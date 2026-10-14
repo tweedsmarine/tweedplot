@@ -8,7 +8,7 @@ Rust on Windows and Tauri both need Microsoft's C++ build tools.
 
 1. Download **Build Tools for Visual Studio 2022** from https://visualstudio.microsoft.com/visual-cpp-build-tools/
 2. In the installer, tick **Desktop development with C++**. Keep the default options (MSVC and the Windows 11 SDK).
-3. **ARM64 PCs (Snapdragon etc.):** also go to **Individual components** and tick **MSVC v143 – VS 2022 C++ ARM64/ARM64EC build tools (Latest)**. Without it, Rust can't find Microsoft's linker.
+3. **ARM64 PCs (Snapdragon etc.):** also go to **Individual components** and tick the ARM64/ARM64EC build tools entry marked **(Latest)**. Rust only uses the default (latest) toolset. If the ARM64 tools are installed only for an older toolset (e.g. 14.44 on Visual Studio 2026, whose default is 14.51), Rust can't find Microsoft's linker. To check, `VC\Tools\MSVC\<default version>\bin\HostArm64\arm64\link.exe` must exist; the default version is in `VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt`.
 4. Install (several GB), then restart if it asks you to.
 
 **Run `cargo` from PowerShell, not Git Bash.** Git Bash has its own `link` command (a GNU file tool). If Rust can't find the Microsoft linker, it picks that one up by mistake and fails with "link: extra operand".
