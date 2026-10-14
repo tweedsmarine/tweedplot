@@ -51,6 +51,7 @@ git push -u origin main
 ## 5. Signal K server (GPS input)
 
 1. In PowerShell: `npm install -g signalk-server`
+   - If PowerShell says "running scripts is disabled on this system", allow signed and local scripts for your user account (once): `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then open a new PowerShell window. Or use `npm.cmd` in place of `npm`.
 2. Start it with `signalk-server` and open http://localhost:3000. Create an admin user when it asks.
 3. **Live GPS:** Server → Data Connections → Add. Input type **NMEA 0183**, source **Serial**. Pick the GPS's COM port (Device Manager → Ports) and baud rate (usually 4800 or 9600).
 4. **Desk testing without a GPS:** add a second data connection of type **File Stream** and point it at one of the Morgane `.nmea` logs. It plays the voyage back as if it were live.
