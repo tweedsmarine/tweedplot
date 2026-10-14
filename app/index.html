@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>racenav</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="map"></div>
+
+    <aside id="panel">
+      <div class="row status"><span id="sk-dot" class="dot"></span><span id="sk-text">Signal K: connecting…</span></div>
+      <div class="row"><span class="label">Lat</span><span id="lat" class="value">—</span></div>
+      <div class="row"><span class="label">Lon</span><span id="lon" class="value">—</span></div>
+      <div class="row"><span class="label">COG</span><span id="cog" class="value">—</span></div>
+      <div class="row"><span class="label">SOG</span><span id="sog" class="value">—</span></div>
+      <div class="row"><span class="label">HDG</span><span id="hdg" class="value">—</span></div>
+      <div class="row"><span class="label">Depth</span><span id="depth" class="value">—</span></div>
+      <div class="row"><span class="label">Time (UTC)</span><span id="time" class="value small">—</span></div>
+      <div class="buttons">
+        <button id="follow" class="on" title="Keep the boat centred">Follow</button>
+        <button id="clear-track" title="Clear the track trail">Clear track</button>
+      </div>
+    </aside>
+
+    <div id="cursor" class="cursor">—</div>
+    <div class="attribution">Land: © OpenStreetMap contributors (geo-maps). Not for navigation.</div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["crates/nav-core", "crates/polar"]
+members = ["crates/nav-core", "crates/polar", "crates/signalk", "app/src-tauri"]
+# `cargo test` at the root skips the GUI app; build it with `npm run tauri dev` in app/.
+default-members = ["crates/nav-core", "crates/polar", "crates/signalk"]
 
 [workspace.package]
 edition = "2021"
@@ -9,4 +11,12 @@ authors = ["Chris Harris <chris@tweedsmarine.nz>"]
 
 [workspace.dependencies]
 nav-core = { path = "crates/nav-core" }
+polar = { path = "crates/polar" }
+signalk = { path = "crates/signalk" }
 thiserror = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "fs", "io-util"] }
+tokio-tungstenite = "0.30"
+futures-util = "0.3"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
