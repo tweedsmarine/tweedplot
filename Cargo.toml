@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = ["crates/nav-core", "crates/polar"]
+
+[workspace.package]
+edition = "2021"
+license = "UNLICENSED"
+authors = ["Chris Harris <chris@tweedsmarine.nz>"]
+
+[workspace.dependencies]
+nav-core = { path = "crates/nav-core" }
+thiserror = "1"
