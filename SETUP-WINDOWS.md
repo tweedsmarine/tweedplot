@@ -8,7 +8,12 @@ Rust on Windows and Tauri both need Microsoft's C++ build tools.
 
 1. Download **Build Tools for Visual Studio 2022** from https://visualstudio.microsoft.com/visual-cpp-build-tools/
 2. In the installer, tick **Desktop development with C++**. Keep the default options (MSVC and the Windows 11 SDK).
-3. Install (several GB), then restart if it asks you to.
+3. **ARM64 PCs (Snapdragon etc.):** also go to **Individual components** and tick **MSVC v143 – VS 2022 C++ ARM64/ARM64EC build tools (Latest)**. Without it, Rust can't find Microsoft's linker.
+4. Install (several GB), then restart if it asks you to.
+
+**Run `cargo` from PowerShell, not Git Bash.** Git Bash has its own `link` command (a GNU file tool). If Rust can't find the Microsoft linker, it picks that one up by mistake and fails with "link: extra operand".
+
+**Keep the repo out of MEGA** (e.g. `C:\dev\racenav`). The `target` build folder grows to thousands of files and hundreds of MB, and MEGA would try to sync all of it.
 
 ## 2. Rust
 
