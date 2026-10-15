@@ -241,3 +241,11 @@ table.cmp tr.active td { background: #e8f1fa; }
 table.cmp td.best { font-weight: 700; color: var(--good); }
 .ctx.checks { width: 260px; padding: 6px 8px; }
 .ctx.checks label { display: flex; gap: 6px; align-items: center; padding: 3px 2px; font-size: 13px; }
+
+/* GRIB chooser and time slider copied into the dock */
+.wx-mini { position: sticky; left: 0; padding: 4px 0 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.wx-mini .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.wx-mini .chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 6px; border: 1px solid #b8c4cc; border-radius: 14px; font-size: 12px; cursor: pointer; background: #fff; white-space: nowrap; }
+.wx-mini .chip.on { border-color: var(--accent); background: #e8f1fa; font-weight: 600; }
+.wx-mini .wx-row.time input[type=range] { flex: 1; min-width: 120px; }
+.wx-mini .when { flex: none; min-width: 190px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }

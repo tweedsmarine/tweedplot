@@ -142,8 +142,8 @@ export function setupWeather(map, layers) {
       radio.checked = path === display;
       label.textContent = s.name;
       label.title = `${path}\n${span}`;
-      radio.onchange = () => { display = path; setTimes(); };
-      label.onclick = () => { radio.checked = true; display = path; setTimes(); };
+      radio.onchange = () => showGrib(path);
+      label.onclick = () => showGrib(path);
       x.onclick = async () => {
         await invoke("grib_unload", { path });
         loaded.delete(path);
@@ -154,6 +154,19 @@ export function setupWeather(map, layers) {
       };
       box.append(row);
     }
+    syncMirrors();
+  }
+
+  /** Show this loaded GRIB on the chart (the time is kept when it is inside the new GRIB). */
+  function showGrib(path) {
+    if (!loaded.has(path)) return;
+    display = path;
+    for (const r of $("wx-loaded").querySelectorAll("input[type=radio]")) r.checked = false;
+    const i = [...loaded.keys()].indexOf(path);
+    const radio = $("wx-loaded").querySelectorAll("input[type=radio]")[i];
+    if (radio) radio.checked = true;
+    setTimes();
+    syncMirrors();
   }
 
   // ---------- time -------------------------------------------------------------
@@ -181,6 +194,13 @@ export function setupWeather(map, layers) {
   }
 
   $("wx-slider").oninput = (e) => { t = Number(e.target.value); draw(); };
+  function setT(v) {
+    if (!times.length) return;
+    const s = $("wx-slider");
+    t = Math.min(Number(s.max), Math.max(Number(s.min), v));
+    s.value = t;
+    draw();
+  }
   const stepBy = (n) => {
     const s = $("wx-slider");
     t = Math.min(Number(s.max), Math.max(Number(s.min), t + n * Number(s.step)));
@@ -197,20 +217,72 @@ export function setupWeather(map, layers) {
   };
   $("wx-prev").onclick = () => stepBy(-1);
   $("wx-next").onclick = () => stepBy(1);
-  $("wx-play").onclick = () => {
-    if (playing) { clearInterval(playing); playing = null; $("wx-play").textContent = "▶"; return; }
-    $("wx-play").textContent = "❚❚";
-    playing = setInterval(() => {
-      const s = $("wx-slider");
-      if (t >= Number(s.max)) { t = Number(s.min) - Number(s.step); }
-      stepBy(1);
-    }, 700);
-  };
+  function togglePlay() {
+    if (playing) { clearInterval(playing); playing = null; }
+    else {
+      playing = setInterval(() => {
+        const s = $("wx-slider");
+        if (t >= Number(s.max)) { t = Number(s.min) - Number(s.step); }
+        stepBy(1);
+      }, 700);
+    }
+    $("wx-play").textContent = playing ? "❚❚" : "▶";
+    syncMirrors();
+  }
+  $("wx-play").onclick = togglePlay;
+
+  // ---------- copies of the GRIB choice and time slider elsewhere (e.g. the compare dock) ----------
+  // Each copy drives the same state as the Weather drawer, so the drawer can stay closed.
+  const mirrors = new Set();
+  function mountControls(el) {
+    el.classList.add("wx-mini");
+    el.innerHTML = `<div class="chips"></div>
+      <div class="wx-row time"><button data-act="prev" title="Back one step">◀</button><button data-act="play" title="Play / pause">▶</button>` +
+      `<button data-act="next" title="Forward one step">▶|</button><button data-act="now" title="Set the time to now">Now</button>` +
+      `<input type="range" class="grow"><span class="when">—</span></div>`;
+    const sl = el.querySelector("input[type=range]");
+    sl.oninput = () => setT(Number(sl.value));
+    el.querySelector('[data-act="prev"]').onclick = () => stepBy(-1);
+    el.querySelector('[data-act="next"]').onclick = () => stepBy(1);
+    el.querySelector('[data-act="play"]').onclick = togglePlay;
+    el.querySelector('[data-act="now"]').onclick = () => $("wx-now").click();
+    mirrors.add(el);
+    syncMirror(el, true);
+  }
+  function syncMirror(el, chips) {
+    if (chips) {
+      const box = el.querySelector(".chips");
+      box.innerHTML = "";
+      if (!loaded.size) box.innerHTML = `<span class="wx-note">No GRIB loaded: load one in the Weather panel.</span>`;
+      for (const [path, s] of loaded) {
+        const lab = document.createElement("label");
+        lab.className = `chip${path === display ? " on" : ""}`;
+        lab.title = `Show ${s.name} on the chart`;
+        lab.innerHTML = `<input type="checkbox"><span></span>`;
+        lab.querySelector("input").checked = path === display;
+        lab.querySelector("span").textContent = s.name;
+        lab.querySelector("input").onchange = (e) => { if (e.target.checked) showGrib(path); else e.target.checked = true; };
+        box.append(lab);
+      }
+    }
+    const main = $("wx-slider"), sl = el.querySelector("input[type=range]");
+    sl.min = main.min; sl.max = main.max; sl.step = main.step; sl.value = t;
+    sl.disabled = !times.length;
+    el.querySelector(".when").textContent = times.length ? fmt(t) : "—";
+    el.querySelector('[data-act="play"]').textContent = playing ? "❚❚" : "▶";
+  }
+  function syncMirrors(timeOnly) {
+    for (const el of mirrors) {
+      if (!el.isConnected) { mirrors.delete(el); continue; }
+      syncMirror(el, !timeOnly);
+    }
+  }
 
   // ---------- drawing --------------------------------------------------------------
   let pending = false;
   async function draw() {
     $("wx-time").textContent = times.length ? fmt(t) : "—";
+    syncMirrors(true);
     for (const fn of timeListeners) fn(t);
     updatePoint();
     if (pending) return;
@@ -345,6 +417,9 @@ export function setupWeather(map, layers) {
       draw();
     },
     onTime: (fn) => { timeListeners.push(fn); },
+    /** Put a GRIB chooser and time slider into `el`, working the same state as the Weather drawer. */
+    mountControls,
+    showGrib,
   };
 }
 

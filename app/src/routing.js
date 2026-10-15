@@ -408,7 +408,11 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
       cog.textContent = "⚙";
       cog.onclick = (e) => { e.stopPropagation(); colsMenu(cog); };
       tools.append(cog);
-      if (!shown.length) { body.innerHTML = `<p class="wx-note">Tick routings in Routing › Routings to compare them here.</p>`; return; }
+      // the GRIB shown on the chart and its time, so the Weather drawer can stay closed
+      const wxBar = document.createElement("div");
+      body.append(wxBar);
+      weather.mountControls(wxBar);
+      if (!shown.length) { body.insertAdjacentHTML("beforeend", `<p class="wx-note">Tick routings in Routing › Routings to compare them here.</p>`); return; }
       const defs = cols.map((k) => STATS.find((c) => c.key === k)).filter(Boolean);
       const val = (it, c) => { try { return c.get(it.stats, it.r); } catch { return null; } };
       let rows = [...shown];
