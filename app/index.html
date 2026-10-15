@@ -28,22 +28,54 @@
     </aside>
 
     <aside id="wx">
-      <div class="wx-head">Weather</div>
-      <div class="wx-row">
-        <select id="wx-files" title="GRIB files in the GRIB folders"></select>
-        <button id="wx-load" title="Load the selected GRIB">Load</button>
-        <button id="wx-refresh" title="Look for new GRIB files">↻</button>
-      </div>
-      <div id="wx-loaded"></div>
-      <div class="wx-row time">
-        <button id="wx-prev" title="Back one step">◀</button>
-        <button id="wx-play" title="Play / pause">▶</button>
-        <button id="wx-next" title="Forward one step">▶|</button>
-        <span id="wx-time">—</span>
-      </div>
-      <input id="wx-slider" type="range" min="0" max="0" step="3600" value="0" />
-      <table id="wx-point"><thead><tr><th>Run</th><th>TWS</th><th>TWD</th><th>Gust</th><th>MSLP</th><th>Hs</th></tr></thead><tbody></tbody></table>
-      <div id="wx-where" class="wx-note">Values at the cursor</div>
+      <details open>
+        <summary>Weather</summary>
+        <div class="wx-row">
+          <select id="wx-files" title="GRIB files in the GRIB folders"></select>
+          <button id="wx-load" title="Load the selected GRIB">Load</button>
+          <button id="wx-refresh" title="Look for new GRIB files">↻</button>
+        </div>
+        <div id="wx-loaded"></div>
+        <div class="wx-row time">
+          <button id="wx-prev" title="Back one step">◀</button>
+          <button id="wx-play" title="Play / pause">▶</button>
+          <button id="wx-next" title="Forward one step">▶|</button>
+          <span id="wx-time">—</span>
+        </div>
+        <input id="wx-slider" type="range" min="0" max="0" step="3600" value="0" />
+        <table id="wx-point"><thead><tr><th>Run</th><th>TWS</th><th>TWD</th><th>Gust</th><th>MSLP</th><th>Hs</th></tr></thead><tbody></tbody></table>
+        <div id="wx-where" class="wx-note">Values at the cursor</div>
+      </details>
+
+      <details>
+        <summary>Boat</summary>
+        <div class="wx-row"><label class="grow" for="boat-polar">Polar</label><select id="boat-polar"></select></div>
+        <div class="wx-row"><label class="grow" for="boat-eff">Polar efficiency (%)</label><input id="boat-eff" type="number" min="10" max="150" step="1" /></div>
+        <div class="wx-row"><label class="grow" for="boat-tack">Tack costs (s)</label><input id="boat-tack" type="number" min="0" step="5" /></div>
+        <div class="wx-row"><label class="grow" for="boat-gybe">Gybe costs (s)</label><input id="boat-gybe" type="number" min="0" step="5" /></div>
+        <div class="wx-note">Safety depth is set in the Chart section on the right; routing avoids water shallower than it.</div>
+      </details>
+
+      <details open>
+        <summary>Route</summary>
+        <div class="wx-row">
+          <button id="rt-start" title="Click on the chart to place the start">Set start</button>
+          <button id="rt-boat" title="Start from the boat's position">From boat</button>
+          <button id="rt-add" title="Click on the chart to add marks in order">Add marks</button>
+          <button id="rt-undo" title="Remove the last mark">Undo</button>
+          <button id="rt-clear" title="Clear start, marks and route">Clear</button>
+        </div>
+        <div class="wx-row"><label class="grow" for="rt-step">Time step (min)</label><input id="rt-step" type="number" min="1" max="360" step="1" /></div>
+        <div class="wx-row"><label class="grow" for="rt-radius">Arrival radius (NM)</label><input id="rt-radius" type="number" min="0.01" max="20" step="0.05" /></div>
+        <div class="wx-row"><label class="grow"><input id="rt-current" type="checkbox" /> Use GRIB currents</label></div>
+        <div class="wx-row"><span class="grow" id="rt-when">Start: weather slider time</span></div>
+        <div class="wx-row">
+          <button id="rt-go" class="on">Compute route</button>
+          <button id="rt-gpx" title="Save the route as GPX">GPX</button>
+        </div>
+        <div id="rt-status" class="wx-note"></div>
+        <table id="rt-summary"><tbody></tbody></table>
+      </details>
     </aside>
 
     <div id="cursor" class="cursor">—</div>

@@ -13,6 +13,7 @@ export function setupWeather(map, beforeLand, beforeTop) {
   let t = 0;
   let playing = null;
   let cursor = null; // [lon, lat]
+  const timeListeners = [];
 
   map.addSource("wx-cells", { type: "geojson", data: fc([]) });
   map.addSource("wx-barbs", { type: "geojson", data: fc([]) });
@@ -141,6 +142,7 @@ export function setupWeather(map, beforeLand, beforeTop) {
   let pending = false;
   async function draw() {
     $("wx-time").textContent = times.length ? fmt(t) : "—";
+    for (const fn of timeListeners) fn(t);
     updatePoint();
     if (pending) return;
     pending = true;
@@ -206,7 +208,20 @@ export function setupWeather(map, beforeLand, beforeTop) {
     if (loaded.size) { display = loaded.keys().next().value; renderLoaded(); setTimes(); }
   }).catch(() => {});
 
-  return { setCursor: (lonlat) => { cursor = lonlat; updatePoint(); } };
+  return {
+    setCursor: (lonlat) => { cursor = lonlat; updatePoint(); },
+    /** The GRIB shown on the chart and the slider time. */
+    current: () => ({ path: display, t, name: display && loaded.get(display)?.name }),
+    /** Move the slider to a time (clamped to the shown GRIB). */
+    setTime: (sec) => {
+      const s = $("wx-slider");
+      if (!times.length) return;
+      t = Math.min(Number(s.max), Math.max(Number(s.min), sec));
+      s.value = t;
+      draw();
+    },
+    onTime: (fn) => { timeListeners.push(fn); },
+  };
 }
 
 /** Barb images are drawn on demand: id "barb:<knots rounded to 5>:<n|s>". */
@@ -265,7 +280,7 @@ function fc(features) { return { type: "FeatureCollection", features }; }
 function n(v, d) { return v == null ? "—" : v.toFixed(d); }
 
 /** Local time plus UTC, e.g. "Tue 13 Oct 09:00 (20:00Z)". */
-function fmt(sec, short = false) {
+export function fmt(sec, short = false) {
   const d = new Date(sec * 1000);
   const local = d.toLocaleString("en-NZ", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
   if (short) return local;

@@ -237,6 +237,35 @@ impl ChartStore {
         }
     }
 
+    /// Every depth-area polygon touching `bbox` [w, s, e, n], coarse bands first:
+    /// `f(band, drval1, rings)`. For building routing obstacle maps.
+    pub fn for_each_depth_area(&self, bbox: [f64; 4], mut f: impl FnMut(u8, Option<f64>, &[geom::Ring])) {
+        let mut tables: Vec<&TableInfo> = self.tables.iter().filter(|t| t.kind == Kind::DepthArea).collect();
+        tables.sort_by_key(|t| t.band);
+        for t in tables {
+            self.query(t, bbox, &["drval1"], |vals, g| {
+                if let Geom::Polygons(polys) = g {
+                    for p in &polys {
+                        f(t.band, vals[0], p);
+                    }
+                }
+            });
+        }
+    }
+
+    /// Every Topo50 land polygon touching `bbox`.
+    pub fn for_each_land(&self, bbox: [f64; 4], mut f: impl FnMut(&[geom::Ring])) {
+        for t in self.tables.iter().filter(|t| t.kind == Kind::Land) {
+            self.query(t, bbox, &[], |_, g| {
+                if let Geom::Polygons(polys) = g {
+                    for p in &polys {
+                        f(p);
+                    }
+                }
+            });
+        }
+    }
+
     /// Depth-area polygons whose shallowest depth (`drval1`) is less than `depth`,
     /// in lon/lat, from the finest band covering each area. For routing.
     pub fn shallow_areas(&self, bbox: [f64; 4], depth: f64, band: u8) -> Vec<Vec<geom::Ring>> {

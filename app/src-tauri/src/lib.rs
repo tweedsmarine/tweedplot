@@ -188,6 +188,98 @@ fn sk_url() -> String {
     std::env::var("RACENAV_SK_URL").unwrap_or_else(|_| signalk::DEFAULT_URL.to_string())
 }
 
+/// Polar folders: `RACENAV_POLAR_DIR`, `C:\dev\racenav-data\polars`, qtVlm's polar folder.
+fn polar_dirs() -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = Vec::new();
+    if let Ok(d) = std::env::var("RACENAV_POLAR_DIR") {
+        v.push(d.into());
+    }
+    v.push(r"C:\dev\racenav-data\polars".into());
+    v.push(r"C:\Program Files (x86)\qtVlm\polar".into());
+    v.retain(|d| d.is_dir());
+    v
+}
+
+#[tauri::command]
+fn polar_files() -> Vec<serde_json::Value> {
+    let mut out = Vec::new();
+    for dir in polar_dirs() {
+        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
+            if !matches!(ext.as_str(), "csv" | "pol" | "txt") {
+                continue;
+            }
+            // only files that actually parse as polars
+            if polar::Polar::from_path(&p).is_err() {
+                continue;
+            }
+            out.push(serde_json::json!({
+                "path": p.to_string_lossy(),
+                "name": p.file_stem().map(|f| f.to_string_lossy().into_owned()),
+                "dir": dir,
+            }));
+        }
+    }
+    out.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+    out
+}
+
+#[derive(serde::Deserialize)]
+struct RouteRequest {
+    /// [lon, lat]
+    start: [f64; 2],
+    marks: Vec<[f64; 2]>,
+    /// Unix seconds UTC
+    t0: i64,
+    grib_path: String,
+    polar_path: String,
+    safety_depth: f64,
+    #[serde(default)]
+    params: routing::Params,
+}
+
+/// Route from start through the marks with one loaded GRIB, a polar and the chart.
+#[tauri::command]
+async fn route_compute(req: RouteRequest) -> Result<serde_json::Value, String> {
+    let grib = GRIBS
+        .lock()
+        .unwrap()
+        .get(&req.grib_path)
+        .cloned()
+        .ok_or("Load the GRIB first (Weather panel).")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let polar = polar::Polar::from_path(&req.polar_path).map_err(|e| format!("Polar: {e}"))?;
+        let start = nav_core::LatLon::new(req.start[1], req.start[0]);
+        let marks: Vec<nav_core::LatLon> = req.marks.iter().map(|m| nav_core::LatLon::new(m[1], m[0])).collect();
+        if marks.is_empty() {
+            return Err("Add at least one mark.".to_string());
+        }
+        let clock = std::time::Instant::now();
+        let raster = CHARTS.get().map(|store| {
+            let mut b = [start.lon, start.lat, start.lon, start.lat];
+            for m in &marks {
+                b = [b[0].min(m.lon), b[1].min(m.lat), b[2].max(m.lon), b[3].max(m.lat)];
+            }
+            // room to go round headlands: a quarter of the span, at least 0.1 degree
+            let pad = ((b[2] - b[0]).max(b[3] - b[1]) * 0.25).max(0.1);
+            routing::Raster::from_chart(store, [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad], req.safety_depth, 50.0, 16_000_000)
+        });
+        let raster_ms = clock.elapsed().as_millis();
+        let r = routing::route(start, req.t0, &marks, &polar, grib.as_ref(), raster.as_ref(), &req.params);
+        let mut v = serde_json::to_value(&r).map_err(|e| e.to_string())?;
+        v["obstacles"] = serde_json::json!({
+            "cell_m": raster.as_ref().map(|r| r.cell_size_m().round()),
+            "build_ms": raster_ms,
+            "charts": raster.is_some(),
+        });
+        Ok(v)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Chart folder: `RACENAV_CHART_DIR`, else `C:\dev\racenav-data\linz` if present,
 /// else `<app data>\charts`.
 fn chart_dir(app: &tauri::AppHandle) -> PathBuf {
@@ -245,7 +337,8 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            app_info, chart_info, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_point
+            app_info, chart_info, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_point,
+            polar_files, route_compute
         ])
         .register_asynchronous_uri_scheme_protocol("chart", |_ctx, request, responder| {
             let path = request.uri().path().to_string();

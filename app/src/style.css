@@ -65,3 +65,14 @@ input[type="number"] { width: 64px; padding: 4px 6px; font-size: 15px; border: 1
 #wx-point td { text-align: right; padding: 2px 3px; border-top: 1px solid #e3e8eb; }
 #wx-point td:first-child { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wx-note { color: var(--quiet); font-size: 11px; margin-top: 4px; }
+
+#wx details { border-top: 1px solid #e3e8eb; padding: 4px 0; }
+#wx details:first-child { border-top: none; }
+#wx summary { cursor: pointer; font-size: 12px; color: var(--quiet); text-transform: uppercase; letter-spacing: 0.04em; padding: 4px 0; }
+.wx-row .grow { flex: 1; }
+.wx-row select#boat-polar { flex: 2; }
+.wx-row button.armed { background: #ffe9a8; border-color: #d8a500; }
+#rt-summary { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; margin-top: 4px; }
+#rt-summary td { padding: 2px 3px; border-top: 1px solid #e3e8eb; }
+#rt-summary td:last-child { text-align: right; font-weight: 600; }
+.rt-popup { font-size: 12px; font-variant-numeric: tabular-nums; line-height: 1.4; }

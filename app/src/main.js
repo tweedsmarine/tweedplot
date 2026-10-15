@@ -6,6 +6,7 @@ maplibregl.setWorkerUrl(workerUrl);
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { setupWeather, barbImage } from "./weather.js";
+import { setupRoute, markImage } from "./route.js";
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
@@ -95,13 +96,17 @@ map.setMissingStyleImageResolver((id) => {
   if (map.hasImage(id)) return;
   const m = /^(sh|dp):(-?[0-9.]+)$/.exec(id);
   if (m) { map.addImage(id, soundingIcon(parseFloat(m[2]), m[1] === "sh"), { pixelRatio: 2 }); return; }
-  const barb = barbImage(id);
-  if (barb) map.addImage(id, barb, { pixelRatio: 2 });
+  const img = barbImage(id) || markImage(id);
+  if (img) map.addImage(id, img, { pixelRatio: 2 });
 });
 
 // Weather: GRIB wind shading sits under the land, barbs under the boat and track.
 let weather = null;
-map.on("load", () => { weather = setupWeather(map, "chart-land", "track"); });
+let lastBoat = null; // [lon, lat] from Signal K
+map.on("load", () => {
+  weather = setupWeather(map, "chart-land", "track");
+  setupRoute(map, { weather, getBoat: () => lastBoat, getSafetyDepth: () => settings.safetyDepth });
+});
 
 // When chart data is present, the Topo50 coastline replaces the coarse land from zoom 6.
 function chartsLoaded(info) {
@@ -163,6 +168,7 @@ listen("vessel", ({ payload: v }) => {
   if (v.lat == null || v.lon == null) return;
 
   const pos = [v.lon, v.lat];
+  lastBoat = pos;
   const dir = v.heading ?? v.cog ?? 0;
   setData("boat", { type: "FeatureCollection", features: [{ type: "Feature", properties: { rot: dir }, geometry: { type: "Point", coordinates: pos } }] });
 

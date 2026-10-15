@@ -11,7 +11,7 @@ Spec and roadmap: https://claude.ai/code/artifact/e37fa4c3-20c2-4aec-af8f-641714
 | `crates/nav-core` | Positions, bearings, distances, angle helpers (NM, kn, deg true) | Working, tested |
 | `crates/polar` | Read qtVlm `.csv` / `.pol` polars, interpolate, best VMG | Working, tested |
 | `crates/grib` | GRIB2 decoding (simple and complex packing, bitmaps, Meltemus JSON section), wind/gust/MSLP/waves/currents in space and time | Working, matches ecCodes on Meltemus files; GRIB1 next |
-| `crates/routing` | Isochrone engine: land and safety-contour avoidance | Next |
+| `crates/routing` | Isochrone routing (modified isochrone method) round land and water shallower than the safety depth, multi-leg, tack/gybe penalties, currents | Working, tested |
 | `crates/chart` | LINZ GeoPackages (Topo50 coastline, depth areas, contours, soundings, all scale bands) served as vector tiles | Working, tested on the full LINZ download |
 | `crates/signalk` | Signal K WebSocket client, own-vessel state, session log | Working, tested against Signal K playing a Morgane log |
 | `app/` | Tauri shell + MapLibre GL front end: offline land, own boat, track, COG vector, instrument panel | First window |
@@ -61,6 +61,18 @@ The Weather panel lists GRIB files found in `RACENAV_GRIB_DIR`, `C:\dev\racenav-
 
 ```
 cargo run -p grib --example grib_info -- path\to\file.grb2 -36.0 174.8
+```
+
+## Routing
+
+Left panel, Boat: choose a polar (from `C:\dev\racenav-data\polars` or qtVlm's `polar` folder), efficiency and tack/gybe time. Route: **Set start** (or **From boat**), **Add marks** by clicking the chart (Esc to stop), then **Compute route**. The route starts at the weather slider time with the GRIB shown on the chart. Hover a route point for heading, TWA, TWS and boat speed; **GPX** saves the route.
+
+How it works: each step fans out headings from every point of the last isochrone, boat speed from the polar at the GRIB wind (plus current if ticked), a tack or gybe costs its time, and steps that cross land (Topo50) or LINZ depth areas shallower than the safety depth are dropped. Obstacles come from a 50 m raster built from the charts for each run, with the finest chart scale winning. Pruning keeps one point per small grid cell (so routes find their way round headlands and into bays); without charts it uses the classic sectors from the start. If the GRIB runs out, the route stops and says so.
+
+Not yet: rounding sides (marks are reached within the arrival radius), route optimisation, multi-routing.
+
+```
+cargo run --release -p routing --example route_cli -- --grib file.grb2 --polar boat.csv --chart C:\dev\racenav-data\linz --start -36.838,174.805 --marks "-35.465,174.80;-35.252,174.100"
 ```
 
 ## Conventions

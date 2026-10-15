@@ -201,6 +201,8 @@ pub struct GribFile {
     pub path: PathBuf,
     pub fields: Vec<Field>,
     pub skipped: Vec<String>,
+    /// Sorted field indices per parameter, built once (queries are hot in routing).
+    index: std::collections::BTreeMap<Param, Vec<usize>>,
 }
 
 /// Summary for the user interface.
@@ -232,21 +234,48 @@ impl GribFile {
         if d.fields.is_empty() && !d.skipped.is_empty() {
             return Err(GribError::Unsupported(d.skipped.join("; ")));
         }
-        Ok(GribFile { path, fields: d.fields, skipped: d.skipped })
+        Ok(GribFile::build(path, d.fields, d.skipped))
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let d = decode::decode(bytes);
-        GribFile { path: PathBuf::new(), fields: d.fields, skipped: d.skipped }
+        GribFile::build(PathBuf::new(), d.fields, d.skipped)
     }
 
     /// Fields of one parameter (deterministic or control member), sorted by valid
     /// time; for duplicate times the latest run wins.
+    fn build(path: PathBuf, fields: Vec<Field>, skipped: Vec<String>) -> Self {
+        let mut index: std::collections::BTreeMap<Param, Vec<usize>> = std::collections::BTreeMap::new();
+        for (i, f) in fields.iter().enumerate() {
+            if f.member.unwrap_or(0) == 0 {
+                index.entry(f.param).or_default().push(i);
+            }
+        }
+        for v in index.values_mut() {
+            v.sort_by_key(|&i| (fields[i].valid_time, std::cmp::Reverse(fields[i].ref_time)));
+            v.dedup_by_key(|i| fields[*i].valid_time);
+        }
+        GribFile { path, fields, skipped, index }
+    }
+
     pub fn series(&self, p: Param) -> Vec<&Field> {
-        let mut v: Vec<&Field> = self.fields.iter().filter(|f| f.param == p && f.member.unwrap_or(0) == 0).collect();
-        v.sort_by_key(|f| (f.valid_time, std::cmp::Reverse(f.ref_time)));
-        v.dedup_by_key(|f| f.valid_time);
-        v
+        self.index.get(&p).map(|v| v.iter().map(|&i| &self.fields[i]).collect()).unwrap_or_default()
+    }
+
+    /// Bracketing fields for time `t` without allocating.
+    fn bracket_at(&self, p: Param, t: i64) -> Option<(&Field, &Field, f64)> {
+        let idx = self.index.get(&p)?;
+        let (first, last) = (&self.fields[*idx.first()?], &self.fields[*idx.last()?]);
+        if t < first.valid_time || t > last.valid_time {
+            return None;
+        }
+        let i = idx.partition_point(|&k| self.fields[k].valid_time <= t);
+        let a = &self.fields[idx[i - 1]];
+        if a.valid_time == t || i == idx.len() {
+            return Some((a, a, 0.0));
+        }
+        let b = &self.fields[idx[i]];
+        Some((a, b, (t - a.valid_time) as f64 / (b.valid_time - a.valid_time) as f64))
     }
 
     pub fn times(&self, p: Param) -> Vec<i64> {
@@ -255,8 +284,7 @@ impl GribFile {
 
     /// One parameter at a point and time, linear in time between fields.
     pub fn value(&self, p: Param, lat: f64, lon: f64, t: i64) -> Option<f64> {
-        let s = self.series(p);
-        let (a, b, w) = bracket(&s, t)?;
+        let (a, b, w) = self.bracket_at(p, t)?;
         let va = a.grid.sample(&a.values, lat, lon)?;
         if w == 0.0 {
             return Some(va);
