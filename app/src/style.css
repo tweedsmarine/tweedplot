@@ -142,7 +142,10 @@ body.drawer-open .cursor, body.drawer-open .attribution { left: calc(var(--rail-
 }
 .ipanel.row .grip { width: 16px; }
 .ipanel.column .grip { height: 14px; letter-spacing: 0; writing-mode: vertical-lr; }
-.locked .ipanel .grip { display: none; }
+.locked .ipanel .grip { cursor: default; opacity: 0.55; }
+.ipanel.collapsed { align-items: stretch; }
+.ipanel.collapsed .grip { width: 22px; height: 26px; }
+.ipanel .ptitle { color: var(--tile-ink); background: var(--tile-bg); border-radius: 6px; padding: 4px 9px; font-size: 12px; line-height: 18px; white-space: nowrap; cursor: pointer; }
 .tile {
   background: var(--tile-bg); color: var(--tile-ink); border-radius: 6px; padding: 4px 8px 5px;
   display: flex; flex-direction: column; justify-content: space-between; cursor: pointer; box-sizing: border-box;

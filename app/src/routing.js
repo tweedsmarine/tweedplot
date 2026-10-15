@@ -60,6 +60,28 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
   map.addLayer({ id: "rt-pts", type: "circle", source: "rt-pts",
     paint: { "circle-radius": 3, "circle-color": ["get", "colour"], "circle-stroke-color": "#fff", "circle-stroke-width": 1 } }, "track");
 
+  // Where each shown routing has the boat at the weather slider's time: a
+  // triangle in the routing's colour pointing along its heading.
+  map.addSource("rt-now", { type: "geojson", data: empty });
+  map.addImage("rt-tri", triangle(), { sdf: true, pixelRatio: 2 });
+  map.addLayer({ id: "rt-now", type: "symbol", source: "rt-now",
+    layout: { "icon-image": "rt-tri", "icon-rotate": ["get", "hdg"], "icon-rotation-alignment": "map",
+              "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-size": ["case", ["get", "active"], 1.5, 1.25] },
+    paint: { "icon-color": ["get", "colour"], "icon-halo-color": "#1d2a33", "icon-halo-width": 1.2,
+             "icon-opacity": ["case", ["get", "done"], 0.55, 1] } });
+  function drawNow() {
+    const t = weather.current().t;
+    const feats = [];
+    if (t) for (const it of items) {
+      if (!it.visible) continue;
+      const p = positionAt(it.r.points, t);
+      if (p) feats.push({ type: "Feature", properties: { key: it.key, colour: it.colour, hdg: p.heading, active: it.key === active, done: p.done, t },
+        geometry: { type: "Point", coordinates: [p.lon, p.lat] } });
+    }
+    map.getSource("rt-now").setData({ type: "FeatureCollection", features: feats });
+  }
+  weather.onTime(drawNow);
+
   const activeItem = () => items.find((x) => x.key === active) ?? null;
   function draw() {
     const vis = items.filter((x) => x.visible && x.key !== active);
@@ -77,6 +99,7 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
       for (const id of ["rt-line", "rt-pts", "rt-iso"]) map.getSource(id).setData(empty);
     }
     course.setLegsHidden(items.some((x) => x.visible));
+    drawNow();
     renderList();
     renderSummary();
     dock.refresh("compare");
@@ -347,6 +370,18 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
     if (weather.setTime) weather.setTime(p.t);
   });
   map.on("mouseleave", "rt-pts", () => popup.remove());
+  map.on("mousemove", "rt-now", (e) => {
+    const f = e.features[0].properties;
+    const it = items.find((x) => x.key === f.key);
+    const p = it && positionAt(it.r.points, f.t);
+    if (!p) return;
+    const side = p.twa >= 0 ? "stbd" : "port";
+    popup.setLngLat([p.lon, p.lat]).setHTML(`<div class="rt-popup"><b></b><br>${fmt(f.t)}${p.done ? " · finished" : ""}<br>` +
+      `HDG ${pad3(p.heading)}° · TWA ${Math.abs(p.twa).toFixed(0)}° ${side}<br>TWS ${p.tws.toFixed(1)} kn · SOG ${p.sog.toFixed(1)} kn</div>`).addTo(map);
+    popup.getElement().querySelector("b").textContent = it.name;
+  });
+  map.on("mouseleave", "rt-now", () => popup.remove());
+  map.on("click", "rt-now", (e) => { const k = e.features[0].properties.key; if (items.some((x) => x.key === k)) { active = k; draw(); } });
   map.on("mouseenter", "rt-multi", (e) => {
     map.getCanvas().style.cursor = "pointer";
     const it = items.find((x) => x.key === e.features[0].properties.key);
@@ -448,6 +483,38 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
     /** Show a saved routing (Library panel). */
     async showSaved(id) { const it = await showSaved(id); if (it) ui.openTab("routing", "list"); },
   };
+}
+
+/**
+ * The boat on a routing at time t: position along the leg being sailed, with
+ * that leg's heading, TWA, TWS and SOG. After the finish it sits on the finish
+ * (done = true); before the start or past a routing that stopped early, none.
+ */
+export function positionAt(points, t) {
+  if (!points?.length || t < points[0].t) return null;
+  const last = points.at(-1);
+  if (t >= last.t) {
+    if (t > last.t && points.length > 1) {
+      const prev = points.at(-2);
+      return { lon: last.lon, lat: last.lat, heading: prev.heading, twa: prev.twa, tws: prev.tws, sog: 0, done: true };
+    }
+    return { ...last, done: false };
+  }
+  let lo = 0, hi = points.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (points[m].t <= t) lo = m; else hi = m; }
+  const a = points[lo], b = points[hi];
+  const f = (t - a.t) / (b.t - a.t || 1);
+  return { lon: a.lon + (b.lon - a.lon) * f, lat: a.lat + (b.lat - a.lat) * f, heading: a.heading, twa: a.twa, tws: a.tws, sog: a.sog, done: false };
+}
+
+/** Isosceles triangle pointing up (north before rotation), as an SDF mask. */
+function triangle() {
+  const w = 40, h = 48, c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const g = c.getContext("2d");
+  g.beginPath(); g.moveTo(w / 2, 3); g.lineTo(w - 4, h - 4); g.lineTo(w / 2, h - 11); g.lineTo(4, h - 4); g.closePath();
+  g.fillStyle = "#000"; g.fill();
+  return g.getImageData(0, 0, w, h);
 }
 
 function courseKey(c) { return JSON.stringify([c.start, c.marks.map((m) => [m.lon, m.lat])]); }

@@ -76,14 +76,23 @@ export function setupInstruments() {
     root.classList.toggle("locked", layout.locked);
     for (const p of layout.panels) {
       const el = document.createElement("div");
-      el.className = `ipanel ${p.dir} ${p.size}`;
+      el.className = `ipanel ${p.collapsed ? "row collapsed" : p.dir} ${p.size}`;
       el.dataset.id = p.id;
       const grip = document.createElement("div");
       grip.className = "grip";
       grip.textContent = "⋮⋮";
-      grip.title = "Drag to move this panel";
+      grip.title = p.collapsed ? "Double-click (or double-tap) to open this panel; drag to move it"
+        : "Drag to move this panel; double-click (or double-tap) to fold it away";
       el.append(grip);
-      p.tiles.forEach((key, i) => {
+      if (p.collapsed) {
+        const t = document.createElement("div");
+        t.className = "ptitle";
+        t.textContent = panelTitle(p);
+        t.title = "Double-click to open";
+        t.ondblclick = () => toggleCollapsed(p);
+        el.append(t);
+      }
+      if (!p.collapsed) p.tiles.forEach((key, i) => {
         const it = ITEMS[key];
         const t = document.createElement("div");
         t.className = `tile ${p.size}${it?.wide ? " wide" : ""}`;
@@ -113,16 +122,24 @@ export function setupInstruments() {
   window.addEventListener("resize", replace);
   window.addEventListener("racenav-layout", replace);
   const panel = (id) => layout.panels.find((p) => p.id === id);
+  const panelTitle = (p) => p.name || p.tiles.slice(0, 3).map((t) => ITEMS[t]?.label ?? t).join(" · ") + (p.tiles.length > 3 ? " …" : "");
+  function toggleCollapsed(p) { p.collapsed = !p.collapsed; save(); build(); }
 
   function dragByGrip(el, grip, p) {
+    // A tap that doesn't move is a tap; two taps close together fold or open
+    // the panel (works with a mouse double-click and a finger double-tap).
+    let lastTap = 0;
     grip.addEventListener("pointerdown", (e) => {
-      if (layout.locked) return;
       e.preventDefault();
       grip.setPointerCapture(e.pointerId);
       const r = el.getBoundingClientRect();
       const dx = e.clientX - r.left, dy = e.clientY - r.top;
-      grip.style.cursor = "grabbing";
+      const x0 = e.clientX, y0 = e.clientY;
+      let moved = false;
+      if (!layout.locked) grip.style.cursor = "grabbing";
       const move = (ev) => {
+        if (Math.abs(ev.clientX - x0) + Math.abs(ev.clientY - y0) > 6) moved = true;
+        if (layout.locked || !moved) return;
         const W = window.innerWidth, H = window.innerHeight;
         let x = ev.clientX - dx, y = ev.clientY - dy;
         // snap to the screen edges
@@ -137,7 +154,9 @@ export function setupInstruments() {
         grip.removeEventListener("pointermove", move);
         grip.removeEventListener("pointerup", up);
         grip.style.cursor = "";
-        save();
+        if (moved) { save(); return; }
+        const now = Date.now();
+        if (now - lastTap < 400) { lastTap = 0; toggleCollapsed(p); } else lastTap = now;
       };
       grip.addEventListener("pointermove", move);
       grip.addEventListener("pointerup", up);
@@ -221,6 +240,7 @@ export function setupInstruments() {
   // ---------- drawer controls ----------------------------------------------------------
   const lockBtn = document.getElementById("inst-lock");
   function renderList() {
+    document.getElementById("inst-fold").textContent = layout.panels.some((p) => !p.collapsed) ? "Fold all" : "Open all";
     lockBtn.classList.toggle("on", layout.locked);
     lockBtn.textContent = layout.locked ? "Layout locked" : "Lock layout";
     const ul = document.getElementById("inst-panels");
@@ -228,7 +248,8 @@ export function setupInstruments() {
     if (!layout.panels.length) ul.innerHTML = `<li class="empty">No panels. Add one.</li>`;
     layout.panels.forEach((p, k) => {
       const li = document.createElement("li");
-      li.innerHTML = `<div class="main"><b>Panel ${k + 1}</b><small></small></div><button data-act="dir">${p.dir === "row" ? "Vertical" : "Horizontal"}</button><button data-act="del">Remove</button>`;
+      li.innerHTML = `<div class="main"><b>Panel ${k + 1}</b><small></small></div><button data-act="fold">${p.collapsed ? "Open" : "Fold"}</button><button data-act="dir">${p.dir === "row" ? "Vertical" : "Horizontal"}</button><button data-act="del">Remove</button>`;
+      li.querySelector('[data-act="fold"]').onclick = () => toggleCollapsed(p);
       li.querySelector("small").textContent = p.tiles.map((t) => ITEMS[t]?.label ?? t).join(", ");
       li.querySelector('[data-act="dir"]').onclick = () => { p.dir = p.dir === "row" ? "column" : "row"; save(); build(); };
       li.querySelector('[data-act="del"]').onclick = () => { layout.panels.splice(k, 1); save(); build(); };
@@ -237,6 +258,11 @@ export function setupInstruments() {
   }
   document.getElementById("inst-add").onclick = () => {
     layout.panels.push({ id: `p${Date.now().toString(36)}`, x: 0.45, y: 0.4, dir: "row", size: "m", tiles: ["SOG", "TWS"] });
+    save(); build();
+  };
+  document.getElementById("inst-fold").onclick = () => {
+    const fold = layout.panels.some((p) => !p.collapsed);
+    for (const p of layout.panels) p.collapsed = fold;
     save(); build();
   };
   lockBtn.onclick = () => { layout.locked = !layout.locked; save(); build(); };
