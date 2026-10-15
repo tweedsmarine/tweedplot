@@ -18,6 +18,16 @@ use tauri::{Emitter, Manager};
 
 static CHARTS: OnceLock<Arc<chart::ChartStore>> = OnceLock::new();
 static GRIBS: Mutex<BTreeMap<String, Arc<grib::GribFile>>> = Mutex::new(BTreeMap::new());
+/// Latest Signal K connection state, for a page that loads after the event was sent.
+static SK_STATUS: Mutex<Option<(bool, String)>> = Mutex::new(None);
+
+#[tauri::command]
+fn sk_status() -> serde_json::Value {
+    match SK_STATUS.lock().unwrap().clone() {
+        Some((connected, detail)) => serde_json::json!({ "connected": connected, "detail": detail }),
+        None => serde_json::json!({ "connected": false, "detail": "connecting" }),
+    }
+}
 
 /// GRIB folders scanned for files: `RACENAV_GRIB_DIR`, `C:\dev\racenav-data\grib`
 /// and qtVlm's own GRIB folder (Meltemus downloads land there).
@@ -338,7 +348,7 @@ pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             app_info, chart_info, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_point,
-            polar_files, route_compute
+            polar_files, route_compute, sk_status
         ])
         .register_asynchronous_uri_scheme_protocol("chart", |_ctx, request, responder| {
             let path = request.uri().path().to_string();
@@ -368,10 +378,10 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 while let Some(ev) = rx.recv().await {
                     let _ = match ev {
-                        signalk::Event::Status { connected, detail } => handle.emit(
-                            "sk-status",
-                            serde_json::json!({ "connected": connected, "detail": detail }),
-                        ),
+                        signalk::Event::Status { connected, detail } => {
+                            *SK_STATUS.lock().unwrap() = Some((connected, detail.clone()));
+                            handle.emit("sk-status", serde_json::json!({ "connected": connected, "detail": detail }))
+                        }
                         signalk::Event::Vessel(v) => handle.emit("vessel", v),
                     };
                 }

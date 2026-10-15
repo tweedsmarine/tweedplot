@@ -23,8 +23,8 @@ export function setupRoute(map, { weather, getBoat, getSafetyDepth }) {
   // ---------- layers ----------------------------------------------------------
   const empty = { type: "FeatureCollection", features: [] };
   for (const id of ["rt-iso", "rt-line", "rt-pts", "rt-marks"]) map.addSource(id, { type: "geojson", data: empty });
-  map.addLayer({ id: "rt-iso", type: "circle", source: "rt-iso",
-    paint: { "circle-radius": 1, "circle-color": "#5b6b75", "circle-opacity": 0.35 } }, "track");
+  map.addLayer({ id: "rt-iso", type: "line", source: "rt-iso",
+    paint: { "line-color": "#4a5a64", "line-width": 1, "line-opacity": 0.7 } }, "track");
   map.addLayer({ id: "rt-line", type: "line", source: "rt-line",
     paint: { "line-color": "#c2185b", "line-width": 2.5 } }, "track");
   map.addLayer({ id: "rt-pts", type: "circle", source: "rt-pts",
@@ -123,9 +123,10 @@ export function setupRoute(map, { weather, getBoat, getSafetyDepth }) {
     const line = r.points.map((p) => [p.lon, p.lat]);
     map.getSource("rt-line").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: line } });
     map.getSource("rt-pts").setData({ type: "FeatureCollection", features: r.points.map((p, i) => pt([p.lon, p.lat], { i })) });
-    const iso = [];
-    const every = Math.max(1, Math.ceil(r.isochrones.length / 25));
-    r.isochrones.forEach((ring, k) => { if (k % every === 0) for (const c of ring) iso.push(pt(c, {})); });
+    // Isochrones: each is a set of lines along the outer edge of the front.
+    const every = Math.max(1, Math.ceil(r.isochrones.length / 40));
+    const iso = r.isochrones.filter((_, k) => k % every === 0)
+      .map((lines) => ({ type: "Feature", properties: {}, geometry: { type: "MultiLineString", coordinates: lines } }));
     map.getSource("rt-iso").setData({ type: "FeatureCollection", features: iso });
 
     const ok = r.status === "arrived";
@@ -182,6 +183,10 @@ export function setupRoute(map, { weather, getBoat, getSafetyDepth }) {
 
   loadPolars();
   drawMarks();
+  return {
+    setStart: (p) => { start = p; drawMarks(); },
+    addMark: (p) => { marks.push(p); drawMarks(); },
+  };
 }
 
 /** Mark icons drawn on demand: "mk:S" (start) or "mk:<n>". */

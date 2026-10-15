@@ -102,10 +102,11 @@ map.setMissingStyleImageResolver((id) => {
 
 // Weather: GRIB wind shading sits under the land, barbs under the boat and track.
 let weather = null;
-let lastBoat = null; // [lon, lat] from Signal K
+let lastBoat = null; // [lon, lat] from Signal K, or placed by hand when planning
+let route = null;
 map.on("load", () => {
   weather = setupWeather(map, "chart-land", "track");
-  setupRoute(map, { weather, getBoat: () => lastBoat, getSafetyDepth: () => settings.safetyDepth });
+  route = setupRoute(map, { weather, getBoat: () => lastBoat, getSafetyDepth: () => settings.safetyDepth });
 });
 
 // When chart data is present, the Topo50 coastline replaces the coarse land from zoom 6.
@@ -150,13 +151,76 @@ let track = [];
 document.getElementById("clear-track").onclick = () => { track = []; setData("track", line(track)); };
 
 // ---------- Signal K events -------------------------------------------------
-listen("sk-status", ({ payload }) => {
-  document.getElementById("sk-dot").classList.toggle("on", payload.connected);
-  document.getElementById("sk-text").textContent = payload.connected ? "Signal K: connected" : "Signal K: not connected";
+// ---------- Signal K status, live / planning ----------------------------------
+let skConnected = false;
+let lastData = 0; // ms timestamp of the last vessel update
+let live = true;
+function showStatus() {
+  const dot = document.getElementById("sk-dot");
+  dot.classList.toggle("on", live && skConnected);
+  dot.classList.toggle("paused", !live);
+  document.getElementById("sk-text").textContent = !live
+    ? "Signal K: paused (planning)"
+    : skConnected ? "Signal K: connected" : "Signal K: not connected";
+}
+function setStatus(payload) {
+  skConnected = payload.connected;
   document.getElementById("sk-text").title = payload.detail;
+  showStatus();
+}
+listen("sk-status", ({ payload }) => setStatus(payload));
+// The page can load after the first status event was sent: ask for it.
+invoke("sk_status").then(setStatus).catch(() => {});
+const liveBtn = document.getElementById("sk-live");
+liveBtn.onclick = () => {
+  live = !live;
+  liveBtn.classList.toggle("on", live);
+  liveBtn.textContent = live ? "Live" : "Paused";
+  showStatus();
+};
+const signalKActive = () => live && skConnected && Date.now() - lastData < 15000;
+
+/** Put the boat at a position by hand (planning, or when there is no Signal K). */
+function placeBoat(pos) {
+  lastBoat = pos;
+  setData("boat", { type: "FeatureCollection", features: [{ type: "Feature", properties: { rot: 0 }, geometry: { type: "Point", coordinates: pos } }] });
+  setData("cogvec", line([]));
+  text("lat", ddm(pos[1], "N", "S"));
+  text("lon", ddm(pos[0], "E", "W"));
+  for (const id of ["cog", "sog", "hdg", "depth", "time"]) text(id, "—");
+}
+
+// ---------- right-click menu ----------------------------------------------------
+const ctx = document.getElementById("ctx");
+let ctxAt = null;
+map.on("contextmenu", (e) => {
+  e.originalEvent.preventDefault();
+  ctxAt = [e.lngLat.lng, e.lngLat.lat];
+  const boatBtn = ctx.querySelector('[data-act="boat"]');
+  boatBtn.disabled = signalKActive();
+  boatBtn.title = boatBtn.disabled ? "Signal K is plotting the boat: press Live to pause it first" : "";
+  ctx.style.left = `${Math.min(e.point.x, window.innerWidth - 200)}px`;
+  ctx.style.top = `${Math.min(e.point.y, window.innerHeight - 180)}px`;
+  ctx.hidden = false;
 });
+document.addEventListener("contextmenu", (e) => e.preventDefault());
+ctx.addEventListener("click", (e) => {
+  const act = e.target.dataset.act;
+  if (!act || e.target.disabled || !ctxAt) return;
+  if (act === "boat") placeBoat(ctxAt);
+  if (act === "start") route?.setStart(ctxAt);
+  if (act === "mark") route?.addMark(ctxAt);
+  if (act === "centre") map.easeTo({ center: ctxAt });
+  ctx.hidden = true;
+});
+map.on("click", () => { ctx.hidden = true; });
+map.on("movestart", () => { ctx.hidden = true; });
+window.addEventListener("keydown", (e) => { if (e.key === "Escape") ctx.hidden = true; });
 
 listen("vessel", ({ payload: v }) => {
+  if (!skConnected) { skConnected = true; showStatus(); } // data proves the link is up
+  lastData = Date.now();
+  if (!live) return; // planning: leave the boat where it is
   text("lat", v.lat != null ? ddm(v.lat, "N", "S") : "—");
   text("lon", v.lon != null ? ddm(v.lon, "E", "W") : "—");
   text("cog", v.cog != null ? `${Math.round(v.cog).toString().padStart(3, "0")}°T` : "—");

@@ -50,7 +50,7 @@ fn main() {
     let line: Vec<[f64; 2]> = r.points.iter().map(|p| [p.lon, p.lat]).collect();
     let mut feats = vec![serde_json::json!({"type":"Feature","properties":{"kind":"route"},"geometry":{"type":"LineString","coordinates":line}})];
     for iso in &r.isochrones {
-        feats.push(serde_json::json!({"type":"Feature","properties":{"kind":"isochrone"},"geometry":{"type":"LineString","coordinates":iso}}));
+        feats.push(serde_json::json!({"type":"Feature","properties":{"kind":"isochrone"},"geometry":{"type":"MultiLineString","coordinates":iso}}));
     }
     let out = get("--out").unwrap_or_else(|| "route.geojson".into());
     std::fs::write(&out, serde_json::to_string(&serde_json::json!({"type":"FeatureCollection","features":feats})).unwrap()).unwrap();

@@ -22,8 +22,9 @@
       <div class="row"><label class="label" for="set-safety-depth">Safety depth (m)</label><input id="set-safety-depth" type="number" min="0" step="0.5" /></div>
       <div class="row"><label class="label" for="set-safety-contour">Safety contour (m)</label><input id="set-safety-contour" type="number" min="0" step="1" /></div>
       <div class="buttons">
+        <button id="sk-live" class="on" title="Plot the boat from Signal K. Pause it to plan: right-click the chart to move the boat.">Live</button>
         <button id="follow" class="on" title="Keep the boat centred">Follow</button>
-        <button id="clear-track" title="Clear the track trail">Clear track</button>
+        <button id="clear-track" title="Clear the track trail">Clear trk</button>
       </div>
     </aside>
 
@@ -77,6 +78,13 @@
         <table id="rt-summary"><tbody></tbody></table>
       </details>
     </aside>
+
+    <div id="ctx" class="ctx" hidden>
+      <button data-act="boat">Move boat here</button>
+      <button data-act="start">Start route here</button>
+      <button data-act="mark">Add mark here</button>
+      <button data-act="centre">Centre chart here</button>
+    </div>
 
     <div id="cursor" class="cursor">—</div>
     <div class="attribution">Charts: LINZ, CC BY 4.0. Land: © OpenStreetMap contributors. Not for navigation.</div>

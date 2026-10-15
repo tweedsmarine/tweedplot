@@ -156,8 +156,10 @@ pub struct RouteResult {
     pub legs: Vec<Leg>,
     pub arrival: Option<i64>,
     pub distance_nm: f64,
-    /// [lon, lat] polylines, one per kept isochrone.
-    pub isochrones: Vec<Vec<[f64; 2]>>,
+    /// Kept isochrones for display. Each isochrone is a set of [lon, lat]
+    /// polylines: the outer edge of the front, broken where land or a gap
+    /// interrupts it.
+    pub isochrones: Vec<Vec<Vec<[f64; 2]>>>,
     pub steps: usize,
     pub compute_ms: u128,
 }
@@ -241,17 +243,12 @@ pub fn route(
         res.arrival = None;
     }
     res.distance_nm = res.legs.iter().map(|l| l.distance_nm).sum();
-    // Thin the isochrones for display: at most `max_isochrones` lines of 1500 points.
+    // Thin the isochrones for display: at most `max_isochrones` of them.
     if p.max_isochrones > 0 && res.isochrones.len() > p.max_isochrones {
         let k = res.isochrones.len().div_ceil(p.max_isochrones);
         res.isochrones = res.isochrones.iter().step_by(k).cloned().collect();
     }
-    for iso in &mut res.isochrones {
-        if iso.len() > 1500 {
-            let k = iso.len().div_ceil(1500);
-            *iso = iso.iter().step_by(k).copied().collect();
-        }
-    }
+
     res.compute_ms = clock.elapsed().as_millis();
     res
 }
@@ -396,7 +393,7 @@ fn route_leg(
             last.t = ta;
             chain.push(last);
             if p.keep_isochrones_every > 0 {
-                res.isochrones.push(front_line(&nodes, &front, start));
+                res.isochrones.push(front_lines(&nodes, &front, start, obstacles));
             }
             return finish(start, dest, t0, chain, Some((arrive_pt.lat, arrive_pt.lon, ta)), "arrived".into(), String::new());
         }
@@ -449,7 +446,7 @@ fn route_leg(
             front.push(nodes.len() - 1);
         }
         if p.keep_isochrones_every > 0 && step % p.keep_isochrones_every == 0 {
-            res.isochrones.push(front_line(&nodes, &front, start));
+            res.isochrones.push(front_lines(&nodes, &front, start, obstacles));
         }
     }
 
@@ -507,16 +504,47 @@ fn trace(nodes: &[Node], mut i: usize) -> Vec<Node> {
     v
 }
 
-fn front_line(nodes: &[Node], front: &[usize], start: LatLon) -> Vec<[f64; 2]> {
-    let mut pts: Vec<(f64, [f64; 2])> = front
-        .iter()
-        .map(|&i| {
-            let n = nodes[i];
-            (start.bearing_to(&LatLon::new(n.lat, n.lon)), [n.lon, n.lat])
-        })
-        .collect();
-    pts.sort_by(|a, b| a.0.total_cmp(&b.0));
-    pts.into_iter().map(|p| p.1).collect()
+/// Outer edge of the front as polylines: the farthest point from the start in
+/// each half-degree sector, joined in bearing order, broken where neighbours
+/// are far apart or the join would cross an obstacle.
+fn front_lines(nodes: &[Node], front: &[usize], start: LatLon, obstacles: Option<&Raster>) -> Vec<Vec<[f64; 2]>> {
+    const SECTOR: f64 = 0.5;
+    let n = (360.0 / SECTOR) as usize;
+    let mut best: Vec<Option<(f64, [f64; 2])>> = vec![None; n];
+    for &i in front {
+        let ll = LatLon::new(nodes[i].lat, nodes[i].lon);
+        let d = start.distance_to(&ll);
+        let s = ((start.bearing_to(&ll) / SECTOR) as usize).min(n - 1);
+        if best[s].is_none_or(|(bd, _)| d > bd) {
+            best[s] = Some((d, [ll.lon, ll.lat]));
+        }
+    }
+    let pts: Vec<(f64, [f64; 2])> = best.into_iter().flatten().collect();
+    let mut lines: Vec<Vec<[f64; 2]>> = Vec::new();
+    let mut cur: Vec<[f64; 2]> = Vec::new();
+    let mut prev: Option<(f64, [f64; 2])> = None;
+    for p in pts.iter().copied() {
+        if let Some((pd, pp)) = prev {
+            let a = LatLon::new(pp[1], pp[0]);
+            let b = LatLon::new(p.1[1], p.1[0]);
+            let gap = a.distance_to(&b);
+            // neighbouring sectors at radius r are about r * 1.5 sector apart; allow 4x that
+            let allowed = (pd.max(p.0) * (4.0 * SECTOR).to_radians() * 1.5).max(0.3);
+            let blocked = obstacles.is_some_and(|r| !r.segment_clear(pp, p.1));
+            if gap > allowed || blocked {
+                if cur.len() > 1 {
+                    lines.push(std::mem::take(&mut cur));
+                }
+                cur.clear();
+            }
+        }
+        cur.push(p.1);
+        prev = Some(p);
+    }
+    if cur.len() > 1 {
+        lines.push(cur);
+    }
+    lines
 }
 
 /// Fast hasher for grid cell keys (the default SipHash is slow for this).
