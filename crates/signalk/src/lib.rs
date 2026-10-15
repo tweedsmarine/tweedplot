@@ -33,8 +33,32 @@ pub struct VesselState {
     pub sog: Option<f64>,
     /// Heading, degrees true.
     pub heading: Option<f64>,
+    /// Heading, degrees magnetic, and magnetic variation (east +), degrees.
+    pub heading_mag: Option<f64>,
+    pub variation: Option<f64>,
+    /// Speed through the water (boat speed), knots.
+    pub stw: Option<f64>,
     /// Depth below transducer, metres.
     pub depth: Option<f64>,
+    /// Depth below keel and below the surface, metres, when the server has them.
+    pub depth_keel: Option<f64>,
+    pub depth_surface: Option<f64>,
+    /// Apparent wind speed (kn) and angle (degrees, + = starboard, -180..180).
+    pub aws: Option<f64>,
+    pub awa: Option<f64>,
+    /// True wind speed (kn), angle (degrees, + = starboard) and direction (degrees true, from).
+    pub tws: Option<f64>,
+    pub twa: Option<f64>,
+    pub twd: Option<f64>,
+    /// True wind was calculated here from apparent wind, boat speed and heading.
+    pub true_wind_calc: bool,
+    /// Total log and trip, NM.
+    pub log: Option<f64>,
+    pub trip: Option<f64>,
+    /// Water and air temperature (°C), barometric pressure (hPa).
+    pub water_temp: Option<f64>,
+    pub air_temp: Option<f64>,
+    pub pressure: Option<f64>,
     /// GPS date and time (`navigation.datetime`, ISO 8601 UTC), when the source sends it.
     pub datetime: Option<String>,
     /// Time stamp of the last update. Sentences without a date (GGA, GLL)
@@ -43,6 +67,32 @@ pub struct VesselState {
 }
 
 impl VesselState {
+    /// Fill in what can be worked out from what arrived: true heading from
+    /// magnetic + variation, true wind from apparent wind, boat speed and heading.
+    fn derive(&mut self) {
+        if self.heading.is_none() {
+            if let (Some(m), Some(v)) = (self.heading_mag, self.variation) {
+                self.heading = Some(nav_core::norm360(m + v));
+            }
+        }
+        let server_tws = self.tws.is_some() && !self.true_wind_calc;
+        if !server_tws {
+            if let (Some(aws), Some(awa), Some(bsp)) = (self.aws, self.awa, self.stw.or(self.sog)) {
+                // wind relative to the boat, x along the bow, y to starboard (direction the wind comes FROM)
+                let (ax, ay) = (aws * awa.to_radians().cos(), aws * awa.to_radians().sin());
+                let (tx, ty) = (ax - bsp, ay);
+                self.tws = Some((tx * tx + ty * ty).sqrt());
+                self.twa = Some(ty.atan2(tx).to_degrees());
+                self.true_wind_calc = true;
+            }
+        }
+        if let (Some(twa), Some(h)) = (self.twa, self.heading) {
+            if self.true_wind_calc || self.twd.is_none() {
+                self.twd = Some(nav_core::norm360(h + twa));
+            }
+        }
+    }
+
     pub fn position(&self) -> Option<LatLon> {
         Some(LatLon::new(self.lat?, self.lon?))
     }
@@ -69,6 +119,9 @@ impl VesselState {
                 self.timestamp = Some(ts.to_string());
             }
         }
+        if *self != before {
+            self.derive();
+        }
         *self != before
     }
 
@@ -91,7 +144,25 @@ impl VesselState {
             "navigation.headingTrue" => {
                 self.heading = num().map(|r| nav_core::norm360(r.to_degrees()))
             }
+            "navigation.headingMagnetic" => self.heading_mag = num().map(|r| nav_core::norm360(r.to_degrees())),
+            "navigation.magneticVariation" => self.variation = num().map(f64::to_degrees),
+            "navigation.speedThroughWater" => self.stw = num().map(|ms| ms * MS_TO_KN),
+            "navigation.log" => self.log = num().map(|m| m / 1852.0),
+            "navigation.trip.log" => self.trip = num().map(|m| m / 1852.0),
             "environment.depth.belowTransducer" => self.depth = num(),
+            "environment.depth.belowKeel" => self.depth_keel = num(),
+            "environment.depth.belowSurface" => self.depth_surface = num(),
+            "environment.wind.speedApparent" => self.aws = num().map(|ms| ms * MS_TO_KN),
+            "environment.wind.angleApparent" => self.awa = num().map(|r| nav_core::norm180(r.to_degrees())),
+            "environment.wind.speedTrue" => {
+                self.tws = num().map(|ms| ms * MS_TO_KN);
+                self.true_wind_calc = false;
+            }
+            "environment.wind.angleTrueWater" => self.twa = num().map(|r| nav_core::norm180(r.to_degrees())),
+            "environment.wind.directionTrue" => self.twd = num().map(|r| nav_core::norm360(r.to_degrees())),
+            "environment.water.temperature" => self.water_temp = num().map(|k| k - 273.15),
+            "environment.outside.temperature" => self.air_temp = num().map(|k| k - 273.15),
+            "environment.outside.pressure" => self.pressure = num().map(|pa| pa / 100.0),
             "navigation.datetime" => self.datetime = val.as_str().map(str::to_string),
             _ => {}
         }
@@ -247,7 +318,28 @@ mod tests {
     fn ignores_hello_and_unknown_paths() {
         let mut s = VesselState::default();
         assert!(!s.apply_delta(&json!({"name": "signalk-server", "version": "2.0", "self": "vessels.urn"})));
-        let d = json!({"updates": [{"values": [{"path": "navigation.magneticVariation", "value": 0.3}]}]});
+        let d = json!({"updates": [{"values": [{"path": "navigation.racing.startLineStb", "value": 0.3}]}]});
         assert!(!s.apply_delta(&d));
+    }
+
+    #[test]
+    fn works_out_true_wind_from_apparent() {
+        let mut s = VesselState::default();
+        // 6 kn boat speed, 15 kn apparent at 40° to starboard, heading 000
+        let d = json!({"updates": [{"values": [
+            {"path": "navigation.headingTrue", "value": 0.0},
+            {"path": "navigation.speedThroughWater", "value": 6.0 / MS_TO_KN},
+            {"path": "environment.wind.speedApparent", "value": 15.0 / MS_TO_KN},
+            {"path": "environment.wind.angleApparent", "value": 40f64.to_radians()}
+        ]}]});
+        assert!(s.apply_delta(&d));
+        assert!(s.true_wind_calc);
+        assert!((s.tws.unwrap() - 11.09).abs() < 0.05, "{:?}", s.tws);
+        assert!((s.twa.unwrap() - 60.3).abs() < 0.3, "{:?}", s.twa);
+        assert!((s.twd.unwrap() - 60.3).abs() < 0.3);
+        // the server's own true wind wins
+        let d = json!({"updates": [{"values": [{"path": "environment.wind.speedTrue", "value": 5.0}]}]});
+        s.apply_delta(&d);
+        assert!(!s.true_wind_calc);
     }
 }

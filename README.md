@@ -13,8 +13,9 @@ Spec and roadmap: https://claude.ai/code/artifact/e37fa4c3-20c2-4aec-af8f-641714
 | `crates/grib` | GRIB2 decoding (simple and complex packing, bitmaps, Meltemus JSON section), wind/gust/MSLP/waves/currents in space and time | Working, matches ecCodes on Meltemus files; GRIB1 next |
 | `crates/routing` | Isochrone routing (modified isochrone method) round land and water shallower than the safety depth, multi-leg, tack/gybe penalties, currents | Working, tested |
 | `crates/chart` | LINZ GeoPackages (Topo50 coastline, depth areas, contours, soundings, all scale bands) served as vector tiles | Working, tested on the full LINZ download |
-| `crates/signalk` | Signal K WebSocket client, own-vessel state, session log | Working, tested against Signal K playing a Morgane log |
-| `app/` | Tauri shell + MapLibre GL front end: offline land, own boat, track, COG vector, instrument panel | First window |
+| `crates/signalk` | Signal K WebSocket client, own-vessel state (position, COG/SOG, heading, BSP, depth, apparent and true wind, log), true wind worked out when the server has none, session log | Working, tested against Signal K playing a Morgane log |
+| `crates/library` | Mark library, routes and saved routings as JSON files; GPX import and export | Working, tested |
+| `app/` | Tauri shell + MapLibre GL front end: icon rail with one drawer at a time, chart, GRIB, routing, library, floating instrument panels | Working |
 
 ## Build and test
 
@@ -65,7 +66,7 @@ cargo run -p grib --example grib_info -- path\to\file.grb2 -36.0 174.8
 
 ## Routing
 
-Left panel, Boat: choose a polar (from `C:\dev\racenav-data\polars` or qtVlm's `polar` folder), efficiency and tack/gybe time. Route: **Set start** (or **From boat**), **Add marks** by clicking the chart (Esc to stop), then **Compute route**. The route starts at the weather slider time with the GRIB shown on the chart. Hover a route point for heading, TWA, TWS and boat speed; **GPX** saves the route.
+Boat drawer: choose a polar (from `C:\dev\racenav-data\polars` or qtVlm's `polar` folder), efficiency and tack/gybe time. Route drawer: **Set start** (or **From boat**), **Add marks** by clicking the chart, or click a library mark to reuse it (Esc to stop), then **Compute routing**. The routing starts at the weather slider time with the GRIB shown on the chart. Hover a routing point for heading, TWA, TWS and boat speed; **Save routing** keeps it in the library, **GPX** writes it to the export folder.
 
 How it works: each step fans out headings from every point of the last isochrone, boat speed from the polar at the GRIB wind (plus current if ticked), a tack or gybe costs its time, and steps that cross land (Topo50) or LINZ depth areas shallower than the safety depth are dropped. Obstacles come from a 50 m raster built from the charts for each run, with the finest chart scale winning. Pruning keeps one point per small grid cell (so routes find their way round headlands and into bays); without charts it uses the classic sectors from the start. If the GRIB runs out, the route stops and says so.
 
@@ -74,6 +75,23 @@ Not yet: rounding sides (marks are reached within the arrival radius), route opt
 ```
 cargo run --release -p routing --example route_cli -- --grib file.grb2 --polar boat.csv --chart C:\dev\racenav-data\linz --start -36.838,174.805 --marks "-35.465,174.80;-35.252,174.100"
 ```
+
+## Marks, routes and routings
+
+Everything is kept as plain JSON in `C:\dev\racenav-data\library` (or `RACENAV_LIBRARY_DIR`; `<app data>\library` when racenav-data doesn't exist):
+
+```
+marks.json            every mark, shared by all routes
+routes\<id>.json      a route: name, start, ordered mark ids (rounding side kept for later)
+routings\<id>.json    a saved routing: its inputs (start, marks, time, GRIB, polar, settings) and the result
+export\*.gpx          GPX written by the app
+```
+
+Route drawer: name the route and **Save**: new marks go into the library (named WP 1, WP 2 … until renamed), moved library marks are updated. **Navigate** picks the mark being sailed to (it steps on by itself inside the arrival radius); the route instruments use it. Library drawer: Routes (open, GPX, delete), Marks (find, edit name/type/group/position/notes, add to the route, delete; positions can be typed as `36 50.12 S` or `-36.8353`), Routings (show, delete). **Import GPX** reads waypoints and routes (qtVlm, OpenCPN, Expedition …); a waypoint with the same name as a library mark and within about 50 m becomes that mark. Right-click the chart: **New library mark here**.
+
+## Instruments
+
+Floating panels of readings, always on top. Drag a panel by its grip; tap a reading to change it (navigation, wind, route/waypoint, routing targets), add one next to it, remove it, or change the panel's size and direction. Instruments drawer: add panels, lock the layout, reset. The layout is kept per PC. Readings from Signal K grey out after 10 s without data; depth turns amber below safety depth + 2 m and red below the safety depth. The tile states (`stale`, `warn`, `alarm`) are where user-set warnings and alarms will plug in.
 
 ## Conventions
 

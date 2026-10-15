@@ -1870,6 +1870,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "library"
+version = "0.1.0"
+dependencies = [
+ "nav-core",
+ "quick-xml",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "libredox"
 version = "0.1.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2600,6 +2611,7 @@ version = "0.1.0"
 dependencies = [
  "chart",
  "grib",
+ "library",
  "nav-core",
  "polar",
  "routing",

@@ -7,6 +7,9 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { setupWeather, barbImage } from "./weather.js";
 import { setupRoute, markImage } from "./route.js";
+import { setupRail } from "./ui.js";
+import { setupInstruments, waypointData, targetAt } from "./instruments.js";
+import { setupLibrary, labelImage } from "./library.js";
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
@@ -96,7 +99,7 @@ map.setMissingStyleImageResolver((id) => {
   if (map.hasImage(id)) return;
   const m = /^(sh|dp):(-?[0-9.]+)$/.exec(id);
   if (m) { map.addImage(id, soundingIcon(parseFloat(m[2]), m[1] === "sh"), { pixelRatio: 2 }); return; }
-  const img = barbImage(id) || markImage(id);
+  const img = barbImage(id) || markImage(id) || labelImage(id);
   if (img) map.addImage(id, img, { pixelRatio: 2 });
 });
 
@@ -104,10 +107,35 @@ map.setMissingStyleImageResolver((id) => {
 let weather = null;
 let lastBoat = null; // [lon, lat] from Signal K, or placed by hand when planning
 let route = null;
+let library = null;
+const ui = setupRail(map);
+const inst = setupInstruments();
 map.on("load", () => {
   weather = setupWeather(map, "chart-land", "track");
-  route = setupRoute(map, { weather, getBoat: () => lastBoat, getSafetyDepth: () => settings.safetyDepth });
+  library = setupLibrary(map, { ui });
+  route = setupRoute(map, { weather, library, getBoat: () => lastBoat, getSafetyDepth: () => settings.safetyDepth });
+  library.attach(route);
+  library.onChange(feed);
+  feed();
 });
+
+// ---------- instruments ----------------------------------------------------------
+let vessel = {}; // latest Signal K state
+function boatTime() {
+  // planning: the weather slider's time; live: the GPS time, else the clock
+  if (!live && weather?.current().t) return weather.current().t;
+  const t = Date.parse(vessel.datetime ?? "");
+  return Number.isFinite(t) ? t / 1000 : Date.now() / 1000;
+}
+function feed() {
+  const nav = route?.nav() ?? null;
+  const pos = lastBoat;
+  const wp = pos && nav ? waypointData(pos, vessel.sog, vessel.cog, nav.from, [nav.next.lon, nav.next.lat]) : null;
+  const target = nav?.points ? targetAt(nav.points, boatTime()) : null;
+  const v = live ? vessel : { ...vessel, lat: pos?.[1], lon: pos?.[0] };
+  inst.update({ v, dataAt: live ? lastData : 0, nav, wp, target, safetyDepth: settings.safetyDepth });
+}
+setInterval(feed, 1000);
 
 // When chart data is present, the Topo50 coastline replaces the coarse land from zoom 6.
 function chartsLoaded(info) {
@@ -132,7 +160,7 @@ for (const [id, key] of [["set-safety-depth", "safetyDepth"], ["set-safety-conto
   el.value = settings[key];
   el.onchange = () => {
     const v = parseFloat(el.value);
-    if (Number.isFinite(v) && v >= 0) { settings[key] = v; saveSettings(); applyChartSettings(); }
+    if (Number.isFinite(v) && v >= 0) { settings[key] = v; saveSettings(); applyChartSettings(); feed(); }
   };
 }
 
@@ -166,6 +194,7 @@ function showStatus() {
 function setStatus(payload) {
   skConnected = payload.connected;
   document.getElementById("sk-text").title = payload.detail;
+  document.getElementById("sk-detail").textContent = `${payload.connected ? "Connected to" : "Not connected:"} ${payload.detail}`;
   showStatus();
 }
 listen("sk-status", ({ payload }) => setStatus(payload));
@@ -177,6 +206,7 @@ liveBtn.onclick = () => {
   liveBtn.classList.toggle("on", live);
   liveBtn.textContent = live ? "Live" : "Paused";
   showStatus();
+  feed();
 };
 const signalKActive = () => live && skConnected && Date.now() - lastData < 15000;
 
@@ -185,9 +215,7 @@ function placeBoat(pos) {
   lastBoat = pos;
   setData("boat", { type: "FeatureCollection", features: [{ type: "Feature", properties: { rot: 0 }, geometry: { type: "Point", coordinates: pos } }] });
   setData("cogvec", line([]));
-  text("lat", ddm(pos[1], "N", "S"));
-  text("lon", ddm(pos[0], "E", "W"));
-  for (const id of ["cog", "sog", "hdg", "depth", "time"]) text(id, "—");
+  feed();
 }
 
 // ---------- right-click menu ----------------------------------------------------
@@ -222,6 +250,7 @@ ctx.addEventListener("click", (e) => {
   if (act === "boat") placeBoat(ctxAt);
   if (act === "start") route?.setStart(ctxAt);
   if (act === "mark") route?.addMark(ctxAt);
+  if (act === "libmark") library?.newMarkAt(ctxAt);
   if (act === "centre") map.easeTo({ center: ctxAt });
   ctx.hidden = true;
 });
@@ -233,15 +262,8 @@ listen("vessel", ({ payload: v }) => {
   if (!skConnected) { skConnected = true; showStatus(); } // data proves the link is up
   lastData = Date.now();
   if (!live) return; // planning: leave the boat where it is
-  text("lat", v.lat != null ? ddm(v.lat, "N", "S") : "—");
-  text("lon", v.lon != null ? ddm(v.lon, "E", "W") : "—");
-  text("cog", v.cog != null ? `${Math.round(v.cog).toString().padStart(3, "0")}°T` : "—");
-  text("sog", v.sog != null ? `${v.sog.toFixed(1)} kn` : "—");
-  text("hdg", v.heading != null ? `${Math.round(v.heading).toString().padStart(3, "0")}°T` : "—");
-  text("depth", v.depth != null ? `${v.depth.toFixed(1)} m` : "—");
-  const t = v.datetime ?? v.timestamp;
-  text("time", t ? t.replace("T", " ").slice(0, 19) : "—");
-  if (v.lat == null || v.lon == null) return;
+  vessel = v;
+  if (v.lat == null || v.lon == null) { feed(); return; }
 
   const pos = [v.lon, v.lat];
   lastBoat = pos;
@@ -262,10 +284,11 @@ listen("vessel", ({ payload: v }) => {
     setData("track", line(track));
   }
   if (follow) map.easeTo({ center: pos, duration: 200 });
+  route?.boatAt(pos);
+  feed();
 });
 
 // ---------- helpers ---------------------------------------------------------
-function text(id, s) { document.getElementById(id).textContent = s; }
 function setData(id, data) { const s = map.getSource(id); if (s) s.setData(data); }
 function emptyFC() { return { type: "FeatureCollection", features: [] }; }
 function line(coords) { return { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: coords } }; }

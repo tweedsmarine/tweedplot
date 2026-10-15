@@ -18,6 +18,7 @@ use tauri::{Emitter, Manager};
 
 static CHARTS: OnceLock<Arc<chart::ChartStore>> = OnceLock::new();
 static GRIBS: Mutex<BTreeMap<String, Arc<grib::GribFile>>> = Mutex::new(BTreeMap::new());
+static LIBRARY: OnceLock<library::Library> = OnceLock::new();
 /// Latest Signal K connection state, for a page that loads after the event was sent.
 static SK_STATUS: Mutex<Option<(bool, String)>> = Mutex::new(None);
 
@@ -290,6 +291,90 @@ async fn route_compute(req: RouteRequest) -> Result<serde_json::Value, String> {
     .map_err(|e| e.to_string())?
 }
 
+// ---------- mark and route library ----------
+
+/// Library folder: `RACENAV_LIBRARY_DIR`, else `C:\dev\racenav-data\library` when
+/// racenav-data exists, else `<app data>\library`.
+fn library_dir(app: &tauri::AppHandle) -> PathBuf {
+    if let Ok(d) = std::env::var("RACENAV_LIBRARY_DIR") {
+        return PathBuf::from(d);
+    }
+    let dev = PathBuf::from(r"C:\dev\racenav-data");
+    if dev.is_dir() {
+        return dev.join("library");
+    }
+    app.path().app_data_dir().map(|p| p.join("library")).unwrap_or_else(|_| PathBuf::from("library"))
+}
+
+fn lib() -> Result<&'static library::Library, String> {
+    LIBRARY.get().ok_or_else(|| "The mark library could not be opened.".to_string())
+}
+
+fn es(e: library::Error) -> String {
+    e.to_string()
+}
+
+#[tauri::command]
+fn lib_info() -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!({ "dir": lib()?.dir() }))
+}
+#[tauri::command]
+fn marks_list() -> Result<Vec<library::Mark>, String> {
+    lib()?.marks().map_err(es)
+}
+#[tauri::command]
+fn mark_save(mark: library::Mark) -> Result<library::Mark, String> {
+    lib()?.save_mark(mark).map_err(es)
+}
+#[tauri::command]
+fn mark_delete(id: String, force: bool) -> Result<(), String> {
+    lib()?.delete_mark(&id, force).map_err(es)
+}
+#[tauri::command]
+fn routes_list() -> Result<Vec<library::Route>, String> {
+    lib()?.routes().map_err(es)
+}
+#[tauri::command]
+fn route_save(route: library::Route) -> Result<library::Route, String> {
+    lib()?.save_route(route).map_err(es)
+}
+#[tauri::command]
+fn route_delete(id: String) -> Result<(), String> {
+    lib()?.delete_route(&id).map_err(es)
+}
+#[tauri::command]
+fn routings_list() -> Result<Vec<library::RoutingSummary>, String> {
+    lib()?.routings().map_err(es)
+}
+#[tauri::command]
+fn routing_get(id: String) -> Result<library::Routing, String> {
+    lib()?.routing(&id).map_err(es)
+}
+#[tauri::command]
+fn routing_save(routing: library::Routing) -> Result<library::RoutingSummary, String> {
+    lib()?.save_routing(routing).map_err(es)
+}
+#[tauri::command]
+fn routing_delete(id: String) -> Result<(), String> {
+    lib()?.delete_routing(&id).map_err(es)
+}
+/// GPX of marks and routes (empty lists = everything) written to the export folder.
+#[tauri::command]
+fn gpx_export(name: String, mark_ids: Vec<String>, route_ids: Vec<String>) -> Result<String, String> {
+    let l = lib()?;
+    let text = l.export_gpx(&mark_ids, &route_ids).map_err(es)?;
+    Ok(l.write_export(&name, &text).map_err(es)?.to_string_lossy().into_owned())
+}
+/// Any GPX text the page made (e.g. a routing with times) written to the export folder.
+#[tauri::command]
+fn gpx_write(name: String, text: String) -> Result<String, String> {
+    Ok(lib()?.write_export(&name, &text).map_err(es)?.to_string_lossy().into_owned())
+}
+#[tauri::command]
+fn gpx_import(text: String, group: String) -> Result<library::ImportReport, String> {
+    lib()?.import_gpx(&text, &group).map_err(es)
+}
+
 /// Chart folder: `RACENAV_CHART_DIR`, else `C:\dev\racenav-data\linz` if present,
 /// else `<app data>\charts`.
 fn chart_dir(app: &tauri::AppHandle) -> PathBuf {
@@ -348,13 +433,21 @@ pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             app_info, chart_info, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_point,
-            polar_files, route_compute, sk_status
+            polar_files, route_compute, sk_status,
+            lib_info, marks_list, mark_save, mark_delete, routes_list, route_save, route_delete,
+            routings_list, routing_get, routing_save, routing_delete, gpx_export, gpx_write, gpx_import
         ])
         .register_asynchronous_uri_scheme_protocol("chart", |_ctx, request, responder| {
             let path = request.uri().path().to_string();
             std::thread::spawn(move || responder.respond(tile_response(&path)));
         })
         .setup(|app| {
+            match library::Library::open(library_dir(app.handle())) {
+                Ok(l) => {
+                    let _ = LIBRARY.set(l);
+                }
+                Err(e) => eprintln!("library: {e}"),
+            }
             // Charts: open in the background (the first run unzips the LINZ downloads).
             let handle = app.handle().clone();
             let dir = chart_dir(&handle);

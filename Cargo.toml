@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing", "app/src-tauri"]
+members = ["crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing", "crates/library", "app/src-tauri"]
 # `cargo test` at the root skips the GUI app; build it with `npm run tauri dev` in app/.
-default-members = ["crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing"]
+default-members = ["crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing", "crates/library"]
 
 [workspace.package]
 edition = "2021"
@@ -16,6 +16,7 @@ signalk = { path = "crates/signalk" }
 chart = { path = "crates/chart" }
 grib = { path = "crates/grib" }
 routing = { path = "crates/routing" }
+library = { path = "crates/library" }
 thiserror = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -27,3 +28,4 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 zip = { version = "9", default-features = false, features = ["deflate"] }
 lru = "0.18"
 rayon = "1"
+quick-xml = "0.42"

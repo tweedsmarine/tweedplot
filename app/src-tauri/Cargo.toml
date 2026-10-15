@@ -27,3 +27,4 @@ nav-core.workspace = true
 chart.workspace = true
 grib.workspace = true
 routing.workspace = true
+library.workspace = true
