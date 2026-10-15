@@ -33,6 +33,10 @@ pub enum Param {
     WindV,
     /// Wind gust (m/s).
     Gust,
+    /// 10 m wind speed (m/s), when a file gives speed and direction (UKMO via Meltemus).
+    WindSpeed,
+    /// 10 m wind direction, degrees, the direction it blows FROM.
+    WindDir,
     /// Mean sea-level pressure (Pa).
     Mslp,
     /// Significant height of combined wind waves and swell (m).
@@ -50,6 +54,8 @@ impl Param {
             (0, 2, 2) if surface == 103 => Param::WindU,
             (0, 2, 3) if surface == 103 => Param::WindV,
             (0, 2, 22) => Param::Gust,
+            (0, 2, 1) if surface == 103 => Param::WindSpeed,
+            (0, 2, 0) if surface == 103 => Param::WindDir,
             (0, 3, 0) if surface == 101 => Param::Mslp,
             (0, 3, 1) => Param::Mslp,
             (10, 0, 3) => Param::WaveHeight,
@@ -244,7 +250,8 @@ impl GribFile {
 
     /// Fields of one parameter (deterministic or control member), sorted by valid
     /// time; for duplicate times the latest run wins.
-    fn build(path: PathBuf, fields: Vec<Field>, skipped: Vec<String>) -> Self {
+    fn build(path: PathBuf, mut fields: Vec<Field>, skipped: Vec<String>) -> Self {
+        fields.extend(uv_from_speed_dir(&fields));
         let mut index: std::collections::BTreeMap<Param, Vec<usize>> = std::collections::BTreeMap::new();
         for (i, f) in fields.iter().enumerate() {
             if f.member.unwrap_or(0) == 0 {
@@ -343,6 +350,33 @@ impl GribFile {
     }
 }
 
+/// Some files (UKMO through Meltemus) give wind as speed and direction rather
+/// than U/V components. Build U/V fields from them so everything downstream
+/// (barbs, routing, comparisons) works the same.
+fn uv_from_speed_dir(fields: &[Field]) -> Vec<Field> {
+    if fields.iter().any(|f| f.param == Param::WindU) {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for sp in fields.iter().filter(|f| f.param == Param::WindSpeed) {
+        let Some(dir) = fields.iter().find(|f| {
+            f.param == Param::WindDir && f.valid_time == sp.valid_time && f.ref_time == sp.ref_time && f.member == sp.member && f.grid == sp.grid
+        }) else {
+            continue;
+        };
+        let (mut u, mut v) = (Vec::with_capacity(sp.values.len()), Vec::with_capacity(sp.values.len()));
+        for (&ws, &wd) in sp.values.iter().zip(&dir.values) {
+            let r = (wd as f64).to_radians();
+            // direction is where the wind comes FROM, so the air moves the other way
+            u.push((-(ws as f64) * r.sin()) as f32);
+            v.push((-(ws as f64) * r.cos()) as f32);
+        }
+        out.push(Field { param: Param::WindU, number: 2, values: u, ..sp.clone() });
+        out.push(Field { param: Param::WindV, number: 3, values: v, ..sp.clone() });
+    }
+    out
+}
+
 /// One model run inside a file, from a header scan.
 #[derive(Debug, Clone, Serialize)]
 pub struct RunInfo {
@@ -386,7 +420,7 @@ pub fn scan(path: impl AsRef<Path>) -> Result<FileInfo, GribError> {
             let mut contents: Vec<String> = Vec::new();
             for f in &fs {
                 let c = match f.param {
-                    Param::WindU | Param::WindV => "wind",
+                    Param::WindU | Param::WindV | Param::WindSpeed | Param::WindDir => "wind",
                     Param::Gust => "gust",
                     Param::Mslp => "pressure",
                     Param::WaveHeight => "waves",
@@ -541,6 +575,21 @@ mod tests {
         let w = Wind::from_uv(5.0, 0.0);
         assert!((w.twd - 270.0).abs() < 1e-9);
         assert!((w.tws - 9.719).abs() < 1e-3);
+    }
+
+    #[test]
+    fn speed_and_direction_become_uv() {
+        let g = Grid::from_grib(1, 1, -40.0, 170.0, -40.0, 170.0, 1.0, 1.0, 0x40).canonical();
+        let mk = |param, number, v: f32| Field {
+            param, discipline: 0, category: 2, number, surface_type: 103, surface_value: 10.0, centre: 0,
+            ref_time: 0, valid_time: 0, member: None, grid: g, values: vec![v], local: None,
+        };
+        // 10 m/s from 270 (a westerly)
+        let f = GribFile::build(PathBuf::new(), vec![mk(Param::WindSpeed, 1, 10.0), mk(Param::WindDir, 0, 270.0)], vec![]);
+        let w = f.wind(-40.0, 170.0, 0).unwrap();
+        assert!((w.twd - 270.0).abs() < 1e-4, "{w:?}");
+        assert!((w.tws - 10.0 * 3600.0 / 1852.0).abs() < 1e-4);
+        assert!(w.u > 9.99);
     }
 
     #[test]
