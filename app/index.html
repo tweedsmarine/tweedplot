@@ -81,7 +81,7 @@
           <button id="rt-undo" title="Remove the last mark">Undo</button>
           <button id="rt-clear" title="Clear start, marks and route">Clear</button>
         </div>
-        <div class="wx-row"><label class="grow" for="rt-step">Time step (min)</label><input id="rt-step" type="number" min="1" max="360" step="1" /></div>
+        <div class="wx-row"><label class="grow" for="rt-step" title="0 = automatic: about 80 steps per leg, 5 min to 3 h">Time step (min, 0 = auto)</label><input id="rt-step" type="number" min="0" max="360" step="5" /></div>
         <div class="wx-row"><label class="grow" for="rt-radius">Arrival radius (NM)</label><input id="rt-radius" type="number" min="0.01" max="20" step="0.05" /></div>
         <div class="wx-row"><label class="grow"><input id="rt-current" type="checkbox" /> Use GRIB currents</label></div>
         <div class="wx-row"><span class="grow" id="rt-when">Start: weather slider time</span></div>

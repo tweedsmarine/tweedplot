@@ -67,6 +67,11 @@ impl Raster {
         self.cells[y as usize * self.w + x as usize]
     }
 
+    /// True if any cell is blocked.
+    pub fn any_blocked(&self) -> bool {
+        self.cells.contains(&BLOCKED)
+    }
+
     pub fn blocked(&self, lat: f64, lon: f64) -> bool {
         self.at(lat, lon) == BLOCKED
     }

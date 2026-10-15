@@ -273,7 +273,7 @@ async fn route_compute(req: RouteRequest) -> Result<serde_json::Value, String> {
                 b = [b[0].min(m.lon), b[1].min(m.lat), b[2].max(m.lon), b[3].max(m.lat)];
             }
             // room to go round headlands: a quarter of the span, at least 0.1 degree
-            let pad = ((b[2] - b[0]).max(b[3] - b[1]) * 0.25).max(0.1);
+            let pad = ((b[2] - b[0]).max(b[3] - b[1]) * 0.25).clamp(0.1, 2.0);
             routing::Raster::from_chart(store, [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad], req.safety_depth, 50.0, 16_000_000)
         });
         let raster_ms = clock.elapsed().as_millis();
@@ -282,7 +282,7 @@ async fn route_compute(req: RouteRequest) -> Result<serde_json::Value, String> {
         v["obstacles"] = serde_json::json!({
             "cell_m": raster.as_ref().map(|r| r.cell_size_m().round()),
             "build_ms": raster_ms,
-            "charts": raster.is_some(),
+            "charts": raster.as_ref().is_some_and(|r| r.any_blocked()),
         });
         Ok(v)
     })

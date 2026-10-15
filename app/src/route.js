@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { fmt } from "./weather.js";
 
 const BOAT_DEFAULTS = { polar: "", eff: 100, tack: 60, gybe: 60 };
-const ROUTE_DEFAULTS = { step: 5, radius: 0.1, current: true };
+const ROUTE_DEFAULTS = { step: 0, radius: 0.1, current: true, v: 2 };
 
 function load(key, defaults) {
   try { return { ...defaults, ...JSON.parse(localStorage.getItem(key) || "{}") }; } catch { return { ...defaults }; }
@@ -15,6 +15,7 @@ export function setupRoute(map, { weather, getBoat, getSafetyDepth }) {
   const $ = (id) => document.getElementById(id);
   const boat = load("racenav.boat", BOAT_DEFAULTS);
   const opts = load("racenav.route", ROUTE_DEFAULTS);
+  if (opts.v !== 2) { opts.step = 0; opts.v = 2; save("racenav.route", opts); } // time step now defaults to auto
   let start = null; // [lon, lat]
   let marks = []; // [[lon, lat]]
   let mode = null; // "start" | "marks" | null
@@ -140,9 +141,9 @@ export function setupRoute(map, { weather, getBoat, getSafetyDepth }) {
     $(id).value = boat[key];
     $(id).onchange = (e) => { const v = Number(e.target.value); if (Number.isFinite(v)) { boat[key] = v; save("racenav.boat", boat); } };
   }
-  for (const [id, key] of [["rt-step", "step"], ["rt-radius", "radius"]]) {
+  for (const [id, key, min] of [["rt-step", "step", 0], ["rt-radius", "radius", 0.001]]) {
     $(id).value = opts[key];
-    $(id).onchange = (e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) { opts[key] = v; save("racenav.route", opts); } };
+    $(id).onchange = (e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= min) { opts[key] = v; save("racenav.route", opts); } };
   }
   $("rt-current").checked = opts.current;
   $("rt-current").onchange = (e) => { opts.current = e.target.checked; save("racenav.route", opts); };
@@ -219,18 +220,29 @@ export function setupRoute(map, { weather, getBoat, getSafetyDepth }) {
     map.getSource("rt-iso").setData({ type: "FeatureCollection", features: iso });
 
     const ok = r.status === "arrived";
-    $("rt-status").textContent = ok ? `Routed in ${(r.compute_ms / 1000).toFixed(1)} s` +
-      (r.obstacles?.charts ? ` · land and < ${getSafetyDepth()} m avoided (${r.obstacles.cell_m} m cells)` : " · no chart: land not avoided")
+    const gribEnd = r.status === "grib end";
+    const end = r.points.length ? r.points[r.points.length - 1] : null;
+    const toGo = end && r.legs.length ? nm([end.lon, end.lat], r.legs[r.legs.length - 1].to) : null;
+    const secs = (r.compute_ms / 1000).toFixed(1);
+    const charts = r.obstacles?.charts ? ` · land and < ${getSafetyDepth()} m avoided (${r.obstacles.cell_m} m cells)` : " · no chart: land not avoided";
+    $("rt-status").textContent = ok ? `Routed in ${secs} s${charts}`
+      : gribEnd ? `Weather ran out before the mark: the route goes as far as the GRIB allows (${secs} s). ${r.message}`
       : `${r.status}: ${r.message}`;
+    const dur = (t) => `${Math.floor((t - r.t0) / 3600)} h ${String(Math.round(((t - r.t0) % 3600) / 60)).padStart(2, "0")} min`;
     const rows = [];
     if (ok) {
-      const dur = r.arrival - r.t0;
-      rows.push(["ETA", fmt(r.arrival)], ["Time", `${Math.floor(dur / 3600)} h ${String(Math.round((dur % 3600) / 60)).padStart(2, "0")} min`]);
+      rows.push(["ETA", fmt(r.arrival)], ["Time", dur(r.arrival)]);
+    } else if (end && r.points.length > 1) {
+      rows.push([gribEnd ? "GRIB ends" : "Route ends", fmt(end.t)], ["Time sailed", dur(end.t)]);
+      if (toGo !== null) rows.push(["Still to go", `${toGo.toFixed(1)} NM to leg ${r.legs.length} mark`]);
     }
     rows.push(["Distance", `${r.distance_nm.toFixed(1)} NM`]);
-    if (ok) rows.push(["Average speed", `${(r.distance_nm / ((r.arrival - r.t0) / 3600)).toFixed(1)} kn`]);
+    const tEnd = ok ? r.arrival : end?.t;
+    if (tEnd > r.t0) rows.push(["Average speed", `${(r.distance_nm / ((tEnd - r.t0) / 3600)).toFixed(1)} kn`]);
     rows.push(["Tacks / gybes", `${r.legs.reduce((a, l) => a + l.tacks, 0)} / ${r.legs.reduce((a, l) => a + l.gybes, 0)}`]);
-    r.legs.forEach((l, i) => rows.push([`Leg ${i + 1}`, l.arrival ? `${l.distance_nm.toFixed(1)} NM, at ${fmt(l.arrival, true)}` : "not reached"]));
+    r.legs.forEach((l, i) => rows.push([`Leg ${i + 1}`, l.arrival ? `${l.distance_nm.toFixed(1)} NM, at ${fmt(l.arrival, true)}` : `${l.distance_nm.toFixed(1)} NM, not reached`]));
+    const steps = [...new Set(r.legs.map((l) => l.step_s).filter(Boolean))].map(stepText);
+    if (steps.length) rows.push(["Time step", (opts.step ? "" : "auto, ") + steps.join(" / ")]);
     rows.push(["Weather", r.grib]);
     const body = document.querySelector("#rt-summary tbody");
     body.innerHTML = "";
@@ -240,6 +252,13 @@ export function setupRoute(map, { weather, getBoat, getSafetyDepth }) {
       tr.children[0].textContent = k; tr.children[1].textContent = v;
       body.append(tr);
     }
+  }
+
+  function stepText(s) { return s >= 3600 ? `${+(s / 3600).toFixed(1)} h` : `${Math.round(s / 60)} min`; }
+  function nm(a, b) { // great-circle distance in NM between [lon, lat] points
+    const r = Math.PI / 180, [l1, p1] = [a[0] * r, a[1] * r], [l2, p2] = [b[0] * r, b[1] * r];
+    const h = Math.sin((p2 - p1) / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin((l2 - l1) / 2) ** 2;
+    return 2 * Math.asin(Math.sqrt(h)) * 3440.065;
   }
 
   // Hover a route point: what the boat is doing there.

@@ -42,6 +42,10 @@ pub trait WindSource: Sync {
     fn current(&self, _lat: f64, _lon: f64, _t: i64) -> Option<(f64, f64)> {
         None
     }
+    /// Last time with wind data, if the source ends.
+    fn end_time(&self) -> Option<i64> {
+        None
+    }
 }
 
 impl WindSource for grib::GribFile {
@@ -50,6 +54,9 @@ impl WindSource for grib::GribFile {
     }
     fn current(&self, lat: f64, lon: f64, t: i64) -> Option<(f64, f64)> {
         grib::GribFile::current(self, lat, lon, t).map(|(u, v)| (u * KN_PER_MS, v * KN_PER_MS))
+    }
+    fn end_time(&self) -> Option<i64> {
+        self.times(grib::Param::WindU).last().copied()
     }
 }
 
@@ -68,7 +75,7 @@ impl WindSource for SteadyWind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Params {
-    /// Time step, seconds.
+    /// Time step, seconds (0 = automatic per leg, from its length and the boat's speed).
     pub step_s: f64,
     /// Heading fan resolution, degrees.
     pub heading_step_deg: f64,
@@ -101,7 +108,7 @@ pub struct Params {
 impl Default for Params {
     fn default() -> Self {
         Params {
-            step_s: 600.0,
+            step_s: 0.0,
             heading_step_deg: 4.0,
             sector_deg: 1.0,
             efficiency: 1.0,
@@ -145,11 +152,15 @@ pub struct Leg {
     pub distance_nm: f64,
     pub tacks: usize,
     pub gybes: usize,
+    /// Time step used for this leg, seconds.
+    pub step_s: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RouteResult {
-    /// "arrived", "no wind data", "blocked", "too many steps", "start blocked", "mark blocked"
+    /// "arrived", "grib end", "no wind data", "blocked", "too many steps", "start blocked", "mark blocked".
+    /// Unless the start or a mark is blocked, `points` holds the route as far as it got:
+    /// for "grib end" that is the point nearest the mark when the weather runs out.
     pub status: String,
     pub message: String,
     pub points: Vec<RoutePoint>,
@@ -189,6 +200,8 @@ pub fn route(
     p: &Params,
 ) -> RouteResult {
     let clock = std::time::Instant::now();
+    // A raster with nothing blocked (open ocean, no chart there) only slows things down.
+    let obstacles = obstacles.filter(|r| r.any_blocked());
     let mut res = RouteResult {
         status: "arrived".into(),
         message: String::new(),
@@ -224,16 +237,16 @@ pub fn route(
         let leg = route_leg(from, t, *mark, polar, wind, obstacles, p, &mut res);
         let n = res.legs.len();
         res.legs.push(leg.leg);
-        if leg.arrived.is_none() {
-            res.status = leg.status;
-            res.message = format!("Leg {} of {}: {}", i + 1, marks.len(), leg.message);
-            break;
-        }
         // drop the duplicate join point between legs
         if n > 0 && !res.points.is_empty() {
             res.points.pop();
         }
         res.points.extend(leg.points);
+        if leg.arrived.is_none() {
+            res.status = leg.status;
+            res.message = if marks.len() > 1 { format!("Leg {} of {}: {}", i + 1, marks.len(), leg.message) } else { leg.message };
+            break;
+        }
         let (lat, lon, ta) = leg.arrived.unwrap();
         from = LatLon::new(lat, lon);
         t = ta;
@@ -272,7 +285,10 @@ fn route_leg(
     p: &Params,
     res: &mut RouteResult,
 ) -> LegOut {
-    let dt_h = p.step_s / 3600.0;
+    let vmax = polar.speeds.iter().flatten().fold(0.0f64, |a, &b| a.max(b)) * p.efficiency;
+    let direct = start.distance_to(&dest);
+    let step_s = if p.step_s > 0.0 { p.step_s } else { auto_step_s(direct, vmax, obstacles.is_some()) };
+    let dt_h = step_s / 3600.0;
     let mut nodes: Vec<Node> = vec![Node { lat: start.lat, lon: start.lon, t: t0, parent: usize::MAX, heading: f64::NAN, twa: 0.0, tws: 0.0, twd: 0.0, bsp: 0.0, sog: 0.0 }];
     let mut front: Vec<usize> = vec![0];
     let n_sectors = (360.0 / p.sector_deg).ceil() as usize;
@@ -282,11 +298,9 @@ fn route_leg(
         "sectors" => false,
         _ => obstacles.is_some(),
     };
-    let vmax = polar.speeds.iter().flatten().fold(0.0f64, |a, &b| a.max(b)) * p.efficiency;
     let cell_nm = if p.cell_nm > 0.0 { p.cell_nm } else { (vmax * dt_h * 0.5).max(0.02) };
     let cell_deg = cell_nm / 60.0;
     let kx = start.lat.to_radians().cos().max(0.05);
-    let direct = start.distance_to(&dest);
     let detour_limit = direct * p.max_detour + 2.0 * cell_nm + 1.0;
     let mut visited: std::collections::HashSet<(i32, i32), CellBuild> = std::collections::HashSet::default();
     visited.insert(cell_key(start.lat, start.lon, cell_deg, kx));
@@ -362,7 +376,7 @@ fn route_leg(
                         t + (pen_h + f * hours) * 3600.0
                     });
                     out.push((
-                        Node { lat: np.lat, lon: np.lon, t: t + p.step_s, parent: ni, heading: h, twa, tws, twd, bsp, sog },
+                        Node { lat: np.lat, lon: np.lon, t: t + step_s, parent: ni, heading: h, twa, tws, twd, bsp, sog },
                         arrive,
                     ));
                 }
@@ -374,11 +388,21 @@ fn route_leg(
             let any_wind = front.iter().any(|&ni| wind.wind(nodes[ni].lat, nodes[ni].lon, nodes[ni].t.round() as i64).is_some());
             if !any_wind {
                 no_wind = true;
-                status = "no wind data".into();
-                message = format!(
-                    "The GRIB has no wind for the route after {} (outside its time span or area).",
-                    grib::fmt_run(nodes[front[0]].t as i64)
-                );
+                let tf = nodes[front[0]].t;
+                if let Some(end) = wind.end_time().filter(|&e| tf + step_s > e as f64) {
+                    // Out of weather: finish at the point of the last isochrone nearest the mark.
+                    let (dd, ni) = front
+                        .iter()
+                        .map(|&ni| (LatLon::new(nodes[ni].lat, nodes[ni].lon).distance_to(&dest), ni))
+                        .min_by(|a, b| a.0.total_cmp(&b.0))
+                        .unwrap();
+                    best_approach = (dd, ni);
+                    status = "grib end".into();
+                    message = format!("The GRIB ends at {}; the route stops there,", grib::fmt_run(end));
+                } else {
+                    status = "no wind data".into();
+                    message = format!("The GRIB has no wind for the route at {} (outside its area).", grib::fmt_run(tf as i64));
+                }
             } else {
                 status = "blocked".into();
                 message = "Every heading is blocked by land or shallow water.".into();
@@ -398,12 +422,14 @@ fn route_leg(
             chain.push(last);
             if p.keep_isochrones_every > 0 {
                 if grid_mode {
-                    res.isochrones.extend(contour_isochrones(&reached, cell_deg, kx, obstacles, leg_steps, p.step_s));
+                    res.isochrones.extend(contour_isochrones(&reached, cell_deg, kx, obstacles, leg_steps, step_s));
                 } else {
                     res.isochrones.push(front_lines(&nodes, &front, start, obstacles));
                 }
             }
-            return finish(start, dest, t0, chain, Some((arrive_pt.lat, arrive_pt.lon, ta)), "arrived".into(), String::new());
+            let mut out = finish(start, dest, t0, chain, Some((arrive_pt.lat, arrive_pt.lon, ta)), "arrived".into(), String::new());
+            out.leg.step_s = step_s;
+            return out;
         }
 
         // Prune.
@@ -462,11 +488,31 @@ fn route_leg(
 
     let _ = no_wind;
     if grid_mode && p.keep_isochrones_every > 0 {
-        res.isochrones.extend(contour_isochrones(&reached, cell_deg, kx, obstacles, leg_steps, p.step_s));
+        res.isochrones.extend(contour_isochrones(&reached, cell_deg, kx, obstacles, leg_steps, step_s));
     }
-    let chain = trace(&nodes, best_approach.1);
+    let mut chain = trace(&nodes, best_approach.1);
+    let grib_end = status == "grib end";
+    if let (true, Some(end)) = (grib_end, wind.end_time()) {
+        // The last step ran past the end of the weather: cut it back to the end time.
+        let n = chain.len();
+        if n >= 2 && chain[n - 1].t > end as f64 {
+            let (a, b) = (chain[n - 2], chain[n - 1]);
+            let f = ((end as f64 - a.t) / (b.t - a.t)).clamp(0.0, 1.0);
+            let pa = LatLon::new(a.lat, a.lon);
+            let pb = pa.destination(pa.bearing_to(&LatLon::new(b.lat, b.lon)), pa.distance_to(&LatLon::new(b.lat, b.lon)) * f);
+            chain[n - 1].lat = pb.lat;
+            chain[n - 1].lon = pb.lon;
+            chain[n - 1].t = end as f64;
+            best_approach.0 = pb.distance_to(&dest);
+        }
+    }
     let mut out = finish(start, dest, t0, chain, None, status, message);
-    out.message.push_str(&format!(" Closest approach {:.1} NM.", best_approach.0));
+    out.leg.step_s = step_s;
+    if grib_end {
+        out.message.push_str(&format!(" {:.1} NM from the mark.", best_approach.0));
+    } else {
+        out.message.push_str(&format!(" Closest approach {:.1} NM.", best_approach.0));
+    }
     out
 }
 
@@ -499,12 +545,24 @@ fn finish(start: LatLon, dest: LatLon, t0: f64, chain: Vec<Node>, arrived: Optio
             distance_nm: dist,
             tacks,
             gybes,
+            step_s: 0.0,
         },
         points,
         arrived,
         status,
         message,
     }
+}
+
+/// Automatic time step for a leg: about 80 steps at a typical speed, rounded
+/// to a tidy value between 5 minutes and 3 hours (1 hour with land about).
+fn auto_step_s(direct_nm: f64, vmax_kn: f64, obstacles: bool) -> f64 {
+    let typical = (vmax_kn * 0.6).max(1.0);
+    let minutes = direct_nm / typical * 60.0 / 80.0;
+    let tidy = [5.0, 10.0, 15.0, 20.0, 30.0, 45.0, 60.0, 90.0, 120.0, 180.0];
+    let cap = if obstacles { 60.0 } else { 180.0 };
+    let m = tidy.iter().copied().filter(|&v| v <= cap).min_by(|a, b| (a - minutes).abs().total_cmp(&(b - minutes).abs())).unwrap();
+    m * 60.0
 }
 
 fn trace(nodes: &[Node], mut i: usize) -> Vec<Node> {
@@ -845,15 +903,32 @@ mod tests {
         struct Short;
         impl WindSource for Short {
             fn wind(&self, _: f64, _: f64, t: i64) -> Option<(f64, f64)> {
-                (t < 1800).then_some((10.0, 0.0))
+                (t <= 3600).then_some((10.0, 0.0))
+            }
+            fn end_time(&self) -> Option<i64> {
+                Some(3600)
             }
         }
         let pol = test_polar();
         let start = LatLon::new(-41.0, 173.0);
         let dest = start.destination(90.0, 20.0);
-        let r = route(start, 0, &[dest], &pol, &Short, None, &Params::default());
-        assert_eq!(r.status, "no wind data");
+        let p = Params { step_s: 600.0, ..Params::default() };
+        let r = route(start, 0, &[dest], &pol, &Short, None, &p);
+        assert_eq!(r.status, "grib end", "{}", r.message);
         assert!(r.arrival.is_none());
+        // a partial route up to the end of the weather, heading for the mark
+        let last = r.points.last().unwrap();
+        assert_eq!(last.t, 3600);
+        let left = LatLon::new(last.lat, last.lon).distance_to(&dest);
+        assert!(left < 20.0 - 4.0, "{left}");
+    }
+
+    #[test]
+    fn auto_step_scales_with_the_leg() {
+        assert_eq!(auto_step_s(10.0, 8.0, true), 300.0);
+        assert_eq!(auto_step_s(130.0, 12.0, true), 900.0);
+        assert_eq!(auto_step_s(2000.0, 10.0, true), 3600.0);
+        assert_eq!(auto_step_s(2000.0, 10.0, false), 10800.0);
     }
 
     #[test]
