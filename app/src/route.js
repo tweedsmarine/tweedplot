@@ -34,11 +34,95 @@ export function setupRoute(map, { weather, getBoat, getSafetyDepth }) {
 
   function drawMarks() {
     const f = [];
-    if (start) f.push(pt(start, { icon: "mk:S" }));
-    marks.forEach((m, i) => f.push(pt(m, { icon: `mk:${i + 1}` })));
+    if (start) f.push(pt(start, { icon: "mk:S", sel: -1 }));
+    marks.forEach((m, i) => f.push(pt(m, { icon: `mk:${i + 1}`, sel: i })));
     map.getSource("rt-marks").setData({ type: "FeatureCollection", features: f });
+    if (selected !== null && !posOf(selected)) deselect();
+    drawSelection();
     $("rt-status").textContent = !start ? "Set a start, then add marks." : marks.length ? "" : "Add marks by clicking the chart.";
   }
+
+  // ---------- selecting, moving and deleting marks ---------------------------------
+  // Left-click a mark to select it (amber ring). After a short pause the ring turns
+  // green and the mark can be moved: drag it, or right-click "Move … here".
+  const ARM_MS = 1200;
+  let selected = null; // -1 = start, 0.. = mark index
+  let movable = false;
+  let armTimer = null;
+  map.addSource("rt-sel", { type: "geojson", data: empty });
+  map.addLayer({ id: "rt-sel", type: "circle", source: "rt-sel",
+    paint: { "circle-radius": 17, "circle-color": "rgba(0,0,0,0)", "circle-stroke-width": 4, "circle-stroke-color": "#f0a500" } }, "rt-marks");
+  const posOf = (k) => (k === -1 ? start : marks[k]);
+  const labelOf = (k) => (k === -1 ? "start" : `mark ${k + 1}`);
+  function drawSelection() {
+    const p = selected !== null && posOf(selected);
+    map.getSource("rt-sel").setData(p ? { type: "FeatureCollection", features: [pt(p, {})] } : empty);
+    map.setPaintProperty("rt-sel", "circle-stroke-color", movable ? "#2e8b57" : "#f0a500");
+  }
+  function select(k) {
+    clearTimeout(armTimer);
+    selected = k;
+    movable = false;
+    drawSelection();
+    $("rt-status").textContent = `Selected ${labelOf(k)}. Wait for the ring to turn green to move it, or right-click to delete.`;
+    armTimer = setTimeout(() => {
+      movable = true;
+      drawSelection();
+      $("rt-status").textContent = `${labelOf(k)[0].toUpperCase()}${labelOf(k).slice(1)} can be moved: drag it, or right-click and choose Move.`;
+    }, ARM_MS);
+  }
+  function deselect() {
+    clearTimeout(armTimer);
+    selected = null;
+    movable = false;
+    map.getSource("rt-sel").setData(empty);
+  }
+  function routeIsStale() {
+    if (last) $("rt-status").textContent = "Marks changed: compute the route again.";
+  }
+  function moveSelected(p) {
+    if (selected === null || !movable) return;
+    if (selected === -1) start = p; else marks[selected] = p;
+    drawMarks();
+    routeIsStale();
+  }
+  function deleteSelected() {
+    if (selected === null) return;
+    if (selected === -1) start = null; else marks.splice(selected, 1);
+    deselect();
+    drawMarks();
+    routeIsStale();
+  }
+
+  // Drag a movable mark.
+  let dragging = false;
+  map.on("mousedown", "rt-marks", (e) => {
+    const k = e.features[0].properties.sel;
+    if (e.originalEvent.button !== 0 || k !== selected || !movable) return;
+    e.preventDefault(); // stop the chart panning
+    map.dragPan.disable();
+    dragging = true;
+    map.getCanvas().style.cursor = "grabbing";
+  });
+  map.on("mousemove", (e) => {
+    if (!dragging) return;
+    const p = [e.lngLat.lng, e.lngLat.lat];
+    if (selected === -1) start = p; else marks[selected] = p;
+    drawMarks();
+  });
+  map.on("mouseup", () => {
+    if (!dragging) return;
+    dragging = false;
+    map.dragPan.enable();
+    map.getCanvas().style.cursor = mode ? "crosshair" : "";
+    routeIsStale();
+  });
+  map.on("mouseenter", "rt-marks", () => { if (!mode && !dragging) map.getCanvas().style.cursor = "pointer"; });
+  map.on("mouseleave", "rt-marks", () => { if (!mode && !dragging) map.getCanvas().style.cursor = ""; });
+  // Esc deselects, unless it is closing the right-click menu.
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && selected !== null && document.getElementById("ctx").hidden) deselect();
+  }, true);
 
   // ---------- boat settings ----------------------------------------------------------
   async function loadPolars() {
@@ -77,15 +161,20 @@ export function setupRoute(map, { weather, getBoat, getSafetyDepth }) {
     if (!b) { $("rt-status").textContent = "No boat position yet (Signal K)."; return; }
     start = b; drawMarks();
   };
-  $("rt-undo").onclick = () => { marks.pop(); drawMarks(); };
+  $("rt-undo").onclick = () => { marks.pop(); drawMarks(); routeIsStale(); };
   $("rt-clear").onclick = () => {
-    start = null; marks = []; last = null; arm(null);
+    start = null; marks = []; last = null; arm(null); deselect();
     for (const id of ["rt-iso", "rt-line", "rt-pts"]) map.getSource(id).setData(empty);
     document.querySelector("#rt-summary tbody").innerHTML = "";
     drawMarks();
   };
   map.on("click", (e) => {
-    if (!mode) return;
+    if (!mode) {
+      const hit = map.queryRenderedFeatures(e.point, { layers: ["rt-marks"] })[0];
+      if (hit) { if (hit.properties.sel !== selected) select(hit.properties.sel); }
+      else if (selected !== null) deselect();
+      return;
+    }
     const p = [e.lngLat.lng, e.lngLat.lat];
     if (mode === "start") { start = p; arm(null); } else { marks.push(p); }
     drawMarks();
@@ -186,6 +275,10 @@ export function setupRoute(map, { weather, getBoat, getSafetyDepth }) {
   return {
     setStart: (p) => { start = p; drawMarks(); },
     addMark: (p) => { marks.push(p); drawMarks(); },
+    /** The selected mark for the right-click menu: { label, movable } or null. */
+    selection: () => (selected === null ? null : { label: labelOf(selected), movable }),
+    moveSelected,
+    deleteSelected,
   };
 }
 

@@ -196,6 +196,16 @@ let ctxAt = null;
 map.on("contextmenu", (e) => {
   e.originalEvent.preventDefault();
   ctxAt = [e.lngLat.lng, e.lngLat.lat];
+  // selected mark: offer Move (only once its ring is green) and Delete
+  const sel = route?.selection();
+  for (const el of ctx.querySelectorAll(".sel-item")) el.hidden = !sel;
+  if (sel) {
+    const mv = ctx.querySelector('[data-act="move-sel"]');
+    mv.textContent = `Move ${sel.label} here`;
+    mv.disabled = !sel.movable;
+    mv.title = sel.movable ? "" : "Wait for the ring round the mark to turn green";
+    ctx.querySelector('[data-act="del-sel"]').textContent = `Delete ${sel.label}`;
+  }
   const boatBtn = ctx.querySelector('[data-act="boat"]');
   boatBtn.disabled = signalKActive();
   boatBtn.title = boatBtn.disabled ? "Signal K is plotting the boat: press Live to pause it first" : "";
@@ -207,6 +217,8 @@ document.addEventListener("contextmenu", (e) => e.preventDefault());
 ctx.addEventListener("click", (e) => {
   const act = e.target.dataset.act;
   if (!act || e.target.disabled || !ctxAt) return;
+  if (act === "move-sel") route?.moveSelected(ctxAt);
+  if (act === "del-sel") route?.deleteSelected();
   if (act === "boat") placeBoat(ctxAt);
   if (act === "start") route?.setStart(ctxAt);
   if (act === "mark") route?.addMark(ctxAt);

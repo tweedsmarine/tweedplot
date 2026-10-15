@@ -290,6 +290,10 @@ fn route_leg(
     let detour_limit = direct * p.max_detour + 2.0 * cell_nm + 1.0;
     let mut visited: std::collections::HashSet<(i32, i32), CellBuild> = std::collections::HashSet::default();
     visited.insert(cell_key(start.lat, start.lon, cell_deg, kx));
+    // Step at which each grid cell was first reached: contoured for the isochrone display.
+    let mut reached: std::collections::HashMap<(i32, i32), u32, CellBuild> = std::collections::HashMap::default();
+    reached.insert(cell_key(start.lat, start.lon, cell_deg, kx), 0);
+    let mut leg_steps: u32 = 0;
     let headings: Vec<f64> = {
         let n = (360.0 / p.heading_step_deg).round() as usize;
         (0..n).map(|k| k as f64 * 360.0 / n as f64).collect()
@@ -393,7 +397,11 @@ fn route_leg(
             last.t = ta;
             chain.push(last);
             if p.keep_isochrones_every > 0 {
-                res.isochrones.push(front_lines(&nodes, &front, start, obstacles));
+                if grid_mode {
+                    res.isochrones.extend(contour_isochrones(&reached, cell_deg, kx, obstacles, leg_steps, p.step_s));
+                } else {
+                    res.isochrones.push(front_lines(&nodes, &front, start, obstacles));
+                }
             }
             return finish(start, dest, t0, chain, Some((arrive_pt.lat, arrive_pt.lon, ta)), "arrived".into(), String::new());
         }
@@ -421,6 +429,7 @@ fn route_leg(
             }
             for k in best.keys() {
                 visited.insert(*k);
+                reached.entry(*k).or_insert(step as u32 + 1);
             }
             best.into_values().map(|(_, n)| n).collect()
         } else {
@@ -445,12 +454,16 @@ fn route_leg(
             }
             front.push(nodes.len() - 1);
         }
-        if p.keep_isochrones_every > 0 && step % p.keep_isochrones_every == 0 {
+        leg_steps = step as u32 + 1;
+        if !grid_mode && p.keep_isochrones_every > 0 && step % p.keep_isochrones_every == 0 {
             res.isochrones.push(front_lines(&nodes, &front, start, obstacles));
         }
     }
 
     let _ = no_wind;
+    if grid_mode && p.keep_isochrones_every > 0 {
+        res.isochrones.extend(contour_isochrones(&reached, cell_deg, kx, obstacles, leg_steps, p.step_s));
+    }
     let chain = trace(&nodes, best_approach.1);
     let mut out = finish(start, dest, t0, chain, None, status, message);
     out.message.push_str(&format!(" Closest approach {:.1} NM.", best_approach.0));
@@ -545,6 +558,167 @@ fn front_lines(nodes: &[Node], front: &[usize], start: LatLon, obstacles: Option
         lines.push(cur);
     }
     lines
+}
+
+/// Isochrones as contours of the time each grid cell was first reached.
+///
+/// Levels are at a round interval (10 min .. 24 h) giving at most about 40
+/// lines. Squares touching land, shallows or unreached cells are skipped, so
+/// lines stop at the coast instead of running along it. Lines are smoothed.
+fn contour_isochrones(
+    reached: &std::collections::HashMap<(i32, i32), u32, CellBuild>,
+    cell_deg: f64,
+    kx: f64,
+    obstacles: Option<&Raster>,
+    steps: u32,
+    step_s: f64,
+) -> Vec<Vec<Vec<[f64; 2]>>> {
+    if reached.len() < 4 || steps == 0 {
+        return Vec::new();
+    }
+    let (mut i0, mut i1, mut j0, mut j1) = (i32::MAX, i32::MIN, i32::MAX, i32::MIN);
+    for &(i, j) in reached.keys() {
+        i0 = i0.min(i);
+        i1 = i1.max(i);
+        j0 = j0.min(j);
+        j1 = j1.max(j);
+    }
+    let (w, h) = ((i1 - i0 + 1) as usize, (j1 - j0 + 1) as usize);
+    if w * h > 6_000_000 {
+        return Vec::new();
+    }
+    let lon_of = |x: f64| (x + 0.5) * cell_deg / kx;
+    let lat_of = |y: f64| (y + 0.5) * cell_deg;
+    // -1 = unreached or blocked
+    let mut v = vec![-1.0f32; w * h];
+    for (&(i, j), &st) in reached {
+        let (x, y) = ((i - i0) as usize, (j - j0) as usize);
+        let blocked = obstacles.is_some_and(|r| r.blocked(lat_of(j as f64), lon_of(i as f64)));
+        if !blocked {
+            v[y * w + x] = st as f32;
+        }
+    }
+    let total_s = steps as f64 * step_s;
+    let nice = [600.0, 900.0, 1800.0, 3600.0, 7200.0, 10800.0, 21600.0, 43200.0, 86400.0];
+    let interval = nice.iter().copied().find(|iv| total_s / iv <= 40.0).unwrap_or(86400.0);
+    let every = ((interval / step_s).round() as u32).max(1);
+
+    let mut out = Vec::new();
+    let mut level = every;
+    while level < steps {
+        let lv = level as f32 + 0.5;
+        let mut segs: Vec<([f64; 2], [f64; 2])> = Vec::new();
+        for y in 0..h - 1 {
+            for x in 0..w - 1 {
+                let a = v[y * w + x];
+                let b = v[y * w + x + 1];
+                let c = v[(y + 1) * w + x + 1];
+                let d = v[(y + 1) * w + x];
+                if a < 0.0 || b < 0.0 || c < 0.0 || d < 0.0 {
+                    continue;
+                }
+                let idx = (a <= lv) as u8 | ((b <= lv) as u8) << 1 | ((c <= lv) as u8) << 2 | ((d <= lv) as u8) << 3;
+                if idx == 0 || idx == 15 {
+                    continue;
+                }
+                let gx = (i0 + x as i32) as f64;
+                let gy = (j0 + y as i32) as f64;
+                let lerp = |va: f32, vb: f32| ((lv - va) / (vb - va)) as f64;
+                // edge points: bottom (a-b), right (b-c), top (d-c), left (a-d)
+                let e_b = || [lon_of(gx + lerp(a, b)), lat_of(gy)];
+                let e_r = || [lon_of(gx + 1.0), lat_of(gy + lerp(b, c))];
+                let e_t = || [lon_of(gx + lerp(d, c)), lat_of(gy + 1.0)];
+                let e_l = || [lon_of(gx), lat_of(gy + lerp(a, d))];
+                let centre_in = (a + b + c + d) / 4.0 <= lv;
+                match idx {
+                    1 | 14 => segs.push((e_l(), e_b())),
+                    2 | 13 => segs.push((e_b(), e_r())),
+                    3 | 12 => segs.push((e_l(), e_r())),
+                    4 | 11 => segs.push((e_r(), e_t())),
+                    6 | 9 => segs.push((e_b(), e_t())),
+                    7 | 8 => segs.push((e_l(), e_t())),
+                    5 => {
+                        if centre_in {
+                            segs.push((e_l(), e_t()));
+                            segs.push((e_b(), e_r()));
+                        } else {
+                            segs.push((e_l(), e_b()));
+                            segs.push((e_r(), e_t()));
+                        }
+                    }
+                    10 => {
+                        if centre_in {
+                            segs.push((e_l(), e_b()));
+                            segs.push((e_r(), e_t()));
+                        } else {
+                            segs.push((e_l(), e_t()));
+                            segs.push((e_b(), e_r()));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let lines: Vec<Vec<[f64; 2]>> = join_segments(segs).into_iter().filter(|l| l.len() >= 3).map(|l| chaikin(&chaikin(&l))).collect();
+        if !lines.is_empty() {
+            out.push(lines);
+        }
+        level += every;
+    }
+    out
+}
+
+/// Join contour segments end to end into polylines.
+fn join_segments(segs: Vec<([f64; 2], [f64; 2])>) -> Vec<Vec<[f64; 2]>> {
+    let key = |p: &[f64; 2]| ((p[0] * 1e7).round() as i64, (p[1] * 1e7).round() as i64);
+    let mut at: std::collections::HashMap<(i64, i64), Vec<usize>> = std::collections::HashMap::new();
+    for (k, (a, b)) in segs.iter().enumerate() {
+        at.entry(key(a)).or_default().push(k);
+        at.entry(key(b)).or_default().push(k);
+    }
+    let mut used = vec![false; segs.len()];
+    let mut lines = Vec::new();
+    for s0 in 0..segs.len() {
+        if used[s0] {
+            continue;
+        }
+        used[s0] = true;
+        let mut line = std::collections::VecDeque::from([segs[s0].0, segs[s0].1]);
+        // grow forwards, then backwards
+        for forward in [true, false] {
+            loop {
+                let end = if forward { *line.back().unwrap() } else { *line.front().unwrap() };
+                let next = at.get(&key(&end)).and_then(|v| v.iter().copied().find(|&k| !used[k]));
+                let Some(k) = next else { break };
+                used[k] = true;
+                let (a, b) = segs[k];
+                let other = if key(&a) == key(&end) { b } else { a };
+                if forward {
+                    line.push_back(other);
+                } else {
+                    line.push_front(other);
+                }
+            }
+        }
+        lines.push(line.into_iter().collect());
+    }
+    lines
+}
+
+/// One pass of Chaikin corner cutting (endpoints kept).
+fn chaikin(l: &[[f64; 2]]) -> Vec<[f64; 2]> {
+    if l.len() < 3 {
+        return l.to_vec();
+    }
+    let mut out = Vec::with_capacity(l.len() * 2);
+    out.push(l[0]);
+    for w in l.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        out.push([0.75 * a[0] + 0.25 * b[0], 0.75 * a[1] + 0.25 * b[1]]);
+        out.push([0.25 * a[0] + 0.75 * b[0], 0.25 * a[1] + 0.75 * b[1]]);
+    }
+    out.push(*l.last().unwrap());
+    out
 }
 
 /// Fast hasher for grid cell keys (the default SipHash is slow for this).
