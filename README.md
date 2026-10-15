@@ -10,7 +10,7 @@ Spec and roadmap: https://claude.ai/code/artifact/e37fa4c3-20c2-4aec-af8f-641714
 | --- | --- | --- |
 | `crates/nav-core` | Positions, bearings, distances, angle helpers (NM, kn, deg true) | Working, tested |
 | `crates/polar` | Read qtVlm `.csv` / `.pol` polars, interpolate, best VMG | Working, tested |
-| `crates/grib` | GRIB1/2 decoding, many runs at once, Meltemus JSON section | Next |
+| `crates/grib` | GRIB2 decoding (simple and complex packing, bitmaps, Meltemus JSON section), wind/gust/MSLP/waves/currents in space and time | Working, matches ecCodes on Meltemus files; GRIB1 next |
 | `crates/routing` | Isochrone engine: land and safety-contour avoidance | Next |
 | `crates/chart` | LINZ GeoPackages (Topo50 coastline, depth areas, contours, soundings, all scale bands) served as vector tiles | Working, tested on the full LINZ download |
 | `crates/signalk` | Signal K WebSocket client, own-vessel state, session log | Working, tested against Signal K playing a Morgane log |
@@ -53,6 +53,14 @@ To check a chart folder or test tiles in a browser:
 ```
 cargo run --release -p chart --example chart_info -- C:\dev\racenav-data\linz
 cargo run --release -p chart --example tileserve -- C:\dev\racenav-data\linz 7070
+```
+
+## Weather (GRIB)
+
+The Weather panel lists GRIB files found in `RACENAV_GRIB_DIR`, `C:\dev\racenav-data\grib` and qtVlm's `C:\Program Files (x86)\qtVlm\grib`. Load as many as you like. One is shown on the chart (wind barbs plus speed shading under the land), and the table compares every loaded run at the cursor for the slider time. Outside a file's time span there is no value: a short GRIB never shows as calm.
+
+```
+cargo run -p grib --example grib_info -- path\to\file.grb2 -36.0 174.8
 ```
 
 ## Conventions

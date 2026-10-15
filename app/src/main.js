@@ -5,6 +5,7 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 maplibregl.setWorkerUrl(workerUrl);
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { setupWeather, barbImage } from "./weather.js";
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
@@ -91,9 +92,16 @@ map.on("load", () => map.addImage("boat", boatIcon(), { pixelRatio: 2 }));
 
 // Sounding figures are drawn on demand: no font files needed offline.
 map.setMissingStyleImageResolver((id) => {
+  if (map.hasImage(id)) return;
   const m = /^(sh|dp):(-?[0-9.]+)$/.exec(id);
-  if (m && !map.hasImage(id)) map.addImage(id, soundingIcon(parseFloat(m[2]), m[1] === "sh"), { pixelRatio: 2 });
+  if (m) { map.addImage(id, soundingIcon(parseFloat(m[2]), m[1] === "sh"), { pixelRatio: 2 }); return; }
+  const barb = barbImage(id);
+  if (barb) map.addImage(id, barb, { pixelRatio: 2 });
 });
+
+// Weather: GRIB wind shading sits under the land, barbs under the boat and track.
+let weather = null;
+map.on("load", () => { weather = setupWeather(map, "chart-land", "track"); });
 
 // When chart data is present, the Topo50 coastline replaces the coarse land from zoom 6.
 function chartsLoaded(info) {

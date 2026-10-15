@@ -9,13 +9,153 @@
 //! (`http://chart.localhost/...` on Windows).
 
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use tauri::http::{header, Response, StatusCode};
 use tauri::{Emitter, Manager};
 
 static CHARTS: OnceLock<Arc<chart::ChartStore>> = OnceLock::new();
+static GRIBS: Mutex<BTreeMap<String, Arc<grib::GribFile>>> = Mutex::new(BTreeMap::new());
+
+/// GRIB folders scanned for files: `RACENAV_GRIB_DIR`, `C:\dev\racenav-data\grib`
+/// and qtVlm's own GRIB folder (Meltemus downloads land there).
+fn grib_dirs() -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = Vec::new();
+    if let Ok(d) = std::env::var("RACENAV_GRIB_DIR") {
+        v.push(d.into());
+    }
+    v.push(r"C:\dev\racenav-data\grib".into());
+    v.push(r"C:\Program Files (x86)\qtVlm\grib".into());
+    v.retain(|d| d.is_dir());
+    v
+}
+
+#[tauri::command]
+fn grib_files() -> Vec<serde_json::Value> {
+    let loaded = GRIBS.lock().unwrap();
+    let mut out = Vec::new();
+    for dir in grib_dirs() {
+        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
+            if !matches!(ext.as_str(), "grb" | "grb2" | "grib" | "grib2") {
+                continue;
+            }
+            let md = e.metadata().ok();
+            let mtime = md.as_ref().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs());
+            let key = p.to_string_lossy().into_owned();
+            out.push(serde_json::json!({
+                "path": key,
+                "file": p.file_name().map(|f| f.to_string_lossy().into_owned()),
+                "dir": dir,
+                "size": md.map(|m| m.len()),
+                "mtime": mtime,
+                "loaded": loaded.contains_key(&key),
+            }));
+        }
+    }
+    out.sort_by(|a, b| b["mtime"].as_u64().cmp(&a["mtime"].as_u64()));
+    out
+}
+
+#[tauri::command]
+async fn grib_load(path: String) -> Result<grib::Summary, String> {
+    let p = path.clone();
+    let f = tauri::async_runtime::spawn_blocking(move || grib::GribFile::open(&p))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    let mut s = f.summary();
+    s.file = path.clone();
+    GRIBS.lock().unwrap().insert(path, Arc::new(f));
+    Ok(s)
+}
+
+#[tauri::command]
+fn grib_unload(path: String) {
+    GRIBS.lock().unwrap().remove(&path);
+}
+
+#[tauri::command]
+fn grib_loaded() -> Vec<grib::Summary> {
+    GRIBS
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(k, f)| {
+            let mut s = f.summary();
+            s.file = k.clone();
+            s
+        })
+        .collect()
+}
+
+/// Wind on a thinned grid inside `bbox` [w, s, e, n] at time `t`, at most about `max_points` points.
+#[tauri::command]
+fn grib_wind_grid(path: String, t: i64, bbox: [f64; 4], max_points: usize) -> Option<serde_json::Value> {
+    let f = GRIBS.lock().unwrap().get(&path)?.clone();
+    let (g, u) = f.grid_at(grib::Param::WindU, t)?;
+    let (_, v) = f.grid_at(grib::Param::WindV, t)?;
+    // grid index window covering the bbox
+    let i_lo = (((bbox[0] - g.lon0) / g.dlon).floor().max(0.0) as usize).min(g.ni - 1);
+    let i_hi = (((bbox[2] - g.lon0) / g.dlon).ceil().max(0.0) as usize).min(g.ni - 1);
+    let j_lo = (((bbox[1] - g.lat0) / g.dlat).floor().max(0.0) as usize).min(g.nj - 1);
+    let j_hi = (((bbox[3] - g.lat0) / g.dlat).ceil().max(0.0) as usize).min(g.nj - 1);
+    let (wi, wj) = (i_hi - i_lo + 1, j_hi - j_lo + 1);
+    let stride = (((wi * wj) as f64 / max_points.max(1) as f64).sqrt().ceil() as usize).max(1);
+    let mut tws = Vec::new();
+    let mut twd = Vec::new();
+    let (mut ni, mut nj) = (0, 0);
+    for j in (j_lo..=j_hi).step_by(stride) {
+        nj += 1;
+        ni = 0;
+        for i in (i_lo..=i_hi).step_by(stride) {
+            ni += 1;
+            let k = j * g.ni + i;
+            let (uu, vv) = (u[k] as f64, v[k] as f64);
+            if uu.is_finite() && vv.is_finite() {
+                let w = grib::Wind::from_uv(uu, vv);
+                tws.push(Some((w.tws * 10.0).round() / 10.0));
+                twd.push(Some(w.twd.round()));
+            } else {
+                tws.push(None);
+                twd.push(None);
+            }
+        }
+    }
+    Some(serde_json::json!({
+        "lon0": g.lon0 + i_lo as f64 * g.dlon,
+        "lat0": g.lat0 + j_lo as f64 * g.dlat,
+        "dlon": g.dlon * stride as f64,
+        "dlat": g.dlat * stride as f64,
+        "ni": ni, "nj": nj, "tws": tws, "twd": twd,
+    }))
+}
+
+/// Every loaded GRIB at one point and time: the quick agreement check.
+#[tauri::command]
+fn grib_point(lat: f64, lon: f64, t: i64) -> Vec<serde_json::Value> {
+    let files: Vec<(String, Arc<grib::GribFile>)> = GRIBS.lock().unwrap().iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    files
+        .into_iter()
+        .map(|(k, f)| {
+            let w = f.wind(lat, lon, t);
+            let kn = |x: Option<f64>| x.map(|v| (v * 3600.0 / 1852.0 * 10.0).round() / 10.0);
+            serde_json::json!({
+                "path": k,
+                "name": f.summary().name,
+                "tws": w.map(|w| (w.tws * 10.0).round() / 10.0),
+                "twd": w.map(|w| w.twd.round()),
+                "gust": kn(f.value(grib::Param::Gust, lat, lon, t)),
+                "mslp": f.value(grib::Param::Mslp, lat, lon, t).map(|p| (p / 10.0).round() / 10.0),
+                "wave": f.value(grib::Param::WaveHeight, lat, lon, t).map(|h| (h * 10.0).round() / 10.0),
+            })
+        })
+        .collect()
+}
 
 /// Signal K URL: `RACENAV_SK_URL` environment variable, else the local server.
 fn sk_url() -> String {
@@ -78,7 +218,9 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
 
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![app_info, chart_info])
+        .invoke_handler(tauri::generate_handler![
+            app_info, chart_info, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_point
+        ])
         .register_asynchronous_uri_scheme_protocol("chart", |_ctx, request, responder| {
             let path = request.uri().path().to_string();
             std::thread::spawn(move || responder.respond(tile_response(&path)));

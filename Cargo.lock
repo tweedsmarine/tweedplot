@@ -1224,6 +1224,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "grib"
+version = "0.1.0"
+dependencies = [
+ "nav-core",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "gtk"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2564,6 +2574,7 @@ name = "racenav-app"
 version = "0.1.0"
 dependencies = [
  "chart",
+ "grib",
  "nav-core",
  "polar",
  "serde",

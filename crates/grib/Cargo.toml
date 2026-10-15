@@ -1,0 +1,15 @@
+[package]
+name = "grib"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "GRIB2 reader (Meltemus, ECMWF, GFS, ICON...) with wind/pressure/wave/current lookup across many runs"
+
+[dependencies]
+nav-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[[example]]
+name = "grib_info"

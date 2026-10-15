@@ -25,3 +25,4 @@ signalk.workspace = true
 polar.workspace = true
 nav-core.workspace = true
 chart.workspace = true
+grib.workspace = true

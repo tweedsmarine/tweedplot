@@ -27,6 +27,25 @@
       </div>
     </aside>
 
+    <aside id="wx">
+      <div class="wx-head">Weather</div>
+      <div class="wx-row">
+        <select id="wx-files" title="GRIB files in the GRIB folders"></select>
+        <button id="wx-load" title="Load the selected GRIB">Load</button>
+        <button id="wx-refresh" title="Look for new GRIB files">↻</button>
+      </div>
+      <div id="wx-loaded"></div>
+      <div class="wx-row time">
+        <button id="wx-prev" title="Back one step">◀</button>
+        <button id="wx-play" title="Play / pause">▶</button>
+        <button id="wx-next" title="Forward one step">▶|</button>
+        <span id="wx-time">—</span>
+      </div>
+      <input id="wx-slider" type="range" min="0" max="0" step="3600" value="0" />
+      <table id="wx-point"><thead><tr><th>Run</th><th>TWS</th><th>TWD</th><th>Gust</th><th>MSLP</th><th>Hs</th></tr></thead><tbody></tbody></table>
+      <div id="wx-where" class="wx-note">Values at the cursor</div>
+    </aside>
+
     <div id="cursor" class="cursor">—</div>
     <div class="attribution">Charts: LINZ, CC BY 4.0. Land: © OpenStreetMap contributors. Not for navigation.</div>
 
