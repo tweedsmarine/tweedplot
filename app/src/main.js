@@ -4,8 +4,34 @@ import * as maplibregl from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 maplibregl.setWorkerUrl(workerUrl);
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+// ---------- chart settings (kept per viewer in local storage) ----------------
+const DEFAULTS = { shallow: 2, safetyDepth: 3, safetyContour: 5, deep: 10 };
+let settings = { ...DEFAULTS };
+try { Object.assign(settings, JSON.parse(localStorage.getItem("racenav.chart") || "{}")); } catch { /* storage unavailable */ }
+function saveSettings() { try { localStorage.setItem("racenav.chart", JSON.stringify(settings)); } catch { /* ignore */ } }
+
+// Chart tiles come from the Rust chart store through the app's own "chart" protocol.
+const TILE_URL = window.RACENAV_TILE_URL
+  ?? (navigator.userAgent.includes("Windows") ? "http://chart.localhost/{z}/{x}/{y}.pbf" : "chart://localhost/{z}/{x}/{y}.pbf");
+
+// S-52 style depth shades (day palette).
+const DEPTH = { drying: "#a9c8a0", vshallow: "#7fb8e8", mshallow: "#a6cdf0", mdeep: "#c9e1ee", deep: "#e9f3f6" };
+function depareColour() {
+  const d1 = ["coalesce", ["get", "drval1"], 0];
+  return ["case",
+    ["<", d1, 0], DEPTH.drying,
+    ["<", d1, settings.shallow], DEPTH.vshallow,
+    ["<", d1, settings.safetyContour], DEPTH.mshallow,
+    ["<", d1, settings.deep], DEPTH.mdeep,
+    DEPTH.deep];
+}
+function soundingImage() {
+  return ["concat", ["case", ["<=", ["get", "depth"], settings.safetyDepth], "sh:", "dp:"], ["to-string", ["get", "depth"]]];
+}
 
 // ---------- chart ----------------------------------------------------------
 const map = new maplibregl.Map({
@@ -22,6 +48,7 @@ const map = new maplibregl.Map({
       track: { type: "geojson", data: line([]) },
       boat: { type: "geojson", data: emptyFC() },
       cogvec: { type: "geojson", data: line([]) },
+      chart: { type: "vector", tiles: [TILE_URL], minzoom: 0, maxzoom: 16 },
     },
     layers: [
       { id: "sea", type: "background", paint: { "background-color": css("--sea") } },
@@ -32,6 +59,21 @@ const map = new maplibregl.Map({
         paint: { "fill-color": css("--land") } },
       { id: "coast-nz", type: "line", source: "land-nz", minzoom: 4,
         paint: { "line-color": css("--coast"), "line-width": 0.8 } },
+      // LINZ hydrographic chart data (not for navigation)
+      { id: "depare", type: "fill", source: "chart", "source-layer": "depare",
+        layout: { "fill-sort-key": ["get", "band"] },
+        paint: { "fill-color": depareColour(), "fill-antialias": false } },
+      { id: "depcnt", type: "line", source: "chart", "source-layer": "depcnt",
+        paint: { "line-color": "#7d97a6", "line-width": 0.6 } },
+      { id: "safety-contour", type: "line", source: "chart", "source-layer": "depcnt",
+        filter: ["==", ["get", "valdco"], settings.safetyContour],
+        paint: { "line-color": "#1d2a33", "line-width": 1.6 } },
+      { id: "chart-land", type: "fill", source: "chart", "source-layer": "land",
+        paint: { "fill-color": css("--land") } },
+      { id: "chart-coast", type: "line", source: "chart", "source-layer": "land",
+        paint: { "line-color": css("--coast"), "line-width": 0.9 } },
+      { id: "soundg", type: "symbol", source: "chart", "source-layer": "soundg",
+        layout: { "icon-image": soundingImage(), "icon-allow-overlap": false, "icon-padding": 1 } },
       { id: "track", type: "line", source: "track",
         paint: { "line-color": "#d35400", "line-width": 2 } },
       { id: "cogvec", type: "line", source: "cogvec",
@@ -42,9 +84,43 @@ const map = new maplibregl.Map({
     ],
   },
 });
+window.__map = map; // handy for debugging in devtools
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), "top-left");
 map.addControl(new maplibregl.ScaleControl({ unit: "nautical" }), "bottom-right");
 map.on("load", () => map.addImage("boat", boatIcon(), { pixelRatio: 2 }));
+
+// Sounding figures are drawn on demand: no font files needed offline.
+map.setMissingStyleImageResolver((id) => {
+  const m = /^(sh|dp):(-?[0-9.]+)$/.exec(id);
+  if (m && !map.hasImage(id)) map.addImage(id, soundingIcon(parseFloat(m[2]), m[1] === "sh"), { pixelRatio: 2 });
+});
+
+// When chart data is present, the Topo50 coastline replaces the coarse land from zoom 6.
+function chartsLoaded(info) {
+  if (!info || !(info.tables > 0)) return;
+  map.setLayerZoomRange("land-nz", 4, 6);
+  map.setLayerZoomRange("coast-nz", 4, 6);
+  const src = map.getSource("chart");
+  if (src) src.setTiles([TILE_URL]); // reload tiles requested before the charts were open
+}
+map.on("load", () => {
+  invoke("chart_info").then(chartsLoaded).catch(() => {});
+  listen("chart-ready", ({ payload }) => chartsLoaded(payload));
+});
+
+function applyChartSettings() {
+  map.setPaintProperty("depare", "fill-color", depareColour());
+  map.setFilter("safety-contour", ["==", ["get", "valdco"], settings.safetyContour]);
+  map.setLayoutProperty("soundg", "icon-image", soundingImage());
+}
+for (const [id, key] of [["set-safety-depth", "safetyDepth"], ["set-safety-contour", "safetyContour"]]) {
+  const el = document.getElementById(id);
+  el.value = settings[key];
+  el.onchange = () => {
+    const v = parseFloat(el.value);
+    if (Number.isFinite(v) && v >= 0) { settings[key] = v; saveSettings(); applyChartSettings(); }
+  };
+}
 
 map.on("mousemove", (e) => {
   document.getElementById("cursor").textContent = `${ddm(e.lngLat.lat, "N", "S")}  ${ddm(e.lngLat.lng, "E", "W")}`;
@@ -148,4 +224,29 @@ function boatIcon() {
   g.fill();
   g.stroke();
   return g.getImageData(0, 0, w, h);
+}
+
+/** Sounding figure in S-52 style: metres, tenths as a smaller subscript below 31 m, drying heights underlined. */
+function soundingIcon(depth, shallow) {
+  const dry = depth < 0;
+  const a = Math.abs(depth);
+  const whole = a < 31 ? Math.floor(a) : Math.round(a);
+  const tenth = a < 31 ? Math.round((a - whole) * 10) % 10 : 0;
+  const big = 22, small = 16, pad = 2;
+  const c = document.createElement("canvas");
+  const g = c.getContext("2d");
+  const fBig = `${big}px "Segoe UI", system-ui, sans-serif`, fSmall = `${small}px "Segoe UI", system-ui, sans-serif`;
+  g.font = fBig;
+  const w1 = g.measureText(String(whole)).width;
+  g.font = fSmall;
+  const w2 = tenth ? g.measureText(String(tenth)).width : 0;
+  c.width = Math.ceil(w1 + w2 + pad * 2);
+  c.height = big + 8;
+  g.fillStyle = shallow ? "#1d2a33" : "#7d8f99";
+  g.textBaseline = "alphabetic";
+  g.font = fBig;
+  g.fillText(String(whole), pad, big - 2);
+  if (tenth) { g.font = fSmall; g.fillText(String(tenth), pad + w1, big + 3); }
+  if (dry) { g.fillRect(pad, big + 4, w1 + w2, 2); }
+  return g.getImageData(0, 0, c.width, c.height);
 }

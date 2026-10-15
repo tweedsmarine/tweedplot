@@ -1,0 +1,21 @@
+[package]
+name = "chart"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Chart data: LINZ GeoPackage layers (coastline, depth areas, contours, soundings) served as vector tiles"
+
+[dependencies]
+rusqlite.workspace = true
+zip.workspace = true
+lru.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tiny_http = "0.12"
+
+[[example]]
+name = "tileserve"
+
+[[example]]
+name = "chart_info"

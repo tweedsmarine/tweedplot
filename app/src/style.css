@@ -41,3 +41,6 @@ button.on { background: var(--accent); border-color: var(--accent); color: #fff;
   background: var(--panel-bg); font-size: 13px; font-variant-numeric: tabular-nums;
 }
 .attribution { position: absolute; left: 12px; bottom: 6px; font-size: 11px; color: var(--quiet); }
+
+.section { margin-top: 8px; padding-top: 6px; border-top: 1px solid #ddd; font-size: 12px; color: var(--quiet); text-transform: uppercase; letter-spacing: 0.04em; }
+input[type="number"] { width: 64px; padding: 4px 6px; font-size: 15px; border: 1px solid #b8c4cc; border-radius: 6px; text-align: right; }

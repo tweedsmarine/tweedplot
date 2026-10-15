@@ -18,6 +18,9 @@
       <div class="row"><span class="label">HDG</span><span id="hdg" class="value">—</span></div>
       <div class="row"><span class="label">Depth</span><span id="depth" class="value">—</span></div>
       <div class="row"><span class="label">Time (UTC)</span><span id="time" class="value small">—</span></div>
+      <div class="section">Chart</div>
+      <div class="row"><label class="label" for="set-safety-depth">Safety depth (m)</label><input id="set-safety-depth" type="number" min="0" step="0.5" /></div>
+      <div class="row"><label class="label" for="set-safety-contour">Safety contour (m)</label><input id="set-safety-contour" type="number" min="0" step="1" /></div>
       <div class="buttons">
         <button id="follow" class="on" title="Keep the boat centred">Follow</button>
         <button id="clear-track" title="Clear the track trail">Clear track</button>
@@ -25,7 +28,7 @@
     </aside>
 
     <div id="cursor" class="cursor">—</div>
-    <div class="attribution">Land: © OpenStreetMap contributors (geo-maps). Not for navigation.</div>
+    <div class="attribution">Charts: LINZ, CC BY 4.0. Land: © OpenStreetMap contributors. Not for navigation.</div>
 
     <script type="module" src="/src/main.js"></script>
   </body>

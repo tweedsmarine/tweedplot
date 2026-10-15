@@ -12,6 +12,7 @@ Spec and roadmap: https://claude.ai/code/artifact/e37fa4c3-20c2-4aec-af8f-641714
 | `crates/polar` | Read qtVlm `.csv` / `.pol` polars, interpolate, best VMG | Working, tested |
 | `crates/grib` | GRIB1/2 decoding, many runs at once, Meltemus JSON section | Next |
 | `crates/routing` | Isochrone engine: land and safety-contour avoidance | Next |
+| `crates/chart` | LINZ GeoPackages (Topo50 coastline, depth areas, contours, soundings, all scale bands) served as vector tiles | Working, tested on the full LINZ download |
 | `crates/signalk` | Signal K WebSocket client, own-vessel state, session log | Working, tested against Signal K playing a Morgane log |
 | `app/` | Tauri shell + MapLibre GL front end: offline land, own boat, track, COG vector, instrument panel | First window |
 
@@ -36,7 +37,23 @@ npm run tauri dev    # first build takes several minutes; later ones are quick
 
 The app connects to `ws://localhost:3000/signalk/v1/stream?subscribe=self`. To use another server, set `RACENAV_SK_URL` before starting. Every Signal K message is logged to `%APPDATA%\nz.tweedsmarine.racenav\logs\sk-<date>-<time>Z.log`.
 
-Land data for now: OpenStreetMap land polygons via geo-maps 0.6.0 (`app/public/data`, built by `tools/prep_land*.py`). About 300 m detail around NZ, so not good enough for Nelson Haven; the LINZ Topo50 coastline replaces it next.
+## Chart data
+
+The app reads LINZ GeoPackage downloads (zipped as downloaded is fine) from `RACENAV_CHART_DIR`, else `C:\dev\racenav-data\linz`, else `%APPDATA%\nz.tweedsmarine.racenav\charts`. On the first run it unzips them into a `.unzipped` folder beside the zips (about 600 MB for all bands); after that, start-up takes a couple of seconds. Layers used:
+
+- NZ Coastlines and Islands Polygons (Topo 1:50k)
+- Depth area polygons, depth contour polylines and sounding points (Hydro), every scale band
+
+Depth shading follows the S-52 day colours, with the safety depth and safety contour set in the panel. LINZ data is CC BY 4.0 and **not for navigation**.
+
+Below zoom 6 (and anywhere without LINZ data) the app falls back to OpenStreetMap land polygons via geo-maps 0.6.0 (`app/public/data`, built by `tools/prep_land*.py`).
+
+To check a chart folder or test tiles in a browser:
+
+```
+cargo run --release -p chart --example chart_info -- C:\dev\racenav-data\linz
+cargo run --release -p chart --example tileserve -- C:\dev\racenav-data\linz 7070
+```
 
 ## Conventions
 
