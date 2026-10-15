@@ -29,3 +29,26 @@ zip = { version = "9", default-features = false, features = ["deflate"] }
 lru = "0.18"
 rayon = "1"
 quick-xml = "0.42"
+
+# The number crunching (GRIB decoding, routing, chart tiles, polars) is ~10x
+# slower unoptimised: build those crates optimised even in `tauri dev`.
+[profile.dev.package.grib]
+opt-level = 3
+[profile.dev.package.routing]
+opt-level = 3
+[profile.dev.package.chart]
+opt-level = 3
+[profile.dev.package.polar]
+opt-level = 3
+[profile.dev.package.nav-core]
+opt-level = 3
+[profile.dev.package.rayon]
+opt-level = 3
+[profile.dev.package.rusqlite]
+opt-level = 3
+[profile.dev.package.libsqlite3-sys]
+opt-level = 3
+[profile.dev.package.zip]
+opt-level = 3
+[profile.dev.package.miniz_oxide]
+opt-level = 3

@@ -102,12 +102,16 @@ export function setupInstruments() {
   function place(el, p) {
     const W = window.innerWidth, H = window.innerHeight;
     const w = el.offsetWidth, h = el.offsetHeight;
+    // keep clear of the dock at the bottom when it is open
+    const dockH = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--dock-h")) || 0;
     const x = Math.max(0, Math.min(W - w, p.x * W));
-    const y = Math.max(0, Math.min(H - h, p.y * H));
+    const y = Math.max(0, Math.min(H - dockH - h, p.y * H));
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
   }
-  window.addEventListener("resize", () => { for (const el of root.children) place(el, panel(el.dataset.id)); });
+  const replace = () => { for (const el of root.children) place(el, panel(el.dataset.id)); };
+  window.addEventListener("resize", replace);
+  window.addEventListener("racenav-layout", replace);
   const panel = (id) => layout.panels.find((p) => p.id === id);
 
   function dragByGrip(el, grip, p) {

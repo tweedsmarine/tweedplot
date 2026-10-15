@@ -1,6 +1,7 @@
 // Weather panel: GRIB files, time slider, wind barbs and speed shading,
 // and a table comparing every loaded run at the cursor.
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 // Wind speed shading (knots).
 // Palette sampled every 2 kn so light-air differences show too.
@@ -89,20 +90,36 @@ export function setupWeather(map, layers) {
     }
   }
 
+  // Loading progress (the Rust side reports while it reads and decodes).
+  const prog = $("wx-progress");
+  let loadingPath = null;
+  function showProgress(pc, stage) {
+    prog.hidden = false;
+    prog.querySelector(".bar").style.width = `${pc}%`;
+    prog.querySelector("span").textContent = `${stage === "reading" ? "Reading" : stage === "indexing" ? "Indexing" : "Decoding"} … ${pc} %`;
+  }
+  listen("grib-progress", ({ payload }) => { if (payload.path === loadingPath) showProgress(payload.percent, payload.stage); }).catch(() => {});
+
   async function load(path) {
     if (!path) return;
     $("wx-load").disabled = true;
     $("wx-load").textContent = "…";
+    loadingPath = path;
+    showProgress(0, "reading");
+    const t0 = performance.now();
     try {
       const s = await invoke("grib_load", { path });
       loaded.set(path, s);
       if (!display) display = path;
       renderLoaded();
       setTimes();
+      alertLine(`Loaded ${s.name} in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
       await refreshFiles();
     } catch (e) {
       alertLine(`Could not read GRIB: ${e}`);
     } finally {
+      loadingPath = null;
+      prog.hidden = true;
       $("wx-load").disabled = false;
       $("wx-load").textContent = "Load";
     }
@@ -168,6 +185,14 @@ export function setupWeather(map, layers) {
     const s = $("wx-slider");
     t = Math.min(Number(s.max), Math.max(Number(s.min), t + n * Number(s.step)));
     s.value = t;
+    draw();
+  };
+  $("wx-now").onclick = () => {
+    if (!times.length) { alertLine("Load a GRIB first."); return; }
+    const now = Math.floor(Date.now() / 1000);
+    if (now < times[0] || now > times.at(-1)) { alertLine(`Now is outside this GRIB (${fmt(times[0], true)} → ${fmt(times.at(-1), true)}).`); return; }
+    t = now;
+    $("wx-slider").value = t;
     draw();
   };
   $("wx-prev").onclick = () => stepBy(-1);
@@ -306,6 +331,11 @@ export function setupWeather(map, layers) {
     setCursor: (lonlat) => { cursor = lonlat; updatePoint(); },
     /** The GRIB shown on the chart and the slider time. */
     current: () => ({ path: display, t, name: display && loaded.get(display)?.name }),
+    /** Every loaded GRIB: { path, name, start, end } (wind times). */
+    all: () => [...loaded].map(([path, s]) => {
+      const w = s.params.find((p) => p.param === "WindU");
+      return { path, name: s.name, start: w?.times[0], end: w?.times.at(-1) };
+    }),
     /** Move the slider to a time (clamped to the shown GRIB). */
     setTime: (sec) => {
       const s = $("wx-slider");

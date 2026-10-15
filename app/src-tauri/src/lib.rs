@@ -99,9 +99,21 @@ fn scan_cached(p: &std::path::Path, mtime: u64, size: u64) -> Option<grib::FileI
 }
 
 #[tauri::command]
-async fn grib_load(path: String) -> Result<grib::Summary, String> {
+async fn grib_load(app: tauri::AppHandle, path: String) -> Result<grib::Summary, String> {
     let p = path.clone();
-    let f = tauri::async_runtime::spawn_blocking(move || grib::GribFile::open(&p))
+    let f = tauri::async_runtime::spawn_blocking(move || {
+        // progress events, at most one per 2 %
+        let last = std::sync::atomic::AtomicU32::new(0);
+        let progress = |frac: f64, stage: &str| {
+            let pc = (frac * 100.0).round() as u32;
+            let prev = last.load(std::sync::atomic::Ordering::Relaxed);
+            if pc >= prev + 2 || pc == 0 || pc >= 97 {
+                last.store(pc, std::sync::atomic::Ordering::Relaxed);
+                let _ = app.emit("grib-progress", serde_json::json!({ "path": p, "percent": pc, "stage": stage }));
+            }
+        };
+        grib::GribFile::open_with_progress(&p, &progress)
+    })
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;

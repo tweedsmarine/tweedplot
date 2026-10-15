@@ -7,6 +7,9 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { setupWeather, barbImage } from "./weather.js";
 import { setupRoute, markImage } from "./route.js";
+import { setupRouting } from "./routing.js";
+import { setupBoat } from "./boat.js";
+import { setupDock } from "./dock.js";
 import { setupRail } from "./ui.js";
 import { setupInstruments, waypointData, targetAt } from "./instruments.js";
 import { setupLibrary, labelImage } from "./library.js";
@@ -110,15 +113,20 @@ map.setMissingStyleImageResolver((id) => {
 // Weather: GRIB wind shading sits under the land, barbs under the boat and track.
 let weather = null;
 let lastBoat = null; // [lon, lat] from Signal K, or placed by hand when planning
-let route = null;
+let route = null; // the course being edited
+let routing = null;
 let library = null;
 const ui = setupRail(map);
 const inst = setupInstruments();
+const boat = setupBoat();
+const dock = setupDock(map);
 map.on("load", () => {
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
   library = setupLibrary(map, { ui });
-  route = setupRoute(map, { weather, library, getBoat: () => lastBoat, getSafetyDepth: () => settings.safetyDepth });
-  library.attach(route);
+  route = setupRoute(map, { library, getBoat: () => lastBoat, getArrivalNm: () => Number(document.getElementById("rt-radius").value) || 0.1 });
+  routing = setupRouting(map, { weather, course: route, library, dock, ui, getBoat: () => lastBoat,
+    getSafetyDepth: () => settings.safetyDepth, getBoatSettings: boat.get });
+  library.attach(route, routing);
   library.onChange(feed);
   feed();
 });
@@ -135,7 +143,8 @@ function feed() {
   const nav = route?.nav() ?? null;
   const pos = lastBoat;
   const wp = pos && nav ? waypointData(pos, vessel.sog, vessel.cog, nav.from, [nav.next.lon, nav.next.lat]) : null;
-  const target = nav?.points ? targetAt(nav.points, boatTime()) : null;
+  const pts = routing?.activePoints();
+  const target = pts ? targetAt(pts, boatTime()) : null;
   const v = live ? vessel : { ...vessel, lat: pos?.[1], lon: pos?.[0] };
   inst.update({ v, dataAt: live ? lastData : 0, nav, wp, target, safetyDepth: settings.safetyDepth });
 }

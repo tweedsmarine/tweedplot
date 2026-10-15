@@ -11,7 +11,8 @@ export function setupLibrary(map, { ui }) {
   let marks = [];
   let routes = [];
   let routings = [];
-  let route = null; // the route editor (set by main once both exist)
+  let route = null; // the course editor (set by main once both exist)
+  let routing = null;
   let editing = null; // mark being edited
   let prefs = { show: true };
   try { Object.assign(prefs, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
@@ -59,14 +60,14 @@ export function setupLibrary(map, { ui }) {
   function renderRoutes() {
     const ul = $("lib-routes");
     ul.innerHTML = "";
-    if (!routes.length) ul.innerHTML = `<li class="empty">No saved routes. Make one in the Route panel and press Save, or import a GPX file.</li>`;
+    if (!routes.length) ul.innerHTML = `<li class="empty">No saved routes. Make one in the Course panel and press Save, or import a GPX file.</li>`;
     for (const r of routes) {
       const li = document.createElement("li");
       li.classList.toggle("active", route?.current().routeId === r.id);
       li.innerHTML = `<div class="main" title="Open this route"><b></b><small></small></div><button data-act="open">Open</button><button data-act="gpx" title="Write this route as GPX">GPX</button><button data-act="del" title="Delete this route (its marks stay in the library)">✕</button>`;
       li.querySelector("b").textContent = r.name;
       li.querySelector("small").textContent = `${r.start ? "start + " : ""}${r.marks.length} marks · ${routeLength(r).toFixed(1)} NM · ${[r.start_mark ? byId(r.start_mark)?.name : null, ...r.marks.map((x) => byId(x.mark)?.name ?? "?")].filter(Boolean).join(" → ")}`;
-      const open = () => { route?.loadRoute(r, marks); ui.open("route"); };
+      const open = () => { route?.loadRoute(r, marks); ui.open("course"); };
       li.querySelector(".main").onclick = open;
       li.querySelector('[data-act="open"]').onclick = open;
       li.querySelector('[data-act="gpx"]').onclick = async () => {
@@ -142,7 +143,7 @@ export function setupLibrary(map, { ui }) {
   function renderRoutings() {
     const ul = $("lib-routings");
     ul.innerHTML = "";
-    if (!routings.length) ul.innerHTML = `<li class="empty">No saved routings. Compute one in the Route panel and press Save routing.</li>`;
+    if (!routings.length) ul.innerHTML = `<li class="empty">No saved routings. Compute one in the Routing panel and press Save.</li>`;
     for (const r of routings) {
       const li = document.createElement("li");
       const result = r.status === "arrived" ? `ETA ${fmt(r.arrival, true)}` : r.status === "grib end" ? "to GRIB end" : r.status ?? "";
@@ -150,7 +151,7 @@ export function setupLibrary(map, { ui }) {
       li.querySelector("b").textContent = r.name;
       li.querySelector("small").textContent = [r.t0 ? `start ${fmt(r.t0, true)}` : "", result, r.distance_nm != null ? `${r.distance_nm.toFixed(1)} NM` : "", r.grib_name, r.polar].filter(Boolean).join(" · ");
       const open = async () => {
-        try { route?.loadRouting(await invoke("routing_get", { id: r.id }), marks); ui.open("route"); } catch (e) { status(String(e)); }
+        await routing?.showSaved(r.id);
       };
       li.querySelector(".main").onclick = open;
       li.querySelector('[data-act="open"]').onclick = open;
@@ -195,7 +196,7 @@ export function setupLibrary(map, { ui }) {
     refresh,
     marks: () => marks,
     byId,
-    attach(r) { route = r; renderRoutes(); },
+    attach(r, x) { route = r; routing = x; renderRoutes(); },
     onChange: (f) => listeners.push(f),
     /** Library marks drawn under the route's own (hide the ones the route shows). */
     hide(ids) { hidden = ids; draw(); },

@@ -16,11 +16,21 @@ pub struct Decoded {
 }
 
 pub fn decode(bytes: &[u8]) -> Decoded {
-    let mut fields = Vec::new();
+    decode_with_progress(bytes, &|_, _| {})
+}
+
+/// Decode every message, in parallel. `progress(done, total)` is called as
+/// messages finish (from worker threads).
+pub fn decode_with_progress(bytes: &[u8], progress: &(dyn Fn(usize, usize) + Sync)) -> Decoded {
+    use rayon::prelude::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // Pass 1 (fast, sequential): find the messages. Meltemus writes the local
+    // section only on the first message of each model block, so each message
+    // inherits the last one seen.
+    let mut msgs: Vec<(usize, usize, Option<serde_json::Value>)> = Vec::new();
     let mut skipped = Vec::new();
     let mut pos = 0;
-    // Meltemus writes the local section only on the first message of each model
-    // block, so it carries forward to the following messages.
     let mut local: Option<serde_json::Value> = None;
     while let Some(off) = find(&bytes[pos..], b"GRIB") {
         let start = pos + off;
@@ -43,16 +53,57 @@ pub fn decode(bytes: &[u8]) -> Decoded {
             skipped.push(format!("truncated message at byte {start}"));
             break;
         }
-        match message(&bytes[start..start + len], &mut local) {
+        msgs.push((start, len, local.clone()));
+        if let Some(l) = local_section(&bytes[start..start + len]) {
+            local = l;
+        }
+        pos = start + len;
+    }
+
+    // Pass 2 (parallel): decode.
+    let total = msgs.len();
+    let done = AtomicUsize::new(0);
+    let results: Vec<(usize, Result<(Vec<Field>, Vec<String>), GribError>)> = msgs
+        .into_par_iter()
+        .map(|(start, len, inherited)| {
+            let mut l = inherited;
+            let r = message(&bytes[start..start + len], &mut l);
+            progress(done.fetch_add(1, Ordering::Relaxed) + 1, total);
+            (start, r)
+        })
+        .collect();
+    let mut fields = Vec::new();
+    for (start, r) in results {
+        match r {
             Ok((f, s)) => {
                 fields.extend(f);
                 skipped.extend(s);
             }
             Err(e) => skipped.push(format!("message at byte {start}: {e}")),
         }
-        pos = start + len;
     }
     Decoded { fields, skipped }
+}
+
+/// The local-use section of a message, if it has one: Some(parsed JSON or None).
+fn local_section(m: &[u8]) -> Option<Option<serde_json::Value>> {
+    let mut p = 16;
+    while p + 5 <= m.len() {
+        if &m[p..p + 4] == b"7777" {
+            return None;
+        }
+        let slen = u32be(&m[p..]) as usize;
+        let snum = m[p + 4];
+        if slen < 5 || p + slen > m.len() || snum > 2 {
+            return None; // sections are in order: past 2 means there is none
+        }
+        if snum == 2 {
+            let s = &m[p..p + slen];
+            return Some(std::str::from_utf8(&s[5..]).ok().and_then(|t| serde_json::from_str(t.trim_end_matches('\0')).ok()));
+        }
+        p += slen;
+    }
+    None
 }
 
 #[derive(Default, Clone)]

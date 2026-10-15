@@ -1253,6 +1253,7 @@ name = "grib"
 version = "0.1.0"
 dependencies = [
  "nav-core",
+ "rayon",
  "serde",
  "serde_json",
  "thiserror 1.0.69",

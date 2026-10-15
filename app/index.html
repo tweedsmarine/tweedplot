@@ -12,7 +12,8 @@
     <!-- Icon rail: one drawer open at a time -->
     <nav id="rail" aria-label="Panels">
       <button data-pane="weather" title="Weather (GRIB)"><svg viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6 9.5 4.25 4.25 0 0 0 7 18z"/></svg><span>Weather</span></button>
-      <button data-pane="route" title="Route and routing"><svg viewBox="0 0 24 24"><circle cx="5" cy="18" r="2"/><circle cx="19" cy="6" r="2"/><path d="M7 17c5-1 3-8 10-10"/></svg><span>Route</span></button>
+      <button data-pane="course" title="Course: start, marks, next mark"><svg viewBox="0 0 24 24"><circle cx="5" cy="18" r="2"/><circle cx="19" cy="6" r="2"/><path d="M7 17L17 7" stroke-dasharray="3 2.5"/></svg><span>Course</span></button>
+      <button data-pane="routing" title="Routing: compute, compare"><svg viewBox="0 0 24 24"><circle cx="5" cy="18" r="2"/><circle cx="19" cy="6" r="2"/><path d="M7 17c5-1 3-8 10-10"/><path d="M6 15c2-6 6-9 11-9" opacity=".5"/></svg><span>Routing</span></button>
       <button data-pane="library" title="Marks, routes and saved routings"><svg viewBox="0 0 24 24"><path d="M6 21V4"/><path d="M6 4h11l-3 4 3 4H6"/></svg><span>Library</span></button>
       <button data-pane="boat" title="Boat and polar"><svg viewBox="0 0 24 24"><path d="M12 3v13"/><path d="M12 4l7 11h-7"/><path d="M11 6L5 15h6"/><path d="M3 18h18l-2 3H5z"/></svg><span>Boat</span></button>
       <button data-pane="chart" title="Chart and Signal K"><svg viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></svg><span>Chart</span></button>
@@ -28,11 +29,13 @@
           <button id="wx-load" title="Load the selected GRIB">Load</button>
           <button id="wx-refresh" title="Look for new GRIB files">↻</button>
         </div>
+        <div id="wx-progress" class="progress" hidden><div class="bar"></div><span></span></div>
         <div id="wx-loaded"></div>
         <div class="wx-row time">
           <button id="wx-prev" title="Back one step">◀</button>
           <button id="wx-play" title="Play / pause">▶</button>
           <button id="wx-next" title="Forward one step">▶|</button>
+          <button id="wx-now" title="Set the time to now">Now</button>
           <span id="wx-time">—</span>
         </div>
         <input id="wx-slider" type="range" min="0" max="0" step="3600" value="0" />
@@ -60,7 +63,7 @@
         </details>
       </section>
 
-      <section class="pane" data-pane="route" data-title="Route">
+      <section class="pane" data-pane="course" data-title="Course">
         <div class="wx-row">
           <input id="rt-name" class="grow" type="text" placeholder="Unsaved route" title="Route name" />
           <button id="rt-save" title="Save the route and its marks in the library">Save</button>
@@ -73,25 +76,61 @@
           <button id="rt-undo" title="Remove the last mark">Undo</button>
         </div>
         <ol id="rt-marklist" class="list"></ol>
+        <div id="crs-status" class="wx-note"></div>
         <h3>Navigate</h3>
         <div class="wx-row">
           <button id="nav-prev" title="Previous mark">◀</button>
           <span id="nav-to" class="grow center">—</span>
           <button id="nav-next" title="Next mark">▶</button>
         </div>
-        <h3>Routing</h3>
-        <div class="wx-row"><label class="grow" for="rt-step" title="0 = automatic: about 80 steps per leg, 5 min to 3 h">Time step (min, 0 = auto)</label><input id="rt-step" type="number" min="0" max="360" step="5" /></div>
-        <div class="wx-row"><label class="grow" for="rt-radius">Arrival radius (NM)</label><input id="rt-radius" type="number" min="0.01" max="20" step="0.05" /></div>
-        <div class="wx-row"><label class="grow"><input id="rt-current" type="checkbox" /> Use GRIB currents</label></div>
-        <div class="wx-row"><span class="grow" id="rt-when">Start: weather slider time</span></div>
-        <div class="wx-row">
-          <button id="rt-go" class="on">Compute routing</button>
-          <button id="rt-keep" title="Save this routing in the library">Save routing</button>
-          <button id="rt-gpx" title="Write the routing as GPX">GPX</button>
-          <button id="rt-clear" title="Remove the routing from the chart">Clear</button>
+      </section>
+
+      <section class="pane" data-pane="routing" data-title="Routing">
+        <div class="tabs">
+          <button data-tab="run" class="on">Run</button>
+          <button data-tab="list">Routings</button>
         </div>
-        <div id="rt-status" class="wx-note"></div>
-        <table id="rt-summary"><tbody></tbody></table>
+        <div class="tab" data-tab="run">
+          <div class="wx-row"><label class="grow" for="rt-tmode">Start time</label>
+            <select id="rt-tmode">
+              <option value="slider">Weather slider time</option>
+              <option value="now">Now (when computed)</option>
+              <option value="fixed">Set a time</option>
+            </select></div>
+          <div class="wx-row"><input id="rt-time" class="grow" type="datetime-local" title="Local time of this PC" hidden /><button id="rt-time-now" title="Fill in the time now" hidden>Now</button></div>
+          <div class="wx-row"><span id="rt-when" class="grow wx-note">—</span></div>
+          <details class="sub">
+            <summary>Settings</summary>
+            <div class="wx-row"><label class="grow" for="rt-step" title="0 = automatic: about 80 steps per leg, 5 min to 3 h">Time step (min, 0 = auto)</label><input id="rt-step" type="number" min="0" max="360" step="5" /></div>
+            <div class="wx-row"><label class="grow" for="rt-radius">Arrival radius (NM)</label><input id="rt-radius" type="number" min="0.01" max="20" step="0.05" /></div>
+            <div class="wx-row"><label class="grow"><input id="rt-current" type="checkbox" /> Use GRIB currents</label></div>
+            <div class="wx-note">Polar, efficiency and tack/gybe costs: Boat panel. Safety depth: Chart panel.</div>
+          </details>
+          <div class="wx-row">
+            <button id="rt-go" class="on grow" title="Route the course with the GRIB shown on the chart">Compute</button>
+            <button id="rt-all" class="grow" title="One routing per loaded GRIB, then compare them">With each GRIB</button>
+          </div>
+          <ul id="rt-log" class="log"></ul>
+          <h3><span id="rt-active-sw" class="sw"></span> <span id="rt-active">No routing yet</span></h3>
+          <div id="rt-stale" class="wx-note warn" hidden>The course has changed since this routing was computed.</div>
+          <table id="rt-summary"><tbody></tbody></table>
+          <div class="wx-row">
+            <button id="rt-keep" title="Save this routing in the library">Save</button>
+            <button id="rt-gpx" title="Write this routing as GPX, with times">GPX</button>
+            <button id="rt-course" title="Make the course the one this routing was computed for">Use its course</button>
+            <label class="grow" title="Show this routing's isochrones"><input id="rt-iso-show" type="checkbox" checked /> Isochrones</label>
+          </div>
+        </div>
+        <div class="tab" data-tab="list" hidden>
+          <div class="wx-row">
+            <button id="rt-compare" class="on" title="Open or close the compare table at the bottom">Compare table</button>
+            <button id="rt-showall">Show all</button>
+            <button id="rt-hideall">Hide all</button>
+          </div>
+          <ul id="rt-list" class="list"></ul>
+          <h3>Saved routings</h3>
+          <ul id="rt-saved" class="list"></ul>
+        </div>
       </section>
 
       <section class="pane" data-pane="library" data-title="Library">
@@ -169,6 +208,14 @@
     <!-- Floating instrument panels -->
     <div id="inst"></div>
     <div id="tile-menu" class="ctx" hidden></div>
+    <div id="cmp-menu" class="ctx checks" hidden></div>
+
+    <!-- Dock: wide views along the bottom (compare routings; later polars, timelines) -->
+    <section id="dock" hidden>
+      <div class="dock-grip" title="Drag to resize"></div>
+      <header><div class="dock-tabs"></div><div class="dock-tools"></div><button class="dock-close" title="Close">✕</button></header>
+      <div class="dock-body"></div>
+    </section>
 
     <div id="ctx" class="ctx" hidden>
       <button data-act="move-sel" class="sel-item">Move mark here</button>

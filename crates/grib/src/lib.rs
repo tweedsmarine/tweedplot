@@ -243,6 +243,20 @@ impl GribFile {
         Ok(GribFile::build(path, d.fields, d.skipped))
     }
 
+    /// As [`open`](Self::open), reporting `progress(fraction 0..1, stage)` while it reads and decodes.
+    pub fn open_with_progress(path: impl AsRef<Path>, progress: &(dyn Fn(f64, &str) + Sync)) -> Result<Self, GribError> {
+        let path = path.as_ref().to_path_buf();
+        progress(0.0, "reading");
+        let bytes = std::fs::read(&path)?;
+        progress(0.05, "decoding");
+        let d = decode::decode_with_progress(&bytes, &|done, total| progress(0.05 + 0.9 * done as f64 / total.max(1) as f64, "decoding"));
+        if d.fields.is_empty() && !d.skipped.is_empty() {
+            return Err(GribError::Unsupported(d.skipped.join("; ")));
+        }
+        progress(0.97, "indexing");
+        Ok(GribFile::build(path, d.fields, d.skipped))
+    }
+
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let d = decode::decode(bytes);
         GribFile::build(PathBuf::new(), d.fields, d.skipped)

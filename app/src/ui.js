@@ -36,7 +36,7 @@ export function setupRail(map) {
 
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(KEY) || "{}").pane; } catch { /* ignore */ }
-  open(saved === undefined ? "weather" : saved);
+  open(saved === undefined ? "weather" : saved === "route" ? "course" : saved);
 
   // Tabs inside a pane
   for (const tabs of drawer.querySelectorAll(".tabs")) {
