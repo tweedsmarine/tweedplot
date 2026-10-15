@@ -421,3 +421,101 @@ mod tests {
         assert_eq!(sm32(&[0x82, 0x3B, 0x2C, 0x10]), -37_432_336);
     }
 }
+
+/// Header-only scan: every field's metadata without reading the data sections.
+/// Reads the file in place, skipping section 7, so large files are quick.
+pub fn scan_file(path: &std::path::Path) -> Result<Vec<FieldMeta>, GribError> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = std::io::BufReader::with_capacity(1 << 16, std::fs::File::open(path)?);
+    let size = f.get_ref().metadata()?.len();
+    let mut out = Vec::new();
+    let mut local: Option<serde_json::Value> = None;
+    let mut pos: u64 = 0;
+    let mut head = [0u8; 16];
+    while pos + 16 <= size {
+        f.seek(SeekFrom::Start(pos))?;
+        f.read_exact(&mut head)?;
+        if &head[0..4] != b"GRIB" {
+            // resync: look for the next "GRIB" within the next 1 MB
+            let mut buf = vec![0u8; (1 << 20).min((size - pos) as usize)];
+            f.seek(SeekFrom::Start(pos))?;
+            f.read_exact(&mut buf)?;
+            match find(&buf[1..], b"GRIB") {
+                Some(o) => {
+                    pos += 1 + o as u64;
+                    continue;
+                }
+                None => break,
+            }
+        }
+        if head[7] == 1 {
+            pos += (u24(&head[4..]) as u64).max(8);
+            continue;
+        }
+        let len = u64be(&head[8..]);
+        if head[7] != 2 || len < 20 || pos + len > size {
+            break;
+        }
+        let mut st = State { discipline: head[6], local: local.clone(), ..Default::default() };
+        let mut p = pos + 16;
+        let end = pos + len - 4;
+        while p + 5 <= end {
+            let mut sh = [0u8; 5];
+            f.seek(SeekFrom::Start(p))?;
+            f.read_exact(&mut sh)?;
+            let slen = u32be(&sh) as u64;
+            let snum = sh[4];
+            if slen < 5 || p + slen > pos + len {
+                break;
+            }
+            if snum == 7 || snum == 6 || snum == 5 {
+                if snum == 7 {
+                    if let (Some(g), Some(pr)) = (&st.grid, &st.product) {
+                        out.push(FieldMeta {
+                            param: crate::Param::from_codes(st.discipline, pr.category, pr.number, pr.surface_type),
+                            centre: st.centre,
+                            ref_time: st.ref_time,
+                            valid_time: pr.valid_time,
+                            member: pr.member,
+                            grid: g.canonical(),
+                            local: st.local.clone(),
+                        });
+                    }
+                }
+                p += slen;
+                continue;
+            }
+            let mut s = vec![0u8; slen as usize];
+            s[..5].copy_from_slice(&sh);
+            f.read_exact(&mut s[5..])?;
+            match snum {
+                1 if s.len() >= 19 => {
+                    st.centre = u16be(&s[5..]);
+                    st.ref_time = unix(u16be(&s[12..]) as i32, s[14], s[15], s[16], s[17], s[18]);
+                }
+                2 => {
+                    st.local = std::str::from_utf8(&s[5..]).ok().and_then(|t| serde_json::from_str(t.trim_end_matches('\0')).ok());
+                    local.clone_from(&st.local);
+                }
+                3 => st.grid = if u16be(&s[12..]) == 0 { grid_latlon(&s).ok() } else { None },
+                4 => st.product = product(&s, st.ref_time),
+                _ => {}
+            }
+            p += slen;
+        }
+        pos += len;
+    }
+    Ok(out)
+}
+
+/// Field metadata from [`scan_file`].
+#[derive(Debug, Clone)]
+pub struct FieldMeta {
+    pub param: crate::Param,
+    pub centre: u16,
+    pub ref_time: i64,
+    pub valid_time: i64,
+    pub member: Option<u16>,
+    pub grid: Grid,
+    pub local: Option<serde_json::Value>,
+}

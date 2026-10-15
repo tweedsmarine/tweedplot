@@ -35,8 +35,12 @@ export function setupWeather(map, beforeLand, beforeTop) {
     sel.innerHTML = "";
     if (!files.length) sel.append(new Option("No GRIB files found", ""));
     for (const f of files) {
-      const mb = f.size ? ` (${(f.size / 1e6).toFixed(f.size < 1e7 ? 1 : 0)} MB)` : "";
-      sel.append(new Option(`${f.loaded ? "✓ " : ""}${f.file}${mb}`, f.path));
+      const mb = f.size ? `${(f.size / 1e6).toFixed(f.size < 1e7 ? 1 : 0)} MB` : "";
+      const fetched = f.mtime ? `fetched ${fmtLocal(f.mtime)}` : "";
+      const desc = f.info ? f.info.label : f.file;
+      const opt = new Option(`${f.loaded ? "✓ " : ""}${desc} · ${fetched} · ${mb}`, f.path);
+      opt.title = `${f.file}\n${f.dir}`;
+      sel.append(opt);
     }
   }
 
@@ -250,6 +254,11 @@ function barbIcon(id) {
   g.fillStyle = "#1d2a33";
   while (k >= 50) { g.beginPath(); g.moveTo(cx, y); g.lineTo(cx + side * 22, y + 5); g.lineTo(cx, y + 10); g.fill(); y += 13; k -= 50; }
   return g.getImageData(0, 0, W, H);
+}
+
+/** "12 Oct 16:55" in local time. */
+function fmtLocal(sec) {
+  return new Date(sec * 1000).toLocaleString("en-NZ", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 function fc(features) { return { type: "FeatureCollection", features }; }

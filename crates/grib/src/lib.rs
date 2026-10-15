@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-pub use decode::unix;
+pub use decode::{unix, FieldMeta};
 
 #[derive(Debug, thiserror::Error)]
 pub enum GribError {
@@ -288,16 +288,7 @@ impl GribFile {
     pub fn model(&self) -> (String, i64) {
         let wind = self.fields.iter().find(|f| f.param == Param::WindU).or(self.fields.first());
         let Some(f) = wind else { return ("empty".into(), 0) };
-        let name = f
-            .local
-            .as_ref()
-            .and_then(|l| {
-                let disp = l.get("dispName").or(l.get("model"))?.as_str()?;
-                let res = l.get("res").and_then(|r| r.as_str()).unwrap_or("");
-                Some(if res.is_empty() { disp.to_string() } else { format!("{disp} {res}") })
-            })
-            .unwrap_or_else(|| centre_name(f.centre).to_string());
-        (name, f.ref_time)
+        (model_name(f.local.as_ref(), f.centre), f.ref_time)
     }
 
     pub fn summary(&self) -> Summary {
@@ -315,13 +306,154 @@ impl GribFile {
             .collect();
         Summary {
             file: self.path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default(),
-            name: format!("{model} {}", fmt_run(ref_time)),
+            name: format!("{model} {}", fmt_short(ref_time)),
             model,
             ref_time,
             params,
             skipped: self.skipped.len(),
         }
     }
+}
+
+/// One model run inside a file, from a header scan.
+#[derive(Debug, Clone, Serialize)]
+pub struct RunInfo {
+    /// e.g. "ECMWF 0p25"; from Meltemus' local section or the issuing centre.
+    pub model: String,
+    pub ref_time: i64,
+    /// "wind", "gust", "pressure", "waves", "currents"...
+    pub contents: Vec<String>,
+    pub first: i64,
+    pub last: i64,
+    /// [west, south, east, north]
+    pub bbox: [f64; 4],
+    pub dlat: f64,
+    pub dlon: f64,
+    /// Number of ensemble members (0 = deterministic).
+    pub members: usize,
+}
+
+/// What a file holds, without decoding the data (fast, for the file chooser).
+#[derive(Debug, Clone, Serialize)]
+pub struct FileInfo {
+    /// Runs in the file, the wind run first.
+    pub runs: Vec<RunInfo>,
+    /// Short description: "ECMWF 0p25 · run 11 Oct 12Z · 37.3–34.5°S 173.8–176.0°E · to 26 Oct 12Z · +waves +currents".
+    pub label: String,
+}
+
+pub fn scan(path: impl AsRef<Path>) -> Result<FileInfo, GribError> {
+    let metas = decode::scan_file(path.as_ref())?;
+    let mut runs: Vec<(String, i64, Vec<&FieldMeta>)> = Vec::new();
+    for m in &metas {
+        let name = model_name(m.local.as_ref(), m.centre);
+        match runs.iter_mut().find(|r| r.0 == name && r.1 == m.ref_time) {
+            Some(r) => r.2.push(m),
+            None => runs.push((name, m.ref_time, vec![m])),
+        }
+    }
+    let mut infos: Vec<RunInfo> = runs
+        .into_iter()
+        .map(|(model, ref_time, fs)| {
+            let mut contents: Vec<String> = Vec::new();
+            for f in &fs {
+                let c = match f.param {
+                    Param::WindU | Param::WindV => "wind",
+                    Param::Gust => "gust",
+                    Param::Mslp => "pressure",
+                    Param::WaveHeight => "waves",
+                    Param::CurrentU | Param::CurrentV => "currents",
+                    Param::Other(..) => "other",
+                };
+                if !contents.iter().any(|x| x == c) {
+                    contents.push(c.to_string());
+                }
+            }
+            let g = fs[0].grid;
+            let mut members: Vec<u16> = fs.iter().filter_map(|f| f.member).collect();
+            members.sort();
+            members.dedup();
+            RunInfo {
+                model,
+                ref_time,
+                contents,
+                first: fs.iter().map(|f| f.valid_time).min().unwrap_or(0),
+                last: fs.iter().map(|f| f.valid_time).max().unwrap_or(0),
+                bbox: g.bbox(),
+                dlat: g.dlat,
+                dlon: g.dlon,
+                members: if members.len() > 1 { members.len() } else { 0 },
+            }
+        })
+        .collect();
+    infos.sort_by_key(|r| !r.contents.iter().any(|c| c == "wind"));
+    let label = match infos.first() {
+        None => "no readable fields".to_string(),
+        Some(r) => {
+            let mut extras: Vec<String> = Vec::new();
+            for c in infos.iter().flat_map(|o| o.contents.iter()) {
+                if (c == "waves" || c == "currents") && !extras.contains(c) {
+                    extras.push(c.clone());
+                }
+            }
+            let mut s = format!(
+                "{} · run {} · {} · to {}",
+                r.model,
+                fmt_short(r.ref_time),
+                fmt_area(&r.bbox),
+                fmt_short(r.last)
+            );
+            if r.members > 0 {
+                s.push_str(&format!(" · {} members", r.members));
+            }
+            for e in extras {
+                s.push_str(&format!(" +{e}"));
+            }
+            s
+        }
+    };
+    Ok(FileInfo { runs: infos, label })
+}
+
+fn model_name(local: Option<&serde_json::Value>, centre: u16) -> String {
+    local
+        .and_then(|l| {
+            let disp = l.get("dispName").or(l.get("model"))?.as_str()?;
+            let res = l.get("res").and_then(|r| r.as_str()).unwrap_or("");
+            Some(if res.is_empty() { disp.to_string() } else { format!("{disp} {res}") })
+        })
+        .unwrap_or_else(|| centre_name(centre).to_string())
+}
+
+/// "11 Oct 12Z"
+pub fn fmt_short(t: i64) -> String {
+    let full = fmt_run(t); // "2026-10-11 12Z"
+    let m: usize = full[5..7].parse().unwrap_or(1);
+    let mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][m.clamp(1, 12) - 1];
+    let d: u32 = full[8..10].parse().unwrap_or(0);
+    format!("{d} {mon} {}", &full[11..])
+}
+
+/// "37.3–34.5°S 173.8–176.0°E"
+pub fn fmt_area(b: &[f64; 4]) -> String {
+    // round half away from zero (37.25 -> 37.3)
+    let r = |x: f64| (x * 10.0).round() / 10.0;
+    let b = &[r(b[0]), r(b[1]), r(b[2]), r(b[3])];
+    let lat = |a: f64, c: f64| {
+        let (h, x, y) = if a <= 0.0 && c <= 0.0 { ("S", -a, -c) } else if a >= 0.0 { ("N", a, c) } else { ("", a, c) };
+        if h.is_empty() { format!("{x:.1}–{y:.1}°") } else { format!("{:.1}–{:.1}°{h}", x.max(y), x.min(y)) }
+    };
+    let lon = |a: f64, c: f64| {
+        if a >= 0.0 && c >= 0.0 {
+            format!("{a:.1}–{c:.1}°E")
+        } else if a <= 0.0 && c <= 0.0 {
+            format!("{:.1}–{:.1}°W", -a, -c)
+        } else {
+            format!("{:.1}°W–{c:.1}°E", -a)
+        }
+    };
+    let east = nav_core::wrap_lon(b[2]);
+    format!("{} {}", lat(b[1], b[3]), lon(b[0], east))
 }
 
 fn bracket<'a>(s: &[&'a Field], t: i64) -> Option<(&'a Field, &'a Field, f64)> {

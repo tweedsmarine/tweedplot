@@ -33,7 +33,11 @@ fn grib_dirs() -> Vec<PathBuf> {
 }
 
 #[tauri::command]
-fn grib_files() -> Vec<serde_json::Value> {
+async fn grib_files() -> Vec<serde_json::Value> {
+    tauri::async_runtime::spawn_blocking(grib_files_blocking).await.unwrap_or_default()
+}
+
+fn grib_files_blocking() -> Vec<serde_json::Value> {
     let loaded = GRIBS.lock().unwrap();
     let mut out = Vec::new();
     for dir in grib_dirs() {
@@ -45,20 +49,42 @@ fn grib_files() -> Vec<serde_json::Value> {
                 continue;
             }
             let md = e.metadata().ok();
+            let md2 = md.clone();
             let mtime = md.as_ref().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs());
             let key = p.to_string_lossy().into_owned();
+            let size = md.as_ref().map(|m| m.len()).unwrap_or(0);
+            let info = scan_cached(&p, mtime.unwrap_or(0), size);
             out.push(serde_json::json!({
+                "info": info,
                 "path": key,
                 "file": p.file_name().map(|f| f.to_string_lossy().into_owned()),
                 "dir": dir,
-                "size": md.map(|m| m.len()),
+                "size": md2.map(|m| m.len()),
                 "mtime": mtime,
                 "loaded": loaded.contains_key(&key),
             }));
         }
     }
-    out.sort_by(|a, b| b["mtime"].as_u64().cmp(&a["mtime"].as_u64()));
+    // newest model run first, then newest download
+    out.sort_by(|a, b| {
+        let run = |x: &serde_json::Value| x["info"]["runs"][0]["ref_time"].as_i64().unwrap_or(0);
+        run(b).cmp(&run(a)).then(b["mtime"].as_u64().cmp(&a["mtime"].as_u64()))
+    });
     out
+}
+
+/// Header scans are cached by path, modification time and size.
+fn scan_cached(p: &std::path::Path, mtime: u64, size: u64) -> Option<grib::FileInfo> {
+    static CACHE: Mutex<BTreeMap<String, (u64, u64, Option<grib::FileInfo>)>> = Mutex::new(BTreeMap::new());
+    let key = p.to_string_lossy().into_owned();
+    if let Some((m, s, info)) = CACHE.lock().unwrap().get(&key) {
+        if *m == mtime && *s == size {
+            return info.clone();
+        }
+    }
+    let info = grib::scan(p).ok();
+    CACHE.lock().unwrap().insert(key, (mtime, size, info.clone()));
+    info
 }
 
 #[tauri::command]

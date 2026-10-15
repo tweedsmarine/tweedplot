@@ -37,7 +37,11 @@ fn meltemus_matches_eccodes() {
     }
     let s = f.summary();
     assert_eq!(s.model, "ECMWF 0p25");
-    assert!(s.name.starts_with("ECMWF 0p25 2026-10-11 12Z"), "{}", s.name);
+    assert_eq!(s.name, "ECMWF 0p25 11 Oct 12Z");
+
+    // The header-only scan describes the file without decoding it.
+    let info = grib::scan(data("meltemus_ecmwf_wam_smoc_small.grb2")).unwrap();
+    assert_eq!(info.label, "ECMWF 0p25 · run 11 Oct 12Z · 37.3–34.5°S 173.8–176.0°E · to 26 Oct 12Z +waves +currents", "{:#?}", info);
     assert_eq!(f.times(Param::WindU).len(), 85);
 
     // Wind at a grid point equals the grid value; between points it is interpolated.
