@@ -89,6 +89,10 @@ export\*.gpx          GPX written by the app
 
 Route drawer: name the route and **Save**: new marks go into the library (named WP 1, WP 2 … until renamed), moved library marks are updated. **Navigate** picks the mark being sailed to (it steps on by itself inside the arrival radius); the route instruments use it. Library drawer: Routes (open, GPX, delete), Marks (find, edit name/type/group/position/notes, add to the route, delete; positions can be typed as `36 50.12 S` or `-36.8353`), Routings (show, delete). **Import GPX** reads waypoints and routes (qtVlm, OpenCPN, Expedition …); a waypoint with the same name as a library mark and within about 50 m becomes that mark. Right-click the chart: **New library mark here**. The start can be a library mark too: in Set start mode click the mark, right-click it (Start route at …), or press **Start** beside it in the Marks list; the route keeps the link (`start_mark`).
 
+## Own boat
+
+Rail, bottom: **Centre** puts the boat in the middle of the chart. Chart drawer, Own boat: a heading line (solid; boat speed through the water, else SOG) and a COG line (dashed orange; SOG), each on or off, each running for a set time (1 min to 48 h) or to the edge of the chart. They are rhumb lines, so straight on the chart. Damping: moving averages of the Signal K readings (course and speed; wind; depth) over 0–60 s, with angles averaged as vectors; position is never damped. The boat symbol, its lines and the instruments all use the damped values.
+
 ## Instruments
 
 Floating panels of readings, always on top. Drag a panel by its grip; double-click or double-tap the grip to fold the panel to a small title (again to open; Fold all in the drawer); tap a reading to change it (navigation, wind, route/waypoint, routing targets), add one next to it, remove it, or change the panel's size and direction. Instruments drawer: add panels, lock the layout, reset. The layout is kept per PC. Readings from Signal K grey out after 10 s without data; depth turns amber below safety depth + 2 m and red below the safety depth. The tile states (`stale`, `warn`, `alarm`) are where user-set warnings and alarms will plug in.

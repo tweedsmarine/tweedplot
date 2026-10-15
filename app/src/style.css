@@ -249,3 +249,6 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
 .wx-mini .chip.on { border-color: var(--accent); background: #e8f1fa; font-weight: 600; }
 .wx-mini .wx-row.time input[type=range] { flex: 1; min-width: 120px; }
 .wx-mini .when { flex: none; min-width: 190px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+#rail .rail-action { margin-top: auto; margin-bottom: 8px; }
+#rail .rail-action:active { background: var(--accent); color: #fff; }

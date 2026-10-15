@@ -10,6 +10,7 @@ import { setupRoute, markImage } from "./route.js";
 import { setupRouting } from "./routing.js";
 import { setupBoat } from "./boat.js";
 import { setupDock } from "./dock.js";
+import { createDamping } from "./damping.js";
 import { setupRail } from "./ui.js";
 import { setupInstruments, waypointData, targetAt } from "./instruments.js";
 import { setupLibrary, labelImage } from "./library.js";
@@ -17,7 +18,13 @@ import { setupLibrary, labelImage } from "./library.js";
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 // ---------- chart settings (kept per viewer in local storage) ----------------
-const DEFAULTS = { shallow: 2, safetyDepth: 3, safetyContour: 5, deep: 10 };
+const DEFAULTS = {
+  shallow: 2, safetyDepth: 3, safetyContour: 5, deep: 10,
+  // own-boat lines: shown, and length in minutes of travel or "inf" (to the edge of the chart)
+  hdgLine: true, hdgLen: "inf", cogLine: true, cogLen: "10",
+  // damping of Signal K readings, seconds (0 = none)
+  dampMotion: 2, dampWind: 5, dampDepth: 0,
+};
 let settings = { ...DEFAULTS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem("racenav.chart") || "{}")); } catch { /* storage unavailable */ }
 function saveSettings() { try { localStorage.setItem("racenav.chart", JSON.stringify(settings)); } catch { /* ignore */ } }
@@ -55,7 +62,8 @@ const map = new maplibregl.Map({
       graticule: { type: "geojson", data: graticule(1) },
       track: { type: "geojson", data: line([]) },
       boat: { type: "geojson", data: emptyFC() },
-      cogvec: { type: "geojson", data: line([]) },
+      hdgline: { type: "geojson", data: line([]) },
+      cogline: { type: "geojson", data: line([]) },
       chart: { type: "vector", tiles: [TILE_URL], minzoom: 0, maxzoom: 16 },
     },
     layers: [
@@ -88,8 +96,10 @@ const map = new maplibregl.Map({
         layout: { "icon-image": soundingImage(), "icon-allow-overlap": false, "icon-padding": 1 } },
       { id: "track", type: "line", source: "track",
         paint: { "line-color": "#d35400", "line-width": 2 } },
-      { id: "cogvec", type: "line", source: "cogvec",
-        paint: { "line-color": "#1d2a33", "line-width": 1.5, "line-dasharray": [3, 2] } },
+      { id: "hdgline", type: "line", source: "hdgline",
+        paint: { "line-color": "#1d2a33", "line-width": 1.6 } },
+      { id: "cogline", type: "line", source: "cogline",
+        paint: { "line-color": "#d35400", "line-width": 2, "line-dasharray": [3, 2] } },
       { id: "boat", type: "symbol", source: "boat",
         layout: { "icon-image": "boat", "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map",
                   "icon-allow-overlap": true, "icon-ignore-placement": true } },
@@ -227,7 +237,7 @@ const signalKActive = () => live && skConnected && Date.now() - lastData < 15000
 function placeBoat(pos) {
   lastBoat = pos;
   setData("boat", { type: "FeatureCollection", features: [{ type: "Feature", properties: { rot: 0 }, geometry: { type: "Point", coordinates: pos } }] });
-  setData("cogvec", line([]));
+  drawLines(null);
   feed();
 }
 
@@ -277,10 +287,12 @@ map.on("click", () => { ctx.hidden = true; });
 map.on("movestart", () => { ctx.hidden = true; });
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") ctx.hidden = true; });
 
-listen("vessel", ({ payload: v }) => {
+const damping = createDamping((g) => Number(settings[{ motion: "dampMotion", wind: "dampWind", depth: "dampDepth" }[g]]) || 0);
+listen("vessel", ({ payload: raw }) => {
   if (!skConnected) { skConnected = true; showStatus(); } // data proves the link is up
   lastData = Date.now();
   if (!live) return; // planning: leave the boat where it is
+  const v = damping.push(raw);
   vessel = v;
   if (v.lat == null || v.lon == null) { feed(); return; }
 
@@ -289,12 +301,7 @@ listen("vessel", ({ payload: v }) => {
   const dir = v.heading ?? v.cog ?? 0;
   setData("boat", { type: "FeatureCollection", features: [{ type: "Feature", properties: { rot: dir }, geometry: { type: "Point", coordinates: pos } }] });
 
-  // COG/SOG vector: where the boat will be in 6 minutes.
-  if (v.cog != null && v.sog != null && v.sog > 0.2) {
-    setData("cogvec", line([pos, destination(v.lat, v.lon, v.cog, v.sog * 0.1)]));
-  } else {
-    setData("cogvec", line([]));
-  }
+  drawLines(v);
 
   const last = track.at(-1);
   if (!last || Math.abs(last[0] - pos[0]) > 1e-5 || Math.abs(last[1] - pos[1]) > 1e-5) {
@@ -306,6 +313,53 @@ listen("vessel", ({ payload: v }) => {
   route?.boatAt(pos);
   feed();
 });
+
+// ---------- heading and COG lines ----------------------------------------------
+// Each line runs from the boat along its bearing, either for a set time at the
+// boat's speed (heading: speed through the water, else SOG; COG: SOG) or to the
+// edge of the chart. Drawn as rhumb lines, so they are straight on the chart.
+let lineBoat = null;
+function lineLength(len, speed) {
+  if (len === "inf") {
+    const b = map.getBounds(), c = [lineBoat.lon, lineBoat.lat];
+    const far = Math.max(...[[b.getWest(), b.getNorth()], [b.getEast(), b.getNorth()], [b.getWest(), b.getSouth()], [b.getEast(), b.getSouth()]].map((p) => gcNm(c, p)));
+    return Math.min(far * 1.3 + 1, 12000);
+  }
+  return speed != null && speed > 0.2 ? speed * (Number(len) / 60) : 0;
+}
+function drawLines(v) {
+  lineBoat = v && v.lat != null && v.lon != null ? v : null;
+  const one = (show, brg, len, speed) => {
+    if (!lineBoat || !show || brg == null) return line([]);
+    const d = lineLength(len, speed);
+    return d > 0 ? line([[lineBoat.lon, lineBoat.lat], rhumbDestination(lineBoat.lat, lineBoat.lon, brg, d)]) : line([]);
+  };
+  setData("hdgline", one(settings.hdgLine, v?.heading, settings.hdgLen, v?.stw ?? v?.sog));
+  setData("cogline", one(settings.cogLine, v?.cog, settings.cogLen, v?.sog));
+}
+map.on("moveend", () => { if (lineBoat && (settings.hdgLen === "inf" || settings.cogLen === "inf")) drawLines(lineBoat); });
+
+const LEN_OPTIONS = [["inf", "To the edge of the chart"], ["1", "1 min"], ["2", "2 min"], ["5", "5 min"], ["10", "10 min"], ["15", "15 min"],
+  ["20", "20 min"], ["30", "30 min"], ["60", "1 h"], ["120", "2 h"], ["180", "3 h"], ["360", "6 h"], ["720", "12 h"], ["1440", "24 h"], ["2880", "48 h"]];
+const DAMP_OPTIONS = [["0", "Off"], ["1", "1 s"], ["2", "2 s"], ["3", "3 s"], ["5", "5 s"], ["10", "10 s"], ["15", "15 s"], ["30", "30 s"], ["60", "60 s"]];
+for (const [id, key, opts] of [["set-hdg-len", "hdgLen", LEN_OPTIONS], ["set-cog-len", "cogLen", LEN_OPTIONS],
+  ["set-damp-motion", "dampMotion", DAMP_OPTIONS], ["set-damp-wind", "dampWind", DAMP_OPTIONS], ["set-damp-depth", "dampDepth", DAMP_OPTIONS]]) {
+  const el = document.getElementById(id);
+  for (const [v, label] of opts) el.append(new Option(label, v));
+  el.value = String(settings[key]);
+  el.onchange = () => { settings[key] = key.startsWith("damp") ? Number(el.value) : el.value; saveSettings(); drawLines(lineBoat); };
+}
+for (const [id, key] of [["set-hdg-line", "hdgLine"], ["set-cog-line", "cogLine"]]) {
+  const el = document.getElementById(id);
+  el.checked = !!settings[key];
+  el.onchange = () => { settings[key] = el.checked; saveSettings(); drawLines(lineBoat); };
+}
+
+// Centre on the boat (rail button).
+document.getElementById("centre-boat").onclick = () => {
+  if (!lastBoat) return;
+  map.easeTo({ center: lastBoat, duration: 400 });
+};
 
 // ---------- helpers ---------------------------------------------------------
 function setData(id, data) { const s = map.getSource(id); if (s) s.setData(data); }
@@ -320,6 +374,28 @@ function ddm(deg, pos, neg) {
   let m = (a - d) * 60;
   if (m >= 59.9995) { d += 1; m = 0; }
   return `${d}°${m.toFixed(3).padStart(6, "0")}'${h}`;
+}
+
+/** Rhumb-line destination: constant bearing, so a straight line on the chart. */
+function rhumbDestination(lat, lon, brg, nm) {
+  const R = 3440.065, d = nm / R, t = (brg * Math.PI) / 180;
+  const p1 = (lat * Math.PI) / 180;
+  let p2 = p1 + d * Math.cos(t);
+  const lim = (85 * Math.PI) / 180;
+  if (Math.abs(p2) > lim) { // stop at the edge of the Mercator chart
+    const f = (Math.sign(p2) * lim - p1) / (p2 - p1 || 1);
+    p2 = Math.sign(p2) * lim;
+    return rhumbDestination(lat, lon, brg, nm * f);
+  }
+  const dpsi = Math.log(Math.tan(Math.PI / 4 + p2 / 2) / Math.tan(Math.PI / 4 + p1 / 2));
+  const q = Math.abs(dpsi) > 1e-12 ? (p2 - p1) / dpsi : Math.cos(p1);
+  const dl = (d * Math.sin(t)) / q;
+  return [lon + (dl * 180) / Math.PI, (p2 * 180) / Math.PI];
+}
+function gcNm(a, b) {
+  const r = Math.PI / 180, [l1, p1] = [a[0] * r, a[1] * r], [l2, p2] = [b[0] * r, b[1] * r];
+  const h = Math.sin((p2 - p1) / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin((l2 - l1) / 2) ** 2;
+  return 2 * Math.asin(Math.min(1, Math.sqrt(h))) * 3440.065;
 }
 
 /** Great-circle destination (same formula as nav-core). */
