@@ -3,7 +3,42 @@
 import { invoke } from "@tauri-apps/api/core";
 
 // Wind speed shading (knots).
-const TWS_STOPS = [0, "#ffffff", 6, "#bfe9ff", 10, "#7fd6f5", 15, "#6fcf97", 20, "#f2c14e", 25, "#f08a5d", 30, "#e84a5f", 40, "#9b5de5"];
+// Palette sampled every 2 kn so light-air differences show too.
+const PALETTE = [
+  [0, "#e8f4ff"], [2, "#c4e2ff"], [4, "#9fd0f7"], [6, "#79bdec"], [8, "#5ab9cf"], [10, "#5cc6a3"],
+  [12, "#7fd27a"], [14, "#b3dc5c"], [16, "#e2e04f"], [18, "#f7cd45"], [20, "#f7aa3b"], [22, "#f38536"],
+  [25, "#e85c3a"], [28, "#d6404f"], [32, "#b8357a"], [36, "#9334a3"], [40, "#6c2fae"], [50, "#45247f"],
+];
+
+// Display settings (per viewer)
+const WX_DEFAULTS = { density: 5, size: 1.0, shading: "2", opacity: 0.45 };
+const DENSITY_POINTS = [80, 150, 300, 500, 900, 1400, 2200, 3500, 6000, 1e9];
+function loadWx() {
+  try { return { ...WX_DEFAULTS, ...JSON.parse(localStorage.getItem("racenav.wx") || "{}") }; } catch { return { ...WX_DEFAULTS }; }
+}
+
+/** Colour of a wind speed on the palette (linear between stops). */
+function paletteAt(kn) {
+  for (let i = 1; i < PALETTE.length; i++) {
+    const [k1, c1] = PALETTE[i - 1], [k2, c2] = PALETTE[i];
+    if (kn <= k2) {
+      const f = Math.max(0, (kn - k1) / (k2 - k1));
+      const a = [1, 3, 5].map((o) => parseInt(c1.slice(o, o + 2), 16));
+      const b = [1, 3, 5].map((o) => parseInt(c2.slice(o, o + 2), 16));
+      return "#" + a.map((v, j) => Math.round(v + (b[j] - v) * f).toString(16).padStart(2, "0")).join("");
+    }
+  }
+  return PALETTE.at(-1)[1];
+}
+
+/** fill-color expression: smooth, or bands of `step` knots. */
+function shadingExpression(mode) {
+  if (mode === "smooth") return ["interpolate", ["linear"], ["get", "tws"], ...PALETTE.flat()];
+  const step = Number(mode);
+  const expr = ["step", ["get", "tws"], paletteAt(step / 2)];
+  for (let k = step; k <= 50; k += step) expr.push(k, paletteAt(k + step / 2));
+  return expr;
+}
 
 export function setupWeather(map, beforeLand, beforeTop) {
   const $ = (id) => document.getElementById(id);
@@ -13,19 +48,21 @@ export function setupWeather(map, beforeLand, beforeTop) {
   let t = 0;
   let playing = null;
   let cursor = null; // [lon, lat]
+  const wx = loadWx();
   const timeListeners = [];
 
   map.addSource("wx-cells", { type: "geojson", data: fc([]) });
   map.addSource("wx-barbs", { type: "geojson", data: fc([]) });
   map.addLayer({
     id: "wx-cells", type: "fill", source: "wx-cells",
-    paint: { "fill-color": ["interpolate", ["linear"], ["get", "tws"], ...TWS_STOPS], "fill-opacity": ["interpolate", ["linear"], ["get", "tws"], 0, 0.05, 8, 0.25, 20, 0.35], "fill-antialias": false },
+    paint: { "fill-color": shadingExpression(wx.shading === "off" ? "2" : wx.shading), "fill-opacity": wx.opacity, "fill-antialias": false },
+    layout: { visibility: wx.shading === "off" ? "none" : "visible" },
   }, beforeLand);
   map.addLayer({
     id: "wx-barbs", type: "symbol", source: "wx-barbs",
     layout: {
       "icon-image": ["get", "icon"], "icon-rotate": ["get", "twd"], "icon-rotation-alignment": "map",
-      "icon-anchor": "bottom", "icon-allow-overlap": true, "icon-ignore-placement": true,
+      "icon-anchor": "bottom", "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-size": wx.size,
     },
   }, beforeTop);
 
@@ -154,9 +191,12 @@ export function setupWeather(map, beforeLand, beforeTop) {
         return;
       }
       const b = map.getBounds();
-      const g = await invoke("grib_wind_grid", {
-        path: display, t, bbox: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], maxPoints: 900,
-      }).catch(() => null);
+      const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+      // Barbs at the chosen density; shading at full GRIB resolution (up to 20 000 cells).
+      const [g, gs] = await Promise.all([
+        invoke("grib_wind_grid", { path: display, t, bbox, maxPoints: Math.round(DENSITY_POINTS[wx.density - 1]) }).catch(() => null),
+        wx.shading === "off" ? null : invoke("grib_wind_grid", { path: display, t, bbox, maxPoints: 20000 }).catch(() => null),
+      ]);
       if (!g) return;
       const cells = [], barbs = [];
       for (let j = 0; j < g.nj; j++) {
@@ -165,11 +205,20 @@ export function setupWeather(map, beforeLand, beforeTop) {
           const tws = g.tws[k], twd = g.twd[k];
           if (tws == null) continue;
           const lon = g.lon0 + i * g.dlon, lat = g.lat0 + j * g.dlat;
-          const hx = g.dlon / 2, hy = g.dlat / 2;
-          cells.push({ type: "Feature", properties: { tws },
-            geometry: { type: "Polygon", coordinates: [[[lon - hx, lat - hy], [lon + hx, lat - hy], [lon + hx, lat + hy], [lon - hx, lat + hy], [lon - hx, lat - hy]]] } });
           barbs.push({ type: "Feature", properties: { tws, twd, icon: barbId(tws, lat) },
             geometry: { type: "Point", coordinates: [lon, lat] } });
+        }
+      }
+      if (gs) {
+        const hx = gs.dlon / 2, hy = gs.dlat / 2;
+        for (let j = 0; j < gs.nj; j++) {
+          for (let i = 0; i < gs.ni; i++) {
+            const tws = gs.tws[j * gs.ni + i];
+            if (tws == null) continue;
+            const lon = gs.lon0 + i * gs.dlon, lat = gs.lat0 + j * gs.dlat;
+            cells.push({ type: "Feature", properties: { tws },
+              geometry: { type: "Polygon", coordinates: [[[lon - hx, lat - hy], [lon + hx, lat - hy], [lon + hx, lat + hy], [lon - hx, lat + hy], [lon - hx, lat - hy]]] } });
+          }
         }
       }
       map.getSource("wx-cells").setData(fc(cells));
@@ -201,6 +250,41 @@ export function setupWeather(map, beforeLand, beforeTop) {
 
   $("wx-load").onclick = () => load($("wx-files").value);
   $("wx-refresh").onclick = refreshFiles;
+
+  // ---------- display settings ----------------------------------------------------------
+  const saveWx = () => { try { localStorage.setItem("racenav.wx", JSON.stringify(wx)); } catch { /* ignore */ } };
+  const dens = $("wx-density"), size = $("wx-size"), shade = $("wx-shading"), opac = $("wx-opacity");
+  dens.value = wx.density; size.value = wx.size; shade.value = wx.shading; opac.value = wx.opacity;
+  const showVals = () => {
+    $("wx-density-v").textContent = wx.density === 10 ? "every point" : String(wx.density);
+    $("wx-size-v").textContent = `${Math.round(wx.size * 100)} %`;
+    $("wx-opacity-v").textContent = `${Math.round(wx.opacity * 100)} %`;
+  };
+  showVals();
+  dens.oninput = () => { wx.density = Number(dens.value); showVals(); saveWx(); draw(); };
+  size.oninput = () => { wx.size = Number(size.value); showVals(); saveWx(); map.setLayoutProperty("wx-barbs", "icon-size", wx.size); };
+  opac.oninput = () => { wx.opacity = Number(opac.value); showVals(); saveWx(); map.setPaintProperty("wx-cells", "fill-opacity", wx.opacity); };
+  shade.onchange = () => {
+    wx.shading = shade.value; saveWx();
+    map.setLayoutProperty("wx-cells", "visibility", wx.shading === "off" ? "none" : "visible");
+    if (wx.shading !== "off") map.setPaintProperty("wx-cells", "fill-color", shadingExpression(wx.shading));
+    draw();
+    drawLegend();
+  };
+  function drawLegend() {
+    const el = $("wx-legend");
+    el.innerHTML = "";
+    if (wx.shading === "off") return;
+    const step = wx.shading === "smooth" ? 5 : Math.max(Number(wx.shading), wx.shading === "1" ? 2 : Number(wx.shading));
+    for (let k = 0; k <= 40; k += step) {
+      const sw = document.createElement("span");
+      sw.style.background = paletteAt(wx.shading === "smooth" ? k : k + Number(wx.shading) / 2);
+      sw.title = `${k} kn`;
+      sw.textContent = k % 10 === 0 ? k : "";
+      el.append(sw);
+    }
+  }
+  drawLegend();
 
   refreshFiles();
   invoke("grib_loaded").then((list) => {

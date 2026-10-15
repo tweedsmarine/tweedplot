@@ -126,7 +126,7 @@ export function setupRoute(map, { weather, getBoat, getSafetyDepth }) {
 
   // ---------- boat settings ----------------------------------------------------------
   async function loadPolars() {
-    const list = await invoke("polar_files").catch(() => []);
+    const list = (await invoke("polar_files").catch(() => [])) || [];
     const sel = $("boat-polar");
     sel.innerHTML = "";
     if (!list.length) sel.append(new Option("No polars found", ""));
