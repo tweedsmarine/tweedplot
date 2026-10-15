@@ -78,6 +78,8 @@ pub struct Route {
     pub notes: String,
     /// Where the race or passage starts, [lon, lat], if the route keeps one.
     pub start: Option<[f64; 2]>,
+    /// The library mark the start is at, when it was set from one.
+    pub start_mark: Option<String>,
     pub marks: Vec<RouteMark>,
     pub modified: i64,
 }
@@ -178,13 +180,17 @@ impl Library {
     /// Delete a mark. If routes use it, refuse unless `force`, which also
     /// takes it out of those routes.
     pub fn delete_mark(&self, id: &str, force: bool) -> Result<()> {
-        let users: Vec<Route> = self.routes()?.into_iter().filter(|r| r.marks.iter().any(|x| x.mark == id)).collect();
+        let uses = |r: &Route| r.marks.iter().any(|x| x.mark == id) || r.start_mark.as_deref() == Some(id);
+        let users: Vec<Route> = self.routes()?.into_iter().filter(|r| uses(r)).collect();
         if !users.is_empty() && !force {
             let names: Vec<&str> = users.iter().map(|r| r.name.as_str()).collect();
             return Err(Error::InUse(format!("The mark is used by: {}", names.join(", "))));
         }
         for mut r in users {
             r.marks.retain(|x| x.mark != id);
+            if r.start_mark.as_deref() == Some(id) {
+                r.start_mark = None; // the start keeps its position
+            }
             self.save_route(r)?;
         }
         let mut all = self.marks()?;
@@ -284,7 +290,10 @@ impl Library {
             // the chosen marks plus every mark the chosen routes use
             marks
                 .iter()
-                .filter(|m| mark_ids.contains(&m.id) || routes.iter().any(|r| r.marks.iter().any(|x| x.mark == m.id)))
+                .filter(|m| {
+                    mark_ids.contains(&m.id)
+                        || routes.iter().any(|r| r.marks.iter().any(|x| x.mark == m.id) || r.start_mark.as_deref() == Some(m.id.as_str()))
+                })
                 .collect()
         };
         let by_id = |id: &str| marks.iter().find(|m| m.id == id);
@@ -294,6 +303,13 @@ impl Library {
         }
         for r in &routes {
             out.push_str(&format!("  <rte>\n    <name>{}</name>\n", gpx::esc(&r.name)));
+            // the start leads the route: its library mark, else a plain point
+            if let Some(m) = r.start_mark.as_deref().and_then(by_id) {
+                out.push_str(&gpx::wpt("rtept", m, "    "));
+            } else if let Some([lon, lat]) = r.start {
+                let m = Mark { name: "Start".into(), lat, lon, kind: "start".into(), ..Default::default() };
+                out.push_str(&gpx::wpt("rtept", &m, "    "));
+            }
             for rm in &r.marks {
                 if let Some(m) = by_id(&rm.mark) {
                     out.push_str(&gpx::wpt("rtept", m, "    "));
@@ -342,7 +358,7 @@ impl Library {
         for (k, r) in data.routes.iter().enumerate() {
             let ids: Vec<RouteMark> = r.points.iter().map(|w| RouteMark { mark: find_or_add(w, &mut rep), rounding: String::new() }).collect();
             let name = if r.name.trim().is_empty() { format!("Imported route {}", k + 1) } else { r.name.trim().to_string() };
-            new_routes.push(Route { id: String::new(), name, notes: String::new(), start: None, marks: ids, modified: 0 });
+            new_routes.push(Route { id: String::new(), name, notes: String::new(), start: None, start_mark: None, marks: ids, modified: 0 });
         }
         self.write_marks(&marks)?;
         for r in new_routes {
@@ -446,6 +462,15 @@ mod tests {
             .save_route(Route { name: "Coastal Classic".into(), marks: vec![RouteMark { mark: a.id.clone(), ..Default::default() }, RouteMark { mark: b.id.clone(), ..Default::default() }], ..Default::default() })
             .unwrap();
         assert_eq!(lib.routes().unwrap().len(), 1);
+        // a route that starts at a library mark
+        let s = lib.save_mark(Mark { name: "Bean Rock".into(), lat: -36.83, lon: 174.83, ..Default::default() }).unwrap();
+        lib.save_route(Route { name: "From Bean Rock".into(), start: Some([174.83, -36.83]), start_mark: Some(s.id.clone()), marks: vec![RouteMark { mark: b.id.clone(), ..Default::default() }], ..Default::default() }).unwrap();
+        assert!(lib.export_gpx(&[], &[]).unwrap().contains("<rtept lat=\"-36.830000\" lon=\"174.830000\">\n      <name>Bean Rock</name>"));
+        assert!(matches!(lib.delete_mark(&s.id, false), Err(Error::InUse(_))));
+        lib.delete_mark(&s.id, true).unwrap();
+        let fr = lib.routes().unwrap().into_iter().find(|x| x.name == "From Bean Rock").unwrap();
+        assert_eq!((fr.start_mark, fr.start), (None, Some([174.83, -36.83])));
+        lib.delete_route(&fr.id).unwrap();
         // in use: refused, then forced
         assert!(matches!(lib.delete_mark(&a.id, false), Err(Error::InUse(_))));
         lib.delete_mark(&a.id, true).unwrap();

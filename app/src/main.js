@@ -58,12 +58,6 @@ const map = new maplibregl.Map({
     layers: [
       { id: "sea", type: "background", paint: { "background-color": css("--sea") } },
       { id: "grid", type: "line", source: "graticule", paint: { "line-color": "#9db8c8", "line-width": 0.5 } },
-      { id: "land-world", type: "fill", source: "land-world", maxzoom: 6,
-        paint: { "fill-color": css("--land"), "fill-outline-color": css("--coast") } },
-      { id: "land-nz", type: "fill", source: "land-nz", minzoom: 4,
-        paint: { "fill-color": css("--land") } },
-      { id: "coast-nz", type: "line", source: "land-nz", minzoom: 4,
-        paint: { "line-color": css("--coast"), "line-width": 0.8 } },
       // LINZ hydrographic chart data (not for navigation)
       { id: "depare", type: "fill", source: "chart", "source-layer": "depare",
         layout: { "fill-sort-key": ["get", "band"] },
@@ -73,8 +67,18 @@ const map = new maplibregl.Map({
       { id: "safety-contour", type: "line", source: "chart", "source-layer": "depcnt",
         filter: ["==", ["get", "valdco"], settings.safetyContour],
         paint: { "line-color": "#1d2a33", "line-width": 1.6 } },
+      // Land fills, then coastlines. Wind shading goes under the land fills
+      // ("land on top") or between the fills and the coastlines ("coastline on top").
+      { id: "land-world", type: "fill", source: "land-world", maxzoom: 6,
+        paint: { "fill-color": css("--land") } },
+      { id: "land-nz", type: "fill", source: "land-nz", minzoom: 4,
+        paint: { "fill-color": css("--land") } },
       { id: "chart-land", type: "fill", source: "chart", "source-layer": "land",
         paint: { "fill-color": css("--land") } },
+      { id: "coast-world", type: "line", source: "land-world", maxzoom: 6,
+        paint: { "line-color": css("--coast"), "line-width": 0.8 } },
+      { id: "coast-nz", type: "line", source: "land-nz", minzoom: 4,
+        paint: { "line-color": css("--coast"), "line-width": 0.8 } },
       { id: "chart-coast", type: "line", source: "chart", "source-layer": "land",
         paint: { "line-color": css("--coast"), "line-width": 0.9 } },
       { id: "soundg", type: "symbol", source: "chart", "source-layer": "soundg",
@@ -111,7 +115,7 @@ let library = null;
 const ui = setupRail(map);
 const inst = setupInstruments();
 map.on("load", () => {
-  weather = setupWeather(map, "chart-land", "track");
+  weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
   library = setupLibrary(map, { ui });
   route = setupRoute(map, { weather, library, getBoat: () => lastBoat, getSafetyDepth: () => settings.safetyDepth });
   library.attach(route);
@@ -221,9 +225,15 @@ function placeBoat(pos) {
 // ---------- right-click menu ----------------------------------------------------
 const ctx = document.getElementById("ctx");
 let ctxAt = null;
+let ctxMark = null; // library mark under the right-click, if any
 map.on("contextmenu", (e) => {
   e.originalEvent.preventDefault();
   ctxAt = [e.lngLat.lng, e.lngLat.lat];
+  // right-click on a library mark: start / add use that mark
+  ctxMark = library?.markAt(e.point) ?? null;
+  ctx.querySelector('[data-act="start"]').textContent = ctxMark ? `Start route at ${ctxMark.name}` : "Start route here";
+  ctx.querySelector('[data-act="mark"]').textContent = ctxMark ? `Add ${ctxMark.name} to route` : "Add mark to route here";
+  ctx.querySelector('[data-act="libmark"]').hidden = !!ctxMark;
   // selected mark: offer Move (only once its ring is green) and Delete
   const sel = route?.selection();
   for (const el of ctx.querySelectorAll(".sel-item")) el.hidden = !sel;
@@ -248,8 +258,8 @@ ctx.addEventListener("click", (e) => {
   if (act === "move-sel") route?.moveSelected(ctxAt);
   if (act === "del-sel") route?.deleteSelected();
   if (act === "boat") placeBoat(ctxAt);
-  if (act === "start") route?.setStart(ctxAt);
-  if (act === "mark") route?.addMark(ctxAt);
+  if (act === "start") route?.setStart(ctxAt, ctxMark);
+  if (act === "mark") route?.addMark(ctxAt, ctxMark);
   if (act === "libmark") library?.newMarkAt(ctxAt);
   if (act === "centre") map.easeTo({ center: ctxAt });
   ctx.hidden = true;

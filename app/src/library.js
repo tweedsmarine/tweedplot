@@ -50,7 +50,8 @@ export function setupLibrary(map, { ui }) {
 
   // ---------- routes tab ----------------------------------------------------------
   function routeLength(r) {
-    const pts = [r.start, ...r.marks.map((x) => byId(x.mark)).filter(Boolean).map((m) => [m.lon, m.lat])].filter(Boolean);
+    const sm = r.start_mark && byId(r.start_mark);
+    const pts = [sm ? [sm.lon, sm.lat] : r.start, ...r.marks.map((x) => byId(x.mark)).filter(Boolean).map((m) => [m.lon, m.lat])].filter(Boolean);
     let d = 0;
     for (let i = 1; i < pts.length; i++) d += distNm(pts[i - 1], pts[i]);
     return d;
@@ -64,7 +65,7 @@ export function setupLibrary(map, { ui }) {
       li.classList.toggle("active", route?.current().routeId === r.id);
       li.innerHTML = `<div class="main" title="Open this route"><b></b><small></small></div><button data-act="open">Open</button><button data-act="gpx" title="Write this route as GPX">GPX</button><button data-act="del" title="Delete this route (its marks stay in the library)">✕</button>`;
       li.querySelector("b").textContent = r.name;
-      li.querySelector("small").textContent = `${r.start ? "start + " : ""}${r.marks.length} marks · ${routeLength(r).toFixed(1)} NM · ${r.marks.map((x) => byId(x.mark)?.name ?? "?").join(" → ")}`;
+      li.querySelector("small").textContent = `${r.start ? "start + " : ""}${r.marks.length} marks · ${routeLength(r).toFixed(1)} NM · ${[r.start_mark ? byId(r.start_mark)?.name : null, ...r.marks.map((x) => byId(x.mark)?.name ?? "?")].filter(Boolean).join(" → ")}`;
       const open = () => { route?.loadRoute(r, marks); ui.open("route"); };
       li.querySelector(".main").onclick = open;
       li.querySelector('[data-act="open"]').onclick = open;
@@ -89,12 +90,13 @@ export function setupLibrary(map, { ui }) {
       .sort((a, b) => a.group.localeCompare(b.group) || a.name.localeCompare(b.name, undefined, { numeric: true }));
     if (!list.length) ul.innerHTML = `<li class="empty">${marks.length ? "No marks match." : "No marks yet. Right-click the chart: New library mark here, or save a route."}</li>`;
     for (const m of list) {
-      const used = routes.filter((r) => r.marks.some((x) => x.mark === m.id)).length;
+      const used = routes.filter((r) => r.start_mark === m.id || r.marks.some((x) => x.mark === m.id)).length;
       const li = document.createElement("li");
-      li.innerHTML = `<div class="main" title="Show on the chart"><b></b><small></small></div><button data-act="add" title="Add to the end of the route being edited">+ Route</button><button data-act="edit">Edit</button><button data-act="del">✕</button>`;
+      li.innerHTML = `<div class="main" title="Show on the chart"><b></b><small></small></div><button data-act="start" title="Make this the route's start">Start</button><button data-act="add" title="Add to the end of the route being edited">+ Route</button><button data-act="edit">Edit</button><button data-act="del">✕</button>`;
       li.querySelector("b").textContent = m.name;
       li.querySelector("small").textContent = `${m.group ? m.group + " · " : ""}${ddm(m.lat, "N", "S")} ${ddm(m.lon, "E", "W")}${used ? ` · in ${used} route${used > 1 ? "s" : ""}` : ""}`;
       li.querySelector(".main").onclick = () => map.flyTo({ center: [m.lon, m.lat], zoom: Math.max(map.getZoom(), 11) });
+      li.querySelector('[data-act="start"]').onclick = () => { route?.setStartLibraryMark(m); status(`The route now starts at ${m.name}.`); };
       li.querySelector('[data-act="add"]').onclick = () => { route?.addLibraryMark(m); status(`${m.name} added to the route.`); };
       li.querySelector('[data-act="edit"]').onclick = () => editMark(m);
       li.querySelector('[data-act="del"]').onclick = () => confirmThen(li, used ? `${m.name} is in ${used} route${used > 1 ? "s" : ""}: delete it and take it out of them?` : `Delete ${m.name}?`, async () => {

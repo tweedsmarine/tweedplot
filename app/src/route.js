@@ -21,8 +21,9 @@ export function setupRoute(map, { weather, library, getBoat, getSafetyDepth }) {
   if (opts.v !== 2) { opts.step = 0; opts.v = 2; save("racenav.route", opts); } // time step now defaults to auto
 
   // The route being edited. Marks: { id (library id, or null until saved), name, lon, lat, rounding }.
-  const work = load(WORK_KEY, { routeId: null, name: "", start: null, marks: [], dirty: false, nav: 0 });
+  const work = load(WORK_KEY, { routeId: null, name: "", start: null, startRef: null, marks: [], dirty: false, nav: 0 });
   let start = work.start; // [lon, lat]
+  let startRef = work.startRef; // { id, name } when the start is a library mark
   let marks = work.marks;
   let routeId = work.routeId;
   let dirty = work.dirty;
@@ -47,7 +48,7 @@ export function setupRoute(map, { weather, library, getBoat, getSafetyDepth }) {
     layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 12], "icon-allow-overlap": true } });
 
   function persist() {
-    save(WORK_KEY, { routeId, name: $("rt-name").value, start, marks, dirty, nav: navIndex });
+    save(WORK_KEY, { routeId, name: $("rt-name").value, start, startRef, marks, dirty, nav: navIndex });
   }
   function changed() {
     dirty = true;
@@ -58,7 +59,7 @@ export function setupRoute(map, { weather, library, getBoat, getSafetyDepth }) {
 
   function drawMarks() {
     const f = [];
-    if (start) f.push(pt(start, { icon: "mk:S", sel: -1, name: "" }));
+    if (start) f.push(pt(start, { icon: "mk:S", sel: -1, name: startRef?.name || "" }));
     marks.forEach((m, i) => f.push(pt([m.lon, m.lat], { icon: `mk:${i + 1}`, sel: i, name: m.name || "" })));
     map.getSource("rt-marks").setData({ type: "FeatureCollection", features: f });
     // legs, the one being sailed drawn heavier
@@ -66,7 +67,7 @@ export function setupRoute(map, { weather, library, getBoat, getSafetyDepth }) {
     const legs = [];
     for (let i = 1; i < pts.length; i++) legs.push({ type: "Feature", properties: { active: i - (start ? 1 : 0) === navIndex }, geometry: { type: "LineString", coordinates: [pts[i - 1], pts[i]] } });
     map.getSource("rt-legs").setData({ type: "FeatureCollection", features: last ? [] : legs });
-    library.hide(marks.map((m) => m.id).filter(Boolean));
+    library.hide([startRef?.id, ...marks.map((m) => m.id)].filter(Boolean));
     if (selected !== null && !posOf(selected)) deselect();
     drawSelection();
     renderList();
@@ -86,9 +87,9 @@ export function setupRoute(map, { weather, library, getBoat, getSafetyDepth }) {
       return li;
     };
     if (start) {
-      const li = row("S", "s", "Start", ddm(start[1], "N", "S") + " " + ddm(start[0], "E", "W"), `<button data-act="x" title="Remove the start">✕</button>`);
+      const li = row("S", "s", startRef ? `Start: ${startRef.name}` : "Start", ddm(start[1], "N", "S") + " " + ddm(start[0], "E", "W"), `<button data-act="x" title="Remove the start">✕</button>`);
       li.querySelector(".main").onclick = () => map.flyTo({ center: start });
-      li.querySelector('[data-act="x"]').onclick = () => { start = null; changed(); };
+      li.querySelector('[data-act="x"]').onclick = () => { start = null; startRef = null; changed(); };
     }
     let prev = start;
     marks.forEach((m, i) => {
@@ -119,7 +120,7 @@ export function setupRoute(map, { weather, library, getBoat, getSafetyDepth }) {
   map.addLayer({ id: "rt-sel", type: "circle", source: "rt-sel",
     paint: { "circle-radius": 17, "circle-color": "rgba(0,0,0,0)", "circle-stroke-width": 4, "circle-stroke-color": "#f0a500" } }, "rt-marks");
   const posOf = (k) => (k === -1 ? start : marks[k] && [marks[k].lon, marks[k].lat]);
-  const labelOf = (k) => (k === -1 ? "start" : marks[k]?.name || `mark ${k + 1}`);
+  const labelOf = (k) => (k === -1 ? (startRef ? `start (${startRef.name})` : "start") : marks[k]?.name || `mark ${k + 1}`);
   const status = (s) => { $("rt-status").textContent = s; };
   function drawSelection() {
     const p = selected !== null && posOf(selected);
@@ -154,7 +155,7 @@ export function setupRoute(map, { weather, library, getBoat, getSafetyDepth }) {
   }
   function deleteSelected() {
     if (selected === null) return;
-    if (selected === -1) start = null; else marks.splice(selected, 1);
+    if (selected === -1) { start = null; startRef = null; } else marks.splice(selected, 1);
     deselect();
     changed();
   }
@@ -225,7 +226,7 @@ export function setupRoute(map, { weather, library, getBoat, getSafetyDepth }) {
   $("rt-boat").onclick = () => {
     const b = getBoat();
     if (!b) { status("No boat position yet (Signal K, or right-click: Move boat here)."); return; }
-    start = b; changed();
+    start = b; startRef = null; changed();
   };
   $("rt-undo").onclick = () => { marks.pop(); changed(); };
   $("rt-name").value = work.name;
@@ -238,11 +239,18 @@ export function setupRoute(map, { weather, library, getBoat, getSafetyDepth }) {
       return;
     }
     const p = [e.lngLat.lng, e.lngLat.lat];
-    if (mode === "start") { start = p; arm(null); changed(); return; }
     const lm = library.markAt(e.point);
+    if (mode === "start") { setStartAt(p, lm); arm(null); return; }
     marks.push(lm ? { id: lm.id, name: lm.name, lon: lm.lon, lat: lm.lat, rounding: "" } : { id: null, name: "", lon: p[0], lat: p[1], rounding: "" });
     changed();
   });
+
+  /** Start at a chart position, or at a library mark (snapped to it, and kept linked). */
+  function setStartAt(p, lm) {
+    if (lm) { start = [lm.lon, lm.lat]; startRef = { id: lm.id, name: lm.name }; }
+    else { start = p; startRef = null; }
+    changed();
+  }
 
   // Save: new marks go into the library first, moved/renamed library marks are updated.
   $("rt-save").onclick = async () => {
@@ -260,7 +268,10 @@ export function setupRoute(map, { weather, library, getBoat, getSafetyDepth }) {
           await invoke("mark_save", { mark: { ...known, lat: m.lat, lon: m.lon } });
         }
       }
-      const r = await invoke("route_save", { route: { id: routeId ?? "", name, notes: "", start, marks: marks.map((m) => ({ mark: m.id, rounding: m.rounding || "" })) } });
+      const sk = startRef && lib.find((x) => x.id === startRef.id);
+      if (sk && (sk.lat !== start[1] || sk.lon !== start[0])) await invoke("mark_save", { mark: { ...sk, lon: start[0], lat: start[1] } });
+      if (startRef && !sk) startRef = null; // deleted from the library meanwhile
+      const r = await invoke("route_save", { route: { id: routeId ?? "", name, notes: "", start, start_mark: startRef?.id ?? null, marks: marks.map((m) => ({ mark: m.id, rounding: m.rounding || "" })) } });
       routeId = r.id;
       dirty = false;
       persist();
@@ -270,7 +281,7 @@ export function setupRoute(map, { weather, library, getBoat, getSafetyDepth }) {
     } catch (e) { status(`Could not save: ${e}`); }
   };
   $("rt-new").onclick = () => {
-    start = null; marks = []; routeId = null; dirty = false; navIndex = 0; $("rt-name").value = "";
+    start = null; startRef = null; marks = []; routeId = null; dirty = false; navIndex = 0; $("rt-name").value = "";
     clearRouting(); arm(null); deselect(); persist(); drawMarks();
   };
 
@@ -297,7 +308,7 @@ export function setupRoute(map, { weather, library, getBoat, getSafetyDepth }) {
     };
     try {
       const r = await invoke("route_compute", { req: request });
-      last = { ...r, grib: w.name, t0: r.legs[0]?.start ?? w.t, request: { ...request, grib_name: w.name, mark_refs: marks.map((m) => ({ ...m })) }, saved: null };
+      last = { ...r, grib: w.name, t0: r.legs[0]?.start ?? w.t, request: { ...request, grib_name: w.name, start_ref: startRef ? { ...startRef } : null, mark_refs: marks.map((m) => ({ ...m })) }, saved: null };
       show(last);
     } catch (e) {
       status(`Routing failed: ${e}`);
@@ -407,13 +418,19 @@ export function setupRoute(map, { weather, library, getBoat, getSafetyDepth }) {
   library.onChange(() => {
     // keep names of library marks in step with edits made in the Library panel
     for (const m of marks) { const x = m.id && library.byId(m.id); if (x) m.name = x.name; }
+    if (startRef) { const x = library.byId(startRef.id); if (x) startRef.name = x.name; else startRef = null; }
     persist();
     drawMarks();
   });
 
   return {
-    setStart: (p) => { start = p; changed(); },
-    addMark: (p) => { marks.push({ id: null, name: "", lon: p[0], lat: p[1], rounding: "" }); changed(); },
+    /** Start here; `lm` = a library mark to start at instead. */
+    setStart: (p, lm) => setStartAt(p, lm),
+    setStartLibraryMark: (m) => setStartAt(null, m),
+    addMark: (p, lm) => {
+      marks.push(lm ? { id: lm.id, name: lm.name, lon: lm.lon, lat: lm.lat, rounding: "" } : { id: null, name: "", lon: p[0], lat: p[1], rounding: "" });
+      changed();
+    },
     /** The selected mark for the right-click menu: { label, movable } or null. */
     selection: () => (selected === null ? null : { label: labelOf(selected), movable }),
     moveSelected,
@@ -423,6 +440,7 @@ export function setupRoute(map, { weather, library, getBoat, getSafetyDepth }) {
     libraryMarkChanged(m) {
       let hit = false;
       for (const x of marks) if (x.id === m.id) { x.name = m.name; x.lon = m.lon; x.lat = m.lat; hit = true; }
+      if (startRef?.id === m.id) { startRef.name = m.name; start = [m.lon, m.lat]; hit = true; }
       if (hit) { persist(); drawMarks(); }
     },
     /** The saved route was deleted: keep editing it as a new, unsaved one. */
@@ -430,7 +448,9 @@ export function setupRoute(map, { weather, library, getBoat, getSafetyDepth }) {
     loadRoute(r, lib) {
       routeId = r.id;
       $("rt-name").value = r.name;
-      start = r.start ?? start;
+      const sm = r.start_mark && lib.find((m) => m.id === r.start_mark);
+      start = sm ? [sm.lon, sm.lat] : r.start ?? null;
+      startRef = sm ? { id: sm.id, name: sm.name } : null;
       marks = r.marks.map((x) => lib.find((m) => m.id === x.mark)).filter(Boolean)
         .map((m, i) => ({ id: m.id, name: m.name, lon: m.lon, lat: m.lat, rounding: r.marks[i]?.rounding || "" }));
       dirty = false;
@@ -444,6 +464,8 @@ export function setupRoute(map, { weather, library, getBoat, getSafetyDepth }) {
     loadRouting(x, lib) {
       const req = x.request || {};
       start = req.start ?? null;
+      const sr = req.start_ref && lib.find((y) => y.id === req.start_ref.id);
+      startRef = sr ? { id: sr.id, name: sr.name } : null;
       const refs = req.mark_refs ?? (req.marks ?? []).map((c) => ({ id: null, name: "", lon: c[0], lat: c[1] }));
       marks = refs.map((m) => {
         const now = m.id && lib.find((y) => y.id === m.id);

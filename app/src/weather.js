@@ -11,7 +11,7 @@ const PALETTE = [
 ];
 
 // Display settings (per viewer)
-const WX_DEFAULTS = { density: 5, size: 1.0, shading: "2", opacity: 0.45 };
+const WX_DEFAULTS = { density: 5, size: 1.0, shading: "2", opacity: 0.45, land: "land" };
 const DENSITY_POINTS = [80, 150, 300, 500, 900, 1400, 2200, 3500, 6000, 1e9];
 function loadWx() {
   try { return { ...WX_DEFAULTS, ...JSON.parse(localStorage.getItem("racenav.wx") || "{}") }; } catch { return { ...WX_DEFAULTS }; }
@@ -40,7 +40,14 @@ function shadingExpression(mode) {
   return expr;
 }
 
-export function setupWeather(map, beforeLand, beforeTop) {
+/**
+ * `layers.landTop`: first land fill layer (shading goes under it for "land on top");
+ * `layers.coastTop`: first coastline layer (shading goes under it for "coastline on top");
+ * `layers.top`: barbs go under this one.
+ */
+export function setupWeather(map, layers) {
+  const beforeTop = layers.top;
+  const shadingBefore = () => (wx.land === "coast" ? layers.coastTop : layers.landTop);
   const $ = (id) => document.getElementById(id);
   const loaded = new Map(); // path -> summary
   let display = null; // path shown on the chart
@@ -57,7 +64,7 @@ export function setupWeather(map, beforeLand, beforeTop) {
     id: "wx-cells", type: "fill", source: "wx-cells",
     paint: { "fill-color": shadingExpression(wx.shading === "off" ? "2" : wx.shading), "fill-opacity": wx.opacity, "fill-antialias": false },
     layout: { visibility: wx.shading === "off" ? "none" : "visible" },
-  }, beforeLand);
+  }, shadingBefore());
   map.addLayer({
     id: "wx-barbs", type: "symbol", source: "wx-barbs",
     layout: {
@@ -264,6 +271,9 @@ export function setupWeather(map, beforeLand, beforeTop) {
   dens.oninput = () => { wx.density = Number(dens.value); showVals(); saveWx(); draw(); };
   size.oninput = () => { wx.size = Number(size.value); showVals(); saveWx(); map.setLayoutProperty("wx-barbs", "icon-size", wx.size); };
   opac.oninput = () => { wx.opacity = Number(opac.value); showVals(); saveWx(); map.setPaintProperty("wx-cells", "fill-opacity", wx.opacity); };
+  const landSel = $("wx-land");
+  landSel.value = wx.land;
+  landSel.onchange = () => { wx.land = landSel.value; saveWx(); map.moveLayer("wx-cells", shadingBefore()); };
   shade.onchange = () => {
     wx.shading = shade.value; saveWx();
     map.setLayoutProperty("wx-cells", "visibility", wx.shading === "off" ? "none" : "visible");

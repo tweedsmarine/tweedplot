@@ -50,6 +50,11 @@
               <option value="2">Bands of 2 kn</option>
               <option value="5">Bands of 5 kn</option>
             </select></div>
+          <div class="wx-row"><label class="grow" for="wx-land">Over the shading</label>
+            <select id="wx-land" title="What is drawn on top of the wind shading">
+              <option value="land">Land and coastline</option>
+              <option value="coast">Coastline only (wind over land shows)</option>
+            </select></div>
           <div class="wx-row"><label class="grow" for="wx-opacity">Shading strength</label><input id="wx-opacity" type="range" min="0.1" max="0.9" step="0.05" /><span id="wx-opacity-v" class="val"></span></div>
           <div id="wx-legend" class="legend" title="Wind speed, knots"></div>
         </details>
@@ -62,7 +67,7 @@
           <button id="rt-new" title="Start a new, empty route">New</button>
         </div>
         <div class="wx-row">
-          <button id="rt-start" title="Click on the chart to place the start">Set start</button>
+          <button id="rt-start" title="Click on the chart to place the start, or click a library mark to start at it">Set start</button>
           <button id="rt-boat" title="Start from the boat's position">From boat</button>
           <button id="rt-add" title="Click on the chart to add marks in order; click a library mark to reuse it">Add marks</button>
           <button id="rt-undo" title="Remove the last mark">Undo</button>
