@@ -486,6 +486,12 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
     activePoints: () => { const a = activeItem(); return a && a.visible ? a.r.points : null; },
     /** Show a saved routing (Library panel). */
     async showSaved(id) { const it = await showSaved(id); if (it) ui.openTab("routing", "list"); },
+    /** Use a set start time (e.g. a competitor's last fix). */
+    setStartTime(t) {
+      opts.tmode = "fixed"; opts.tfixed = Math.round(t);
+      tmode.value = "fixed"; tinput.value = toLocalInput(opts.tfixed);
+      save(OPTS_KEY, opts); showStart();
+    },
   };
 }
 

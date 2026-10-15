@@ -387,6 +387,99 @@ fn gpx_import(text: String, group: String) -> Result<library::ImportReport, Stri
     lib()?.import_gpx(&text, &group).map_err(es)
 }
 
+// ---------- race tracking (YB) ----------
+
+static TRACKING_DIR: OnceLock<PathBuf> = OnceLock::new();
+static RACES: Mutex<BTreeMap<String, tracking::Race>> = Mutex::new(BTreeMap::new());
+
+/// Tracking folder: `RACENAV_TRACKING_DIR`, else `C:\dev\racenav-data\tracking`
+/// when racenav-data exists, else `<app data>\tracking`.
+fn tracking_dir(app: &tauri::AppHandle) -> PathBuf {
+    if let Ok(d) = std::env::var("RACENAV_TRACKING_DIR") {
+        return PathBuf::from(d);
+    }
+    let dev = PathBuf::from(r"C:\dev\racenav-data");
+    if dev.is_dir() {
+        return dev.join("tracking");
+    }
+    app.path().app_data_dir().map(|p| p.join("tracking")).unwrap_or_else(|_| PathBuf::from("tracking"))
+}
+
+fn with_race<T>(key: &str, f: impl FnOnce(&mut tracking::Race) -> Result<T, String>) -> Result<T, String> {
+    let key = tracking::clean_key(key).map_err(|e| e.to_string())?;
+    let mut races = RACES.lock().unwrap();
+    if !races.contains_key(&key) {
+        let dir = TRACKING_DIR.get().ok_or("no tracking folder")?;
+        races.insert(key.clone(), tracking::Race::open(dir, &key).map_err(|e| e.to_string())?);
+    }
+    f(races.get_mut(&key).unwrap())
+}
+
+/// Open a race: the cached setup and every fix kept so far; the setup is
+/// (re)fetched when missing or more than 6 hours old. Network errors are
+/// reported in `error` alongside whatever is cached.
+#[tauri::command]
+async fn yb_open(race: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = tracking::clean_key(&race).map_err(|e| e.to_string())?;
+        let (cached, fetched) = with_race(&key, |r| Ok((r.setup(), r.meta.setup_fetched)))?;
+        let now = tracking::now();
+        let mut error = None;
+        let mut setup = cached;
+        if setup.is_none() || fetched.is_none_or(|t| now - t > 6 * 3600) {
+            match tracking::fetch_setup(&key) {
+                Ok(text) => match with_race(&key, |r| r.save_setup_text(&text, now).map_err(|e| e.to_string())) {
+                    Ok(s) => setup = Some(s),
+                    Err(e) => error = Some(format!("Race setup not understood: {e}")),
+                },
+                Err(e) => error = Some(if setup.is_some() { format!("Using the saved race setup ({e})") } else { e.to_string() }),
+            }
+        }
+        with_race(&key, |r| {
+            Ok(serde_json::json!({ "key": key, "setup": setup, "fixes": r.fixes, "meta": r.meta, "error": error }))
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Download the latest positions and keep them; returns the fixes newer than `since`.
+#[tauri::command]
+async fn yb_refresh(race: String, since: i64) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = tracking::clean_key(&race).map_err(|e| e.to_string())?;
+        let fixes = tracking::fetch_positions(&key).map_err(|e| e.to_string())?;
+        let now = tracking::now();
+        with_race(&key, |r| {
+            let added = r.merge(&fixes, now).map_err(|e| e.to_string())?;
+            Ok(serde_json::json!({ "key": key, "added": added, "boats": fixes.len(), "fixes": r.fixes_since(since), "meta": r.meta }))
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Races with something saved, newest first.
+#[tauri::command]
+fn yb_races() -> Vec<serde_json::Value> {
+    let Some(dir) = TRACKING_DIR.get() else { return Vec::new() };
+    let mut v: Vec<(u64, serde_json::Value)> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .map(|e| {
+            let key = e.file_name().to_string_lossy().into_owned();
+            let m = std::fs::metadata(e.path().join("fixes.json")).or_else(|_| std::fs::metadata(e.path()));
+            let t = m.ok().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
+            let title = std::fs::read_to_string(e.path().join("setup.json")).ok().and_then(|s| tracking::parse_setup(&s).ok()).map(|s| s.title).unwrap_or_default();
+            (t, serde_json::json!({ "key": key, "title": title, "modified": t }))
+        })
+        .collect();
+    v.sort_by(|a, b| b.0.cmp(&a.0));
+    v.into_iter().map(|x| x.1).collect()
+}
+
 /// Chart folder: `RACENAV_CHART_DIR`, else `C:\dev\racenav-data\linz` if present,
 /// else `<app data>\charts`.
 fn chart_dir(app: &tauri::AppHandle) -> PathBuf {
@@ -447,13 +540,17 @@ pub fn run() {
             app_info, chart_info, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_point,
             polar_files, route_compute, sk_status,
             lib_info, marks_list, mark_save, mark_delete, routes_list, route_save, route_delete,
-            routings_list, routing_get, routing_save, routing_delete, gpx_export, gpx_write, gpx_import
+            routings_list, routing_get, routing_save, routing_delete, gpx_export, gpx_write, gpx_import,
+            yb_open, yb_refresh, yb_races
         ])
         .register_asynchronous_uri_scheme_protocol("chart", |_ctx, request, responder| {
             let path = request.uri().path().to_string();
             std::thread::spawn(move || responder.respond(tile_response(&path)));
         })
         .setup(|app| {
+            let td = tracking_dir(app.handle());
+            let _ = std::fs::create_dir_all(&td);
+            let _ = TRACKING_DIR.set(td);
             match library::Library::open(library_dir(app.handle())) {
                 Ok(l) => {
                     let _ = LIBRARY.set(l);

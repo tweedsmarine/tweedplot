@@ -252,3 +252,9 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
 
 #rail .rail-action { margin-top: auto; margin-bottom: 8px; }
 #rail .rail-action:active { background: var(--accent); color: #fff; }
+
+/* fleet */
+.list li .star { flex: none; border: none; background: none; padding: 0 2px; font-size: 15px; color: #c3cdd3; }
+.list li .star.on { color: #e0a800; }
+#fl-title { font-size: 13px; }
+.wx-note.good { color: var(--good); } .wx-note.bad { color: var(--bad); }

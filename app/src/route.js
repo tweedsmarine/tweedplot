@@ -292,6 +292,23 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     setLegsHidden(v) { if (v !== legsHidden) { legsHidden = v; drawMarks(); } },
     stopEditing: () => { if (mode) arm(null); },
     /** Put back the course a routing was computed for. */
+    /** A course from a list of named points (e.g. a YB race course): first = start. */
+    fromPoints(points, name) {
+      if (!points.length) return;
+      start = [points[0].lon, points[0].lat];
+      startRef = null;
+      marks = points.slice(1).map((p) => ({ id: null, name: p.name || "", lon: p.lon, lat: p.lat, rounding: "" }));
+      routeId = null;
+      $("rt-name").value = name || "";
+      dirty = true;
+      navIndex = 0;
+      persist();
+      drawMarks();
+      for (const f of listeners) f();
+      fit([start, ...marks.map((m) => [m.lon, m.lat])]);
+    },
+    /** Start from a position, keeping the marks (e.g. route a competitor from its fix). */
+    startAt(p) { start = p; startRef = null; changed(); },
     fromRouting(req) {
       const lib = library.marks();
       start = req.start ?? null;
