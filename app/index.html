@@ -43,6 +43,27 @@
         <input id="wx-slider" type="range" min="0" max="0" step="3600" value="0" />
         <table id="wx-point"><thead><tr><th>Run</th><th>TWS</th><th>TWD</th><th>Gust</th><th>MSLP</th><th>Hs</th></tr></thead><tbody></tbody></table>
         <div id="wx-where" class="wx-note">Values at the cursor</div>
+        <details class="sub" id="dl-box">
+          <summary>Download (free, no email)</summary>
+          <div class="wx-row"><label class="grow" for="dl-model">Model</label><select id="dl-model"></select></div>
+          <div id="dl-params" class="checks"></div>
+          <div class="wx-row"><label class="grow">Area</label>
+            <button id="dl-draw" title="Drag a rectangle on the chart">Draw</button>
+            <button id="dl-view" title="The part of the chart on screen">Chart view</button>
+            <button id="dl-course" title="Around the course (start and marks) with a margin">Course</button></div>
+          <div class="wx-row area">
+            <label>N</label><input id="dl-n" type="text" title="North edge, degrees (− = south)" />
+            <label>S</label><input id="dl-s" type="text" title="South edge, degrees (− = south)" />
+            <label>W</label><input id="dl-w" type="text" title="West edge, degrees (− = west)" />
+            <label>E</label><input id="dl-e" type="text" title="East edge, degrees (− = west)" />
+          </div>
+          <div class="wx-row"><label class="grow" for="dl-days">Forecast length</label><select id="dl-days"></select></div>
+          <div class="wx-row"><label class="grow" for="dl-every">Time step</label><select id="dl-every"></select></div>
+          <div class="wx-row"><span id="dl-size" class="grow wx-note"></span></div>
+          <div class="wx-row"><button id="dl-go" class="on grow">Download</button><button id="dl-cancel" disabled>Cancel</button></div>
+          <div id="dl-progress" class="progress" hidden><div class="bar"></div><span></span></div>
+          <div id="dl-status" class="wx-note">Source: NOAA NOMADS (GFS, GFS-Wave), cut to the area on the server. The newest complete run is used.</div>
+        </details>
         <details class="sub">
           <summary>Display</summary>
           <div class="wx-row"><label class="grow" for="wx-density">Arrow density</label><input id="wx-density" type="range" min="1" max="10" step="1" /><span id="wx-density-v" class="val"></span></div>

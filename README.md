@@ -62,6 +62,8 @@ The bundled world land is coarse (small islands missing). For a detailed one, do
 
 ## Weather (GRIB)
 
+**Download (free, no email)** in the Weather drawer: GFS 0.25°/0.5°/1° (wind, gusts, pressure, rain rate, CAPE) and GFS-Wave 0.25° (significant height, peak period and direction, swell) from NOAA NOMADS. Draw the area on the chart (or use the chart view or the course), choose the forecast length (1–16 days) and step (1, 3, 6 or 12 h), check the size estimate, Download. The newest complete run is found by checking the server, each forecast time is fetched cut to the area (one request at a time, politely), the steps are joined into one file in `racenav-data\grib`, and it is loaded straight away.
+
 The Weather panel lists GRIB files found in `RACENAV_GRIB_DIR`, `C:\dev\racenav-data\grib` and qtVlm's `C:\Program Files (x86)\qtVlm\grib`. Load as many as you like. One is shown on the chart (wind barbs plus speed shading under the land), and the table compares every loaded run at the cursor for the slider time. Outside a file's time span there is no value: a short GRIB never shows as calm.
 
 ```

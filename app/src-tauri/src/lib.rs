@@ -37,10 +37,80 @@ fn grib_dirs() -> Vec<PathBuf> {
     if let Ok(d) = std::env::var("RACENAV_GRIB_DIR") {
         v.push(d.into());
     }
+    if let Some(d) = DOWNLOAD_DIR.get() {
+        v.push(d.clone());
+    }
     v.push(r"C:\dev\racenav-data\grib".into());
     v.push(r"C:\Program Files (x86)\qtVlm\grib".into());
     v.retain(|d| d.is_dir());
+    v.dedup();
     v
+}
+
+// ---------- GRIB downloads (NOMADS GFS) ----------
+
+/// Downloaded GRIBs go here: `RACENAV_GRIB_DIR`, else `C:\dev\racenav-data\grib`
+/// when racenav-data exists, else `<app data>\grib`.
+static DOWNLOAD_DIR: OnceLock<PathBuf> = OnceLock::new();
+static DL_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static DL_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn download_dir(app: &tauri::AppHandle) -> PathBuf {
+    if let Ok(d) = std::env::var("RACENAV_GRIB_DIR") {
+        return PathBuf::from(d);
+    }
+    let dev = PathBuf::from(r"C:\dev\racenav-data");
+    if dev.is_dir() {
+        return dev.join("grib");
+    }
+    app.path().app_data_dir().map(|p| p.join("grib")).unwrap_or_else(|_| PathBuf::from("grib"))
+}
+
+#[tauri::command]
+fn gribdl_models() -> Vec<gribdl::ModelInfo> {
+    gribdl::Model::all().iter().map(|m| m.info()).collect()
+}
+
+#[tauri::command]
+fn gribdl_estimate(req: gribdl::Request) -> serde_json::Value {
+    let steps = req.model.hours(req.hours, req.every);
+    serde_json::json!({ "bytes": gribdl::estimate_bytes(&req), "steps": steps.len(), "last": steps.last() })
+}
+
+/// Find the newest complete run and download it, cut to the area. Progress
+/// comes as `gribdl-progress` events; returns the file written.
+#[tauri::command]
+async fn gribdl_start(app: tauri::AppHandle, req: gribdl::Request) -> Result<serde_json::Value, String> {
+    use std::sync::atomic::Ordering;
+    if DL_BUSY.swap(true, Ordering::SeqCst) {
+        return Err("A download is already running.".into());
+    }
+    DL_CANCEL.store(false, Ordering::SeqCst);
+    let dir = DOWNLOAD_DIR.get().cloned().unwrap_or_else(|| PathBuf::from("grib"));
+    let res = tauri::async_runtime::spawn_blocking(move || {
+        let last = *req.model.hours(req.hours, req.every).last().unwrap_or(&0);
+        let _ = app.emit("gribdl-progress", serde_json::json!({ "stage": "Finding the latest run", "done": 0, "total": 0, "bytes": 0 }));
+        let run = gribdl::latest_run(req.model, last, chrono_now()).map_err(|e| e.to_string())?;
+        let label = format!("{} run {}", req.model.info().name, grib::fmt_run(run.t));
+        let progress = |done: usize, total: usize, bytes: u64| {
+            let _ = app.emit("gribdl-progress", serde_json::json!({ "stage": label, "done": done, "total": total, "bytes": bytes }));
+        };
+        let path = gribdl::download(&req, &run, &dir, &progress, &DL_CANCEL).map_err(|e| e.to_string())?;
+        Ok::<_, String>(serde_json::json!({ "path": path, "run": run, "name": label }))
+    })
+    .await
+    .map_err(|e| e.to_string());
+    DL_BUSY.store(false, Ordering::SeqCst);
+    res?
+}
+
+#[tauri::command]
+fn gribdl_cancel() {
+    DL_CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn chrono_now() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
 #[tauri::command]
@@ -148,6 +218,10 @@ fn grib_wind_grid(path: String, t: i64, bbox: [f64; 4], max_points: usize) -> Op
     let f = GRIBS.lock().unwrap().get(&path)?.clone();
     let (g, u) = f.grid_at(grib::Param::WindU, t)?;
     let (_, v) = f.grid_at(grib::Param::WindV, t)?;
+    // Grids may run 0..360 (GFS) while the chart asks in -180..180: shift the
+    // view by whole turns so it lines up with the grid, and back for the output.
+    let turn = ((g.lon0 + g.dlon * (g.ni as f64 - 1.0) / 2.0 - (bbox[0] + bbox[2]) / 2.0) / 360.0).round() * 360.0;
+    let bbox = [bbox[0] + turn, bbox[1], bbox[2] + turn, bbox[3]];
     // grid index window covering the bbox
     let i_lo = (((bbox[0] - g.lon0) / g.dlon).floor().max(0.0) as usize).min(g.ni - 1);
     let i_hi = (((bbox[2] - g.lon0) / g.dlon).ceil().max(0.0) as usize).min(g.ni - 1);
@@ -176,7 +250,7 @@ fn grib_wind_grid(path: String, t: i64, bbox: [f64; 4], max_points: usize) -> Op
         }
     }
     Some(serde_json::json!({
-        "lon0": g.lon0 + i_lo as f64 * g.dlon,
+        "lon0": g.lon0 + i_lo as f64 * g.dlon - turn,
         "lat0": g.lat0 + j_lo as f64 * g.dlat,
         "dlon": g.dlon * stride as f64,
         "dlat": g.dlat * stride as f64,
@@ -581,13 +655,17 @@ pub fn run() {
             polar_files, route_compute, sk_status,
             lib_info, marks_list, mark_save, mark_delete, routes_list, route_save, route_delete,
             routings_list, routing_get, routing_save, routing_delete, gpx_export, gpx_write, gpx_import,
-            yb_open, yb_refresh, yb_races, yb_history
+            yb_open, yb_refresh, yb_races, yb_history,
+            gribdl_models, gribdl_estimate, gribdl_start, gribdl_cancel
         ])
         .register_asynchronous_uri_scheme_protocol("chart", |_ctx, request, responder| {
             let path = request.uri().path().to_string();
             std::thread::spawn(move || responder.respond(tile_response(&path)));
         })
         .setup(|app| {
+            let dd = download_dir(app.handle());
+            let _ = std::fs::create_dir_all(&dd);
+            let _ = DOWNLOAD_DIR.set(dd);
             let td = tracking_dir(app.handle());
             let _ = std::fs::create_dir_all(&td);
             let _ = TRACKING_DIR.set(td);

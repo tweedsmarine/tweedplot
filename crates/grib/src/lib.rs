@@ -529,7 +529,8 @@ pub fn fmt_area(b: &[f64; 4]) -> String {
         }
     };
     let east = nav_core::wrap_lon(b[2]);
-    format!("{} {}", lat(b[1], b[3]), lon(b[0], east))
+    let west = nav_core::wrap_lon(b[0]);
+    format!("{} {}", lat(b[1], b[3]), lon(west, east))
 }
 
 fn bracket<'a>(s: &[&'a Field], t: i64) -> Option<(&'a Field, &'a Field, f64)> {
@@ -549,7 +550,7 @@ fn bracket<'a>(s: &[&'a Field], t: i64) -> Option<(&'a Field, &'a Field, f64)> {
 
 fn centre_name(c: u16) -> &'static str {
     match c {
-        7 => "NCEP",
+        7 => "NCEP GFS",
         74 => "UK Met Office",
         78 => "DWD",
         85 => "Météo-France",

@@ -258,3 +258,9 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
 .list li .star.on { color: #e0a800; }
 #fl-title { font-size: 13px; }
 .wx-note.good { color: var(--good); } .wx-note.bad { color: var(--bad); }
+
+/* GRIB download */
+.checks { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 4px 0; font-size: 13px; }
+.checks label { display: inline-flex; gap: 4px; align-items: center; }
+.wx-row.area label { color: var(--quiet); font-size: 11px; }
+.wx-row.area input { width: 20%; min-width: 0; flex: 1; text-align: right; font-variant-numeric: tabular-nums; }

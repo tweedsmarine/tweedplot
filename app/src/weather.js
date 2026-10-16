@@ -420,6 +420,9 @@ export function setupWeather(map, layers) {
     /** Put a GRIB chooser and time slider into `el`, working the same state as the Weather drawer. */
     mountControls,
     showGrib,
+    /** Load a GRIB file by path (e.g. one just downloaded), then show it. */
+    async load(path) { await load(path); showGrib(path); },
+    refreshFiles,
   };
 }
 

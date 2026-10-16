@@ -12,6 +12,7 @@ import { setupBoat } from "./boat.js";
 import { setupDock } from "./dock.js";
 import { createDamping } from "./damping.js";
 import { setupFleet } from "./fleet.js";
+import { setupGribDownload } from "./gribdl.js";
 import { setupRail } from "./ui.js";
 import { setupInstruments, waypointData, targetAt } from "./instruments.js";
 import { setupLibrary, labelImage } from "./library.js";
@@ -139,6 +140,7 @@ map.on("load", () => {
     getSafetyDepth: () => settings.safetyDepth, getBoatSettings: boat.get });
   library.attach(route, routing);
   setupFleet(map, { weather, course: route, routing, dock, ui });
+  setupGribDownload(map, { weather, course: route });
   library.onChange(feed);
   feed();
 });
