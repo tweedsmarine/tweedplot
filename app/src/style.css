@@ -312,3 +312,34 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
   background: var(--tile-bg); color: var(--tile-ink); padding: 6px 12px; border-radius: 6px; font-size: 13px; pointer-events: none; }
 .toast[hidden] { display: none; }
 .ctx hr[hidden], .ctx button[hidden] { display: none; }
+
+/* meteogram and verify (dock) */
+.mg-head { font-weight: 600; font-variant-numeric: tabular-nums; margin: 2px 0 4px; }
+.mg-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; margin-bottom: 4px; }
+.mg-legend i { display: inline-block; width: 14px; height: 3px; margin-right: 5px; vertical-align: middle; }
+svg.mg { display: block; cursor: crosshair; }
+svg.mg .mg-bg { fill: #fbfcfd; stroke: var(--line); }
+svg.mg .mg-grid { stroke: #e6ecf0; }
+svg.mg .mg-vgrid { stroke: #eef2f5; }
+svg.mg .mg-tick { font-size: 10px; fill: var(--quiet); font-variant-numeric: tabular-nums; }
+svg.mg .mg-title { font-size: 10px; font-weight: 600; fill: var(--quiet); }
+svg.mg .mg-cursor { stroke: #7b2cbf; stroke-width: 1.5; }
+.vf-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 2px 0 4px; }
+.vf-bar select { max-width: 460px; }
+.seg { display: inline-flex; }
+.seg button { border-radius: 0; padding: 3px 9px; margin-left: -1px; }
+.seg button:first-child { border-radius: 4px 0 0 4px; } .seg button:last-child { border-radius: 0 4px 4px 0; }
+.seg button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+table.vf-table tr.best td { font-weight: 700; color: var(--good); }
+table.vf-table tr.on td { background: #e8f1fa; }
+.dock-body h4 { margin: 10px 0 4px; font-size: 12px; color: var(--quiet); }
+
+/* gate sweep (dock) */
+.gt-head { font-weight: 600; margin: 2px 0 6px; }
+.gt-wrap { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+table.gt-table td small { color: var(--quiet); font-weight: 400; }
+table.gt-table td .sw { margin-right: 5px; }
+table.gt-table tr.gt-best td { background: #f1e8fa; }
+table.gt-table tr.gt-best td.nm { font-weight: 700; }
+#gt-line, #gt-from, #gt-to { width: 90px; }
+#gt-n { width: 60px; }

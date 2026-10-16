@@ -11,7 +11,11 @@
 //! Spread is max − min for up to six forecasts, P90 − P10 above that (so one
 //! outlier in a big set doesn't decide the picture). Each forecast is sampled
 //! bilinearly at the slider time (linear in time between its fields) on a common
-//! grid as coarse as the coarsest file. Ensemble files count as their control run.
+//! grid as coarse as the coarsest file.
+//!
+//! Ensembles: when every file compared is an ensemble, each member is a layer of
+//! its own; when they are mixed with deterministic files, an ensemble counts once,
+//! as its mean.
 
 use crate::{GribFile, Param};
 
@@ -55,6 +59,68 @@ pub struct AgreementGrid {
     pub mean_wind: Vec<Option<(f32, f32)>>,
     /// Indexes into the input of the files that cover the time and area.
     pub used: Vec<usize>,
+    /// Number of forecasts compared (ensemble members counted one by one when they are layers).
+    pub layers: usize,
+    /// True when ensemble members were compared one by one.
+    pub members: bool,
+}
+
+/// Which forecast of a file: its deterministic (or control) run, one ensemble member, or the ensemble mean.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Source {
+    Control,
+    Member(u16),
+    Mean,
+}
+
+/// One forecast in a comparison.
+#[derive(Debug, Clone, Copy)]
+pub struct Layer {
+    pub file: usize,
+    pub src: Source,
+}
+
+/// The forecasts to compare from these files: members one by one when every file
+/// is an ensemble, otherwise one per file (an ensemble as its mean).
+pub fn layers(files: &[&GribFile], used: &[usize]) -> (Vec<Layer>, bool) {
+    let ens: Vec<Vec<u16>> = used.iter().map(|&i| files[i].members()).collect();
+    let all_ens = !ens.is_empty() && ens.iter().all(|m| m.len() > 1);
+    if all_ens {
+        let v = used.iter().zip(&ens).flat_map(|(&i, ms)| ms.iter().map(move |&m| Layer { file: i, src: Source::Member(m) })).collect();
+        return (v, true);
+    }
+    let v = used
+        .iter()
+        .zip(&ens)
+        .map(|(&i, ms)| Layer { file: i, src: if ms.len() > 1 { Source::Mean } else { Source::Control } })
+        .collect();
+    (v, false)
+}
+
+/// One parameter of a forecast at a point (the mean over members for `Source::Mean`).
+pub fn layer_value(f: &GribFile, src: Source, p: Param, lat: f64, lon: f64, t: i64) -> Option<f64> {
+    match src {
+        Source::Control => f.value(p, lat, lon, t),
+        Source::Member(m) => f.member_value(p, m, lat, lon, t),
+        Source::Mean => {
+            let (mut sum, mut n) = (0.0, 0);
+            for m in f.members() {
+                if let Some(v) = f.member_value(p, m, lat, lon, t) {
+                    sum += v;
+                    n += 1;
+                }
+            }
+            (n > 0).then(|| sum / n as f64)
+        }
+    }
+}
+
+/// u, v (m/s) of a forecast at a point.
+pub fn layer_wind(f: &GribFile, src: Source, lat: f64, lon: f64, t: i64) -> Option<(f64, f64)> {
+    match src {
+        Source::Control => wind_uv(f, lat, lon, t),
+        _ => Some((layer_value(f, src, Param::WindU, lat, lon, t)?, layer_value(f, src, Param::WindV, lat, lon, t)?)),
+    }
 }
 
 /// u, v (m/s) at a point: from U/V, or from speed and direction (UKMO style files).
@@ -91,16 +157,101 @@ fn ang_diff(a: f64, b: f64) -> f64 {
 
 /// The grid of a file's first field of `p` (or of wind speed, for speed/direction files).
 fn first_grid(f: &GribFile, p: Param) -> Option<crate::Grid> {
-    f.series(p).first().map(|x| x.grid).or_else(|| f.series(Param::WindSpeed).first().map(|x| x.grid))
+    f.any_grid(p).or_else(|| f.any_grid(Param::WindSpeed))
 }
 
-fn covers(f: &GribFile, p: Param, t: i64) -> bool {
-    let ts = f.times(p);
+pub(crate) fn covers(f: &GribFile, p: Param, t: i64) -> bool {
+    let ts = f.any_times(p);
     matches!((ts.first(), ts.last()), (Some(a), Some(b)) if *a <= t && t <= *b)
 }
 
-fn has_wind(f: &GribFile, t: i64) -> bool {
+pub(crate) fn has_wind(f: &GribFile, t: i64) -> bool {
     covers(f, Param::WindU, t) || covers(f, Param::WindSpeed, t)
+}
+
+/// A grid over `bbox` as coarse as the coarsest of the `used` files (coarser still if
+/// the view needs more than `max_points`), and each file's own longitude range.
+pub(crate) struct CommonGrid {
+    pub lon0: f64,
+    pub lat0: f64,
+    pub step: f64,
+    pub ni: usize,
+    pub nj: usize,
+    pub boxes: Vec<Option<[f64; 4]>>,
+}
+
+pub(crate) fn common_grid(files: &[&GribFile], used: &[usize], p: Param, bbox: [f64; 4], max_points: usize) -> CommonGrid {
+    let res = used.iter().filter_map(|&i| first_grid(files[i], p)).map(|g| g.dlat.abs().max(g.dlon.abs())).fold(0.0f64, f64::max).max(0.01);
+    let boxes: Vec<Option<[f64; 4]>> = files.iter().map(|f| first_grid(f, p).map(|g| g.bbox())).collect();
+    let (w, s, e, n) = (bbox[0], bbox[1].max(-89.9), bbox[2], bbox[3].min(89.9));
+    let mut step = res;
+    while ((e - w) / step).ceil() * ((n - s) / step).ceil() > max_points.max(4) as f64 {
+        step *= 1.25;
+    }
+    let lon0 = (w / step).floor() * step;
+    let lat0 = (s / step).floor() * step;
+    let ni = (((e - lon0) / step).ceil() as usize + 1).max(1);
+    let nj = (((n - lat0) / step).ceil() as usize + 1).max(1);
+    CommonGrid { lon0, lat0, step, ni, nj, boxes }
+}
+
+/// A longitude in a file's own range (files stored 0..360 are asked in their longitudes).
+pub(crate) fn own_lon(b: Option<[f64; 4]>, lon: f64) -> f64 {
+    match b {
+        Some(b) if lon < b[0] => lon + 360.0,
+        Some(b) if lon > b[2] => lon - 360.0,
+        _ => lon,
+    }
+}
+
+// ---------- meteogram ----------
+
+/// One forecast's time series at a point.
+#[derive(Debug, Clone)]
+pub struct Series {
+    pub file: usize,
+    /// (time, TWS kn, TWD °, gust kn, MSLP hPa); missing values are None.
+    pub points: Vec<(i64, Option<f64>, Option<f64>, Option<f64>, Option<f64>)>,
+    /// For an ensemble: lowest and highest member TWS at each time.
+    pub tws_range: Vec<Option<(f64, f64)>>,
+}
+
+/// Every file's forecast at one point over its whole time span (ensembles as their mean, with the member range).
+pub fn meteogram(files: &[&GribFile], lat: f64, lon: f64) -> Vec<Series> {
+    let mut out = Vec::new();
+    for (k, f) in files.iter().enumerate() {
+        let mut times = f.any_times(Param::WindU);
+        if times.is_empty() {
+            times = f.any_times(Param::WindSpeed);
+        }
+        if times.is_empty() {
+            continue;
+        }
+        let b = first_grid(f, Param::WindU).map(|g| g.bbox());
+        let lo = own_lon(b, lon);
+        let members = f.members();
+        let src = if members.len() > 1 { Source::Mean } else { Source::Control };
+        let mut points = Vec::with_capacity(times.len());
+        let mut tws_range = Vec::with_capacity(times.len());
+        for &t in &times {
+            let w = layer_wind(f, src, lat, lo, t);
+            let tws = w.map(|w| w.0.hypot(w.1) * KN);
+            let twd = w.map(|w| ((-w.0).atan2(-w.1).to_degrees() + 360.0) % 360.0);
+            let gust = layer_value(f, src, Param::Gust, lat, lo, t).map(|g| g * KN);
+            let p = layer_value(f, src, Param::Mslp, lat, lo, t).map(|p| p / 100.0);
+            points.push((t, tws, twd, gust, p));
+            tws_range.push(if members.len() > 1 {
+                let v: Vec<f64> = members.iter().filter_map(|&m| layer_wind(f, Source::Member(m), lat, lo, t)).map(|w| w.0.hypot(w.1) * KN).collect();
+                v.iter().copied().reduce(f64::min).zip(v.iter().copied().reduce(f64::max))
+            } else {
+                None
+            });
+        }
+        if points.iter().any(|p| p.1.is_some() || p.4.is_some()) {
+            out.push(Series { file: k, points, tws_range });
+        }
+    }
+    out
 }
 
 /// Compare `files` at time `t` over `bbox` [w, s, e, n] (longitudes as the chart
@@ -131,47 +282,34 @@ pub fn agreement(files: &[&GribFile], metric: Metric, t: i64, bbox: [f64; 4], ma
     if metric == Metric::Trend && runs.iter().min() == runs.iter().max() {
         return None;
     }
-    // grid: as coarse as the coarsest file, coarser still if the view needs too many points
+    let (lays, members) = layers(files, &used);
+    // the trend compares the newest and oldest runs as whole files (an ensemble as its mean)
+    let src_of = |k: usize| if files[k].members().len() > 1 { Source::Mean } else { Source::Control };
     let p = if needs_pressure { Param::Mslp } else { Param::WindU };
-    let res = used.iter().filter_map(|&i| first_grid(files[i], p)).map(|g| g.dlat.abs().max(g.dlon.abs())).fold(0.0f64, f64::max).max(0.01);
-    // each file's own longitude range: a file stored 0..360 is asked in its own longitudes
-    let boxes: Vec<Option<[f64; 4]>> = files.iter().map(|f| first_grid(f, p).map(|g| g.bbox())).collect();
-    let (w, s, e, n) = (bbox[0], bbox[1].max(-89.9), bbox[2], bbox[3].min(89.9));
-    let mut step = res;
-    while ((e - w) / step).ceil() * ((n - s) / step).ceil() > max_points.max(4) as f64 {
-        step *= 1.25;
-    }
-    let lon0 = (w / step).floor() * step;
-    let lat0 = (s / step).floor() * step;
-    let ni = (((e - lon0) / step).ceil() as usize + 1).max(1);
-    let nj = (((n - lat0) / step).ceil() as usize + 1).max(1);
+    let CommonGrid { lon0, lat0, step, ni, nj, boxes } = common_grid(files, &used, p, bbox, max_points);
     let mut values = Vec::with_capacity(ni * nj);
     let mut mean_wind = Vec::with_capacity(ni * nj);
-    let mut buf: Vec<f64> = Vec::with_capacity(used.len());
-    let mut uv: Vec<(f64, f64)> = Vec::with_capacity(used.len());
+    let mut buf: Vec<f64> = Vec::with_capacity(lays.len());
+    let mut uv: Vec<(f64, f64)> = Vec::with_capacity(lays.len());
     for j in 0..nj {
         let lat = lat0 + j as f64 * step;
         for i in 0..ni {
             let lon = lon0 + i as f64 * step;
-            let sample_lon = |k: usize| match boxes[k] {
-                Some(b) if lon < b[0] => lon + 360.0,
-                Some(b) if lon > b[2] => lon - 360.0,
-                _ => lon,
-            };
+            let sample_lon = |k: usize| own_lon(boxes[k], lon);
             let mut val = None;
             let mut mw = None;
             if needs_pressure {
                 buf.clear();
-                for &k in &used {
-                    if let Some(x) = files[k].value(Param::Mslp, lat, sample_lon(k), t) {
+                for l in &lays {
+                    if let Some(x) = layer_value(files[l.file], l.src, Param::Mslp, lat, sample_lon(l.file), t) {
                         buf.push(x / 100.0);
                     }
                 }
                 val = spread(&mut buf);
             } else {
                 uv.clear();
-                for &k in &used {
-                    if let Some(w) = wind_uv(files[k], lat, sample_lon(k), t) {
+                for l in &lays {
+                    if let Some(w) = layer_wind(files[l.file], l.src, lat, sample_lon(l.file), t) {
                         uv.push(w);
                     }
                 }
@@ -203,8 +341,8 @@ pub fn agreement(files: &[&GribFile], metric: Metric, t: i64, bbox: [f64; 4], ma
                             }
                         }
                         Metric::Trend => {
-                            let a = wind_uv(files[new_i], lat, sample_lon(new_i), t);
-                            let b = wind_uv(files[old_i], lat, sample_lon(old_i), t);
+                            let a = layer_wind(files[new_i], src_of(new_i), lat, sample_lon(new_i), t);
+                            let b = layer_wind(files[old_i], src_of(old_i), lat, sample_lon(old_i), t);
                             a.zip(b).map(|(a, b)| (a.0.hypot(a.1) - b.0.hypot(b.1)) * KN)
                         }
                         Metric::Pressure => None,
@@ -215,7 +353,7 @@ pub fn agreement(files: &[&GribFile], metric: Metric, t: i64, bbox: [f64; 4], ma
             mean_wind.push(mw);
         }
     }
-    Some(AgreementGrid { lon0, lat0, dlon: step, dlat: step, ni, nj, values, mean_wind, used })
+    Some(AgreementGrid { lon0, lat0, dlon: step, dlat: step, ni, nj, values, mean_wind, used, layers: lays.len(), members })
 }
 
 #[cfg(test)]
@@ -261,6 +399,47 @@ mod tests {
         assert!((first(&agreement(&[&a, &e], Metric::Trend, t, bbox, 1000).unwrap()) - 9.7).abs() < 0.11);
         // same run twice: no trend
         assert!(agreement(&[&a, &a], Metric::Trend, t, bbox, 1000).is_none());
+    }
+
+    /// An ensemble file: member m has wind (u0 + m, 0).
+    fn ens_file(u0: f32, members: u16, run: i64, t: i64) -> GribFile {
+        let g = Grid::regular(5, 5, -42.0, 172.0, 0.5, 0.5);
+        let mut fields = Vec::new();
+        for m in 1..=members {
+            for (param, val) in [(Param::WindU, u0 + m as f32), (Param::WindV, 0.0)] {
+                fields.push(Field {
+                    param, discipline: 0, category: 0, number: 0, surface_type: 103, surface_value: 10.0, centre: 98,
+                    ref_time: run, valid_time: t, member: Some(m), grid: g, values: vec![val; 25], local: None,
+                });
+            }
+        }
+        GribFile::from_fields(fields)
+    }
+
+    #[test]
+    fn ensembles() {
+        let t = 1_792_000_000;
+        let bbox = [172.5, -41.5, 173.5, -40.5];
+        // two ensembles: every member is a layer
+        let a = ens_file(0.0, 4, t - 86400, t);
+        let b = ens_file(2.0, 4, t - 43200, t);
+        let g = agreement(&[&a, &b], Metric::Speed, t, bbox, 1000).unwrap();
+        assert_eq!((g.layers, g.members), (8, true));
+        // u from 1..4 and 3..6 m/s: 8 values, P90 - P10 of 1,2,3,3,4,4,5,6 m/s
+        let s = g.values.iter().flatten().next().copied().unwrap() as f64;
+        assert!(s > 5.0 && s < 8.0, "{s}");
+        // an ensemble with a deterministic run: the ensemble counts once, as its mean (u = 2.5)
+        let d = file(2.5, 0.0, 1010.0, t - 43200, t);
+        let g = agreement(&[&a, &d], Metric::Vector, t, bbox, 1000).unwrap();
+        assert_eq!((g.layers, g.members), (2, false));
+        assert_eq!(g.values.iter().flatten().next().copied(), Some(0.0));
+        // meteogram: the ensemble's mean and member range
+        let m = meteogram(&[&a, &d], -41.0, 173.0);
+        assert_eq!(m.len(), 2);
+        assert!((m[0].points[0].1.unwrap() - 2.5 * KN).abs() < 1e-6);
+        let (lo, hi) = m[0].tws_range[0].unwrap();
+        assert!((lo - KN).abs() < 1e-6 && (hi - 4.0 * KN).abs() < 1e-6);
+        assert!(m[1].tws_range[0].is_none());
     }
 
     #[test]

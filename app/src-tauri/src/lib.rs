@@ -340,8 +340,133 @@ fn grib_compare(paths: Vec<String>, metric: String, t: i64, bbox: [f64; 4], max_
         .collect();
     Ok(serde_json::json!({
         "lon0": r.lon0, "lat0": r.lat0, "dlon": r.dlon, "dlat": r.dlat, "ni": r.ni, "nj": r.nj,
-        "values": r.values, "used": used,
+        "values": r.values, "used": used, "layers": r.layers, "members": r.members,
     }))
+}
+
+fn loaded(paths: &[String]) -> Vec<(String, Arc<grib::GribFile>)> {
+    let g = GRIBS.lock().unwrap();
+    if paths.is_empty() {
+        let mut v: Vec<_> = g.iter().map(|(k, f)| (k.clone(), f.clone())).collect();
+        v.sort_by(|a, b| a.0.cmp(&b.0));
+        v
+    } else {
+        paths.iter().filter_map(|p| g.get(p).map(|f| (p.clone(), f.clone()))).collect()
+    }
+}
+
+fn file_json(files: &[(String, Arc<grib::GribFile>)], i: usize) -> serde_json::Value {
+    let (name, run) = files[i].1.model();
+    serde_json::json!({ "path": files[i].0, "name": name, "run": run, "members": files[i].1.members().len() })
+}
+
+fn r1(x: f64) -> f64 {
+    (x * 10.0).round() / 10.0
+}
+
+/// Every loaded GRIB (or those in `paths`) at one point over its whole span.
+#[tauri::command]
+async fn grib_meteogram(paths: Vec<String>, lat: f64, lon: f64) -> Vec<serde_json::Value> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let files = loaded(&paths);
+        let refs: Vec<&grib::GribFile> = files.iter().map(|(_, f)| f.as_ref()).collect();
+        grib::compare::meteogram(&refs, lat, lon)
+            .into_iter()
+            .map(|s| {
+                let pts: Vec<serde_json::Value> = s
+                    .points
+                    .iter()
+                    .zip(s.tws_range.iter())
+                    .map(|(&(t, tws, twd, gust, msl), rng)| {
+                        serde_json::json!({ "t": t, "tws": tws.map(r1), "twd": twd.map(f64::round), "gust": gust.map(r1), "mslp": msl.map(r1),
+                            "lo": rng.map(|r| r1(r.0)), "hi": rng.map(|r| r1(r.1)) })
+                    })
+                    .collect();
+                let mut j = file_json(&files, s.file);
+                j["points"] = serde_json::Value::Array(pts);
+                j
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
+fn score_json(files: &[(String, Arc<grib::GribFile>)], s: &grib::verify::Score) -> serde_json::Value {
+    let mut j = file_json(files, s.file);
+    j["lead_h"] = s.lead_h.into();
+    j["n"] = s.n.into();
+    j["rms"] = r1(s.rms_kn).into();
+    j["bias"] = r1(s.speed_bias_kn).into();
+    j["dir"] = s.dir_abs_deg.map(f64::round).into();
+    j["veer"] = s.veer_deg.map(f64::round).into();
+    j["msl"] = s.msl_bias_hpa.map(r1).into();
+    j
+}
+
+/// Verify times among the loaded GRIBs: a run's hour 0 that earlier runs forecast.
+#[tauri::command]
+fn grib_verify_times(paths: Vec<String>) -> Vec<serde_json::Value> {
+    let files = loaded(&paths);
+    let refs: Vec<&grib::GribFile> = files.iter().map(|(_, f)| f.as_ref()).collect();
+    grib::verify::verify_times(&refs)
+        .into_iter()
+        .map(|vt| {
+            serde_json::json!({
+                "t": vt.t,
+                "refs": vt.refs.iter().map(|&i| file_json(&files, i)).collect::<Vec<_>>(),
+                "forecasts": vt.forecasts.iter().map(|f| { let mut j = file_json(&files, f.file); j["lead_h"] = f.lead_h.into(); j }).collect::<Vec<_>>(),
+            })
+        })
+        .collect()
+}
+
+/// Scores of every earlier forecast against the hour-0 reference at verify time `t`.
+#[tauri::command]
+async fn grib_verify_scores(paths: Vec<String>, t: i64, bbox: [f64; 4]) -> Result<Vec<serde_json::Value>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let files = loaded(&paths);
+        let refs: Vec<&grib::GribFile> = files.iter().map(|(_, f)| f.as_ref()).collect();
+        let vt = grib::verify::verify_times(&refs).into_iter().find(|v| v.t == t).ok_or("No GRIB has this time as hour 0.")?;
+        Ok(grib::verify::scores(&refs, &vt, bbox, 6000).iter().map(|s| score_json(&files, s)).collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Scores averaged over every verify time by model and lead band.
+#[tauri::command]
+async fn grib_verify_track(paths: Vec<String>, bbox: [f64; 4]) -> Vec<serde_json::Value> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let files = loaded(&paths);
+        let refs: Vec<&grib::GribFile> = files.iter().map(|(_, f)| f.as_ref()).collect();
+        grib::verify::track_record(&refs, bbox, 4000)
+            .into_iter()
+            .map(|r| {
+                serde_json::json!({ "model": r.model, "band": r.band, "count": r.count, "rms": r1(r.rms_kn), "bias": r1(r.speed_bias_kn),
+                    "dir": r.dir_abs_deg.map(f64::round), "veer": r.veer_deg.map(f64::round), "msl": r.msl_bias_hpa.map(r1) })
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// The error field of the forecast in `forecast` against the reference at verify time `t`; `kind` is vector, speed or direction.
+#[tauri::command]
+fn grib_verify_grid(paths: Vec<String>, t: i64, forecast: String, kind: String, bbox: [f64; 4], max_points: usize) -> Result<serde_json::Value, String> {
+    let files = loaded(&paths);
+    let refs: Vec<&grib::GribFile> = files.iter().map(|(_, f)| f.as_ref()).collect();
+    let k = match kind.as_str() {
+        "speed" => grib::verify::ErrorKind::Speed,
+        "direction" => grib::verify::ErrorKind::Direction,
+        _ => grib::verify::ErrorKind::Vector,
+    };
+    let fi = files.iter().position(|(p, _)| *p == forecast).ok_or("That GRIB is not loaded.")?;
+    let vt = grib::verify::verify_times(&refs).into_iter().find(|v| v.t == t).ok_or("No GRIB has this time as hour 0.")?;
+    let r = grib::verify::error_grid(&refs, &vt, fi, k, bbox, max_points.clamp(100, 40_000)).ok_or("This GRIB does not forecast that time.")?;
+    Ok(serde_json::json!({ "lon0": r.lon0, "lat0": r.lat0, "dlon": r.dlon, "dlat": r.dlat, "ni": r.ni, "nj": r.nj, "values": r.values,
+        "used": r.used.iter().map(|&i| file_json(&files, i)).collect::<Vec<_>>() }))
 }
 
 /// Every loaded GRIB at one point and time: the quick agreement check.
@@ -1028,7 +1153,7 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            app_info, chart_info, chart_feature, tides_info, tides_stations, tides_curve, tides_download, tides_cancel, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_compare, grib_point,
+            app_info, chart_info, chart_feature, tides_info, tides_stations, tides_curve, tides_download, tides_cancel, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_compare, grib_meteogram, grib_verify_times, grib_verify_scores, grib_verify_track, grib_verify_grid, grib_point,
             polar_files, route_compute, sk_status,
             lib_info, marks_list, mark_save, mark_delete, routes_list, route_save, route_delete,
             routings_list, routing_get, routing_save, routing_delete, gpx_export, gpx_write, gpx_import,

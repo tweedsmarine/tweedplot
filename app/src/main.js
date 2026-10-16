@@ -10,6 +10,7 @@ import { setupChartFeatures, featureImage } from "./chartfeatures.js";
 import { setupTides, tideImage } from "./tides.js";
 import { setupTracks } from "./tracks.js";
 import { setupRuler } from "./ruler.js";
+import { setupGribTools } from "./gribtools.js";
 import { setupRoute, markImage } from "./route.js";
 import { setupRouting } from "./routing.js";
 import { setupBoat } from "./boat.js";
@@ -138,6 +139,7 @@ const boat = setupBoat();
 const dock = setupDock(map);
 let features = null;
 let ruler = null;
+let gribTools = null;
 
 /** A short message at the bottom of the chart ("" hides it); gone after `ms` if given. */
 let toastTimer = null;
@@ -159,6 +161,8 @@ map.on("load", () => {
   library.attach(route, routing);
   setupFleet(map, { weather, course: route, routing, dock, ui });
   setupGribDownload(map, { weather, course: route });
+  gribTools = setupGribTools(map, { weather, dock });
+  document.getElementById("wx-verify").onclick = () => gribTools.openVerify();
   setupTides(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn) });
   ruler = setupRuler(map, { before: "track", ui, library, route, toast, getVariation: () => vessel.variation });
   setupTracks(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn),
@@ -337,6 +341,7 @@ ctx.addEventListener("click", (e) => {
   if (act === "mark") route?.addMark(ctxAt, ctxMark);
   if (act === "libmark") library?.newMarkAt(ctxAt);
   if (act === "centre") map.easeTo({ center: ctxAt });
+  if (act === "meteogram") gribTools?.meteogramAt(ctxAt);
   if (act === "ruler-route" && ctxRuler) ruler.saveAsRoute(ctxRuler.rid);
   if (act === "ruler-pt" && ctxRuler) ruler.deletePoint(ctxRuler.rid, ctxRuler.i);
   if (act === "ruler-del" && ctxRuler) ruler.deleteRuler(ctxRuler.rid);

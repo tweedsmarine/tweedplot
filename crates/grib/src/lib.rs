@@ -8,6 +8,7 @@
 
 mod decode;
 pub mod compare;
+pub mod verify;
 
 use std::path::{Path, PathBuf};
 
@@ -231,6 +232,8 @@ pub struct GribFile {
     pub skipped: Vec<String>,
     /// Sorted field indices per parameter, built once (queries are hot in routing).
     index: std::collections::BTreeMap<Param, Vec<usize>>,
+    /// The same per ensemble member (ensemble files only).
+    member_index: std::collections::BTreeMap<(Param, u16), Vec<usize>>,
 }
 
 /// Summary for the user interface.
@@ -303,7 +306,22 @@ impl GribFile {
             v.sort_by_key(|&i| (fields[i].valid_time, std::cmp::Reverse(fields[i].ref_time)));
             v.dedup_by_key(|i| fields[*i].valid_time);
         }
-        GribFile { path, fields, skipped, index }
+        let mut member_index: std::collections::BTreeMap<(Param, u16), Vec<usize>> = std::collections::BTreeMap::new();
+        let mut members: Vec<u16> = fields.iter().filter_map(|f| f.member).collect();
+        members.sort();
+        members.dedup();
+        if members.len() > 1 {
+            for (i, f) in fields.iter().enumerate() {
+                if let Some(m) = f.member {
+                    member_index.entry((f.param, m)).or_default().push(i);
+                }
+            }
+            for v in member_index.values_mut() {
+                v.sort_by_key(|&i| (fields[i].valid_time, std::cmp::Reverse(fields[i].ref_time)));
+                v.dedup_by_key(|i| fields[*i].valid_time);
+            }
+        }
+        GribFile { path, fields, skipped, index, member_index }
     }
 
     pub fn series(&self, p: Param) -> Vec<&Field> {
@@ -324,6 +342,47 @@ impl GribFile {
         }
         let b = &self.fields[idx[i]];
         Some((a, b, (t - a.valid_time) as f64 / (b.valid_time - a.valid_time) as f64))
+    }
+
+    /// Valid times of `p`: the deterministic/control series, else the first ensemble member's.
+    pub fn any_times(&self, p: Param) -> Vec<i64> {
+        let t = self.times(p);
+        if !t.is_empty() {
+            return t;
+        }
+        self.member_index.iter().find(|(k, _)| k.0 == p).map(|(_, v)| v.iter().map(|&i| self.fields[i].valid_time).collect()).unwrap_or_default()
+    }
+
+    /// The grid of the first field of `p` (control or any member).
+    pub fn any_grid(&self, p: Param) -> Option<Grid> {
+        self.series(p).first().map(|f| f.grid).or_else(|| self.member_index.iter().find(|(k, _)| k.0 == p).map(|(_, v)| self.fields[v[0]].grid))
+    }
+
+    /// Ensemble members in the file (empty for a deterministic file).
+    pub fn members(&self) -> Vec<u16> {
+        let mut m: Vec<u16> = self.member_index.keys().map(|k| k.1).collect();
+        m.sort_unstable();
+        m.dedup();
+        m
+    }
+
+    /// One parameter of one ensemble member at a point and time (linear in time).
+    pub fn member_value(&self, p: Param, member: u16, lat: f64, lon: f64, t: i64) -> Option<f64> {
+        let idx = self.member_index.get(&(p, member))?;
+        let f = |k: usize| &self.fields[idx[k]];
+        let (first, last) = (f(0), f(idx.len() - 1));
+        if t < first.valid_time || t > last.valid_time {
+            return None;
+        }
+        let i = idx.partition_point(|&k| self.fields[k].valid_time <= t);
+        let a = f(i - 1);
+        let (b, w) = if a.valid_time == t || i == idx.len() { (a, 0.0) } else { let b = f(i); (b, (t - a.valid_time) as f64 / (b.valid_time - a.valid_time) as f64) };
+        let va = a.grid.sample(&a.values, lat, lon)?;
+        if w == 0.0 {
+            return Some(va);
+        }
+        let vb = b.grid.sample(&b.values, lat, lon)?;
+        Some(va + (vb - va) * w)
     }
 
     pub fn times(&self, p: Param) -> Vec<i64> {

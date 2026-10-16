@@ -11,6 +11,7 @@ import * as maplibregl from "maplibre-gl";
 import { invoke } from "@tauri-apps/api/core";
 import { fmt } from "./weather.js";
 import { routingStats, STATS, hm } from "./stats.js";
+import { setupGates } from "./gates.js";
 
 const OPTS_KEY = "racenav.route"; // kept from earlier versions: step, radius, current
 const OPTS_DEFAULTS = { step: 0, radius: 0.1, current: true, v: 2, tmode: "slider", tfixed: null };
@@ -83,7 +84,9 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
   weather.onTime(drawNow);
 
   const activeItem = () => items.find((x) => x.key === active) ?? null;
+  const drawListeners = [];
   function draw() {
+    for (const fn of drawListeners) fn(active);
     const vis = items.filter((x) => x.visible && x.key !== active);
     map.getSource("rt-multi").setData({ type: "FeatureCollection", features: vis.map((x) => ({
       type: "Feature", properties: { key: x.key, colour: x.colour }, geometry: { type: "LineString", coordinates: x.r.points.map((p) => [p.lon, p.lat]) } })) });
@@ -150,8 +153,10 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
   setInterval(() => { if (opts.tmode === "now") showStart(); }, 30000);
 
   // ---------- compute ----------------------------------------------------------
-  function request(grib) {
+  /** The router's request for this course and GRIB; `marks` (course marks, e.g. with a gate added) replaces the course's. */
+  function request(grib, marks) {
     const c = course.get();
+    if (marks) c.marks = marks;
     const b = getBoatSettings();
     return {
       start: c.start, marks: c.marks.map((m) => [m.lon, m.lat]), t0: startTime(), grib_path: grib.path, polar_path: b.polar, safety_depth: getSafetyDepth(), avoid: getAvoid?.() ?? { dangers: true, farms: true },
@@ -490,6 +495,26 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
   library.onChange(refreshSaved);
   showStart();
   draw();
+
+  // gate sweep: routings through each of a row of gates (gates.js)
+  setupGates(map, { weather, course, dock, ui, msg, ready, startTime,
+    async compute(grib, marks, nameExtra) {
+      const req = request(grib, marks);
+      const r = await invoke("route_compute", { req });
+      const it = add({ ...r, request: req, grib: grib.name, t0: r.legs?.[0]?.start ?? req.t0 }, nameExtra);
+      report(it, msg(`${it.name}…`));
+      return it;
+    },
+    item: (key) => items.find((x) => x.key === key) ?? null,
+    activate(key) { const it = items.find((x) => x.key === key); if (it) { active = key; it.visible = true; draw(); } },
+    setVisible(keys, only) { for (const it of items) { if (keys.includes(it.key)) it.visible = true; else if (only) it.visible = false; } draw(); },
+    remove(keys) {
+      for (const k of keys) { const i = items.findIndex((x) => x.key === k); if (i >= 0) items.splice(i, 1); }
+      if (!items.some((x) => x.key === active)) active = items.at(-1)?.key ?? null;
+      draw();
+    },
+    onDraw: (fn) => drawListeners.push(fn),
+  });
 
   return {
     msg,

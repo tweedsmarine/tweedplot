@@ -54,6 +54,7 @@
         </div>
         <div id="wx-legend" class="legend" title="Wind speed, knots"></div>
         <div id="wx-cmp-note" class="wx-note" hidden></div>
+        <div class="wx-row"><button id="wx-verify" title="Score earlier runs against a later run's hour 0 (opens the Verify dock)">Verify runs…</button></div>
         <table id="wx-point"><thead><tr><th>Run</th><th>TWS</th><th>TWD</th><th>Gust</th><th>MSLP</th><th>Hs / Tp</th></tr></thead><tbody></tbody></table>
         <div id="wx-where" class="wx-note">Values at the cursor</div>
         <details class="sub" id="dl-box">
@@ -124,6 +125,7 @@
         <div class="tabs">
           <button data-tab="run" class="on">Run</button>
           <button data-tab="list">Routings</button>
+          <button data-tab="gates">Gates</button>
         </div>
         <div class="tab" data-tab="run">
           <div class="wx-row"><label class="grow" for="rt-tmode">Start time</label>
@@ -165,6 +167,26 @@
           <ul id="rt-list" class="list"></ul>
           <h3>Saved routings</h3>
           <ul id="rt-saved" class="list"></ul>
+        </div>
+        <div class="tab" data-tab="gates" hidden>
+          <div class="wx-note">Gate sweep: one routing through each of a row of gates on the way to a mark, with the start time and settings of a normal Compute, then a table to compare them.</div>
+          <div class="wx-row"><label class="grow" for="gt-target">Gates before</label><select id="gt-target"></select></div>
+          <div class="wx-row"><label class="grow" for="gt-axis">Gates along</label>
+            <select id="gt-axis"><option value="lon">a meridian (longitude)</option><option value="lat">a parallel (latitude)</option></select></div>
+          <div class="wx-row"><label class="grow" for="gt-line" id="gt-line-lab">Longitude</label><input id="gt-line" type="text" placeholder="5E" spellcheck="false" /></div>
+          <div class="wx-row"><label class="grow" for="gt-from" id="gt-range-lab">Latitudes from</label><input id="gt-from" type="text" placeholder="30S" spellcheck="false" />
+            <span>to</span><input id="gt-to" type="text" placeholder="40S" spellcheck="false" /></div>
+          <div class="wx-row"><label class="grow" for="gt-n">Number of gates</label><input id="gt-n" type="number" min="2" max="40" step="1" />
+            <span id="gt-spacing" class="wx-note"></span></div>
+          <div class="wx-row"><label class="grow" for="gt-wx">Weather</label>
+            <select id="gt-wx"><option value="shown">The GRIB shown on the chart</option><option value="all">Each loaded GRIB</option></select></div>
+          <div class="wx-row"><span id="gt-count" class="grow wx-note"></span></div>
+          <div class="wx-row">
+            <button id="gt-go" class="on grow" title="Compute a routing through each gate">Run gate sweep</button>
+            <button id="gt-stop" title="Stop after the routings running now" disabled>Stop</button>
+            <button id="gt-table" title="Open or close the gate table at the bottom">Table</button>
+          </div>
+          <div class="wx-note">Positions as 35S, 35 30S, -35.5 or 005 00E. The gates show as violet dots on the chart while this tab is open.</div>
         </div>
       </section>
 
@@ -331,6 +353,7 @@
       <button data-act="mark">Add mark to route here</button>
       <button data-act="libmark">New library mark here</button>
       <button data-act="centre">Centre chart here</button>
+      <button data-act="meteogram">Meteogram here</button>
       <hr class="ruler-item" />
       <button data-act="ruler-route" class="ruler-item">Save ruler as route</button>
       <button data-act="ruler-pt" class="ruler-item">Delete ruler point</button>

@@ -97,7 +97,19 @@ With two or more GRIBs loaded (different models, or several runs of one), **Show
 - **Wind direction spread** (°): about the mean direction, blank where the mean wind is under 6 kn;
 - **Run trend**: newest run minus oldest, wind speed (kn; red = the newer run is windier).
 
-Green means the forecasts agree, red that they don't. The tick beside each loaded GRIB includes it or leaves it out; GRIBs not covering the slider time or the view are left out automatically. Each is sampled bilinearly, linear in time, on a common grid as coarse as the coarsest GRIB; ensemble files count as their control run. The line under the legend lists the GRIBs compared and the mean and maximum in view, and the table below still gives every GRIB's values at the cursor.
+Green means the forecasts agree, red that they don't. The tick beside each loaded GRIB includes it or leaves it out; GRIBs not covering the slider time or the view are left out automatically. Each is sampled bilinearly, linear in time, on a common grid as coarse as the coarsest GRIB. When every GRIB compared is an ensemble, each member is a layer (the note says so); otherwise an ensemble counts once, as its mean. The line under the legend lists the GRIBs compared and the mean and maximum in view, and the table below still gives every GRIB's values at the cursor.
+
+### Meteogram
+
+Right-click the chart > **Meteogram here**: every loaded GRIB at that point over its whole span, in the dock — wind speed (solid; gusts dashed; an ensemble's member range shaded), direction (unwrapped, so a veer through north stays one line) and pressure. The violet line is the slider time; click the graph to move the slider there. **Clear point** removes the violet ring from the chart.
+
+### Verify
+
+Weather drawer > **Verify runs…** (the Verify tab in the dock) scores earlier runs against what a later run says actually happened at its hour 0 (its analysis — the best estimate available without observations). A verify time is any loaded run's hour 0 that an earlier loaded run also forecast; the reference is the mean of the deterministic runs with that hour 0. Scores are over sea points in the chart view (land left out when a wave GRIB is loaded): RMS vector error, speed bias (+ = forecast too windy), mean absolute direction error and mean veer (+ = forecast veered), and MSL bias, best RMS in green. The track record averages every verify time by model and lead (≤ 24 h, ≤ 48 h, > 48 h), so after a few days of downloads it shows which model has been doing best here. Click a forecast to shade its error on the chart (**Vector**, **Speed** or **Direction**: Show > Verify); **Rescore this view** after moving the chart, **Stop shading** to go back to the wind.
+
+```
+cargo run --release -p grib --example verify -- older.grb2 newer.grb2   (BBOX=w,s,e,n limits the area)
+```
 
 ## Routing
 
@@ -105,7 +117,9 @@ Course drawer: start and marks (see below). Routing drawer, Run tab: start time 
 
 How it works: each step fans out headings from every point of the last isochrone, boat speed from the polar at the GRIB wind (plus current if ticked), a tack or gybe costs its time, and steps that cross land (Topo50) or LINZ depth areas shallower than the safety depth are dropped. Obstacles come from a 50 m raster built from the charts for each run, with the finest chart scale winning. Pruning keeps one point per small grid cell (so routes find their way round headlands and into bays); without charts it uses the classic sectors from the start. If the GRIB runs out, the route stops and says so.
 
-Not yet: rounding sides (marks are reached within the arrival radius), route optimisation, multi-routing.
+**Gate sweep** (Routing drawer, Gates tab): the gate method, automated. Choose the mark the gates come before (default the finish), a line — a meridian (e.g. 5E) or a parallel — the range along it (e.g. 30S to 40S) and the number of gates; the gates show as violet dots on the chart while the tab is open, with their spacing. **Run gate sweep** computes one routing per gate (each gate is a mark inserted before the target, reached within the arrival radius) with the start time and settings of a normal Compute, with the GRIB shown or with each loaded GRIB, two at a time (**Stop** finishes the ones running). The dock's Gates table lists each gate's arrival per GRIB and the time lost against the best gate under that GRIB; with several GRIBs, the mean and worst time lost, ranked by the mean — the gate that is nearly best under every GRIB is the robust choice when they disagree. A small graph plots time lost against gate position. Click a cell to show that routing in detail; **Show only these** hides other routings; **Remove these routings** takes the sweep's routings off the list. The routings are ordinary ones, so they can be saved, compared or exported like any other.
+
+Not yet: rounding sides (marks are reached within the arrival radius), route optimisation, gates as lines (a gate here is a point).
 
 ```
 cargo run --release -p routing --example route_cli -- --grib file.grb2 --polar boat.csv --chart C:\dev\racenav-data\linz --start -36.838,174.805 --marks "-35.465,174.80;-35.252,174.100"

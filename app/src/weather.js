@@ -34,6 +34,13 @@ const AGREE_HPA = [[0, "#1a9850"], [0.5, "#66bd63"], [1, "#a6d96a"], [1.5, "#d9e
 const TREND = [[-10, "#2166ac"], [-6, "#4393c3"], [-3, "#92c5de"], [-1, "#d1e5f0"], [1, "#f7f7f7"], [3, "#fddbc7"], [6, "#f4a582"],
   [10, "#d6604d"], [15, "#b2182b"]];
 
+// Verification: a forecast's error against a later run's hour 0.
+const VERR_SPD = [[-12, "#2166ac"], [-8, "#4393c3"], [-4, "#92c5de"], [-1.5, "#d1e5f0"], [1.5, "#f7f7f7"], [4, "#fddbc7"], [8, "#f4a582"],
+  [12, "#d6604d"], [16, "#b2182b"]];
+// signed direction error: blue = backed, red = veered (degrees, clockwise positive)
+const VERR_DIR = [[-60, "#2166ac"], [-30, "#4393c3"], [-15, "#92c5de"], [-5, "#d1e5f0"], [5, "#f7f7f7"], [15, "#fddbc7"], [30, "#f4a582"],
+  [60, "#d6604d"], [90, "#b2182b"]];
+
 /** What can be shaded: the GRIB parameters it needs, unit, colour scale, and values below `min` left clear.
  * `compare`: a display of how much the loaded GRIBs disagree (grib::compare), not of one GRIB. */
 export const LAYERS = {
@@ -55,6 +62,12 @@ export const LAYERS = {
     help: "Highest minus lowest MSL pressure (P90 − P10 with seven or more GRIBs)." },
   agree_trend: { label: "Run trend (newest − oldest)", unit: "kn", params: ["WindU", "WindSpeed"], scale: TREND, compare: "trend",
     help: "Wind speed of the newest run minus the oldest: red = the newer run is windier." },
+  verr_vec: { label: "Forecast error (vector)", unit: "kn", params: ["WindU", "WindSpeed"], scale: AGREE_KN, verify: "vector",
+    help: "Vector difference between the forecast and the later run's hour 0." },
+  verr_spd: { label: "Forecast speed error", unit: "kn", params: ["WindU", "WindSpeed"], scale: VERR_SPD, verify: "speed",
+    help: "Forecast speed minus the hour-0 speed: red = the forecast was too windy." },
+  verr_dir: { label: "Forecast direction error", unit: "°", params: ["WindU", "WindSpeed"], scale: VERR_DIR, verify: "direction",
+    help: "Forecast direction minus the hour-0 direction: red = forecast veered (clockwise), blue = backed. Blank under 6 kn." },
 };
 
 // Display settings (per viewer)
@@ -115,6 +128,9 @@ export function setupWeather(map, layers) {
   let cursor = null; // [lon, lat]
   const wx = loadWx();
   const timeListeners = [];
+  const loadedListeners = [];
+  // a forecast chosen in the Verify dock: { t, path, name, lead } (enables the forecast error layers)
+  let verifyTarget = null;
 
   map.addSource("wx-cells", { type: "geojson", data: fc([]) });
   map.addSource("wx-barbs", { type: "geojson", data: fc([]) });
@@ -232,6 +248,7 @@ export function setupWeather(map, layers) {
       box.append(row);
     }
     syncMirrors();
+    for (const fn of loadedListeners) fn();
   }
 
   /** Show this loaded GRIB on the chart (the time is kept when it is inside the new GRIB). */
@@ -259,6 +276,7 @@ export function setupWeather(map, layers) {
     return Object.keys(LAYERS).filter((k) => {
       const l = LAYERS[k];
       if (l.compare) return cmp.filter((h) => l.params.some((p) => h.has(p))).length >= 2;
+      if (l.verify) return !!verifyTarget && loaded.has(verifyTarget.path);
       return l.params.some((p) => has.has(p));
     });
   }
@@ -271,13 +289,16 @@ export function setupWeather(map, layers) {
       sel.innerHTML = "";
       const group = document.createElement("optgroup");
       group.label = "Agreement of the loaded GRIBs";
+      const vgroup = document.createElement("optgroup");
+      vgroup.label = verifyTarget ? `Verify ${verifyTarget.name} (+${Math.round(verifyTarget.lead)} h)` : "Verify: choose a forecast in the Verify dock";
       for (const [k, l] of Object.entries(LAYERS)) {
         const o = new Option(l.label, k);
         o.disabled = !av.includes(k);
         if (l.help) o.title = l.help;
-        (l.compare ? group : sel).append(o);
+        (l.compare ? group : l.verify ? vgroup : sel).append(o);
       }
       sel.append(group);
+      sel.append(vgroup);
       sel.append(new Option("No shading", "none"));
       sel.value = wx.shading === "off" ? "none" : wx.layer;
     }
@@ -423,7 +444,10 @@ export function setupWeather(map, layers) {
       // Barbs and wave arrows at the chosen density; shading at full GRIB resolution (up to 20 000 cells).
       const [g, gs, gw, gp] = await Promise.all([
         wx.arrows && (hasParam("WindU") || hasParam("WindSpeed")) ? invoke("grib_wind_grid", { path: display, t, bbox, maxPoints: arrowPts }).catch(() => null) : null,
-        !shade ? null : layer.compare
+        !shade ? null : layer.verify
+          ? (verifyTarget ? invoke("grib_verify_grid", { paths: [], t: verifyTarget.t, forecast: verifyTarget.path, kind: layer.verify, bbox, maxPoints: 20000 })
+            .catch((e) => ({ error: String(e) })) : { error: "Choose a forecast to verify in the Verify dock." })
+          : layer.compare
           ? invoke("grib_compare", { paths: comparePaths(), metric: layer.compare, t, bbox, maxPoints: 20000 }).catch((e) => ({ error: String(e) }))
           : invoke("grib_grid", { path: display, layer: wx.layer, t, bbox, maxPoints: 20000 }).catch(() => null),
         wx.waveArrows && hasParam("WaveDir") ? invoke("grib_grid", { path: display, layer: "wavedir", t, bbox, maxPoints: Math.max(40, arrowPts / 2) }).catch(() => null) : null,
@@ -476,14 +500,24 @@ export function setupWeather(map, layers) {
   /** Under the legend: which GRIBs an agreement display compares (or why it can't). */
   function showCompareNote(layer, r) {
     const el = $("wx-cmp-note");
-    if (!layer.compare || wx.shading === "off") { el.hidden = true; return; }
+    if (!(layer.compare || layer.verify) || wx.shading === "off") { el.hidden = true; return; }
     el.hidden = false;
     if (!r || r.error) { el.textContent = r?.error ?? "Nothing to compare here."; return; }
+    if (layer.verify) {
+      const vals = r.values.filter((v) => v != null);
+      const ref = r.used.slice(0, -1).map((u) => u.name).join(", ");
+      const mean = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+      el.textContent = `${layer.help} ${verifyTarget.name} at +${Math.round(verifyTarget.lead)} h against hour 0 of ${ref}, ${fmt(verifyTarget.t)}.` +
+        (mean != null ? ` In view: mean ${mean.toFixed(1)} ${layer.unit}.` : "") +
+        (t !== verifyTarget.t ? " (The shading is for the verify time, not the slider time.)" : "");
+      return;
+    }
     const vals = r.values.filter((v) => v != null);
     const mean = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
     const runs = [...r.used].sort((a, b) => a.run - b.run);
     const names = runs.map((u) => `${u.name.replace(/ \d+ \w+ \d+Z$/, "")} ${fmtRun(u.run)}`);
     el.textContent = `${layer.help} Comparing ${r.used.length}: ${names.join(", ")}.` +
+      (r.members ? ` Every one is an ensemble, so each of the ${r.layers} members counts as a layer.` : "") +
       (mean != null ? ` In view: mean ${mean.toFixed(1)} ${layer.unit}, max ${Math.max(...vals).toFixed(1)} ${layer.unit}.` : "") +
       (layer.compare === "trend" ? ` Newest ${names.at(-1)} − oldest ${names[0]}.` : "");
   }
@@ -620,6 +654,26 @@ export function setupWeather(map, layers) {
       draw();
     },
     onTime: (fn) => { timeListeners.push(fn); },
+    /** Called when a GRIB is loaded or unloaded. */
+    onLoaded: (fn) => { loadedListeners.push(fn); },
+    /** Loaded GRIBs ticked for the agreement displays. */
+    comparePaths,
+    /** Shade a forecast's error at a verify time ({ t, path, name, lead, kind }), or null to stop. */
+    setVerify(v) {
+      verifyTarget = v;
+      if (v) {
+        const key = { vector: "verr_vec", speed: "verr_spd", direction: "verr_dir" }[v.kind ?? "vector"];
+        if (!LAYERS[wx.layer]?.verify || v.kind) { wx.layer = key; if (wx.shading === "off") wx.shading = "smooth"; shade.value = wx.shading; saveWx(); applyLayer(); }
+        renderLayers();
+        const s = $("wx-slider");
+        if (times.length && v.t >= Number(s.min) && v.t <= Number(s.max)) { t = v.t; s.value = t; }
+        draw();
+      } else {
+        if (LAYERS[wx.layer]?.verify) { wx.layer = "wind"; saveWx(); applyLayer(); }
+        setTimes();
+      }
+    },
+    verifyTarget: () => verifyTarget,
     /** Put a GRIB chooser and time slider into `el`, working the same state as the Weather drawer. */
     mountControls,
     showGrib,
