@@ -36,7 +36,9 @@ export const LAYERS = {
 };
 
 // Display settings (per viewer)
-const WX_DEFAULTS = { density: 5, size: 1.0, shading: "2", opacity: 0.45, land: "land", layer: "wind", arrows: true, waveArrows: true, isobars: false };
+const WX_DEFAULTS = { density: 5, size: 1.0, shading: "2", opacity: 0.45, land: "land", layer: "wind", arrows: true, waveArrows: true, isobars: false,
+  // isobar interval (hPa), and whether to widen it when zoomed out
+  isoStep: 4, isoAuto: true };
 const DENSITY_POINTS = [80, 150, 300, 500, 900, 1400, 2200, 3500, 6000, 1e9];
 function loadWx() {
   try { return { ...WX_DEFAULTS, ...JSON.parse(localStorage.getItem("racenav.wx") || "{}") }; } catch { return { ...WX_DEFAULTS }; }
@@ -418,7 +420,7 @@ export function setupWeather(map, layers) {
       map.getSource("wx-cells").setData(fc(cells));
       map.getSource("wx-barbs").setData(fc(barbs));
       map.getSource("wx-wavedir").setData(fc(waves));
-      map.getSource("wx-isobars").setData(fc(gp ? isobars(gp, map.getZoom() < 4 ? 8 : 4) : []));
+      map.getSource("wx-isobars").setData(fc(gp ? isobars(gp, isobarStep()) : []));
     });
   }
   map.on("moveend", draw);
@@ -487,7 +489,16 @@ export function setupWeather(map, layers) {
     setTimes();
   }
   $("wx-layer").onchange = (e) => setLayer(e.target.value);
-  for (const [id, key] of [["wx-arrows", "arrows"], ["wx-wavearrows", "waveArrows"], ["wx-isobars", "isobars"]]) {
+  /** The isobar interval for this zoom: the chosen one, ×2 below zoom 4 and ×4 below 2.5 when Auto is on. */
+  function isobarStep() {
+    const base = Number(wx.isoStep) || 4;
+    if (!wx.isoAuto) return base;
+    const z = map.getZoom();
+    return z < 2.5 ? base * 4 : z < 4 ? base * 2 : base;
+  }
+  $("wx-isostep").value = String(wx.isoStep);
+  $("wx-isostep").onchange = (e) => { wx.isoStep = Number(e.target.value); saveWx(); draw(); };
+  for (const [id, key] of [["wx-arrows", "arrows"], ["wx-wavearrows", "waveArrows"], ["wx-isobars", "isobars"], ["wx-isoauto", "isoAuto"]]) {
     $(id).checked = !!wx[key];
     $(id).onchange = (e) => { wx[key] = e.target.checked; saveWx(); draw(); };
   }

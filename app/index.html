@@ -46,7 +46,11 @@
         <div class="wx-row checks">
           <label id="wx-arrows-row"><input id="wx-arrows" type="checkbox" /> Wind barbs</label>
           <label id="wx-wavearrows-row"><input id="wx-wavearrows" type="checkbox" /> Wave direction</label>
-          <label id="wx-isobars-row"><input id="wx-isobars" type="checkbox" /> Isobars</label>
+          <span id="wx-isobars-row" class="iso"><label><input id="wx-isobars" type="checkbox" /> Isobars</label>
+            <select id="wx-isostep" title="Isobar interval. Auto: wider when zoomed out (×2 below zoom 4, ×4 below zoom 2.5)">
+              <option value="1">1 hPa</option><option value="2">2 hPa</option><option value="3">3 hPa</option><option value="4">4 hPa</option>
+              <option value="5">5 hPa</option><option value="8">8 hPa</option><option value="10">10 hPa</option></select>
+            <label title="Wider spacing when zoomed out"><input id="wx-isoauto" type="checkbox" /> Auto</label></span>
         </div>
         <div id="wx-legend" class="legend" title="Wind speed, knots"></div>
         <table id="wx-point"><thead><tr><th>Run</th><th>TWS</th><th>TWD</th><th>Gust</th><th>MSLP</th><th>Hs / Tp</th></tr></thead><tbody></tbody></table>

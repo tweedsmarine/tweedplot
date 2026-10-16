@@ -82,7 +82,7 @@ The bundled world land is coarse (small islands missing). For a detailed one, do
 
 The Weather panel lists GRIB files found in `RACENAV_GRIB_DIR`, `C:\dev\racenav-data\grib` and qtVlm's `C:\Program Files (x86)\qtVlm\grib`. Load as many as you like. One is shown on the chart (wind barbs plus speed shading under the land), and the table compares every loaded run at the cursor for the slider time. Outside a file's time span there is no value: a short GRIB never shows as calm.
 
-**Show** picks what the shading displays: wind, gusts, wave height (Hs), swell, wave period, rain (mm/h), CAPE (squall risk) or pressure, or nothing. Choices the shown GRIB lacks are greyed out, and a wave-only GRIB switches to wave height by itself. Tick boxes add wind barbs, wave direction arrows (pointing the way the waves travel) and isobars every 4 hPa (8 hPa zoomed out), whatever the shading shows. The time slider follows the shown layer, so wave and rain files work without any wind in them.
+**Show** picks what the shading displays: wind, gusts, wave height (Hs), swell, wave period, rain (mm/h), CAPE (squall risk) or pressure, or nothing. Choices the shown GRIB lacks are greyed out, and a wave-only GRIB switches to wave height by itself. Tick boxes add wind barbs, wave direction arrows (pointing the way the waves travel) and isobars at a chosen interval (1, 2, 3, 4, 5, 8 or 10 hPa; with **Auto** ticked the interval doubles below zoom 4 and quadruples below zoom 2.5), whatever the shading shows. The time slider follows the shown layer, so wave and rain files work without any wind in them.
 
 ```
 cargo run -p grib --example grib_info -- path\to\file.grb2 -36.0 174.8

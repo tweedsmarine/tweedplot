@@ -155,10 +155,13 @@ body.drawer-open .cursor, body.drawer-open .attribution { left: calc(var(--rail-
 }
 .tile .lbl { display: flex; justify-content: space-between; font-size: 11px; color: var(--tile-quiet); text-transform: uppercase; letter-spacing: 0.04em; gap: 6px; }
 .tile .v { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; white-space: nowrap; line-height: 1.05; contain: content; }
-.tile.s { width: 82px; height: 54px; } .tile.s .v { font-size: 24px; }
-.tile.m { width: 110px; height: 70px; } .tile.m .v { font-size: 34px; }
-.tile.l { width: 150px; height: 96px; } .tile.l .v { font-size: 50px; }
-.tile.wide.s { width: 150px; } .tile.wide.m { width: 200px; } .tile.wide.l { width: 270px; }
+/* sizes are minimums: a tile widens for a long label or a value with its units, and never clips */
+.tile.s { min-width: 82px; min-height: 54px; } .tile.s .v { font-size: 24px; }
+.tile.m { min-width: 110px; min-height: 70px; } .tile.m .v { font-size: 34px; }
+.tile.l { min-width: 150px; min-height: 96px; } .tile.l .v { font-size: 50px; }
+.tile.wide.s { min-width: 150px; } .tile.wide.m { min-width: 200px; } .tile.wide.l { min-width: 270px; }
+.tile .lbl { white-space: nowrap; }
+.tile .v { padding-bottom: 2px; }
 .tile.wide .v { font-size: 0.7em; }
 .tile.wide.s .v { font-size: 16px; } .tile.wide.m .v { font-size: 22px; } .tile.wide.l .v { font-size: 30px; }
 .tile .v .u { font-size: 0.45em; color: var(--tile-quiet); margin-left: 2px; font-weight: 500; }
@@ -268,7 +271,9 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
 .checks label { display: inline-flex; gap: 4px; align-items: center; }
 .wx-row.area label { color: var(--quiet); font-size: 11px; }
 .wx-row.area input { width: 20%; min-width: 0; flex: 1; text-align: right; font-variant-numeric: tabular-nums; }
-.wx-row.checks label[hidden] { display: none; }
+.wx-row.checks label[hidden], .wx-row.checks span[hidden] { display: none; }
+.wx-row.checks .iso { display: inline-flex; align-items: center; gap: 6px; }
+.wx-row.checks .iso select { padding: 1px 2px; }
 
 /* chart feature details */
 .feat-pop { font-size: 12px; max-height: 50vh; overflow: auto; }
