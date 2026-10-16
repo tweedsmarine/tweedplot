@@ -14,10 +14,17 @@ const LIGHT = { r: "#d7262b", g: "#1f9a3a", w: "#f4c20d", o: MAGENTA, m: MAGENTA
 const KEY = "racenav.chartfeatures";
 const DEFAULTS = { show: true, sectors: true, names: true, avoidDangers: true, avoidFarms: true };
 
+/** Point symbols; underwater dangers deeper than the safety contour show as their depth only. */
+const pointFilter = (contour) => ["all", minz, ["!", ["in", ["get", "cls"], ["literal", ["LIGHTS", "SEAARE", "LNDRGN"]]]],
+  ["any", ["!", ["has", "dep"]], ["<", ["get", "dep"], contour]]];
+
+const labelFilter = (contour) => ["all", minz, ["has", "lbl"], ["!", ["in", ["get", "cls"], ["literal", ["SEAARE", "LNDRGN"]]]],
+  ["any", ["!", ["has", "dep"]], ["<", ["get", "dep"], contour]]];
+
 /** Zoom filter: a feature shows from its SCAMIN zoom. */
 const minz = ["any", ["!", ["has", "minz"]], [">=", ["zoom"], ["get", "minz"]]];
 
-export function setupChartFeatures(map, { before }) {
+export function setupChartFeatures(map, { before, safetyContour = 5 }) {
   const $ = (id) => document.getElementById(id);
   const opts = { ...DEFAULTS };
   try { Object.assign(opts, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
@@ -56,13 +63,13 @@ export function setupChartFeatures(map, { before }) {
     { id: "f-lights", type: "symbol", ...src, "source-layer": "fpt", filter: ["all", minz, cls("LIGHTS")],
       layout: { "icon-image": ["concat", "s57:", ["get", "icon"]], "icon-anchor": "top-left", "icon-offset": [-2, -2],
                 "icon-allow-overlap": true, "icon-ignore-placement": true } },
-    { id: "f-points", type: "symbol", ...src, "source-layer": "fpt", filter: ["all", minz, ["!", cls("LIGHTS", "SEAARE", "LNDRGN")]],
+    { id: "f-points", type: "symbol", ...src, "source-layer": "fpt", filter: pointFilter(safetyContour),
       layout: { "icon-image": ["concat", "s57:", ["get", "icon"]],
                 "icon-anchor": ["match", ["slice", ["get", "icon"], 0, 2], ["b|", "c|"], "bottom", "center"],
                 "icon-allow-overlap": true, "icon-ignore-placement": true,
                 "symbol-sort-key": ["match", ["get", "cls"], ["UWTROC", "WRECKS", "OBSTRN"], 2, 1] } },
     // labels: light characteristics, names of marks, depths over dangers
-    { id: "f-labels", type: "symbol", ...src, "source-layer": "fpt", filter: ["all", minz, ["has", "lbl"], ["!", cls("SEAARE", "LNDRGN")]],
+    { id: "f-labels", type: "symbol", ...src, "source-layer": "fpt", filter: labelFilter(safetyContour),
       layout: { "icon-image": ["concat", "txt:", ["match", ["get", "cls"], "LIGHTS", "l", ["UWTROC", "WRECKS", "OBSTRN"], "d", "b"], ":", ["get", "lbl"]],
                 "icon-anchor": "left", "icon-offset": ["match", ["get", "cls"], "LIGHTS", ["literal", [12, 8]], ["literal", [8, -6]]],
                 "icon-allow-overlap": false, "icon-padding": 1,
@@ -138,6 +145,8 @@ export function setupChartFeatures(map, { before }) {
   }
 
   return {
+    /** Underwater rocks, wrecks and obstructions deeper than this lose their danger symbol. */
+    setSafetyContour: (m) => { map.setFilter("f-points", pointFilter(m)); map.setFilter("f-labels", labelFilter(m)); },
     /** Routing options: which charted hazards to keep off. */
     avoid: () => ({ dangers: opts.avoidDangers, farms: opts.avoidFarms }),
   };

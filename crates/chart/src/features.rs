@@ -81,13 +81,17 @@ impl ChartStore {
             pk = t.pk
         );
         let Ok(mut st) = conn.prepare_cached(&sql) else { return };
-        let Ok(mut rows) = st.query(rusqlite::params![b[0], b[2], b[1], b[3]]) else { return };
-        while let Ok(Some(r)) = rows.next() {
-            let fid: i64 = r.get(0).unwrap_or(0);
-            let vals: Vec<Option<String>> = (0..cols.len()).map(|i| r.get_ref(i + 1).ok().and_then(text)).collect();
-            let Ok(blob) = r.get_ref(cols.len() + 1).and_then(|v| v.as_blob().map_err(Into::into)) else { continue };
-            if let Some(geom) = parse_gpkg(blob) {
-                f(Row { fid, vals, geom });
+        // data east of 180° may be stored as 180..190: look there too (see crate::wrap_shifts)
+        for shift in crate::wrap_shifts(b) {
+            let Ok(mut rows) = st.query(rusqlite::params![b[0] + shift, b[2] + shift, b[1], b[3]]) else { continue };
+            while let Ok(Some(r)) = rows.next() {
+                let fid: i64 = r.get(0).unwrap_or(0);
+                let vals: Vec<Option<String>> = (0..cols.len()).map(|i| r.get_ref(i + 1).ok().and_then(text)).collect();
+                let Ok(blob) = r.get_ref(cols.len() + 1).and_then(|v| v.as_blob().map_err(Into::into)) else { continue };
+                if let Some(mut geom) = parse_gpkg(blob) {
+                    crate::shift_geom(&mut geom, -shift);
+                    f(Row { fid, vals, geom });
+                }
             }
         }
     }
@@ -157,6 +161,13 @@ impl ChartStore {
                                 ];
                                 if let Some(l) = s57::label(class.code, &a) {
                                     props.push(("lbl", Value::Str(l)));
+                                }
+                                // depth over a rock, wreck or obstruction, so the chart can leave
+                                // the danger symbol off those deeper than the safety contour
+                                if matches!(class.code, "UWTROC" | "WRECKS" | "OBSTRN") && matches!(a.first("watlev"), None | Some(3)) {
+                                    if let Some(d) = a.num("valsou") {
+                                        props.push(("dep", Value::F64(d)));
+                                    }
                                 }
                                 if let Some(n) = a.get("objnam") {
                                     props.push(("name", Value::Str(n.into())));

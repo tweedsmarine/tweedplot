@@ -135,7 +135,7 @@ const boat = setupBoat();
 const dock = setupDock(map);
 let features = null;
 map.on("load", () => {
-  features = setupChartFeatures(map, { before: "track" });
+  features = setupChartFeatures(map, { before: "track", safetyContour: settings.safetyContour });
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
   window.__weather = weather; // debugging handle
   library = setupLibrary(map, { ui });
@@ -189,6 +189,7 @@ function applyChartSettings() {
   map.setPaintProperty("depare", "fill-color", depareColour());
   map.setFilter("safety-contour", ["==", ["get", "valdco"], settings.safetyContour]);
   map.setLayoutProperty("soundg", "icon-image", soundingImage());
+  features?.setSafetyContour(settings.safetyContour);
 }
 for (const [id, key] of [["set-safety-depth", "safetyDepth"], ["set-safety-contour", "safetyContour"]]) {
   const el = document.getElementById(id);

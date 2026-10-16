@@ -96,9 +96,12 @@ pub struct ChartStore {
 /// NZ mainland area covered by LINZ Topo50 land: GSHHG polygons wholly inside
 /// it are left out where Topo50 is drawn, so coastlines aren't doubled.
 const TOPO50_AREA: [f64; 4] = [166.0, -47.6, 179.0, -34.0];
+/// The Chatham Islands (also in Topo50), in both longitude frames.
+const CHATHAMS: [[f64; 4]; 2] = [[-177.2, -44.7, -175.5, -43.3], [182.8, -44.7, 184.5, -43.3]];
 
 fn inside(b: [f64; 4], area: [f64; 4]) -> bool {
-    b[0] >= area[0] && b[1] >= area[1] && b[2] <= area[2] && b[3] <= area[3]
+    let i = |a: [f64; 4]| b[0] >= a[0] && b[1] >= a[1] && b[2] <= a[2] && b[3] <= a[3];
+    i(area) || (area == TOPO50_AREA && CHATHAMS.iter().any(|c| i(*c)))
 }
 
 impl ChartStore {
@@ -281,15 +284,18 @@ impl ChartStore {
             pk = t.pk
         );
         let Ok(mut st) = conn.prepare_cached(&sql) else { return };
-        let Ok(mut rows) = st.query(rusqlite::params![b[0], b[2], b[1], b[3]]) else { return };
         let mut vals = vec![None; cols.len()];
-        while let Ok(Some(r)) = rows.next() {
-            for (i, v) in vals.iter_mut().enumerate() {
-                *v = r.get::<_, Option<f64>>(i).ok().flatten();
-            }
-            let Ok(blob) = r.get_ref(cols.len()).and_then(|v| v.as_blob().map_err(Into::into)) else { continue };
-            if let Some(g) = parse_gpkg(blob) {
-                f(&vals, g);
+        for shift in wrap_shifts(b) {
+            let Ok(mut rows) = st.query(rusqlite::params![b[0] + shift, b[2] + shift, b[1], b[3]]) else { continue };
+            while let Ok(Some(r)) = rows.next() {
+                for (i, v) in vals.iter_mut().enumerate() {
+                    *v = r.get::<_, Option<f64>>(i).ok().flatten();
+                }
+                let Ok(blob) = r.get_ref(cols.len()).and_then(|v| v.as_blob().map_err(Into::into)) else { continue };
+                if let Some(mut g) = parse_gpkg(blob) {
+                    shift_geom(&mut g, -shift);
+                    f(&vals, g);
+                }
             }
         }
     }
@@ -366,6 +372,34 @@ impl ChartStore {
             });
         }
         out
+    }
+}
+
+/// Longitude shifts to query for a bbox near the date line. LINZ stores the
+/// Chathams and other places east of 180° as 180..190, GSHHG as -180..-170, while
+/// map tiles always ask in -180..180: so a bbox reaching west of -120 is also
+/// looked up 360° further east, and one reaching past 180 also 360° further
+/// west; what is found is shifted back into the bbox's frame.
+pub(crate) fn wrap_shifts(b: [f64; 4]) -> Vec<f64> {
+    let mut v = vec![0.0];
+    if b[0] < -120.0 {
+        v.push(360.0);
+    }
+    if b[2] > 180.0 {
+        v.push(-360.0);
+    }
+    v
+}
+
+/// Add `dlon` to every longitude of a geometry.
+pub(crate) fn shift_geom(g: &mut Geom, dlon: f64) {
+    if dlon == 0.0 {
+        return;
+    }
+    match g {
+        Geom::Points(v) => v.iter_mut().for_each(|p| p[0] += dlon),
+        Geom::Lines(v) => v.iter_mut().flatten().for_each(|p| p[0] += dlon),
+        Geom::Polygons(v) => v.iter_mut().flatten().flatten().for_each(|p| p[0] += dlon),
     }
 }
 
@@ -570,6 +604,17 @@ mod tests {
         assert_eq!(classify("something_else"), None);
         assert_eq!(classify("light_points_hydro_190k_1350k"), Some((Kind::Feature, 3)));
         assert_eq!(classify("building_single_points_hydro_190k_1350k"), None);
+    }
+
+    #[test]
+    fn date_line_shifts() {
+        assert_eq!(wrap_shifts([170.0, -45.0, 175.0, -40.0]), vec![0.0]);
+        assert_eq!(wrap_shifts([-177.0, -45.0, -175.0, -43.0]), vec![0.0, 360.0]);
+        assert_eq!(wrap_shifts([179.0, -45.0, 180.1, -43.0]), vec![0.0, -360.0]);
+        let mut g = Geom::Points(vec![[183.5, -44.0]]);
+        shift_geom(&mut g, -360.0);
+        assert!(matches!(g, Geom::Points(ref p) if (p[0][0] + 176.5).abs() < 1e-9));
+        assert!(inside([-176.9, -44.4, -176.1, -43.6], TOPO50_AREA));
     }
 
     #[test]
