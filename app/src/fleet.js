@@ -82,7 +82,8 @@ export function setupFleet(map, { weather, course, routing, dock, ui }) {
         let lo = 0, hi = f.length - 1;
         while (hi - lo > 1) { const m = (lo + hi) >> 1; if (f[m].t <= t) lo = m; else hi = m; }
         const a = f[lo], b = f[hi], k = (t - a.t) / (b.t - a.t || 1);
-        pos = { t, lat: a.lat + (b.lat - a.lat) * k, lon: a.lon + (b.lon - a.lon) * k };
+        pos = { t, lat: a.lat + (b.lat - a.lat) * k, lon: a.lon + (b.lon - a.lon) * k,
+                dtf: a.dtf != null && b.dtf != null ? a.dtf + (b.dtf - a.dtf) * k : null };
         i = hi;
       }
     }
@@ -94,7 +95,7 @@ export function setupFleet(map, { weather, course, routing, dock, ui }) {
     const day = f.filter((x) => x.t >= cur.t - 86400 && x.t <= cur.t);
     let d24 = 0;
     for (let j = 1; j < day.length; j++) d24 += distNm([day[j - 1].lon, day[j - 1].lat], [day[j].lon, day[j].lat]);
-    return { lat: pos.lat, lon: pos.lon, t: pos.t, fixT: cur.t, sog, cog, stale, d24: day.length > 1 ? d24 : null, dtf: dtf(pos) };
+    return { lat: pos.lat, lon: pos.lon, t: pos.t, fixT: cur.t, sog, cog, stale, d24: day.length > 1 ? d24 : null, dtf: pos.dtf ?? dtf(pos), ybDtf: pos.dtf != null };
   }
   /** Index of the YB course point a boat at p is heading for (end of the nearest leg). */
   function nextNode(p) {
@@ -238,6 +239,9 @@ export function setupFleet(map, { weather, course, routing, dock, ui }) {
       $("fl-course-copy").disabled = !(r.setup?.course?.length > 1);
       draw();
       if (r.error) status(r.error, "warn");
+      // the full history when this race has none yet, or once it is 6 hours old
+      const h = r.meta?.history_fetched;
+      if (!h || Date.now() / 1000 - h > 6 * 3600) await loadHistory();
       await refresh();
       fitFleet();
       schedule();
@@ -261,6 +265,23 @@ export function setupFleet(map, { weather, course, routing, dock, ui }) {
       status(`Positions: ${e}`, "bad");
     } finally { busy = false; $("fl-refresh").disabled = false; }
   }
+  /** Every published fix of every boat (YB's history file). */
+  async function loadHistory() {
+    if (!race) return;
+    status("Downloading the full tracks…");
+    $("fl-history").disabled = true;
+    try {
+      const r = await invoke("yb_history", { race: race.key });
+      race.fixes = toFixes(r.fixes);
+      race.meta = r.meta;
+      assignColours();
+      status(`Full tracks: ${r.received} fixes for ${r.boats} boats (${r.added} new).`, "good");
+      draw();
+    } catch (e) {
+      status(`Full tracks not available: ${e}`, "warn");
+    } finally { $("fl-history").disabled = false; }
+  }
+
   function schedule() {
     clearInterval(timer);
     if (race && prefs.auto > 0) timer = setInterval(refresh, prefs.auto * 60000);
@@ -282,6 +303,7 @@ export function setupFleet(map, { weather, course, routing, dock, ui }) {
   $("fl-open").onclick = () => open($("fl-race").value);
   $("fl-race").onkeydown = (e) => { if (e.key === "Enter") open($("fl-race").value); };
   $("fl-refresh").onclick = refresh;
+  $("fl-history").onclick = loadHistory;
   const auto = $("fl-auto");
   for (const [v, l] of [[0, "Off"], [5, "5 min"], [10, "10 min"], [15, "15 min"], [30, "30 min"], [60, "1 h"], [180, "3 h"]]) auto.append(new Option(l, String(v)));
   auto.value = String(prefs.auto);
@@ -311,7 +333,7 @@ export function setupFleet(map, { weather, course, routing, dock, ui }) {
     map.getCanvas().style.cursor = "pointer";
     popup.setLngLat([s.lon, s.lat]).setHTML(`<div class="rt-popup"><b></b><br><span></span><br>fix ${fmt(s.fixT)}` +
       `${s.sog != null ? `<br>${s.sog.toFixed(1)} kn · ${s.cog != null ? pad3(s.cog) + "°" : "—"} (between fixes)` : ""}` +
-      `${s.dtf != null ? `<br>DTF ${s.dtf.toFixed(1)} NM` : ""}${s.d24 != null ? ` · 24 h ${s.d24.toFixed(0)} NM` : ""}</div>`).addTo(map);
+      `${s.dtf != null ? `<br>DTF ${s.dtf.toFixed(1)} NM${s.ybDtf ? " (YB)" : ""}` : ""}${s.d24 != null ? ` · 24 h ${s.d24.toFixed(0)} NM` : ""}</div>`).addTo(map);
     const el = popup.getElement();
     el.querySelector("b").textContent = nameOf(id);
     el.querySelector("span").textContent = [tm?.sail, tm?.model, tm?.skipper].filter(Boolean).join(" · ");
@@ -365,7 +387,7 @@ export function setupFleet(map, { weather, course, routing, dock, ui }) {
       };
       const note = document.createElement("p");
       note.className = "wx-note";
-      note.textContent = `${prefs.at === "weather" ? `Positions at the weather time, ${fmt(t ?? 0, true)}` : "Latest fixes"}. SOG and COG are made good between the last two fixes; DTF follows the YB course.`;
+      note.textContent = `${prefs.at === "weather" ? `Positions at the weather time, ${fmt(t ?? 0, true)}` : "Latest fixes"}. SOG and COG are made good between the last two fixes; DTF is YB's own where the full tracks give it, otherwise measured along the YB course.`;
       body.append(tbl, note);
     },
   });

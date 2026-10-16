@@ -448,11 +448,37 @@ async fn yb_open(race: String) -> Result<serde_json::Value, String> {
 async fn yb_refresh(race: String, since: i64) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let key = tracking::clean_key(&race).map_err(|e| e.to_string())?;
-        let fixes = tracking::fetch_positions(&key).map_err(|e| e.to_string())?;
+        let now = tracking::now();
+        match tracking::fetch_positions(&key) {
+            Ok(fixes) => with_race(&key, |r| {
+                let added = r.merge(&fixes, now).map_err(|e| e.to_string())?;
+                Ok(serde_json::json!({ "key": key, "added": added, "boats": fixes.len(), "fixes": r.fixes_since(since), "meta": r.meta, "source": "expedition" }))
+            }),
+            // no Expedition file for this race: the history file has the latest fixes too
+            Err(e1) => {
+                let h = tracking::fetch_history(&key).map_err(|e2| format!("{e1}; history: {e2}"))?;
+                with_race(&key, |r| {
+                    let added = r.merge_history(&h, now).map_err(|e| e.to_string())?;
+                    Ok(serde_json::json!({ "key": key, "added": added, "boats": h.len(), "fixes": r.fixes_since(since), "meta": r.meta, "source": "history" }))
+                })
+            }
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Download the race's full history (every published fix of every boat) and keep it.
+#[tauri::command]
+async fn yb_history(race: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = tracking::clean_key(&race).map_err(|e| e.to_string())?;
+        let h = tracking::fetch_history(&key).map_err(|e| e.to_string())?;
+        let n: usize = h.values().map(Vec::len).sum();
         let now = tracking::now();
         with_race(&key, |r| {
-            let added = r.merge(&fixes, now).map_err(|e| e.to_string())?;
-            Ok(serde_json::json!({ "key": key, "added": added, "boats": fixes.len(), "fixes": r.fixes_since(since), "meta": r.meta }))
+            let added = r.merge_history(&h, now).map_err(|e| e.to_string())?;
+            Ok(serde_json::json!({ "key": key, "added": added, "received": n, "boats": h.len(), "fixes": r.fixes, "meta": r.meta }))
         })
     })
     .await
@@ -541,7 +567,7 @@ pub fn run() {
             polar_files, route_compute, sk_status,
             lib_info, marks_list, mark_save, mark_delete, routes_list, route_save, route_delete,
             routings_list, routing_get, routing_save, routing_delete, gpx_export, gpx_write, gpx_import,
-            yb_open, yb_refresh, yb_races
+            yb_open, yb_refresh, yb_races, yb_history
         ])
         .register_asynchronous_uri_scheme_protocol("chart", |_ctx, request, responder| {
             let path = request.uri().path().to_string();
