@@ -9,6 +9,7 @@ import { setupWeather, barbImage } from "./weather.js";
 import { setupChartFeatures, featureImage } from "./chartfeatures.js";
 import { setupTides, tideImage } from "./tides.js";
 import { setupTracks } from "./tracks.js";
+import { setupRuler } from "./ruler.js";
 import { setupRoute, markImage } from "./route.js";
 import { setupRouting } from "./routing.js";
 import { setupBoat } from "./boat.js";
@@ -136,6 +137,17 @@ const inst = setupInstruments();
 const boat = setupBoat();
 const dock = setupDock(map);
 let features = null;
+let ruler = null;
+
+/** A short message at the bottom of the chart ("" hides it); gone after `ms` if given. */
+let toastTimer = null;
+function toast(text, ms = 0) {
+  const el = document.getElementById("toast");
+  clearTimeout(toastTimer);
+  el.textContent = text;
+  el.hidden = !text;
+  if (text && ms) toastTimer = setTimeout(() => { el.hidden = true; }, ms);
+}
 map.on("load", () => {
   features = setupChartFeatures(map, { before: "track", safetyContour: settings.safetyContour });
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
@@ -148,6 +160,7 @@ map.on("load", () => {
   setupFleet(map, { weather, course: route, routing, dock, ui });
   setupGribDownload(map, { weather, course: route });
   setupTides(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn) });
+  ruler = setupRuler(map, { before: "track", ui, library, route, toast, getVariation: () => vessel.variation });
   setupTracks(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn),
     status: (s) => { document.getElementById("lib-status").textContent = s; } });
   library.onChange(feed);
@@ -205,9 +218,19 @@ for (const [id, key] of [["set-safety-depth", "safetyDepth"], ["set-safety-conto
   };
 }
 
+// cursor position: the box at the bottom left and the Cursor instrument tiles
+let cursorFrame = null;
+function setCursor(c) {
+  if (cursorFrame) cancelAnimationFrame(cursorFrame);
+  cursorFrame = requestAnimationFrame(() => { cursorFrame = null; inst.update({ cursor: c }); });
+}
 map.on("mousemove", (e) => {
   document.getElementById("cursor").textContent = `${ddm(e.lngLat.lat, "N", "S")}  ${ddm(e.lngLat.lng, "E", "W")}`;
+  setCursor([e.lngLat.lng, e.lngLat.lat]);
 });
+// touch screens have no hover: a tap sets the cursor
+map.on("click", (e) => setCursor([e.lngLat.lng, e.lngLat.lat]));
+map.getCanvas().addEventListener("mouseleave", () => setCursor(null));
 
 // ---------- follow / track -------------------------------------------------
 let follow = true;
@@ -263,6 +286,7 @@ function placeBoat(pos) {
 const ctx = document.getElementById("ctx");
 let ctxAt = null;
 let ctxMark = null; // library mark under the right-click, if any
+let ctxRuler = null; // ruler under the right-click: { rid, i, points }
 map.on("contextmenu", (e) => {
   e.originalEvent.preventDefault();
   ctxAt = [e.lngLat.lng, e.lngLat.lat];
@@ -271,6 +295,13 @@ map.on("contextmenu", (e) => {
   ctx.querySelector('[data-act="start"]').textContent = ctxMark ? `Start route at ${ctxMark.name}` : "Start route here";
   ctx.querySelector('[data-act="mark"]').textContent = ctxMark ? `Add ${ctxMark.name} to route` : "Add mark to route here";
   ctx.querySelector('[data-act="libmark"]').hidden = !!ctxMark;
+  // a ruler under the right-click: delete it, a point of it, or save it as a route
+  ctxRuler = ruler?.isArmed() ? null : ruler?.hitAt(e.point) ?? null;
+  for (const el of ctx.querySelectorAll(".ruler-item")) el.hidden = !ctxRuler;
+  if (ctxRuler) {
+    ctx.querySelector('[data-act="ruler-pt"]').hidden = ctxRuler.i == null;
+    ctx.querySelector('[data-act="ruler-all"]').hidden = ruler.count() < 2;
+  }
   // selected mark: offer Move (only once its ring is green) and Delete
   const sel = route?.selection();
   for (const el of ctx.querySelectorAll(".sel-item")) el.hidden = !sel;
@@ -285,7 +316,7 @@ map.on("contextmenu", (e) => {
   boatBtn.disabled = signalKActive();
   boatBtn.title = boatBtn.disabled ? "Signal K is plotting the boat: press Live to pause it first" : "";
   ctx.style.left = `${Math.min(e.point.x, window.innerWidth - 200)}px`;
-  ctx.style.top = `${Math.min(e.point.y, window.innerHeight - 180)}px`;
+  ctx.style.top = `${Math.min(e.point.y, window.innerHeight - (ctxRuler ? 300 : 180))}px`;
   ctx.hidden = false;
 });
 document.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -299,6 +330,10 @@ ctx.addEventListener("click", (e) => {
   if (act === "mark") route?.addMark(ctxAt, ctxMark);
   if (act === "libmark") library?.newMarkAt(ctxAt);
   if (act === "centre") map.easeTo({ center: ctxAt });
+  if (act === "ruler-route" && ctxRuler) ruler.saveAsRoute(ctxRuler.rid);
+  if (act === "ruler-pt" && ctxRuler) ruler.deletePoint(ctxRuler.rid, ctxRuler.i);
+  if (act === "ruler-del" && ctxRuler) ruler.deleteRuler(ctxRuler.rid);
+  if (act === "ruler-all") ruler.deleteAll();
   ctx.hidden = true;
 });
 map.on("click", () => { ctx.hidden = true; });

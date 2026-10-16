@@ -144,6 +144,12 @@ Fleet drawer: type the race's YB name (as in `yb.tl/<race>`, e.g. `ggr2026`) and
 
 Rail, bottom: **Centre** puts the boat in the middle of the chart. Chart drawer, Own boat: a heading line (solid; boat speed through the water, else SOG) and a COG line (dashed orange; SOG), each on or off, each running for a set time (1 min to 48 h) or to the edge of the chart. They are rhumb lines, so straight on the chart. Damping: moving averages of the Signal K readings (course and speed; wind; depth) over 0–60 s, with angles averaged as vectors; position is never damped. The boat symbol, its lines and the instruments all use the damped values.
 
+## Measuring
+
+**Cursor** instrument tiles (Instruments: add them to any panel; a Cursor panel is added once to existing layouts): the cursor's position, and the bearing (°T) and range from the boat to the cursor. On a touch screen a tap sets the cursor.
+
+**Ruler** (left rail, above Centre): click to set the first point, click again for each further point, double-click to finish; the ruler stays on the chart (Esc stops early). Each leg shows its bearing (°T, and °M when Signal K sends the variation) and distance, with the total at the end; while drawing, the leg to the cursor and the running total follow the mouse. Distances and bearings are rhumb lines, so they match the straight lines on the chart. Points move like course marks: click one (amber ring), wait for the ring to turn green, then drag. Right-click a ruler: **Save ruler as route** (first point the start, the others new library marks; the route opens in the Course panel), **Delete ruler point**, **Delete ruler**, **Delete all rulers**. Rulers are kept between sessions.
+
 ## Instruments
 
 Floating panels of readings, always on top. Drag a panel by its grip; double-click or double-tap the grip to fold the panel to a small title (again to open; Fold all in the drawer); tap a reading to change it (navigation, wind, route/waypoint, routing targets), add one next to it, remove it, or change the panel's size and direction. Instruments drawer: add panels, lock the layout, reset. The layout is kept per PC. Readings from Signal K grey out after 10 s without data; depth turns amber below safety depth + 2 m and red below the safety depth. The tile states (`stale`, `warn`, `alarm`) are where user-set warnings and alarms will plug in.

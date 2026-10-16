@@ -2,6 +2,8 @@
 // always on top of the chart. Each reading can show a state ("stale", "warn",
 // "alarm") that styles the tile, ready for user-set warnings and alarms later.
 
+import { rhumb } from "./navmath.js";
+
 const KEY = "racenav.instruments";
 const STALE_S = 10;
 
@@ -51,7 +53,22 @@ export const ITEMS = {
   TBSP: { label: "Tgt BSP", unit: "kn", group: "Route", get: (c) => c.target?.bsp, fmt: f1 },
   THDG: { label: "Tgt HDG", unit: "°T", group: "Route", get: (c) => c.target?.heading, fmt: deg3 },
   PERF: { label: "BSP / tgt", unit: "%", group: "Route", live: true, get: (c) => (c.target?.bsp > 0.2 && c.v.stw != null ? (100 * c.v.stw) / c.target.bsp : null), fmt: (x) => x.toFixed(0) },
+
+  // the mouse cursor on the chart: position, and bearing and range from the boat (rhumb line)
+  CPOS: { label: "Cursor", unit: "", group: "Cursor", wide: true, get: (c) => c.cursor ?? null, fmt: (p) => `${ddm(p[1], "N", "S")}<br>${ddm(p[0], "E", "W")}` },
+  CLAT: { label: "Cursor lat", unit: "", group: "Cursor", wide: true, get: (c) => c.cursor?.[1] ?? null, fmt: (x) => ddm(x, "N", "S") },
+  CLON: { label: "Cursor lon", unit: "", group: "Cursor", wide: true, get: (c) => c.cursor?.[0] ?? null, fmt: (x) => ddm(x, "E", "W") },
+  CBRG: { label: "Brg to cursor", unit: "°T", group: "Cursor", get: (c) => cursorLeg(c)?.brg ?? null, fmt: deg3 },
+  CRNG: { label: "Rng to cursor", unit: "NM", group: "Cursor", get: (c) => cursorLeg(c)?.nm ?? null, fmt: (x) => (x < 10 ? x.toFixed(2) : x.toFixed(1)) },
 };
+
+/** Rhumb line from the boat to the cursor, or null. */
+function cursorLeg(c) {
+  if (!c.cursor || c.v.lat == null || c.v.lon == null) return null;
+  return rhumb([c.v.lon, c.v.lat], c.cursor);
+}
+
+const CURSOR_PANEL = { id: "pc", x: 0.45, y: 0.02, dir: "row", size: "s", tiles: ["CPOS", "CBRG", "CRNG"] };
 
 const DEFAULT_LAYOUT = {
   v: 1,
@@ -59,7 +76,9 @@ const DEFAULT_LAYOUT = {
   panels: [
     { id: "p1", x: 0.3, y: 0.86, dir: "row", size: "m", tiles: ["SOG", "COG", "HDG", "DPT", "TWS", "TWA"] },
     { id: "p2", x: 0.86, y: 0.12, dir: "column", size: "s", tiles: ["NEXT", "BTW", "DTW", "TTG", "XTE"] },
+    CURSOR_PANEL,
   ],
+  added: ["cursor"],
 };
 
 export function setupInstruments() {
@@ -283,7 +302,12 @@ export function setupInstruments() {
 function loadLayout() {
   try {
     const l = JSON.parse(localStorage.getItem(KEY) || "null");
-    if (l && l.v === 1 && Array.isArray(l.panels)) return l;
+    if (l && l.v === 1 && Array.isArray(l.panels)) {
+      // panels added in later versions appear once in an existing layout
+      l.added ??= [];
+      if (!l.added.includes("cursor")) { l.panels.push(structuredClone(CURSOR_PANEL)); l.added.push("cursor"); }
+      return l;
+    }
   } catch { /* ignore */ }
   return structuredClone(DEFAULT_LAYOUT);
 }

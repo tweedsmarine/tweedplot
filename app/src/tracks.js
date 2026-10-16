@@ -117,7 +117,8 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
   async function refresh() {
     try {
       [list, rec] = await Promise.all([invoke("tracks_list"), invoke("rec_status")]);
-    } catch (e) { status(`Tracks: ${e}`); list = []; }
+      list ||= []; rec ||= { on: false };
+    } catch (e) { status(`Tracks: ${e}`); list = []; rec = { on: false }; }
     // the recording track may not be on disk yet: list it anyway
     if (rec.on && !list.some((t) => t.id === rec.id)) list.unshift({ id: rec.id, name: rec.name, notes: "", colour: "", source: "log", stats: rec.stats });
     prefs.shown = prefs.shown.filter((id) => list.some((t) => t.id === id));

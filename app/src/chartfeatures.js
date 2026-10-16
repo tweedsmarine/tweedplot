@@ -349,7 +349,7 @@ function daymark(colours) {
   return g.getImageData(0, 0, 26, 26);
 }
 
-/** Text drawn as an image: l = light, b = mark name, d = depth, n = area name, t = tide station. */
+/** Text drawn as an image: l = light, b = mark name, d = depth, n = area name, t = tide station, r = ruler. */
 function text(style, t) {
   const fonts = {
     l: `600 19px "Segoe UI", system-ui, sans-serif`,
@@ -357,8 +357,9 @@ function text(style, t) {
     d: `600 19px "Segoe UI", system-ui, sans-serif`,
     n: `italic 600 21px "Segoe UI", system-ui, sans-serif`,
     t: `600 18px "Segoe UI", system-ui, sans-serif`,
+    r: `700 20px "Segoe UI", system-ui, sans-serif`,
   };
-  const ink = { l: MAGENTA, b: INK, d: INK, n: "#2d5f8a", t: "#1e6fb5" };
+  const ink = { l: MAGENTA, b: INK, d: INK, n: "#2d5f8a", t: "#1e6fb5", r: "#a3134d" };
   const [c0, g0] = canvas(1, 1);
   g0.font = fonts[style];
   const w = Math.ceil(g0.measureText(t).width) + 10;
