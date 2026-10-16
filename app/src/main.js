@@ -167,6 +167,10 @@ function chartsLoaded(info) {
   if (!info || !(info.tables > 0)) return;
   map.setLayerZoomRange("land-nz", 4, 6);
   map.setLayerZoomRange("coast-nz", 4, 6);
+  if (info.world_land) {
+    // GSHHG world land comes in the chart tiles at every zoom: the bundled coarse land is not needed
+    for (const id of ["land-world", "coast-world", "land-nz", "coast-nz"]) map.setLayoutProperty(id, "visibility", "none");
+  }
   const src = map.getSource("chart");
   if (src) src.setTiles([TILE_URL]); // reload tiles requested before the charts were open
 }

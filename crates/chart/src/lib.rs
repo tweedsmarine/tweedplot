@@ -14,9 +14,13 @@
 //! appears from its own minimum zoom, coarse bands are drawn first, and
 //! soundings and contours come from the finest band that has data in a tile.
 //!
-//! LINZ data: CC BY 4.0. Not for navigation.
+//! World land outside the LINZ coverage comes from GSHHG (see [`coast`]),
+//! drawn into the same `land` layer at a resolution to suit the zoom.
+//!
+//! LINZ data: CC BY 4.0. GSHHG: LGPL. Not for navigation.
 
 pub mod clip;
+pub mod coast;
 pub mod geom;
 pub mod mvt;
 
@@ -42,6 +46,8 @@ pub enum ChartError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Land,
+    /// GSHHG world land; `band` 1..5 = crude, low, intermediate, high, full.
+    WorldLand,
     DepthArea,
     Contour,
     Sounding,
@@ -78,25 +84,44 @@ pub struct ChartStore {
     cache: Mutex<lru::LruCache<(u8, u32, u32), Arc<Vec<u8>>>>,
 }
 
+/// NZ mainland area covered by LINZ Topo50 land: GSHHG polygons wholly inside
+/// it are left out where Topo50 is drawn, so coastlines aren't doubled.
+const TOPO50_AREA: [f64; 4] = [166.0, -47.6, 179.0, -34.0];
+
+fn inside(b: [f64; 4], area: [f64; 4]) -> bool {
+    b[0] >= area[0] && b[1] >= area[1] && b[2] <= area[2] && b[3] <= area[3]
+}
+
 impl ChartStore {
     /// Open every LINZ GeoPackage in `dir`. Zip files are unpacked once into `dir/.unzipped`.
     pub fn open_dir(dir: impl AsRef<Path>) -> Result<Self, ChartError> {
-        let dir = dir.as_ref();
+        Self::open_dirs(&[dir.as_ref().to_path_buf()])
+    }
+
+    /// Open the chart data in several folders (LINZ GeoPackages and zips, GSHHG
+    /// shapefiles). Missing folders are skipped.
+    pub fn open_dirs(dirs: &[PathBuf]) -> Result<Self, ChartError> {
         let mut gpkgs: Vec<PathBuf> = Vec::new();
-        let unz = dir.join(".unzipped");
-        for e in std::fs::read_dir(dir)? {
-            let p = e?.path();
-            match p.extension().and_then(|s| s.to_str()).map(str::to_ascii_lowercase).as_deref() {
-                Some("gpkg") => gpkgs.push(p),
-                Some("zip") => gpkgs.extend(unzip_gpkgs(&p, &unz)?),
-                _ => {}
-            }
-        }
-        if unz.is_dir() {
-            for e in std::fs::read_dir(&unz)? {
+        for dir in dirs.iter().filter(|d| d.is_dir()) {
+            let unz = dir.join(".unzipped");
+            for e in std::fs::read_dir(dir)? {
                 let p = e?.path();
-                if p.extension().is_some_and(|x| x == "gpkg") && !gpkgs.contains(&p) {
-                    gpkgs.push(p);
+                let name = p.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+                match p.extension().and_then(|s| s.to_str()).map(str::to_ascii_lowercase).as_deref() {
+                    Some("gpkg") => gpkgs.push(p),
+                    Some("zip") if !name.starts_with("gshhg") => gpkgs.extend(unzip_gpkgs(&p, &unz)?),
+                    _ => {}
+                }
+            }
+            if let Some(g) = coast::ensure_gpkg(dir, &unz)? {
+                gpkgs.push(g);
+            }
+            if unz.is_dir() {
+                for e in std::fs::read_dir(&unz)? {
+                    let p = e?.path();
+                    if p.extension().is_some_and(|x| x == "gpkg") && !gpkgs.contains(&p) {
+                        gpkgs.push(p);
+                    }
                 }
             }
         }
@@ -209,6 +234,22 @@ impl ChartStore {
                 }
             });
         }
+        // World land at the resolution for this zoom, except inside NZ where Topo50 is drawn.
+        let topo = z >= band_minzoom(0) && self.has_topo50();
+        for t in self.tables.iter().filter(|t| t.kind == Kind::WorldLand) {
+            let (lo, hi) = coast::zoom_range(coast::RESOLUTIONS[(t.band as usize).clamp(1, 5) - 1]);
+            if z < lo || z > hi {
+                continue;
+            }
+            self.query(t, bbox, &[], |_, g| {
+                if topo && inside(geom_bounds(&g), TOPO50_AREA) {
+                    return;
+                }
+                if let Some(tg) = tp.polygons(&g) {
+                    land.add(&tg, &[]);
+                }
+            });
+        }
         mvt::encode_tile(&[depare, depcnt, land, soundg])
     }
 
@@ -266,6 +307,35 @@ impl ChartStore {
         }
     }
 
+    fn has_topo50(&self) -> bool {
+        self.tables.iter().any(|t| t.kind == Kind::Land)
+    }
+
+    /// True if GSHHG world land is available.
+    pub fn has_world_land(&self) -> bool {
+        self.tables.iter().any(|t| t.kind == Kind::WorldLand)
+    }
+
+    /// GSHHG land polygons touching `bbox`, at a resolution to suit raster cells
+    /// of `cell_m` metres; NZ polygons are left to Topo50 when it is present.
+    pub fn for_each_world_land(&self, bbox: [f64; 4], cell_m: f64, mut f: impl FnMut(&[geom::Ring])) {
+        let res = coast::res_for_cell(cell_m);
+        let band = coast::RESOLUTIONS.iter().position(|&r| r == res).unwrap() as u8 + 1;
+        let topo = self.has_topo50();
+        for t in self.tables.iter().filter(|t| t.kind == Kind::WorldLand && t.band == band) {
+            self.query(t, bbox, &[], |_, g| {
+                if topo && inside(geom_bounds(&g), TOPO50_AREA) {
+                    return;
+                }
+                if let Geom::Polygons(polys) = g {
+                    for p in &polys {
+                        f(p);
+                    }
+                }
+            });
+        }
+    }
+
     /// Depth-area polygons whose shallowest depth (`drval1`) is less than `depth`,
     /// in lon/lat, from the finest band covering each area. For routing.
     pub fn shallow_areas(&self, bbox: [f64; 4], depth: f64, band: u8) -> Vec<Vec<geom::Ring>> {
@@ -283,8 +353,23 @@ impl ChartStore {
     }
 }
 
+fn geom_bounds(g: &Geom) -> [f64; 4] {
+    let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+    let mut add = |p: &[f64; 2]| b = [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])];
+    match g {
+        Geom::Points(v) => v.iter().for_each(&mut add),
+        Geom::Lines(v) => v.iter().flatten().for_each(&mut add),
+        Geom::Polygons(v) => v.iter().flatten().flatten().for_each(&mut add),
+    }
+    b
+}
+
 fn classify(table: &str) -> Option<(Kind, u8)> {
     let t = table.to_ascii_lowercase();
+    if let Some(r) = t.strip_prefix("gshhs_") {
+        let i = coast::RESOLUTIONS.iter().position(|c| r.starts_with(*c) && r.len() == 1)?;
+        return Some((Kind::WorldLand, i as u8 + 1));
+    }
     let kind = if t.contains("coastlines_and_islands") {
         return Some((Kind::Land, 0));
     } else if t.contains("depth_area") {

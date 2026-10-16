@@ -56,6 +56,10 @@ cargo run --release -p chart --example chart_info -- C:\dev\racenav-data\linz
 cargo run --release -p chart --example tileserve -- C:\dev\racenav-data\linz 7070
 ```
 
+## World coastline (GSHHG)
+
+The bundled world land is coarse (small islands missing). For a detailed one, download the GSHHG shapefiles, `gshhg-shp-2.3.7.zip` (about 150 MB, LGPL), from https://www.soest.hawaii.edu/pwessel/gshhg/ and put the zip (or the unpacked `GSHHS_shp` folder) in `C:\dev\racenav-data\coastline` (or `RACENAV_COAST_DIR`). On the next start the app builds `coastline\.unzipped\gshhg_land.gpkg` once (a minute or two), then draws land at five resolutions (crude at world scale to full, every island, from zoom 8) and routing avoids it. Inside NZ, LINZ Topo50 is used instead where it is loaded.
+
 ## Weather (GRIB)
 
 The Weather panel lists GRIB files found in `RACENAV_GRIB_DIR`, `C:\dev\racenav-data\grib` and qtVlm's `C:\Program Files (x86)\qtVlm\grib`. Load as many as you like. One is shown on the chart (wind barbs plus speed shading under the land), and the table compares every loaded run at the cursor for the slider time. Outside a file's time span there is no value: a short GRIB never shows as calm.

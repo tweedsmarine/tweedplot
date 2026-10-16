@@ -519,6 +519,19 @@ fn chart_dir(app: &tauri::AppHandle) -> PathBuf {
     app.path().app_data_dir().map(|p| p.join("charts")).unwrap_or_else(|_| PathBuf::from("charts"))
 }
 
+/// World coastline folder (GSHHG zip or GSHHS_shp): `RACENAV_COAST_DIR`, else
+/// `C:\dev\racenav-data\coastline` when racenav-data exists, else `<app data>\coastline`.
+fn coast_dir(app: &tauri::AppHandle) -> PathBuf {
+    if let Ok(d) = std::env::var("RACENAV_COAST_DIR") {
+        return PathBuf::from(d);
+    }
+    let dev = PathBuf::from(r"C:\dev\racenav-data");
+    if dev.is_dir() {
+        return dev.join("coastline");
+    }
+    app.path().app_data_dir().map(|p| p.join("coastline")).unwrap_or_else(|_| PathBuf::from("coastline"))
+}
+
 #[tauri::command]
 fn app_info(app: tauri::AppHandle) -> serde_json::Value {
     let log_dir = app.path().app_data_dir().ok().map(|p| p.join("logs"));
@@ -535,6 +548,7 @@ fn chart_info() -> serde_json::Value {
     match CHARTS.get() {
         Some(s) => serde_json::json!({
             "tables": s.tables.len(),
+            "world_land": s.has_world_land(),
             "layers": s.tables.iter().map(|t| serde_json::json!({
                 "table": t.table, "kind": format!("{:?}", t.kind), "band": t.band, "rows": t.rows
             })).collect::<Vec<_>>(),
@@ -586,11 +600,16 @@ pub fn run() {
             // Charts: open in the background (the first run unzips the LINZ downloads).
             let handle = app.handle().clone();
             let dir = chart_dir(&handle);
-            std::thread::spawn(move || match chart::ChartStore::open_dir(&dir) {
+            let coast = coast_dir(&handle);
+            let _ = std::fs::create_dir_all(&coast);
+            // the first run with a GSHHG download builds the world coastline file (a minute or two)
+            let _ = handle.emit("chart-status", serde_json::json!({ "detail": "opening charts" }));
+            std::thread::spawn(move || match chart::ChartStore::open_dirs(&[dir.clone(), coast]) {
                 Ok(store) => {
                     let n = store.tables.len();
+                    let world = store.has_world_land();
                     let _ = CHARTS.set(Arc::new(store));
-                    let _ = handle.emit("chart-ready", serde_json::json!({ "tables": n, "dir": dir }));
+                    let _ = handle.emit("chart-ready", serde_json::json!({ "tables": n, "dir": dir, "world_land": world }));
                 }
                 Err(e) => {
                     let _ = handle.emit("chart-ready", serde_json::json!({ "tables": 0, "dir": dir, "error": e.to_string() }));

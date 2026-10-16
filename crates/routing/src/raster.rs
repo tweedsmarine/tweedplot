@@ -195,6 +195,11 @@ impl Raster {
             r.fill(rings, BLOCKED);
             r.block_outline(rings);
         });
+        let cell = r.cell_size_m();
+        store.for_each_world_land(bbox, cell, |rings| {
+            r.fill(rings, BLOCKED);
+            r.block_outline(rings);
+        });
         r
     }
 
