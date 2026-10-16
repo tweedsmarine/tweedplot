@@ -215,16 +215,25 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
     }
   }
 
+  // A label for routings started from somewhere particular (a competitor's fix):
+  // used while the course still starts there and the start time is unchanged.
+  let runLabel = null; // { text, colour, start: [lon, lat], t }
+  function labelFor(c, t0) {
+    if (!runLabel || !c.start) return null;
+    const same = Math.abs(c.start[0] - runLabel.start[0]) < 1e-6 && Math.abs(c.start[1] - runLabel.start[1]) < 1e-6;
+    return same && t0 === runLabel.t ? runLabel : null;
+  }
   function add(r, nameExtra) {
     seq += 1;
     const c = course.get();
     const used = new Set(items.map((x) => x.colour));
-    let name = `${c.name || "Routing"} · ${nameExtra ?? fmt(r.t0, true)}`;
+    const lab = labelFor(c, r.request?.t0);
+    let name = lab ? `${lab.text}${nameExtra ? ` · ${nameExtra}` : ""}` : `${c.name || "Routing"} · ${nameExtra ?? fmt(r.t0, true)}`;
     if (items.some((x) => x.name === name)) { let n = 2; while (items.some((x) => x.name === `${name} (${n})`)) n++; name = `${name} (${n})`; }
     const it = {
       key: `k${seq}`,
       name,
-      colour: COLOURS.find((x) => !used.has(x)) ?? COLOURS[seq % COLOURS.length],
+      colour: (lab?.colour && !used.has(lab.colour) ? lab.colour : null) ?? COLOURS.find((x) => !used.has(x)) ?? COLOURS[seq % COLOURS.length],
       visible: true, savedId: null, r, stats: routingStats(r), courseKey: courseKey(c),
     };
     items.push(it);
@@ -486,6 +495,8 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
     activePoints: () => { const a = activeItem(); return a && a.visible ? a.r.points : null; },
     /** Show a saved routing (Library panel). */
     async showSaved(id) { const it = await showSaved(id); if (it) ui.openTab("routing", "list"); },
+    /** Name (and colour) routings started from this position and time, e.g. "Guillou · fix 15 Oct 20:00Z". */
+    setRunLabel(text, start, t, colour) { runLabel = { text, start, t: Math.round(t), colour }; },
     /** Use a set start time (e.g. a competitor's last fix). */
     setStartTime(t) {
       opts.tmode = "fixed"; opts.tfixed = Math.round(t);

@@ -219,7 +219,10 @@ export function setupFleet(map, { weather, course, routing, dock, ui }) {
       course.startAt([last.lon, last.lat]);
     }
     routing.setStartTime(last.t);
-    routing.msg(`Start set to ${nameOf(id)}'s fix at ${fmt(last.t, true)}. Compute when ready (polar in Boat).`);
+    const label = `${nameOf(id)} · fix ${utc(last.t)}`;
+    const col = colourOf(id);
+    routing.setRunLabel(label, [last.lon, last.lat], last.t, col && col.toLowerCase() !== "#ffffff" ? col : null);
+    routing.msg(`Start set to ${nameOf(id)}'s fix at ${utc(last.t)}. Routings from here will be named “${label}”. Compute when ready (polar in Boat).`);
     ui.openTab("routing", "run");
   }
 
