@@ -7,6 +7,7 @@
 //! <dir>/marks.json             every mark, shared by all routes
 //! <dir>/routes/<id>.json       one route: an ordered list of mark ids
 //! <dir>/routings/<id>.json     one saved routing: its inputs and the result
+//! <dir>/tracks/<id>.json       one track (logged or imported), see [`tracks`]
 //! <dir>/export/*.gpx           GPX written by the app
 //! ```
 //!
@@ -20,7 +21,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 mod gpx;
-pub use gpx::{parse_gpx, GpxData, GpxRoute, GpxWaypoint};
+pub mod tracks;
+pub use gpx::{parse_gpx, GpxData, GpxRoute, GpxTrack, GpxWaypoint};
+pub use tracks::{Recorder, Track, TrackPoint, TrackStats, TrackSummary};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -122,7 +125,7 @@ pub struct ImportReport {
     pub marks_added: usize,
     pub marks_matched: usize,
     pub routes_added: Vec<String>,
-    pub tracks_ignored: usize,
+    pub tracks_added: Vec<String>,
 }
 
 pub struct Library {
@@ -135,7 +138,7 @@ const SAME_MARK_NM: f64 = 0.03;
 impl Library {
     pub fn open(dir: impl Into<PathBuf>) -> Result<Self> {
         let dir = dir.into();
-        for sub in ["routes", "routings", "export"] {
+        for sub in ["routes", "routings", "tracks", "export"] {
             std::fs::create_dir_all(dir.join(sub))?;
         }
         Ok(Library { dir })
@@ -327,7 +330,7 @@ impl Library {
     /// same name as a library mark and within about 50 m is the same mark.
     pub fn import_gpx(&self, text: &str, group: &str) -> Result<ImportReport> {
         let data = parse_gpx(text)?;
-        let mut rep = ImportReport { tracks_ignored: data.tracks, ..Default::default() };
+        let mut rep = ImportReport::default();
         let mut marks = self.marks()?;
         let mut find_or_add = |w: &GpxWaypoint, rep: &mut ImportReport| -> String {
             let here = nav_core::LatLon::new(w.lat, w.lon);
@@ -366,7 +369,70 @@ impl Library {
         for r in new_routes {
             rep.routes_added.push(self.save_route(r)?.name);
         }
+        for (k, t) in data.tracks.into_iter().enumerate() {
+            let name = if t.name.trim().is_empty() {
+                if group.is_empty() { format!("Imported track {}", k + 1) } else { format!("{group} {}", k + 1) }
+            } else {
+                t.name.trim().to_string()
+            };
+            let tr = Track { name, notes: t.desc, source: "gpx".into(), segments: t.segments, ..Default::default() };
+            rep.tracks_added.push(self.save_track(tr)?.name);
+        }
         Ok(rep)
+    }
+
+    // ---------- tracks ----------
+
+    /// Every track, without points, newest first.
+    pub fn tracks(&self) -> Result<Vec<TrackSummary>> {
+        let mut v: Vec<TrackSummary> = read_dir_json::<Track>(&self.dir.join("tracks"))?.iter().map(Track::summary).collect();
+        v.sort_by_key(|t| std::cmp::Reverse(t.stats.start.unwrap_or(t.modified)));
+        Ok(v)
+    }
+
+    pub fn track(&self, id: &str) -> Result<Track> {
+        read_one(&self.dir.join("tracks"), id)
+    }
+
+    /// Save a track (new id if it has none); its totals are worked out again.
+    pub fn save_track(&self, mut t: Track) -> Result<TrackSummary> {
+        if t.id.is_empty() {
+            t.id = new_id("t");
+        }
+        t.modified = now();
+        t.update_stats();
+        write_json(&self.dir.join("tracks").join(format!("{}.json", safe(&t.id))), &t)?;
+        Ok(t.summary())
+    }
+
+    /// A fresh track id (for a track that will be saved later).
+    pub fn new_track_id(&self) -> String {
+        new_id("t")
+    }
+
+    /// Save a track as it is (totals kept), e.g. a track being recorded.
+    pub fn store_track(&self, t: &Track) -> Result<()> {
+        write_json(&self.dir.join("tracks").join(format!("{}.json", safe(&t.id))), t)
+    }
+
+    /// Change a track's name, notes and colour.
+    pub fn update_track_info(&self, id: &str, name: &str, notes: &str, colour: &str) -> Result<TrackSummary> {
+        let mut t = self.track(id)?;
+        t.name = name.trim().to_string();
+        t.notes = notes.to_string();
+        t.colour = colour.to_string();
+        t.modified = now();
+        self.store_track(&t)?;
+        Ok(t.summary())
+    }
+
+    pub fn delete_track(&self, id: &str) -> Result<()> {
+        let p = self.dir.join("tracks").join(format!("{}.json", safe(id)));
+        if !p.exists() {
+            return Err(Error::NotFound(id.to_string()));
+        }
+        std::fs::remove_file(p)?;
+        Ok(())
     }
 
     /// Write text into the export folder; returns the full path.
@@ -505,6 +571,30 @@ mod tests {
         assert_eq!(full.result["distance_nm"], 925.6);
         lib.delete_routing(&s.id).unwrap();
         assert!(lib.routings().unwrap().is_empty());
+    }
+
+    #[test]
+    fn tracks_import_list_edit_delete() {
+        let lib = temp_lib("t");
+        let g = r#"<gpx version="1.1"><trk><name>Race</name><trkseg>
+            <trkpt lat="-41.0" lon="173.0"><time>2026-10-17T00:00:00Z</time></trkpt>
+            <trkpt lat="-41.0" lon="173.02"><time>2026-10-17T00:10:00Z</time></trkpt></trkseg></trk>
+            <trk><trkseg><trkpt lat="-40.0" lon="173.0"/></trkseg></trk></gpx>"#;
+        let rep = lib.import_gpx(g, "Morgane").unwrap();
+        assert_eq!(rep.tracks_added, vec!["Race".to_string(), "Morgane 2".to_string()]);
+        let list = lib.tracks().unwrap();
+        assert_eq!(list.len(), 2);
+        let race = list.iter().find(|t| t.name == "Race").unwrap();
+        assert_eq!(race.stats.points, 2);
+        assert!((race.stats.distance_nm - 0.91).abs() < 0.02, "{}", race.stats.distance_nm);
+        assert!((race.stats.max_sog.unwrap() - 5.4).abs() < 0.2);
+        assert_eq!(race.source, "gpx");
+        let s = lib.update_track_info(&race.id, "Race day 1", "light airs", "#ff0000").unwrap();
+        assert_eq!((s.name.as_str(), s.colour.as_str()), ("Race day 1", "#ff0000"));
+        let full = lib.track(&race.id).unwrap();
+        assert!(full.to_gpx().contains("<name>Race day 1</name>"));
+        lib.delete_track(&race.id).unwrap();
+        assert_eq!(lib.tracks().unwrap().len(), 1);
     }
 
     #[test]

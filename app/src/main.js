@@ -8,6 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { setupWeather, barbImage } from "./weather.js";
 import { setupChartFeatures, featureImage } from "./chartfeatures.js";
 import { setupTides, tideImage } from "./tides.js";
+import { setupTracks } from "./tracks.js";
 import { setupRoute, markImage } from "./route.js";
 import { setupRouting } from "./routing.js";
 import { setupBoat } from "./boat.js";
@@ -147,6 +148,8 @@ map.on("load", () => {
   setupFleet(map, { weather, course: route, routing, dock, ui });
   setupGribDownload(map, { weather, course: route });
   setupTides(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn) });
+  setupTracks(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn),
+    status: (s) => { document.getElementById("lib-status").textContent = s; } });
   library.onChange(feed);
   feed();
 });

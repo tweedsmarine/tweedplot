@@ -293,3 +293,7 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
 .tide-pop table.ext { border-collapse: collapse; margin: 4px 0; }
 .tide-pop table.ext td { padding: 1px 10px 1px 0; }
 .tide-pop .nav button { flex: none; width: auto; }
+
+/* tracks list */
+#lib-tracks li .swatch { flex: none; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
+#lib-tracks li input[type="checkbox"] { flex: none; margin: 0 4px 0 0; }

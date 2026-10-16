@@ -1,0 +1,257 @@
+// Library > Tracks: tracks recorded from Signal K and tracks imported from GPX.
+// Shown on the chart in their own colours; optionally a dot where each track's
+// boat was at the weather time (replays and comparisons); click a track for the
+// time, SOG and COG there. The recorder itself runs in Rust (it keeps logging
+// while plotting is paused); this module starts and stops it and shows its progress.
+import * as maplibregl from "maplibre-gl";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+
+const KEY = "racenav.tracks";
+const PALETTE = ["#d35400", "#8e44ad", "#16a085", "#c0392b", "#2c3e50", "#27ae60", "#2980b9", "#b7950b"];
+const empty = { type: "FeatureCollection", features: [] };
+
+const fmtTime = (t) => (t == null ? "–" : new Date(t * 1000).toLocaleString("en-NZ", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }));
+const fmtClock = (t) => new Date(t * 1000).toLocaleTimeString("en-NZ", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+function fmtDur(s) {
+  if (s == null || s <= 0) return "";
+  const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
+  return h >= 24 ? `${Math.floor(h / 24)} d ${h % 24} h` : h ? `${h} h ${String(m).padStart(2, "0")} m` : `${m} min`;
+}
+
+export function setupTracks(map, { before, getTime, onTime, status }) {
+  const $ = (id) => document.getElementById(id);
+  const prefs = { shown: [], atTime: true };
+  try { Object.assign(prefs, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ } };
+
+  let list = []; // summaries
+  const cache = new Map(); // id -> { segments: [[lon, lat, t, sog, cog]...] }
+  let rec = { on: false };
+
+  // ---------- chart ----------------------------------------------------------
+  map.addSource("trk-lines", { type: "geojson", data: empty });
+  map.addSource("trk-now", { type: "geojson", data: empty });
+  map.addLayer({ id: "trk-lines", type: "line", source: "trk-lines", layout: { "line-join": "round", "line-cap": "round" },
+    paint: { "line-color": ["get", "colour"], "line-width": 2.2, "line-opacity": 0.9 } }, before);
+  map.addLayer({ id: "trk-now", type: "circle", source: "trk-now",
+    paint: { "circle-radius": 5, "circle-color": ["get", "colour"], "circle-stroke-color": "#fff", "circle-stroke-width": 1.5 } }, before);
+
+  const colourOf = (t) => t.colour || PALETTE[Math.abs([...t.id].reduce((a, c) => a * 31 + c.charCodeAt(0), 7)) % PALETTE.length];
+
+  async function load(id) {
+    if (!cache.has(id)) cache.set(id, await invoke("track_get", { id }));
+    return cache.get(id);
+  }
+
+  async function draw() {
+    const feats = [];
+    for (const t of list.filter((x) => prefs.shown.includes(x.id))) {
+      let d;
+      try { d = await load(t.id); } catch { continue; }
+      const colour = colourOf(t);
+      for (const seg of d.segments) {
+        if (seg.length > 1) feats.push({ type: "Feature", properties: { id: t.id, colour }, geometry: { type: "LineString", coordinates: seg.map((p) => [p[0], p[1]]) } });
+      }
+    }
+    map.getSource("trk-lines").setData({ type: "FeatureCollection", features: feats });
+    drawNow();
+  }
+
+  /** Position of a track at time t (between fixes, straight line), or null outside its times. */
+  function at(d, t) {
+    for (const seg of d.segments) {
+      if (!seg.length || seg[0][2] == null || t < seg[0][2] || t > seg.at(-1)[2]) continue;
+      let lo = 0, hi = seg.length - 1;
+      while (hi - lo > 1) { const m = (lo + hi) >> 1; if (seg[m][2] <= t) lo = m; else hi = m; }
+      const a = seg[lo], b = seg[hi];
+      const f = b[2] > a[2] ? (t - a[2]) / (b[2] - a[2]) : 0;
+      return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+    }
+    return null;
+  }
+  function drawNow() {
+    const feats = [];
+    if (prefs.atTime) {
+      const t = getTime();
+      for (const s of list.filter((x) => prefs.shown.includes(x.id))) {
+        const d = cache.get(s.id);
+        const p = d && at(d, t);
+        if (p) feats.push({ type: "Feature", properties: { id: s.id, colour: colourOf(s) }, geometry: { type: "Point", coordinates: p } });
+      }
+    }
+    map.getSource("trk-now").setData({ type: "FeatureCollection", features: feats });
+  }
+  onTime?.(drawNow);
+
+  // click a track: time, SOG and COG at the nearest fix
+  let popup = null;
+  map.on("click", "trk-lines", async (e) => {
+    if (document.querySelector(".armed")) return;
+    const id = e.features[0].properties.id;
+    const d = cache.get(id);
+    const s = list.find((x) => x.id === id);
+    if (!d || !s) return;
+    let best = null, bd = Infinity;
+    const c = e.lngLat;
+    const k = Math.cos((c.lat * Math.PI) / 180);
+    for (const seg of d.segments) for (const p of seg) {
+      const dd = ((p[0] - c.lng) * k) ** 2 + (p[1] - c.lat) ** 2;
+      if (dd < bd) { bd = dd; best = p; }
+    }
+    if (!best) return;
+    const el = document.createElement("div");
+    el.className = "feat-pop";
+    const rows = [["Time", best[2] == null ? "–" : `${fmtTime(best[2])}:${String(new Date(best[2] * 1000).getSeconds()).padStart(2, "0")}`],
+      ["SOG", best[3] == null ? "–" : `${best[3].toFixed(1)} kn`], ["COG", best[4] == null ? "–" : `${Math.round(best[4])}°T`]];
+    el.innerHTML = `<h4></h4><table>${rows.map(() => "<tr><td></td><td></td></tr>").join("")}</table>`;
+    el.querySelector("h4").textContent = s.name;
+    el.querySelectorAll("tr").forEach((tr, i) => { tr.cells[0].textContent = rows[i][0]; tr.cells[1].textContent = rows[i][1]; });
+    popup?.remove();
+    popup = new maplibregl.Popup({ maxWidth: "260px" }).setLngLat([best[0], best[1]]).setDOMContent(el).addTo(map);
+  });
+  map.on("mouseenter", "trk-lines", () => { if (!document.querySelector(".armed")) map.getCanvas().style.cursor = "pointer"; });
+  map.on("mouseleave", "trk-lines", () => { if (!document.querySelector(".armed")) map.getCanvas().style.cursor = ""; });
+
+  // ---------- list ----------------------------------------------------------
+  async function refresh() {
+    try {
+      [list, rec] = await Promise.all([invoke("tracks_list"), invoke("rec_status")]);
+    } catch (e) { status(`Tracks: ${e}`); list = []; }
+    // the recording track may not be on disk yet: list it anyway
+    if (rec.on && !list.some((t) => t.id === rec.id)) list.unshift({ id: rec.id, name: rec.name, notes: "", colour: "", source: "log", stats: rec.stats });
+    prefs.shown = prefs.shown.filter((id) => list.some((t) => t.id === id));
+    if (rec.on) cache.delete(rec.id); // reload the recording track as the recorder has it
+    render();
+    showRec();
+    draw();
+  }
+
+  function render() {
+    const ul = $("lib-tracks");
+    ul.innerHTML = "";
+    if (!list.length) {
+      const li = document.createElement("li");
+      li.className = "wx-note";
+      li.textContent = "No tracks yet: press Record, or import a GPX file.";
+      ul.append(li);
+    }
+    for (const t of list) {
+      const li = document.createElement("li");
+      const st = t.stats || {};
+      const recording = rec.on && rec.id === t.id;
+      li.innerHTML = `<input type="checkbox" title="Show on the chart"><span class="swatch"></span>
+        <div class="main" title="Zoom to this track"><b></b><small></small></div>
+        <button data-act="gpx" title="Write this track as GPX">GPX</button><button data-act="edit" title="Name, colour, notes">✎</button><button data-act="del" title="Delete this track">✕</button>`;
+      const cb = li.querySelector("input");
+      cb.checked = prefs.shown.includes(t.id);
+      cb.onchange = () => {
+        prefs.shown = cb.checked ? [...prefs.shown, t.id] : prefs.shown.filter((x) => x !== t.id);
+        save(); draw();
+      };
+      li.querySelector(".swatch").style.background = colourOf(t);
+      li.querySelector("b").textContent = `${recording ? "● " : ""}${t.name}`;
+      li.querySelector("small").textContent = [fmtTime(st.start), fmtDur(st.end - st.start), `${(st.distance_nm ?? 0).toFixed(1)} NM`,
+        st.max_sog ? `max ${st.max_sog.toFixed(1)} kn` : "", t.source === "gpx" ? "GPX" : recording ? "recording" : "log"].filter(Boolean).join(" · ");
+      li.querySelector(".main").onclick = () => zoomTo(t);
+      li.querySelector('[data-act="gpx"]').onclick = async () => {
+        try { status(`Written to ${await invoke("track_export", { id: t.id })}`); } catch (e) { status(String(e)); }
+      };
+      li.querySelector('[data-act="edit"]').onclick = () => edit(t);
+      li.querySelector('[data-act="del"]').onclick = () => {
+        if (recording) { status("This track is being recorded: stop recording first."); return; }
+        const keep = li.innerHTML;
+        li.innerHTML = `<div class="main"><b>Delete ${t.name.replace(/[<&]/g, "")}?</b></div><button data-act="yes" class="bad">Delete</button><button data-act="no">Keep</button>`;
+        li.querySelector('[data-act="no"]').onclick = () => { li.innerHTML = keep; render(); };
+        li.querySelector('[data-act="yes"]').onclick = async () => {
+          try { await invoke("track_delete", { id: t.id }); cache.delete(t.id); } catch (e) { status(String(e)); }
+          refresh();
+        };
+      };
+      ul.append(li);
+    }
+  }
+
+  function zoomTo(t) {
+    const b = t.stats?.bbox;
+    if (!b) return;
+    if (!prefs.shown.includes(t.id)) { prefs.shown.push(t.id); save(); render(); draw(); }
+    map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: { top: 60, bottom: 80, left: 440, right: 80 }, duration: 600, maxZoom: 15 });
+  }
+
+  // ---------- edit ----------------------------------------------------------
+  const form = $("trk-edit");
+  let editing = null;
+  function edit(t) {
+    editing = t;
+    form.name.value = t.name;
+    form.colour.value = colourOf(t);
+    form.notes.value = t.notes || "";
+    form.hidden = false;
+    form.name.focus();
+  }
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    if (!editing) return;
+    try {
+      await invoke("track_update", { id: editing.id, name: form.name.value.trim() || editing.name, notes: form.notes.value, colour: form.colour.value });
+      cache.delete(editing.id);
+    } catch (err) { status(String(err)); }
+    form.hidden = true; editing = null;
+    refresh();
+  };
+  form.querySelector('[data-act="cancel"]').onclick = () => { form.hidden = true; editing = null; };
+
+  // ---------- recording ----------------------------------------------------------
+  function showRec() {
+    const b = $("trk-rec");
+    b.textContent = rec.on ? "Stop" : "Record";
+    b.classList.toggle("on", !!rec.on);
+    $("trk-new").disabled = !rec.on;
+    const st = rec.stats || {};
+    $("trk-rec-info").textContent = rec.on
+      ? `${rec.name}: ${st.points ?? 0} fixes, ${(st.distance_nm ?? 0).toFixed(1)} NM${st.points ? "" : " (waiting for Signal K)"}`
+      : "Not recording.";
+  }
+  $("trk-rec").onclick = async () => {
+    try { rec = rec.on ? await invoke("rec_stop") : await invoke("rec_start", { fresh: false }); } catch (e) { status(String(e)); }
+    refresh();
+  };
+  $("trk-new").onclick = async () => {
+    try { rec = await invoke("rec_start", { fresh: true }); } catch (e) { status(String(e)); }
+    if (rec.on && !prefs.shown.includes(rec.id)) { prefs.shown.push(rec.id); save(); }
+    refresh();
+  };
+  // each fix the recorder keeps: extend the drawn track and the totals
+  let redraw = null;
+  listen("rec-point", ({ payload: p }) => {
+    if (!rec.on) return;
+    rec.stats = p.stats;
+    const d = cache.get(rec.id);
+    if (d) {
+      if (!d.segments.length) d.segments.push([]);
+      d.segments.at(-1).push([p.lon, p.lat, p.t, null, null]);
+    }
+    const row = list.find((t) => t.id === rec.id);
+    if (row) row.stats = p.stats;
+    showRec();
+    if (!redraw) redraw = setTimeout(() => { redraw = null; if (prefs.shown.includes(rec.id)) draw(); }, 2000);
+  }).catch(() => {});
+
+  // ---------- import and options ----------------------------------------------------------
+  $("trk-import").onclick = () => $("lib-file").click();
+  window.addEventListener("racenav-tracks-imported", async () => {
+    const before = new Set(list.map((t) => t.id));
+    await refresh();
+    // show what came in
+    for (const t of list) if (!before.has(t.id) && !prefs.shown.includes(t.id)) prefs.shown.push(t.id);
+    save(); render(); draw();
+    const fresh = list.filter((t) => !before.has(t.id));
+    if (fresh.length === 1) zoomTo(fresh[0]);
+  });
+  $("trk-time").checked = prefs.atTime;
+  $("trk-time").onchange = () => { prefs.atTime = $("trk-time").checked; save(); drawNow(); };
+
+  refresh();
+  return { refresh };
+}

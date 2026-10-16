@@ -187,8 +187,9 @@ export function setupLibrary(map, { ui }) {
     try {
       const rep = await invoke("gpx_import", { text: await file.text(), group: file.name.replace(/\.gpx$/i, "") });
       status(`${file.name}: ${rep.marks_added} new marks, ${rep.marks_matched} matched existing marks` +
-        `${rep.routes_added.length ? `, routes: ${rep.routes_added.join(", ")}` : ""}${rep.tracks_ignored ? ` (${rep.tracks_ignored} tracks not imported)` : ""}.`);
+        `${rep.routes_added.length ? `, routes: ${rep.routes_added.join(", ")}` : ""}${rep.tracks_added?.length ? `, tracks: ${rep.tracks_added.join(", ")}` : ""}.`);
       await refresh();
+      if (rep.tracks_added?.length) window.dispatchEvent(new CustomEvent("racenav-tracks-imported", { detail: rep.tracks_added }));
     } catch (err) { status(`Import failed: ${err}`); }
   };
   $("lib-export").onclick = async () => {

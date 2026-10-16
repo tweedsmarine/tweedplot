@@ -192,10 +192,11 @@
           <button data-tab="routes" class="on">Routes</button>
           <button data-tab="marks">Marks</button>
           <button data-tab="routings">Routings</button>
+          <button data-tab="tracks">Tracks</button>
         </div>
         <div class="tab" data-tab="routes">
           <div class="wx-row">
-            <button id="lib-import" title="Read marks and routes from a GPX file (qtVlm, OpenCPN, Expedition …)">Import GPX…</button>
+            <button id="lib-import" title="Read marks, routes and tracks from a GPX file (qtVlm, OpenCPN, Expedition …)">Import GPX…</button>
             <button id="lib-export" title="Write every mark and route to one GPX file">Export all</button>
             <input id="lib-file" type="file" accept=".gpx,application/gpx+xml" hidden />
           </div>
@@ -223,6 +224,25 @@
         </div>
         <div class="tab" data-tab="routings" hidden>
           <ul id="lib-routings" class="list"></ul>
+        </div>
+        <div class="tab" data-tab="tracks" hidden>
+          <div class="wx-row">
+            <button id="trk-rec" title="Record the boat's track from Signal K (kept while the app runs, also when plotting is paused)">Record</button>
+            <button id="trk-new" title="Finish the current log and start a new track">New log</button>
+            <span id="trk-rec-info" class="grow wx-note"></span>
+          </div>
+          <div class="wx-row">
+            <button id="trk-import" title="Read tracks (and any marks and routes) from a GPX file">Import GPX…</button>
+            <label class="grow" title="Show where each track's boat was at the weather time"><input id="trk-time" type="checkbox" /> Boat at weather time</label>
+          </div>
+          <ul id="lib-tracks" class="list"></ul>
+          <form id="trk-edit" class="edit" hidden>
+            <div class="wx-row"><label class="grow">Name</label><input name="name" type="text" /></div>
+            <div class="wx-row"><label class="grow">Colour</label><input name="colour" type="color" /></div>
+            <div class="wx-row"><label class="grow">Notes</label><input name="notes" type="text" /></div>
+            <div class="wx-row"><button type="submit" class="on">Save</button><button type="button" data-act="cancel">Cancel</button></div>
+          </form>
+          <div class="wx-note">Logged tracks keep a fix every 10 s while moving (sooner in a tack or gybe) and are saved in racenav-data\library\tracks. GPX writes to the library's export folder.</div>
         </div>
         <div id="lib-status" class="wx-note"></div>
       </section>

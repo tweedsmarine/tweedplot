@@ -14,7 +14,7 @@ Spec and roadmap: https://claude.ai/code/artifact/e37fa4c3-20c2-4aec-af8f-641714
 | `crates/routing` | Isochrone routing (modified isochrone method) round land and water shallower than the safety depth, multi-leg, tack/gybe penalties, currents | Working, tested |
 | `crates/chart` | LINZ GeoPackages (Topo50 coastline, depth areas, contours, soundings, all scale bands) served as vector tiles | Working, tested on the full LINZ download |
 | `crates/signalk` | Signal K WebSocket client, own-vessel state (position, COG/SOG, heading, BSP, depth, apparent and true wind, log), true wind worked out when the server has none, session log | Working, tested against Signal K playing a Morgane log |
-| `crates/library` | Mark library, routes and saved routings as JSON files; GPX import and export | Working, tested |
+| `crates/library` | Mark library, routes, saved routings and tracks as JSON files; track recorder; GPX import and export | Working, tested |
 | `crates/tides` | LINZ tide predictions: daily tables, secondary ports from LINZ differences, cosine curves, downloader | Working, tested on LINZ files |
 | `app/` | Tauri shell + MapLibre GL front end: icon rail with one drawer at a time, chart, GRIB, routing, library, floating instrument panels | Working |
 
@@ -112,6 +112,16 @@ export\*.gpx          GPX written by the app
 ```
 
 Route drawer: name the route and **Save**: new marks go into the library (named WP 1, WP 2 … until renamed), moved library marks are updated. **Navigate** picks the mark being sailed to (it steps on by itself inside the arrival radius); the route instruments use it. Library drawer: Routes (open, GPX, delete), Marks (find, edit name/type/group/position/notes, add to the route, delete; positions can be typed as `36 50.12 S` or `-36.8353`), Routings (show, delete). **Import GPX** reads waypoints and routes (qtVlm, OpenCPN, Expedition …); a waypoint with the same name as a library mark and within about 50 m becomes that mark. Right-click the chart: **New library mark here**. The start can be a library mark too: in Set start mode click the mark, right-click it (Start route at …), or press **Start** beside it in the Marks list; the route keeps the link (`start_mark`).
+
+### Tracks
+
+Library > **Tracks**:
+
+- **Record** logs the own boat's track from Signal K into the library (`tracks\<id>.json`). Fixes are kept every 10 s while moving (at least 5 m), sooner in a tack or gybe, and every 10 min when still; a gap of 10 min or more starts a new segment. Times come from the GPS (`navigation.datetime`) when the server sends it, so a replayed log keeps its own times. Recording carries on while plotting is paused, is saved every 30 s and on exit, and resumes the same track after a restart if its last fix is under 2 h old. **New log** starts a new track.
+- **Import GPX…** (here or in Routes) reads `<trk>` tracks with times, and speed and course where the file has them (GPX 1.0 elements or extensions), along with any waypoints and routes.
+- Tick a track to show it; click its name to zoom to it; **GPX** writes it to the export folder (GPX 1.1 with times, course and speed); ✎ for name, colour and notes; ✕ deletes. Click a track on the chart for the time, SOG and COG there. **Boat at weather time** puts a dot on each shown track where that boat was at the weather slider time, for replays and comparing races.
+
+The orange line behind the boat is still the live trail since the app started (**Clear trk** clears it); the recorded track is separate.
 
 A library mark's type can also be a buoy: port (red can) or starboard (green cone) lateral, north/east/south/west cardinal, isolated danger, safe water or special. Those are drawn with their IALA A chart symbol instead of a dot, which helps for temporary race marks and marks missing from the charts.
 

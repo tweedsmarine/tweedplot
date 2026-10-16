@@ -523,6 +523,169 @@ fn gpx_import(text: String, group: String) -> Result<library::ImportReport, Stri
     lib()?.import_gpx(&text, &group).map_err(es)
 }
 
+// ---------- tracks and the track recorder ----------
+
+/// The track being recorded from Signal K, when recording is on.
+static REC: Mutex<Option<library::Recorder>> = Mutex::new(None);
+const REC_FILE: &str = "recorder.json";
+
+fn rec_settings_save(on: bool, id: &str) {
+    if let Ok(l) = lib() {
+        let _ = std::fs::write(l.dir().join(REC_FILE), serde_json::json!({ "on": on, "track": id }).to_string());
+    }
+}
+
+fn new_log_track() -> library::Track {
+    library::Track {
+        id: String::new(),
+        name: chrono::Local::now().format("Log %d %b %Y %H:%M").to_string(),
+        source: "log".into(),
+        ..Default::default()
+    }
+}
+
+/// Start recording: carry on with `resume` if given (and it exists), else a new track.
+fn rec_begin(resume: Option<&str>) -> Result<library::TrackSummary, String> {
+    let l = lib()?;
+    let mut t = match resume.and_then(|id| l.track(id).ok()) {
+        Some(t) => t,
+        // a new track is written with its first fix, so a session without Signal K leaves no empty track
+        None => library::Track { id: l.new_track_id(), ..new_log_track() },
+    };
+    t.source = "log".into();
+    let sum = t.summary();
+    rec_settings_save(true, &t.id);
+    *REC.lock().unwrap() = Some(library::Recorder::new(t));
+    Ok(sum)
+}
+
+/// Save the recording track now (if it has new fixes).
+fn rec_flush() {
+    let snapshot = {
+        let mut g = REC.lock().unwrap();
+        match g.as_mut() {
+            Some(r) if r.is_dirty() => {
+                r.mark_saved(chrono_now());
+                Some(r.track.clone())
+            }
+            _ => None,
+        }
+    };
+    if let (Some(t), Ok(l)) = (snapshot, lib()) {
+        if let Err(e) = l.store_track(&t) {
+            eprintln!("track save: {e}");
+        }
+    }
+}
+
+/// Offer a Signal K fix to the recorder; saves every 30 s.
+fn rec_vessel(app: &tauri::AppHandle, v: &signalk::VesselState) {
+    let (Some(lat), Some(lon)) = (v.lat, v.lon) else { return };
+    let now = chrono_now();
+    let t = v.datetime.as_deref().and_then(library::tracks::parse_iso).unwrap_or(now);
+    let (kept, due, stats) = {
+        let mut g = REC.lock().unwrap();
+        let Some(r) = g.as_mut() else { return };
+        let kept = r.push(library::TrackPoint { t: Some(t), lat, lon, sog: v.sog, cog: v.cog });
+        (kept, r.due_save(now, 30), r.track.stats.clone())
+    };
+    if kept {
+        let _ = app.emit("rec-point", serde_json::json!({ "lon": lon, "lat": lat, "t": t, "stats": stats }));
+    }
+    if due {
+        std::thread::spawn(rec_flush);
+    }
+}
+
+#[tauri::command]
+fn rec_status() -> serde_json::Value {
+    let g = REC.lock().unwrap();
+    match g.as_ref() {
+        Some(r) => serde_json::json!({ "on": true, "id": r.track.id, "name": r.track.name, "stats": r.track.stats }),
+        None => serde_json::json!({ "on": false }),
+    }
+}
+
+/// Start recording; `fresh` starts a new track, else the last one carries on.
+#[tauri::command]
+fn rec_start(fresh: bool) -> Result<serde_json::Value, String> {
+    rec_flush();
+    let last = if fresh {
+        None
+    } else {
+        std::fs::read_to_string(lib()?.dir().join(REC_FILE))
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .and_then(|v| v["track"].as_str().map(str::to_string))
+    };
+    rec_begin(last.as_deref())?;
+    Ok(rec_status())
+}
+
+#[tauri::command]
+fn rec_stop() -> serde_json::Value {
+    rec_flush();
+    let id = REC.lock().unwrap().take().map(|r| r.track.id).unwrap_or_default();
+    rec_settings_save(false, &id);
+    rec_status()
+}
+
+#[tauri::command]
+fn tracks_list() -> Result<Vec<library::TrackSummary>, String> {
+    rec_flush();
+    lib()?.tracks().map_err(es)
+}
+
+/// A track's points for drawing: segments of [lon, lat, t, sog, cog].
+#[tauri::command]
+fn track_get(id: String) -> Result<serde_json::Value, String> {
+    let t = {
+        let g = REC.lock().unwrap();
+        match g.as_ref().filter(|r| r.track.id == id) {
+            Some(r) => r.track.clone(),
+            None => {
+                drop(g);
+                lib()?.track(&id).map_err(es)?
+            }
+        }
+    };
+    let segs: Vec<Vec<serde_json::Value>> = t
+        .segments
+        .iter()
+        .map(|s| s.iter().map(|p| serde_json::json!([p.lon, p.lat, p.t, p.sog, p.cog])).collect())
+        .collect();
+    Ok(serde_json::json!({ "id": t.id, "name": t.name, "colour": t.colour, "stats": t.stats, "segments": segs }))
+}
+
+#[tauri::command]
+fn track_update(id: String, name: String, notes: String, colour: String) -> Result<library::TrackSummary, String> {
+    rec_flush();
+    let s = lib()?.update_track_info(&id, &name, &notes, &colour).map_err(es)?;
+    if let Some(r) = REC.lock().unwrap().as_mut().filter(|r| r.track.id == id) {
+        r.track.name = s.name.clone();
+        r.track.notes = s.notes.clone();
+        r.track.colour = s.colour.clone();
+    }
+    Ok(s)
+}
+
+#[tauri::command]
+fn track_delete(id: String) -> Result<(), String> {
+    if REC.lock().unwrap().as_ref().is_some_and(|r| r.track.id == id) {
+        return Err("This track is being recorded: stop recording first.".into());
+    }
+    lib()?.delete_track(&id).map_err(es)
+}
+
+/// Write a track as GPX into the library's export folder; returns the path.
+#[tauri::command]
+fn track_export(id: String) -> Result<String, String> {
+    rec_flush();
+    let l = lib()?;
+    let t = l.track(&id).map_err(es)?;
+    Ok(l.write_export(&t.name, &t.to_gpx()).map_err(es)?.to_string_lossy().into_owned())
+}
+
 // ---------- tides (LINZ) ----------
 
 static TIDE_DIR: OnceLock<PathBuf> = OnceLock::new();
@@ -840,6 +1003,7 @@ pub fn run() {
             polar_files, route_compute, sk_status,
             lib_info, marks_list, mark_save, mark_delete, routes_list, route_save, route_delete,
             routings_list, routing_get, routing_save, routing_delete, gpx_export, gpx_write, gpx_import,
+            rec_status, rec_start, rec_stop, tracks_list, track_get, track_update, track_delete, track_export,
             yb_open, yb_refresh, yb_races, yb_history,
             gribdl_models, gribdl_estimate, gribdl_start, gribdl_cancel
         ])
@@ -860,6 +1024,17 @@ pub fn run() {
             match library::Library::open(library_dir(app.handle())) {
                 Ok(l) => {
                     let _ = LIBRARY.set(l);
+                    // carry on recording if it was on: the same track if its last fix is under 2 h old
+                    let st = lib().ok().and_then(|l| std::fs::read_to_string(l.dir().join(REC_FILE)).ok());
+                    if let Some(v) = st.and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()) {
+                        if v["on"].as_bool() == Some(true) {
+                            let id = v["track"].as_str().unwrap_or("").to_string();
+                            let recent = lib().ok().and_then(|l| l.track(&id).ok()).and_then(|t| t.stats.end).is_some_and(|e| chrono_now() - e < 2 * 3600);
+                            if let Err(e) = rec_begin(recent.then_some(id.as_str())) {
+                                eprintln!("recorder: {e}");
+                            }
+                        }
+                    }
                 }
                 Err(e) => eprintln!("library: {e}"),
             }
@@ -895,12 +1070,21 @@ pub fn run() {
                             *SK_STATUS.lock().unwrap() = Some((connected, detail.clone()));
                             handle.emit("sk-status", serde_json::json!({ "connected": connected, "detail": detail }))
                         }
-                        signalk::Event::Vessel(v) => handle.emit("vessel", v),
+                        signalk::Event::Vessel(v) => {
+                            rec_vessel(&handle, &v);
+                            handle.emit("vessel", v)
+                        }
                     };
                 }
             });
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running racenav");
+        .build(tauri::generate_context!())
+        .expect("error while building racenav")
+        .run(|_app, event| {
+            // save the track being recorded on the way out
+            if let tauri::RunEvent::Exit = event {
+                rec_flush();
+            }
+        });
 }

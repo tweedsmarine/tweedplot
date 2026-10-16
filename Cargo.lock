@@ -2731,6 +2731,7 @@ name = "racenav-app"
 version = "0.1.0"
 dependencies = [
  "chart",
+ "chrono",
  "grib",
  "gribdl",
  "library",
