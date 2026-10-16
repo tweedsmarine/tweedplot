@@ -134,6 +134,7 @@ body.drawer-open .cursor, body.drawer-open .attribution { left: calc(var(--rail-
 .ipanel {
   position: absolute; pointer-events: auto; display: flex; gap: 3px; padding: 3px; border-radius: 8px;
   background: rgba(0, 0, 0, 0.25); touch-action: none; user-select: none;
+  will-change: transform; /* its own layer: the chart redrawing underneath never re-renders the text */
 }
 .ipanel.row { flex-direction: row; }
 .ipanel.column { flex-direction: column; }
@@ -153,7 +154,7 @@ body.drawer-open .cursor, body.drawer-open .attribution { left: calc(var(--rail-
   transition: background-color 0.3s;
 }
 .tile .lbl { display: flex; justify-content: space-between; font-size: 11px; color: var(--tile-quiet); text-transform: uppercase; letter-spacing: 0.04em; gap: 6px; }
-.tile .v { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; white-space: nowrap; line-height: 1.05; }
+.tile .v { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; white-space: nowrap; line-height: 1.05; contain: content; }
 .tile.s { width: 82px; height: 54px; } .tile.s .v { font-size: 24px; }
 .tile.m { width: 110px; height: 70px; } .tile.m .v { font-size: 34px; }
 .tile.l { width: 150px; height: 96px; } .tile.l .v { font-size: 50px; }

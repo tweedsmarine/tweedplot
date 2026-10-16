@@ -92,7 +92,7 @@ export function setupInstruments() {
   // ---------- build ----------------------------------------------------------
   function build() {
     root.innerHTML = "";
-    root.classList.toggle("locked", layout.locked);
+    root.classList.toggle("locked", !!layout.locked);
     for (const p of layout.panels) {
       const el = document.createElement("div");
       el.className = `ipanel ${p.collapsed ? "row collapsed" : p.dir} ${p.size}`;
@@ -193,7 +193,8 @@ export function setupInstruments() {
         let val = null;
         try { val = it.get(ctx); } catch { val = null; }
         const has = val !== null && val !== undefined && !(typeof val === "number" && !Number.isFinite(val));
-        const stale = it.live && ctx.age > STALE_S;
+        // a real true/false: classList.toggle(name, undefined) flips the class on every render
+        const stale = Boolean(it.live) && ctx.age > STALE_S;
         const state = has && !stale && it.state ? it.state(val, ctx) : "";
         const html = has ? it.fmt(val) + (it.unit ? `<span class="u">${it.unit}</span>` : "") : "—";
         const v = t.querySelector(".v");
@@ -260,7 +261,7 @@ export function setupInstruments() {
   const lockBtn = document.getElementById("inst-lock");
   function renderList() {
     document.getElementById("inst-fold").textContent = layout.panels.some((p) => !p.collapsed) ? "Fold all" : "Open all";
-    lockBtn.classList.toggle("on", layout.locked);
+    lockBtn.classList.toggle("on", !!layout.locked);
     lockBtn.textContent = layout.locked ? "Layout locked" : "Lock layout";
     const ul = document.getElementById("inst-panels");
     ul.innerHTML = "";

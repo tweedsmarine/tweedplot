@@ -369,7 +369,7 @@ export function setupFleet(map, { weather, course, routing, dock, ui }) {
       const all = boatIds();
       for (const r of rows) {
         const tr = document.createElement("tr");
-        tr.classList.toggle("active", r.star);
+        tr.classList.toggle("active", !!r.star);
         const cell = {
           rank: r.rank ?? "—", name: "", cls: r.cls || "—", fix: r.fix ? utc(r.fix) : "—",
           age: r.age != null ? age(r.age) : "—", sog: r.sog != null ? `${r.sog.toFixed(1)} kn` : "—", cog: r.cog != null ? `${pad3(r.cog)}°` : "—",

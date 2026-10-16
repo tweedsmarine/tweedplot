@@ -219,10 +219,17 @@ for (const [id, key] of [["set-safety-depth", "safetyDepth"], ["set-safety-conto
 }
 
 // cursor position: the box at the bottom left and the Cursor instrument tiles
-let cursorFrame = null;
+// at most ten updates a second: steadier to read, and less work while the mouse moves
+let cursorNext = null, cursorTimer = null, cursorLast = 0;
 function setCursor(c) {
-  if (cursorFrame) cancelAnimationFrame(cursorFrame);
-  cursorFrame = requestAnimationFrame(() => { cursorFrame = null; inst.update({ cursor: c }); });
+  cursorNext = c;
+  if (cursorTimer) return;
+  const wait = Math.max(0, 100 - (Date.now() - cursorLast));
+  cursorTimer = setTimeout(() => {
+    cursorTimer = null;
+    cursorLast = Date.now();
+    inst.update({ cursor: cursorNext });
+  }, wait);
 }
 map.on("mousemove", (e) => {
   document.getElementById("cursor").textContent = `${ddm(e.lngLat.lat, "N", "S")}  ${ddm(e.lngLat.lng, "E", "W")}`;
