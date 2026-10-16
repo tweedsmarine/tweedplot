@@ -141,11 +141,12 @@ impl ChartStore {
                                 if taken.iter().any(|(q, b)| *b > t.band && metres(p, *q) < SAME_M) {
                                     continue;
                                 }
-                                mine.push((p, t.band));
                                 let minz = a.num("scamin").map_or(0.0, |s| s57::scamin_zoom(s, p[1]));
                                 if !keep(minz) {
                                     continue;
                                 }
+                                // only a feature actually drawn at this zoom hides a coarser band's copy
+                                mine.push((p, t.band));
                                 let px = tp.px(&p);
                                 if !inside(px) {
                                     continue;
@@ -256,11 +257,11 @@ impl ChartStore {
             if kept.iter().any(|(q, b)| *b > first.band && metres(first.p, *q) < SAME_M) {
                 continue;
             }
-            kept.push((first.p, first.band));
             let minz = idx.iter().map(|&i| recs[i].minz).fold(f64::MAX, f64::min);
             if !keep(minz) {
                 continue;
             }
+            kept.push((first.p, first.band));
             let c = tp.px(&first.p);
             let lights: Vec<Light> = idx.iter().map(|&i| recs[i].light.clone()).collect();
             let cols: Vec<&str> = lights.iter().map(|l| s57::light_colour(&l.colours)).collect();
