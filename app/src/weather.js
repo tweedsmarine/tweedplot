@@ -23,7 +23,19 @@ const CAPE = [[100, "#f4f0c0"], [250, "#f7e08a"], [500, "#f7cd45"], [1000, "#f7a
 const PRESS = [[960, "#45247f"], [980, "#6c2fae"], [995, "#5aa8d3"], [1005, "#a6d2ec"], [1013, "#eef6fb"], [1020, "#f7e08a"],
   [1030, "#f7aa3b"], [1040, "#d6404f"]];
 
-/** What can be shaded: the GRIB parameters it needs, unit, colour scale, and values below `min` left clear. */
+// Agreement between GRIBs: green = the forecasts agree, red = they don't.
+const AGREE_KN = [[0, "#1a9850"], [1, "#66bd63"], [2, "#a6d96a"], [3, "#d9ef8b"], [4, "#fee08b"], [6, "#fdae61"], [8, "#f46d43"],
+  [10, "#d73027"], [15, "#a50026"]];
+const AGREE_DEG = [[0, "#1a9850"], [5, "#66bd63"], [10, "#a6d96a"], [15, "#d9ef8b"], [20, "#fee08b"], [30, "#fdae61"], [45, "#f46d43"],
+  [60, "#d73027"], [90, "#a50026"]];
+const AGREE_HPA = [[0, "#1a9850"], [0.5, "#66bd63"], [1, "#a6d96a"], [1.5, "#d9ef8b"], [2, "#fee08b"], [3, "#fdae61"], [4, "#f46d43"],
+  [6, "#d73027"], [8, "#a50026"]];
+// newest run minus oldest: blue = lighter now, red = windier now
+const TREND = [[-10, "#2166ac"], [-6, "#4393c3"], [-3, "#92c5de"], [-1, "#d1e5f0"], [1, "#f7f7f7"], [3, "#fddbc7"], [6, "#f4a582"],
+  [10, "#d6604d"], [15, "#b2182b"]];
+
+/** What can be shaded: the GRIB parameters it needs, unit, colour scale, and values below `min` left clear.
+ * `compare`: a display of how much the loaded GRIBs disagree (grib::compare), not of one GRIB. */
 export const LAYERS = {
   wind: { label: "Wind speed", unit: "kn", params: ["WindU", "WindSpeed"], scale: PALETTE, knots: true },
   gust: { label: "Gusts", unit: "kn", params: ["Gust"], scale: PALETTE, knots: true },
@@ -33,12 +45,24 @@ export const LAYERS = {
   rain: { label: "Rain", unit: "mm/h", params: ["Rain"], scale: RAIN, min: 0.1 },
   cape: { label: "CAPE (squalls)", unit: "J/kg", params: ["Cape"], scale: CAPE, min: 100 },
   mslp: { label: "Pressure", unit: "hPa", params: ["Mslp"], scale: PRESS },
+  agree_vec: { label: "Wind disagreement (vector)", unit: "kn", params: ["WindU", "WindSpeed"], scale: AGREE_KN, compare: "vector",
+    help: "RMS distance of each GRIB's wind from their mean wind: speed and direction together." },
+  agree_spd: { label: "Wind speed spread", unit: "kn", params: ["WindU", "WindSpeed"], scale: AGREE_KN, compare: "speed",
+    help: "Highest minus lowest wind speed (P90 − P10 with seven or more GRIBs)." },
+  agree_dir: { label: "Wind direction spread", unit: "°", params: ["WindU", "WindSpeed"], scale: AGREE_DEG, compare: "direction",
+    help: "Spread of wind direction about the mean direction; blank where the mean wind is under 6 kn." },
+  agree_mslp: { label: "Pressure spread", unit: "hPa", params: ["Mslp"], scale: AGREE_HPA, compare: "pressure",
+    help: "Highest minus lowest MSL pressure (P90 − P10 with seven or more GRIBs)." },
+  agree_trend: { label: "Run trend (newest − oldest)", unit: "kn", params: ["WindU", "WindSpeed"], scale: TREND, compare: "trend",
+    help: "Wind speed of the newest run minus the oldest: red = the newer run is windier." },
 };
 
 // Display settings (per viewer)
 const WX_DEFAULTS = { density: 5, size: 1.0, shading: "2", opacity: 0.45, land: "land", layer: "wind", arrows: true, waveArrows: true, isobars: false,
   // isobar interval (hPa), and whether to widen it when zoomed out
-  isoStep: 4, isoAuto: true };
+  isoStep: 4, isoAuto: true,
+  // loaded GRIBs left out of the agreement displays
+  cmpOff: [] };
 const DENSITY_POINTS = [80, 150, 300, 500, 900, 1400, 2200, 3500, 6000, 1e9];
 function loadWx() {
   try { return { ...WX_DEFAULTS, ...JSON.parse(localStorage.getItem("racenav.wx") || "{}") }; } catch { return { ...WX_DEFAULTS }; }
@@ -181,8 +205,17 @@ export function setupWeather(map, layers) {
       row.className = "run";
       const wind = s.params.find((p) => p.param === "WindU") ?? s.params.find((p) => p.times?.length);
       const span = wind ? `${fmt(wind.times[0], true)} → ${fmt(wind.times.at(-1), true)}` : "no data";
-      row.innerHTML = `<input type="radio" name="wx-show"><label></label><button title="Unload">×</button>`;
-      const [radio, label, x] = row.children;
+      row.innerHTML = `<input type="radio" name="wx-show" title="Show this GRIB on the chart"><label></label>` +
+        `<input type="checkbox" class="cmp" title="Include in the agreement displays (Show > Agreement of the loaded GRIBs)"><button title="Unload">×</button>`;
+      const [radio, label, cmp, x] = row.children;
+      cmp.hidden = loaded.size < 2;
+      cmp.checked = !wx.cmpOff.includes(path);
+      cmp.onchange = () => {
+        wx.cmpOff = cmp.checked ? wx.cmpOff.filter((p) => p !== path) : [...wx.cmpOff, path];
+        saveWx();
+        renderLayers();
+        draw();
+      };
       radio.checked = path === display;
       label.textContent = s.name;
       label.title = `${path}\n${span}`;
@@ -214,12 +247,20 @@ export function setupWeather(map, layers) {
   }
 
   // ---------- time -------------------------------------------------------------
-  /** Layers the shown GRIB has data for. */
+  const paramsOf = (s) => new Set(s.params.map((p) => (typeof p.param === "string" ? p.param : "")));
+  /** Loaded GRIBs ticked for the agreement displays. */
+  const comparePaths = () => [...loaded.keys()].filter((p) => !wx.cmpOff.includes(p));
+  /** Layers the shown GRIB has data for; agreement layers when two or more ticked GRIBs have the data. */
   function available(path = display) {
     const s = path && loaded.get(path);
     if (!s) return [];
-    const has = new Set(s.params.map((p) => (typeof p.param === "string" ? p.param : "")));
-    return Object.keys(LAYERS).filter((k) => LAYERS[k].params.some((p) => has.has(p)));
+    const has = paramsOf(s);
+    const cmp = comparePaths().map((p) => paramsOf(loaded.get(p)));
+    return Object.keys(LAYERS).filter((k) => {
+      const l = LAYERS[k];
+      if (l.compare) return cmp.filter((h) => l.params.some((p) => h.has(p))).length >= 2;
+      return l.params.some((p) => has.has(p));
+    });
   }
   const hasParam = (name) => !!loaded.get(display)?.params.some((p) => p.param === name);
   function renderLayers() {
@@ -228,11 +269,15 @@ export function setupWeather(map, layers) {
     for (const sel of [$("wx-layer"), ...[...mirrors].filter((m) => m.isConnected).map((m) => m.querySelector(".layer"))]) {
       if (!sel) continue;
       sel.innerHTML = "";
+      const group = document.createElement("optgroup");
+      group.label = "Agreement of the loaded GRIBs";
       for (const [k, l] of Object.entries(LAYERS)) {
         const o = new Option(l.label, k);
         o.disabled = !av.includes(k);
-        sel.append(o);
+        if (l.help) o.title = l.help;
+        (l.compare ? group : sel).append(o);
       }
+      sel.append(group);
       sel.append(new Option("No shading", "none"));
       sel.value = wx.shading === "off" ? "none" : wx.layer;
     }
@@ -378,7 +423,9 @@ export function setupWeather(map, layers) {
       // Barbs and wave arrows at the chosen density; shading at full GRIB resolution (up to 20 000 cells).
       const [g, gs, gw, gp] = await Promise.all([
         wx.arrows && (hasParam("WindU") || hasParam("WindSpeed")) ? invoke("grib_wind_grid", { path: display, t, bbox, maxPoints: arrowPts }).catch(() => null) : null,
-        shade ? invoke("grib_grid", { path: display, layer: wx.layer, t, bbox, maxPoints: 20000 }).catch(() => null) : null,
+        !shade ? null : layer.compare
+          ? invoke("grib_compare", { paths: comparePaths(), metric: layer.compare, t, bbox, maxPoints: 20000 }).catch((e) => ({ error: String(e) }))
+          : invoke("grib_grid", { path: display, layer: wx.layer, t, bbox, maxPoints: 20000 }).catch(() => null),
         wx.waveArrows && hasParam("WaveDir") ? invoke("grib_grid", { path: display, layer: "wavedir", t, bbox, maxPoints: Math.max(40, arrowPts / 2) }).catch(() => null) : null,
         wx.isobars && hasParam("Mslp") ? invoke("grib_grid", { path: display, layer: "mslp", t, bbox, maxPoints: 20000 }).catch(() => null) : null,
       ]);
@@ -395,7 +442,8 @@ export function setupWeather(map, layers) {
           }
         }
       }
-      if (gs) {
+      showCompareNote(layer, gs);
+      if (gs && !gs.error) {
         const hx = gs.dlon / 2, hy = gs.dlat / 2, min = layer.min ?? -Infinity;
         for (let j = 0; j < gs.nj; j++) {
           for (let i = 0; i < gs.ni; i++) {
@@ -424,6 +472,25 @@ export function setupWeather(map, layers) {
     });
   }
   map.on("moveend", draw);
+
+  /** Under the legend: which GRIBs an agreement display compares (or why it can't). */
+  function showCompareNote(layer, r) {
+    const el = $("wx-cmp-note");
+    if (!layer.compare || wx.shading === "off") { el.hidden = true; return; }
+    el.hidden = false;
+    if (!r || r.error) { el.textContent = r?.error ?? "Nothing to compare here."; return; }
+    const vals = r.values.filter((v) => v != null);
+    const mean = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    const runs = [...r.used].sort((a, b) => a.run - b.run);
+    const names = runs.map((u) => `${u.name.replace(/ \d+ \w+ \d+Z$/, "")} ${fmtRun(u.run)}`);
+    el.textContent = `${layer.help} Comparing ${r.used.length}: ${names.join(", ")}.` +
+      (mean != null ? ` In view: mean ${mean.toFixed(1)} ${layer.unit}, max ${Math.max(...vals).toFixed(1)} ${layer.unit}.` : "") +
+      (layer.compare === "trend" ? ` Newest ${names.at(-1)} − oldest ${names[0]}.` : "");
+  }
+  const fmtRun = (t) => {
+    const d = new Date(t * 1000);
+    return `${d.getUTCDate()} ${d.toLocaleString("en-NZ", { month: "short", timeZone: "UTC" })} ${String(d.getUTCHours()).padStart(2, "0")}Z`;
+  };
 
   // ---------- comparison table --------------------------------------------------------
   let pointTimer = null;

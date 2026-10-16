@@ -88,6 +88,17 @@ The Weather panel lists GRIB files found in `RACENAV_GRIB_DIR`, `C:\dev\racenav-
 cargo run -p grib --example grib_info -- path\to\file.grb2 -36.0 174.8
 ```
 
+### GRIB agreement
+
+With two or more GRIBs loaded (different models, or several runs of one), **Show > Agreement of the loaded GRIBs** shades the chart by how much they disagree at the slider time — the displays of the earlier stand-alone agreement viewer:
+
+- **Wind disagreement (vector)**: RMS distance of each GRIB's wind from their mean wind (kn), speed and direction together;
+- **Wind speed spread** (kn) and **Pressure spread** (hPa): highest minus lowest, or P90 − P10 with seven or more GRIBs;
+- **Wind direction spread** (°): about the mean direction, blank where the mean wind is under 6 kn;
+- **Run trend**: newest run minus oldest, wind speed (kn; red = the newer run is windier).
+
+Green means the forecasts agree, red that they don't. The tick beside each loaded GRIB includes it or leaves it out; GRIBs not covering the slider time or the view are left out automatically. Each is sampled bilinearly, linear in time, on a common grid as coarse as the coarsest GRIB; ensemble files count as their control run. The line under the legend lists the GRIBs compared and the mean and maximum in view, and the table below still gives every GRIB's values at the cursor.
+
 ## Routing
 
 Course drawer: start and marks (see below). Routing drawer, Run tab: start time (weather slider time, now, or a set time), settings, **Compute** (the GRIB shown on the chart) or **With each GRIB** (one routing per loaded GRIB, then the compare table opens). Messages are listed newest first, one line each. Routings tab: every routing of this session plus saved ones, each with its own colour; tick to show on the chart, click to make it the one shown in detail (isochrones, points, summary, instrument targets), Save, each shown routing has a triangle in its colour where its boat is at the weather slider's time (pointing along its heading; faded once finished; hover for details, click to make it the active one), or open the **Compare table** in the dock at the bottom (it has its own GRIB chooser and time slider, so the Weather drawer can stay closed) (click a column to sort, ⚙ to choose columns, best values in green). Boat drawer: choose a polar (from `C:\dev\racenav-data\polars` or qtVlm's `polar` folder), efficiency and tack/gybe time. Route drawer: **Set start** (or **From boat**), **Add marks** by clicking the chart, or click a library mark to reuse it (Esc to stop), then **Compute routing**. The routing starts at the weather slider time with the GRIB shown on the chart. Hover a routing point for heading, TWA, TWS and boat speed; **Save routing** keeps it in the library, **GPX** writes it to the export folder.

@@ -7,6 +7,7 @@
 //! returns `None`: a truncated GRIB must never look like calm weather.
 
 mod decode;
+pub mod compare;
 
 use std::path::{Path, PathBuf};
 
@@ -106,6 +107,11 @@ impl Grid {
         let lat0 = la1.min(la2);
         let west = if scan & 0x80 != 0 { lo1 - (ni as f64 - 1.0) * dlon } else { lo1 };
         Self { ni, nj, lat0, lon0: nav_core::wrap_lon(west), dlat, dlon, scan }
+    }
+
+    /// A regular grid from its south-west corner and spacing (canonical order: rows south to north).
+    pub fn regular(ni: usize, nj: usize, lat0: f64, lon0: f64, dlat: f64, dlon: f64) -> Self {
+        Grid { ni, nj, lat0, lon0, dlat, dlon, scan: 0x40 }
     }
 
     fn canonical(&self) -> Grid {
@@ -271,6 +277,11 @@ impl GribFile {
         }
         progress(0.97, "indexing");
         Ok(GribFile::build(path, d.fields, d.skipped))
+    }
+
+    /// A file from fields already decoded (tests, and fields made by the app).
+    pub fn from_fields(fields: Vec<Field>) -> Self {
+        GribFile::build(PathBuf::new(), fields, Vec::new())
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Self {

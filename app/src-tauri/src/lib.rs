@@ -315,6 +315,35 @@ fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max_points: us
     }))
 }
 
+/// How much the loaded GRIBs in `paths` disagree at time `t` over `bbox` (see
+/// `grib::compare`): `metric` is vector, speed, direction, pressure or trend.
+#[tauri::command]
+fn grib_compare(paths: Vec<String>, metric: String, t: i64, bbox: [f64; 4], max_points: usize) -> Result<serde_json::Value, String> {
+    let m = grib::compare::Metric::parse(&metric).ok_or("unknown comparison")?;
+    let files: Vec<(String, Arc<grib::GribFile>)> = {
+        let g = GRIBS.lock().unwrap();
+        paths.iter().filter_map(|p| g.get(p).map(|f| (p.clone(), f.clone()))).collect()
+    };
+    let refs: Vec<&grib::GribFile> = files.iter().map(|(_, f)| f.as_ref()).collect();
+    let r = grib::compare::agreement(&refs, m, t, bbox, max_points.clamp(100, 40_000)).ok_or(if m == grib::compare::Metric::Trend {
+        "Needs two or more runs covering this time."
+    } else {
+        "Needs two or more GRIBs covering this time and area."
+    })?;
+    let used: Vec<serde_json::Value> = r
+        .used
+        .iter()
+        .map(|&i| {
+            let (name, run) = files[i].1.model();
+            serde_json::json!({ "path": files[i].0, "name": name, "run": run })
+        })
+        .collect();
+    Ok(serde_json::json!({
+        "lon0": r.lon0, "lat0": r.lat0, "dlon": r.dlon, "dlat": r.dlat, "ni": r.ni, "nj": r.nj,
+        "values": r.values, "used": used,
+    }))
+}
+
 /// Every loaded GRIB at one point and time: the quick agreement check.
 #[tauri::command]
 fn grib_point(lat: f64, lon: f64, t: i64) -> Vec<serde_json::Value> {
@@ -999,7 +1028,7 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            app_info, chart_info, chart_feature, tides_info, tides_stations, tides_curve, tides_download, tides_cancel, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_point,
+            app_info, chart_info, chart_feature, tides_info, tides_stations, tides_curve, tides_download, tides_cancel, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_compare, grib_point,
             polar_files, route_compute, sk_status,
             lib_info, marks_list, mark_save, mark_delete, routes_list, route_save, route_delete,
             routings_list, routing_get, routing_save, routing_delete, gpx_export, gpx_write, gpx_import,
