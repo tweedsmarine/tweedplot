@@ -272,3 +272,24 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
 .feat-pop table { border-collapse: collapse; width: 100%; margin-bottom: 6px; }
 .feat-pop td { padding: 1px 6px 1px 0; vertical-align: top; }
 .feat-pop td:first-child { color: var(--quiet); white-space: nowrap; }
+
+/* tide popup */
+.tide-pop { font-size: 12px; }
+.tide-pop h4 { margin: 2px 0 2px; font-size: 13px; }
+.tide-pop .nav { display: flex; align-items: center; gap: 4px; margin: 4px 0; }
+.tide-pop .nav .day { flex: 1; text-align: center; font-weight: 600; }
+.tide-pop .nav button { padding: 1px 7px; }
+.tide-pop svg { display: block; }
+.tide-pop svg .g { stroke: #e3e8eb; stroke-width: 1; }
+.tide-pop svg .ax { font-size: 9px; fill: var(--quiet); }
+.tide-pop svg .msl { stroke: #9db8c8; stroke-dasharray: 3 3; }
+.tide-pop svg .fill { fill: rgba(30, 111, 181, 0.12); }
+.tide-pop svg .line { fill: none; stroke: #1e6fb5; stroke-width: 2; }
+.tide-pop svg .pt { fill: #1e6fb5; }
+.tide-pop svg .lbl { font-size: 9px; fill: var(--ink); }
+.tide-pop svg .now { stroke: #d35400; stroke-width: 1.5; }
+.tide-pop svg .nowpt { fill: #d35400; stroke: #fff; stroke-width: 1.5; }
+.tide-pop svg .nowlbl { font-size: 10px; font-weight: 600; fill: #d35400; }
+.tide-pop table.ext { border-collapse: collapse; margin: 4px 0; }
+.tide-pop table.ext td { padding: 1px 10px 1px 0; }
+.tide-pop .nav button { flex: none; width: auto; }

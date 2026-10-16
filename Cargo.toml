@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing", "crates/library", "crates/tracking", "crates/gribdl", "app/src-tauri"]
+members = ["crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing", "crates/library", "crates/tracking", "crates/gribdl", "crates/tides", "app/src-tauri"]
 # `cargo test` at the root skips the GUI app; build it with `npm run tauri dev` in app/.
-default-members = ["crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing", "crates/library", "crates/tracking", "crates/gribdl"]
+default-members = ["crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing", "crates/library", "crates/tracking", "crates/gribdl", "crates/tides"]
 
 [workspace.package]
 edition = "2021"
@@ -19,6 +19,7 @@ routing = { path = "crates/routing" }
 library = { path = "crates/library" }
 tracking = { path = "crates/tracking" }
 gribdl = { path = "crates/gribdl" }
+tides = { path = "crates/tides" }
 thiserror = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

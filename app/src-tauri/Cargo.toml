@@ -30,3 +30,4 @@ routing.workspace = true
 library.workspace = true
 tracking.workspace = true
 gribdl.workspace = true
+tides.workspace = true

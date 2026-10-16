@@ -2742,6 +2742,7 @@ dependencies = [
  "signalk",
  "tauri",
  "tauri-build",
+ "tides",
  "tokio",
  "tracking",
 ]
@@ -3848,6 +3849,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.9",
+]
+
+[[package]]
+name = "tides"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "reqwest",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

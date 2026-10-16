@@ -106,7 +106,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
     // leave clicks on the app's own things (course, routings, fleet, marks) to them
     const pad = 6;
     const box = [[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]];
-    const own = map.queryRenderedFeatures(box).some((f) => /^(rt-|lib-|fl-|dl-|boat)/.test(f.layer.id));
+    const own = map.queryRenderedFeatures(box).some((f) => /^(rt-|lib-|fl-|dl-|boat|tide-)/.test(f.layer.id));
     if (own) return;
     const hit = map.queryRenderedFeatures(box, { layers: POINTS }).concat(
       map.queryRenderedFeatures(box, { layers: LINES }), map.queryRenderedFeatures(e.point, { layers: ["f-area-hit"] }));
@@ -349,15 +349,16 @@ function daymark(colours) {
   return g.getImageData(0, 0, 26, 26);
 }
 
-/** Text drawn as an image: l = light, b = mark name, d = depth, n = area name. */
+/** Text drawn as an image: l = light, b = mark name, d = depth, n = area name, t = tide station. */
 function text(style, t) {
   const fonts = {
     l: `600 19px "Segoe UI", system-ui, sans-serif`,
     b: `italic 18px "Segoe UI", system-ui, sans-serif`,
     d: `600 19px "Segoe UI", system-ui, sans-serif`,
     n: `italic 600 21px "Segoe UI", system-ui, sans-serif`,
+    t: `600 18px "Segoe UI", system-ui, sans-serif`,
   };
-  const ink = { l: MAGENTA, b: INK, d: INK, n: "#2d5f8a" };
+  const ink = { l: MAGENTA, b: INK, d: INK, n: "#2d5f8a", t: "#1e6fb5" };
   const [c0, g0] = canvas(1, 1);
   g0.font = fonts[style];
   const w = Math.ceil(g0.measureText(t).width) + 10;

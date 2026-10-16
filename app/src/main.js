@@ -7,6 +7,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { setupWeather, barbImage } from "./weather.js";
 import { setupChartFeatures, featureImage } from "./chartfeatures.js";
+import { setupTides, tideImage } from "./tides.js";
 import { setupRoute, markImage } from "./route.js";
 import { setupRouting } from "./routing.js";
 import { setupBoat } from "./boat.js";
@@ -119,7 +120,7 @@ map.setMissingStyleImageResolver((id) => {
   if (map.hasImage(id)) return;
   const m = /^(sh|dp):(-?[0-9.]+)$/.exec(id);
   if (m) { map.addImage(id, soundingIcon(parseFloat(m[2]), m[1] === "sh"), { pixelRatio: 2 }); return; }
-  const img = barbImage(id) || markImage(id) || labelImage(id) || featureImage(id);
+  const img = barbImage(id) || markImage(id) || labelImage(id) || featureImage(id) || tideImage(id);
   if (img) map.addImage(id, img, { pixelRatio: 2 });
 });
 
@@ -145,6 +146,7 @@ map.on("load", () => {
   library.attach(route, routing);
   setupFleet(map, { weather, course: route, routing, dock, ui });
   setupGribDownload(map, { weather, course: route });
+  setupTides(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn) });
   library.onChange(feed);
   feed();
 });

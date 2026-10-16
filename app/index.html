@@ -210,7 +210,10 @@
           <form id="mark-edit" class="edit" hidden>
             <div class="wx-row"><label class="grow">Name</label><input name="name" type="text" /></div>
             <div class="wx-row"><label class="grow">Type</label>
-              <select name="kind"><option value="mark">Racing mark</option><option value="waypoint">Waypoint</option><option value="start">Start line end</option><option value="finish">Finish line end</option><option value="danger">Danger</option></select></div>
+              <select name="kind"><option value="mark">Racing mark</option><option value="waypoint">Waypoint</option><option value="start">Start line end</option><option value="finish">Finish line end</option><option value="danger">Danger</option>
+                <optgroup label="Buoy symbol (IALA A)"><option value="port">Port lateral (red can)</option><option value="starboard">Starboard lateral (green cone)</option>
+                <option value="north">North cardinal</option><option value="east">East cardinal</option><option value="south">South cardinal</option><option value="west">West cardinal</option>
+                <option value="isolated">Isolated danger</option><option value="safewater">Safe water</option><option value="special">Special (yellow)</option></optgroup></select></div>
             <div class="wx-row"><label class="grow">Group</label><input name="group" type="text" placeholder="e.g. RNZYS 2026" /></div>
             <div class="wx-row"><label class="grow">Latitude</label><input name="lat" type="text" placeholder="36 50.120 S" /></div>
             <div class="wx-row"><label class="grow">Longitude</label><input name="lon" type="text" placeholder="174 49.800 E" /></div>
@@ -241,6 +244,12 @@
         <div class="wx-row checks"><label><input id="set-feat" type="checkbox" /> Lights, marks, dangers, areas</label></div>
         <div class="wx-row checks"><label><input id="set-sectors" type="checkbox" /> Light sectors</label><label><input id="set-featnames" type="checkbox" /> Names and labels</label></div>
         <div class="wx-note">From the LINZ hydrographic layers in the linz folder (any scale band). Click a light, mark or area for its details. Not for navigation.</div>
+        <h3>Tides</h3>
+        <div class="wx-row checks"><label><input id="tide-show" type="checkbox" /> Tide stations</label></div>
+        <div class="wx-row"><span id="tide-status" class="grow wx-note">—</span></div>
+        <div class="wx-row"><button id="tide-dl" title="Download the LINZ tide tables (about 90 daily tables a year, plus the secondary ports) for this year and next">Download LINZ tides</button><button id="tide-cancel" disabled>Cancel</button></div>
+        <div id="tide-progress" class="progress" hidden><div class="bar"></div><span></span></div>
+        <div class="wx-note">Click a tide station for the day's curve, at the weather time when planning. Daily ports from LINZ tables; others from LINZ secondary port differences. Not official tide tables.</div>
         <h3>Own boat</h3>
         <div class="wx-row"><label class="grow"><input id="set-hdg-line" type="checkbox" /> Heading line</label><select id="set-hdg-len" title="Length: time at boat speed, or to the edge of the chart"></select></div>
         <div class="wx-row"><label class="grow"><input id="set-cog-line" type="checkbox" /> COG line</label><select id="set-cog-len" title="Length: time at SOG, or to the edge of the chart"></select></div>

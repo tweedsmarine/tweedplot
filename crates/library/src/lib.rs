@@ -45,7 +45,9 @@ pub struct Mark {
     pub name: String,
     pub lat: f64,
     pub lon: f64,
-    /// "mark" (a racing mark or buoy), "waypoint", "start" or "finish" (line ends), "danger".
+    /// "mark" (a racing mark or buoy), "waypoint", "start" or "finish" (line ends), "danger", or a
+    /// buoy drawn with its IALA A symbol: "port", "starboard", "north", "east", "south", "west",
+    /// "isolated", "safewater", "special".
     pub kind: String,
     pub notes: String,
     /// Groups marks, e.g. "Coastal Classic 2026" or "RNZYS".

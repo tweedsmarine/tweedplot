@@ -15,6 +15,7 @@ Spec and roadmap: https://claude.ai/code/artifact/e37fa4c3-20c2-4aec-af8f-641714
 | `crates/chart` | LINZ GeoPackages (Topo50 coastline, depth areas, contours, soundings, all scale bands) served as vector tiles | Working, tested on the full LINZ download |
 | `crates/signalk` | Signal K WebSocket client, own-vessel state (position, COG/SOG, heading, BSP, depth, apparent and true wind, log), true wind worked out when the server has none, session log | Working, tested against Signal K playing a Morgane log |
 | `crates/library` | Mark library, routes and saved routings as JSON files; GPX import and export | Working, tested |
+| `crates/tides` | LINZ tide predictions: daily tables, secondary ports from LINZ differences, cosine curves, downloader | Working, tested on LINZ files |
 | `app/` | Tauri shell + MapLibre GL front end: icon rail with one drawer at a time, chart, GRIB, routing, library, floating instrument panels | Working |
 
 ## Build and test
@@ -111,6 +112,19 @@ export\*.gpx          GPX written by the app
 ```
 
 Route drawer: name the route and **Save**: new marks go into the library (named WP 1, WP 2 … until renamed), moved library marks are updated. **Navigate** picks the mark being sailed to (it steps on by itself inside the arrival radius); the route instruments use it. Library drawer: Routes (open, GPX, delete), Marks (find, edit name/type/group/position/notes, add to the route, delete; positions can be typed as `36 50.12 S` or `-36.8353`), Routings (show, delete). **Import GPX** reads waypoints and routes (qtVlm, OpenCPN, Expedition …); a waypoint with the same name as a library mark and within about 50 m becomes that mark. Right-click the chart: **New library mark here**. The start can be a library mark too: in Set start mode click the mark, right-click it (Start route at …), or press **Start** beside it in the Marks list; the route keeps the link (`start_mark`).
+
+A library mark's type can also be a buoy: port (red can) or starboard (green cone) lateral, north/east/south/west cardinal, isolated danger, safe water or special. Those are drawn with their IALA A chart symbol instead of a dot, which helps for temporary race marks and marks missing from the charts.
+
+## Tides
+
+Chart panel > Tides > **Download LINZ tides** fetches, once, LINZ's tide tables for this year and next into `C:\dev\racenav-data\tides` (or `RACENAV_TIDE_DIR`):
+
+- the daily high/low tables for about 90 places (`<Place> <year>.csv`, from static.charts.linz.govt.nz);
+- the secondary ports file (`secondary-ports.csv`, NZ Nautical Almanac): about 330 more places with their reference port, time differences, mean levels and range ratio.
+
+Tide stations appear on the chart: a filled "T" for a LINZ daily table (from zoom 5), an open "T" for a secondary port (from zoom 8), grey where LINZ gives levels only. Click one for the day's tide curve, highs and lows, mean sea level and the height at the planning time (the weather slider time when planning, else now), with rising or falling; step through days with ◀ ▶. Times are NZ local (Chatham time for the Chathams), as LINZ publishes them.
+
+Secondary ports use LINZ's method: the reference port's highs and lows shifted by the mean time differences, heights `MSL + (h_ref − MSL_ref) × ratio`. Between highs and lows the curve is LINZ's cosine curve. These are not official tide tables (Maritime Rules Part 25), and not for navigation.
 
 ## Fleet (YB race tracking)
 

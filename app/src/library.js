@@ -6,6 +6,13 @@ import { distNm } from "./instruments.js";
 
 const KEY = "racenav.library";
 
+/** Library mark kinds drawn as IALA A buoys: kind -> chart symbol id (see chartfeatures.js). */
+export const BUOY_ICONS = {
+  port: "b|2|3||", starboard: "b|1|4||",
+  north: "b|4|2,6|1|n", east: "b|4|2,6,2|1|e", south: "b|4|6,2|1|s", west: "b|4|6,2,6|1|w",
+  isolated: "b|4|2,3,2|1|isd", safewater: "b|3|3,1|2|saw", special: "b|4|6||spp",
+};
+
 export function setupLibrary(map, { ui }) {
   const $ = (id) => document.getElementById(id);
   let marks = [];
@@ -22,9 +29,16 @@ export function setupLibrary(map, { ui }) {
   // ---------- chart layers ----------------------------------------------------------
   const empty = { type: "FeatureCollection", features: [] };
   map.addSource("lib-marks", { type: "geojson", data: empty });
+  // marks given a buoy kind are drawn with the chart symbol (chartfeatures.js); the circle stays as an
+  // invisible click target so selecting and routing to them works the same
+  const isBuoy = ["has", ["get", "kind"], ["literal", BUOY_ICONS]];
   map.addLayer({ id: "lib-marks", type: "circle", source: "lib-marks",
-    paint: { "circle-radius": 5, "circle-color": ["match", ["get", "kind"], "danger", "#c0392b", "waypoint", "#5b6b75", "#e67e22"],
+    paint: { "circle-radius": ["case", isBuoy, 9, 5], "circle-color": ["match", ["get", "kind"], "danger", "#c0392b", "waypoint", "#5b6b75", "#e67e22"],
+             "circle-opacity": ["case", isBuoy, 0, 1], "circle-stroke-opacity": ["case", isBuoy, 0, 1],
              "circle-stroke-color": "#fff", "circle-stroke-width": 1.5 } }, "track");
+  map.addLayer({ id: "lib-buoys", type: "symbol", source: "lib-marks", filter: isBuoy,
+    layout: { "icon-image": ["concat", "s57:", ["get", ["get", "kind"], ["literal", BUOY_ICONS]]], "icon-anchor": "bottom", "icon-offset": [0, 3],
+              "icon-allow-overlap": true, "icon-ignore-placement": true } }, "lib-marks");
   map.addLayer({ id: "lib-labels", type: "symbol", source: "lib-marks", minzoom: 8,
     layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 6], "icon-allow-overlap": false } }, "track");
   let hidden = [];
@@ -32,6 +46,7 @@ export function setupLibrary(map, { ui }) {
     const vis = prefs.show ? "visible" : "none";
     map.setLayoutProperty("lib-marks", "visibility", vis);
     map.setLayoutProperty("lib-labels", "visibility", vis);
+    map.setLayoutProperty("lib-buoys", "visibility", vis);
     map.getSource("lib-marks").setData({ type: "FeatureCollection", features: marks.filter((m) => !hidden.includes(m.id)).map((m) => ({
       type: "Feature", properties: { id: m.id, name: m.name, kind: m.kind }, geometry: { type: "Point", coordinates: [m.lon, m.lat] } })) });
   }

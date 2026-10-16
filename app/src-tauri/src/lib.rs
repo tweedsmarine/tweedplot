@@ -523,6 +523,118 @@ fn gpx_import(text: String, group: String) -> Result<library::ImportReport, Stri
     lib()?.import_gpx(&text, &group).map_err(es)
 }
 
+// ---------- tides (LINZ) ----------
+
+static TIDE_DIR: OnceLock<PathBuf> = OnceLock::new();
+static TIDES: Mutex<Option<Arc<tides::TideDb>>> = Mutex::new(None);
+static TIDE_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Tide folder: `RACENAV_TIDE_DIR`, else `C:\dev\racenav-data\tides` when
+/// racenav-data exists, else `<app data>\tides`.
+fn tide_dir(app: &tauri::AppHandle) -> PathBuf {
+    if let Ok(d) = std::env::var("RACENAV_TIDE_DIR") {
+        return PathBuf::from(d);
+    }
+    let dev = PathBuf::from(r"C:\dev\racenav-data");
+    if dev.is_dir() {
+        return dev.join("tides");
+    }
+    app.path().app_data_dir().map(|p| p.join("tides")).unwrap_or_else(|_| PathBuf::from("tides"))
+}
+
+fn tide_db() -> Arc<tides::TideDb> {
+    let mut g = TIDES.lock().unwrap();
+    if g.is_none() {
+        let dir = TIDE_DIR.get().cloned().unwrap_or_else(|| PathBuf::from("tides"));
+        *g = Some(Arc::new(tides::TideDb::open(&dir)));
+    }
+    g.as_ref().unwrap().clone()
+}
+
+/// What tide data is on this PC: stations, years with daily tables, folder.
+#[tauri::command]
+fn tides_info() -> serde_json::Value {
+    let db = tide_db();
+    serde_json::json!({
+        "stations": db.stations.len(),
+        "daily": db.stations.iter().filter(|s| s.kind == tides::Kind::Daily).count(),
+        "years": db.years,
+        "dir": TIDE_DIR.get(),
+    })
+}
+
+/// Every tide station as GeoJSON points (`kind`: daily, secondary, levels).
+#[tauri::command]
+fn tides_stations() -> serde_json::Value {
+    let db = tide_db();
+    let features: Vec<serde_json::Value> = db
+        .stations
+        .iter()
+        .map(|s| {
+            let (kind, reference) = match &s.kind {
+                tides::Kind::Daily => ("daily", None),
+                tides::Kind::Secondary { reference, .. } => ("secondary", Some(reference.clone())),
+                tides::Kind::LevelsOnly { reference } => ("levels", Some(reference.clone())),
+            };
+            serde_json::json!({ "type": "Feature",
+                "properties": { "id": s.id, "name": s.name, "kind": kind, "ref": reference, "approx": s.approx },
+                "geometry": { "type": "Point", "coordinates": [s.lon, s.lat] } })
+        })
+        .collect();
+    serde_json::json!({ "type": "FeatureCollection", "features": features })
+}
+
+/// Tides at a station from `t0` to `t1` (Unix seconds): highs and lows, the curve
+/// every 10 minutes, mean levels, and how the prediction is made.
+#[tauri::command]
+fn tides_curve(id: String, t0: i64, t1: i64) -> Result<serde_json::Value, String> {
+    let db = tide_db();
+    let s = db.station(&id).ok_or("No such tide station.")?;
+    let ext = db.extremes(&id, t0, t1).unwrap_or_default();
+    let curve = db.curve(&id, t0, t1, 600);
+    let lv = s.levels;
+    let method = match &s.kind {
+        tides::Kind::Daily => "LINZ daily table".to_string(),
+        tides::Kind::Secondary { reference, hw_min, lw_min, ratio } => format!(
+            "Secondary to {reference}: HW {:+} min, LW {:+} min{}",
+            hw_min,
+            lw_min,
+            ratio.map_or(", times only".to_string(), |r| format!(", range × {r:.2}"))
+        ),
+        tides::Kind::LevelsOnly { reference } => format!("Reference port {reference}: LINZ gives levels only, no times"),
+    };
+    Ok(serde_json::json!({
+        "id": s.id, "name": s.name, "approx": s.approx, "method": method,
+        "chatham": s.lon < -175.0 && s.lat < -43.0 && s.lat > -45.0,
+        "extremes": ext.iter().filter(|e| e.t >= t0 - 3 * 3600 && e.t <= t1 + 3 * 3600).map(|e| serde_json::json!({ "t": e.t, "h": e.h, "high": e.high })).collect::<Vec<_>>(),
+        "curve": curve,
+        "levels": { "mhws": lv.mhws, "mhwn": lv.mhwn, "mlwn": lv.mlwn, "mlws": lv.mlws, "msl": lv.msl },
+        "years": db.years,
+    }))
+}
+
+/// Download the LINZ secondary ports file and daily tables for `years` (emits "tides-progress").
+#[tauri::command]
+async fn tides_download(app: tauri::AppHandle, years: Vec<i32>) -> Result<serde_json::Value, String> {
+    TIDE_CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
+    let dir = TIDE_DIR.get().cloned().ok_or("no tide folder")?;
+    let n = tauri::async_runtime::spawn_blocking(move || {
+        tides::download(&dir, &years, &TIDE_CANCEL, |p| {
+            let _ = app.emit("tides-progress", serde_json::json!({ "stage": p.stage, "done": p.done, "total": p.total }));
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    *TIDES.lock().unwrap() = None; // re-read on next use
+    Ok(serde_json::json!({ "written": n, "info": tides_info() }))
+}
+
+#[tauri::command]
+fn tides_cancel() {
+    TIDE_CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
 // ---------- race tracking (YB) ----------
 
 static TRACKING_DIR: OnceLock<PathBuf> = OnceLock::new();
@@ -724,7 +836,7 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            app_info, chart_info, chart_feature, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_point,
+            app_info, chart_info, chart_feature, tides_info, tides_stations, tides_curve, tides_download, tides_cancel, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_point,
             polar_files, route_compute, sk_status,
             lib_info, marks_list, mark_save, mark_delete, routes_list, route_save, route_delete,
             routings_list, routing_get, routing_save, routing_delete, gpx_export, gpx_write, gpx_import,
@@ -742,6 +854,9 @@ pub fn run() {
             let td = tracking_dir(app.handle());
             let _ = std::fs::create_dir_all(&td);
             let _ = TRACKING_DIR.set(td);
+            let tdir = tide_dir(app.handle());
+            let _ = std::fs::create_dir_all(&tdir);
+            let _ = TIDE_DIR.set(tdir);
             match library::Library::open(library_dir(app.handle())) {
                 Ok(l) => {
                     let _ = LIBRARY.set(l);
