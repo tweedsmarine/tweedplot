@@ -134,6 +134,7 @@ const boat = setupBoat();
 const dock = setupDock(map);
 map.on("load", () => {
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
+  window.__weather = weather; // debugging handle
   library = setupLibrary(map, { ui });
   route = setupRoute(map, { library, getBoat: () => lastBoat, getArrivalNm: () => Number(document.getElementById("rt-radius").value) || 0.1 });
   routing = setupRouting(map, { weather, course: route, library, dock, ui, getBoat: () => lastBoat,

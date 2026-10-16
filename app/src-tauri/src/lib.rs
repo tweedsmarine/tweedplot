@@ -258,6 +258,63 @@ fn grib_wind_grid(path: String, t: i64, bbox: [f64; 4], max_points: usize) -> Op
     }))
 }
 
+/// One quantity on a thinned grid inside `bbox` at time `t`, for shading and
+/// contours: "wind" and "gust" (kn), "waves", "swell", "windwaves" (m),
+/// "period" (s), "wavedir" (deg from), "rain" (mm/h), "cape" (J/kg), "mslp" (hPa).
+#[tauri::command]
+fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max_points: usize) -> Option<serde_json::Value> {
+    use grib::Param as P;
+    let f = GRIBS.lock().unwrap().get(&path)?.clone();
+    const KN: f32 = 3600.0 / 1852.0;
+    // the grid(s) and how to turn their values into the quantity shown
+    let (g, vals): (grib::Grid, Vec<f32>) = match layer.as_str() {
+        "wind" => {
+            if let (Some((g, u)), Some((_, v))) = (f.grid_at(P::WindU, t), f.grid_at(P::WindV, t)) {
+                (g, u.iter().zip(&v).map(|(a, b)| (a * a + b * b).sqrt() * KN).collect())
+            } else {
+                let (g, w) = f.grid_at(P::WindSpeed, t)?;
+                (g, w.iter().map(|x| x * KN).collect())
+            }
+        }
+        "gust" => { let (g, v) = f.grid_at(P::Gust, t)?; (g, v.iter().map(|x| x * KN).collect()) }
+        "waves" => f.grid_at(P::WaveHeight, t)?,
+        "swell" => f.grid_at(P::SwellHeight, t)?,
+        "windwaves" => f.grid_at(P::WindWaveHeight, t)?,
+        "period" => f.grid_at(P::WavePeriod, t)?,
+        "wavedir" => f.grid_at(P::WaveDir, t)?,
+        "rain" => { let (g, v) = f.grid_at(P::Rain, t)?; (g, v.iter().map(|x| x * 3600.0).collect()) }
+        "cape" => f.grid_at(P::Cape, t)?,
+        "mslp" => { let (g, v) = f.grid_at(P::Mslp, t)?; (g, v.iter().map(|x| x / 100.0).collect()) }
+        _ => return None,
+    };
+    let turn = ((g.lon0 + g.dlon * (g.ni as f64 - 1.0) / 2.0 - (bbox[0] + bbox[2]) / 2.0) / 360.0).round() * 360.0;
+    let bbox = [bbox[0] + turn, bbox[1], bbox[2] + turn, bbox[3]];
+    let i_lo = (((bbox[0] - g.lon0) / g.dlon).floor().max(0.0) as usize).min(g.ni - 1);
+    let i_hi = (((bbox[2] - g.lon0) / g.dlon).ceil().max(0.0) as usize).min(g.ni - 1);
+    let j_lo = (((bbox[1] - g.lat0) / g.dlat).floor().max(0.0) as usize).min(g.nj - 1);
+    let j_hi = (((bbox[3] - g.lat0) / g.dlat).ceil().max(0.0) as usize).min(g.nj - 1);
+    let (wi, wj) = (i_hi - i_lo + 1, j_hi - j_lo + 1);
+    let stride = (((wi * wj) as f64 / max_points.max(1) as f64).sqrt().ceil() as usize).max(1);
+    let (mut ni, mut nj) = (0, 0);
+    let mut out: Vec<Option<f32>> = Vec::new();
+    for j in (j_lo..=j_hi).step_by(stride) {
+        nj += 1;
+        ni = 0;
+        for i in (i_lo..=i_hi).step_by(stride) {
+            ni += 1;
+            let x = vals[j * g.ni + i];
+            out.push(x.is_finite().then(|| (x * 10.0).round() / 10.0));
+        }
+    }
+    Some(serde_json::json!({
+        "lon0": g.lon0 + i_lo as f64 * g.dlon - turn,
+        "lat0": g.lat0 + j_lo as f64 * g.dlat,
+        "dlon": g.dlon * stride as f64,
+        "dlat": g.dlat * stride as f64,
+        "ni": ni, "nj": nj, "values": out,
+    }))
+}
+
 /// Every loaded GRIB at one point and time: the quick agreement check.
 #[tauri::command]
 fn grib_point(lat: f64, lon: f64, t: i64) -> Vec<serde_json::Value> {
@@ -275,6 +332,8 @@ fn grib_point(lat: f64, lon: f64, t: i64) -> Vec<serde_json::Value> {
                 "gust": kn(f.value(grib::Param::Gust, lat, lon, t)),
                 "mslp": f.value(grib::Param::Mslp, lat, lon, t).map(|p| (p / 10.0).round() / 10.0),
                 "wave": f.value(grib::Param::WaveHeight, lat, lon, t).map(|h| (h * 10.0).round() / 10.0),
+                "period": f.value(grib::Param::WavePeriod, lat, lon, t).map(|h| h.round()),
+                "rain": f.value(grib::Param::Rain, lat, lon, t).map(|r| (r * 36000.0).round() / 10.0),
             })
         })
         .collect()
@@ -651,7 +710,7 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            app_info, chart_info, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_point,
+            app_info, chart_info, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_point,
             polar_files, route_compute, sk_status,
             lib_info, marks_list, mark_save, mark_delete, routes_list, route_save, route_delete,
             routings_list, routing_get, routing_save, routing_delete, gpx_export, gpx_write, gpx_import,

@@ -41,6 +41,16 @@ pub enum Param {
     Mslp,
     /// Significant height of combined wind waves and swell (m).
     WaveHeight,
+    /// Peak (primary) wave period (s) and direction waves come FROM (deg).
+    WavePeriod,
+    WaveDir,
+    /// Significant height of swell and of wind waves (m).
+    SwellHeight,
+    WindWaveHeight,
+    /// Precipitation rate (kg m-2 s-1 = mm/s).
+    Rain,
+    /// Convective available potential energy (J/kg).
+    Cape,
     /// Ocean current, eastward (m/s).
     CurrentU,
     /// Ocean current, northward (m/s).
@@ -59,6 +69,12 @@ impl Param {
             (0, 3, 0) if surface == 101 => Param::Mslp,
             (0, 3, 1) => Param::Mslp,
             (10, 0, 3) => Param::WaveHeight,
+            (10, 0, 5) => Param::WindWaveHeight,
+            (10, 0, 8) => Param::SwellHeight,
+            (10, 0, 10) => Param::WaveDir,
+            (10, 0, 11) => Param::WavePeriod,
+            (0, 1, 7) => Param::Rain,
+            (0, 7, 6) => Param::Cape,
             (10, 1, 2) => Param::CurrentU,
             (10, 1, 3) => Param::CurrentV,
             (d, c, n) => Param::Other(d, c, n),
@@ -337,7 +353,12 @@ impl GribFile {
     pub fn model(&self) -> (String, i64) {
         let wind = self.fields.iter().find(|f| f.param == Param::WindU).or(self.fields.first());
         let Some(f) = wind else { return ("empty".into(), 0) };
-        (model_name(f.local.as_ref(), f.centre), f.ref_time)
+        let mut name = model_name(f.local.as_ref(), f.centre);
+        // NOAA wave files carry no model name: say so when there is no wind in them
+        if f.centre == 7 && f.local.is_none() && f.param != Param::WindU && f.discipline == 10 {
+            name = "NCEP GFS-Wave".into();
+        }
+        (name, f.ref_time)
     }
 
     pub fn summary(&self) -> Summary {
@@ -437,7 +458,9 @@ pub fn scan(path: impl AsRef<Path>) -> Result<FileInfo, GribError> {
                     Param::WindU | Param::WindV | Param::WindSpeed | Param::WindDir => "wind",
                     Param::Gust => "gust",
                     Param::Mslp => "pressure",
-                    Param::WaveHeight => "waves",
+                    Param::WaveHeight | Param::WavePeriod | Param::WaveDir | Param::SwellHeight | Param::WindWaveHeight => "waves",
+                    Param::Rain => "rain",
+                    Param::Cape => "CAPE",
                     Param::CurrentU | Param::CurrentV => "currents",
                     Param::Other(..) => "other",
                 };

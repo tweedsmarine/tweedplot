@@ -41,7 +41,14 @@
           <span id="wx-time">—</span>
         </div>
         <input id="wx-slider" type="range" min="0" max="0" step="3600" value="0" />
-        <table id="wx-point"><thead><tr><th>Run</th><th>TWS</th><th>TWD</th><th>Gust</th><th>MSLP</th><th>Hs</th></tr></thead><tbody></tbody></table>
+        <div class="wx-row"><label class="grow" for="wx-layer">Show</label><select id="wx-layer" title="What the shading shows"></select></div>
+        <div class="wx-row checks">
+          <label id="wx-arrows-row"><input id="wx-arrows" type="checkbox" /> Wind barbs</label>
+          <label id="wx-wavearrows-row"><input id="wx-wavearrows" type="checkbox" /> Wave direction</label>
+          <label id="wx-isobars-row"><input id="wx-isobars" type="checkbox" /> Isobars</label>
+        </div>
+        <div id="wx-legend" class="legend" title="Wind speed, knots"></div>
+        <table id="wx-point"><thead><tr><th>Run</th><th>TWS</th><th>TWD</th><th>Gust</th><th>MSLP</th><th>Hs / Tp</th></tr></thead><tbody></tbody></table>
         <div id="wx-where" class="wx-note">Values at the cursor</div>
         <details class="sub" id="dl-box">
           <summary>Download (free, no email)</summary>
@@ -68,13 +75,13 @@
           <summary>Display</summary>
           <div class="wx-row"><label class="grow" for="wx-density">Arrow density</label><input id="wx-density" type="range" min="1" max="10" step="1" /><span id="wx-density-v" class="val"></span></div>
           <div class="wx-row"><label class="grow" for="wx-size">Arrow size</label><input id="wx-size" type="range" min="0.5" max="2" step="0.1" /><span id="wx-size-v" class="val"></span></div>
-          <div class="wx-row"><label class="grow" for="wx-shading">Wind shading</label>
+          <div class="wx-row"><label class="grow" for="wx-shading" id="wx-shading-label">Wind shading</label>
             <select id="wx-shading">
               <option value="off">Off</option>
               <option value="smooth">Smooth</option>
-              <option value="1">Bands of 1 kn</option>
-              <option value="2">Bands of 2 kn</option>
-              <option value="5">Bands of 5 kn</option>
+              <option value="1">Bands (1 kn for wind)</option>
+              <option value="2">Bands (2 kn for wind)</option>
+              <option value="5">Bands (5 kn for wind)</option>
             </select></div>
           <div class="wx-row"><label class="grow" for="wx-land">Over the shading</label>
             <select id="wx-land" title="What is drawn on top of the wind shading">
@@ -82,7 +89,6 @@
               <option value="coast">Coastline only (wind over land shows)</option>
             </select></div>
           <div class="wx-row"><label class="grow" for="wx-opacity">Shading strength</label><input id="wx-opacity" type="range" min="0.1" max="0.9" step="0.05" /><span id="wx-opacity-v" class="val"></span></div>
-          <div id="wx-legend" class="legend" title="Wind speed, knots"></div>
         </details>
       </section>
 
