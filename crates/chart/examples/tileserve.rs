@@ -17,6 +17,23 @@ fn main() {
             _ => None,
         };
         let cors = tiny_http::Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap();
+        // feature details for testing: /feature/<table>/<fid> as JSON
+        if let ["feature", t, fid] = parts.as_slice() {
+            let info = t.parse().ok().zip(fid.parse().ok()).and_then(|(t, f)| store.feature(t, f));
+            let q = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
+            let body = match info {
+                Some(i) => format!(
+                    "{{\"code\":{},\"name\":{},\"band\":{},\"attrs\":[{}]}}",
+                    q(i.code),
+                    q(i.class_name),
+                    i.band,
+                    i.attrs.iter().map(|(k, v)| format!("[{},{}]", q(k), q(v))).collect::<Vec<_>>().join(",")
+                ),
+                None => "null".into(),
+            };
+            let _ = req.respond(tiny_http::Response::from_string(body).with_header(cors));
+            continue;
+        }
         let resp = match tile {
             Some(t) => tiny_http::Response::from_data(t.as_ref().clone())
                 .with_header(tiny_http::Header::from_bytes("Content-Type", "application/x-protobuf").unwrap())

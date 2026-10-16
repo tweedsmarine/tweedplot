@@ -23,6 +23,9 @@ pub mod clip;
 pub mod coast;
 pub mod geom;
 pub mod mvt;
+pub mod s57;
+pub mod features;
+pub use features::FeatureInfo;
 
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -51,6 +54,8 @@ pub enum Kind {
     DepthArea,
     Contour,
     Sounding,
+    /// Another LINZ hydrographic layer (lights, buoys, rocks, areas...): see [`s57`].
+    Feature,
 }
 
 #[derive(Debug, Clone)]
@@ -61,6 +66,10 @@ pub struct TableInfo {
     /// 0 = land, 1 (smallest scale) .. 5 (largest scale).
     pub band: u8,
     pub rows: i64,
+    /// For `Kind::Feature`: the S-57 class.
+    pub class: Option<&'static s57::FeatureClass>,
+    /// Column names (lower case).
+    cols: Vec<String>,
     db: usize,
     rtree: String,
     pk: String,
@@ -156,7 +165,13 @@ impl ChartStore {
                     .query_row(&format!("SELECT name FROM pragma_table_info('{table}') WHERE pk = 1"), [], |r| r.get(0))
                     .unwrap_or_else(|_| "fid".into());
                 let rows: i64 = conn.query_row(&format!("SELECT count(*) FROM \"{table}\""), [], |r| r.get(0))?;
-                tables.push(TableInfo { file: path.clone(), table, kind, band, rows, db, rtree, pk });
+                let cols: Vec<String> = {
+                    let mut st = conn.prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))?;
+                    let r = st.query_map([], |r| r.get::<_, String>(0))?;
+                    r.filter_map(Result::ok).map(|c| c.to_ascii_lowercase()).collect()
+                };
+                let class = if kind == Kind::Feature { s57::class_for(&table) } else { None };
+                tables.push(TableInfo { file: path.clone(), table, kind, band, rows, class, cols, db, rtree, pk });
                 any = true;
             }
             if any {
@@ -250,7 +265,8 @@ impl ChartStore {
                 }
             });
         }
-        mvt::encode_tile(&[depare, depcnt, land, soundg])
+        let [far, fln, fpt, lsec] = self.render_features(&tp, z);
+        mvt::encode_tile(&[depare, depcnt, far, land, fln, soundg, lsec, fpt])
     }
 
     fn query(&self, t: &TableInfo, b: [f64; 4], cols: &[&str], mut f: impl FnMut(&[Option<f64>], Geom)) {
@@ -378,6 +394,8 @@ fn classify(table: &str) -> Option<(Kind, u8)> {
         Kind::Contour
     } else if t.contains("sounding") {
         Kind::Sounding
+    } else if s57::class_for(&t).is_some() {
+        Kind::Feature
     } else {
         return None;
     };
@@ -407,7 +425,17 @@ fn unzip_gpkgs(zip_path: &Path, out_dir: &Path) -> Result<Vec<PathBuf>, ChartErr
             continue;
         }
         let dest = out_dir.join(&name);
-        if !dest.exists() || std::fs::metadata(&dest)?.len() != f.size() {
+        // Unpack when missing, or when this zip is newer than the copy (two downloads may hold
+        // the same layer: the newest wins once, and then neither rewrites it on every start).
+        let zip_time = std::fs::metadata(zip_path).and_then(|m| m.modified()).ok();
+        let stale = match std::fs::metadata(&dest) {
+            Err(_) => true,
+            Ok(m) => match (zip_time, m.modified().ok()) {
+                (Some(z), Some(d)) => z > d,
+                _ => m.len() != f.size(),
+            },
+        };
+        if stale {
             std::fs::create_dir_all(out_dir)?;
             let tmp = dest.with_extension("gpkg.part");
             let mut w = std::fs::File::create(&tmp)?;
@@ -540,6 +568,8 @@ mod tests {
         assert_eq!(classify("sounding_points_hydro_115mil_and_smaller"), Some((Kind::Sounding, 1)));
         assert_eq!(classify("nz_coastlines_and_islands_polygons_topo_150k"), Some((Kind::Land, 0)));
         assert_eq!(classify("something_else"), None);
+        assert_eq!(classify("light_points_hydro_190k_1350k"), Some((Kind::Feature, 3)));
+        assert_eq!(classify("building_single_points_hydro_190k_1350k"), None);
     }
 
     #[test]

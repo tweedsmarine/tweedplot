@@ -6,6 +6,7 @@ maplibregl.setWorkerUrl(workerUrl);
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { setupWeather, barbImage } from "./weather.js";
+import { setupChartFeatures, featureImage } from "./chartfeatures.js";
 import { setupRoute, markImage } from "./route.js";
 import { setupRouting } from "./routing.js";
 import { setupBoat } from "./boat.js";
@@ -118,7 +119,7 @@ map.setMissingStyleImageResolver((id) => {
   if (map.hasImage(id)) return;
   const m = /^(sh|dp):(-?[0-9.]+)$/.exec(id);
   if (m) { map.addImage(id, soundingIcon(parseFloat(m[2]), m[1] === "sh"), { pixelRatio: 2 }); return; }
-  const img = barbImage(id) || markImage(id) || labelImage(id);
+  const img = barbImage(id) || markImage(id) || labelImage(id) || featureImage(id);
   if (img) map.addImage(id, img, { pixelRatio: 2 });
 });
 
@@ -132,13 +133,15 @@ const ui = setupRail(map);
 const inst = setupInstruments();
 const boat = setupBoat();
 const dock = setupDock(map);
+let features = null;
 map.on("load", () => {
+  features = setupChartFeatures(map, { before: "track" });
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
   window.__weather = weather; // debugging handle
   library = setupLibrary(map, { ui });
   route = setupRoute(map, { library, getBoat: () => lastBoat, getArrivalNm: () => Number(document.getElementById("rt-radius").value) || 0.1 });
   routing = setupRouting(map, { weather, course: route, library, dock, ui, getBoat: () => lastBoat,
-    getSafetyDepth: () => settings.safetyDepth, getBoatSettings: boat.get });
+    getSafetyDepth: () => settings.safetyDepth, getAvoid: () => features.avoid(), getBoatSettings: boat.get });
   library.attach(route, routing);
   setupFleet(map, { weather, course: route, routing, dock, ui });
   setupGribDownload(map, { weather, course: route });

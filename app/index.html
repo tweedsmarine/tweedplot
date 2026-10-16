@@ -229,12 +229,18 @@
         <div class="wx-row"><label class="grow" for="boat-eff">Polar efficiency (%)</label><input id="boat-eff" type="number" min="10" max="150" step="1" /></div>
         <div class="wx-row"><label class="grow" for="boat-tack">Tack costs (s)</label><input id="boat-tack" type="number" min="0" step="5" /></div>
         <div class="wx-row"><label class="grow" for="boat-gybe">Gybe costs (s)</label><input id="boat-gybe" type="number" min="0" step="5" /></div>
-        <div class="wx-note">Safety depth is set in the Chart panel; routing avoids water shallower than it.</div>
+        <div class="wx-note">Safety depth is set in the Chart panel; routing avoids water shallower than it, and charted dangers and marine farms if ticked there.</div>
       </section>
 
       <section class="pane" data-pane="chart" data-title="Chart and Signal K">
         <div class="wx-row"><label class="grow" for="set-safety-depth">Safety depth (m)</label><input id="set-safety-depth" type="number" min="0" step="0.5" /></div>
         <div class="wx-row"><label class="grow" for="set-safety-contour">Safety contour (m)</label><input id="set-safety-contour" type="number" min="0" step="1" /></div>
+        <div class="wx-row checks"><label title="Routing keeps off rocks, wrecks and obstructions that dry, are awash, or have less water than the safety depth (or an unknown depth)"><input id="set-avoid-dangers" type="checkbox" /> Route round dangers</label>
+          <label title="Routing keeps out of charted marine farms"><input id="set-avoid-farms" type="checkbox" /> Route round marine farms</label></div>
+        <h3>Chart features</h3>
+        <div class="wx-row checks"><label><input id="set-feat" type="checkbox" /> Lights, marks, dangers, areas</label></div>
+        <div class="wx-row checks"><label><input id="set-sectors" type="checkbox" /> Light sectors</label><label><input id="set-featnames" type="checkbox" /> Names and labels</label></div>
+        <div class="wx-note">From the LINZ hydrographic layers in the linz folder (any scale band). Click a light, mark or area for its details. Not for navigation.</div>
         <h3>Own boat</h3>
         <div class="wx-row"><label class="grow"><input id="set-hdg-line" type="checkbox" /> Heading line</label><select id="set-hdg-len" title="Length: time at boat speed, or to the edge of the chart"></select></div>
         <div class="wx-row"><label class="grow"><input id="set-cog-line" type="checkbox" /> COG line</label><select id="set-cog-len" title="Length: time at SOG, or to the edge of the chart"></select></div>

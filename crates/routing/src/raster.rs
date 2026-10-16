@@ -12,6 +12,22 @@ pub const UNKNOWN: u8 = 0;
 pub const FREE: u8 = 1;
 pub const BLOCKED: u8 = 2;
 
+/// Charted hazards to keep off besides land and shallow water.
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
+pub struct Avoid {
+    /// Rocks, wrecks and obstructions that dry, are awash, or have less than the safety depth.
+    pub dangers: bool,
+    /// Marine farms.
+    pub farms: bool,
+}
+
+impl Default for Avoid {
+    fn default() -> Self {
+        Avoid { dangers: true, farms: true }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Raster {
     pub w: usize,
@@ -169,9 +185,21 @@ impl Raster {
         }
     }
 
+    /// Block the cell holding a point (a rock, a wreck...).
+    pub fn block_point(&mut self, p: &[f64; 2]) {
+        let (x, y) = self.xy(p);
+        if x >= 0.0 && y >= 0.0 && x < self.w as f64 && y < self.h as f64 {
+            self.cells[y as usize * self.w + x as usize] = BLOCKED;
+        }
+    }
+
     /// Build from a LINZ chart store for `bbox`: depth areas (shallower than
-    /// `safety_depth` blocked), then Topo50 land on top.
+    /// `safety_depth` blocked), then Topo50 land on top, then charted dangers and marine farms.
     pub fn from_chart(store: &chart::ChartStore, bbox: [f64; 4], safety_depth: f64, cell_m: f64, max_cells: usize) -> Self {
+        Self::from_chart_with(store, bbox, safety_depth, cell_m, max_cells, Avoid::default())
+    }
+
+    pub fn from_chart_with(store: &chart::ChartStore, bbox: [f64; 4], safety_depth: f64, cell_m: f64, max_cells: usize, avoid: Avoid) -> Self {
         let mut r = Raster::new(bbox, cell_m, max_cells);
         let mut current_band = 0u8;
         let mut shallow: Vec<Vec<Ring>> = Vec::new();
@@ -200,6 +228,18 @@ impl Raster {
             r.fill(rings, BLOCKED);
             r.block_outline(rings);
         });
+        if avoid.dangers || avoid.farms {
+            store.for_each_danger(bbox, safety_depth, avoid.dangers, avoid.farms, |g| match g {
+                chart::geom::Geom::Points(pts) => pts.iter().for_each(|p| r.block_point(p)),
+                chart::geom::Geom::Polygons(polys) => {
+                    for p in polys {
+                        r.fill(p, BLOCKED);
+                        r.block_outline(p);
+                    }
+                }
+                chart::geom::Geom::Lines(_) => {}
+            });
+        }
         r
     }
 

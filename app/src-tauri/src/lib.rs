@@ -392,6 +392,9 @@ struct RouteRequest {
     grib_path: String,
     polar_path: String,
     safety_depth: f64,
+    /// Rocks, wrecks, obstructions and marine farms to keep off.
+    #[serde(default)]
+    avoid: routing::Avoid,
     #[serde(default)]
     params: routing::Params,
 }
@@ -420,7 +423,7 @@ async fn route_compute(req: RouteRequest) -> Result<serde_json::Value, String> {
             }
             // room to go round headlands: a quarter of the span, at least 0.1 degree
             let pad = ((b[2] - b[0]).max(b[3] - b[1]) * 0.25).clamp(0.1, 2.0);
-            routing::Raster::from_chart(store, [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad], req.safety_depth, 50.0, 16_000_000)
+            routing::Raster::from_chart_with(store, [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad], req.safety_depth, 50.0, 16_000_000, req.avoid)
         });
         let raster_ms = clock.elapsed().as_millis();
         let r = routing::route(start, req.t0, &marks, &polar, grib.as_ref(), raster.as_ref(), &req.params);
@@ -676,6 +679,17 @@ fn app_info(app: tauri::AppHandle) -> serde_json::Value {
     })
 }
 
+/// All attributes of a chart feature (table index and fid from the tiles), in words.
+#[tauri::command]
+fn chart_feature(t: usize, fid: i64) -> Option<serde_json::Value> {
+    let f = CHARTS.get()?.feature(t, fid)?;
+    Some(serde_json::json!({
+        "code": f.code, "name": f.class_name, "band": f.band, "position": f.position,
+        "attrs": f.attrs,
+    }))
+}
+
+/// Summary of the chart folder.
 #[tauri::command]
 fn chart_info() -> serde_json::Value {
     match CHARTS.get() {
@@ -710,7 +724,7 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            app_info, chart_info, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_point,
+            app_info, chart_info, chart_feature, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_point,
             polar_files, route_compute, sk_status,
             lib_info, marks_list, mark_save, mark_delete, routes_list, route_save, route_delete,
             routings_list, routing_get, routing_save, routing_delete, gpx_export, gpx_write, gpx_import,

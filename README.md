@@ -47,6 +47,21 @@ The app reads LINZ GeoPackage downloads (zipped as downloaded is fine) from `RAC
 
 Depth shading follows the S-52 day colours, with the safety depth and safety contour set in the panel. LINZ data is CC BY 4.0 and **not for navigation**.
 
+### Chart features (lights, marks, dangers, areas)
+
+The LINZ hydrographic feature layers (the "121 layers" download, any scale band, GeoPackage) go in the same folder. The app draws:
+
+- lights with paper-chart labels (`Fl(2) WR 12s 22m 20-17M`) and sector arcs;
+- lateral, cardinal, isolated danger, safe water and special buoys and beacons, with colours and topmarks;
+- rocks (covers and uncovers, awash, underwater), wrecks and obstructions, with depths;
+- restricted areas, marine farms, anchorages, cable areas, caution areas;
+- submarine cables, pipelines, leading lines and recommended tracks;
+- names of bays and sea areas; landmarks, racons, pilot boarding places, moorings.
+
+Each feature shows from the scale its chart gives it (SCAMIN). Where several bands are loaded the finest wins. Click a feature for all its details in words. Chart panel: switch features, light sectors and labels on or off. The depth layers inside that download duplicate the separate depth downloads and are read once.
+
+Routing also keeps off rocks, wrecks and obstructions that dry, are awash, or have less water than the safety depth (or an unknown depth), and out of marine farms. Both can be switched off in the Chart panel.
+
 Below zoom 6 (and anywhere without LINZ data) the app falls back to OpenStreetMap land polygons via geo-maps 0.6.0 (`app/public/data`, built by `tools/prep_land*.py`).
 
 To check a chart folder or test tiles in a browser:

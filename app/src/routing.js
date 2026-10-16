@@ -20,7 +20,7 @@ const COLOURS = ["#c2185b", "#1565c0", "#2e7d32", "#ef6c00", "#6a1b9a", "#00838f
 function load(key, d) { try { return { ...d, ...JSON.parse(localStorage.getItem(key) || "{}") }; } catch { return { ...d }; } }
 function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* ignore */ } }
 
-export function setupRouting(map, { weather, course, library, dock, ui, getBoat, getSafetyDepth, getBoatSettings }) {
+export function setupRouting(map, { weather, course, library, dock, ui, getBoat, getSafetyDepth, getAvoid, getBoatSettings }) {
   const $ = (id) => document.getElementById(id);
   const opts = load(OPTS_KEY, OPTS_DEFAULTS);
   if (opts.v !== 2) { opts.step = 0; opts.v = 2; }
@@ -154,7 +154,7 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
     const c = course.get();
     const b = getBoatSettings();
     return {
-      start: c.start, marks: c.marks.map((m) => [m.lon, m.lat]), t0: startTime(), grib_path: grib.path, polar_path: b.polar, safety_depth: getSafetyDepth(),
+      start: c.start, marks: c.marks.map((m) => [m.lon, m.lat]), t0: startTime(), grib_path: grib.path, polar_path: b.polar, safety_depth: getSafetyDepth(), avoid: getAvoid?.() ?? { dangers: true, farms: true },
       params: { step_s: opts.step * 60, efficiency: b.eff / 100, tack_s: b.tack, gybe_s: b.gybe,
                 arrival_nm: opts.radius, use_current: opts.current, keep_isochrones_every: 1 },
       // for saving and reopening: names and library links of the course
@@ -206,7 +206,9 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
     const msg = (t, k) => line.set(t, k);
     const r = it.r, secs = ((r.compute_ms ?? 0) / 1000).toFixed(1);
     if (r.status === "arrived") {
-      const charts = r.obstacles?.charts ? `, land and < ${r.request.safety_depth} m avoided` : ", no chart: land not avoided";
+      const av = r.request.avoid ?? {};
+      const extra = [av.dangers !== false && "dangers", av.farms !== false && "marine farms"].filter(Boolean).join(", ");
+      const charts = r.obstacles?.charts ? `, land, < ${r.request.safety_depth} m${extra ? `, ${extra}` : ""} avoided` : ", no chart: land not avoided";
       msg(`${it.name}: arrives ${fmt(r.arrival, true)} (${hm(r.arrival - r.t0)}), ${secs} s${charts}.`, "good");
     } else if (r.status === "grib end") {
       msg(`${it.name}: the weather runs out first. ${r.message}`, "warn");

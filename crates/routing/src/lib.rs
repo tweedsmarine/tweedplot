@@ -30,7 +30,7 @@ use polar::Polar;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-pub use raster::Raster;
+pub use raster::{Avoid, Raster};
 
 const KN_PER_MS: f64 = 3600.0 / 1852.0;
 

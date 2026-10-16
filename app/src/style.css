@@ -265,3 +265,10 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
 .wx-row.area label { color: var(--quiet); font-size: 11px; }
 .wx-row.area input { width: 20%; min-width: 0; flex: 1; text-align: right; font-variant-numeric: tabular-nums; }
 .wx-row.checks label[hidden] { display: none; }
+
+/* chart feature details */
+.feat-pop { font-size: 12px; max-height: 50vh; overflow: auto; }
+.feat-pop h4 { margin: 2px 0 4px; font-size: 13px; }
+.feat-pop table { border-collapse: collapse; width: 100%; margin-bottom: 6px; }
+.feat-pop td { padding: 1px 6px 1px 0; vertical-align: top; }
+.feat-pop td:first-child { color: var(--quiet); white-space: nowrap; }
