@@ -7,8 +7,11 @@
 //! returns `None`: a truncated GRIB must never look like calm weather.
 
 mod decode;
+mod grib1;
+pub mod aec;
 pub mod compare;
 pub mod verify;
+pub mod write;
 
 use std::path::{Path, PathBuf};
 
@@ -74,6 +77,8 @@ impl Param {
             (10, 0, 5) => Param::WindWaveHeight,
             (10, 0, 8) => Param::SwellHeight,
             (10, 0, 10) => Param::WaveDir,
+            (10, 0, 14) => Param::WaveDir,   // ECMWF mwd: mean direction of combined wind waves and swell
+            (10, 0, 34) => Param::WavePeriod, // ECMWF pp1d: peak period
             (10, 0, 11) => Param::WavePeriod,
             (0, 1, 7) => Param::Rain,
             (0, 7, 6) => Param::Cape,
@@ -285,6 +290,12 @@ impl GribFile {
     /// A file from fields already decoded (tests, and fields made by the app).
     pub fn from_fields(fields: Vec<Field>) -> Self {
         GribFile::build(PathBuf::new(), fields, Vec::new())
+    }
+
+    /// The fields of a GRIB2 byte buffer as they are, with what was skipped.
+    pub fn decode_fields(bytes: &[u8]) -> (Vec<Field>, Vec<String>) {
+        let d = decode::decode(bytes);
+        (d.fields, d.skipped)
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
@@ -617,6 +628,8 @@ pub fn fmt_area(b: &[f64; 4]) -> String {
             format!("{a:.1}–{c:.1}°E")
         } else if a <= 0.0 && c <= 0.0 {
             format!("{:.1}–{:.1}°W", -a, -c)
+        } else if a > 0.0 && c < 0.0 {
+            format!("{a:.1}°E–{:.1}°W", -c) // across the date line
         } else {
             format!("{:.1}°W–{c:.1}°E", -a)
         }

@@ -2,6 +2,7 @@
 // the chart, the chart view, or round the course), forecast length and step.
 // The Rust side finds the newest complete run on NOAA NOMADS, downloads it cut
 // to the area, and the file is loaded as soon as it is written.
+import { SAILDOCS, SD_MODELS, SD_PARAM_NAMES, saildocsRequest, saildocsBytes } from "./saildocs.js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -15,6 +16,7 @@ export function setupGribDownload(map, { weather, course }) {
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ } };
   let models = [];
   const status = (t, kind = "") => { const el = $("dl-status"); el.textContent = t; el.className = `wx-note ${kind}`; };
+  let sdReady = false; // the Saildocs request is set up (end of this function)
   const model = () => models.find((m) => m.id === prefs.model) ?? models[0];
 
   // ---------- the area on the chart ----------------------------------------------------------
@@ -28,6 +30,7 @@ export function setupGribDownload(map, { weather, course }) {
     map.getSource("dl-area").setData(a && open ? { type: "Feature", properties: {}, geometry: { type: "Polygon",
       coordinates: [[[a[0], a[1]], [a[2], a[1]], [a[2], a[3]], [a[0], a[3]], [a[0], a[1]]]] } } : empty);
     for (const [id, i] of [["dl-w", 0], ["dl-s", 1], ["dl-e", 2], ["dl-n", 3]]) $(id).value = a ? String(+a[i].toFixed(2)) : "";
+    if (sdReady) sdUpdate();
   }
   function setArea(a) {
     if (!a) return;
@@ -105,7 +108,7 @@ export function setupGribDownload(map, { weather, course }) {
   // ---------- model, parameters, time ----------------------------------------------------------
   function renderParams() {
     const m = model();
-    const key = m.id === "gfs_wave0p25" ? "wave" : "gfs";
+    const key = m.id.includes("wave") ? "wave" : "gfs";
     const box = $("dl-params");
     box.innerHTML = "";
     for (const p of m.params) {
@@ -136,7 +139,7 @@ export function setupGribDownload(map, { weather, course }) {
   }
   function request() {
     const m = model();
-    const key = m.id === "gfs_wave0p25" ? "wave" : "gfs";
+    const key = m.id.includes("wave") ? "wave" : "gfs";
     return { model: m.id, area: prefs.area, params: prefs.params[key], hours: Number($("dl-days").value) * 24, every: Number($("dl-every").value) };
   }
   async function estimate() {
@@ -144,11 +147,20 @@ export function setupGribDownload(map, { weather, course }) {
     if (!prefs.area) { $("dl-size").textContent = "Choose an area: draw it, use the chart view or the course."; return; }
     try {
       const r = await invoke("gribdl_estimate", { req: request() });
-      const mb = r.bytes / 1e6;
-      $("dl-size").textContent = `About ${mb < 1 ? `${Math.max(1, Math.round(r.bytes / 1000))} kB` : `${mb.toFixed(mb < 10 ? 1 : 0)} MB`} · ${r.steps} forecast times to +${r.last} h`;
+      const size = (b) => { const mb = b / 1e6; return mb < 1 ? `${Math.max(1, Math.round(b / 1000))} kB` : `${mb.toFixed(mb < 10 ? 1 : 0)} MB`; };
+      const ecmwf = request().model.startsWith("ecmwf");
+      $("dl-size").textContent = ecmwf
+        ? `File about ${size(r.bytes)}; downloads about ${size(r.download)} (ECMWF publishes whole-globe fields, cut to the area here) · ${r.steps} forecast times to +${r.last} h` +
+          (r.last > 144 && !request().model.includes("aifs") ? " · only the 00Z and 12Z runs go past 144 h" : "")
+        : `About ${size(r.bytes)} · ${r.steps} forecast times to +${r.last} h`;
     } catch (e) { $("dl-size").textContent = String(e); }
   }
-  $("dl-model").onchange = (e) => { prefs.model = e.target.value; save(); renderParams(); estimate(); };
+  const SOURCE_NOTE = {
+    gfs: "Source: NOAA NOMADS (GFS, GFS-Wave), cut to the area on the server. The newest complete run is used.",
+    ecmwf: "Source: ECMWF open data (CC BY 4.0, © ECMWF), from data.ecmwf.int or its AWS mirror. The newest complete run is used.",
+  };
+  const showSource = () => status(SOURCE_NOTE[String(prefs.model).startsWith("ecmwf") ? "ecmwf" : "gfs"]);
+  $("dl-model").onchange = (e) => { prefs.model = e.target.value; save(); renderParams(); estimate(); showSource(); };
   $("dl-days").onchange = (e) => { prefs.days = Number(e.target.value); save(); estimate(); };
   $("dl-every").onchange = (e) => { prefs.every = Number(e.target.value); save(); estimate(); };
 
@@ -184,11 +196,64 @@ export function setupGribDownload(map, { weather, course }) {
   };
   $("dl-cancel").onclick = () => invoke("gribdl_cancel").catch(() => {});
 
+  // ---------- Saildocs email request ----------------------------------------------------------
+  prefs.sd ??= { model: "GFS", res: {}, params: {} };
+  const sdSel = $("sd-model"), sdRes = $("sd-res");
+  for (const [k, m] of Object.entries(SD_MODELS)) sdSel.append(new Option(m.name, k));
+  sdSel.value = SD_MODELS[prefs.sd.model] ? prefs.sd.model : "GFS";
+  function sdRender() {
+    const m = SD_MODELS[sdSel.value];
+    sdRes.innerHTML = "";
+    for (const r of m.res) sdRes.append(new Option(`${r}°`, String(r)));
+    sdRes.value = String(prefs.sd.res[sdSel.value] ?? m.res[0]);
+    const box = $("sd-params");
+    box.innerHTML = "";
+    const on = prefs.sd.params[sdSel.value] ?? m.def;
+    for (const p of m.params) {
+      const lab = document.createElement("label");
+      lab.innerHTML = `<input type="checkbox" value="${p}"> ${SD_PARAM_NAMES[p] ?? p}`;
+      lab.querySelector("input").checked = on.includes(p);
+      box.append(lab);
+    }
+    sdUpdate();
+  }
+  function sdReq() {
+    const params = [...$("sd-params").querySelectorAll("input:checked")].map((x) => x.value);
+    return { model: sdSel.value, area: prefs.area, res: Number(sdRes.value), hours: Number($("dl-days").value) * 24, every: Math.max(3, Number($("dl-every").value)), params };
+  }
+  function sdUpdate() {
+    const r = sdReq();
+    const ok = !!r.area && r.params.length > 0;
+    $("sd-text").value = ok ? saildocsRequest(r) : r.area ? "Choose at least one parameter." : "Choose an area above.";
+    $("sd-copy").disabled = $("sd-mail").disabled = !ok;
+    if (!ok) { $("sd-size").textContent = ""; return; }
+    const kb = saildocsBytes(r) / 1000;
+    const hrs = Math.min(r.hours, SD_MODELS[r.model].max);
+    $("sd-size").textContent = `Reply about ${kb < 1000 ? `${Math.max(1, Math.round(kb))} kB` : `${(kb / 1000).toFixed(1)} MB`}` +
+      (hrs < r.hours ? ` · ${r.model} goes to ${hrs} h` : "");
+    $("sd-size").classList.toggle("warn", kb > 500);
+  }
+  sdSel.onchange = () => { prefs.sd.model = sdSel.value; save(); sdRender(); };
+  sdRes.onchange = () => { prefs.sd.res[sdSel.value] = Number(sdRes.value); save(); sdUpdate(); };
+  $("sd-params").onchange = () => { prefs.sd.params[sdSel.value] = sdReq().params; save(); sdUpdate(); };
+  for (const id of ["dl-days", "dl-every", "dl-n", "dl-s", "dl-w", "dl-e"]) $(id).addEventListener("change", sdUpdate);
+  $("sd-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText($("sd-text").value); $("sd-copy").textContent = "Copied"; } catch { $("sd-text").select(); }
+    setTimeout(() => { $("sd-copy").textContent = "Copy"; }, 1500);
+  };
+  $("sd-mail").onclick = () => {
+    const url = `mailto:${SAILDOCS}?subject=${encodeURIComponent("GRIB request")}&body=${encodeURIComponent($("sd-text").value)}`;
+    invoke("open_url", { url }).catch(() => { window.location.href = url; });
+  };
+  sdReady = true;
+  sdRender();
+
   (async () => {
     models = (await invoke("gribdl_models").catch(() => [])) || [];
     const sel = $("dl-model");
     for (const m of models) sel.append(new Option(m.name, m.id));
     if (!models.some((m) => m.id === prefs.model)) prefs.model = models[0]?.id ?? "gfs0p25";
+    showSource();
     sel.value = prefs.model;
     if (models.length) renderParams();
     showArea();

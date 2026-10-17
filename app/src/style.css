@@ -343,3 +343,4 @@ table.gt-table tr.gt-best td { background: #f1e8fa; }
 table.gt-table tr.gt-best td.nm { font-weight: 700; }
 #gt-line, #gt-from, #gt-to { width: 90px; }
 #gt-n { width: 60px; }
+#sd-text { width: 100%; box-sizing: border-box; font: 12px ui-monospace, Consolas, monospace; resize: vertical; margin: 4px 0; }

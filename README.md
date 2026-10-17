@@ -78,7 +78,16 @@ The bundled world land is coarse (small islands missing). For a detailed one, do
 
 ## Weather (GRIB)
 
-**Download (free, no email)** in the Weather drawer: GFS 0.25°/0.5°/1° (wind, gusts, pressure, rain rate, CAPE) and GFS-Wave 0.25° (significant height, peak period and direction, swell) from NOAA NOMADS. Draw the area on the chart (or use the chart view or the course), choose the forecast length (1–16 days) and step (1, 3, 6 or 12 h), check the size estimate, Download. The newest complete run is found by checking the server, each forecast time is fetched cut to the area (one request at a time, politely), the steps are joined into one file in `racenav-data\grib`, and it is loaded straight away.
+**Download GRIBs (free)** in the Weather drawer:
+
+- **NOAA NOMADS**: GFS 0.25°/0.5°/1° (wind, gusts, pressure, rain rate, CAPE) and GFS-Wave 0.25° (significant height, peak period and direction, swell), cut to the area on the server, one request at a time.
+- **ECMWF open data** (CC BY 4.0, © ECMWF): IFS 0.25° (wind, pressure, gusts where published), AIFS 0.25° (ECMWF's AI model: wind, pressure) and the IFS wave model 0.25° (significant height, peak period, mean direction). 3-hourly to 144 h then 6-hourly to 360 h (AIFS 6-hourly); the 06Z and 18Z IFS runs stop at 144 h, so longer requests use the 00Z/12Z runs. ECMWF publishes whole-globe files with an index, so only the wanted fields are fetched (HTTP ranges), four steps at a time, from data.ecmwf.int or its AWS mirror; each field (CCSDS-packed) is decoded, cut to the area and written again. The download is much bigger than the file (about 0.6 MB per field per step); the estimate shows both.
+
+Draw the area on the chart (or use the chart view or the course), choose the forecast length (1–16 days) and step, check the size estimate, Download. The newest complete run is found by checking the server, the steps are joined into one file in `racenav-data\grib`, and it is loaded straight away.
+
+**Saildocs email request** (inside Download): for email-only links. Builds the request line from the same area, length and step, e.g. `send GFS:33S,48S,165E,175W|0.25,0.25|0,3..120|WIND,PRMSL`, for GFS, ICON (0.125°) or the free part of ECMWF (0.4°), with the parameters ticked and a size estimate. **Email** opens a message to query@saildocs.com in your mail program; **Copy** copies the line. Save the attached reply in the GRIB folder (Saildocs sends GRIB1, which racenav now reads).
+
+GRIB formats read: GRIB2 with simple, complex, complex + spatial differencing and CCSDS packing (ECMWF since 2023), and GRIB1 with simple packing (regular lat/lon), with or without a bitmap.
 
 The Weather panel lists GRIB files found in `RACENAV_GRIB_DIR`, `C:\dev\racenav-data\grib` and qtVlm's `C:\Program Files (x86)\qtVlm\grib`. Load as many as you like. One is shown on the chart (wind barbs plus speed shading under the land), and the table compares every loaded run at the cursor for the slider time. Outside a file's time span there is no value: a short GRIB never shows as calm.
 

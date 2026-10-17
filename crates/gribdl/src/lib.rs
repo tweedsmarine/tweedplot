@@ -11,6 +11,10 @@
 //!
 //! One request per forecast step, one at a time with a short pause (NOMADS
 //! blocks clients that hammer it). The steps are appended to one GRIB2 file.
+//!
+//! ECMWF open data (IFS, AIFS, IFS wave) comes as global files; see `ecmwf`.
+
+pub mod ecmwf;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -44,6 +48,9 @@ pub enum Model {
     Gfs0p50,
     Gfs1p00,
     GfsWave0p25,
+    EcmwfIfs0p25,
+    EcmwfAifs0p25,
+    EcmwfWave0p25,
 }
 
 /// What a model offers, for the download dialog.
@@ -71,8 +78,12 @@ pub struct ParamInfo {
 }
 
 impl Model {
-    pub fn all() -> [Model; 4] {
-        [Model::Gfs0p25, Model::Gfs0p50, Model::Gfs1p00, Model::GfsWave0p25]
+    pub fn all() -> [Model; 7] {
+        [Model::Gfs0p25, Model::Gfs0p50, Model::Gfs1p00, Model::GfsWave0p25, Model::EcmwfIfs0p25, Model::EcmwfAifs0p25, Model::EcmwfWave0p25]
+    }
+
+    pub fn is_ecmwf(self) -> bool {
+        matches!(self, Model::EcmwfIfs0p25 | Model::EcmwfAifs0p25 | Model::EcmwfWave0p25)
     }
 
     pub fn info(self) -> ModelInfo {
@@ -102,6 +113,43 @@ impl Model {
                 ],
                 delay_h: 6,
             },
+            Model::EcmwfIfs0p25 => ModelInfo {
+                id: self,
+                name: "ECMWF IFS 0.25°",
+                res_deg: 0.25,
+                max_hours: 360,
+                steps: vec![(144, 3), (360, 6)],
+                params: vec![
+                    ParamInfo { id: "wind", name: "Wind at 10 m", fields: 2, default: true },
+                    ParamInfo { id: "gust", name: "Gusts (where published)", fields: 1, default: false },
+                    ParamInfo { id: "mslp", name: "Pressure (MSL)", fields: 1, default: true },
+                ],
+                delay_h: 8,
+            },
+            Model::EcmwfAifs0p25 => ModelInfo {
+                id: self,
+                name: "ECMWF AIFS 0.25° (AI model)",
+                res_deg: 0.25,
+                max_hours: 360,
+                steps: vec![(360, 6)],
+                params: vec![
+                    ParamInfo { id: "wind", name: "Wind at 10 m", fields: 2, default: true },
+                    ParamInfo { id: "mslp", name: "Pressure (MSL)", fields: 1, default: true },
+                ],
+                delay_h: 7,
+            },
+            Model::EcmwfWave0p25 => ModelInfo {
+                id: self,
+                name: "ECMWF wave 0.25°",
+                res_deg: 0.25,
+                max_hours: 360,
+                steps: vec![(144, 3), (360, 6)],
+                params: vec![
+                    ParamInfo { id: "waves", name: "Significant wave height", fields: 1, default: true },
+                    ParamInfo { id: "period", name: "Peak period and mean direction", fields: 2, default: true },
+                ],
+                delay_h: 8,
+            },
         }
     }
 
@@ -111,6 +159,7 @@ impl Model {
             Model::Gfs0p50 => "filter_gfs_0p50.pl",
             Model::Gfs1p00 => "filter_gfs_1p00.pl",
             Model::GfsWave0p25 => "filter_gfswave.pl",
+            _ => "",
         }
     }
 
@@ -127,6 +176,7 @@ impl Model {
             Model::Gfs0p50 => format!("gfs.t{hh}z.pgrb2full.0p50.f{f:03}"),
             Model::Gfs1p00 => format!("gfs.t{hh}z.pgrb2.1p00.f{f:03}"),
             Model::GfsWave0p25 => format!("gfswave.t{hh}z.global.0p25.f{f:03}.grib2"),
+            _ => String::new(),
         }
     }
 
@@ -134,6 +184,10 @@ impl Model {
     fn vars(self, params: &[String]) -> Vec<&'static str> {
         let mut v: Vec<&'static str> = Vec::new();
         let has = |p: &str| params.iter().any(|x| x == p);
+        if self.is_ecmwf() {
+            let info = self.info();
+            return params.iter().filter_map(|p| info.params.iter().find(|x| x.id == p).map(|x| x.id)).collect();
+        }
         if self == Model::GfsWave0p25 {
             if has("waves") {
                 v.extend(["var_HTSGW=on"]);
@@ -211,7 +265,7 @@ pub struct Run {
 }
 
 impl Run {
-    fn at(t: i64) -> Run {
+    pub(crate) fn at(t: i64) -> Run {
         let d = chrono::DateTime::from_timestamp(t, 0).unwrap_or_default();
         Run { date: d.format("%Y%m%d").to_string(), hh: d.format("%H").to_string(), t }
     }
@@ -242,7 +296,19 @@ pub fn step_url(req: &Request, run: &Run, f: u32) -> String {
     )
 }
 
-/// Rough size of the download, bytes: grid points × fields × steps at about
+/// Rough amount downloaded, bytes: the file for NOMADS (cut on the server);
+/// for ECMWF whole global fields of about 600 kB (wave 300 kB) each.
+pub fn download_bytes(req: &Request) -> u64 {
+    if !req.model.is_ecmwf() {
+        return estimate_bytes(req);
+    }
+    let info = req.model.info();
+    let fields: u32 = info.params.iter().filter(|p| req.params.iter().any(|x| x == p.id)).map(|p| p.fields).sum();
+    let per = if req.model == Model::EcmwfWave0p25 { 300_000 } else { 600_000 };
+    fields as u64 * req.model.hours(req.hours, req.every).len() as u64 * per
+}
+
+/// Rough size of the file written, bytes: grid points × fields × steps at about
 /// 1.4 bytes a point after packing, plus headers.
 pub fn estimate_bytes(req: &Request) -> u64 {
     let info = req.model.info();
@@ -254,7 +320,7 @@ pub fn estimate_bytes(req: &Request) -> u64 {
     ((nx * ny * 1.4 + 200.0) * fields as f64 * steps) as u64
 }
 
-fn client() -> Result<reqwest::blocking::Client> {
+pub(crate) fn client() -> Result<reqwest::blocking::Client> {
     reqwest::blocking::Client::builder()
         .user_agent(concat!("racenav/", env!("CARGO_PKG_VERSION"), " (sailing navigation)"))
         .timeout(Duration::from_secs(120))
@@ -265,6 +331,9 @@ fn client() -> Result<reqwest::blocking::Client> {
 /// The newest run whose last wanted step is on the server, checked from the
 /// newest possible cycle backwards (the index file of that step exists).
 pub fn latest_run(model: Model, last_hour: u32, now: i64) -> Result<Run> {
+    if model.is_ecmwf() {
+        return ecmwf::latest_run(model, last_hour, now);
+    }
     let c = client()?;
     let newest = now - now.rem_euclid(6 * 3600);
     for k in 0..8 {
@@ -293,6 +362,9 @@ pub fn download(req: &Request, run: &Run, dir: &Path, progress: Progress, cancel
     }
     if !(req.area[3] > req.area[1]) || !(-90.0..=90.0).contains(&req.area[1]) || !(-90.0..=90.0).contains(&req.area[3]) {
         return Err(Error::Bad("the area is not valid".into()));
+    }
+    if req.model.is_ecmwf() {
+        return ecmwf::download(req, run, dir, progress, cancel);
     }
     std::fs::create_dir_all(dir)?;
     let hours = req.model.hours(req.hours, req.every);
@@ -348,12 +420,15 @@ fn get_retry(c: &reqwest::blocking::Client, url: &str, cancel: &AtomicBool) -> R
 }
 
 /// e.g. "GFS_0p25_20261015_12z_f000-f240_41S-34S_172E-178E.grb2"
-fn file_name(req: &Request, run: &Run, last: u32) -> String {
+pub(crate) fn file_name(req: &Request, run: &Run, last: u32) -> String {
     let m = match req.model {
         Model::Gfs0p25 => "GFS_0p25",
         Model::Gfs0p50 => "GFS_0p50",
         Model::Gfs1p00 => "GFS_1p00",
         Model::GfsWave0p25 => "GFSwave_0p25",
+        Model::EcmwfIfs0p25 => "ECMWF_IFS_0p25",
+        Model::EcmwfAifs0p25 => "ECMWF_AIFS_0p25",
+        Model::EcmwfWave0p25 => "ECMWF_wave_0p25",
     };
     let lat = |v: f64| format!("{}{}", v.abs().round(), if v < 0.0 { "S" } else { "N" });
     let lon = |v: f64| {

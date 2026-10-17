@@ -2,9 +2,9 @@
 //!
 //! Supported: grid template 3.0 (regular lat/lon); product templates 4.0, 4.1,
 //! 4.8 and 4.11; data representation 5.0 (simple), 5.2 (complex) and 5.3
-//! (complex with spatial differencing); bitmaps. The local-use section (2) is
+//! (complex with spatial differencing), 5.42 (CCSDS, ECMWF open data); bitmaps. The local-use section (2) is
 //! kept as JSON when it parses as JSON (Meltemus puts model and run there).
-//! Fields in other representations (JPEG 2000, PNG, CCSDS) are skipped and
+//! GRIB1 messages go to `grib1`. Fields in other representations (JPEG 2000, PNG) are skipped and
 //! reported, not fatal.
 
 use crate::{Field, Grid, GribError, Param};
@@ -32,6 +32,7 @@ pub fn decode_with_progress(bytes: &[u8], progress: &(dyn Fn(usize, usize) + Syn
     let mut skipped = Vec::new();
     let mut pos = 0;
     let mut local: Option<serde_json::Value> = None;
+    let mut g1: Vec<(usize, usize)> = Vec::new();
     while let Some(off) = find(&bytes[pos..], b"GRIB") {
         let start = pos + off;
         if start + 16 > bytes.len() {
@@ -40,8 +41,12 @@ pub fn decode_with_progress(bytes: &[u8], progress: &(dyn Fn(usize, usize) + Syn
         let edition = bytes[start + 7];
         if edition == 1 {
             let len = u24(&bytes[start + 4..]) as usize;
-            skipped.push(format!("GRIB1 message at byte {start} (GRIB1 not supported yet)"));
-            pos = start + len.max(8);
+            if len < 8 || start + len > bytes.len() {
+                skipped.push(format!("truncated GRIB1 message at byte {start}"));
+                break;
+            }
+            g1.push((start, len));
+            pos = start + len;
             continue;
         }
         if edition != 2 {
@@ -73,6 +78,13 @@ pub fn decode_with_progress(bytes: &[u8], progress: &(dyn Fn(usize, usize) + Syn
         })
         .collect();
     let mut fields = Vec::new();
+    for (start, len) in g1 {
+        match crate::grib1::message(&bytes[start..start + len], true) {
+            Ok(Some(f)) => fields.push(f),
+            Ok(None) => {}
+            Err(e) => skipped.push(format!("GRIB1 message at byte {start}: {e}")),
+        }
+    }
     for (start, r) in results {
         match r {
             Ok((f, s)) => {
@@ -127,6 +139,7 @@ struct Product {
     surface_value: f64,
     valid_time: i64,
     member: Option<u16>,
+    process: u8,
 }
 
 fn message(m: &[u8], local: &mut Option<serde_json::Value>) -> Result<(Vec<Field>, Vec<String>), GribError> {
@@ -194,6 +207,7 @@ fn field(st: &State, s7: &[u8]) -> Result<Option<Field>, GribError> {
     let packed = match tmpl {
         0 => unpack_simple(s5, &s7[5..], nvalues)?,
         2 | 3 => unpack_complex(s5, &s7[5..], nvalues, *tmpl == 3)?,
+        42 => unpack_ccsds(s5, &s7[5..], nvalues)?,
         t => return Err(GribError::Unsupported(format!("data representation 5.{t}"))),
     };
     // Spread over the grid using the bitmap (missing points become NaN).
@@ -227,7 +241,7 @@ fn field(st: &State, s7: &[u8]) -> Result<Option<Field>, GribError> {
         member: prod.member,
         grid: grid.canonical(),
         values,
-        local: st.local.clone(),
+        local: local_or_process(&st.local, st.centre, prod.process),
     }))
 }
 
@@ -288,7 +302,7 @@ fn product(s: &[u8], ref_time: i64) -> Option<Product> {
         }
         _ => {}
     }
-    Some(Product { category, number, surface_type, surface_value, valid_time, member })
+    Some(Product { category, number, surface_type, surface_value, valid_time, member, process: s[13] })
 }
 
 struct Scale {
@@ -315,6 +329,22 @@ fn unpack_simple(s5: &[u8], data: &[u8], n: usize) -> Result<Vec<f32>, GribError
         .map(|_| br.take(sc.bits).map(|x| ((sc.r + x as f64 * sc.e) * sc.d) as f32))
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| GribError::Format("simple packing: data too short".into()))
+}
+
+/// Template 5.42: simple packing whose packed values are CCSDS (AEC) coded.
+fn unpack_ccsds(s5: &[u8], data: &[u8], n: usize) -> Result<Vec<f32>, GribError> {
+    if s5.len() < 25 {
+        return Err(GribError::Format("CCSDS packing: section 5 too short".into()));
+    }
+    let sc = scale(s5);
+    if sc.bits == 0 {
+        return Ok(vec![(sc.r * sc.d) as f32; n]);
+    }
+    let flags = s5[21];
+    let block = s5[22] as usize;
+    let rsi = u16be(&s5[23..]) as usize;
+    let raw = crate::aec::decode(data, n, sc.bits, block, rsi, flags).map_err(|e| GribError::Format(format!("CCSDS packing: {e:?}")))?;
+    Ok(raw.into_iter().map(|x| ((sc.r + x as f64 * sc.e) * sc.d) as f32).collect())
 }
 
 fn unpack_complex(s5: &[u8], data: &[u8], n: usize, spatial: bool) -> Result<Vec<f32>, GribError> {
@@ -500,7 +530,17 @@ pub fn scan_file(path: &std::path::Path) -> Result<Vec<FieldMeta>, GribError> {
             }
         }
         if head[7] == 1 {
-            pos += (u24(&head[4..]) as u64).max(8);
+            let len = (u24(&head[4..]) as u64).max(8);
+            if pos + len <= size {
+                // GRIB1 messages are small: read the header sections and skip the data
+                let mut m = vec![0u8; len.min(1 << 16) as usize];
+                f.seek(SeekFrom::Start(pos))?;
+                f.read_exact(&mut m)?;
+                if let Ok(Some(fl)) = crate::grib1::message(&m, false) {
+                    out.push(FieldMeta { param: fl.param, centre: fl.centre, ref_time: fl.ref_time, valid_time: fl.valid_time, member: None, grid: fl.grid, local: None });
+                }
+            }
+            pos += len;
             continue;
         }
         let len = u64be(&head[8..]);
@@ -529,7 +569,7 @@ pub fn scan_file(path: &std::path::Path) -> Result<Vec<FieldMeta>, GribError> {
                             valid_time: pr.valid_time,
                             member: pr.member,
                             grid: g.canonical(),
-                            local: st.local.clone(),
+                            local: local_or_process(&st.local, st.centre, pr.process),
                         });
                     }
                 }
@@ -557,6 +597,11 @@ pub fn scan_file(path: &std::path::Path) -> Result<Vec<FieldMeta>, GribError> {
         pos += len;
     }
     Ok(out)
+}
+
+/// The local section, or a model name from a racenav process code (see `write`).
+fn local_or_process(local: &Option<serde_json::Value>, centre: u16, process: u8) -> Option<serde_json::Value> {
+    local.clone().or_else(|| crate::write::process_name(centre, process).map(|n| serde_json::json!({ "dispName": n })))
 }
 
 /// Field metadata from [`scan_file`].

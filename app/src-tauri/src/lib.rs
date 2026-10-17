@@ -74,7 +74,7 @@ fn gribdl_models() -> Vec<gribdl::ModelInfo> {
 #[tauri::command]
 fn gribdl_estimate(req: gribdl::Request) -> serde_json::Value {
     let steps = req.model.hours(req.hours, req.every);
-    serde_json::json!({ "bytes": gribdl::estimate_bytes(&req), "steps": steps.len(), "last": steps.last() })
+    serde_json::json!({ "bytes": gribdl::estimate_bytes(&req), "download": gribdl::download_bytes(&req), "steps": steps.len(), "last": steps.last() })
 }
 
 /// Find the newest complete run and download it, cut to the area. Progress
@@ -102,6 +102,21 @@ async fn gribdl_start(app: tauri::AppHandle, req: gribdl::Request) -> Result<ser
     .map_err(|e| e.to_string());
     DL_BUSY.store(false, Ordering::SeqCst);
     res?
+}
+
+/// Open a mailto: link (a Saildocs request) in the default mail program.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !url.starts_with("mailto:") || url.chars().any(|c| c.is_control() || c == '"') {
+        return Err("only mailto: links".into());
+    }
+    #[cfg(windows)]
+    let r = std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", &url]).spawn();
+    #[cfg(target_os = "macos")]
+    let r = std::process::Command::new("open").arg(&url).spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let r = std::process::Command::new("xdg-open").arg(&url).spawn();
+    r.map(|_| ()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1159,7 +1174,7 @@ pub fn run() {
             routings_list, routing_get, routing_save, routing_delete, gpx_export, gpx_write, gpx_import,
             rec_status, rec_start, rec_stop, tracks_list, track_get, track_update, track_delete, track_export,
             yb_open, yb_refresh, yb_races, yb_history,
-            gribdl_models, gribdl_estimate, gribdl_start, gribdl_cancel
+            gribdl_models, gribdl_estimate, gribdl_start, gribdl_cancel, open_url
         ])
         .register_asynchronous_uri_scheme_protocol("chart", |_ctx, request, responder| {
             let path = request.uri().path().to_string();
