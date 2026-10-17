@@ -3,6 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { fmt } from "./weather.js";
 import { distNm } from "./instruments.js";
+import { POI_KINDS } from "./poi.js";
 
 const KEY = "racenav.library";
 
@@ -32,13 +33,17 @@ export function setupLibrary(map, { ui }) {
   // marks given a buoy kind are drawn with the chart symbol (chartfeatures.js); the circle stays as an
   // invisible click target so selecting and routing to them works the same
   const isBuoy = ["has", ["get", "kind"], ["literal", BUOY_ICONS]];
+  const isPoi = ["has", ["get", "kind"], ["literal", Object.fromEntries(Object.keys(POI_KINDS).map((k) => [k, 1]))]];
+  const isIcon = ["any", isBuoy, isPoi];
   map.addLayer({ id: "lib-marks", type: "circle", source: "lib-marks",
-    paint: { "circle-radius": ["case", isBuoy, 9, 5], "circle-color": ["match", ["get", "kind"], "danger", "#c0392b", "waypoint", "#5b6b75", "#e67e22"],
-             "circle-opacity": ["case", isBuoy, 0, 1], "circle-stroke-opacity": ["case", isBuoy, 0, 1],
+    paint: { "circle-radius": ["case", isIcon, 11, 5], "circle-color": ["match", ["get", "kind"], "danger", "#c0392b", "waypoint", "#5b6b75", "#e67e22"],
+             "circle-opacity": ["case", isIcon, 0, 1], "circle-stroke-opacity": ["case", isIcon, 0, 1],
              "circle-stroke-color": "#fff", "circle-stroke-width": 1.5 } }, "track");
   map.addLayer({ id: "lib-buoys", type: "symbol", source: "lib-marks", filter: isBuoy,
     layout: { "icon-image": ["concat", "s57:", ["get", ["get", "kind"], ["literal", BUOY_ICONS]]], "icon-anchor": "bottom", "icon-offset": [0, 3],
               "icon-allow-overlap": true, "icon-ignore-placement": true } }, "lib-marks");
+  map.addLayer({ id: "lib-poi", type: "symbol", source: "lib-marks", filter: isPoi,
+    layout: { "icon-image": ["concat", "poi:", ["get", "kind"]], "icon-allow-overlap": true, "icon-ignore-placement": true } }, "lib-marks");
   map.addLayer({ id: "lib-labels", type: "symbol", source: "lib-marks", minzoom: 8,
     layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 6], "icon-allow-overlap": false } }, "track");
   let hidden = [];
@@ -47,6 +52,7 @@ export function setupLibrary(map, { ui }) {
     map.setLayoutProperty("lib-marks", "visibility", vis);
     map.setLayoutProperty("lib-labels", "visibility", vis);
     map.setLayoutProperty("lib-buoys", "visibility", vis);
+    map.setLayoutProperty("lib-poi", "visibility", vis);
     map.getSource("lib-marks").setData({ type: "FeatureCollection", features: marks.filter((m) => !hidden.includes(m.id)).map((m) => ({
       type: "Feature", properties: { id: m.id, name: m.name, kind: m.kind }, geometry: { type: "Point", coordinates: [m.lon, m.lat] } })) });
   }
@@ -131,6 +137,13 @@ export function setupLibrary(map, { ui }) {
     editing = { ...m };
     form.hidden = false;
     form.name.value = m.name;
+    if (!form.kind.querySelector("optgroup.poi")) {
+      const og = document.createElement("optgroup");
+      og.className = "poi";
+      og.label = "Point of interest";
+      for (const [k, [label]] of Object.entries(POI_KINDS)) og.append(new Option(label, k));
+      form.kind.append(og);
+    }
     form.kind.value = m.kind || "mark";
     form.group.value = m.group || "";
     form.lat.value = ddm(m.lat, "N", "S");

@@ -34,8 +34,10 @@ export function setupFleet(map, { weather, course, routing, dock, ui }) {
     layout: { "icon-image": "rt-tri", "icon-rotate": ["get", "cog"], "icon-rotation-alignment": "map",
               "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-size": ["case", ["get", "star"], 1.25, 0.95] },
     paint: { "icon-color": ["get", "colour"], "icon-halo-color": "#ffffff", "icon-halo-width": 1.4, "icon-opacity": ["case", ["get", "stale"], 0.5, 1] } });
-  map.addLayer({ id: "fl-labels", type: "symbol", source: "fl-boats", minzoom: 4,
-    layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "left", "icon-offset": [14, 0], "icon-allow-overlap": false } });
+  // names at every zoom; where they would overlap some are left out, followed boats (★) first
+  map.addLayer({ id: "fl-labels", type: "symbol", source: "fl-boats",
+    layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "left", "icon-offset": [14, 0], "icon-allow-overlap": false,
+              "icon-padding": 1, "symbol-sort-key": ["case", ["to-boolean", ["get", "star"]], 0, 1] } });
 
   // ---------- derived numbers per boat ----------------------------------------------------------
   const teams = () => race?.setup?.teams ?? [];

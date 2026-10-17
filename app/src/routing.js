@@ -14,7 +14,7 @@ import { routingStats, STATS, hm } from "./stats.js";
 import { setupGates } from "./gates.js";
 
 const OPTS_KEY = "racenav.route"; // kept from earlier versions: step, radius, current
-const OPTS_DEFAULTS = { step: 0, radius: 0.1, current: true, v: 2, tmode: "slider", tfixed: null };
+const OPTS_DEFAULTS = { step: 0, radius: 0.1, current: true, v: 2, tmode: "slider", tfixed: null, hoverTime: false };
 const COLS_KEY = "racenav.compare.cols";
 const COLOURS = ["#c2185b", "#1565c0", "#2e7d32", "#ef6c00", "#6a1b9a", "#00838f", "#5d4037", "#455a64", "#d81b60", "#7cb342"];
 
@@ -116,6 +116,8 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
   }
   $("rt-current").checked = opts.current;
   $("rt-current").onchange = (e) => { opts.current = e.target.checked; save(OPTS_KEY, opts); };
+  $("rt-hovertime").checked = opts.hoverTime;
+  $("rt-hovertime").onchange = (e) => { opts.hoverTime = e.target.checked; save(OPTS_KEY, opts); };
 
   // ---------- start time ----------------------------------------------------------
   // "slider": the weather slider's time; "now": the clock when Compute is pressed;
@@ -383,7 +385,7 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
     popup.setLngLat([p.lon, p.lat]).setHTML(
       `<div class="rt-popup"><b>${fmt(p.t)}</b><br>HDG ${pad3(p.heading)}° · TWA ${Math.abs(p.twa).toFixed(0)}° ${side}<br>` +
       `TWS ${p.tws.toFixed(1)} kn from ${pad3(p.twd)}°<br>BSP ${p.bsp.toFixed(1)} kn · SOG ${p.sog.toFixed(1)} kn</div>`).addTo(map);
-    if (weather.setTime) weather.setTime(p.t);
+    if (opts.hoverTime && weather.setTime) weather.setTime(p.t);
   });
   map.on("mouseleave", "rt-pts", () => popup.remove());
   map.on("mousemove", "rt-now", (e) => {

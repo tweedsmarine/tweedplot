@@ -60,12 +60,15 @@ pub enum Param {
     CurrentU,
     /// Ocean current, northward (m/s).
     CurrentV,
+    /// Air temperature at 2 m (K).
+    AirTemp,
     Other(u8, u8, u8),
 }
 
 impl Param {
     pub fn from_codes(discipline: u8, category: u8, number: u8, surface: u8) -> Self {
         match (discipline, category, number) {
+            (0, 0, 0) if surface == 103 => Param::AirTemp,
             (0, 2, 2) if surface == 103 => Param::WindU,
             (0, 2, 3) if surface == 103 => Param::WindV,
             (0, 2, 22) => Param::Gust,
@@ -543,6 +546,7 @@ pub fn scan(path: impl AsRef<Path>) -> Result<FileInfo, GribError> {
                     Param::Rain => "rain",
                     Param::Cape => "CAPE",
                     Param::CurrentU | Param::CurrentV => "currents",
+                    Param::AirTemp => "temperature",
                     Param::Other(..) => "other",
                 };
                 if !contents.iter().any(|x| x == c) {

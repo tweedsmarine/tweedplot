@@ -41,6 +41,7 @@ fn short_names(model: Model, param: &str) -> Vec<Vec<&'static str>> {
         (Model::EcmwfWave0p25, _) => vec![],
         (_, "wind") => vec![vec!["10u"], vec!["10v"]],
         (_, "mslp") => vec![vec!["msl"]],
+        (_, "temp") => vec![vec!["2t"]],
         (Model::EcmwfIfs0p25, "gust") => vec![vec!["10fg", "i10fg", "fg10"]],
         _ => vec![],
     }

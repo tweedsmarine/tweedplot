@@ -204,6 +204,27 @@ export function setupGribTools(map, { weather, dock }) {
   };
 }
 
+/** Each series' TWD as continuous values (may pass 360 or go below 0), placed about a shared unwrapped mean. */
+export function unwrapAroundMean(series) {
+  const ts = [...new Set(series.flatMap((s) => s.points.filter((p) => p.twd != null).map((p) => p.t)))].sort((a, b) => a - b);
+  const mean = new Map();
+  let prev = null;
+  for (const t of ts) {
+    let x = 0, y = 0;
+    for (const s of series) {
+      const p = s.points.find((q) => q.t === t && q.twd != null);
+      if (p) { x += Math.sin((p.twd * Math.PI) / 180); y += Math.cos((p.twd * Math.PI) / 180); }
+    }
+    let m = (Math.atan2(x, y) * 180) / Math.PI;
+    if (Math.hypot(x, y) < 1e-9) m = prev ?? 0; // directions cancel out: keep the line where it was
+    prev = prev == null ? (m + 360) % 360 : prev + ang(m, prev);
+    mean.set(t, prev);
+  }
+  // a time a GRIB has but no other: the nearest mean in time
+  const near = (t) => mean.get(t) ?? mean.get(ts.reduce((a, b) => (Math.abs(b - t) < Math.abs(a - t) ? b : a), ts[0]));
+  return series.map((s) => s.points.map((p) => (p.twd == null ? null : near(p.t) + ang(p.twd, near(p.t)))));
+}
+
 /** The meteogram as SVG: wind speed (with gusts and ensemble range), direction and pressure panels. */
 function drawMeteogram(series, W, onPick) {
   const pad = { l: 46, r: 12 };
@@ -225,22 +246,11 @@ function drawMeteogram(series, W, onPick) {
   if (t1 <= t0) t1 = t0 + 3600;
   const x = (t) => pad.l + ((t - t0) / (t1 - t0)) * (W - pad.l - pad.r);
 
-  // direction: unwrap each series, then shift it by whole turns to sit near the first series
-  const dirs = series.map((s) => {
-    let prev = null;
-    return s.points.map((p) => {
-      if (p.twd == null) return null;
-      prev = prev == null ? p.twd : prev + ang(p.twd, prev);
-      return prev;
-    });
-  });
-  const ref = dirs.find((d) => d.some((v) => v != null))?.find((v) => v != null) ?? 0;
-  for (const d of dirs) {
-    const first = d.find((v) => v != null);
-    if (first == null) continue;
-    const k = Math.round((ref - first) / 360) * 360;
-    for (let i = 0; i < d.length; i++) if (d[i] != null) d[i] += k;
-  }
+  // direction: one common unwrapped "mean direction" line through time (circular
+  // mean of every GRIB at each time, unwrapped step by step); each GRIB is drawn
+  // at its angle from that mean, so GRIBs that agree are drawn together even when
+  // the wind swings through north
+  const dirs = unwrapAroundMean(series);
 
   let y0 = top;
   for (const pn of panels) {

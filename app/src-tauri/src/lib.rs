@@ -275,7 +275,7 @@ fn grib_wind_grid(path: String, t: i64, bbox: [f64; 4], max_points: usize) -> Op
 
 /// One quantity on a thinned grid inside `bbox` at time `t`, for shading and
 /// contours: "wind" and "gust" (kn), "waves", "swell", "windwaves" (m),
-/// "period" (s), "wavedir" (deg from), "rain" (mm/h), "cape" (J/kg), "mslp" (hPa).
+/// "period" (s), "wavedir" (deg from), "rain" (mm/h), "cape" (J/kg), "mslp" (hPa), "temp" (°C).
 #[tauri::command]
 fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max_points: usize) -> Option<serde_json::Value> {
     use grib::Param as P;
@@ -300,6 +300,7 @@ fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max_points: us
         "rain" => { let (g, v) = f.grid_at(P::Rain, t)?; (g, v.iter().map(|x| x * 3600.0).collect()) }
         "cape" => f.grid_at(P::Cape, t)?,
         "mslp" => { let (g, v) = f.grid_at(P::Mslp, t)?; (g, v.iter().map(|x| x / 100.0).collect()) }
+        "temp" => { let (g, v) = f.grid_at(P::AirTemp, t)?; (g, v.iter().map(|x| x - 273.15).collect()) }
         _ => return None,
     };
     let turn = ((g.lon0 + g.dlon * (g.ni as f64 - 1.0) / 2.0 - (bbox[0] + bbox[2]) / 2.0) / 360.0).round() * 360.0;
@@ -502,6 +503,8 @@ fn grib_point(lat: f64, lon: f64, t: i64) -> Vec<serde_json::Value> {
                 "mslp": f.value(grib::Param::Mslp, lat, lon, t).map(|p| (p / 10.0).round() / 10.0),
                 "wave": f.value(grib::Param::WaveHeight, lat, lon, t).map(|h| (h * 10.0).round() / 10.0),
                 "period": f.value(grib::Param::WavePeriod, lat, lon, t).map(|h| h.round()),
+                "wavedir": f.value(grib::Param::WaveDir, lat, lon, t).map(|d| d.round()),
+                "temp": f.value(grib::Param::AirTemp, lat, lon, t).map(|k| ((k - 273.15) * 10.0).round() / 10.0),
                 "rain": f.value(grib::Param::Rain, lat, lon, t).map(|r| (r * 36000.0).round() / 10.0),
             })
         })
@@ -523,6 +526,19 @@ fn polar_dirs() -> Vec<PathBuf> {
     v.push(r"C:\Program Files (x86)\qtVlm\polar".into());
     v.retain(|d| d.is_dir());
     v
+}
+
+/// Boat speed from a polar file (cached) at a TWA and TWS, kn.
+#[tauri::command]
+fn polar_speed(path: String, twa: f64, tws: f64) -> Option<f64> {
+    static CACHE: Mutex<Option<(String, Arc<polar::Polar>)>> = Mutex::new(None);
+    let mut c = CACHE.lock().unwrap();
+    if c.as_ref().map(|x| x.0 != path).unwrap_or(true) {
+        *c = Some((path.clone(), Arc::new(polar::Polar::from_path(&path).ok()?)));
+    }
+    let p = c.as_ref()?.1.clone();
+    let b = p.bsp(twa.abs(), tws);
+    b.is_finite().then_some((b * 100.0).round() / 100.0)
 }
 
 #[tauri::command]
@@ -1169,7 +1185,7 @@ pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             app_info, chart_info, chart_feature, tides_info, tides_stations, tides_curve, tides_download, tides_cancel, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_compare, grib_meteogram, grib_verify_times, grib_verify_scores, grib_verify_track, grib_verify_grid, grib_point,
-            polar_files, route_compute, sk_status,
+            polar_files, polar_speed, route_compute, sk_status,
             lib_info, marks_list, mark_save, mark_delete, routes_list, route_save, route_delete,
             routings_list, routing_get, routing_save, routing_delete, gpx_export, gpx_write, gpx_import,
             rec_status, rec_start, rec_stop, tracks_list, track_get, track_update, track_delete, track_export,

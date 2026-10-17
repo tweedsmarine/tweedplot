@@ -94,6 +94,7 @@ impl Model {
                 ParamInfo { id: "mslp", name: "Pressure (MSL)", fields: 1, default: true },
                 ParamInfo { id: "rain", name: "Rain rate", fields: 1, default: false },
                 ParamInfo { id: "cape", name: "CAPE (squall risk)", fields: 1, default: false },
+                ParamInfo { id: "temp", name: "Air temperature (2 m)", fields: 1, default: false },
             ]
         };
         match self {
@@ -123,6 +124,7 @@ impl Model {
                     ParamInfo { id: "wind", name: "Wind at 10 m", fields: 2, default: true },
                     ParamInfo { id: "gust", name: "Gusts (where published)", fields: 1, default: false },
                     ParamInfo { id: "mslp", name: "Pressure (MSL)", fields: 1, default: true },
+                    ParamInfo { id: "temp", name: "Air temperature (2 m)", fields: 1, default: false },
                 ],
                 delay_h: 8,
             },
@@ -135,6 +137,7 @@ impl Model {
                 params: vec![
                     ParamInfo { id: "wind", name: "Wind at 10 m", fields: 2, default: true },
                     ParamInfo { id: "mslp", name: "Pressure (MSL)", fields: 1, default: true },
+                    ParamInfo { id: "temp", name: "Air temperature (2 m)", fields: 1, default: false },
                 ],
                 delay_h: 7,
             },
@@ -219,6 +222,9 @@ impl Model {
             }
             if has("cape") {
                 v.extend(["var_CAPE=on", "lev_surface=on"]);
+            }
+            if has("temp") {
+                v.extend(["var_TMP=on", "lev_2_m_above_ground=on"]);
             }
             v.sort();
             v.dedup();

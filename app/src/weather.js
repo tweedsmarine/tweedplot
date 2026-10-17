@@ -23,6 +23,9 @@ const CAPE = [[100, "#f4f0c0"], [250, "#f7e08a"], [500, "#f7cd45"], [1000, "#f7a
 const PRESS = [[960, "#45247f"], [980, "#6c2fae"], [995, "#5aa8d3"], [1005, "#a6d2ec"], [1013, "#eef6fb"], [1020, "#f7e08a"],
   [1030, "#f7aa3b"], [1040, "#d6404f"]];
 
+const TEMP = [[-10, "#45247f"], [-5, "#6c2fae"], [0, "#3f8fcf"], [5, "#79bdec"], [10, "#a6d2ec"], [15, "#b3dc5c"], [20, "#f7cd45"],
+  [25, "#f38536"], [30, "#d6404f"], [35, "#9334a3"]];
+
 // Agreement between GRIBs: green = the forecasts agree, red = they don't.
 const AGREE_KN = [[0, "#1a9850"], [1, "#66bd63"], [2, "#a6d96a"], [3, "#d9ef8b"], [4, "#fee08b"], [6, "#fdae61"], [8, "#f46d43"],
   [10, "#d73027"], [15, "#a50026"]];
@@ -52,6 +55,7 @@ export const LAYERS = {
   rain: { label: "Rain", unit: "mm/h", params: ["Rain"], scale: RAIN, min: 0.1 },
   cape: { label: "CAPE (squalls)", unit: "J/kg", params: ["Cape"], scale: CAPE, min: 100 },
   mslp: { label: "Pressure", unit: "hPa", params: ["Mslp"], scale: PRESS },
+  temp: { label: "Air temperature", unit: "°C", params: ["AirTemp"], scale: TEMP },
   agree_vec: { label: "Wind disagreement (vector)", unit: "kn", params: ["WindU", "WindSpeed"], scale: AGREE_KN, compare: "vector",
     help: "RMS distance of each GRIB's wind from their mean wind: speed and direction together." },
   agree_spd: { label: "Wind speed spread", unit: "kn", params: ["WindU", "WindSpeed"], scale: AGREE_KN, compare: "speed",
@@ -129,6 +133,7 @@ export function setupWeather(map, layers) {
   const wx = loadWx();
   const timeListeners = [];
   const loadedListeners = [];
+  const pointListeners = [];
   // a forecast chosen in the Verify dock: { t, path, name, lead } (enables the forecast error layers)
   let verifyTarget = null;
 
@@ -373,13 +378,16 @@ export function setupWeather(map, layers) {
   // ---------- copies of the GRIB choice and time slider elsewhere (e.g. the compare dock) ----------
   // Each copy drives the same state as the Weather drawer, so the drawer can stay closed.
   const mirrors = new Set();
-  function mountControls(el) {
+  function mountControls(el, { compact = false } = {}) {
     el.classList.add("wx-mini");
-    el.innerHTML = `<div class="chips"></div>
-      <div class="wx-row time"><button data-act="prev" title="Back one step">◀</button><button data-act="play" title="Play / pause">▶</button>` +
+    if (compact) el.dataset.compact = "1";
+    el.innerHTML = (compact ? "" : `<div class="chips"></div>`) +
+      `<div class="wx-row time">` + (compact ? `<select class="gsel" title="The GRIB shown on the chart"></select>` : "") +
+      `<button data-act="prev" title="Back one step">◀</button><button data-act="play" title="Play / pause">▶</button>` +
       `<button data-act="next" title="Forward one step">▶|</button><button data-act="now" title="Set the time to now">Now</button>` +
       `<select class="layer" title="What the shading shows"></select>` +
       `<input type="range" class="grow"><span class="when">—</span></div>`;
+    el.querySelector(".gsel")?.addEventListener("change", (e) => showGrib(e.target.value));
     const sl = el.querySelector("input[type=range]");
     sl.oninput = () => setT(Number(sl.value));
     el.querySelector('[data-act="prev"]').onclick = () => stepBy(-1);
@@ -392,7 +400,13 @@ export function setupWeather(map, layers) {
     renderLayers();
   }
   function syncMirror(el, chips) {
-    if (chips) {
+    const gsel = el.querySelector(".gsel");
+    if (chips && gsel) {
+      gsel.innerHTML = "";
+      if (!loaded.size) gsel.append(new Option("No GRIB loaded", ""));
+      for (const [path, s] of loaded) gsel.append(new Option(s.name, path));
+      gsel.value = display ?? "";
+    } else if (chips) {
       const box = el.querySelector(".chips");
       box.innerHTML = "";
       if (!loaded.size) box.innerHTML = `<span class="wx-note">No GRIB loaded: load one in the Weather panel.</span>`;
@@ -410,7 +424,7 @@ export function setupWeather(map, layers) {
     const main = $("wx-slider"), sl = el.querySelector("input[type=range]");
     sl.min = main.min; sl.max = main.max; sl.step = main.step; sl.value = t;
     sl.disabled = !times.length;
-    el.querySelector(".when").textContent = times.length ? fmt(t) : "—";
+    el.querySelector(".when").textContent = times.length ? (el.dataset.compact ? fmt(t, true) : fmt(t)) : "—";
     el.querySelector('[data-act="play"]').textContent = playing ? "❚❚" : "▶";
   }
   function syncMirrors(timeOnly) {
@@ -419,6 +433,47 @@ export function setupWeather(map, layers) {
       syncMirror(el, !timeOnly);
     }
   }
+
+  // ---------- the floating time slider (drawers can stay closed) ----------
+  const FKEY = "racenav.wxfloat";
+  let fl = { on: true, x: 0.3, y: 0.78 };
+  try { Object.assign(fl, JSON.parse(localStorage.getItem(FKEY) || "{}")); } catch { /* ignore */ }
+  const saveFl = () => { try { localStorage.setItem(FKEY, JSON.stringify(fl)); } catch { /* ignore */ } };
+  const float = document.createElement("div");
+  float.id = "wx-float";
+  float.innerHTML = `<div class="grip" title="Drag to move">⋮⋮</div><div class="body"></div><button class="x" title="Hide (Instruments drawer › Time slider brings it back)">×</button>`;
+  document.body.append(float);
+  mountControls(float.querySelector(".body"), { compact: true });
+  function placeFloat() {
+    const W = window.innerWidth, H = window.innerHeight;
+    const dockH = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--dock-h")) || 0;
+    float.style.left = `${Math.max(0, Math.min(W - float.offsetWidth, fl.x * W))}px`;
+    float.style.top = `${Math.max(0, Math.min(H - dockH - float.offsetHeight, fl.y * H))}px`;
+  }
+  function showFloat() {
+    float.hidden = !fl.on;
+    const cb = document.getElementById("inst-slider");
+    if (cb) cb.checked = fl.on;
+    if (fl.on) placeFloat();
+  }
+  float.querySelector(".x").onclick = () => { fl.on = false; saveFl(); showFloat(); };
+  {
+    const grip = float.querySelector(".grip");
+    grip.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      grip.setPointerCapture(e.pointerId);
+      const r = float.getBoundingClientRect();
+      const dx = e.clientX - r.left, dy = e.clientY - r.top;
+      const move = (ev) => { fl.x = (ev.clientX - dx) / window.innerWidth; fl.y = (ev.clientY - dy) / window.innerHeight; placeFloat(); };
+      const up = () => { grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); saveFl(); };
+      grip.addEventListener("pointermove", move);
+      grip.addEventListener("pointerup", up);
+    });
+  }
+  window.addEventListener("resize", () => fl.on && placeFloat());
+  window.addEventListener("racenav-layout", () => fl.on && placeFloat());
+  document.getElementById("inst-slider")?.addEventListener("change", (e) => { fl.on = e.target.checked; saveFl(); showFloat(); });
+  requestAnimationFrame(showFloat);
 
   // ---------- drawing --------------------------------------------------------------
   let pending = false;
@@ -533,8 +588,11 @@ export function setupWeather(map, layers) {
     pointTimer = setTimeout(async () => {
       pointTimer = null;
       const body = document.querySelector("#wx-point tbody");
-      if (!cursor || !loaded.size || !times.length) { body.innerHTML = ""; return; }
-      const rows = await invoke("grib_point", { lat: cursor[1], lon: cursor[0], t }).catch(() => []);
+      if (!cursor || !loaded.size || !times.length) { body.innerHTML = ""; for (const fn of pointListeners) fn(null, cursor); return; }
+      const at = cursor, tt = t;
+      const rows = await invoke("grib_point", { lat: at[1], lon: at[0], t: tt }).catch(() => []);
+      const shown = (rows || []).find((r) => r.path === display) ?? null;
+      for (const fn of pointListeners) fn(shown && { ...shown, t: tt, name: loaded.get(display)?.name ?? shown.name }, at);
       body.innerHTML = "";
       for (const r of rows) {
         const tr = document.createElement("tr");
@@ -547,6 +605,7 @@ export function setupWeather(map, layers) {
     }, 120);
   }
   map.on("mousemove", (e) => { cursor = [e.lngLat.lng, e.lngLat.lat]; updatePoint(); });
+  map.on("click", (e) => { cursor = [e.lngLat.lng, e.lngLat.lat]; updatePoint(); }); // touch: a tap is the cursor
 
   $("wx-load").onclick = () => load($("wx-files").value);
   $("wx-refresh").onclick = refreshFiles;
@@ -654,6 +713,8 @@ export function setupWeather(map, layers) {
       draw();
     },
     onTime: (fn) => { timeListeners.push(fn); },
+    /** The shown GRIB's values at the cursor (and slider time) each time they change: fn(row | null, [lon, lat]). */
+    onPoint: (fn) => { pointListeners.push(fn); },
     /** Called when a GRIB is loaded or unloaded. */
     onLoaded: (fn) => { loadedListeners.push(fn); },
     /** Loaded GRIBs ticked for the agreement displays. */

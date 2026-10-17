@@ -60,6 +60,19 @@ export const ITEMS = {
   CLON: { label: "Cursor lon", unit: "", group: "Cursor", wide: true, get: (c) => c.cursor?.[0] ?? null, fmt: (x) => ddm(x, "E", "W") },
   CBRG: { label: "Brg to cursor", unit: "°T", group: "Cursor", get: (c) => cursorLeg(c)?.brg ?? null, fmt: deg3 },
   CRNG: { label: "Rng to cursor", unit: "NM", group: "Cursor", get: (c) => cursorLeg(c)?.nm ?? null, fmt: (x) => (x < 10 ? x.toFixed(2) : x.toFixed(1)) },
+
+  // the GRIB shown on the chart, at the cursor and the slider time (Weather panel)
+  GTWS: { label: "GRIB TWS", unit: "kn", group: "GRIB at cursor", get: (c) => c.grib?.tws, fmt: f1 },
+  GTWD: { label: "GRIB TWD", unit: "°T", group: "GRIB at cursor", get: (c) => c.grib?.twd, fmt: deg3 },
+  GGUST: { label: "GRIB gust", unit: "kn", group: "GRIB at cursor", get: (c) => c.grib?.gust, fmt: (x) => x.toFixed(0) },
+  GMSLP: { label: "GRIB MSLP", unit: "hPa", group: "GRIB at cursor", get: (c) => c.grib?.mslp, fmt: (x) => x.toFixed(0) },
+  GHS: { label: "GRIB Hs", unit: "m", group: "GRIB at cursor", get: (c) => c.grib?.wave, fmt: f1 },
+  GTP: { label: "GRIB period", unit: "s", group: "GRIB at cursor", get: (c) => c.grib?.period, fmt: (x) => x.toFixed(0) },
+  GWVD: { label: "GRIB wave dir", unit: "°T", group: "GRIB at cursor", get: (c) => c.grib?.wavedir, fmt: deg3 },
+  GRAIN: { label: "GRIB rain", unit: "mm/h", group: "GRIB at cursor", get: (c) => c.grib?.rain, fmt: f1 },
+  GTEMP: { label: "GRIB air temp", unit: "°C", group: "GRIB at cursor", get: (c) => c.grib?.temp, fmt: f1 },
+  GTIME: { label: "GRIB time", unit: "", group: "GRIB at cursor", wide: true, get: (c) => c.grib?.t, fmt: (t) => new Date(t * 1000).toLocaleString("en-NZ", { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) },
+  GSRC: { label: "GRIB", unit: "", group: "GRIB at cursor", wide: true, get: (c) => c.grib?.name, fmt: (s) => esc(s) },
 };
 
 /** Rhumb line from the boat to the cursor, or null. */
@@ -69,6 +82,7 @@ function cursorLeg(c) {
 }
 
 const CURSOR_PANEL = { id: "pc", x: 0.45, y: 0.02, dir: "row", size: "s", tiles: ["CPOS", "CBRG", "CRNG"] };
+const GRIB_PANEL = { id: "pg", x: 0.45, y: 0.11, dir: "row", size: "s", tiles: ["GTWS", "GTWD", "GGUST", "GMSLP", "GHS"] };
 
 const DEFAULT_LAYOUT = {
   v: 1,
@@ -77,8 +91,9 @@ const DEFAULT_LAYOUT = {
     { id: "p1", x: 0.3, y: 0.86, dir: "row", size: "m", tiles: ["SOG", "COG", "HDG", "DPT", "TWS", "TWA"] },
     { id: "p2", x: 0.86, y: 0.12, dir: "column", size: "s", tiles: ["NEXT", "BTW", "DTW", "TTG", "XTE"] },
     CURSOR_PANEL,
+    GRIB_PANEL,
   ],
-  added: ["cursor"],
+  added: ["cursor", "grib"],
 };
 
 export function setupInstruments() {
@@ -93,7 +108,9 @@ export function setupInstruments() {
   function build() {
     root.innerHTML = "";
     root.classList.toggle("locked", !!layout.locked);
+    root.hidden = !!layout.hideAll;
     for (const p of layout.panels) {
+      if (p.hidden) continue;
       const el = document.createElement("div");
       el.className = `ipanel ${p.collapsed ? "row collapsed" : p.dir} ${p.size}`;
       el.dataset.id = p.id;
@@ -263,13 +280,17 @@ export function setupInstruments() {
     document.getElementById("inst-fold").textContent = layout.panels.some((p) => !p.collapsed) ? "Fold all" : "Open all";
     lockBtn.classList.toggle("on", !!layout.locked);
     lockBtn.textContent = layout.locked ? "Layout locked" : "Lock layout";
+    document.getElementById("inst-all").checked = !layout.hideAll;
     const ul = document.getElementById("inst-panels");
     ul.innerHTML = "";
     if (!layout.panels.length) ul.innerHTML = `<li class="empty">No panels. Add one.</li>`;
     layout.panels.forEach((p, k) => {
       const li = document.createElement("li");
-      li.innerHTML = `<div class="main"><b>Panel ${k + 1}</b><small></small></div><button data-act="fold">${p.collapsed ? "Open" : "Fold"}</button><button data-act="dir">${p.dir === "row" ? "Vertical" : "Horizontal"}</button><button data-act="del">Remove</button>`;
+      li.innerHTML = `<input type="checkbox" title="Show this panel"><div class="main"><b>Panel ${k + 1}</b><small></small></div><button data-act="fold">${p.collapsed ? "Open" : "Fold"}</button><button data-act="dir">${p.dir === "row" ? "Vertical" : "Horizontal"}</button><button data-act="del">Remove</button>`;
       li.querySelector('[data-act="fold"]').onclick = () => toggleCollapsed(p);
+      const cb = li.querySelector("input");
+      cb.checked = !p.hidden;
+      cb.onchange = () => { p.hidden = !cb.checked; save(); build(); };
       li.querySelector("small").textContent = p.tiles.map((t) => ITEMS[t]?.label ?? t).join(", ");
       li.querySelector('[data-act="dir"]').onclick = () => { p.dir = p.dir === "row" ? "column" : "row"; save(); build(); };
       li.querySelector('[data-act="del"]').onclick = () => { layout.panels.splice(k, 1); save(); build(); };
@@ -286,6 +307,7 @@ export function setupInstruments() {
     save(); build();
   };
   lockBtn.onclick = () => { layout.locked = !layout.locked; save(); build(); };
+  document.getElementById("inst-all").onchange = (e) => { layout.hideAll = !e.target.checked; save(); build(); };
   document.getElementById("inst-reset").onclick = () => { layout = structuredClone(DEFAULT_LAYOUT); save(); build(); };
 
   build();
@@ -307,6 +329,7 @@ function loadLayout() {
       // panels added in later versions appear once in an existing layout
       l.added ??= [];
       if (!l.added.includes("cursor")) { l.panels.push(structuredClone(CURSOR_PANEL)); l.added.push("cursor"); }
+      if (!l.added.includes("grib")) { l.panels.push(structuredClone(GRIB_PANEL)); l.added.push("grib"); }
       return l;
     }
   } catch { /* ignore */ }
