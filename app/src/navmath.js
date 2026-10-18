@@ -28,6 +28,7 @@ export function fmtNm(nm) {
 
 /** Degrees and decimal minutes: 41°15.974'S */
 export function ddm(deg, pos, neg) {
+  if (pos === "E" && Number.isFinite(deg)) deg = ((((deg + 180) % 360) + 360) % 360) - 180; // map past ±180
   const h = deg >= 0 ? pos : neg;
   const a = Math.abs(deg);
   let d = Math.floor(a);

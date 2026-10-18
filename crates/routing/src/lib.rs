@@ -379,13 +379,16 @@ pub fn route_marks(
         res.message = "The start is inside a barrier (zone or barrier mark). Move it, or switch that barrier off.".into();
         return res;
     }
-    if let Some(i) = marks.iter().position(|m| barriers.blocked(m.pos)) {
+    // a mark left to port or starboard may be the rock or island itself: only a
+    // mark the boat must reach (pass through, as close as possible) needs open water
+    let reached = |m: &MarkSpec| matches!(m.rounding, Rounding::Through | Rounding::Close);
+    if let Some(i) = marks.iter().position(|m| reached(m) && barriers.blocked(m.pos)) {
         res.status = "mark blocked".into();
         res.message = format!("Mark {} is inside a barrier (zone or barrier mark). Move the mark, or switch that barrier off.", i + 1);
         return res;
     }
     if let Some(r) = obstacles {
-        if let Some(i) = marks.iter().position(|m| r.blocked(m.pos.lat, m.pos.lon)) {
+        if let Some(i) = marks.iter().position(|m| reached(m) && r.blocked(m.pos.lat, m.pos.lon)) {
             res.status = "mark blocked".into();
             res.message = format!(
                 "Mark {} is on land or in water shallower than the safety depth. Marks must be in navigable water: move it off the rock or into the channel.",
@@ -1079,6 +1082,25 @@ mod tests {
         // through: the route just touches the arrival circle
         let res = run(Rounding::Through);
         assert_eq!(res.status, "arrived");
+    }
+
+    /// A mark that is the island itself can be rounded, but not passed through.
+    #[test]
+    fn round_an_island_mark() {
+        let pol = test_polar();
+        let start = LatLon::new(-41.0, 173.0);
+        let m = start.destination(0.0, 6.0);
+        let fin = m.destination(270.0, 4.0);
+        let wind = SteadyWind { tws: 10.0, twd: 90.0 };
+        let p = Params { step_s: 300.0, ..Params::default() };
+        let d = 0.1 / 60.0; // a small island round the mark
+        let island = Barriers { zones: vec![vec![[m.lon - d, m.lat - d], [m.lon + d, m.lat - d], [m.lon + d, m.lat + d], [m.lon - d, m.lat + d]]], ..Default::default() };
+        let mut round = spec(m, Rounding::Port);
+        round.radius_nm = Some(0.3);
+        let r = route_marks(start, 0, &[round, MarkSpec::at(fin)], &pol, &wind, None, &island, &p);
+        assert_eq!(r.status, "arrived", "{}", r.message);
+        let r2 = route_marks(start, 0, &[MarkSpec::at(m), MarkSpec::at(fin)], &pol, &wind, None, &island, &p);
+        assert_eq!(r2.status, "mark blocked");
     }
 
     /// A fence across the direct line makes the route go round its end.

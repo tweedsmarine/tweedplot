@@ -220,6 +220,13 @@ export function unwrapAroundMean(series) {
     prev = prev == null ? (m + 360) % 360 : prev + ang(m, prev);
     mean.set(t, prev);
   }
+  // keep the line inside one 360° band round the overall mean direction, so a
+  // wind that keeps turning the same way (light airs, sea breezes) cannot drift
+  // the axis through several turns; the line breaks where it wraps
+  let cx = 0, cy = 0;
+  for (const m of mean.values()) { cx += Math.sin((m * Math.PI) / 180); cy += Math.cos((m * Math.PI) / 180); }
+  const c = ((Math.atan2(cx, cy) * 180) / Math.PI + 360) % 360;
+  for (const [t, m] of mean) mean.set(t, c + ang(m, c));
   // a time a GRIB has but no other: the nearest mean in time
   const near = (t) => mean.get(t) ?? mean.get(ts.reduce((a, b) => (Math.abs(b - t) < Math.abs(a - t) ? b : a), ts[0]));
   return series.map((s) => s.points.map((p) => (p.twd == null ? null : near(p.t) + ang(p.twd, near(p.t)))));
@@ -288,10 +295,12 @@ function drawMeteogram(series, W, onPick) {
         add("polygon", { points: [...up, ...dn].join(" "), fill: col, "fill-opacity": 0.15, stroke: "none" }, g);
       }
       const path = (val) => {
-        let d = "", pen = false;
+        let d = "", pen = false, last = null;
         pts.forEach((p, i) => {
           const v = val(p, i);
           if (v == null) { pen = false; return; }
+          if (pn.key === "twd" && last != null && Math.abs(v - last) > 180) pen = false; // wrapped
+          last = v;
           d += `${pen ? "L" : "M"}${x(p.t).toFixed(1)},${yv(v).toFixed(1)}`;
           pen = true;
         });

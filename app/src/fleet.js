@@ -437,6 +437,7 @@ function cmp(a, b) {
 function pad3(x) { return String(Math.round(x) % 360).padStart(3, "0"); }
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
 function ddm(deg, pos, neg) {
+  if (pos === "E" && Number.isFinite(deg)) deg = ((((deg + 180) % 360) + 360) % 360) - 180; // map past ±180
   const h = deg >= 0 ? pos : neg;
   const a = Math.abs(deg);
   let d = Math.floor(a);
