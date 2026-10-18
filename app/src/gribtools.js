@@ -11,7 +11,7 @@ import { ddm } from "./navmath.js";
 const COLOURS = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e", "#17becf", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22"];
 const NS = "http://www.w3.org/2000/svg";
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const ang = (a, b) => ((a - b + 540) % 360) - 180;
+const ang = (a, b) => ((((a - b) % 360) + 540) % 360) - 180; // signed difference, -180..180, for any a and b
 const shortName = (name) => name.replace(/ \d+ \w+ \d+Z$/, "");
 function fmtRun(t) {
   const d = new Date(t * 1000);
