@@ -96,13 +96,15 @@ impl Polar {
     /// Boat speed (kn) at a true wind angle (deg, sign ignored) and speed (kn).
     pub fn bsp(&self, twa: f64, tws: f64) -> f64 {
         let a = nav_core::norm180(twa).abs();
-        if tws <= 0.0 {
+        // a table with a 0 kn column (a power boat's) gives its speed in a calm; otherwise no wind, no speed
+        if tws <= 0.0 && self.tws[0] > 0.0 {
             return 0.0;
         }
+        let tws = tws.max(0.0);
         let (i0, i1, fa) = bracket(&self.twa, a);
         let row = |i: usize| -> f64 {
             let r = &self.speeds[i];
-            if tws < self.tws[0] {
+            if tws < self.tws[0] && self.tws[0] > 0.0 {
                 r[0] * tws / self.tws[0]
             } else {
                 let (j0, j1, fs) = bracket(&self.tws, tws);
@@ -195,6 +197,14 @@ fn lerp(a: f64, b: f64, f: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn power_polar_moves_in_a_calm() {
+        let p = Polar::parse("power", "TWA\\TWS;0;10;15;20;25;30\n0;22;22;18;12;8;5\n45;22;22;19;14;9;6\n90;22;22;21;17;12;8\n135;22;22;22;19;15;10\n180;22;22;22;20;16;12\n").unwrap();
+        assert_eq!(p.bsp(30.0, 0.0), 22.0);
+        assert_eq!(p.bsp(0.0, 20.0), 12.0);
+        assert!((p.bsp(90.0, 22.5) - 14.5).abs() < 1e-9);
+    }
 
     // Morgane median polar (Chris, 2026), first rows trimmed for the test.
     const MORGANE_CSV: &str = "TWA\\TWS;4;6;8;10;12;14;16;20;25;30
