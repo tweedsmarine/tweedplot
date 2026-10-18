@@ -148,7 +148,7 @@ No instruments? A GPS dongle into Signal K is enough for position, course and sp
 **Lines and arrows on the boat**
 
 - *Heading line* (solid) and *COG line* (dashed orange): each as long as a set time at the boat's speed, or to the edge of the chart. Set in Chart and Signal K > Own boat.
-- *Wind arrows*: true wind (blue) and apparent wind (orange), each pointing the way the wind blows with its tip on the boat and longer as the wind gets stronger. With live data they sit on the boat. When planning (paused, or no live data) they follow the cursor instead, showing the GRIB's true wind there and the apparent wind you would feel: on the active routing's heading if the cursor is near it, otherwise heading for the end of the nearest course leg at polar speed. Turn them on or off in the Instruments drawer.
+- *Wind arrows*: true wind (blue) and apparent wind (orange), each pointing the way the wind blows with its tip on the boat and longer as the wind gets stronger. With live data they sit on the boat. When planning (paused, or no live data) they follow the cursor instead, showing the GRIB's true wind there and the apparent wind you would feel on a shown routing's heading and boat speed when the cursor is near that routing. Away from a routing there is no boat to feel it, so only the true wind is shown. Turn them on or off in the Instruments drawer.
 
 **Damping**
 

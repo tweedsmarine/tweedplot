@@ -192,8 +192,9 @@ map.on("load", () => {
   feed();
 });
 
-/** Planning: wind arrows at the cursor. Heading and speed from the active routing
- * near the cursor, else towards the end of the nearest course leg at polar speed. */
+/** Planning: wind arrows at the cursor. True wind from the GRIB; apparent wind only
+ * where a shown routing passes near the cursor (its heading and boat speed there):
+ * without a routing there is no boat, so no apparent wind. */
 let arrowSeq = 0;
 async function planningArrows(row, at) {
   if (!arrows) return;
@@ -212,39 +213,8 @@ async function planningArrows(row, at) {
     }
     if (best) { hdg = best.heading; bsp = best.bsp; }
   }
-  if (hdg == null) {
-    const c = route?.get();
-    const from = c?.start ?? lastBoat;
-    const pts2 = from && c?.marks?.length ? [from, ...c.marks.map((m) => [m.lon, m.lat])] : [];
-    let to = null, bd = Infinity;
-    for (let i = 0; i + 1 < pts2.length; i++) {
-      const d = segDist(at, pts2[i], pts2[i + 1]);
-      if (d < bd) { bd = d; to = pts2[i + 1]; }
-    }
-    if (to) {
-      hdg = bearingTo(at, to);
-      const twa = ((tw.twd - hdg + 540) % 360) - 180;
-      const polar = boat.get().polar;
-      bsp = polar ? await invoke("polar_speed", { path: polar, twa: Math.abs(twa), tws: tw.tws }).catch(() => null) : null;
-      if (bsp != null) bsp *= (boat.get().eff || 100) / 100;
-    }
-  }
   if (seq !== arrowSeq || signalKActive()) return;
   arrows.planning(at, tw, hdg, bsp);
-}
-function bearingTo(a, b) {
-  const r = Math.PI / 180;
-  const y = Math.sin((b[0] - a[0]) * r) * Math.cos(b[1] * r);
-  const x = Math.cos(a[1] * r) * Math.sin(b[1] * r) - Math.sin(a[1] * r) * Math.cos(b[1] * r) * Math.cos((b[0] - a[0]) * r);
-  return ((Math.atan2(y, x) / r) + 360) % 360;
-}
-/** Distance (in degrees, scaled for latitude) from p to the segment a–b: good enough to pick the nearest leg. */
-function segDist(p, a, b) {
-  const k = Math.cos((p[1] * Math.PI) / 180);
-  const ax = a[0] * k, ay = a[1], bx = b[0] * k, by = b[1], px = p[0] * k, py = p[1];
-  const dx = bx - ax, dy = by - ay;
-  const t = dx || dy ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy))) : 0;
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
 // ---------- instruments ----------------------------------------------------------

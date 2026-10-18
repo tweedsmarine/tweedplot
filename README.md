@@ -200,7 +200,7 @@ Floating panels of readings, always on top. Drag a panel by its grip; double-cli
 - **GRIB at cursor** readings: TWS, TWD, gust, MSLP, wave height, period and direction, rain, air temperature, the GRIB time and name, for the GRIB shown on the chart at the cursor (or the last tap on a touch screen) and the slider time. A panel of them is added once to existing layouts.
 - **Show instrument panels** hides or shows them all; the tick beside each panel in the list hides or shows that one.
 - **Time slider**: a floating bar (GRIB choice, step back/forward, play, Now, what the shading shows, the slider and time) that can be dragged anywhere, so every drawer can stay closed. On by default; × hides it, the Instruments drawer brings it back.
-- **Wind arrows**: true wind (blue) and apparent wind (orange), pointing the way the wind blows with the tip on the boat, longer with more wind. With live Signal K data they sit on the boat (from the instruments); planning (paused, or no live data) they sit on the cursor: true wind from the GRIB shown, apparent wind for the heading and polar speed of the active routing within 40 px of the cursor, else for a course from the cursor to the end of the nearest course leg (polar speed × efficiency).
+- **Wind arrows**: true wind (blue) and apparent wind (orange), pointing the way the wind blows with the tip on the boat, longer with more wind. With live Signal K data they sit on the boat (from the instruments); planning (paused, or no live data) they sit on the cursor: true wind from the GRIB shown, apparent wind only for a shown routing within 40 px of the cursor (its heading and boat speed there); away from a routing only the true wind is drawn.
 
 ## User manual
 

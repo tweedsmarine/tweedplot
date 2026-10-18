@@ -1,7 +1,6 @@
 // True and apparent wind arrows: on the boat when live (from the instruments),
-// on the cursor when planning (true wind from the GRIB shown; apparent wind for
-// the heading and polar speed of the active routing near the cursor, else for
-// a course towards the mark of the nearest course leg).
+// on the cursor when planning (true wind from the GRIB shown; apparent wind only
+// where a shown routing passes near the cursor, for its heading and boat speed).
 //
 // Each arrow points the way the wind blows, its tip on the boat (or cursor) and
 // its tail upwind; its length grows with the wind speed.
