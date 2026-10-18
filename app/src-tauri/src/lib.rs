@@ -1387,6 +1387,15 @@ fn data_etopo_delete(app: tauri::AppHandle, file: String) -> Result<(), String> 
     Ok(())
 }
 
+/// How fine the GSHHG coastline is drawn: 0 standard, 1 more, 2 most detail.
+#[tauri::command]
+fn chart_land_detail(level: u8) {
+    chart::coast::LAND_DETAIL.store(level.min(2), std::sync::atomic::Ordering::Relaxed);
+    if let Some(s) = charts() {
+        s.clear_cache();
+    }
+}
+
 #[tauri::command]
 fn data_cancel() {
     DATA_CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -1455,7 +1464,7 @@ pub fn run() {
             rec_status, rec_start, rec_stop, tracks_list, track_get, track_update, track_delete, track_export,
             yb_open, yb_refresh, yb_races, yb_history,
             gribdl_models, gribdl_estimate, gribdl_start, gribdl_cancel, open_url, grib_combine,
-            data_status, data_etopo_plan, data_gshhg, data_etopo, data_etopo_delete, data_cancel
+            data_status, data_etopo_plan, data_gshhg, data_etopo, data_etopo_delete, data_cancel, chart_land_detail
         ])
         .register_asynchronous_uri_scheme_protocol("chart", |_ctx, request, responder| {
             let path = request.uri().path().to_string();

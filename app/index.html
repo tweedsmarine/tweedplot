@@ -258,6 +258,22 @@
             <input id="lib-search" class="grow" type="search" placeholder="Find a mark" />
             <label title="Show library marks on the chart"><input id="lib-show" type="checkbox" /> On chart</label>
           </div>
+          <div class="wx-row lib-filter">
+            <select id="lib-f-group" title="Only the marks in one group"><option value="*">All groups</option></select>
+            <select id="lib-f-type" title="Only one type of mark">
+              <option value="*">All types</option><option value="course">Course marks and waypoints</option><option value="buoy">Buoys</option>
+              <option value="danger">Dangers</option><option value="poi">Points of interest</option></select>
+          </div>
+          <div class="wx-row lib-filter">
+            <select id="lib-f-route" title="Marks used by a saved route, or not">
+              <option value="*">In a route or not</option><option value="used">In a saved route</option><option value="unused">In no route</option></select>
+            <label title="Only the marks inside the area shown on the chart"><input id="lib-f-view" type="checkbox" /> In chart view</label>
+          </div>
+          <div class="wx-row lib-filter">
+            <span id="lib-f-count" class="grow wx-note"></span>
+            <label title="Apply the group, type and route filters to the marks drawn on the chart too"><input id="lib-f-chart" type="checkbox" /> Filter the chart too</label>
+            <button id="lib-f-clear" title="Show every mark again">Clear</button>
+          </div>
           <ul id="lib-marks" class="list"></ul>
           <form id="mark-edit" class="edit" hidden>
             <div class="wx-row"><label class="grow">Name</label><input name="name" type="text" /></div>
@@ -326,6 +342,9 @@
           <div class="data-item"><span class="dot" id="data-wd-dot"></span><span class="grow"><b>World depths</b>: Natural Earth, bundled (0, 200, 1000 … 10000 m)</span></div>
           <div class="data-item"><span class="dot" id="data-gshhg-dot"></span><span class="grow"><b>World coastline</b>: <span id="data-gshhg-state">—</span></span>
             <button id="data-gshhg" title="Download the GSHHG world coastline (every island, about 150 MB) from the University of Hawaiʻi or NOAA">Download</button></div>
+          <div class="wx-row" id="data-coast-detail-row"><label class="grow" for="data-coast-detail">Coastline detail</label>
+            <select id="data-coast-detail" title="How fine the GSHHG coastline is drawn at each scale. More detail draws the finer GSHHG levels when zoomed further out: sharper coasts at ocean and regional scales, slower to draw">
+              <option value="0">Standard</option><option value="1">More</option><option value="2">Most</option></select></div>
           <div class="data-item"><span class="dot" id="data-etopo-dot"></span><span class="grow"><b>Detailed depths</b> (ETOPO 2022) for areas you choose</span></div>
           <ul id="data-etopo-list"></ul>
           <div class="wx-row"><label class="grow" for="data-etopo-res">Detail</label>

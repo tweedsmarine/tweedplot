@@ -30,14 +30,20 @@ const LEVELS: [u8; 2] = [1, 5];
 const BUILD_VERSION: i64 = 1;
 
 /// Zoom range a resolution is drawn at.
-pub fn zoom_range(res: char) -> (u8, u8) {
-    match res {
-        'c' => (0, 1),
-        'l' => (2, 3),
-        'i' => (4, 5),
-        'h' => (6, 7),
-        _ => (8, 30),
-    }
+/// How much finer than standard the drawn coastline is: 0 standard (the table
+/// above), 1 one resolution finer at each zoom, 2 two finer. Set from the app.
+pub static LAND_DETAIL: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// The resolution drawn at zoom `z` with `detail` steps finer than standard.
+pub fn res_for_zoom(z: u8, detail: u8) -> char {
+    let base = match z {
+        0..=1 => 0,
+        2..=3 => 1,
+        4..=5 => 2,
+        6..=7 => 3,
+        _ => 4,
+    };
+    RESOLUTIONS[(base + detail as usize).min(4)]
 }
 
 /// Resolution to use for a routing obstacle map with cells of `cell_m` metres.
@@ -238,6 +244,14 @@ fn create_table(db: &Connection, table: &str) -> Result<(), ChartError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn finer_detail_shifts_the_resolutions() {
+        use super::res_for_zoom;
+        assert_eq!([0, 2, 4, 6, 8, 12].map(|z| res_for_zoom(z, 0)), ['c', 'l', 'i', 'h', 'f', 'f']);
+        assert_eq!([0, 2, 4, 6].map(|z| res_for_zoom(z, 1)), ['l', 'i', 'h', 'f']);
+        assert_eq!([0, 2, 4].map(|z| res_for_zoom(z, 2)), ['i', 'h', 'f']);
+    }
+
     use super::*;
 
     /// A shapefile with one polygon record of two rings (a square and a triangle).

@@ -174,7 +174,7 @@ map.on("load", () => {
   features = setupChartFeatures(map, { before: "track", safetyContour: settings.safetyContour });
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
   window.__weather = weather; // debugging handle
-  setupData(map, { toast });
+  setupData(map, { toast, reloadTiles: reloadChartTiles });
   library = setupLibrary(map, { ui });
   route = setupRoute(map, { library, getBoat: () => lastBoat, getArrivalNm: () => Number(document.getElementById("rt-radius").value) || 0.1 });
   routing = setupRouting(map, { weather, course: route, library, dock, ui, getBoat: () => lastBoat,
@@ -256,8 +256,11 @@ function chartsLoaded(info) {
     // GSHHG world land comes in the chart tiles at every zoom: the bundled coarse land is not needed
     for (const id of ["land-world", "coast-world", "land-nz", "coast-nz"]) map.setLayoutProperty(id, "visibility", "none");
   }
-  const src = map.getSource("chart");
   // reload the tiles (asked for before the charts were open, or the chart data changed)
+  reloadChartTiles();
+}
+function reloadChartTiles() {
+  const src = map.getSource("chart");
   if (src) src.setTiles([TILE_URL + (TILE_URL.includes("?") ? "&" : "?") + "v=" + Date.now()]);
 }
 map.on("load", () => {

@@ -203,6 +203,11 @@ impl ChartStore {
         t
     }
 
+    /// Forget the rendered tiles (after a drawing setting changes).
+    pub fn clear_cache(&self) {
+        self.cache.lock().unwrap().clear();
+    }
+
     fn render(&self, z: u8, x: u32, y: u32) -> Vec<u8> {
         let tp = TileProj::new(z, x, y);
         let bbox = tp.lonlat_bbox(BUFFER);
@@ -287,9 +292,9 @@ impl ChartStore {
         }
         // World land at the resolution for this zoom, except inside NZ where Topo50 is drawn.
         let topo = z >= band_minzoom(0) && self.has_topo50();
+        let res = coast::res_for_zoom(z, coast::LAND_DETAIL.load(std::sync::atomic::Ordering::Relaxed));
         for t in self.tables.iter().filter(|t| t.kind == Kind::WorldLand) {
-            let (lo, hi) = coast::zoom_range(coast::RESOLUTIONS[(t.band as usize).clamp(1, 5) - 1]);
-            if z < lo || z > hi {
+            if coast::RESOLUTIONS[(t.band as usize).clamp(1, 5) - 1] != res {
                 continue;
             }
             self.query(t, bbox, &[], |_, g| {

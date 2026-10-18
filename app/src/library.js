@@ -22,8 +22,10 @@ export function setupLibrary(map, { ui }) {
   let route = null; // the course editor (set by main once both exist)
   let routing = null;
   let editing = null; // mark being edited
-  let prefs = { show: true };
+  let prefs = { show: true, filter: { group: "*", type: "*", route: "*", view: false, chart: false } };
   try { Object.assign(prefs, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
+  prefs.filter = { group: "*", type: "*", route: "*", view: false, chart: false, ...(prefs.filter || {}) };
+  const savePrefs = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ } };
   const listeners = [];
   const status = (s) => { $("lib-status").textContent = s; };
 
@@ -53,7 +55,8 @@ export function setupLibrary(map, { ui }) {
     map.setLayoutProperty("lib-labels", "visibility", vis);
     map.setLayoutProperty("lib-buoys", "visibility", vis);
     map.setLayoutProperty("lib-poi", "visibility", vis);
-    map.getSource("lib-marks").setData({ type: "FeatureCollection", features: marks.filter((m) => !hidden.includes(m.id)).map((m) => ({
+    const shown = prefs.filter.chart ? marks.filter((m) => passes(m, false)) : marks;
+    map.getSource("lib-marks").setData({ type: "FeatureCollection", features: shown.filter((m) => !hidden.includes(m.id)).map((m) => ({
       type: "Feature", properties: { id: m.id, name: m.name, kind: m.kind }, geometry: { type: "Point", coordinates: [m.lon, m.lat] } })) });
   }
   map.on("mouseenter", "lib-marks", () => { map.getCanvas().style.cursor = "pointer"; });
@@ -66,6 +69,7 @@ export function setupLibrary(map, { ui }) {
       marks ||= []; routes ||= []; routings ||= [];
     } catch (e) { status(`Library: ${e}`); }
     draw();
+    renderGroups();
     renderRoutes(); renderMarks(); renderRoutings();
     for (const f of listeners) f();
   }
@@ -104,13 +108,69 @@ export function setupLibrary(map, { ui }) {
   }
 
   // ---------- marks tab ----------------------------------------------------------
+  // ---------- marks filters ----------------------------------------------------------
+  const COURSE = new Set(["mark", "waypoint", "start", "finish"]);
+  const markType = (m) => (COURSE.has(m.kind) || !m.kind ? "course" : m.kind === "danger" ? "danger" : BUOY_ICONS[m.kind] ? "buoy" : POI_KINDS[m.kind] ? "poi" : "course");
+  const inRoute = (m) => routes.some((r) => r.start_mark === m.id || r.marks.some((x) => x.mark === m.id));
+  /** Whether a mark passes the filters (`view`: the chart-view filter too). */
+  function passes(m, view) {
+    const f = prefs.filter;
+    if (f.group !== "*" && (m.group || "") !== f.group) return false;
+    if (f.type !== "*" && markType(m) !== f.type) return false;
+    if (f.route !== "*" && inRoute(m) !== (f.route === "used")) return false;
+    if (view && f.view) {
+      const b = map.getBounds();
+      const lon = b.getEast() - b.getWest() >= 360 ? null : ((m.lon - b.getWest()) % 360 + 360) % 360;
+      if (m.lat < b.getSouth() || m.lat > b.getNorth() || (lon != null && lon > b.getEast() - b.getWest())) return false;
+    }
+    return true;
+  }
+  function renderGroups() {
+    const sel = $("lib-f-group");
+    const groups = [...new Set(marks.map((m) => m.group || ""))].sort((a, b) => a.localeCompare(b));
+    if (prefs.filter.group !== "*" && !groups.includes(prefs.filter.group)) prefs.filter.group = "*";
+    sel.innerHTML = `<option value="*">All groups</option>`;
+    for (const g of groups) {
+      const o = document.createElement("option");
+      o.value = g;
+      o.textContent = g || "(no group)";
+      sel.append(o);
+    }
+    sel.value = prefs.filter.group;
+  }
+  function syncFilterControls() {
+    const f = prefs.filter;
+    $("lib-f-type").value = f.type; $("lib-f-route").value = f.route;
+    $("lib-f-view").checked = f.view; $("lib-f-chart").checked = f.chart;
+    const on = f.group !== "*" || f.type !== "*" || f.route !== "*" || f.view;
+    $("lib-f-clear").disabled = !on;
+    for (const id of ["lib-f-group", "lib-f-type", "lib-f-route"]) $(id).classList.toggle("filtering", $(id).value !== "*");
+  }
+  const filterChanged = () => { savePrefs(); syncFilterControls(); renderMarks(); draw(); };
+  $("lib-f-group").onchange = (e) => { prefs.filter.group = e.target.value; filterChanged(); };
+  $("lib-f-type").onchange = (e) => { prefs.filter.type = e.target.value; filterChanged(); };
+  $("lib-f-route").onchange = (e) => { prefs.filter.route = e.target.value; filterChanged(); };
+  $("lib-f-view").onchange = (e) => { prefs.filter.view = e.target.checked; filterChanged(); };
+  $("lib-f-chart").onchange = (e) => { prefs.filter.chart = e.target.checked; filterChanged(); };
+  $("lib-f-clear").onclick = () => { Object.assign(prefs.filter, { group: "*", type: "*", route: "*", view: false }); renderGroups(); filterChanged(); };
+  // the chart-view filter follows the chart while the Marks tab is open
+  let viewTimer = null;
+  map.on("moveend", () => {
+    if (!prefs.filter.view || $("lib-marks").closest(".tab")?.hidden || $("lib-marks").closest(".pane")?.hidden) return;
+    clearTimeout(viewTimer);
+    viewTimer = setTimeout(renderMarks, 150);
+  });
+
   function renderMarks() {
     const q = $("lib-search").value.trim().toLowerCase();
     const ul = $("lib-marks");
     ul.innerHTML = "";
-    const list = marks.filter((m) => !q || m.name.toLowerCase().includes(q) || m.group.toLowerCase().includes(q))
+    if ($("lib-f-group").options.length <= 1 && marks.length) renderGroups();
+    syncFilterControls();
+    const list = marks.filter((m) => (!q || m.name.toLowerCase().includes(q) || m.group.toLowerCase().includes(q)) && passes(m, true))
       .sort((a, b) => a.group.localeCompare(b.group) || a.name.localeCompare(b.name, undefined, { numeric: true }));
-    if (!list.length) ul.innerHTML = `<li class="empty">${marks.length ? "No marks match." : "No marks yet. Right-click the chart: New library mark here, or save a route."}</li>`;
+    $("lib-f-count").textContent = list.length === marks.length ? `${marks.length} mark${marks.length === 1 ? "" : "s"}` : `${list.length} of ${marks.length} marks`;
+    if (!list.length) ul.innerHTML = `<li class="empty">${marks.length ? "No marks match the search and filters." : "No marks yet. Right-click the chart: New library mark here, or save a route."}</li>`;
     for (const m of list) {
       const used = routes.filter((r) => r.start_mark === m.id || r.marks.some((x) => x.mark === m.id)).length;
       const li = document.createElement("li");
@@ -130,7 +190,7 @@ export function setupLibrary(map, { ui }) {
   }
   $("lib-search").oninput = renderMarks;
   $("lib-show").checked = prefs.show;
-  $("lib-show").onchange = (e) => { prefs.show = e.target.checked; try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ } draw(); };
+  $("lib-show").onchange = (e) => { prefs.show = e.target.checked; savePrefs(); draw(); };
 
   const form = $("mark-edit");
   function editMark(m) {

@@ -8,7 +8,9 @@ import { listen } from "@tauri-apps/api/event";
 const $ = (id) => document.getElementById(id);
 const LDS = "https://data.linz.govt.nz/";
 
-export function setupData(map, { toast } = {}) {
+const DETAIL_KEY = "racenav.coastDetail";
+
+export function setupData(map, { toast, reloadTiles } = {}) {
   let status = null;
   let busy = false;
 
@@ -37,6 +39,7 @@ export function setupData(map, { toast } = {}) {
     $("data-gshhg-state").textContent = status.world_land ? "GSHHG, every island"
       : status.gshhg ? "GSHHG downloaded, being prepared…" : `coarse outline only (GSHHG not downloaded, about ${fmtMB(status.gshhg_bytes)})`;
     $("data-gshhg").hidden = status.gshhg;
+    $("data-coast-detail").disabled = !status.world_land;
     dot("data-linz-dot", status.linz_tables > 0 ? "ok" : "");
     $("data-linz-state").textContent = status.linz_tables > 0 ? `${status.linz_tables} layers` : "none (optional, NZ only)";
     $("data-linz").title = `Open the LINZ Data Service in your browser (free account) and download the hydrographic layers as GeoPackage into\n${status.dirs.charts}`;
@@ -107,6 +110,17 @@ export function setupData(map, { toast } = {}) {
     } catch (e) {
       say(String(e) === "cancelled" ? "Download cancelled." : `Download failed: ${e}`, String(e) === "cancelled" ? "warn" : "bad");
     } finally { setBusy(false); refresh(); }
+  };
+
+  // Coastline detail: kept per PC, sent to the chart store at start and on change
+  let detail = 0;
+  try { detail = Math.min(2, Math.max(0, +localStorage.getItem(DETAIL_KEY) || 0)); } catch { /* storage unavailable */ }
+  $("data-coast-detail").value = String(detail);
+  invoke("chart_land_detail", { level: detail }).then(() => { if (detail) reloadTiles?.(); }).catch(() => {});
+  $("data-coast-detail").onchange = async () => {
+    detail = +$("data-coast-detail").value;
+    try { localStorage.setItem(DETAIL_KEY, String(detail)); } catch { /* ignore */ }
+    try { await invoke("chart_land_detail", { level: detail }); reloadTiles?.(); } catch (e) { say(`Could not change the detail: ${e}`, "bad"); }
   };
 
   $("data-cancel").onclick = () => invoke("data_cancel").catch(() => {});

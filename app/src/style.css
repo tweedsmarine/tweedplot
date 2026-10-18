@@ -465,3 +465,8 @@ table.gt-table tr.gt-best td.nm { font-weight: 700; }
 #data-box .data-src p { margin: 6px 0; line-height: 1.45; }
 .progress.indeterminate .bar { width: 30% !important; animation: prog-slide 1.2s linear infinite; }
 @keyframes prog-slide { from { margin-left: -30%; } to { margin-left: 100%; } }
+
+/* Library › Marks filters */
+.lib-filter { margin: 3px 0; font-size: 12px; }
+.lib-filter label { white-space: nowrap; }
+.lib-filter select.filtering { border-color: var(--accent); background: #eef5fc; }

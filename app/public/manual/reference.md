@@ -127,7 +127,7 @@ Outside New Zealand, RaceNav shades the sea by depth from free world data. **Cha
 | Data | How you get it | What it shows |
 | --- | --- | --- |
 | **World depths** (Natural Earth) | Comes with RaceNav | Depth shading at 0, 200, 1000, 2000 … 10000 m, everywhere |
-| **World coastline** (GSHHG) | **Download**, once, about 150 MB | Every island, at every scale. Until then a coarser outline is drawn |
+| **World coastline** (GSHHG) | **Download**, once, about 150 MB | Every island, at every scale. Until then a coarser outline is drawn. Coastline detail (Standard, More, Most) brings GSHHG's finer levels in when zoomed further out: Most draws the full-resolution coast from zoom 4 instead of zoom 8, a little slower to draw |
 | **Detailed depths** (ETOPO 2022) | **Get for chart view**, for the area on screen, typically 1–5 MB | Finer depth bands from zoom 4 and contours (5 m to 5000 m) from zoom 7 |
 | **NZ charts** (LINZ) | **LINZ…** opens the LINZ Data Service (see above) | The full hydrographic chart |
 
@@ -249,7 +249,7 @@ Untick a barrier to keep it but not use it; rename it in the list; move its poin
 | Tab | Holds |
 | --- | --- |
 | Routes | Saved routes: open one in the Course drawer, export as GPX, delete |
-| Marks | Every mark, by group: edit, show on the chart, delete (a mark used by a route asks first) |
+| Marks | Every mark, by group: edit, show on the chart, delete (a mark used by a route asks first). Filters narrow the list: one group, one type (course marks and waypoints, buoys, dangers, points of interest), in a saved route or not, and only the marks in the chart view (the list follows the chart as you pan). The count shows how many pass; Filter the chart too applies the group, type and route filters to the marks drawn on the chart; Clear shows every mark again |
 | Routings | Saved routings: show, delete |
 | Tracks | Logged and imported tracks (see Your boat) |
 | Barriers | Lines and zones (above) |
