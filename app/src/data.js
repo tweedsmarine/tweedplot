@@ -31,6 +31,7 @@ export function setupData(map, { toast } = {}) {
 
   async function refresh() {
     try { status = await invoke("data_status"); } catch { return; }
+    if (!status) return;
     dot("data-wd-dot", status.world_depth ? "ok" : "");
     dot("data-gshhg-dot", status.world_land ? "ok" : status.gshhg ? "part" : "");
     $("data-gshhg-state").textContent = status.world_land ? "GSHHG, every island"

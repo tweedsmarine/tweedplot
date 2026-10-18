@@ -114,13 +114,33 @@ details.sub summary { cursor: pointer; font-size: 11px; color: var(--quiet); tex
 .edit { border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; margin-top: 6px; background: #fafcfd; }
 .edit input[type="text"] { width: 170px; }
 
-/* ---------- toolbar (top right) ---------- */
-#toolbar {
-  position: absolute; top: 10px; right: 10px; z-index: 3; display: flex; align-items: center; gap: 6px;
-  background: var(--panel-bg); border-radius: 8px; padding: 5px 6px 5px 10px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25); font-size: 12px;
+/* ---------- toolbar (top right): a column like the MapLibre zoom control ---------- */
+.ctl-col {
+  position: absolute; top: 10px; right: 10px; z-index: 3; display: flex; flex-direction: column;
+  background: #fff; border-radius: 4px; box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1); overflow: hidden;
 }
-#toolbar #sk-text { color: var(--quiet); margin-right: 4px; white-space: nowrap; }
-#toolbar button { flex: none; padding: 6px 10px; }
+.ctl-col button {
+  flex: none; box-sizing: border-box; width: 29px; height: 29px; min-height: 29px; padding: 0; margin: 0; line-height: 0; border: 0; border-radius: 0; background: transparent;
+  display: grid; place-items: center; color: #333; cursor: pointer;
+}
+.ctl-col button + button { border-top: 1px solid #ddd; }
+.ctl-col button:hover { background: rgba(0, 0, 0, 0.05); }
+.ctl-col svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ctl-col svg .fill { fill: currentColor; stroke: none; }
+/* Signal K status: the colour is the state; a slash too when there is no link */
+#sk-state.good { color: var(--good); }
+#sk-state.stale { color: #d08f00; }
+#sk-state.bad { color: var(--bad); }
+#sk-state svg .slash { display: none; }
+#sk-state.bad svg .slash { display: inline; }
+#sk-state.connecting svg { animation: sk-blink 1.2s ease-in-out infinite; }
+@keyframes sk-blink { 50% { opacity: 0.35; } }
+/* Live / paused, follow: lit when on */
+#sk-live .pause { display: none; }
+#sk-live:not(.on) { background: #fff3cc; color: #9a6a00; }
+#sk-live:not(.on) .play { display: none; }
+#sk-live:not(.on) .pause { display: inline; }
+#sk-live.on, #follow.on { color: var(--accent, #1f6fb2); }
 
 .cursor {
   position: absolute; left: calc(var(--rail-w) + 10px); bottom: 26px; padding: 4px 8px; border-radius: 6px;

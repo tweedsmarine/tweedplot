@@ -172,7 +172,7 @@ Library > **Tracks**:
 - **Import GPX…** (here or in Routes) reads `<trk>` tracks with times, and speed and course where the file has them (GPX 1.0 elements or extensions), along with any waypoints and routes.
 - Tick a track to show it; click its name to zoom to it; **GPX** writes it to the export folder (GPX 1.1 with times, course and speed); ✎ for name, colour and notes; ✕ deletes. Click a track on the chart for the time, SOG and COG there. **Boat at weather time** puts a dot on each shown track where that boat was at the weather slider time, for replays and comparing races.
 
-The orange line behind the boat is still the live trail since the app started (**Clear trk** clears it); the recorded track is separate.
+The orange line behind the boat is still the live trail since the app started (the Clear track button at the top right clears it); the recorded track is separate.
 
 A library mark's type can also be a buoy: port (red can) or starboard (green cone) lateral, north/east/south/west cardinal, isolated danger, safe water or special. Those are drawn with their IALA A chart symbol instead of a dot, which helps for temporary race marks and marks missing from the charts.
 

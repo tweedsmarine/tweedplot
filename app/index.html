@@ -360,9 +360,9 @@
         <div class="wx-row"><label class="grow" for="set-damp-wind">Wind (AWS, AWA, TWS, TWA, TWD)</label><select id="set-damp-wind"></select></div>
         <div class="wx-row"><label class="grow" for="set-damp-depth">Depth</label><select id="set-damp-depth"></select></div>
         <div class="wx-note">Averages the Signal K readings over the time chosen, for the boat on the chart, its lines and the instruments. Position is never damped.</div>
-        <h3>Signal K</h3>
+        <h3 id="sk-section">Signal K</h3>
         <div class="wx-row"><span id="sk-detail" class="grow wx-note">—</span></div>
-        <div class="wx-note">Pause plotting (top right, Live) to plan: right-click the chart to move the boat.</div>
+        <div class="wx-note">The buttons at the top right: the Signal K status (green receiving, amber connected but quiet, red not connected), Live ▶ / Paused ❚❚, Follow and Clear track. Pause to plan: right-click the chart to move the boat.</div>
       </section>
 
       <section class="pane" data-pane="inst" data-title="Instruments">
@@ -382,12 +382,16 @@
       </section>
     </aside>
 
-    <!-- Always on top, top right: plotting controls -->
-    <div id="toolbar">
-      <span id="sk-dot" class="dot"></span><span id="sk-text">Signal K: connecting…</span>
-      <button id="sk-live" class="on" title="Plot the boat from Signal K. Pause it to plan: right-click the chart to move the boat.">Live</button>
-      <button id="follow" class="on" title="Keep the boat centred">Follow</button>
-      <button id="clear-track" title="Clear the track trail">Clear trk</button>
+    <!-- Always on top, top right: Signal K status and plotting controls, sized like the zoom buttons -->
+    <div id="toolbar" class="ctl-col">
+      <button id="sk-state" class="bad" aria-label="Signal K status" title="Signal K: connecting…">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="14" r="2" class="fill"/><path d="M8.5 10.5a5 5 0 0 1 7 0M5.6 7.6a9 9 0 0 1 12.8 0"/><path class="slash" d="M5 19L19 5"/></svg></button>
+      <button id="sk-live" class="on" aria-label="Live or paused" title="Live: the boat follows Signal K. Click to pause and plan (right-click the chart to move the boat).">
+        <svg viewBox="0 0 24 24"><path class="play fill" d="M8 5.5v13l10-6.5z"/><path class="pause" d="M9 6v12M15 6v12"/></svg></button>
+      <button id="follow" class="on" aria-label="Follow the boat" title="Follow: keep the boat centred (dragging the chart turns it off)">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="1.6" class="fill"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
+      <button id="clear-track" aria-label="Clear the track trail" title="Clear the trail behind the boat">
+        <svg viewBox="0 0 24 24"><path d="M3 18c3-1 4-5 7-6s5 1 7-1" stroke-dasharray="2.2 2.2"/><path d="M15 15l6 6M21 15l-6 6"/></svg></button>
     </div>
 
     <!-- Floating instrument panels -->

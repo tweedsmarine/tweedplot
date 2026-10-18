@@ -314,30 +314,52 @@ document.getElementById("clear-track").onclick = () => { track = []; setData("tr
 // ---------- Signal K events -------------------------------------------------
 // ---------- Signal K status, live / planning ----------------------------------
 let skConnected = false;
+let skDetail = "connecting…";
+let skSeen = false; // a status has arrived (else still connecting)
 let lastData = 0; // ms timestamp of the last vessel update
+let lastRaw = null; // the last vessel update, for what is arriving
 let live = true;
+const SK_STALE_MS = 10000;
+/** The status button: colour = the link (green data arriving, amber connected
+ * but quiet for 10 s, red no link), whether plotting is live or paused. */
 function showStatus() {
-  const dot = document.getElementById("sk-dot");
-  dot.classList.toggle("on", live && skConnected);
-  dot.classList.toggle("paused", !live);
-  document.getElementById("sk-text").textContent = !live
-    ? "Signal K: paused (planning)"
-    : skConnected ? "Signal K: connected" : "Signal K: not connected";
+  const el = document.getElementById("sk-state");
+  const age = lastData ? Date.now() - lastData : Infinity;
+  const state = !skConnected ? "bad" : age < SK_STALE_MS ? "good" : "stale";
+  el.className = state + (skSeen ? "" : " connecting");
+  const ago = (ms) => (ms < 90000 ? `${Math.max(1, Math.round(ms / 1000))} s` : ms < 5400000 ? `${Math.round(ms / 60000)} min` : `${(ms / 3600000).toFixed(1)} h`);
+  const what = lastRaw ? [["lat", "position"], ["heading", "heading"], ["sog", "speed"], ["stw", "boat speed"], ["aws", "wind"], ["tws", "wind"], ["depth", "depth"], ["depth_keel", "depth"], ["depth_surface", "depth"]]
+    .filter(([k]) => lastRaw[k] != null).map(([, w]) => w).filter((w, i, a) => a.indexOf(w) === i).join(", ") : "";
+  const head = !skSeen ? "Signal K: connecting…"
+    : state === "bad" ? "Signal K: not connected"
+    : state === "good" ? "Signal K: receiving data" : "Signal K: connected, no data";
+  el.title = [head, skSeen ? skDetail : "",
+    lastData ? `Last update ${ago(age)} ago${what && state === "good" ? `: ${what}` : ""}` : skConnected ? "No data yet" : "",
+    live ? "" : "Plotting paused (planning): the boat stays where you put it",
+    "Click for the Signal K settings"].filter(Boolean).join("\n");
 }
 function setStatus(payload) {
+  if (!payload) return;
+  if (payload.connected || payload.detail !== "connecting") skSeen = true; // "connecting" = nothing heard yet
   skConnected = payload.connected;
-  document.getElementById("sk-text").title = payload.detail;
+  skDetail = payload.detail;
   document.getElementById("sk-detail").textContent = `${payload.connected ? "Connected to" : "Not connected:"} ${payload.detail}`;
   showStatus();
 }
 listen("sk-status", ({ payload }) => setStatus(payload));
 // The page can load after the first status event was sent: ask for it.
 invoke("sk_status").then(setStatus).catch(() => {});
+setInterval(showStatus, 1000); // data going quiet turns it amber
+document.getElementById("sk-state").onclick = () => {
+  ui.open("chart");
+  document.getElementById("sk-section")?.scrollIntoView({ block: "start", behavior: "smooth" });
+};
 const liveBtn = document.getElementById("sk-live");
 liveBtn.onclick = () => {
   live = !live;
   liveBtn.classList.toggle("on", live);
-  liveBtn.textContent = live ? "Live" : "Paused";
+  liveBtn.title = live ? "Live: the boat follows Signal K. Click to pause and plan (right-click the chart to move the boat)."
+    : "Paused (planning): the boat stays where you put it. Click to go live.";
   arrows?.clear();
   if (live && lastBoat) arrows?.live(lastBoat, vessel);
   showStatus();
@@ -425,8 +447,11 @@ window.addEventListener("keydown", (e) => { if (e.key === "Escape") ctx.hidden =
 
 const damping = createDamping((g) => Number(settings[{ motion: "dampMotion", wind: "dampWind", depth: "dampDepth" }[g]]) || 0);
 listen("vessel", ({ payload: raw }) => {
-  if (!skConnected) { skConnected = true; showStatus(); } // data proves the link is up
+  if (!skConnected) skConnected = true; // data proves the link is up
+  const fresh = !lastData || Date.now() - lastData >= SK_STALE_MS;
   lastData = Date.now();
+  lastRaw = raw;
+  if (fresh) showStatus();
   if (!live) return; // planning: leave the boat where it is
   const v = damping.push(raw);
   vessel = v;

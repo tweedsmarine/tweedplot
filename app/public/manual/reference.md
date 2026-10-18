@@ -60,7 +60,7 @@ Advanced: the environment variables `RACENAV_GRIB_DIR`, `RACENAV_POLAR_DIR`, `RA
 - [ ] Boat drawer: choose a polar (sail) and set efficiency and tack/gybe times.
 - [ ] Weather drawer: download or load a GRIB.
 - [ ] Instruments drawer: arrange the panels you want; the layout is kept per PC.
-- [ ] If you have instruments: start your Signal K server; the status at the top right turns green.
+- [ ] If you have instruments: start your Signal K server; the Signal K button at the top right turns green.
 
 **The screen**
 
@@ -75,7 +75,7 @@ Drawers slide out from the rail; instrument panels, the time slider and the dock
 | Where | What | How to use it |
 | --- | --- | --- |
 | Left rail | Weather, Course, Routing, Fleet, Library, Boat, Chart, Instruments; Ruler and Centre at the bottom | Click an icon to open its drawer; click again or press Esc to close it. Only one drawer is open at a time |
-| Top right | Signal K status, **Live / Paused**, **Follow**, **Clear trk** | Paused = planning: the boat stays where you put it |
+| Top right | Four buttons in a column: Signal K status, **Live / Paused**, **Follow**, **Clear track** | Paused = planning: the boat stays where you put it |
 | Floating panels | Instrument panels and the time slider | Drag by the grip (⋮⋮); double-click the grip to fold a panel |
 | Bottom | The dock: Compare routings, Gates, Fleet, Meteogram, Verify | Opens from buttons in the drawers; drag its top edge to resize |
 | Bottom left | Cursor position | Also in the Cursor instrument |
@@ -149,7 +149,7 @@ RaceNav shows your own boat from live instruments, or wherever you put it when p
 
 **Signal K**
 
-RaceNav reads live data (position, heading, speed, wind, depth) from a [Signal K](https://signalk.org) server, normally running on the same PC. Signal K takes NMEA 0183 and NMEA 2000 from your GPS and instruments through a USB adapter or gateway and serves it to any number of apps. RaceNav connects to `ws://localhost:3000` (set `RACENAV_SK_URL` for another address). The dot at the top right is green when data is arriving; the Chart and Signal K drawer shows the connection details.
+RaceNav reads live data (position, heading, speed, wind, depth) from a [Signal K](https://signalk.org) server, normally running on the same PC. Signal K takes NMEA 0183 and NMEA 2000 from your GPS and instruments through a USB adapter or gateway and serves it to any number of apps. RaceNav connects to `ws://localhost:3000` (set `RACENAV_SK_URL` for another address). The top button of the column at the top right shows the connection at all times: green when data is arriving, amber when connected but nothing has arrived for 10 seconds, red with a slash when there is no connection (blinking while it first tries). Hover it for the server address, the time of the last update and what is arriving; click it for the Signal K section of the Chart and Signal K drawer.
 
 No instruments? A GPS dongle into Signal K is enough for position, course and speed. With no Signal K at all, RaceNav works fully in planning mode.
 
@@ -160,7 +160,7 @@ No instruments? A GPS dongle into Signal K is enough for position, course and sp
 | Live | **Live** | Follows Signal K | Now (GPS time) |
 | Planning | **Paused** | Stays where you put it: right-click > **Move boat here** | The weather slider time |
 
-**Follow** keeps the chart centred on the boat (dragging the chart turns it off); **Centre** (rail) recentres once; **Clear trk** clears the short trail behind the boat.
+**Follow** keeps the chart centred on the boat (dragging the chart turns it off); **Centre** (rail) recentres once; **Clear track** clears the short trail behind the boat.
 
 **Lines and arrows on the boat**
 
@@ -400,7 +400,7 @@ Positions may be delayed by the race organiser.
 | --- | --- |
 | No detailed NZ chart | The LINZ zips aren't in `racenav-data\linz`, or only small-scale bands were downloaded. Add the bands for the area and restart |
 | A harbour's buoys are missing | The open data has no large-scale coverage there. Add them as library marks with buoy symbols |
-| Signal K dot stays grey | The server isn't running, or is on another port or PC: check the Chart and Signal K drawer's details and `RACENAV_SK_URL` |
+| Signal K button stays red or amber | Red: the server isn't running, or is on another port or PC. Amber: connected, but the server is sending no boat data (check its connections to the GPS and instruments). Hover the button, and check the Chart and Signal K drawer's details and `RACENAV_SK_URL` |
 | Instruments show — | No data for that reading, or more than 10 s old (greyed out) |
 | "Load the GRIB first" | Routing needs the GRIB shown on the chart to be loaded and cover the start time |
 | "The weather runs out first" | The GRIB ends before the boat arrives: download a longer forecast, or accept the partial routing |
