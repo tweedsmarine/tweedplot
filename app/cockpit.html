@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RaceNav cockpit</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body class="cockpit">
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+      <filter id="pal-red" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/></filter>
+      <filter id="pal-green" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.06 0.12 0.02 0 0  0.299 0.587 0.114 0 0  0.03 0.06 0.01 0 0  0 0 0 1 0"/></filter>
+    </defs></svg>
+    <div id="ck-alarms" hidden></div>
+    <main id="ck-grid"></main>
+    <footer id="ck-bar">
+      <span id="ck-state">Waiting for the chart window…</span>
+      <button id="ck-cols" title="Columns">Columns: 3</button>
+      <button id="ck-add" title="Add a reading">+ Reading</button>
+      <button id="ck-pal" title="Day or night colours">Day</button>
+      <button id="ck-full" title="Full screen">Full screen</button>
+    </footer>
+    <div id="ck-menu" hidden></div>
+    <script type="module" src="/src/cockpit.js"></script>
+  </body>
+</html>

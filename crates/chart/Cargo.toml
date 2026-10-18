@@ -10,6 +10,7 @@ rusqlite.workspace = true
 zip.workspace = true
 lru.workspace = true
 thiserror.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
 tiny_http = "0.12"

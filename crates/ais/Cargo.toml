@@ -1,0 +1,14 @@
+[package]
+name = "ais"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "AIS targets: Signal K and aisstream.io sources, merging, expiry"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-tungstenite = { workspace = true, features = ["native-tls"] }
+futures-util.workspace = true
+chrono.workspace = true

@@ -31,4 +31,6 @@ library.workspace = true
 tracking.workspace = true
 gribdl.workspace = true
 tides.workspace = true
+ais.workspace = true
+stations.workspace = true
 chrono.workspace = true

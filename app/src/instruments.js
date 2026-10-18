@@ -75,6 +75,52 @@ export const ITEMS = {
   GSRC: { label: "GRIB", unit: "", group: "GRIB at cursor", wide: true, get: (c) => c.grib?.name, fmt: (s) => esc(s) },
 };
 
+// ---------- graphical instruments ----------------------------------------------------------
+const polar = (r, deg) => [50 + r * Math.sin((deg * Math.PI) / 180), 50 - r * Math.cos((deg * Math.PI) / 180)];
+const pt = (p) => `${p[0].toFixed(2)},${p[1].toFixed(2)}`;
+function ticks(step, rIn, rOut, cls) {
+  let d = "";
+  for (let a = 0; a < 360; a += step) d += `M${pt(polar(rIn, a))}L${pt(polar(rOut, a))}`;
+  return `<path d="${d}" class="${cls}"/>`;
+}
+/** Wind dial: boat up, apparent (orange) and true (blue) wind angle pointers, speeds in the middle. */
+function windDial(w) {
+  const sector = (a0, a1, cls) => {
+    const p0 = polar(44, a0), p1 = polar(44, a1);
+    return `<path d="M${pt(polar(38, a0))}L${pt(p0)}A44,44 0 0 ${a1 > a0 ? 1 : 0} ${pt(p1)}L${pt(polar(38, a1))}A38,38 0 0 ${a1 > a0 ? 0 : 1} ${pt(polar(38, a0))}z" class="${cls}"/>`;
+  };
+  const ptr = (a, cls, len) => (a == null ? "" : `<path d="M${pt(polar(len, a))}L${pt(polar(10, a - 9))}L${pt(polar(10, a + 9))}z" class="${cls}"/>`);
+  return `<svg viewBox="0 0 100 100" class="dial">
+    ${sector(20, 60, "close-stbd")}${sector(-60, -20, "close-port")}
+    <circle cx="50" cy="50" r="44" class="ring"/>${ticks(10, 41, 44, "tk")}${ticks(30, 37, 44, "tk2")}
+    <path d="M50,32 L56,47 L56,62 L50,68 L44,62 L44,47z" class="hull"/>
+    ${ptr(w.twa, "ptr-t", 40)}${ptr(w.awa, "ptr-a", 43)}
+    <text x="50" y="84" class="num a">${w.aws != null ? w.aws.toFixed(1) : "—"}</text>
+    <text x="50" y="22" class="num t">${w.tws != null ? w.tws.toFixed(1) : "—"}</text>
+    <text x="13" y="96" class="cap">AWA ${w.awa != null ? Math.round(Math.abs(w.awa)) + "°" : "—"}</text><text x="87" y="96" class="cap end">TWA ${w.twa != null ? Math.round(Math.abs(w.twa)) + "°" : "—"}</text>
+  </svg>`;
+}
+/** Compass: heading up; COG (orange tick) and bearing to the mark (green). */
+function compassRose(c) {
+  const h = c.hdg ?? c.cog;
+  let card = ticks(10, 40, 44, "tk") + ticks(30, 36, 44, "tk2");
+  for (const [a, l] of [[0, "N"], [90, "E"], [180, "S"], [270, "W"]]) {
+    const p = polar(30, a);
+    card += `<text x="${p[0].toFixed(1)}" y="${(p[1] + 3.5).toFixed(1)}" class="card${a === 0 ? " n" : ""}" transform="rotate(${a} ${p[0].toFixed(1)} ${p[1].toFixed(1)})">${l}</text>`;
+  }
+  const mark = (a, cls) => (a == null ? "" : `<path d="M${pt(polar(46, a))}L${pt(polar(38, a - 5))}L${pt(polar(38, a + 5))}z" class="${cls}"/>`);
+  return `<svg viewBox="0 0 100 100" class="dial">
+    <g transform="rotate(${(-h).toFixed(1)} 50 50)"><circle cx="50" cy="50" r="44" class="ring"/>${card}${mark(c.cog, "m-cog")}${mark(c.btw, "m-btw")}</g>
+    <path d="M50,3 L54,10 L46,10z" class="lubber"/>
+    <text x="50" y="56" class="num">${String(Math.round(((h % 360) + 360) % 360) % 360).padStart(3, "0")}°</text>
+    <text x="50" y="68" class="cap mid">${c.hdg != null ? "HDG" : "COG"}${c.cog != null && c.hdg != null ? ` · COG ${String(Math.round(c.cog)).padStart(3, "0")}` : ""}</text>
+  </svg>`;
+}
+ITEMS.WDIAL = { label: "Wind", unit: "", group: "Graphic", live: true, graphic: true,
+  get: (c) => (c.v.awa == null && c.v.twa == null ? null : { awa: c.v.awa, twa: c.v.twa, aws: c.v.aws, tws: c.v.tws }), fmt: windDial };
+ITEMS.COMPASS = { label: "Compass", unit: "", group: "Graphic", live: true, graphic: true,
+  get: (c) => (c.v.heading == null && c.v.cog == null ? null : { hdg: c.v.heading, cog: c.v.cog, btw: c.wp?.btw }), fmt: compassRose };
+
 /** Rhumb line from the boat to the cursor, or null. */
 function cursorLeg(c) {
   if (!c.cursor || c.v.lat == null || c.v.lon == null) return null;
@@ -131,7 +177,7 @@ export function setupInstruments() {
       if (!p.collapsed) p.tiles.forEach((key, i) => {
         const it = ITEMS[key];
         const t = document.createElement("div");
-        t.className = `tile ${p.size}${it?.wide ? " wide" : ""}`;
+        t.className = `tile ${p.size}${it?.wide ? " wide" : ""}${it?.graphic ? " graphic" : ""}`;
         t.dataset.i = i;
         t.innerHTML = `<div class="lbl"><span>${it ? it.label : key}</span><span class="sd"></span></div><div class="v">—</div>`;
         el.append(t);

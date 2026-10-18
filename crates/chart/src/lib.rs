@@ -26,7 +26,7 @@ pub mod geom;
 pub mod mvt;
 pub mod s57;
 pub mod features;
-pub use features::FeatureInfo;
+pub use features::{Clearance, FeatureInfo};
 
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};

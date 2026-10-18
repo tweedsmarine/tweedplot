@@ -143,6 +143,19 @@ Tick **Tide stations** and press **Download LINZ tides** once a year: RaceNav fe
 
 Tidal streams are not shown yet; ocean currents from a GRIB can be used in routing (see Routing).
 
+**Display colours: day, dusk and night**
+
+The ☀ button at the top right (or **Chart and Signal K › Display colours**) steps through four sets of colours:
+
+| Colours | Use |
+| --- | --- |
+| **Day** | Normal colours |
+| **Dusk** | Dimmer, a little less colour |
+| **Night (red)** | Everything as shades of red on black: chart, GRIB shading, panels and drawers. Keeps night vision best |
+| **Night (green)** | The same in green, if you find it easier to read than red |
+
+**Brightness** sets how bright dusk and night are. Turn the screen's own brightness down at night too: night colours dim what is drawn, not the backlight.
+
 ## Your boat
 
 RaceNav shows your own boat from live instruments, or wherever you put it when planning.
@@ -152,6 +165,10 @@ RaceNav shows your own boat from live instruments, or wherever you put it when p
 RaceNav reads live data (position, heading, speed, wind, depth) from a [Signal K](https://signalk.org) server, normally running on the same PC. Signal K takes NMEA 0183 and NMEA 2000 from your GPS and instruments through a USB adapter or gateway and serves it to any number of apps. RaceNav connects to `ws://localhost:3000` (set `RACENAV_SK_URL` for another address). The top button of the column at the top right shows the connection at all times: green when data is arriving, amber when connected but nothing has arrived for 10 seconds, red with a slash when there is no connection (blinking while it first tries). Hover it for the server address, the time of the last update and what is arriving; click it for the Signal K section of the Chart and Signal K drawer.
 
 No instruments? A GPS dongle into Signal K is enough for position, course and speed. With no Signal K at all, RaceNav works fully in planning mode.
+
+**Replaying a log**
+
+RaceNav logs every Signal K session, AIS targets included, while it runs. **Chart and Signal K › Replay a log** lists the logs by start time, length and size; choose one and press **Replay**. The log then drives the boat, instruments, AIS targets and alarms as if it were live, and the live Signal K data waits until the replay stops. A bar at the top of the chart has pause, speed (1× to 300×), a slider to jump to any time, and **✕** to go back to live data. Tracks are not recorded from a replay. Use it to go over a race, test alarms and settings at the dock, or show someone what happened.
 
 **Live and planning**
 
@@ -203,6 +220,50 @@ Port and starboard are marked on wind angles. Readings from Signal K grey out af
 A bar with the GRIB choice, step back and forward, play, **Now**, what the shading shows, the slider and the time. Drag it anywhere. With it and the GRIB-at-cursor panel you can close every drawer and still scrub the forecast and read values anywhere on the chart, which is the most useful layout for planning or talking a route through with crew. Hide it with ×; bring it back with Instruments > **Time slider**.
 
 ![Drawers closed: only the floating time slider and the GRIB-at-cursor and cursor panels over an ECMWF AIFS forecast for New Zealand](img/03-slider-grib-panel.jpg)
+
+**Graphical readings**
+
+Two readings are drawn rather than written, in the Graphic group of any tile's menu:
+
+- **Wind**: a dial with the boat pointing up, apparent wind (orange) and true wind (blue) pointers, close-hauled sectors red to port and green to starboard, true wind speed at the top and apparent at the bottom.
+- **Compass**: heading at the top of a turning card, with course over ground (orange) and the bearing to the next mark (green) on its rim.
+
+**Cockpit window**
+
+**Instruments › Cockpit window** opens a second window of large readings for a screen at the helm. Drag it to that screen and press **Full screen**. Touch a reading to choose what it shows or move it, **+ Reading** adds one, **Columns** sets the grid, and its own day/night button sets its colours. It shows the same numbers as the chart window's panels and the alarms in large type, with a tone while an alarm has not been silenced. Keep the chart window open: it feeds the cockpit window.
+
+## Alarms and man overboard
+
+Alarms appear in a banner at the top of the chart and sound until silenced. **Silence** stops the sound; the alarm stays in the banner while its cause lasts. Click an alarm's text to show its place on the chart. They work from live data (or a replay), not in planning.
+
+**Instruments › Alarms**
+
+| Alarm | Raised when | Settings |
+| --- | --- | --- |
+| **Shallow water** | The depth (under the keel if Signal K has it, else below the transducer) is less than the alarm depth | Alarm depth; empty = the safety depth (Chart panel) |
+| **Air draft** | A bridge, overhead cable or pipeline on the chart within a mile (or 10 minutes) ahead has less charted clearance than your air draft plus the margin | Air draft in the **Boat** panel; margin. Charted clearances are above Highest Astronomical Tide |
+| **Anchor watch** | The boat is outside the swing circle | **Drop anchor here** (at the boat), radius; the circle is drawn on the chart. **Weigh anchor** ends it |
+| **Position lost** | Signal K is connected but no position has come for 30 seconds | On or off |
+| **AIS collision, AIS-SART, MOB device, EPIRB** | See AIS targets | **Fleet › AIS** |
+
+**Alarm volume** and **Test** are at the bottom.
+
+**Man overboard**
+
+Press the red **MOB** button at the top right the moment someone goes over. RaceNav marks the boat's position (or where it was put when planning) and raises an alarm that shows the time since, and the bearing and distance back to the position, updated every second, with a line from the boat to it on the chart. The position is also saved as a library mark in the group "MOB". **Clear MOB** in the banner, pressed twice, ends it.
+
+## AIS targets
+
+**Fleet › AIS** shows ships, aids to navigation, SAR aircraft and AIS distress beacons on the chart, from two sources merged by MMSI:
+
+- **Signal K**: whatever an AIS receiver or transponder on board passes to the Signal K server.
+- **Online (aisstream.io)**: what volunteer shore stations hear around the area on the chart. Get a free API key by signing in at aisstream.io with a GitHub account, paste it in and press **Go online**. The area follows the chart (up to about 6° across). Coverage has gaps and delays: it is no substitute for a receiver on board.
+
+On the chart, ships are triangles pointing along their heading (class B a little smaller), coloured by type: cargo green, tanker red, passenger blue, fishing orange, sailing and pleasure purple, tugs and special craft teal. A line ahead shows where each will be in 6 minutes. Diamonds are aids to navigation (pink when virtual: nothing is physically there), a circle with a cross is an AIS-SART, MOB device or EPIRB. Targets not heard for a few minutes fade, and go after 20 minutes. Click a target for its name, type, status, speed and course, size, destination, and the range, bearing, CPA and TCPA from your boat.
+
+The list under the settings sorts targets by range, CPA or name; click one to show it.
+
+**Alarms**: a ship whose closest point of approach (CPA) is less than the limit within the time limit (TCPA) raises a collision alarm; anchored and moored ships can be ignored. An AIS-SART, MOB device or EPIRB always raises an alarm, with its bearing and distance.
 
 ## Marks, routes and the library
 
@@ -319,6 +380,18 @@ With two or more GRIBs loaded, **Show** offers displays of how much they disagre
 
 Weather > **Verify runs…** scores earlier forecasts against what a later run says actually happened at its first hour (its analysis), over the sea in the chart view: vector error, speed and direction bias, pressure bias. The track record averages every verify time by model and lead time, so after some days of downloads it shows which model has been doing best in your area. Click a forecast to shade its error on the chart.
 
+**Weather stations and buoys**
+
+**Weather › Weather stations and buoys** shows what the wind is actually doing at stations around the chart, the quickest way to see which forecast is right today. Tick **Show observations** and the sources:
+
+| Source | What | Updates |
+| --- | --- | --- |
+| **MetService (NZ)** | MetService's synoptic stations around New Zealand, many on the coast and islands (Farewell Spit, Stephens Island, Cape Campbell …). Open access data | Hourly or 3-hourly |
+| **Airports (METAR)** | Airport weather reports worldwide from aviationweather.gov | Half-hourly |
+| **Buoys (NDBC)** | NOAA moored buoys and coastal stations, mostly around the US, with waves and sea temperature | Hourly |
+
+Each station shows an arrow pointing downwind, coloured like the wind shading, with the wind speed and the gust after a G (15G25). Click a station for its latest report and a graph of its last 24 hours: observed wind (with gusts as dots) and pressure against each loaded GRIB's forecast for that place, and the average difference (the forecast minus what was observed, in knots and degrees of veer). Observations refresh every 10 minutes while shown.
+
 ## Routing
 
 A routing is the fastest way from the start through your marks, given a forecast, your boat's speeds and the chart. RaceNav uses the isochrone method (explained in the Weather routing tutorial) and keeps off land, water shallower than your safety depth, charted dangers, marine farms and your barriers.
@@ -385,7 +458,7 @@ The Cursor panel shows the cursor's latitude and longitude and the bearing and r
 
 **Fleet (YB race tracking)**
 
-Fleet drawer: type the race's YB name (as in `yb.tl/<race>`, for example `ggr2026`) and **Open**. RaceNav downloads the race setup, every boat's published track, then the latest positions every 5 minutes to 3 hours.
+Fleet › Race (YB): type the race's YB name (as in `yb.tl/<race>`, for example `ggr2026`) and **Open**. RaceNav downloads the race setup, every boat's published track, then the latest positions every 5 minutes to 3 hours.
 
 - Boats show at their latest fix, or where they were at the weather slider time, so you can replay a race against the forecast.
 - ★ follows a boat (thicker track, name kept first when names would overlap). Choose a class, tracks for all or followed boats, names, and the YB course.

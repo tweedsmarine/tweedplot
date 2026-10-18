@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 
 // Wind speed shading (knots).
 // Palette sampled every 2 kn so light-air differences show too.
-const PALETTE = [
+export const PALETTE = [
   [0, "#e8f4ff"], [2, "#c4e2ff"], [4, "#9fd0f7"], [6, "#79bdec"], [8, "#5ab9cf"], [10, "#5cc6a3"],
   [12, "#7fd27a"], [14, "#b3dc5c"], [16, "#e2e04f"], [18, "#f7cd45"], [20, "#f7aa3b"], [22, "#f38536"],
   [25, "#e85c3a"], [28, "#d6404f"], [32, "#b8357a"], [36, "#9334a3"], [40, "#6c2fae"], [50, "#45247f"],

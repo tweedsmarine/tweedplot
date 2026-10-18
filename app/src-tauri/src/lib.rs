@@ -8,10 +8,11 @@
 //! The `chart` URI scheme serves vector tiles: `chart://localhost/{z}/{x}/{y}.pbf`
 //! (`http://chart.localhost/...` on Windows).
 
+mod live;
+mod stations_cmd;
 use std::path::PathBuf;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
 
 use tauri::http::{header, Response, StatusCode};
 use tauri::{Emitter, Manager};
@@ -26,7 +27,7 @@ static DATA_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBoo
 static GRIBS: Mutex<BTreeMap<String, Arc<grib::GribFile>>> = Mutex::new(BTreeMap::new());
 static LIBRARY: OnceLock<library::Library> = OnceLock::new();
 /// Latest Signal K connection state, for a page that loads after the event was sent.
-static SK_STATUS: Mutex<Option<(bool, String)>> = Mutex::new(None);
+pub(crate) static SK_STATUS: Mutex<Option<(bool, String)>> = Mutex::new(None);
 
 #[tauri::command]
 fn sk_status() -> serde_json::Value {
@@ -531,7 +532,7 @@ fn grib_point(lat: f64, lon: f64, t: i64) -> Vec<serde_json::Value> {
 }
 
 /// Signal K URL: `RACENAV_SK_URL` environment variable, else the local server.
-fn sk_url() -> String {
+pub(crate) fn sk_url() -> String {
     std::env::var("RACENAV_SK_URL").unwrap_or_else(|_| signalk::DEFAULT_URL.to_string())
 }
 
@@ -865,7 +866,7 @@ fn rec_flush() {
 }
 
 /// Offer a Signal K fix to the recorder; saves every 30 s.
-fn rec_vessel(app: &tauri::AppHandle, v: &signalk::VesselState) {
+pub(crate) fn rec_vessel(app: &tauri::AppHandle, v: &signalk::VesselState) {
     let (Some(lat), Some(lon)) = (v.lat, v.lon) else { return };
     let now = chrono_now();
     let t = v.datetime.as_deref().and_then(library::tracks::parse_iso).unwrap_or(now);
@@ -1422,6 +1423,28 @@ fn chart_feature(t: usize, fid: i64) -> Option<serde_json::Value> {
     }))
 }
 
+/// Open (or bring forward) the cockpit window: large readings for a second screen.
+#[tauri::command]
+fn cockpit_open(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("cockpit") {
+        let _ = w.unminimize();
+        return w.set_focus().map_err(|e| e.to_string());
+    }
+    tauri::WebviewWindowBuilder::new(&app, "cockpit", tauri::WebviewUrl::App("cockpit.html".into()))
+        .title("RaceNav cockpit")
+        .inner_size(1024.0, 640.0)
+        .min_inner_size(320.0, 240.0)
+        .build()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Charted vertical clearances (bridges, overhead cables) within `radius_m` of a point, nearest first.
+#[tauri::command]
+fn chart_clearances(lat: f64, lon: f64, radius_m: f64) -> Vec<chart::Clearance> {
+    charts().map(|s| s.clearances([lon, lat], radius_m.min(20_000.0))).unwrap_or_default()
+}
+
 /// Summary of the chart folder.
 #[tauri::command]
 fn chart_info() -> serde_json::Value {
@@ -1457,8 +1480,10 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            app_info, chart_info, chart_feature, tides_info, tides_stations, tides_curve, tides_download, tides_cancel, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_compare, grib_meteogram, grib_verify_times, grib_verify_scores, grib_verify_track, grib_verify_grid, grib_point,
+            app_info, chart_info, chart_feature, chart_clearances, cockpit_open, tides_info, tides_stations, tides_curve, tides_download, tides_cancel, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_compare, grib_meteogram, grib_verify_times, grib_verify_scores, grib_verify_track, grib_verify_grid, grib_point,
             polar_files, polar_speed, route_compute, sk_status,
+            stations_cmd::stations_latest, stations_cmd::station_history,
+            live::ais_targets, live::ais_online, live::ais_status, live::replay_logs, live::replay_start, live::replay_control, live::replay_stop,
             lib_info, marks_list, mark_save, mark_delete, barriers_list, barrier_save, barrier_delete, routes_list, route_save, route_delete,
             routings_list, routing_get, routing_save, routing_delete, gpx_export, gpx_write, gpx_import,
             rec_status, rec_start, rec_stop, tracks_list, track_get, track_update, track_delete, track_export,
@@ -1502,26 +1527,8 @@ pub fn run() {
             let _ = std::fs::create_dir_all(bathy_dir(app.handle()));
             open_charts(app.handle().clone());
 
-            // Signal K
-            let handle = app.handle().clone();
-            let log_dir = app.path().app_data_dir().ok().map(|p| p.join("logs"));
-            let opts = signalk::Options { url: sk_url(), log_dir, min_interval: Duration::from_millis(250) };
-            let (tx, mut rx) = tokio::sync::mpsc::channel(256);
-            tauri::async_runtime::spawn(signalk::run(opts, tx));
-            tauri::async_runtime::spawn(async move {
-                while let Some(ev) = rx.recv().await {
-                    let _ = match ev {
-                        signalk::Event::Status { connected, detail } => {
-                            *SK_STATUS.lock().unwrap() = Some((connected, detail.clone()));
-                            handle.emit("sk-status", serde_json::json!({ "connected": connected, "detail": detail }))
-                        }
-                        signalk::Event::Vessel(v) => {
-                            rec_vessel(&handle, &v);
-                            handle.emit("vessel", v)
-                        }
-                    };
-                }
-            });
+            // Signal K, AIS, replay
+            live::start(app.handle());
             Ok(())
         })
         .build(tauri::generate_context!())

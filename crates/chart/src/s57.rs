@@ -68,6 +68,8 @@ pub static CLASSES: &[FeatureClass] = &[
     fc!("LNDRGN", "Land region", "land_region_points", Point),
     fc!("CBLSUB", "Submarine cable", "cable_submarine_polyline", Line),
     fc!("CBLOHD", "Overhead cable", "cable_overhead_polyline", Line),
+    fc!("PIPOHD", "Overhead pipeline", "pipeline_overhead_polyline", Line),
+    fc!("BRIDGE", "Bridge", "bridge_polyline", Line),
     fc!("PIPSOL", "Pipeline", "pipeline_submarine_on_land_polyline", Line),
     fc!("NAVLNE", "Navigation line", "navigation_line_polyline", Line),
     fc!("RECTRC", "Recommended track", "recommended_track_polyline", Line),
@@ -83,6 +85,7 @@ pub static CLASSES: &[FeatureClass] = &[
     fc!("FERYRT", "Ferry route", "ferry_route_polygons", Area),
     fc!("OBSTRN", "Obstruction area", "obstruction_polygon", Area),
     fc!("WEDKLP", "Kelp", "weed_kelp_polygon", Area),
+    fc!("BRIDGE", "Bridge", "bridge_polygon", Area),
     fc!("SEAARE", "Sea area", "sea_area_named_water_area_polygon", Area),
 ];
 

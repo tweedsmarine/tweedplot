@@ -307,6 +307,63 @@ impl ChartStore {
         }
     }
 
+    /// Bridges, overhead cables and pipelines within `radius_m` of `at`
+    /// ([lon, lat]) that give a vertical clearance: the nearest point of each,
+    /// for an air-draft alarm. Clearance is the charted VERCLR (or the safe
+    /// clearance VERCSA of a power line when it is lower), metres above HAT.
+    pub fn clearances(&self, at: [f64; 2], radius_m: f64) -> Vec<Clearance> {
+        let dlat = radius_m / 111_320.0;
+        let dlon = dlat / at[1].to_radians().cos().max(0.05);
+        let bbox = [at[0] - dlon, at[1] - dlat, at[0] + dlon, at[1] + dlat];
+        let mut out: Vec<Clearance> = Vec::new();
+        for t in self.tables.iter().filter(|t| t.kind == Kind::Feature && t.class.is_some_and(|c| matches!(c.code, "BRIDGE" | "CBLOHD" | "PIPOHD"))) {
+            let class = t.class.unwrap();
+            self.query_text(t, bbox, &["objnam", "verclr", "vercsa"], |row| {
+                let num = |i: usize| row.vals[i].as_deref().and_then(|s| s.trim().parse::<f64>().ok()).filter(|v| *v > 0.0);
+                let Some(clear) = [num(1), num(2)].into_iter().flatten().reduce(f64::min) else { return };
+                let pts: Vec<[f64; 2]> = match &row.geom {
+                    Geom::Lines(ls) => ls.iter().flatten().copied().collect(),
+                    Geom::Polygons(ps) => ps.iter().flatten().flatten().copied().collect(),
+                    Geom::Points(p) => p.clone(),
+                };
+                // nearest point on the outline (segments), in local metres
+                let k = at[1].to_radians().cos();
+                let xy = |p: [f64; 2]| [(p[0] - at[0]) * 111_320.0 * k, (p[1] - at[1]) * 111_320.0];
+                let mut best = (f64::INFINITY, [0.0, 0.0]);
+                let segs: Vec<([f64; 2], [f64; 2])> = match &row.geom {
+                    Geom::Lines(ls) => ls.iter().flat_map(|l| l.windows(2).map(|w| (w[0], w[1]))).collect(),
+                    Geom::Polygons(ps) => ps.iter().flatten().flat_map(|r| r.windows(2).map(|w| (w[0], w[1]))).collect(),
+                    Geom::Points(_) => pts.iter().map(|p| (*p, *p)).collect(),
+                };
+                for (a, b) in segs {
+                    let (a, b) = (xy(a), xy(b));
+                    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+                    let l2 = dx * dx + dy * dy;
+                    let u = if l2 > 0.0 { ((-a[0]) * dx + (-a[1]) * dy) / l2 } else { 0.0 }.clamp(0.0, 1.0);
+                    let q = [a[0] + u * dx, a[1] + u * dy];
+                    let d = q[0].hypot(q[1]);
+                    if d < best.0 {
+                        best = (d, q);
+                    }
+                }
+                if best.0 > radius_m {
+                    return;
+                }
+                let bearing = best.1[0].atan2(best.1[1]).to_degrees().rem_euclid(360.0);
+                out.push(Clearance {
+                    code: class.code,
+                    class: class.name,
+                    name: row.vals[0].clone().filter(|s| !s.trim().is_empty()),
+                    clearance_m: clear,
+                    distance_m: best.0,
+                    bearing,
+                });
+            });
+        }
+        out.sort_by(|a, b| a.distance_m.total_cmp(&b.distance_m));
+        out
+    }
+
     /// All the attributes of one feature (table index and fid from the tile), in words.
     pub fn feature(&self, table: usize, fid: i64) -> Option<FeatureInfo> {
         let t = self.tables.get(table)?;
@@ -433,4 +490,16 @@ mod tests {
         let v = attrs(&[]);
         assert!(is_danger("UWTROC", &Attrs(&v), 3.0));
     }
+}
+
+/// A charted vertical clearance near the boat (see [`ChartStore::clearances`]).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Clearance {
+    pub code: &'static str,
+    pub class: &'static str,
+    pub name: Option<String>,
+    pub clearance_m: f64,
+    pub distance_m: f64,
+    /// True bearing from the boat to the nearest point.
+    pub bearing: f64,
 }

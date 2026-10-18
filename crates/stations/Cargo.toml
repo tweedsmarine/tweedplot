@@ -1,0 +1,13 @@
+[package]
+name = "stations"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Weather station and buoy observations: MetService (WIS2), METAR (aviationweather.gov), NOAA NDBC buoys"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+reqwest = { version = "0.13", default-features = false, features = ["native-tls", "blocking"] }

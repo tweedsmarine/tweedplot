@@ -18,6 +18,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ais"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite",
+]
+
+[[package]]
 name = "alloc-no-stdlib"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -354,6 +366,7 @@ version = "0.1.0"
 dependencies = [
  "lru",
  "rusqlite",
+ "serde",
  "serde_json",
  "thiserror 1.0.69",
  "tiny_http",
@@ -2731,6 +2744,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 name = "racenav-app"
 version = "0.1.0"
 dependencies = [
+ "ais",
  "chart",
  "chrono",
  "grib",
@@ -2742,6 +2756,7 @@ dependencies = [
  "serde",
  "serde_json",
  "signalk",
+ "stations",
  "tauri",
  "tauri-build",
  "tides",
@@ -3414,6 +3429,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff7589a1859b09232522bb9edf076ca7fcf14ded96685d3fa629db73023ffbb7"
 
 [[package]]
+name = "stations"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "string_cache"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3964,7 +3990,9 @@ checksum = "17a073bfed563fa236697a068031408a93cd9522e08abf9933ead3e73411bd71"
 dependencies = [
  "futures-util",
  "log",
+ "native-tls",
  "tokio",
+ "tokio-native-tls",
  "tungstenite",
 ]
 
@@ -4191,6 +4219,7 @@ dependencies = [
  "http",
  "httparse",
  "log",
+ "native-tls",
  "rand",
  "sha1",
  "thiserror 2.0.21",

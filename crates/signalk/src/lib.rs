@@ -18,7 +18,8 @@ use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 
-pub const DEFAULT_URL: &str = "ws://localhost:3000/signalk/v1/stream?subscribe=self";
+/// Everything the server has: the own vessel and the AIS targets it hears.
+pub const DEFAULT_URL: &str = "ws://localhost:3000/signalk/v1/stream?subscribe=all";
 
 const MS_TO_KN: f64 = 3600.0 / 1852.0;
 
@@ -177,6 +178,49 @@ pub enum Event {
     Status { connected: bool, detail: String },
     /// Own-vessel state changed.
     Vessel(VesselState),
+    /// Values for another context (an AIS target: `vessels.urn:mrn:imo:mmsi:…`, `atons.…`, `aircraft.…`).
+    Other { context: String, values: Vec<(String, Value)> },
+}
+
+/// Splits Signal K messages into the own vessel's values and other contexts'.
+#[derive(Debug, Default, Clone)]
+pub struct Router {
+    /// The own vessel's context, from the server's hello (`self`).
+    pub self_ctx: Option<String>,
+}
+
+impl Router {
+    fn is_self(&self, ctx: Option<&str>) -> bool {
+        match ctx {
+            None | Some("vessels.self") => true,
+            Some(c) => self.self_ctx.as_deref() == Some(c) || self.self_ctx.as_deref().is_some_and(|s| s.strip_prefix("vessels.") == Some(c)),
+        }
+    }
+
+    /// Route one message: apply own-vessel values to `state` (returns whether it
+    /// changed) and return the other contexts' values.
+    pub fn route(&mut self, state: &mut VesselState, msg: &Value) -> (bool, Vec<Event>) {
+        if let Some(s) = msg.get("self").and_then(Value::as_str) {
+            self.self_ctx = Some(s.to_string());
+        }
+        let ctx = msg.get("context").and_then(Value::as_str);
+        if self.is_self(ctx) {
+            return (state.apply_delta(msg), Vec::new());
+        }
+        let Some(updates) = msg.get("updates").and_then(Value::as_array) else { return (false, Vec::new()) };
+        let mut values = Vec::new();
+        for u in updates {
+            for v in u.get("values").and_then(Value::as_array).into_iter().flatten() {
+                if let (Some(p), Some(val)) = (v.get("path").and_then(Value::as_str), v.get("value")) {
+                    values.push((p.to_string(), val.clone()));
+                }
+            }
+        }
+        if values.is_empty() {
+            return (false, Vec::new());
+        }
+        (false, vec![Event::Other { context: ctx.unwrap_or_default().to_string(), values }])
+    }
 }
 
 /// Client options.
@@ -203,6 +247,7 @@ impl Default for Options {
 /// Events go to `tx`; the function returns only when `tx` is closed.
 pub async fn run(opts: Options, tx: mpsc::Sender<Event>) {
     let mut state = VesselState::default();
+    let mut router = Router::default();
     let mut backoff = Duration::from_secs(1);
     let mut log = match &opts.log_dir {
         Some(dir) => open_log(dir).await,
@@ -246,7 +291,13 @@ pub async fn run(opts: Options, tx: mpsc::Sender<Event>) {
                         let _ = f.write_all(line.as_bytes()).await;
                     }
                     if let Ok(v) = serde_json::from_str::<Value>(text.as_str()) {
-                        if state.apply_delta(&v) {
+                        let (own, others) = router.route(&mut state, &v);
+                        for ev in others {
+                            if send(&tx, ev).await {
+                                return;
+                            }
+                        }
+                        if own {
                             if last_sent.elapsed() >= opts.min_interval {
                                 last_sent = tokio::time::Instant::now();
                                 pending = false;
@@ -278,6 +329,8 @@ pub async fn run(opts: Options, tx: mpsc::Sender<Event>) {
 async fn send(tx: &mpsc::Sender<Event>, ev: Event) -> bool {
     tx.send(ev).await.is_err()
 }
+
+pub mod replay;
 
 async fn open_log(dir: &PathBuf) -> Option<tokio::io::BufWriter<tokio::fs::File>> {
     tokio::fs::create_dir_all(dir).await.ok()?;

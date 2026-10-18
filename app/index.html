@@ -7,6 +7,11 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
+    <!-- night colours: luminance into one channel (palette.js, style.css) -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+      <filter id="pal-red" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/></filter>
+      <filter id="pal-green" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.06 0.12 0.02 0 0  0.299 0.587 0.114 0 0  0.03 0.06 0.01 0 0  0 0 0 1 0"/></filter>
+    </defs></svg>
     <div id="map"></div>
 
     <!-- Icon rail: one drawer open at a time -->
@@ -14,7 +19,7 @@
       <button data-pane="weather" title="Weather (GRIB)"><svg viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6 9.5 4.25 4.25 0 0 0 7 18z"/></svg><span>Weather</span></button>
       <button data-pane="course" title="Course: start, marks, next mark"><svg viewBox="0 0 24 24"><circle cx="5" cy="18" r="2"/><circle cx="19" cy="6" r="2"/><path d="M7 17L17 7" stroke-dasharray="3 2.5"/></svg><span>Course</span></button>
       <button data-pane="routing" title="Routing: compute, compare"><svg viewBox="0 0 24 24"><circle cx="5" cy="18" r="2"/><circle cx="19" cy="6" r="2"/><path d="M7 17c5-1 3-8 10-10"/><path d="M6 15c2-6 6-9 11-9" opacity=".5"/></svg><span>Routing</span></button>
-      <button data-pane="fleet" title="Fleet: YB race tracking"><svg viewBox="0 0 24 24"><path d="M6 4l3 7H3z"/><path d="M17 9l3 7h-6z"/><path d="M9 15l3 6H6z"/></svg><span>Fleet</span></button>
+      <button data-pane="fleet" title="Fleet: AIS targets and YB race tracking"><svg viewBox="0 0 24 24"><path d="M6 4l3 7H3z"/><path d="M17 9l3 7h-6z"/><path d="M9 15l3 6H6z"/></svg><span>Fleet</span></button>
       <button data-pane="library" title="Marks, routes and saved routings"><svg viewBox="0 0 24 24"><path d="M6 21V4"/><path d="M6 4h11l-3 4 3 4H6"/></svg><span>Library</span></button>
       <button data-pane="boat" title="Boat and polar"><svg viewBox="0 0 24 24"><path d="M12 3v13"/><path d="M12 4l7 11h-7"/><path d="M11 6L5 15h6"/><path d="M3 18h18l-2 3H5z"/></svg><span>Boat</span></button>
       <button data-pane="chart" title="Chart and Signal K"><svg viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></svg><span>Chart</span></button>
@@ -89,6 +94,17 @@
               <button id="sd-mail" class="on" title="Open an email to query@saildocs.com in your mail program">Email</button></div>
             <div class="wx-note">Send it from your own email. The GRIB comes back attached: save it in the GRIB folder and it shows in the list above.</div>
           </details>
+        </details>
+        <details class="sub" id="stn-box">
+          <summary>Weather stations and buoys</summary>
+          <div class="wx-row"><label class="grow"><input id="stn-show" type="checkbox" /> Show observations</label><button id="stn-refresh" title="Download the latest observations now">↻</button></div>
+          <div class="wx-row checks">
+            <label title="MetService's synoptic stations around New Zealand, many on the coast and islands (hourly or 3-hourly; open access)"><input id="stn-src-metservice" type="checkbox" /> MetService (NZ)</label>
+            <label title="Airport weather reports (METAR) worldwide, half-hourly, from aviationweather.gov"><input id="stn-src-metar" type="checkbox" /> Airports (METAR)</label>
+            <label title="NOAA NDBC moored buoys and coastal stations (mostly around the US)"><input id="stn-src-ndbc" type="checkbox" /> Buoys (NDBC)</label>
+          </div>
+          <div id="stn-status" class="wx-note"></div>
+          <div class="wx-note">Each station shows its wind (arrow downwind, coloured like the wind shading) and speed, gust after the G. Click one for its last 24 h against the loaded GRIBs: the quickest check of which forecast is right today. Updated every 10 minutes while shown.</div>
         </details>
         <details class="sub">
           <summary>Display</summary>
@@ -213,28 +229,47 @@
       </section>
 
       <section class="pane" data-pane="fleet" data-title="Fleet">
-        <div class="wx-row">
-          <input id="fl-race" class="grow" type="text" list="fl-races" placeholder="YB race, e.g. ggr2026" title="The race name as in yb.tl/race" autocomplete="off" spellcheck="false" />
-          <datalist id="fl-races"></datalist>
-          <button id="fl-open" class="on">Open</button>
-          <button id="fl-refresh" title="Download the latest positions now">↻</button>
+        <div class="tabs"><button data-tab="ais" class="on">AIS</button><button data-tab="race">Race (YB)</button></div>
+        <div class="tab" data-tab="ais">
+          <div class="wx-row"><label class="grow"><input id="ais-show" type="checkbox" /> Show AIS targets</label><label><input id="ais-names" type="checkbox" /> Names</label></div>
+          <div class="wx-row"><span class="dot" id="ais-sk-dot"></span><span class="grow wx-note" id="ais-sk-state">Signal K: —</span></div>
+          <div class="wx-row"><span class="dot" id="ais-on-dot"></span><span class="grow wx-note" id="ais-on-state">Online (aisstream.io): off</span></div>
+          <div class="wx-row"><input id="ais-key" class="grow" type="password" placeholder="aisstream.io API key" autocomplete="off" spellcheck="false" title="Free: sign in at aisstream.io with a GitHub account and copy the key" />
+            <button id="ais-online" title="Receive AIS from shore stations for the chart area">Go online</button></div>
+          <div class="wx-note">Online AIS shows what volunteer shore stations hear around the area on the chart (a wider area is asked for when zoomed out, up to about 6°). Get a free key at <a href="#" id="ais-key-link">aisstream.io</a>. Not a substitute for a receiver on board: coverage has gaps and delays.</div>
+          <h3>Collision and distress alarms</h3>
+          <div class="wx-row"><label class="grow"><input id="ais-cpa-on" type="checkbox" /> CPA under (NM)</label><input id="ais-cpa" type="number" min="0.05" step="0.05" /></div>
+          <div class="wx-row"><label class="grow" for="ais-tcpa">within (min)</label><input id="ais-tcpa" type="number" min="1" step="1" /></div>
+          <div class="wx-row"><label class="grow"><input id="ais-ignore-moored" type="checkbox" /> Ignore anchored and moored ships</label></div>
+          <div class="wx-note">An AIS-SART, MOB device or EPIRB always raises an alarm. CPA alarms work from live data (or a replay).</div>
+          <h3>Targets <span id="ais-count" class="wx-note"></span></h3>
+          <div class="wx-row"><label class="grow" for="ais-sort">Sort by</label><select id="ais-sort"><option value="range">Range</option><option value="cpa">CPA</option><option value="name">Name</option></select></div>
+          <ul id="ais-list" class="list"></ul>
         </div>
-        <div class="wx-row"><b id="fl-title" class="grow"></b></div>
-        <div id="fl-status" class="wx-note"></div>
-        <div class="wx-row"><label class="grow" for="fl-auto">Download positions every</label><select id="fl-auto"></select></div>
-        <div class="wx-row"><label class="grow" for="fl-at">Boats at</label>
-          <select id="fl-at"><option value="latest">Latest fix</option><option value="weather">Weather slider time</option></select></div>
-        <div class="wx-row"><label class="grow" for="fl-tracks-sel">Tracks</label>
-          <select id="fl-tracks-sel"><option value="all">All boats</option><option value="starred">Followed boats (★)</option><option value="none">None</option></select></div>
-        <div class="wx-row"><label class="grow"><input id="fl-labels" type="checkbox" /> Names</label><label class="grow"><input id="fl-show-course" type="checkbox" /> YB course</label></div>
-        <div class="wx-row"><select id="fl-class"></select></div>
-        <div class="wx-row">
-          <button id="fl-table" class="on" title="Open or close the fleet table at the bottom">Fleet table</button>
-          <button id="fl-course-copy" title="Use the YB course as the course to route" disabled>Copy course</button>
-          <button id="fl-history" title="Download every published fix of every boat (YB's full tracks)">Full tracks</button>
+        <div class="tab" data-tab="race" hidden>
+          <div class="wx-row">
+            <input id="fl-race" class="grow" type="text" list="fl-races" placeholder="YB race, e.g. ggr2026" title="The race name as in yb.tl/race" autocomplete="off" spellcheck="false" />
+            <datalist id="fl-races"></datalist>
+            <button id="fl-open" class="on">Open</button>
+            <button id="fl-refresh" title="Download the latest positions now">↻</button>
+          </div>
+          <div class="wx-row"><b id="fl-title" class="grow"></b></div>
+          <div id="fl-status" class="wx-note"></div>
+          <div class="wx-row"><label class="grow" for="fl-auto">Download positions every</label><select id="fl-auto"></select></div>
+          <div class="wx-row"><label class="grow" for="fl-at">Boats at</label>
+            <select id="fl-at"><option value="latest">Latest fix</option><option value="weather">Weather slider time</option></select></div>
+          <div class="wx-row"><label class="grow" for="fl-tracks-sel">Tracks</label>
+            <select id="fl-tracks-sel"><option value="all">All boats</option><option value="starred">Followed boats (★)</option><option value="none">None</option></select></div>
+          <div class="wx-row"><label class="grow"><input id="fl-labels" type="checkbox" /> Names</label><label class="grow"><input id="fl-show-course" type="checkbox" /> YB course</label></div>
+          <div class="wx-row"><select id="fl-class"></select></div>
+          <div class="wx-row">
+            <button id="fl-table" class="on" title="Open or close the fleet table at the bottom">Fleet table</button>
+            <button id="fl-course-copy" title="Use the YB course as the course to route" disabled>Copy course</button>
+            <button id="fl-history" title="Download every published fix of every boat (YB's full tracks)">Full tracks</button>
+          </div>
+          <ul id="fl-list" class="list"></ul>
+          <div class="wx-note">Positions come from YB's light Expedition file, which holds each boat's latest fix; tracks build up from the fixes this app has downloaded (kept in racenav-data\tracking). Races may publish positions with a delay.</div>
         </div>
-        <ul id="fl-list" class="list"></ul>
-        <div class="wx-note">Positions come from YB's light Expedition file, which holds each boat's latest fix; tracks build up from the fixes this app has downloaded (kept in racenav-data\tracking). Races may publish positions with a delay.</div>
       </section>
 
       <section class="pane" data-pane="library" data-title="Library">
@@ -329,6 +364,7 @@
         <div class="wx-row"><label class="grow" for="boat-eff">Polar efficiency (%)</label><input id="boat-eff" type="number" min="10" max="150" step="1" /></div>
         <div class="wx-row"><label class="grow" for="boat-tack">Tack costs (s)</label><input id="boat-tack" type="number" min="0" step="5" /></div>
         <div class="wx-row"><label class="grow" for="boat-gybe">Gybe costs (s)</label><input id="boat-gybe" type="number" min="0" step="5" /></div>
+        <div class="wx-row"><label class="grow" for="boat-air" title="Height of the top of the mast (or highest point) above the waterline, for the air-draft alarm">Air draft (m)</label><input id="boat-air" type="number" min="0" step="0.1" /></div>
         <div class="wx-note">Safety depth is set in the Chart panel; routing avoids water shallower than it, and charted dangers and marine farms if ticked there.</div>
       </section>
 
@@ -360,6 +396,12 @@
             <p>Natural Earth bathymetry: public domain (naturalearthdata.com). GSHHG coastline: Wessel &amp; Smith, University of Hawaiʻi and NOAA, LGPL 3, downloaded from its home site. ETOPO 2022: NOAA National Centers for Environmental Information, free to use and redistribute (doi:10.25921/fd45-gt74), fetched through NOAA CoastWatch ERDDAP. LINZ hydrographic data: Toitū Te Whenua LINZ, CC BY 4.0. World depths and ETOPO are drawn under the charts for orientation only: they are coarse or interpolated near the coast, and routing does not use them. Not for navigation.</p>
           </details>
         </div>
+        <h3>Display colours</h3>
+        <div class="wx-row"><label class="grow" for="pal-mode">Colours</label>
+          <select id="pal-mode" title="Day; dusk (dimmer); night red or night green, which keep your night vision (every colour becomes a shade of red or green on black)">
+            <option value="day">Day</option><option value="dusk">Dusk</option><option value="night-red">Night (red)</option><option value="night-green">Night (green)</option></select></div>
+        <div class="wx-row"><label class="grow" for="pal-dim">Brightness</label><input id="pal-dim" type="range" min="20" max="100" step="5" title="How bright the screen is drawn in dusk and night colours" /><span id="pal-dim-v" class="wx-note"></span></div>
+        <div class="wx-note">The ☀ button at the top right steps through them. Turn the screen's own brightness down at night too.</div>
         <h3>Chart features</h3>
         <div class="wx-row checks"><label><input id="set-feat" type="checkbox" /> Lights, marks, dangers, areas</label></div>
         <div class="wx-row checks"><label><input id="set-sectors" type="checkbox" /> Light sectors</label><label><input id="set-featnames" type="checkbox" /> Names and labels</label></div>
@@ -381,6 +423,10 @@
         <div class="wx-note">Averages the Signal K readings over the time chosen, for the boat on the chart, its lines and the instruments. Position is never damped.</div>
         <h3 id="sk-section">Signal K</h3>
         <div class="wx-row"><span id="sk-detail" class="grow wx-note">—</span></div>
+        <h3>Replay a log</h3>
+        <div class="wx-row"><select id="replay-log" class="grow" title="Signal K sessions are logged while RaceNav runs; play one back in place of the live data"></select>
+          <button id="replay-play" title="Play this log in place of the live Signal K data">Replay</button></div>
+        <div id="replay-note" class="wx-note">Every Signal K session is logged. A replay drives the boat, instruments, AIS targets and alarms as if live; live data waits until it stops. Tracks are not recorded from a replay.</div>
         <div class="wx-note">The buttons at the top right: the Signal K status (green receiving, amber connected but quiet, red not connected), Live ▶ / Paused ❚❚, Follow and Clear track. Pause to plan: right-click the chart to move the boat.</div>
       </section>
 
@@ -391,17 +437,36 @@
           <button id="inst-lock" title="Stop panels being moved by accident">Lock layout</button>
           <button id="inst-reset" title="Back to the default panels">Reset</button>
         </div>
+        <div class="wx-row"><button id="inst-cockpit" title="Open a second window of large readings for a screen at the helm (drag it to that screen, then Full screen)">Cockpit window</button><span class="grow wx-note">Large readings for a second screen; touch a reading to change it.</span></div>
         <div class="wx-row">
           <label class="grow" title="Hide or show every instrument panel (the floating time slider has its own box)"><input id="inst-all" type="checkbox" /> Show instrument panels</label>
           <label title="Show or hide the floating time slider"><input id="inst-slider" type="checkbox" /> Time slider</label>
         </div>
         <div class="wx-row"><label class="grow" title="Live: true (blue) and apparent (orange) wind on the boat. Planning: on the cursor, from the GRIB shown"><input id="inst-arrows" type="checkbox" /> Wind arrows (boat when live, cursor when planning)</label></div>
         <ul id="inst-panels" class="list"></ul>
+        <h3>Alarms</h3>
+        <div class="wx-row"><label class="grow"><input id="al-shallow" type="checkbox" /> Shallow water below (m)</label><input id="al-shallow-m" type="number" min="0" step="0.5" title="Empty: the safety depth (Chart panel)" /></div>
+        <div class="wx-row"><label class="grow" title="Bridges, overhead cables and pipelines on the chart ahead of the boat with less clearance than the air draft plus the margin"><input id="al-air" type="checkbox" /> Air draft, margin (m)</label><input id="al-air-margin" type="number" min="0" step="0.5" /></div>
+        <div id="al-air-note" class="wx-note"></div>
+        <div class="wx-row"><label class="grow"><input id="al-poslost" type="checkbox" /> Position lost (no GPS for 30 s)</label></div>
+        <div class="wx-row"><label class="grow" for="anc-radius">Anchor watch, radius (m)</label><input id="anc-radius" type="number" min="10" step="5" /><button id="anc-drop">Drop anchor here</button></div>
+        <div id="anc-state" class="wx-note"></div>
+        <div class="wx-row"><label class="grow" for="al-volume">Alarm volume</label><input id="al-volume" type="range" min="0" max="100" step="5" /><button id="al-test" title="Play the alarm sound">Test</button></div>
+        <div class="wx-note">Alarms show in a banner at the top of the chart and sound until silenced. AIS collision and distress alarms are set in Fleet › AIS. Alarms work from live data (or a replay), not in planning.</div>
         <div class="wx-note">Drag a panel by its grip (⋮⋮); double-click or double-tap the grip to fold it down to a small title, and again to open it. Tap a reading to change what it shows, add one next to it, resize or remove it. The layout is kept on this PC, so the chart table and the cockpit screen can differ.</div>
       </section>
     </aside>
 
     <!-- Always on top, top right: Signal K status and plotting controls, sized like the zoom buttons -->
+    <div id="alarm-banner" hidden></div>
+    <div id="replay-bar" hidden>
+      <button id="rp-play" title="Pause or play">❚❚</button>
+      <select id="rp-speed" title="Replay speed"><option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option><option value="30">30×</option><option value="60">60×</option><option value="300">300×</option></select>
+      <input id="rp-pos" type="range" min="0" max="1000" value="0" title="Go to a time in the log" />
+      <span id="rp-time">—</span>
+      <button id="rp-stop" title="Stop the replay and go back to live data">✕</button>
+    </div>
+    <button id="mob-btn" title="Man overboard: mark the boat's position now, with bearing, distance and time from it until cleared">MOB</button>
     <div id="toolbar" class="ctl-col">
       <button id="sk-state" class="bad" aria-label="Signal K status" title="Signal K: connecting…">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="14" r="2" class="fill"/><path d="M8.5 10.5a5 5 0 0 1 7 0M5.6 7.6a9 9 0 0 1 12.8 0"/><path class="slash" d="M5 19L19 5"/></svg></button>
@@ -409,6 +474,8 @@
         <svg viewBox="0 0 24 24"><path class="play fill" d="M8 5.5v13l10-6.5z"/><path class="pause" d="M9 6v12M15 6v12"/></svg></button>
       <button id="follow" class="on" aria-label="Follow the boat" title="Follow: keep the boat centred (dragging the chart turns it off)">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="1.6" class="fill"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
+      <button id="palette-btn" aria-label="Day or night colours" title="Colours: day (click for dusk, night red, night green)">
+        <svg viewBox="0 0 24 24"><path class="sun" d="M12 7a5 5 0 1 0 0 10a5 5 0 1 0 0-10zM12 1v3M12 20v3M1 12h3M20 12h3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/><path class="moon" d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg></button>
       <button id="clear-track" aria-label="Clear the track trail" title="Clear the trail behind the boat">
         <svg viewBox="0 0 24 24"><path d="M3 18c3-1 4-5 7-6s5 1 7-1" stroke-dasharray="2.2 2.2"/><path d="M15 15l6 6M21 15l-6 6"/></svg></button>
     </div>

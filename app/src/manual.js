@@ -19,7 +19,7 @@ export const PANE_HELP = {
   weather: ["reference", "Weather"],
   course: ["reference", "Marks, routes and the library"],
   routing: ["reference", "Routing"],
-  fleet: ["reference", "Measuring and fleet tracking"],
+  fleet: ["reference", "AIS targets"],
   library: ["reference", "Marks, routes and the library"],
   boat: ["reference", "Your boat"],
   chart: ["reference", "Charts"],

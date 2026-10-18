@@ -3,7 +3,7 @@ import * as maplibregl from "maplibre-gl";
 // Bundle MapLibre's web worker with the app so the map works offline.
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 maplibregl.setWorkerUrl(workerUrl);
-import { listen } from "@tauri-apps/api/event";
+import { listen, emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { setupWeather, barbImage } from "./weather.js";
 import { setupChartFeatures, featureImage } from "./chartfeatures.js";
@@ -24,6 +24,11 @@ import { setupGribDownload } from "./gribdl.js";
 import { setupRail } from "./ui.js";
 import { setupManual } from "./manual.js";
 import { setupData } from "./data.js";
+import { setupReplay } from "./replay.js";
+import { setupPalette } from "./palette.js";
+import { setupAlarms } from "./alarms.js";
+import { setupAis } from "./ais.js";
+import { setupStations } from "./stations.js";
 import { setupInstruments, waypointData, targetAt } from "./instruments.js";
 import { setupLibrary, labelImage } from "./library.js";
 
@@ -175,6 +180,20 @@ map.on("load", () => {
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
   window.__weather = weather; // debugging handle
   setupData(map, { toast, reloadTiles: reloadChartTiles });
+  setupPalette();
+  alarms = setupAlarms(map, {
+    getBoat: () => ({ pos: lastBoat, v: vessel, live: live && signalKActive(), connected: skConnected || replayOn, fresh: Date.now() - lastFeed < 5000 }),
+    getSafetyDepth: () => settings.safetyDepth,
+    getAirDraft: () => Number(boat.get().airDraft) || 0,
+  });
+  setupStations(map, { weather });
+  document.getElementById("inst-cockpit").onclick = () => invoke("cockpit_open").catch((e) => toast?.(`Cockpit window: ${e}`, 4000));
+  setupAis(map, { alarms, ui, getOwn: () => ({ pos: lastBoat, cog: live ? vessel?.cog : null, sog: live ? vessel?.sog : 0, live: live && signalKActive() }) });
+  setupReplay({ onState: (on) => {
+    replayOn = on;
+    if (on && !live) liveBtn.click(); // a replay plays live
+    if (!on) { lastFeed = 0; }
+  } });
   library = setupLibrary(map, { ui });
   route = setupRoute(map, { library, getBoat: () => lastBoat, getArrivalNm: () => Number(document.getElementById("rt-radius").value) || 0.1 });
   routing = setupRouting(map, { weather, course: route, library, dock, ui, getBoat: () => lastBoat,
@@ -241,7 +260,9 @@ function feed() {
   const pts = routing?.activePoints();
   const target = pts ? targetAt(pts, boatTime()) : null;
   const v = live ? vessel : { ...vessel, lat: pos?.[1], lon: pos?.[0] };
-  inst.update({ v, dataAt: live ? lastData : 0, nav, wp, target, safetyDepth: settings.safetyDepth });
+  inst.update({ v, dataAt: live ? lastFeed : 0, nav, wp, target, safetyDepth: settings.safetyDepth });
+  // the cockpit window (if open) shows the same numbers and the alarms
+  emit("cockpit", { v, dataAt: live ? lastFeed : 0, nav, wp, target, safetyDepth: settings.safetyDepth, alarms: alarms?.list() ?? [] }).catch(() => {});
 }
 setInterval(feed, 1000);
 
@@ -319,7 +340,10 @@ document.getElementById("clear-track").onclick = () => { track = []; setData("tr
 let skConnected = false;
 let skDetail = "connecting…";
 let skSeen = false; // a status has arrived (else still connecting)
-let lastData = 0; // ms timestamp of the last vessel update
+let lastData = 0; // ms timestamp of the last live vessel update (the Signal K status)
+let lastFeed = 0; // last vessel update, live or replayed (what the boat and instruments show)
+let replayOn = false;
+let alarms = null;
 let lastRaw = null; // the last vessel update, for what is arriving
 let live = true;
 const SK_STALE_MS = 10000;
@@ -368,7 +392,7 @@ liveBtn.onclick = () => {
   showStatus();
   feed();
 };
-const signalKActive = () => live && skConnected && Date.now() - lastData < 15000;
+const signalKActive = () => live && (skConnected || replayOn) && Date.now() - lastFeed < 15000;
 
 /** Put the boat at a position by hand (planning, or when there is no Signal K). */
 function placeBoat(pos) {
@@ -449,12 +473,18 @@ map.on("movestart", () => { ctx.hidden = true; });
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") ctx.hidden = true; });
 
 const damping = createDamping((g) => Number(settings[{ motion: "dampMotion", wind: "dampWind", depth: "dampDepth" }[g]]) || 0);
-listen("vessel", ({ payload: raw }) => {
-  if (!skConnected) skConnected = true; // data proves the link is up
-  const fresh = !lastData || Date.now() - lastData >= SK_STALE_MS;
-  lastData = Date.now();
-  lastRaw = raw;
-  if (fresh) showStatus();
+listen("vessel", ({ payload }) => {
+  const raw = payload.v ?? payload;
+  if (payload.replay) {
+    if (!replayOn) return; // a late message after the replay stopped
+  } else {
+    if (!skConnected) skConnected = true; // data proves the link is up
+    const fresh = !lastData || Date.now() - lastData >= SK_STALE_MS;
+    lastData = Date.now();
+    lastRaw = raw;
+    if (fresh) showStatus();
+  }
+  lastFeed = Date.now();
   if (!live) return; // planning: leave the boat where it is
   const v = damping.push(raw);
   vessel = v;

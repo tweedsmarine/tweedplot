@@ -18,6 +18,7 @@ async fn main() {
                 v.cog.unwrap_or(f64::NAN),
                 v.sog.unwrap_or(f64::NAN)
             ),
+            Event::Other { context, values } => println!("{context}: {} values", values.len()),
         }
     }
 }

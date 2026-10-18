@@ -3,7 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 const KEY = "racenav.boat";
-const DEFAULTS = { polar: "", eff: 100, tack: 60, gybe: 60 };
+const DEFAULTS = { polar: "", eff: 100, tack: 60, gybe: 60, airDraft: 0 };
 
 export function setupBoat() {
   const $ = (id) => document.getElementById(id);
@@ -22,9 +22,9 @@ export function setupBoat() {
     save();
   }
   $("boat-polar").onchange = (e) => { boat.polar = e.target.value; save(); };
-  for (const [id, key] of [["boat-eff", "eff"], ["boat-tack", "tack"], ["boat-gybe", "gybe"]]) {
+  for (const [id, key] of [["boat-eff", "eff"], ["boat-tack", "tack"], ["boat-gybe", "gybe"], ["boat-air", "airDraft"]]) {
     $(id).value = boat[key];
-    $(id).onchange = (e) => { const v = Number(e.target.value); if (Number.isFinite(v)) { boat[key] = v; save(); } };
+    $(id).onchange = (e) => { const v = Number(e.target.value); if (Number.isFinite(v)) { boat[key] = v; save(); window.dispatchEvent(new Event("racenav-boat")); } };
   }
   loadPolars();
   return { get: () => ({ ...boat }) };

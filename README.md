@@ -13,7 +13,9 @@ Spec and roadmap: https://claude.ai/code/artifact/e37fa4c3-20c2-4aec-af8f-641714
 | `crates/grib` | GRIB2 decoding (simple and complex packing, bitmaps, Meltemus JSON section), wind/gust/MSLP/waves/currents in space and time | Working, matches ecCodes on Meltemus files; GRIB1 next |
 | `crates/routing` | Isochrone routing (modified isochrone method) round land and water shallower than the safety depth, multi-leg, tack/gybe penalties, currents | Working, tested |
 | `crates/chart` | LINZ GeoPackages (Topo50 coastline, depth areas, contours, soundings, all scale bands) served as vector tiles | Working, tested on the full LINZ download |
-| `crates/signalk` | Signal K WebSocket client, own-vessel state (position, COG/SOG, heading, BSP, depth, apparent and true wind, log), true wind worked out when the server has none, session log | Working, tested against Signal K playing a Morgane log |
+| `crates/signalk` | Signal K WebSocket client (`subscribe=all`), own-vessel state (position, COG/SOG, heading, BSP, depth, apparent and true wind, log), true wind worked out when the server has none, other contexts (AIS) passed on, session log and log replay | Working, tested against Signal K playing a Morgane log |
+| `crates/ais` | AIS targets: Signal K AIS contexts and the aisstream.io WebSocket feed, merged by MMSI, expiry, distress kinds from MMSI | Parsers tested; aisstream.io not yet tried live |
+| `crates/stations` | Weather observations: MetService WIS2 (OGC API), aviationweather.gov METAR, NOAA NDBC buoys | Parsers tested; not yet tried live |
 | `crates/library` | Mark library, routes, saved routings and tracks as JSON files; track recorder; GPX import and export | Working, tested |
 | `crates/tides` | LINZ tide predictions: daily tables, secondary ports from LINZ differences, cosine curves, downloader | Working, tested on LINZ files |
 | `app/` | Tauri shell + MapLibre GL front end: icon rail with one drawer at a time, chart, GRIB, routing, library, floating instrument panels | Working |
@@ -195,7 +197,7 @@ Tide stations appear on the chart: a filled "T" for a LINZ daily table (from zoo
 
 Secondary ports use LINZ's method: the reference port's highs and lows shifted by the mean time differences, heights `MSL + (h_ref − MSL_ref) × ratio`. Between highs and lows the curve is LINZ's cosine curve. These are not official tide tables (Maritime Rules Part 25), and not for navigation.
 
-## Fleet (YB race tracking)
+## Fleet (YB race tracking: Fleet › Race (YB))
 
 Fleet drawer: type the race's YB name (as in `yb.tl/<race>`, e.g. `ggr2026`) and Open. The app fetches the race setup (`cf.yb.tl/JSON/<race>/RaceSetup`: boats, classes, course) and downloads the full tracks (`cf.yb.tl/BIN/<race>/AllPositions3`: every published fix of every boat with YB's distance to finish; re-fetched every 6 h or with **Full tracks**), then polls the light Expedition position file (`yb.tl/<race>-expedition.txt`, latest fix per boat) every 5 min to 3 h. Every fix is kept in `racenav-data\tracking\<race>\`, so tracks build up from what this app has downloaded. Boats are shown at their latest fix or where they were at the weather slider's time; ★ follows a boat; class filter; names (at every zoom; where names would overlap some are left out, followed boats first); YB course. The Fleet table in the dock ranks by distance to finish along the YB course, with SOG/COG made good between fixes and distance in the last 24 h. **Copy course** puts the YB course in the Course panel; **Route** on a boat starts the routing from its last fix and time (dropping YB course points it has passed when the Course panel holds the YB course).
 
@@ -217,6 +219,15 @@ Floating panels of readings, always on top. Drag a panel by its grip; double-cli
 - **Show instrument panels** hides or shows them all; the tick beside each panel in the list hides or shows that one.
 - **Time slider**: a floating bar (GRIB choice, step back/forward, play, Now, what the shading shows, the slider and time) that can be dragged anywhere, so every drawer can stay closed. On by default; × hides it, the Instruments drawer brings it back.
 - **Wind arrows**: true wind (blue) and apparent wind (orange), pointing the way the wind blows with the tip on the boat, longer with more wind. With live Signal K data they sit on the boat (from the instruments); planning (paused, or no live data) they sit on the cursor: true wind from the GRIB shown, apparent wind only for a shown routing within 40 px of the cursor (its heading and boat speed there); away from a routing only the true wind is drawn.
+
+## Live data: replay, AIS, alarms, stations
+
+- **Replay** (Chart › Replay a log): plays a Signal K session log (`<app data>\logs\sk-*.log`, one `time<TAB>message` line each) in place of the live stream, with pause, speed, seek and stop (`signalk::replay`, commands `replay_logs/start/control/stop`). Live events are dropped while a replay runs; the track recorder ignores replays.
+- **AIS** (Fleet › AIS): Signal K AIS contexts and aisstream.io (free key; the subscription follows the chart view, up to 6°, at most every 5 s) merged in `ais::Targets`; changes go to the page every 2 s (`ais` event). CPA/TCPA in `app/src/ais.js`; collision alarm under a CPA within a TCPA (anchored/moored ignorable); AIS-SART/MOB/EPIRB (MMSI 970/972/974, or nav status 14) always alarm.
+- **Alarms** (`app/src/alarms.js`): banner + Web Audio tones until silenced; shallow water, anchor watch, air draft against charted VERCLR/VERCSA of bridges, overhead cables and pipelines (`chart::ChartStore::clearances`, command `chart_clearances`), position lost, own MOB (also saved as a library mark, group MOB). Other modules raise their own (`alarms.raise/clear`).
+- **Weather stations** (Weather › Weather stations and buoys): `stations_latest` (10-minute cache per source) and `station_history`; the popup plots observed wind, gusts and pressure against `grib_meteogram` for the loaded GRIBs, with the mean forecast-minus-observed difference.
+- **Display colours**: day, dusk, night red, night green: CSS filters on the whole page (invert, then an SVG colour matrix to one channel), with already-dark elements inverted first so they stay dark (`app/src/palette.js`).
+- **Cockpit window** (Instruments › Cockpit window, `cockpit.html`): a second Tauri window of large tiles; the chart window emits `cockpit` (the instrument context and the active alarms) once a second.
 
 ## User manual
 
