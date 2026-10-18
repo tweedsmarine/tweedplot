@@ -320,12 +320,22 @@ impl ChartStore {
         let mut rows = st.query([fid]).ok()?;
         let r = rows.next().ok()??;
         let mut attrs = Vec::new();
+        let mut raw: Vec<(String, String)> = Vec::new();
         for (i, c) in cols.iter().enumerate() {
             let Some(v) = r.get_ref(i).ok().and_then(text) else { continue };
             if v.trim().is_empty() {
                 continue;
             }
             attrs.push((s57::attr_name(c), s57::describe(c, &v)));
+            raw.push((c.to_ascii_lowercase(), v));
+        }
+        // a light: its chart characteristic first ("Fl(4) W 30s 29m 14M")
+        if class.code == "LIGHTS" {
+            let vals: Vec<Option<String>> = s57::TILE_COLS.iter().map(|n| raw.iter().find(|(k, _)| k == n).map(|(_, v)| v.clone())).collect();
+            let lbl = s57::light_label(&[s57::Light::from_attrs(&s57::Attrs(&vals))]);
+            if !lbl.is_empty() {
+                attrs.insert(0, ("Characteristic".to_string(), lbl));
+            }
         }
         if let Some(i) = attrs.iter().position(|(k, _)| k == "Name") {
             let n = attrs.remove(i);
