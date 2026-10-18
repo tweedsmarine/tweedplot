@@ -223,15 +223,16 @@ map.on("load", () => {
   feed();
 });
 
-/** Planning: wind arrows at the cursor. True wind from the GRIB; apparent wind only
- * where a shown routing passes near the cursor (its heading and boat speed there):
- * without a routing there is no boat, so no apparent wind. */
+/** Planning: wind arrows at the cursor. True wind from the GRIB at the slider time; near
+ * a shown routing, the true wind, heading and boat speed of its nearest point (at that
+ * point's time) and the apparent wind from them. Without a routing there is no boat,
+ * so no apparent wind. */
 let arrowSeq = 0;
 async function planningArrows(row, at) {
   if (!arrows) return;
   if (!row || !at || row.tws == null || row.twd == null) { arrows.clear(); return; }
   const seq = ++arrowSeq;
-  const tw = { twd: row.twd, tws: row.tws };
+  let tw = { twd: row.twd, tws: row.tws };
   let hdg = null, bsp = null;
   const pts = routing?.activePoints();
   if (pts?.length) {
@@ -242,7 +243,12 @@ async function planningArrows(row, at) {
       const d = (q.x - c.x) ** 2 + (q.y - c.y) ** 2;
       if (d < bd) { bd = d; best = p; }
     }
-    if (best) { hdg = best.heading; bsp = best.bsp; }
+    // on a routing, show the wind the routing had there (its time, not the slider's),
+    // so the arrows agree with the point's popup
+    if (best) {
+      hdg = best.heading; bsp = best.bsp;
+      if (Number.isFinite(best.twd) && Number.isFinite(best.tws)) tw = { twd: best.twd, tws: best.tws };
+    }
   }
   if (seq !== arrowSeq || signalKActive()) return;
   arrows.planning(at, tw, hdg, bsp);
