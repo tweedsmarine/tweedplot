@@ -39,6 +39,12 @@ npm run tauri dev    # first build takes several minutes; later ones are quick
 
 The app connects to `ws://localhost:3000/signalk/v1/stream?subscribe=self`. To use another server, set `RACENAV_SK_URL` before starting. Every Signal K message is logged to `%APPDATA%\nz.tweedsmarine.racenav\logs\sk-<date>-<time>Z.log`.
 
+## Windows builds (GitHub Actions)
+
+- `.github/workflows/build.yml`: every push to `main` (or **Run workflow** on the Actions tab) runs the Rust tests and builds the NSIS installers for **x64** (`windows-latest`) and **ARM64** (`windows-11-arm`, native). They are on the run page under Artifacts for 30 days.
+- `.github/workflows/release.yml`: push a tag `vX.Y.Z` (matching `version` in `app/src-tauri/tauri.conf.json`) and both installers go on a draft pre-release; check it, add notes, Publish.
+- The installers are not code-signed: SmartScreen warns until they are (More info › Run anyway).
+
 ## Chart data
 
 The app reads LINZ GeoPackage downloads (zipped as downloaded is fine) from `RACENAV_CHART_DIR`, else `C:\dev\racenav-data\linz`, else `%APPDATA%\nz.tweedsmarine.racenav\charts`. On the first run it unzips them into a `.unzipped` folder beside the zips (about 600 MB for all bands); after that, start-up takes a couple of seconds. Layers used:

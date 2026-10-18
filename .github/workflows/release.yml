@@ -1,0 +1,52 @@
+# A tagged release: push a tag like v0.2.0 (matching the version in
+# app/src-tauri/tauri.conf.json) and the x64 and ARM64 installers are built and
+# put on a draft GitHub release. Check it, write the notes, then Publish.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  windows:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+          - arch: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.arch }}
+      - name: Front-end dependencies
+        working-directory: app
+        run: npm ci
+      - name: Build and attach to the draft release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: app
+          tauriScript: npx tauri
+          tagName: v__VERSION__
+          releaseName: RaceNav v__VERSION__
+          releaseBody: |
+            Alpha test build. Not for navigation.
+            racenav_*_x64-setup.exe for most Windows PCs; racenav_*_arm64-setup.exe for Windows on Arm (Snapdragon, Surface Pro X …).
+            The installer is not code-signed yet: Windows SmartScreen will warn ("Windows protected your PC") — choose More info › Run anyway.
+          releaseDraft: true
+          prerelease: true
