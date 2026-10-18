@@ -21,7 +21,10 @@
 //! or the routing's), "as close as possible" (a 0.01 NM circle), or rounded to
 //! port or starboard: then the leg ends on crossing the line abeam of the mark
 //! on the side the boat must pass, at least the mark's clearance off, and the
-//! mark is a disc the boat may not cut through on that leg and the next.
+//! mark is a disc the boat may not cut through on that leg and the next. When
+//! the course turns towards that side (the mark is inside the turn), the leg
+//! goes on round the mark until it also crosses the line abeam of the mark on
+//! the way out to the next one, so the route really rounds it.
 //!
 //! Limits drop parts of the fan: headings outside ±`fan_deg` of the bearing to
 //! the mark, true wind angles outside `min_twa`..`max_twa`; and points where
@@ -435,7 +438,39 @@ pub fn route_marks(
         if i > 0 {
             leg_barriers.discs.extend(disc(&marks[i - 1]));
         }
-        let leg = route_leg(from, t, mark.pos, goal, polar, wind, obstacles, &leg_barriers, p, &mut res);
+        let mut leg = route_leg(from, t, mark.pos, goal, polar, wind, obstacles, &leg_barriers, p, &mut res);
+        // Rounding: crossing the line abeam on the way in is only half of it. When the
+        // course turns towards the mark's side (round it, not just past it), the leg
+        // carries on round the mark until it crosses the line abeam on the way out.
+        if let (Some((lat, lon, ta)), Goal::Ray { dir: dir_in, clear, .. }, Some(next)) = (leg.arrived, goal, marks.get(i + 1)) {
+            let out = mark.pos.bearing_to(&next.pos);
+            let stbd = mark.rounding == Rounding::Starboard;
+            let dir_out = norm360(if stbd { out - 90.0 } else { out + 90.0 });
+            // angle swept round the mark, clockwise when left to starboard
+            let sweep = if stbd { norm360(dir_out - dir_in) } else { norm360(dir_in - dir_out) };
+            if mark.pos.distance_to(&next.pos) > 1e-6 && sweep > 20.0 && sweep <= 200.0 {
+                let vmax = polar.speeds.iter().flatten().fold(0.0f64, |a, &b| a.max(b)) * p.efficiency;
+                let auto = (clear.max(0.05) / vmax.max(1.0) * 3600.0).clamp(120.0, 300.0);
+                let sub_p = Params { step_s: if p.step_s > 0.0 { p.step_s.min(auto) } else { auto }, ..p.clone() };
+                let aim = mark.pos.destination(dir_out, clear * 1.2 + 0.02);
+                let goal_out = Goal::Ray { m: mark.pos, dir: dir_out, fwd: out, clear };
+                let round = route_leg(LatLon::new(lat, lon), ta, aim, goal_out, polar, wind, obstacles, &leg_barriers, &sub_p, &mut res);
+                // one leg: the way in, then round the mark
+                if !leg.points.is_empty() && !round.points.is_empty() {
+                    leg.points.pop();
+                }
+                leg.points.extend(round.points);
+                leg.leg.distance_nm += round.leg.distance_nm;
+                leg.leg.tacks += round.leg.tacks;
+                leg.leg.gybes += round.leg.gybes;
+                leg.leg.arrival = round.leg.arrival;
+                leg.arrived = round.arrived;
+                if round.arrived.is_none() {
+                    leg.status = round.status;
+                    leg.message = round.message;
+                }
+            }
+        }
         let n = res.legs.len();
         res.legs.push(leg.leg);
         // drop the duplicate join point between legs
@@ -1069,8 +1104,8 @@ mod tests {
         MarkSpec { pos, rounding, radius_nm: Some(0.2) }
     }
 
-    /// A mark on the way, then a finish to the north-west: rounding to port the
-    /// route passes east of the mark; to starboard it goes round the west side.
+    /// A mark on the way, then a finish to the west: rounding to port the route
+    /// goes up the east side and over the top; to starboard it passes the west side.
     #[test]
     fn rounding_sides() {
         let pol = test_polar();
@@ -1086,7 +1121,15 @@ mod tests {
             let leg1_end = res.legs[0].arrival.unwrap();
             let pt = res.points.iter().find(|q| q.t == leg1_end).copied().unwrap_or(*res.points.iter().min_by_key(|q| (q.t - leg1_end).abs()).unwrap());
             let dx = (pt.lon - m.lon) * 60.0 * m.lat.to_radians().cos();
-            assert!(if east { dx > 0.19 } else { dx < -0.19 }, "{r:?}: leg 1 ends {dx:.2} NM east of the mark");
+            let dy = (pt.lat - m.lat) * 60.0;
+            if east {
+                // to port the course turns round the mark: in up the east side, leg 1 ends north of it
+                assert!(dy > 0.19, "{r:?}: leg 1 ends {dy:.2} NM north of the mark");
+                assert!(res.points.iter().any(|q| (q.lon - m.lon) * 60.0 * m.lat.to_radians().cos() > 0.19 && (q.lat - m.lat).abs() * 60.0 < 0.5));
+            } else {
+                // to starboard the mark is outside the turn: passing it on the west side is enough
+                assert!(dx < -0.19, "{r:?}: leg 1 ends {dx:.2} NM east of the mark");
+            }
             // no point of the route within the clearance of the mark
             for q in &res.points {
                 let d = LatLon::new(q.lat, q.lon).distance_to(&m);
@@ -1096,6 +1139,36 @@ mod tests {
         // through: the route just touches the arrival circle
         let res = run(Rounding::Through);
         assert_eq!(res.status, "arrived");
+    }
+
+    /// Out to a mark and back: the route goes right round it (over the top), on
+    /// the side asked, rather than touching the line abeam and turning back.
+    #[test]
+    fn rounds_and_returns() {
+        let pol = test_polar();
+        let start = LatLon::new(-41.0, 173.0);
+        let m = start.destination(0.0, 6.0);
+        let fin = start.destination(0.0, 0.5);
+        let wind = SteadyWind { tws: 10.0, twd: 90.0 }; // beam reach both ways
+        let p = Params { step_s: 300.0, ..Params::default() };
+        let k = m.lat.to_radians().cos();
+        for (r, west_in) in [(Rounding::Starboard, true), (Rounding::Port, false)] {
+            let res = route_marks(start, 0, &[spec(m, r), MarkSpec::at(fin)], &pol, &wind, None, &Barriers::default(), &p);
+            assert_eq!(res.status, "arrived", "{r:?}: {}", res.message);
+            assert_eq!(res.legs.len(), 2);
+            let north = res.points.iter().map(|q| (q.lat - m.lat) * 60.0).fold(f64::MIN, f64::max);
+            assert!(north > 0.15, "{r:?}: gets only {north:.2} NM north of the mark");
+            // in on one side, back on the other
+            let t1 = res.legs[0].arrival.unwrap();
+            let before: Vec<_> = res.points.iter().filter(|q| q.t < t1 && (q.lat - m.lat) * 60.0 > -1.0 && q.lat < m.lat).collect();
+            let after: Vec<_> = res.points.iter().filter(|q| q.t > t1 && (q.lat - m.lat) * 60.0 > -1.0 && q.lat < m.lat).collect();
+            let side = |v: &Vec<&RoutePoint>| v.iter().map(|q| (q.lon - m.lon) * 60.0 * k).sum::<f64>() / v.len().max(1) as f64;
+            assert!(!before.is_empty() && !after.is_empty(), "{r:?}");
+            if west_in { assert!(side(&before) < 0.0 && side(&after) > 0.0, "{r:?}") } else { assert!(side(&before) > 0.0 && side(&after) < 0.0, "{r:?}") }
+            for q in &res.points {
+                assert!(LatLon::new(q.lat, q.lon).distance_to(&m) > 0.15, "{r:?}: cuts the mark");
+            }
+        }
     }
 
     /// A mark that is the island itself can be rounded, but not passed through.

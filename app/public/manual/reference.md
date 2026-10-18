@@ -295,6 +295,8 @@ The list shows each leg's distance. **↑ ↓** reorder marks; **✕** takes a m
 | Leave to starboard | The same, mark on your right | Green ring |
 | As close as possible | Reach within 0.01 NM (about 20 m): a fishing spot, a mooring, a fuel berth | Black ring |
 
+When the course turns towards the mark's side (the mark is inside the turn, as at a windward mark or an out-and-back turning mark), the routing goes right round it and only finishes the leg once it is past the mark on the way to the next one. When the course turns away from that side, passing the mark on the correct side is enough.
+
 Use the rounding sides for race marks and headlands you must keep off; use a generous radius for marks you only need to pass near (an offshore waypoint) so the routing is not forced through a single point.
 
 **Mark types and points of interest**

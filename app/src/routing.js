@@ -12,6 +12,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { fmt } from "./weather.js";
 import { routingStats, STATS, hm } from "./stats.js";
 import { setupGates } from "./gates.js";
+import { apparent } from "./windarrows.js";
+
+/** "AWA 77° port · AWS 7.1 kn" line for a routing point (the orange arrow). */
+function awText(p) {
+  if (![p.twd, p.tws, p.heading, p.bsp].every(Number.isFinite)) return "";
+  const a = apparent(p.twd, p.tws, p.heading, p.bsp);
+  const awa = ((a.awd - p.heading + 540) % 360) - 180;
+  return `AWA ${Math.abs(awa).toFixed(0)}° ${awa >= 0 ? "stbd" : "port"} · AWS ${a.aws.toFixed(1)} kn<br>`;
+}
 
 const OPTS_KEY = "racenav.route"; // kept from earlier versions: step, radius, current
 const LIMIT_DEFAULTS = { fan: 180, hstep: 4, mintws: 0, maxtws: 0, maxhs: 0, mintwa: 0, maxtwa: 180, barriers: true };
@@ -406,7 +415,7 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
     const side = p.twa >= 0 ? "stbd" : "port";
     popup.setLngLat([p.lon, p.lat]).setHTML(
       `<div class="rt-popup"><b>${fmt(p.t)}</b><br>HDG ${pad3(p.heading)}° · TWA ${Math.abs(p.twa).toFixed(0)}° ${side}<br>` +
-      `TWS ${p.tws.toFixed(1)} kn from ${pad3(p.twd)}°<br>BSP ${p.bsp.toFixed(1)} kn · SOG ${p.sog.toFixed(1)} kn</div>`).addTo(map);
+      `TWS ${p.tws.toFixed(1)} kn from ${pad3(p.twd)}°<br>${awText(p)}BSP ${p.bsp.toFixed(1)} kn · SOG ${p.sog.toFixed(1)} kn</div>`).addTo(map);
     if (opts.hoverTime && weather.setTime) weather.setTime(p.t);
   });
   map.on("mouseleave", "rt-pts", () => popup.remove());
