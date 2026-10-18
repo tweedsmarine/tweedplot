@@ -200,6 +200,12 @@ Floating panels of readings, always on top. Drag a panel by its grip; double-cli
 - **Time slider**: a floating bar (GRIB choice, step back/forward, play, Now, what the shading shows, the slider and time) that can be dragged anywhere, so every drawer can stay closed. On by default; × hides it, the Instruments drawer brings it back.
 - **Wind arrows**: true wind (blue) and apparent wind (orange), pointing the way the wind blows with the tip on the boat, longer with more wind. With live Signal K data they sit on the boat (from the instruments); planning (paused, or no live data) they sit on the cursor: true wind from the GRIB shown, apparent wind for the heading and polar speed of the active routing within 40 px of the cursor, else for a course from the cursor to the end of the nearest course leg (polar speed × efficiency).
 
+## User manual
+
+The manual is built into the app: **Manual** on the rail (or F1) opens it in a panel on the right, and the **?** in each drawer's title bar opens it at that drawer's section. Tabs: Reference, Route planning, Weather routing, Glossary; contents, search across every tab, pictures and diagrams full size on click, Wide. External links open in the browser (`open_url` allows mailto:, http: and https: only).
+
+The text is written as a Claude Doc ("RaceNav User Manual") and bundled from `app/public/manual` (Markdown, screenshots in `img/`, diagrams as inline SVG in `fig/`), so every build carries the manual for its own version and it works offline. To update it: export each tab as Markdown, then `python tools/manual/import.py <exports> <screenshots> tools/manual/fig`; the script turns the export's picture and diagram placeholders back into images (by alt text) and SVGs (by caption). The diagram sources are in `tools/manual/fig` (`*.jsx`, rendered with `render.mjs`, needs esbuild). The viewer is `app/src/manual.js` (uses `marked`).
+
 ## Front-end layout
 
 - Rail + one drawer (`ui.js`): controls. Panes: Weather, Course (`route.js`), Routing (`routing.js`), Library, Boat (`boat.js`), Chart, Instruments.

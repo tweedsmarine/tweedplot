@@ -104,11 +104,13 @@ async fn gribdl_start(app: tauri::AppHandle, req: gribdl::Request) -> Result<ser
     res?
 }
 
-/// Open a mailto: link (a Saildocs request) in the default mail program.
+/// Open a mailto: link (a Saildocs request) in the mail program, or a web link from the manual in the browser.
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
-    if !url.starts_with("mailto:") || url.chars().any(|c| c.is_control() || c == '"') {
-        return Err("only mailto: links".into());
+    // mail (Saildocs requests) and web links from the manual; nothing that could run a program
+    let ok = url.starts_with("mailto:") || url.starts_with("https://") || url.starts_with("http://");
+    if !ok || url.chars().any(|c| c.is_control() || (c.is_whitespace() && !url.starts_with("mailto:")) || c == '"') {
+        return Err("only mailto: and web links".into());
     }
     #[cfg(windows)]
     let r = std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", &url]).spawn();

@@ -22,6 +22,7 @@ import { createDamping } from "./damping.js";
 import { setupFleet } from "./fleet.js";
 import { setupGribDownload } from "./gribdl.js";
 import { setupRail } from "./ui.js";
+import { setupManual } from "./manual.js";
 import { setupInstruments, waypointData, targetAt } from "./instruments.js";
 import { setupLibrary, labelImage } from "./library.js";
 
@@ -137,6 +138,12 @@ let route = null; // the course being edited
 let routing = null;
 let library = null;
 const ui = setupRail(map);
+
+// The user manual (bundled with the app): rail button, F1, ? in each drawer.
+const manual = setupManual();
+document.getElementById("manual-btn").onclick = () => manual.toggle();
+manual.onToggle((on) => document.getElementById("manual-btn").classList.toggle("on", on));
+document.getElementById("drawer-help").onclick = () => manual.help(ui.current());
 const inst = setupInstruments();
 const boat = setupBoat();
 const dock = setupDock(map);

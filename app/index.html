@@ -19,12 +19,13 @@
       <button data-pane="boat" title="Boat and polar"><svg viewBox="0 0 24 24"><path d="M12 3v13"/><path d="M12 4l7 11h-7"/><path d="M11 6L5 15h6"/><path d="M3 18h18l-2 3H5z"/></svg><span>Boat</span></button>
       <button data-pane="chart" title="Chart and Signal K"><svg viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></svg><span>Chart</span></button>
       <button data-pane="inst" title="Instrument panels"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 13l4-4"/><path d="M12 5v2M5 13h2M17 13h2"/></svg><span>Instr.</span></button>
+      <button id="manual-btn" class="rail-action" title="User manual (F1)"><svg viewBox="0 0 24 24"><path d="M4 5.5C6.5 4.5 9.5 4.5 12 6c2.5-1.5 5.5-1.5 8-.5v13c-2.5-1-5.5-1-8 .5-2.5-1.5-5.5-1.5-8-.5z"/><path d="M12 6v13.5"/></svg><span>Manual</span></button>
       <button id="ruler-btn" class="rail-action" title="Ruler: click points to measure bearing and distance, double-click to finish"><svg viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg><span>Ruler</span></button>
       <button id="centre-boat" class="rail-action" title="Centre the chart on the boat"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><path d="M12 8.5l2.2 6h-4.4z" fill="currentColor"/></svg><span>Centre</span></button>
     </nav>
 
     <aside id="drawer" hidden>
-      <header><h2 id="drawer-title"></h2><button id="drawer-close" title="Close (Esc)">✕</button></header>
+      <header><h2 id="drawer-title"></h2><button id="drawer-help" title="Open the manual at this drawer (F1 for the whole manual)">?</button><button id="drawer-close" title="Close (Esc)">✕</button></header>
 
       <section class="pane" data-pane="weather" data-title="Weather">
         <div class="wx-row">
