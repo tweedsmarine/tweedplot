@@ -518,6 +518,9 @@ export function setupWeather(map, layers) {
       if (!display || !times.length) {
         map.getSource("wx-cells").setData(fc([]));
         map.getSource("wx-barbs").setData(fc([]));
+        map.getSource("wx-wavedir").setData(fc([]));
+        map.getSource("wx-isobars").setData(fc([]));
+        showCompareNote({}, null);
         return;
       }
       const b = map.getBounds();
