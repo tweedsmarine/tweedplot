@@ -23,6 +23,7 @@ import { setupFleet } from "./fleet.js";
 import { setupGribDownload } from "./gribdl.js";
 import { setupRail } from "./ui.js";
 import { setupManual } from "./manual.js";
+import { setupData } from "./data.js";
 import { setupInstruments, waypointData, targetAt } from "./instruments.js";
 import { setupLibrary, labelImage } from "./library.js";
 
@@ -80,6 +81,13 @@ const map = new maplibregl.Map({
     layers: [
       { id: "sea", type: "background", paint: { "background-color": css("--sea") } },
       { id: "grid", type: "line", source: "graticule", paint: { "line-color": "#9db8c8", "line-width": 0.5 } },
+      // World depths under the charts: Natural Earth (bundled) and downloaded ETOPO areas (not for navigation)
+      { id: "wdepth", type: "fill", source: "chart", "source-layer": "wdepth",
+        layout: { "fill-sort-key": ["+", ["*", ["get", "src"], 100000], ["get", "d"]] },
+        paint: { "fill-color": ["step", ["get", "d"], "#a6cdf0", 10, "#b7d8f2", 20, "#c9e1ee", 50, "#dcecf3", 200, "#e4f0f5",
+          1000, "#dbeaf2", 2000, "#d3e5ef", 3000, "#cbe0ec", 4000, "#c3dbe9", 5000, "#bbd6e6", 6000, "#b3d1e3"], "fill-antialias": false } },
+      { id: "wdcnt", type: "line", source: "chart", "source-layer": "wdcnt", minzoom: 7,
+        paint: { "line-color": "#8fa9b8", "line-width": 0.6, "line-opacity": 0.8 } },
       // LINZ hydrographic chart data (not for navigation)
       { id: "depare", type: "fill", source: "chart", "source-layer": "depare",
         layout: { "fill-sort-key": ["get", "band"] },
@@ -166,6 +174,7 @@ map.on("load", () => {
   features = setupChartFeatures(map, { before: "track", safetyContour: settings.safetyContour });
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
   window.__weather = weather; // debugging handle
+  setupData(map, { toast });
   library = setupLibrary(map, { ui });
   route = setupRoute(map, { library, getBoat: () => lastBoat, getArrivalNm: () => Number(document.getElementById("rt-radius").value) || 0.1 });
   routing = setupRouting(map, { weather, course: route, library, dock, ui, getBoat: () => lastBoat,
@@ -238,7 +247,9 @@ setInterval(feed, 1000);
 
 // When chart data is present, the Topo50 coastline replaces the coarse land from zoom 6.
 function chartsLoaded(info) {
-  if (!info || !(info.tables > 0)) return;
+  if (!info) return;
+  window.dispatchEvent(new CustomEvent("racenav-charts", { detail: info }));
+  if (!(info.tables > 0)) return;
   map.setLayerZoomRange("land-nz", 4, 6);
   map.setLayerZoomRange("coast-nz", 4, 6);
   if (info.world_land) {
@@ -246,7 +257,8 @@ function chartsLoaded(info) {
     for (const id of ["land-world", "coast-world", "land-nz", "coast-nz"]) map.setLayoutProperty(id, "visibility", "none");
   }
   const src = map.getSource("chart");
-  if (src) src.setTiles([TILE_URL]); // reload tiles requested before the charts were open
+  // reload the tiles (asked for before the charts were open, or the chart data changed)
+  if (src) src.setTiles([TILE_URL + (TILE_URL.includes("?") ? "&" : "?") + "v=" + Date.now()]);
 }
 map.on("load", () => {
   invoke("chart_info").then(chartsLoaded).catch(() => {});

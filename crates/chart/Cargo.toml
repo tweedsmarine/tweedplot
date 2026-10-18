@@ -13,9 +13,13 @@ thiserror.workspace = true
 
 [dev-dependencies]
 tiny_http = "0.12"
+serde_json.workspace = true
 
 [[example]]
 name = "tileserve"
 
 [[example]]
 name = "chart_info"
+
+[[example]]
+name = "world_depth"

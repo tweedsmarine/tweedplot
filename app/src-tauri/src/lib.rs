@@ -16,7 +16,13 @@ use std::time::Duration;
 use tauri::http::{header, Response, StatusCode};
 use tauri::{Emitter, Manager};
 
-static CHARTS: OnceLock<Arc<chart::ChartStore>> = OnceLock::new();
+static CHARTS: std::sync::RwLock<Option<Arc<chart::ChartStore>>> = std::sync::RwLock::new(None);
+/// The open chart store (None until the charts are open).
+fn charts() -> Option<Arc<chart::ChartStore>> {
+    CHARTS.read().unwrap().clone()
+}
+static DATA_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static DATA_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static GRIBS: Mutex<BTreeMap<String, Arc<grib::GribFile>>> = Mutex::new(BTreeMap::new());
 static LIBRARY: OnceLock<library::Library> = OnceLock::new();
 /// Latest Signal K connection state, for a page that loads after the event was sent.
@@ -668,14 +674,14 @@ async fn route_compute(req: RouteRequest) -> Result<serde_json::Value, String> {
             None
         };
         let clock = std::time::Instant::now();
-        let raster = CHARTS.get().map(|store| {
+        let raster = charts().map(|store| {
             let mut b = [start.lon, start.lat, start.lon, start.lat];
             for m in &marks {
                 b = [b[0].min(m.lon), b[1].min(m.lat), b[2].max(m.lon), b[3].max(m.lat)];
             }
             // room to go round headlands: a quarter of the span, at least 0.1 degree
             let pad = ((b[2] - b[0]).max(b[3] - b[1]) * 0.25).clamp(0.1, 2.0);
-            routing::Raster::from_chart_with(store, [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad], req.safety_depth, 50.0, 16_000_000, req.avoid)
+            routing::Raster::from_chart_with(&store, [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad], req.safety_depth, 50.0, 16_000_000, req.avoid)
         });
         let raster_ms = clock.elapsed().as_millis();
         let r = match &wave_grib {
@@ -1223,6 +1229,169 @@ fn coast_dir(app: &tauri::AppHandle) -> PathBuf {
     app.path().app_data_dir().map(|p| p.join("coastline")).unwrap_or_else(|_| PathBuf::from("coastline"))
 }
 
+/// Downloaded ETOPO areas: `RACENAV_BATHY_DIR`, else `C:\dev\racenav-data\bathy` when
+/// racenav-data exists, else `<app data>\bathy`.
+fn bathy_dir(app: &tauri::AppHandle) -> PathBuf {
+    if let Ok(d) = std::env::var("RACENAV_BATHY_DIR") {
+        return PathBuf::from(d);
+    }
+    let dev = PathBuf::from(r"C:\dev\racenav-data");
+    if dev.is_dir() {
+        return dev.join("bathy");
+    }
+    app.path().app_data_dir().map(|p| p.join("bathy")).unwrap_or_else(|_| PathBuf::from("bathy"))
+}
+
+/// The folder holding the bundled world depths (`world_depth.gpkg`).
+fn world_depth_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let candidates = [
+        app.path().resource_dir().ok().map(|d| d.join("resources")),
+        app.path().resource_dir().ok(),
+        Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources")),
+    ];
+    candidates.into_iter().flatten().find(|d| d.join("world_depth.gpkg").is_file())
+}
+
+/// (Re)open the chart store in the background: LINZ charts, GSHHG coastline,
+/// bundled world depths and downloaded ETOPO areas. Emits chart-ready.
+fn open_charts(handle: tauri::AppHandle) {
+    let dir = chart_dir(&handle);
+    let mut dirs = vec![dir.clone(), coast_dir(&handle), bathy_dir(&handle)];
+    if let Some(w) = world_depth_dir(&handle) {
+        dirs.push(w);
+    }
+    // the first run with a GSHHG download builds the world coastline file (a minute or two)
+    let _ = handle.emit("chart-status", serde_json::json!({ "detail": "opening charts" }));
+    std::thread::spawn(move || match chart::ChartStore::open_dirs(&dirs) {
+        Ok(store) => {
+            let n = store.tables.len();
+            let world = store.has_world_land();
+            *CHARTS.write().unwrap() = Some(Arc::new(store));
+            let _ = handle.emit("chart-ready", serde_json::json!({ "tables": n, "dir": dir, "world_land": world }));
+        }
+        Err(e) => {
+            let _ = handle.emit("chart-ready", serde_json::json!({ "tables": 0, "dir": dir, "error": e.to_string() }));
+        }
+    });
+}
+
+/// What chart data is installed, for Chart › Chart data.
+#[tauri::command]
+fn data_status(app: tauri::AppHandle) -> serde_json::Value {
+    let coast = coast_dir(&app);
+    let gshhg = coast.join(gribdl::data::GSHHG_FILE).is_file() || coast.join("GSHHS_shp").is_dir();
+    let bdir = bathy_dir(&app);
+    let mut etopo = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(&bdir) {
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.extension().is_some_and(|x| x == "gpkg") {
+                if let Some((area, source, spacing)) = chart::bathy::area_info(&p) {
+                    let size = e.metadata().map(|m| m.len()).unwrap_or(0);
+                    etopo.push(serde_json::json!({ "file": p, "name": p.file_name().map(|n| n.to_string_lossy().into_owned()), "area": area, "source": source, "spacing": spacing, "bytes": size }));
+                }
+            }
+        }
+    }
+    let store = charts();
+    let linz = store.as_ref().map(|s| s.tables.iter().filter(|t| matches!(t.kind, chart::Kind::DepthArea | chart::Kind::Land | chart::Kind::Contour)).count()).unwrap_or(0);
+    serde_json::json!({
+        "world_depth": world_depth_dir(&app).is_some(),
+        "gshhg": gshhg,
+        "world_land": store.as_ref().is_some_and(|s| s.has_world_land()),
+        "gshhg_bytes": gribdl::data::GSHHG_BYTES,
+        "etopo": etopo,
+        "linz_tables": linz,
+        "dirs": { "charts": chart_dir(&app), "coast": coast, "bathy": bdir },
+        "busy": DATA_BUSY.load(std::sync::atomic::Ordering::SeqCst),
+    })
+}
+
+/// Points and stride an ETOPO download of `area` at `arcsec` would fetch.
+#[tauri::command]
+fn data_etopo_plan(area: [f64; 4], arcsec: u32) -> serde_json::Value {
+    let (points, stride) = gribdl::data::etopo_plan(area, arcsec);
+    serde_json::json!({ "points": points, "spacing": 15 * stride, "bytes": points * 4 })
+}
+
+fn data_guard() -> Result<(), String> {
+    if DATA_BUSY.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return Err("A chart data download is already running.".into());
+    }
+    DATA_CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
+    Ok(())
+}
+
+/// Download the GSHHG world coastline (about 150 MB) and reopen the charts (which builds it).
+#[tauri::command]
+async fn data_gshhg(app: tauri::AppHandle) -> Result<String, String> {
+    data_guard()?;
+    let dir = coast_dir(&app);
+    let h = app.clone();
+    let r = tauri::async_runtime::spawn_blocking(move || {
+        let progress = |done: u64, total: u64| {
+            let _ = h.emit("data-progress", serde_json::json!({ "stage": "World coastline (GSHHG)", "done": done, "total": total }));
+        };
+        gribdl::data::gshhg(&dir, &progress, &DATA_CANCEL).map(|p| p.to_string_lossy().into_owned()).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string());
+    DATA_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+    let path = r??;
+    open_charts(app);
+    Ok(path)
+}
+
+/// Download ETOPO 2022 depths for `area` at `arcsec` (15, 30, 60), write depth
+/// bands and contours to the bathy folder, and reopen the charts.
+#[tauri::command]
+async fn data_etopo(app: tauri::AppHandle, area: [f64; 4], arcsec: u32) -> Result<String, String> {
+    data_guard()?;
+    let dir = bathy_dir(&app);
+    let h = app.clone();
+    let r = tauri::async_runtime::spawn_blocking(move || {
+        let _ = h.emit("data-progress", serde_json::json!({ "stage": "Depths (ETOPO 2022): downloading", "done": 0, "total": 0 }));
+        let progress = |done: u64, _total: u64| {
+            let _ = h.emit("data-progress", serde_json::json!({ "stage": "Depths (ETOPO 2022): downloading", "done": done, "total": 0 }));
+        };
+        let g = gribdl::data::etopo(area, arcsec, &progress, &DATA_CANCEL).map_err(|e| e.to_string())?;
+        let _ = h.emit("data-progress", serde_json::json!({ "stage": "Depths (ETOPO 2022): drawing depth bands and contours", "done": 0, "total": 0 }));
+        let spacing = (g.dlat * 3600.0).round() as u32;
+        let grid = chart::bathy::Grid { west: g.west, south: g.south, dlon: g.dlon, dlat: g.dlat, nx: g.nx, ny: g.ny, z: g.z };
+        let f = |v: f64, pos: char, neg: char| format!("{:.1}{}", v.abs(), if v < 0.0 { neg } else { pos });
+        let name = format!("etopo_{}_{}_{}_{}_{spacing}s.gpkg", f(area[1], 'N', 'S'), f(area[3], 'N', 'S'), f(area[0], 'E', 'W'), f(area[2], 'E', 'W'));
+        chart::bathy::write_grid(&grid, &dir.join(name), &format!("ETOPO 2022 {spacing}\u{2033} (NOAA NCEI)"))
+            .map(|p| p.to_string_lossy().into_owned())
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string());
+    DATA_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+    let path = r??;
+    open_charts(app);
+    Ok(path)
+}
+
+/// Delete a downloaded ETOPO area (only files in the bathy folder) and reopen the charts.
+#[tauri::command]
+fn data_etopo_delete(app: tauri::AppHandle, file: String) -> Result<(), String> {
+    let p = PathBuf::from(&file);
+    let dir = bathy_dir(&app);
+    if p.parent().map(|d| d.canonicalize().ok()) != Some(dir.canonicalize().ok()) || p.extension().is_none_or(|x| x != "gpkg") {
+        return Err("not a downloaded depth area".into());
+    }
+    // the store has the file open: reopen without it first, then delete
+    *CHARTS.write().unwrap() = None;
+    std::fs::remove_file(&p).map_err(|e| e.to_string())?;
+    open_charts(app);
+    Ok(())
+}
+
+#[tauri::command]
+fn data_cancel() {
+    DATA_CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
 #[tauri::command]
 fn app_info(app: tauri::AppHandle) -> serde_json::Value {
     let log_dir = app.path().app_data_dir().ok().map(|p| p.join("logs"));
@@ -1237,7 +1406,7 @@ fn app_info(app: tauri::AppHandle) -> serde_json::Value {
 /// All attributes of a chart feature (table index and fid from the tiles), in words.
 #[tauri::command]
 fn chart_feature(t: usize, fid: i64) -> Option<serde_json::Value> {
-    let f = CHARTS.get()?.feature(t, fid)?;
+    let f = charts()?.feature(t, fid)?;
     Some(serde_json::json!({
         "code": f.code, "name": f.class_name, "band": f.band, "position": f.position,
         "attrs": f.attrs,
@@ -1247,7 +1416,7 @@ fn chart_feature(t: usize, fid: i64) -> Option<serde_json::Value> {
 /// Summary of the chart folder.
 #[tauri::command]
 fn chart_info() -> serde_json::Value {
-    match CHARTS.get() {
+    match charts() {
         Some(s) => serde_json::json!({
             "tables": s.tables.len(),
             "world_land": s.has_world_land(),
@@ -1266,7 +1435,7 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
         _ => None,
     };
     let builder = Response::builder().header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
-    match (parsed, CHARTS.get()) {
+    match (parsed, charts()) {
         (Some(((z, x), y)), Some(store)) => builder
             .header(header::CONTENT_TYPE, "application/x-protobuf")
             .body(store.tile(z, x, y).as_ref().clone()),
@@ -1285,7 +1454,8 @@ pub fn run() {
             routings_list, routing_get, routing_save, routing_delete, gpx_export, gpx_write, gpx_import,
             rec_status, rec_start, rec_stop, tracks_list, track_get, track_update, track_delete, track_export,
             yb_open, yb_refresh, yb_races, yb_history,
-            gribdl_models, gribdl_estimate, gribdl_start, gribdl_cancel, open_url, grib_combine
+            gribdl_models, gribdl_estimate, gribdl_start, gribdl_cancel, open_url, grib_combine,
+            data_status, data_etopo_plan, data_gshhg, data_etopo, data_etopo_delete, data_cancel
         ])
         .register_asynchronous_uri_scheme_protocol("chart", |_ctx, request, responder| {
             let path = request.uri().path().to_string();
@@ -1319,23 +1489,9 @@ pub fn run() {
                 Err(e) => eprintln!("library: {e}"),
             }
             // Charts: open in the background (the first run unzips the LINZ downloads).
-            let handle = app.handle().clone();
-            let dir = chart_dir(&handle);
-            let coast = coast_dir(&handle);
-            let _ = std::fs::create_dir_all(&coast);
-            // the first run with a GSHHG download builds the world coastline file (a minute or two)
-            let _ = handle.emit("chart-status", serde_json::json!({ "detail": "opening charts" }));
-            std::thread::spawn(move || match chart::ChartStore::open_dirs(&[dir.clone(), coast]) {
-                Ok(store) => {
-                    let n = store.tables.len();
-                    let world = store.has_world_land();
-                    let _ = CHARTS.set(Arc::new(store));
-                    let _ = handle.emit("chart-ready", serde_json::json!({ "tables": n, "dir": dir, "world_land": world }));
-                }
-                Err(e) => {
-                    let _ = handle.emit("chart-ready", serde_json::json!({ "tables": 0, "dir": dir, "error": e.to_string() }));
-                }
-            });
+            let _ = std::fs::create_dir_all(coast_dir(app.handle()));
+            let _ = std::fs::create_dir_all(bathy_dir(app.handle()));
+            open_charts(app.handle().clone());
 
             // Signal K
             let handle = app.handle().clone();

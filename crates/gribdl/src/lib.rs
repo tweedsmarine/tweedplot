@@ -14,6 +14,7 @@
 //!
 //! ECMWF open data (IFS, AIFS, IFS wave) comes as global files; see `ecmwf`.
 
+pub mod data;
 pub mod ecmwf;
 
 use std::io::Write;

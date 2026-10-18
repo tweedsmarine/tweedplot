@@ -321,6 +321,26 @@
         <div class="wx-row"><label class="grow" for="set-safety-contour">Safety contour (m)</label><input id="set-safety-contour" type="number" min="0" step="1" /></div>
         <div class="wx-row checks"><label title="Routing keeps off rocks, wrecks and obstructions that dry, are awash, or have less water than the safety depth (or an unknown depth)"><input id="set-avoid-dangers" type="checkbox" /> Route round dangers</label>
           <label title="Routing keeps out of charted marine farms"><input id="set-avoid-farms" type="checkbox" /> Route round marine farms</label></div>
+        <h3>Chart data</h3>
+        <div id="data-box">
+          <div class="data-item"><span class="dot" id="data-wd-dot"></span><span class="grow"><b>World depths</b>: Natural Earth, bundled (0, 200, 1000 … 10000 m)</span></div>
+          <div class="data-item"><span class="dot" id="data-gshhg-dot"></span><span class="grow"><b>World coastline</b>: <span id="data-gshhg-state">—</span></span>
+            <button id="data-gshhg" title="Download the GSHHG world coastline (every island, about 150 MB) from the University of Hawaiʻi or NOAA">Download</button></div>
+          <div class="data-item"><span class="dot" id="data-etopo-dot"></span><span class="grow"><b>Detailed depths</b> (ETOPO 2022) for areas you choose</span></div>
+          <ul id="data-etopo-list"></ul>
+          <div class="wx-row"><label class="grow" for="data-etopo-res">Detail</label>
+            <select id="data-etopo-res" title="Grid spacing: 15″ ≈ 460 m. Big areas are thinned automatically">
+              <option value="15">15″ (≈ 460 m)</option><option value="30">30″ (≈ 0.9 km)</option><option value="60">60″ (≈ 1.9 km)</option></select>
+            <button id="data-etopo" title="Download depths for the area shown on the chart">Get for chart view</button></div>
+          <div id="data-etopo-plan" class="wx-note"></div>
+          <div class="data-item"><span class="dot" id="data-linz-dot"></span><span class="grow"><b>NZ charts</b> (LINZ): <span id="data-linz-state">—</span></span>
+            <button id="data-linz" title="Open the LINZ Data Service in your browser (free account) to download the hydrographic layers as GeoPackage">LINZ…</button></div>
+          <div id="data-progress" class="progress" hidden><div class="bar"></div><span></span></div>
+          <div class="wx-row"><span id="data-status" class="grow wx-note"></span><button id="data-cancel" disabled>Cancel</button></div>
+          <details class="data-src"><summary>Sources and licences</summary>
+            <p>Natural Earth bathymetry: public domain (naturalearthdata.com). GSHHG coastline: Wessel &amp; Smith, University of Hawaiʻi and NOAA, LGPL 3, downloaded from its home site. ETOPO 2022: NOAA National Centers for Environmental Information, free to use and redistribute (doi:10.25921/fd45-gt74), fetched through NOAA CoastWatch ERDDAP. LINZ hydrographic data: Toitū Te Whenua LINZ, CC BY 4.0. World depths and ETOPO are drawn under the charts for orientation only: they are coarse or interpolated near the coast, and routing does not use them. Not for navigation.</p>
+          </details>
+        </div>
         <h3>Chart features</h3>
         <div class="wx-row checks"><label><input id="set-feat" type="checkbox" /> Lights, marks, dangers, areas</label></div>
         <div class="wx-row checks"><label><input id="set-sectors" type="checkbox" /> Light sectors</label><label><input id="set-featnames" type="checkbox" /> Names and labels</label></div>

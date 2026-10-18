@@ -19,6 +19,7 @@
 //!
 //! LINZ data: CC BY 4.0. GSHHG: LGPL. Not for navigation.
 
+pub mod bathy;
 pub mod clip;
 pub mod coast;
 pub mod geom;
@@ -56,6 +57,10 @@ pub enum Kind {
     Sounding,
     /// Another LINZ hydrographic layer (lights, buoys, rocks, areas...): see [`s57`].
     Feature,
+    /// World depth bands where there is no chart: band 0 = Natural Earth (light, small scales), 1 = Natural Earth, 2 = ETOPO area. See [`bathy`].
+    WorldDepth,
+    /// World depth contours (ETOPO areas).
+    WorldContour,
 }
 
 #[derive(Debug, Clone)]
@@ -205,6 +210,34 @@ impl ChartStore {
         let mut depare = Layer::new("depare");
         let mut depcnt = Layer::new("depcnt");
         let mut soundg = Layer::new("soundg");
+        let mut wdepth = Layer::new("wdepth");
+        let mut wdcnt = Layer::new("wdcnt");
+
+        // World depths (under the charts): Natural Earth everywhere (a lighter copy below
+        // zoom 4), ETOPO areas from zoom 4.
+        let has_lo = self.tables.iter().any(|t| t.kind == Kind::WorldDepth && t.band == 0);
+        let mut wd: Vec<&TableInfo> = self
+            .tables
+            .iter()
+            .filter(|t| t.kind == Kind::WorldDepth && if t.band == 0 { z < 4 } else if t.band == 1 { z >= 4 || !has_lo } else { z >= 4 })
+            .collect();
+        wd.sort_by_key(|t| t.band);
+        for t in wd {
+            self.query(t, bbox, &["depth"], |vals, g| {
+                if let Some(tg) = tp.polygons(&g) {
+                    wdepth.add(&tg, &[("d", Value::F64(vals[0].unwrap_or(0.0))), ("src", Value::UInt(t.band as u64))]);
+                }
+            });
+        }
+        if z >= 7 {
+            for t in self.tables.iter().filter(|t| t.kind == Kind::WorldContour) {
+                self.query(t, bbox, &["depth"], |vals, g| {
+                    if let Some(tg) = tp.lines(&g) {
+                        wdcnt.add(&tg, &[("d", Value::F64(vals[0].unwrap_or(0.0)))]);
+                    }
+                });
+            }
+        }
 
         let mut bands: Vec<&TableInfo> = self.tables.iter().filter(|t| z >= band_minzoom(t.band)).collect();
         bands.sort_by_key(|t| t.band);
@@ -269,7 +302,7 @@ impl ChartStore {
             });
         }
         let [far, fln, fpt, lsec] = self.render_features(&tp, z);
-        mvt::encode_tile(&[depare, depcnt, far, land, fln, soundg, lsec, fpt])
+        mvt::encode_tile(&[wdepth, wdcnt, depare, depcnt, far, land, fln, soundg, lsec, fpt])
     }
 
     fn query(&self, t: &TableInfo, b: [f64; 4], cols: &[&str], mut f: impl FnMut(&[Option<f64>], Geom)) {
@@ -416,6 +449,13 @@ fn geom_bounds(g: &Geom) -> [f64; 4] {
 
 fn classify(table: &str) -> Option<(Kind, u8)> {
     let t = table.to_ascii_lowercase();
+    match t.as_str() {
+        "wdepth_nelo" => return Some((Kind::WorldDepth, 0)),
+        "wdepth_ne" => return Some((Kind::WorldDepth, 1)),
+        "wdepth_etopo" => return Some((Kind::WorldDepth, 2)),
+        "wdcnt_etopo" => return Some((Kind::WorldContour, 1)),
+        _ => {}
+    }
     if let Some(r) = t.strip_prefix("gshhs_") {
         let i = coast::RESOLUTIONS.iter().position(|c| r.starts_with(*c) && r.len() == 1)?;
         return Some((Kind::WorldLand, i as u8 + 1));

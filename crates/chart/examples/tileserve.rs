@@ -8,7 +8,7 @@ fn main() {
     let server = tiny_http::Server::http(format!("0.0.0.0:{port}")).expect("bind");
     println!("serving {} tables on :{port}", store.tables.len());
     for req in server.incoming_requests() {
-        let parts: Vec<&str> = req.url().trim_start_matches('/').trim_end_matches(".pbf").split('/').collect();
+        let parts: Vec<&str> = req.url().split('?').next().unwrap_or("").trim_start_matches('/').trim_end_matches(".pbf").split('/').collect();
         let tile = match parts.as_slice() {
             [z, x, y] => match (z.parse(), x.parse(), y.parse()) {
                 (Ok(z), Ok(x), Ok(y)) => Some(store.tile(z, x, y)),

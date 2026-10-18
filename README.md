@@ -72,9 +72,19 @@ cargo run --release -p chart --example chart_info -- C:\dev\racenav-data\linz
 cargo run --release -p chart --example tileserve -- C:\dev\racenav-data\linz 7070
 ```
 
-## World coastline (GSHHG)
+## World coastline and depths
 
-The bundled world land is coarse (small islands missing). For a detailed one, download the GSHHG shapefiles, `gshhg-shp-2.3.7.zip` (about 150 MB, LGPL), from https://www.soest.hawaii.edu/pwessel/gshhg/ and put the zip (or the unpacked `GSHHS_shp` folder) in `C:\dev\racenav-data\coastline` (or `RACENAV_COAST_DIR`). On the next start the app builds `coastline\.unzipped\gshhg_land.gpkg` once (a minute or two), then draws land at five resolutions (crude at world scale to full, every island, from zoom 8) and routing avoids it. Inside NZ, LINZ Topo50 is used instead where it is loaded.
+Chart panel > **Chart data** shows what is installed and downloads the rest. Nothing here is used by routing except the GSHHG land; world and ETOPO depths are for orientation only.
+
+| Data | How | Where | Licence |
+| --- | --- | --- | --- |
+| World depths: Natural Earth 10 m bathymetry (0, 200, 1000 … 10000 m) | Bundled: `app/src-tauri/resources/world_depth.gpkg` (33 MB), built by `cargo run --release -p chart --example world_depth -- <geojson dir> <out.gpkg>` from the `ne_10m_bathymetry_*.geojson` files of nvkelso/natural-earth-vector | Installer resources | Public domain |
+| World coastline: GSHHG 2.3.7 shapefiles | **Download** (about 150 MB, from soest.hawaii.edu or the NOAA NGDC mirror), or put `gshhg-shp-2.3.7.zip` there yourself | `RACENAV_COAST_DIR`, else `C:\dev\racenav-data\coastline`, else app data `coast` | LGPL 3 |
+| Detailed depths: ETOPO 2022 15″ | **Get for chart view**: the area on screen from NOAA CoastWatch ERDDAP (`ETOPO_2022_v1_15s`, DAP2 binary), thinned to at most 6 M points, split at the date line. Written as `etopo_<S>_<N>_<W>_<E>_<n>s.gpkg` (depth bands, plus contours 5–5000 m) | `RACENAV_BATHY_DIR`, else `C:\dev\racenav-data\bathy`, else app data `bathy` | Free to use and redistribute (NOAA NCEI) |
+
+GSHHG: on the next chart load the app builds `coastline\.unzipped\gshhg_land.gpkg` once (a minute or two), then draws land at five resolutions (crude at world scale to full, every island, from zoom 8) and routing avoids it. Inside NZ, LINZ Topo50 is used instead where it is loaded.
+
+The world depths draw as the `wdepth` tile layer (Natural Earth below zoom 4 from a simplified table, full detail from zoom 4, ETOPO over it where downloaded) and ETOPO contours as `wdcnt` from zoom 7, all under the LINZ depth areas. `RACENAV_ETOPO_URL` overrides the ERDDAP dataset URL.
 
 ## Weather (GRIB)
 

@@ -430,3 +430,18 @@ table.gt-table tr.gt-best td.nm { font-weight: 700; }
 .wx-combine { display: flex; align-items: center; gap: 8px; margin: 4px 0 6px; padding: 6px 8px; background: #eef5fb; border: 1px solid #c9dcee; border-radius: 6px; font-size: 12.5px; color: var(--ink); }
 .wx-combine span { flex: 1; }
 .wx-combine button { flex: none; padding: 4px 10px; }
+
+/* ---------- Chart › Chart data (data.js) ---------- */
+#data-box .data-item { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 13px; }
+#data-box .data-item button { flex: none; padding: 4px 10px; }
+#data-box .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: #c6ced3; }
+#data-box .dot.ok { background: var(--good); }
+#data-box .dot.part { background: #e0a800; }
+#data-etopo-list { list-style: none; margin: 2px 0 6px 17px; padding: 0; font-size: 12.5px; }
+#data-etopo-list li { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+#data-etopo-list li span { flex: 1; }
+#data-etopo-list li button { flex: none; padding: 2px 8px; font-size: 12px; }
+#data-box .data-src { font-size: 12px; color: var(--quiet); margin: 6px 0 10px; }
+#data-box .data-src p { margin: 6px 0; line-height: 1.45; }
+.progress.indeterminate .bar { width: 30% !important; animation: prog-slide 1.2s linear infinite; }
+@keyframes prog-slide { from { margin-left: -30%; } to { margin-left: 100%; } }
