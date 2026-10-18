@@ -1424,8 +1424,9 @@ fn chart_feature(t: usize, fid: i64) -> Option<serde_json::Value> {
 }
 
 /// Open (or bring forward) the cockpit window: large readings for a second screen.
+/// Async: on Windows a window made from a synchronous command deadlocks and stays blank.
 #[tauri::command]
-fn cockpit_open(app: tauri::AppHandle) -> Result<(), String> {
+async fn cockpit_open(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("cockpit") {
         let _ = w.unminimize();
         return w.set_focus().map_err(|e| e.to_string());
@@ -1483,7 +1484,7 @@ pub fn run() {
             app_info, chart_info, chart_feature, chart_clearances, cockpit_open, tides_info, tides_stations, tides_curve, tides_download, tides_cancel, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_compare, grib_meteogram, grib_verify_times, grib_verify_scores, grib_verify_track, grib_verify_grid, grib_point,
             polar_files, polar_speed, route_compute, sk_status,
             stations_cmd::stations_latest, stations_cmd::station_history,
-            live::ais_targets, live::ais_online, live::ais_status, live::replay_logs, live::replay_start, live::replay_control, live::replay_stop,
+            live::ais_targets, live::ais_online, live::ais_status, live::ais_set_own, live::ais_tracks, live::replay_logs, live::replay_start, live::replay_control, live::replay_stop,
             lib_info, marks_list, mark_save, mark_delete, barriers_list, barrier_save, barrier_delete, routes_list, route_save, route_delete,
             routings_list, routing_get, routing_save, routing_delete, gpx_export, gpx_write, gpx_import,
             rec_status, rec_start, rec_stop, tracks_list, track_get, track_update, track_delete, track_export,

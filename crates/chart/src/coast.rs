@@ -16,6 +16,11 @@
 //! | `gshhs_f` | full | 8 and up |
 //!
 //! Levels used: L1 (land and ocean islands) and L5 (Antarctic ice front).
+//!
+//! Each resolution has land polygons cut into pieces of at most a few thousand
+//! points (`gshhs_<r>`, for the land fill) and the coastline as lines in
+//! chunks (`gshhs_<r>_ln`, for the coast line: the cuts would draw as lines
+//! across the land if the polygon outlines were used).
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -27,7 +32,12 @@ use crate::ChartError;
 pub const RESOLUTIONS: [char; 5] = ['c', 'l', 'i', 'h', 'f'];
 const LEVELS: [u8; 2] = [1, 5];
 /// Bump when the built file changes shape, so old builds are redone.
-const BUILD_VERSION: i64 = 1;
+const BUILD_VERSION: i64 = 2;
+/// Land polygons bigger than this are cut into pieces (so a tile reads only
+/// the piece it needs: Eurasia at full resolution is over a million points).
+const MAX_PIECE: usize = 4000;
+/// Coastline lines are kept in chunks of this many points.
+const LINE_CHUNK: usize = 1500;
 
 /// Zoom range a resolution is drawn at.
 /// How much finer than standard the drawn coastline is: 0 standard (the table
@@ -105,19 +115,36 @@ pub fn ensure_gpkg(dir: &Path, out_dir: &Path) -> Result<Option<PathBuf>, ChartE
     init_gpkg(&db)?;
     for res in RESOLUTIONS {
         let table = format!("gshhs_{res}");
-        create_table(&db, &table)?;
+        let ltable = format!("gshhs_{res}_ln");
+        create_table(&db, &table, "POLYGON")?;
+        create_table(&db, &ltable, "LINESTRING")?;
         let tx = db.transaction()?;
         {
             let mut ins = tx.prepare(&format!("INSERT INTO \"{table}\" (fid, geom, level) VALUES (?1, ?2, ?3)"))?;
             let mut rt = tx.prepare(&format!("INSERT INTO \"rtree_{table}_geom\" (id, minx, maxx, miny, maxy) VALUES (?1, ?2, ?3, ?4, ?5)"))?;
-            let mut fid = 0i64;
+            let mut lins = tx.prepare(&format!("INSERT INTO \"{ltable}\" (fid, geom, level) VALUES (?1, ?2, ?3)"))?;
+            let mut lrt = tx.prepare(&format!("INSERT INTO \"rtree_{ltable}_geom\" (id, minx, maxx, miny, maxy) VALUES (?1, ?2, ?3, ?4, ?5)"))?;
+            let (mut fid, mut lfid) = (0i64, 0i64);
             for level in LEVELS {
                 let Some(bytes) = read_shp(&src, res, level)? else { continue };
                 for ring in shp_rings(&bytes) {
-                    fid += 1;
                     let b = bounds(&ring);
-                    ins.execute(rusqlite::params![fid, gpkg_polygon(&ring), level])?;
-                    rt.execute(rusqlite::params![fid, b[0], b[2], b[1], b[3]])?;
+                    for piece in split_ring(ring.clone(), b) {
+                        fid += 1;
+                        let pb = bounds(&piece);
+                        ins.execute(rusqlite::params![fid, gpkg_polygon(&piece), level])?;
+                        rt.execute(rusqlite::params![fid, pb[0], pb[2], pb[1], pb[3]])?;
+                    }
+                    // the coastline itself, in chunks that overlap by a point
+                    let mut i = 0;
+                    while i + 1 < ring.len() {
+                        let chunk = &ring[i..(i + LINE_CHUNK + 1).min(ring.len())];
+                        lfid += 1;
+                        let cb = bounds(chunk);
+                        lins.execute(rusqlite::params![lfid, gpkg_line(chunk), level])?;
+                        lrt.execute(rusqlite::params![lfid, cb[0], cb[2], cb[1], cb[3]])?;
+                        i += LINE_CHUNK;
+                    }
                 }
             }
         }
@@ -232,18 +259,80 @@ fn init_gpkg(db: &Connection) -> Result<(), ChartError> {
     Ok(())
 }
 
-fn create_table(db: &Connection, table: &str) -> Result<(), ChartError> {
+fn create_table(db: &Connection, table: &str, geom: &str) -> Result<(), ChartError> {
     db.execute_batch(&format!(
         "CREATE TABLE \"{table}\" (fid INTEGER PRIMARY KEY, geom BLOB, level INTEGER);
          CREATE VIRTUAL TABLE \"rtree_{table}_geom\" USING rtree(id, minx, maxx, miny, maxy);
          INSERT INTO gpkg_contents (table_name, data_type, identifier, srs_id) VALUES ('{table}', 'features', '{table}', 4326);
-         INSERT INTO gpkg_geometry_columns VALUES ('{table}', 'geom', 'POLYGON', 4326, 0, 0);"
+         INSERT INTO gpkg_geometry_columns VALUES ('{table}', 'geom', '{geom}', 4326, 0, 0);"
     ))?;
     Ok(())
 }
 
+/// GeoPackage blob of a line string.
+fn gpkg_line(pts: &[[f64; 2]]) -> Vec<u8> {
+    let mut v = Vec::with_capacity(8 + 9 + pts.len() * 16);
+    v.extend_from_slice(b"GP");
+    v.push(0);
+    v.push(0x01);
+    v.extend_from_slice(&4326i32.to_le_bytes());
+    v.push(1);
+    v.extend_from_slice(&2u32.to_le_bytes()); // line string
+    v.extend_from_slice(&(pts.len() as u32).to_le_bytes());
+    for p in pts {
+        v.extend_from_slice(&p[0].to_le_bytes());
+        v.extend_from_slice(&p[1].to_le_bytes());
+    }
+    v
+}
+
+/// Cut a land polygon into pieces of at most [`MAX_PIECE`] points by halving
+/// its box along the longer side, clipping to each half (Sutherland–Hodgman;
+/// the pieces fill exactly the same land).
+pub fn split_ring(ring: Vec<[f64; 2]>, b: [f64; 4]) -> Vec<Vec<[f64; 2]>> {
+    if ring.len() <= MAX_PIECE || (b[2] - b[0]).max(b[3] - b[1]) < 0.02 {
+        return vec![ring];
+    }
+    let halves = if b[2] - b[0] >= b[3] - b[1] {
+        let m = (b[0] + b[2]) / 2.0;
+        [[b[0], b[1], m, b[3]], [m, b[1], b[2], b[3]]]
+    } else {
+        let m = (b[1] + b[3]) / 2.0;
+        [[b[0], b[1], b[2], m], [b[0], m, b[2], b[3]]]
+    };
+    let mut out = Vec::new();
+    for h in halves {
+        let mut piece = crate::clip::clip_ring(&ring, crate::clip::Rect { x0: h[0], y0: h[1], x1: h[2], y1: h[3] });
+        if piece.len() < 3 {
+            continue;
+        }
+        piece.push(piece[0]);
+        let pb = bounds(&piece);
+        out.extend(split_ring(piece, pb));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn splits_big_rings_into_pieces_of_the_same_area() {
+        // a jagged circle of 20 000 points
+        let n = 20_000;
+        let ring: Vec<[f64; 2]> = (0..=n).map(|i| {
+            let a = i as f64 / n as f64 * std::f64::consts::TAU;
+            let r = 1.0 + 0.05 * (a * 40.0).sin();
+            [r * a.cos(), r * a.sin()]
+        }).collect();
+        let area = |r: &[[f64; 2]]| (0..r.len() - 1).map(|k| r[k][0] * r[k + 1][1] - r[k + 1][0] * r[k][1]).sum::<f64>().abs() / 2.0;
+        let whole = area(&ring);
+        let pieces = super::split_ring(ring.clone(), super::bounds(&ring));
+        assert!(pieces.len() >= 5, "{}", pieces.len());
+        assert!(pieces.iter().all(|p| p.len() <= super::MAX_PIECE + 400), "{:?}", pieces.iter().map(|p| p.len()).collect::<Vec<_>>());
+        let sum: f64 = pieces.iter().map(|p| area(p)).sum();
+        assert!((sum - whole).abs() / whole < 1e-9, "{sum} v {whole}");
+    }
+
     #[test]
     fn finer_detail_shifts_the_resolutions() {
         use super::res_for_zoom;

@@ -40,6 +40,9 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
       paint: { "fill-color": "#000", "fill-opacity": 0.01 } },
     { id: "f-area-dash", type: "line", ...src, "source-layer": "far", filter: ["all", minz, cls("RESARE", "ACHARE", "MARCUL", "CBLARE", "CTNARE", "PRCARE")],
       paint: { "line-color": MAGENTA, "line-width": ["match", ["get", "cls"], "RESARE", 1.4, 1], "line-dasharray": [4, 2.5] } },
+    // wharves, breakwaters, pontoons, floating docks, hulks, causeways
+    { id: "f-construct", type: "fill", ...src, "source-layer": "far", filter: ["all", minz, cls("SLCONS", "PONTON", "FLODOC", "HULKES", "MORFAC", "CAUSWY")],
+      paint: { "fill-color": "#b9b2a3", "fill-outline-color": INK } },
     { id: "f-bridge", type: "fill", ...src, "source-layer": "far", filter: ["all", minz, cls("BRIDGE")],
       paint: { "fill-color": "#9a9a9a", "fill-outline-color": INK } },
     { id: "f-area-grey", type: "line", ...src, "source-layer": "far", filter: ["all", minz, cls("DMPGRD", "FERYRT", "OBSTRN")],
@@ -47,8 +50,8 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
     // lines
     { id: "f-line-mag", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, cls("CBLSUB", "PIPSOL", "RDOCAL")],
       paint: { "line-color": MAGENTA, "line-width": 1.1, "line-dasharray": [3, 2] } },
-    { id: "f-line-solid", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, cls("NAVLNE", "BRIDGE")],
-      paint: { "line-color": INK, "line-width": ["match", ["get", "cls"], "BRIDGE", 2.5, 1] } },
+    { id: "f-line-solid", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, cls("NAVLNE", "BRIDGE", "SLCONS", "PONTON", "CAUSWY")],
+      paint: { "line-color": INK, "line-width": ["match", ["get", "cls"], "BRIDGE", 2.5, "PONTON", 2.2, "SLCONS", 1.6, "CAUSWY", 1.6, 1] } },
     { id: "f-line-dash", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, cls("RECTRC", "CBLOHD", "PIPOHD", "FSHFAC")],
       paint: { "line-color": ["match", ["get", "cls"], "RECTRC", INK, "#5b6b75"], "line-width": 1, "line-dasharray": [5, 3] } },
     // light sectors

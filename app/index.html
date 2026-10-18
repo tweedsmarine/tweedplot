@@ -229,9 +229,10 @@
       </section>
 
       <section class="pane" data-pane="fleet" data-title="Fleet">
-        <div class="tabs"><button data-tab="ais" class="on">AIS</button><button data-tab="race">Race (YB)</button></div>
+        <div class="tabs"><button data-tab="ais" class="on">AIS</button><button data-tab="own">Own fleet</button><button data-tab="race">YB race</button></div>
         <div class="tab" data-tab="ais">
           <div class="wx-row"><label class="grow"><input id="ais-show" type="checkbox" /> Show AIS targets</label><label><input id="ais-names" type="checkbox" /> Names</label></div>
+          <div class="wx-row"><label class="grow" title="Draw where the target you clicked has been (the last 6 hours this app has heard it)"><input id="ais-sel-track" type="checkbox" /> Track of the selected target</label></div>
           <div class="wx-row"><span class="dot" id="ais-sk-dot"></span><span class="grow wx-note" id="ais-sk-state">Signal K: —</span></div>
           <div class="wx-row"><span class="dot" id="ais-on-dot"></span><span class="grow wx-note" id="ais-on-state">Online (aisstream.io): off</span></div>
           <div class="wx-row"><input id="ais-key" class="grow" type="password" placeholder="aisstream.io API key" autocomplete="off" spellcheck="false" title="Free: sign in at aisstream.io with a GitHub account and copy the key" />
@@ -245,6 +246,15 @@
           <h3>Targets <span id="ais-count" class="wx-note"></span></h3>
           <div class="wx-row"><label class="grow" for="ais-sort">Sort by</label><select id="ais-sort"><option value="range">Range</option><option value="cpa">CPA</option><option value="name">Name</option></select></div>
           <ul id="ais-list" class="list"></ul>
+        </div>
+        <div class="tab" data-tab="own" hidden>
+          <div class="wx-note">Boats you want to pick out: friends, your company's vessels, a race fleet. They are ringed in their group's colour and named on the chart, and their tracks can be drawn. Your own boat's MMSI goes in the Boat panel.</div>
+          <div class="wx-row"><input id="of-mmsi" type="text" inputmode="numeric" placeholder="MMSI" maxlength="9" style="width:90px" title="The 9-digit MMSI" /><input id="of-name" class="grow" type="text" placeholder="Name (optional)" /></div>
+          <div class="wx-row"><select id="of-group" class="grow" title="Group"><option>Friends</option><option>Company</option><option>Race fleet</option><option>Other</option></select><button id="of-add">Add</button></div>
+          <div id="of-msg" class="wx-note"></div>
+          <div class="wx-row"><label class="grow" title="Draw the tracks of every boat in the list"><input id="of-track-all" type="checkbox" /> Track all</label><label title="Hide every AIS target that is not in this list"><input id="of-only" type="checkbox" /> Only these on the chart</label></div>
+          <ul id="of-list" class="list"></ul>
+          <div class="wx-note">Tracks are what this app has heard over the last 6 hours (from your receiver or online AIS), so they start when RaceNav does. Click a boat in the AIS popup › Add to own fleet to add it from the chart.</div>
         </div>
         <div class="tab" data-tab="race" hidden>
           <div class="wx-row">
@@ -365,6 +375,7 @@
         <div class="wx-row"><label class="grow" for="boat-tack">Tack costs (s)</label><input id="boat-tack" type="number" min="0" step="5" /></div>
         <div class="wx-row"><label class="grow" for="boat-gybe">Gybe costs (s)</label><input id="boat-gybe" type="number" min="0" step="5" /></div>
         <div class="wx-row"><label class="grow" for="boat-air" title="Height of the top of the mast (or highest point) above the waterline, for the air-draft alarm">Air draft (m)</label><input id="boat-air" type="number" min="0" step="0.1" /></div>
+        <div class="wx-row"><label class="grow" for="boat-mmsi" title="Your own AIS MMSI: your boat is then never shown or alarmed as an AIS target">Own MMSI</label><input id="boat-mmsi" type="text" inputmode="numeric" maxlength="9" style="width:110px" /></div>
         <div class="wx-note">Safety depth is set in the Chart panel; routing avoids water shallower than it, and charted dangers and marine farms if ticked there.</div>
       </section>
 

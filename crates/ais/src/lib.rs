@@ -210,7 +210,15 @@ pub fn mmsi_of_context(ctx: &str) -> Option<u32> {
 pub struct Targets {
     pub map: HashMap<u32, Target>,
     changed: std::collections::HashSet<u32>,
+    /// Each target's recent positions [t, lon, lat] (see [`TRACK_S`]).
+    pub tracks: HashMap<u32, Vec<[f64; 3]>>,
+    /// The own vessel's MMSI: never a target.
+    pub own: Option<u32>,
 }
+
+/// How much track is kept per target, s, and the most points.
+pub const TRACK_S: i64 = 6 * 3600;
+const TRACK_MAX: usize = 3000;
 
 /// Targets not heard from for this long are dropped.
 pub const EXPIRE_S: i64 = 20 * 60;
@@ -219,6 +227,9 @@ impl Targets {
     /// Apply a Signal K delta's values for `context` (not the own vessel).
     pub fn apply_signalk(&mut self, context: &str, values: &[(String, Value)], now: i64) {
         let Some(mmsi) = mmsi_of_context(context) else { return };
+        if self.own == Some(mmsi) {
+            return;
+        }
         let t = self.map.entry(mmsi).or_insert_with(|| Target::new(mmsi));
         if context.starts_with("atons.") {
             t.kind = Kind::Aton;
@@ -229,18 +240,60 @@ impl Targets {
         }
         if t.apply_signalk(values, now) {
             self.changed.insert(mmsi);
+            self.track(mmsi, now);
+        }
+    }
+
+    /// Add the target's position to its track if it moved (20 m) or 60 s passed.
+    fn track(&mut self, mmsi: u32, now: i64) {
+        let Some(t) = self.map.get(&mmsi) else { return };
+        let (Some(lat), Some(lon)) = (t.lat, t.lon) else { return };
+        let tr = self.tracks.entry(mmsi).or_default();
+        if let Some(l) = tr.last() {
+            let dx = (lon - l[1]) * 111_320.0 * lat.to_radians().cos();
+            let dy = (lat - l[2]) * 111_320.0;
+            if dx.hypot(dy) < 20.0 && (now as f64 - l[0]) < 60.0 {
+                return;
+            }
+        }
+        tr.push([now as f64, lon, lat]);
+        let cut = (now - TRACK_S) as f64;
+        if tr.first().is_some_and(|p| p[0] < cut) {
+            tr.retain(|p| p[0] >= cut);
+        }
+        if tr.len() > TRACK_MAX {
+            // thin the older half
+            let half = tr.len() / 2;
+            let mut kept: Vec<[f64; 3]> = tr[..half].iter().step_by(2).copied().collect();
+            kept.extend_from_slice(&tr[half..]);
+            *tr = kept;
+        }
+    }
+
+    /// Set the own vessel's MMSI (dropping it if it is already a target).
+    pub fn set_own(&mut self, own: Option<u32>) {
+        self.own = own;
+        if let Some(m) = own {
+            if self.map.remove(&m).is_some() {
+                self.changed.remove(&m);
+                self.tracks.remove(&m);
+            }
         }
     }
 
     /// Merge a target update from another source (fields it has replace ours).
     pub fn merge(&mut self, u: Update, now: i64) {
         let mmsi = u.mmsi;
+        if self.own == Some(mmsi) {
+            return;
+        }
         let t = self.map.entry(mmsi).or_insert_with(|| Target::new(mmsi));
         let mut before = t.clone();
         u.apply(t, now);
         before.last_seen = t.last_seen;
         if *t != before {
             self.changed.insert(mmsi);
+            self.track(mmsi, now);
         }
     }
 
@@ -250,6 +303,7 @@ impl Targets {
         for m in &gone {
             self.map.remove(m);
             self.changed.remove(m);
+            self.tracks.remove(m);
         }
         let ch = self.changed.drain().filter_map(|m| self.map.get(&m).cloned()).collect();
         (ch, gone)
@@ -258,6 +312,7 @@ impl Targets {
     pub fn clear(&mut self) {
         self.map.clear();
         self.changed.clear();
+        self.tracks.clear();
     }
 
     /// Every target (for a newly opened view).
@@ -374,6 +429,16 @@ mod tests {
         // "not available" positions are ignored
         ts.merge(Update { mmsi: 512000123, source: "aisstream", pos: Some((91.0, 181.0)), ..Default::default() }, 12);
         assert_eq!(ts.map[&512000123].lat, Some(-41.0));
+        // the own MMSI is never a target
+        ts.set_own(Some(512000123));
+        assert!(!ts.map.contains_key(&512000123));
+        ts.merge(Update { mmsi: 512000123, source: "aisstream", pos: Some((-41.0, 173.0)), ..Default::default() }, 13);
+        assert!(!ts.map.contains_key(&512000123));
+        // tracks build up as a target moves
+        for k in 0..5 {
+            ts.merge(Update { mmsi: 512000555, source: "aisstream", pos: Some((-41.0 + k as f64 * 0.001, 173.0)), ..Default::default() }, 100 + k * 10);
+        }
+        assert_eq!(ts.tracks[&512000555].len(), 5);
         // an AIS-SART state turns a ship MMSI into a SART alarm
         ts.merge(Update { mmsi: 512000999, source: "aisstream", status: Some(14), pos: Some((-41.1, 173.1)), ..Default::default() }, 12);
         assert_eq!(ts.map[&512000999].kind, Kind::Sart);

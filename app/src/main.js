@@ -109,12 +109,15 @@ const map = new maplibregl.Map({
       { id: "land-nz", type: "fill", source: "land-nz", minzoom: 4,
         paint: { "fill-color": css("--land") } },
       { id: "chart-land", type: "fill", source: "chart", "source-layer": "land",
-        paint: { "fill-color": css("--land") } },
+        // no antialiasing: world land comes in pieces whose shared edges would show as faint lines
+        paint: { "fill-color": css("--land"), "fill-antialias": false } },
       { id: "coast-world", type: "line", source: "land-world", maxzoom: 6,
         paint: { "line-color": css("--coast"), "line-width": 0.8 } },
       { id: "coast-nz", type: "line", source: "land-nz", minzoom: 4,
         paint: { "line-color": css("--coast"), "line-width": 0.8 } },
-      { id: "chart-coast", type: "line", source: "chart", "source-layer": "land",
+      { id: "chart-coast", type: "line", source: "chart", "source-layer": "land", filter: ["!", ["has", "w"]],
+        paint: { "line-color": css("--coast"), "line-width": 0.9 } },
+      { id: "chart-wcoast", type: "line", source: "chart", "source-layer": "wcoast",
         paint: { "line-color": css("--coast"), "line-width": 0.9 } },
       { id: "soundg", type: "symbol", source: "chart", "source-layer": "soundg",
         layout: { "icon-image": soundingImage(), "icon-allow-overlap": false, "icon-padding": 1 } },
@@ -188,7 +191,7 @@ map.on("load", () => {
   });
   setupStations(map, { weather });
   document.getElementById("inst-cockpit").onclick = () => invoke("cockpit_open").catch((e) => toast?.(`Cockpit window: ${e}`, 4000));
-  setupAis(map, { alarms, ui, getOwn: () => ({ pos: lastBoat, cog: live ? vessel?.cog : null, sog: live ? vessel?.sog : 0, live: live && signalKActive() }) });
+  setupAis(map, { alarms, ui, getOwnMmsi: () => boat.get().mmsi, getOwn: () => ({ pos: lastBoat, cog: live ? vessel?.cog : null, sog: live ? vessel?.sog : 0, live: live && signalKActive() }) });
   setupReplay({ onState: (on) => {
     replayOn = on;
     if (on && !live) liveBtn.click(); // a replay plays live

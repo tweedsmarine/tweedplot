@@ -104,6 +104,8 @@ Download from the [LINZ Data Service](https://data.linz.govt.nz) (free account) 
 
 The open data does not cover every harbour at large scale. Port Nelson's inner channel marks, for example, are only in the official ENC. Add missing marks yourself as library marks with buoy symbols (see Marks).
 
+Wharves, breakwaters, jetties, pontoons, floating docks and causeways are drawn from LINZ's shoreline construction and pontoon layers (in the hydrographic feature downloads) where LINZ has them; click one for its type. Many marinas, Nelson's included, have no pontoons in the open data: those are only in the official ENC.
+
 **Chart and Signal K drawer: chart settings**
 
 | Setting | What it does |
@@ -264,6 +266,12 @@ On the chart, ships are triangles pointing along their heading (class B a little
 The list under the settings sorts targets by range, CPA or name; click one to show it.
 
 **Alarms**: a ship whose closest point of approach (CPA) is less than the limit within the time limit (TCPA) raises a collision alarm; anchored and moored ships can be ignored. An AIS-SART, MOB device or EPIRB always raises an alarm, with its bearing and distance.
+
+**Your own boat**: put your MMSI in the **Boat** panel (Own MMSI) and your boat is never shown or alarmed as a target, whichever source hears it.
+
+**Tracks**: tick **Track of the selected target** and the boat you last clicked shows where it has been. Tracks are what RaceNav has heard over the last 6 hours, so they start when the app does.
+
+**Own fleet** (Fleet › Own fleet): a list of boats to pick out, such as friends, your company's vessels or a race fleet. Add an MMSI with a name and a group (Friends, Company, Race fleet, Other), or click a boat on the chart › **Add to own fleet**. Own-fleet boats are ringed in their group's colour and named at every zoom; each has a **Track** tick, **Track all** draws them all, and **Only these on the chart** hides every other AIS target. The list shows each boat's speed, distance and how long since it was heard; click one to show it.
 
 ## Marks, routes and the library
 
@@ -458,7 +466,7 @@ The Cursor panel shows the cursor's latitude and longitude and the bearing and r
 
 **Fleet (YB race tracking)**
 
-Fleet › Race (YB): type the race's YB name (as in `yb.tl/<race>`, for example `ggr2026`) and **Open**. RaceNav downloads the race setup, every boat's published track, then the latest positions every 5 minutes to 3 hours.
+Fleet › YB race: type the race's YB name (as in `yb.tl/<race>`, for example `ggr2026`) and **Open**. RaceNav downloads the race setup, every boat's published track, then the latest positions every 5 minutes to 3 hours.
 
 - Boats show at their latest fix, or where they were at the weather slider time, so you can replay a race against the forecast.
 - ★ follows a boat (thicker track, name kept first when names would overlap). Choose a class, tracks for all or followed boats, names, and the YB course.

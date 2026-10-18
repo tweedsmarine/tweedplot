@@ -90,14 +90,14 @@ function windDial(w) {
     return `<path d="M${pt(polar(38, a0))}L${pt(p0)}A44,44 0 0 ${a1 > a0 ? 1 : 0} ${pt(p1)}L${pt(polar(38, a1))}A38,38 0 0 ${a1 > a0 ? 0 : 1} ${pt(polar(38, a0))}z" class="${cls}"/>`;
   };
   const ptr = (a, cls, len) => (a == null ? "" : `<path d="M${pt(polar(len, a))}L${pt(polar(10, a - 9))}L${pt(polar(10, a + 9))}z" class="${cls}"/>`);
-  return `<svg viewBox="0 0 100 100" class="dial">
+  return `<svg viewBox="-6 -1 112 108" class="dial">
     ${sector(20, 60, "close-stbd")}${sector(-60, -20, "close-port")}
     <circle cx="50" cy="50" r="44" class="ring"/>${ticks(10, 41, 44, "tk")}${ticks(30, 37, 44, "tk2")}
     <path d="M50,32 L56,47 L56,62 L50,68 L44,62 L44,47z" class="hull"/>
     ${ptr(w.twa, "ptr-t", 40)}${ptr(w.awa, "ptr-a", 43)}
     <text x="50" y="84" class="num a">${w.aws != null ? w.aws.toFixed(1) : "—"}</text>
     <text x="50" y="22" class="num t">${w.tws != null ? w.tws.toFixed(1) : "—"}</text>
-    <text x="13" y="96" class="cap">AWA ${w.awa != null ? Math.round(Math.abs(w.awa)) + "°" : "—"}</text><text x="87" y="96" class="cap end">TWA ${w.twa != null ? Math.round(Math.abs(w.twa)) + "°" : "—"}</text>
+    <text x="-5" y="105.5" class="cap">AWA ${w.awa != null ? Math.round(Math.abs(w.awa)) + "°" : "—"}</text><text x="105" y="105.5" class="cap end">TWA ${w.twa != null ? Math.round(Math.abs(w.twa)) + "°" : "—"}</text>
   </svg>`;
 }
 /** Compass: heading up; COG (orange tick) and bearing to the mark (green). */

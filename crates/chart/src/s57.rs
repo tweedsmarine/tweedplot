@@ -70,6 +70,9 @@ pub static CLASSES: &[FeatureClass] = &[
     fc!("CBLOHD", "Overhead cable", "cable_overhead_polyline", Line),
     fc!("PIPOHD", "Overhead pipeline", "pipeline_overhead_polyline", Line),
     fc!("BRIDGE", "Bridge", "bridge_polyline", Line),
+    fc!("SLCONS", "Shoreline construction", "shoreline_construction_polyline", Line),
+    fc!("PONTON", "Pontoon", "pontoon_polyline", Line),
+    fc!("CAUSWY", "Causeway", "causeway_polyline", Line),
     fc!("PIPSOL", "Pipeline", "pipeline_submarine_on_land_polyline", Line),
     fc!("NAVLNE", "Navigation line", "navigation_line_polyline", Line),
     fc!("RECTRC", "Recommended track", "recommended_track_polyline", Line),
@@ -86,6 +89,13 @@ pub static CLASSES: &[FeatureClass] = &[
     fc!("OBSTRN", "Obstruction area", "obstruction_polygon", Area),
     fc!("WEDKLP", "Kelp", "weed_kelp_polygon", Area),
     fc!("BRIDGE", "Bridge", "bridge_polygon", Area),
+    fc!("SLCONS", "Shoreline construction", "shoreline_construction_polygon", Area),
+    fc!("PONTON", "Pontoon", "pontoon_polygon", Area),
+    fc!("FLODOC", "Floating dock", "floating_dock_polygon", Area),
+    fc!("HULKES", "Hulk", "hulk_polygon", Area),
+    fc!("HULKES", "Hulk", "hulk_polygons", Area),
+    fc!("MORFAC", "Mooring facility", "mooring_warping_facility_polygon", Area),
+    fc!("CAUSWY", "Causeway", "causeway_polygon", Area),
     fc!("SEAARE", "Sea area", "sea_area_named_water_area_polygon", Area),
 ];
 
@@ -454,6 +464,26 @@ pub fn attr_name(a: &str) -> String {
 
 fn enum_word(attr: &str, code: u32) -> Option<&'static str> {
     Some(match (attr, code) {
+        ("catslc", c) => match c {
+            1 => "breakwater",
+            2 => "groyne",
+            3 => "mole",
+            4 => "pier (jetty)",
+            5 => "promenade pier",
+            6 => "wharf (quay)",
+            7 => "training wall",
+            8 => "rip rap",
+            9 => "revetment",
+            10 => "sea wall",
+            11 => "landing steps",
+            12 => "ramp",
+            13 => "slipway",
+            14 => "fender",
+            15 => "solid face wharf",
+            16 => "open face wharf",
+            17 => "log ramp",
+            _ => return None,
+        },
         ("colour", c) => match c {
             1 => "white",
             2 => "black",

@@ -132,6 +132,18 @@ pub fn ais_online(key: String, boxes: Vec<[[f64; 2]; 2]>) {
     }
 }
 
+/// Our own MMSI (from the Boat panel): never shown as a target.
+#[tauri::command]
+pub fn ais_set_own(mmsi: Option<u32>) {
+    with_targets(|t| t.set_own(mmsi.filter(|m| *m > 0)));
+}
+
+/// Recent tracks of the given targets: MMSI → [[t, lon, lat], …].
+#[tauri::command]
+pub fn ais_tracks(mmsis: Vec<u32>) -> std::collections::HashMap<u32, Vec<[f64; 3]>> {
+    with_targets(|t| mmsis.iter().filter_map(|m| t.tracks.get(m).map(|tr| (*m, tr.clone()))).collect())
+}
+
 #[tauri::command]
 pub fn ais_status() -> serde_json::Value {
     let (c, d) = AIS_STATUS.lock().unwrap().clone();

@@ -564,3 +564,10 @@ body.cockpit { margin: 0; height: 100vh; display: flex; flex-direction: column; 
 #ck-alarms .alarm.alarm { background: #c0392b; animation: alarm-flash 1s steps(2, start) infinite; } #ck-alarms .alarm.warn { background: #d08f00; } #ck-alarms .alarm.acked { animation: none; }
 html[data-palette^="night"] body.cockpit { background: #fff; }
 html[data-palette^="night"] #ck-grid .tile, html[data-palette^="night"] #ck-bar, html[data-palette^="night"] #ck-alarms { filter: invert(1); }
+
+.ais-pop-btns { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.ais-pop-btns button { padding: 4px 8px; font-size: 12px; }
+#of-list li { align-items: center; }
+#of-list li .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+#of-list li select { width: auto; flex: none; font-size: 12px; padding: 3px; }
+#of-list .of-trk { font-size: 12px; white-space: nowrap; }

@@ -52,6 +52,8 @@ pub enum Kind {
     Land,
     /// GSHHG world land; `band` 1..5 = crude, low, intermediate, high, full.
     WorldLand,
+    /// GSHHG coastline lines (same bands).
+    WorldCoast,
     DepthArea,
     Contour,
     Sounding,
@@ -293,21 +295,28 @@ impl ChartStore {
         // World land at the resolution for this zoom, except inside NZ where Topo50 is drawn.
         let topo = z >= band_minzoom(0) && self.has_topo50();
         let res = coast::res_for_zoom(z, coast::LAND_DETAIL.load(std::sync::atomic::Ordering::Relaxed));
-        for t in self.tables.iter().filter(|t| t.kind == Kind::WorldLand) {
+        let mut wcoast = Layer::new("wcoast");
+        for t in self.tables.iter().filter(|t| matches!(t.kind, Kind::WorldLand | Kind::WorldCoast)) {
             if coast::RESOLUTIONS[(t.band as usize).clamp(1, 5) - 1] != res {
                 continue;
             }
+            let is_land = t.kind == Kind::WorldLand;
             self.query(t, bbox, &[], |_, g| {
                 if topo && inside(geom_bounds(&g), TOPO50_AREA) {
                     return;
                 }
-                if let Some(tg) = tp.polygons(&g) {
-                    land.add(&tg, &[]);
+                if is_land {
+                    if let Some(tg) = tp.polygons(&g) {
+                        // "w": world land, whose outline is drawn from the wcoast lines
+                        land.add(&tg, &[("w", Value::UInt(1))]);
+                    }
+                } else if let Some(tg) = tp.lines(&g) {
+                    wcoast.add(&tg, &[]);
                 }
             });
         }
         let [far, fln, fpt, lsec] = self.render_features(&tp, z);
-        mvt::encode_tile(&[wdepth, wdcnt, depare, depcnt, far, land, fln, soundg, lsec, fpt])
+        mvt::encode_tile(&[wdepth, wdcnt, depare, depcnt, far, land, wcoast, fln, soundg, lsec, fpt])
     }
 
     fn query(&self, t: &TableInfo, b: [f64; 4], cols: &[&str], mut f: impl FnMut(&[Option<f64>], Geom)) {
@@ -321,19 +330,25 @@ impl ChartStore {
             rt = t.rtree,
             pk = t.pk
         );
-        let Ok(mut st) = conn.prepare_cached(&sql) else { return };
-        let mut vals = vec![None; cols.len()];
-        for shift in wrap_shifts(b) {
-            let Ok(mut rows) = st.query(rusqlite::params![b[0] + shift, b[2] + shift, b[1], b[3]]) else { continue };
-            while let Ok(Some(r)) = rows.next() {
-                for (i, v) in vals.iter_mut().enumerate() {
-                    *v = r.get::<_, Option<f64>>(i).ok().flatten();
+        // read the rows, then let go of the file before the (slower) geometry
+        // work, so tiles being drawn at the same time don't queue on the lock
+        let mut got: Vec<(Vec<Option<f64>>, Vec<u8>, f64)> = Vec::new();
+        {
+            let Ok(mut st) = conn.prepare_cached(&sql) else { return };
+            for shift in wrap_shifts(b) {
+                let Ok(mut rows) = st.query(rusqlite::params![b[0] + shift, b[2] + shift, b[1], b[3]]) else { continue };
+                while let Ok(Some(r)) = rows.next() {
+                    let vals: Vec<Option<f64>> = (0..cols.len()).map(|i| r.get::<_, Option<f64>>(i).ok().flatten()).collect();
+                    let Ok(blob) = r.get_ref(cols.len()).and_then(|v| v.as_blob().map_err(Into::into)) else { continue };
+                    got.push((vals, blob.to_vec(), shift));
                 }
-                let Ok(blob) = r.get_ref(cols.len()).and_then(|v| v.as_blob().map_err(Into::into)) else { continue };
-                if let Some(mut g) = parse_gpkg(blob) {
-                    shift_geom(&mut g, -shift);
-                    f(&vals, g);
-                }
+            }
+        }
+        drop(conn);
+        for (vals, blob, shift) in got {
+            if let Some(mut g) = parse_gpkg(&blob) {
+                shift_geom(&mut g, -shift);
+                f(&vals, g);
             }
         }
     }
@@ -462,8 +477,12 @@ fn classify(table: &str) -> Option<(Kind, u8)> {
         _ => {}
     }
     if let Some(r) = t.strip_prefix("gshhs_") {
-        let i = coast::RESOLUTIONS.iter().position(|c| r.starts_with(*c) && r.len() == 1)?;
-        return Some((Kind::WorldLand, i as u8 + 1));
+        let (res, kind) = match r.strip_suffix("_ln") {
+            Some(x) => (x, Kind::WorldCoast),
+            None => (r, Kind::WorldLand),
+        };
+        let i = coast::RESOLUTIONS.iter().position(|c| res.starts_with(*c) && res.len() == 1)?;
+        return Some((kind, i as u8 + 1));
     }
     let kind = if t.contains("coastlines_and_islands") {
         return Some((Kind::Land, 0));
