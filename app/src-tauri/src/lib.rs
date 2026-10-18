@@ -1288,7 +1288,7 @@ fn data_status(app: tauri::AppHandle) -> serde_json::Value {
             if p.extension().is_some_and(|x| x == "gpkg") {
                 if let Some((area, source, spacing)) = chart::bathy::area_info(&p) {
                     let size = e.metadata().map(|m| m.len()).unwrap_or(0);
-                    etopo.push(serde_json::json!({ "file": p, "name": p.file_name().map(|n| n.to_string_lossy().into_owned()), "area": area, "source": source, "spacing": spacing, "bytes": size }));
+                    etopo.push(serde_json::json!({ "file": p, "name": p.file_name().map(|n| n.to_string_lossy().into_owned()), "area": area, "source": source, "spacing": spacing, "bytes": size, "old": chart::bathy::file_format(&p) < chart::bathy::FORMAT }));
                 }
             }
         }

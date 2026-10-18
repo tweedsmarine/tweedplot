@@ -470,3 +470,4 @@ table.gt-table tr.gt-best td.nm { font-weight: 700; }
 .lib-filter { margin: 3px 0; font-size: 12px; }
 .lib-filter label { white-space: nowrap; }
 .lib-filter select.filtering { border-color: var(--accent); background: #eef5fc; }
+#data-etopo-list button.warn { border-color: #d08f00; background: #fff3cc; color: #7a5200; }

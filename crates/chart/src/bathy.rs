@@ -190,46 +190,154 @@ fn band(depth: f64) -> Option<usize> {
     ETOPO_LEVELS.iter().rposition(|&l| depth > l)
 }
 
-/// Depth bands as rectangles: runs of cells of one band along each row, merged
-/// with identical runs in the rows above. Cells are centred on the grid nodes.
+/// Cells per side of the blocks the depth areas are traced in (keeps each
+/// polygon small, so a tile reads only what is near it).
+const BLOCK: usize = 256;
+
+/// Nested depth areas: for each level, the water deeper than it, as polygons
+/// traced round the grid cells (cells centred on the grid nodes), in blocks of
+/// [`BLOCK`] cells. Drawn shallow to deep, each level covers the one before, so
+/// no gap can open between bands however the tiles round the edges (row-by-row
+/// rectangles left slivers that vanished when zoomed out).
 pub fn bands(g: &Grid) -> Vec<(Vec<Vec<[f64; 2]>>, f64)> {
-    // (i0, i1 exclusive, band) per row
-    let mut open: HashMap<(usize, usize, usize), usize> = HashMap::new(); // run → start row
     let mut out = Vec::new();
-    let rect = |i0: usize, i1: usize, j0: usize, j1: usize| {
-        let (w, e) = (g.lon(i0 as f64 - 0.5), g.lon(i1 as f64 - 0.5));
-        let (s, n) = (g.lat(j0 as f64 - 0.5), g.lat(j1 as f64 - 0.5));
-        vec![vec![[w, s], [e, s], [e, n], [w, n], [w, s]]]
-    };
-    for j in 0..=g.ny {
-        let mut runs: Vec<(usize, usize, usize)> = Vec::new();
-        if j < g.ny {
-            let mut i = 0;
-            while i < g.nx {
-                let b = band(g.depth(i, j));
-                let mut k = i + 1;
-                while k < g.nx && band(g.depth(k, j)) == b {
-                    k += 1;
+    for (k, &level) in ETOPO_LEVELS.iter().enumerate() {
+        // band(d) >= k  <=>  d > level (and wet)
+        let wet = |i: usize, j: usize| band(g.depth(i, j)).is_some_and(|b| b >= k);
+        for j0 in (0..g.ny).step_by(BLOCK) {
+            for i0 in (0..g.nx).step_by(BLOCK) {
+                let (i1, j1) = ((i0 + BLOCK).min(g.nx), (j0 + BLOCK).min(g.ny));
+                for poly in trace(i0, i1, j0, j1, &wet) {
+                    let rings = poly
+                        .into_iter()
+                        .map(|r| {
+                            let mut pts: Vec<[f64; 2]> = r.into_iter().map(|(ci, cj)| [g.lon(ci as f64 - 0.5), g.lat(cj as f64 - 0.5)]).collect();
+                            pts.push(pts[0]); // closed, as GeoPackage rings are
+                            pts
+                        })
+                        .collect();
+                    out.push((rings, level));
                 }
-                if let Some(b) = b {
-                    runs.push((i, k, b));
-                }
-                i = k;
             }
-        }
-        // close runs that don't continue into this row
-        let keys: Vec<_> = open.keys().copied().collect();
-        for key in keys {
-            if !runs.contains(&key) {
-                let j0 = open.remove(&key).unwrap();
-                out.push((rect(key.0, key.1, j0, j), ETOPO_LEVELS[key.2]));
-            }
-        }
-        for r in runs {
-            open.entry(r).or_insert(j);
         }
     }
     out
+}
+
+type Corner = (i64, i64);
+
+/// Outlines of the cells where `inside(i, j)` within the block, as polygons
+/// (outer ring first, then its holes), in cell-corner coordinates: corner
+/// (i, j) is the south-west corner of cell (i, j).
+fn trace(i0: usize, i1: usize, j0: usize, j1: usize, inside: &dyn Fn(usize, usize) -> bool) -> Vec<Vec<Vec<Corner>>> {
+    let (w, h) = (i1 - i0, j1 - j0);
+    let mut mask = vec![false; w * h];
+    let mut any = false;
+    for j in 0..h {
+        for i in 0..w {
+            let v = inside(i0 + i, j0 + j);
+            mask[j * w + i] = v;
+            any |= v;
+        }
+    }
+    if !any {
+        return Vec::new();
+    }
+    let at = |i: i64, j: i64| i >= 0 && j >= 0 && (i as usize) < w && (j as usize) < h && mask[j as usize * w + i as usize];
+    // boundary edges with the inside on the left (outer rings anticlockwise)
+    let mut edges: HashMap<Corner, Vec<Corner>> = HashMap::new();
+    let mut n_edges = 0usize;
+    for j in 0..h as i64 {
+        for i in 0..w as i64 {
+            if !at(i, j) {
+                continue;
+            }
+            let mut add = |a: Corner, b: Corner| {
+                edges.entry(a).or_default().push(b);
+                n_edges += 1;
+            };
+            if !at(i, j - 1) {
+                add((i, j), (i + 1, j));
+            }
+            if !at(i + 1, j) {
+                add((i + 1, j), (i + 1, j + 1));
+            }
+            if !at(i, j + 1) {
+                add((i + 1, j + 1), (i, j + 1));
+            }
+            if !at(i - 1, j) {
+                add((i, j + 1), (i, j));
+            }
+        }
+    }
+    // chain the edges into rings; where two rings touch at a corner, turn left
+    let mut rings: Vec<Vec<Corner>> = Vec::new();
+    while n_edges > 0 {
+        let start = *edges.iter().find(|(_, v)| !v.is_empty()).unwrap().0;
+        let mut ring = vec![start];
+        let mut cur = start;
+        let mut dir: Option<Corner> = None;
+        loop {
+            let outs = edges.get_mut(&cur).unwrap();
+            let pick = match dir {
+                Some((dx, dy)) if outs.len() > 1 => {
+                    let left = (cur.0 - dy, cur.1 + dx);
+                    outs.iter().position(|&p| p == left).unwrap_or(0)
+                }
+                _ => 0,
+            };
+            let next = outs.swap_remove(pick);
+            n_edges -= 1;
+            dir = Some((next.0 - cur.0, next.1 - cur.1));
+            cur = next;
+            if cur == start {
+                break;
+            }
+            ring.push(cur);
+        }
+        // drop the corners along straight runs
+        let n = ring.len();
+        let kept: Vec<Corner> = (0..n)
+            .filter(|&k| {
+                let (p, c, q) = (ring[(k + n - 1) % n], ring[k], ring[(k + 1) % n]);
+                (c.0 - p.0) * (q.1 - c.1) != (c.1 - p.1) * (q.0 - c.0)
+            })
+            .map(|k| ring[k])
+            .collect();
+        if kept.len() >= 4 {
+            rings.push(kept.into_iter().map(|(i, j)| (i + i0 as i64, j + j0 as i64)).collect());
+        }
+    }
+    let area2 = |r: &[Corner]| -> i64 { (0..r.len()).map(|k| { let (a, b) = (r[k], r[(k + 1) % r.len()]); a.0 * b.1 - b.0 * a.1 }).sum() };
+    let contains = |r: &[Corner], x: f64, y: f64| {
+        let mut c = false;
+        for k in 0..r.len() {
+            let (a, b) = (r[k], r[(k + 1) % r.len()]);
+            let (ax, ay, bx, by) = (a.0 as f64, a.1 as f64, b.0 as f64, b.1 as f64);
+            if (ay > y) != (by > y) && x < ax + (y - ay) / (by - ay) * (bx - ax) {
+                c = !c;
+            }
+        }
+        c
+    };
+    let (outers, holes): (Vec<_>, Vec<_>) = rings.into_iter().map(|r| (area2(&r), r)).partition(|(a, _)| *a > 0);
+    let mut polys: Vec<Vec<Vec<Corner>>> = outers.iter().map(|(_, r)| vec![r.clone()]).collect();
+    for (_, hole) in holes {
+        // a point just inside the hole: right of its first edge
+        let (a, b) = (hole[0], hole[1]);
+        let (dx, dy) = ((b.0 - a.0).signum() as f64, (b.1 - a.1).signum() as f64);
+        let (x, y) = (a.0 as f64 + dx * 0.5 + dy * 0.25, a.1 as f64 + dy * 0.5 - dx * 0.25);
+        let owner = outers
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, r))| contains(r, x, y))
+            .min_by_key(|(_, (ar, _))| *ar)
+            .map(|(k, _)| k);
+        if let Some(k) = owner {
+            polys[k].push(hole);
+        }
+    }
+    polys
 }
 
 /// Contour lines at `level` metres depth (marching squares, segments joined into lines).
@@ -317,6 +425,7 @@ pub fn write_grid(g: &Grid, out: &Path, source: &str) -> Result<std::path::PathB
     w.meta("area", &format!("{},{},{},{}", g.west, g.south, e, n))?;
     w.meta("source", source)?;
     w.meta("spacing_arcsec", &format!("{}", (g.dlat * 3600.0).round()))?;
+    w.meta("format", &FORMAT.to_string())?;
     w.insert("wdepth_etopo", polygon_rows(bands(g)))?;
     let mut lines = Vec::new();
     for l in CONTOUR_LEVELS {
@@ -329,6 +438,19 @@ pub fn write_grid(g: &Grid, out: &Path, source: &str) -> Result<std::path::PathB
     }
     w.insert("wdcnt_etopo", lines)?;
     w.finish()
+}
+
+/// Version of the depth areas [`write_grid`] writes: 2 = nested traced polygons
+/// (files without it have row rectangles that break up when zoomed out).
+pub const FORMAT: u32 = 2;
+
+/// The format of an ETOPO GeoPackage (1 for files written before it was recorded).
+pub fn file_format(path: &Path) -> u32 {
+    Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .ok()
+        .and_then(|c| c.query_row("SELECT value FROM racenav_meta WHERE key = 'format'", [], |r| r.get::<_, String>(0)).ok())
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1)
 }
 
 /// The area and source written into an ETOPO GeoPackage by [`write_grid`].
@@ -360,20 +482,47 @@ mod tests {
         Grid { west: 173.0, south: -41.5, dlon: 1.0 / 240.0, dlat: 1.0 / 240.0, nx, ny, z }
     }
 
+    fn ring_area(r: &[[f64; 2]]) -> f64 {
+        (0..r.len() - 1).map(|k| { let (a, b) = (r[k], r[k + 1]); a[0] * b[1] - b[0] * a[1] }).sum::<f64>() / 2.0
+    }
+
     #[test]
-    fn bands_cover_the_water_once() {
+    fn nested_areas_cover_each_level_exactly() {
         let g = bowl();
         let b = bands(&g);
-        // every wet cell is in exactly one rectangle of its band
         let cell = g.dlon * g.dlat;
-        let wet = (0..g.ny).flat_map(|j| (0..g.nx).map(move |i| (i, j))).filter(|&(i, j)| band(g.depth(i, j)).is_some()).count();
-        let area: f64 = b.iter().map(|(r, _)| {
-            let r = &r[0];
-            (r[1][0] - r[0][0]) * (r[2][1] - r[1][1])
-        }).sum();
-        assert!((area / cell - wet as f64).abs() < 0.01, "{} v {wet}", area / cell);
-        assert!(b.iter().any(|(_, d)| *d == 50.0) && b.iter().any(|(_, d)| *d == 100.0) && b.iter().all(|(_, d)| *d <= 100.0));
-        assert!(b.len() < wet / 2, "runs merged: {} rectangles for {wet} cells", b.len());
+        for (k, &level) in ETOPO_LEVELS.iter().enumerate() {
+            let want = (0..g.ny).flat_map(|j| (0..g.nx).map(move |i| (i, j))).filter(|&(i, j)| band(g.depth(i, j)).is_some_and(|x| x >= k)).count();
+            // outer rings minus holes = the cells deeper than the level
+            let got: f64 = b.iter().filter(|(_, d)| *d == level).map(|(rings, _)| {
+                ring_area(&rings[0]).abs() - rings[1..].iter().map(|h| ring_area(h).abs()).sum::<f64>()
+            }).sum();
+            assert!((got / cell - want as f64).abs() < 0.01, "level {level}: {} v {want}", got / cell);
+        }
+        // the bowl is one round area per level: one polygon each, no slivers
+        assert_eq!(b.iter().filter(|(_, d)| *d == 50.0).count(), 1);
+        assert!(b.iter().all(|(r, _)| r[0].len() >= 4));
+    }
+
+    #[test]
+    fn traces_holes_and_blocks() {
+        // a ring of water round an island, in a grid bigger than one block
+        let (nx, ny) = (300usize, 20usize);
+        let mut z = vec![-30.0f32; nx * ny];
+        for j in 5..15 {
+            for i in 100..110 {
+                z[j * nx + i] = 10.0; // island
+            }
+        }
+        let g = Grid { west: 0.0, south: 0.0, dlon: 0.01, dlat: 0.01, nx, ny, z };
+        let b: Vec<_> = bands(&g).into_iter().filter(|(_, d)| *d == 20.0).collect();
+        assert_eq!(b.len(), 2, "one polygon per block"); // 0..256 and 256..300
+        let first = b.iter().find(|(r, _)| r[0].iter().any(|p| p[0] < 0.5)).unwrap();
+        assert_eq!(first.0.len(), 2, "outer ring and the island's hole");
+        let cell = g.dlon * g.dlat;
+        let area = ring_area(&first.0[0]).abs() - ring_area(&first.0[1]).abs();
+        assert!((area / cell - (256.0 * 20.0 - 100.0)).abs() < 0.01, "{}", area / cell);
+        assert_eq!(first.0[1].len(), 5, "the hole is a square (closed): straight runs merged");
     }
 
     #[test]
@@ -400,6 +549,7 @@ mod tests {
         let (a, src, sp) = area_info(&out).unwrap();
         assert_eq!(src, "ETOPO 2022 15s");
         assert_eq!(sp, 15.0);
+        assert_eq!(file_format(&out), FORMAT);
         assert!((a[0] - 173.0).abs() < 1e-9);
         let store = crate::ChartStore::open_dirs(&[dir.clone()]).unwrap();
         assert!(store.tables.iter().any(|t| t.kind == crate::Kind::WorldDepth));

@@ -48,8 +48,20 @@ export function setupData(map, { toast, reloadTiles } = {}) {
     dot("data-etopo-dot", status.etopo.length ? "ok" : "");
     for (const a of status.etopo) {
       const li = document.createElement("li");
-      li.innerHTML = `<span></span><button data-act="zoom" title="Show this area">Show</button><button data-act="del" title="Delete this area">✕</button>`;
-      li.firstChild.textContent = `${fmtArea(a.area)} · ${Math.round(a.spacing)}″ · ${fmtMB(a.bytes)}`;
+      li.innerHTML = `<span></span>${a.old ? `<button data-act="redo" class="warn" title="Downloaded by an older RaceNav: its shading breaks into stripes when zoomed out. Download this area again">Redo</button>` : ""}<button data-act="zoom" title="Show this area">Show</button><button data-act="del" title="Delete this area">✕</button>`;
+      li.firstChild.textContent = `${fmtArea(a.area)} · ${Math.round(a.spacing)}″ · ${fmtMB(a.bytes)}${a.old ? " · old format" : ""}`;
+      li.querySelector('[data-act="redo"]')?.addEventListener("click", async () => {
+        if (busy) return;
+        setBusy(true);
+        say(`Downloading ${fmtArea(a.area)} again…`);
+        try {
+          await invoke("data_etopo_delete", { file: a.file }); // the old file is open: remove it before writing the new one
+          await invoke("data_etopo", { area: a.area, arcsec: Math.round(a.spacing) || 15 });
+          say("Depths downloaded again.", "good");
+        } catch (e) {
+          say(String(e) === "cancelled" ? "Cancelled: the old area was removed, press Get for chart view to fetch it." : `Download failed (the old area was removed): ${e}`, "bad");
+        } finally { setBusy(false); refresh(); }
+      });
       li.querySelector('[data-act="zoom"]').onclick = () => map.fitBounds([[a.area[0], a.area[1]], [a.area[2], a.area[3]]], { padding: 40, duration: 600 });
       li.querySelector('[data-act="del"]').onclick = async () => {
         try { await invoke("data_etopo_delete", { file: a.file }); say("Depth area deleted."); } catch (e) { say(`Could not delete: ${e}`, "bad"); }
