@@ -149,6 +149,7 @@ export function setupLibrary(map, { ui }) {
     form.lat.value = ddm(m.lat, "N", "S");
     form.lon.value = ddm(m.lon, "E", "W");
     form.notes.value = m.notes || "";
+    form.barrier.value = m.barrier_nm > 0 ? m.barrier_nm : "";
     form.name.focus();
   }
   form.onsubmit = async (e) => {
@@ -156,7 +157,9 @@ export function setupLibrary(map, { ui }) {
     const lat = parseCoord(form.lat.value, "NS"), lon = parseCoord(form.lon.value, "EW");
     if (lat === null || Math.abs(lat) > 90) { status("Latitude not understood: try 36 50.12 S or -36.8353"); return; }
     if (lon === null || Math.abs(lon) > 180) { status("Longitude not understood: try 174 49.8 E or 174.83"); return; }
-    const m = { ...editing, name: form.name.value.trim(), kind: form.kind.value, group: form.group.value.trim(), notes: form.notes.value.trim(), lat, lon };
+    const bn = Number(form.barrier.value);
+    const m = { ...editing, name: form.name.value.trim(), kind: form.kind.value, group: form.group.value.trim(), notes: form.notes.value.trim(), lat, lon,
+      barrier_nm: Number.isFinite(bn) && bn > 0 ? bn : 0 };
     try {
       const saved = await invoke("mark_save", { mark: m });
       form.hidden = true;

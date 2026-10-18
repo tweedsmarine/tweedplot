@@ -128,7 +128,11 @@ How it works: each step fans out headings from every point of the last isochrone
 
 **Gate sweep** (Routing drawer, Gates tab): the gate method, automated. Choose the mark the gates come before (default the finish), a line — a meridian (e.g. 5E) or a parallel — the range along it (e.g. 30S to 40S) and the number of gates; the gates show as violet dots on the chart while the tab is open, with their spacing. **Run gate sweep** computes one routing per gate (each gate is a mark inserted before the target, reached within the arrival radius) with the start time and settings of a normal Compute, with the GRIB shown or with each loaded GRIB, two at a time (**Stop** finishes the ones running). The dock's Gates table lists each gate's arrival per GRIB and the time lost against the best gate under that GRIB; with several GRIBs, the mean and worst time lost, ranked by the mean — the gate that is nearly best under every GRIB is the robust choice when they disagree. A small graph plots time lost against gate position. Click a cell to show that routing in detail; **Show only these** hides other routings; **Remove these routings** takes the sweep's routings off the list. The routings are ordinary ones, so they can be saved, compared or exported like any other.
 
-Not yet: rounding sides (marks are reached within the arrival radius), route optimisation, gates as lines (a gate here is a point).
+**How each mark is reached** (Course drawer, under each mark): *Pass through* (enter its arrival circle: its own radius if typed, else the routing's arrival radius), *Leave to port* / *Leave to starboard* (the leg ends when the boat crosses the line abeam of the mark on the side it must pass, at least the radius off; the mark is a disc of that radius the route may not cut through on that leg and the next), or *As close as possible* (a 0.01 NM circle). Rounding marks show a red (port) or green (starboard) ring; a radius of its own shows a grey dashed ring. The settings are saved with the route.
+
+**Limits and barriers** (Routing › Run): search angle (only headings within ± that of the bearing to the next mark are tried: faster, but keep 90° or more where the route may tack or go round land), heading step, minimum and maximum wind (the routing won't sail on from places outside that range), maximum wave height (from the routing GRIB's waves, else the newest loaded wave GRIB covering the start; the message says when no waves were found), and the true wind angles allowed (e.g. 50° to stay off the wind, 165° to avoid a dead run). **Keep off barriers** uses Library › Barriers: lines the routing may not cross and zones it may not enter (draw them like a ruler: click points, double-click to finish; untick to keep one but not use it; right-click to delete a point or the barrier or switch it off), and library marks given a **Barrier radius** in the mark editor (a red dashed ring; ignored when the mark is on the course). All are kept in `racenav-data\library` (`barriers.json`, marks, routes).
+
+Not yet: route optimisation, gates as lines (a gate here is a point), power-boat routing (fuel and comfort limits).
 
 ```
 cargo run --release -p routing --example route_cli -- --grib file.grb2 --polar boat.csv --chart C:\dev\racenav-data\linz --start -36.838,174.805 --marks "-35.465,174.80;-35.252,174.100"
@@ -140,7 +144,8 @@ Everything is kept as plain JSON in `C:\dev\racenav-data\library` (or `RACENAV_L
 
 ```
 marks.json            every mark, shared by all routes
-routes\<id>.json      a route: name, start, ordered mark ids (rounding side kept for later)
+routes\<id>.json      a route: name, start, ordered mark ids with rounding and radius
+barriers.json         barrier lines and zones
 routings\<id>.json    a saved routing: its inputs (start, marks, time, GRIB, polar, settings) and the result
 export\*.gpx          GPX written by the app
 ```

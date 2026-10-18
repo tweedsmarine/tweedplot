@@ -582,6 +582,23 @@ struct RouteRequest {
     avoid: routing::Avoid,
     #[serde(default)]
     params: routing::Params,
+    /// Per mark (same order as `marks`): rounding "port" | "stbd" | "close" | "" and radius NM (0 = default).
+    #[serde(default)]
+    mark_opts: Vec<MarkOpt>,
+    /// Keep off the library's active barriers and barrier marks.
+    #[serde(default = "yes")]
+    use_barriers: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+#[derive(serde::Deserialize, Default, Clone)]
+#[serde(default)]
+struct MarkOpt {
+    rounding: String,
+    radius_nm: f64,
 }
 
 /// Route from start through the marks with one loaded GRIB, a polar and the chart.
@@ -600,6 +617,43 @@ async fn route_compute(req: RouteRequest) -> Result<serde_json::Value, String> {
         if marks.is_empty() {
             return Err("Add at least one mark.".to_string());
         }
+        let specs: Vec<routing::MarkSpec> = marks
+            .iter()
+            .enumerate()
+            .map(|(i, m)| {
+                let o = req.mark_opts.get(i).cloned().unwrap_or_default();
+                routing::MarkSpec { pos: *m, rounding: routing::Rounding::parse(&o.rounding), radius_nm: (o.radius_nm > 0.0).then_some(o.radius_nm) }
+            })
+            .collect();
+        // barriers: active lines and zones, and barrier marks that aren't on this course
+        let mut barriers = routing::Barriers::default();
+        let mut barrier_count = 0;
+        if req.use_barriers {
+            if let Ok(l) = lib() {
+                for b in l.barriers().unwrap_or_default().into_iter().filter(|b| b.active && b.points.len() >= 2) {
+                    barrier_count += 1;
+                    if b.kind == "zone" && b.points.len() >= 3 { barriers.zones.push(b.points) } else { barriers.lines.push(b.points) }
+                }
+                let on_course = |m: &library::Mark| {
+                    let p = nav_core::LatLon::new(m.lat, m.lon);
+                    marks.iter().chain(std::iter::once(&start)).any(|c| c.distance_to(&p) < 0.01)
+                };
+                for m in l.marks().unwrap_or_default().into_iter().filter(|m| m.barrier_nm > 0.0 && !on_course(m)) {
+                    barrier_count += 1;
+                    barriers.discs.push(([m.lon, m.lat], m.barrier_nm));
+                }
+            }
+        }
+        // waves for the wave-height limit: this GRIB, else a loaded wave GRIB covering the start
+        let wave_grib: Option<Arc<grib::GribFile>> = if req.params.max_hs > 0.0 && grib.times(grib::Param::WaveHeight).is_empty() {
+            let g = GRIBS.lock().unwrap();
+            g.values()
+                .filter(|f| f.times(grib::Param::WaveHeight).first().is_some_and(|&a| a <= req.t0) && f.times(grib::Param::WaveHeight).last().is_some_and(|&b| b >= req.t0))
+                .max_by_key(|f| f.model().1)
+                .cloned()
+        } else {
+            None
+        };
         let clock = std::time::Instant::now();
         let raster = CHARTS.get().map(|store| {
             let mut b = [start.lon, start.lat, start.lon, start.lat];
@@ -611,8 +665,21 @@ async fn route_compute(req: RouteRequest) -> Result<serde_json::Value, String> {
             routing::Raster::from_chart_with(store, [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad], req.safety_depth, 50.0, 16_000_000, req.avoid)
         });
         let raster_ms = clock.elapsed().as_millis();
-        let r = routing::route(start, req.t0, &marks, &polar, grib.as_ref(), raster.as_ref(), &req.params);
+        let r = match &wave_grib {
+            Some(w) => {
+                let src = routing::WithWaves { wind: grib.as_ref(), waves: w.as_ref() };
+                routing::route_marks(start, req.t0, &specs, &polar, &src, raster.as_ref(), &barriers, &req.params)
+            }
+            None => routing::route_marks(start, req.t0, &specs, &polar, grib.as_ref(), raster.as_ref(), &barriers, &req.params),
+        };
         let mut v = serde_json::to_value(&r).map_err(|e| e.to_string())?;
+        v["barriers"] = barrier_count.into();
+        v["waves_from"] = match (&wave_grib, req.params.max_hs > 0.0) {
+            (Some(w), _) => w.model().0.into(),
+            (None, true) if !grib.times(grib::Param::WaveHeight).is_empty() => "the same GRIB".into(),
+            (None, true) => serde_json::Value::String("none: no wave GRIB loaded, the wave limit was not applied".into()),
+            _ => serde_json::Value::Null,
+        };
         v["obstacles"] = serde_json::json!({
             "cell_m": raster.as_ref().map(|r| r.cell_size_m().round()),
             "build_ms": raster_ms,
@@ -651,6 +718,21 @@ fn es(e: library::Error) -> String {
 fn lib_info() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({ "dir": lib()?.dir() }))
 }
+#[tauri::command]
+fn barriers_list() -> Result<Vec<library::Barrier>, String> {
+    lib()?.barriers().map_err(es)
+}
+
+#[tauri::command]
+fn barrier_save(barrier: library::Barrier) -> Result<library::Barrier, String> {
+    lib()?.save_barrier(barrier).map_err(es)
+}
+
+#[tauri::command]
+fn barrier_delete(id: String) -> Result<(), String> {
+    lib()?.delete_barrier(&id).map_err(es)
+}
+
 #[tauri::command]
 fn marks_list() -> Result<Vec<library::Mark>, String> {
     lib()?.marks().map_err(es)
@@ -1186,7 +1268,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_info, chart_info, chart_feature, tides_info, tides_stations, tides_curve, tides_download, tides_cancel, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_compare, grib_meteogram, grib_verify_times, grib_verify_scores, grib_verify_track, grib_verify_grid, grib_point,
             polar_files, polar_speed, route_compute, sk_status,
-            lib_info, marks_list, mark_save, mark_delete, routes_list, route_save, route_delete,
+            lib_info, marks_list, mark_save, mark_delete, barriers_list, barrier_save, barrier_delete, routes_list, route_save, route_delete,
             routings_list, routing_get, routing_save, routing_delete, gpx_export, gpx_write, gpx_import,
             rec_status, rec_start, rec_stop, tracks_list, track_get, track_update, track_delete, track_export,
             yb_open, yb_refresh, yb_races, yb_history,

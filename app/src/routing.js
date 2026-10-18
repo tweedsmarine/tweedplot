@@ -14,7 +14,8 @@ import { routingStats, STATS, hm } from "./stats.js";
 import { setupGates } from "./gates.js";
 
 const OPTS_KEY = "racenav.route"; // kept from earlier versions: step, radius, current
-const OPTS_DEFAULTS = { step: 0, radius: 0.1, current: true, v: 2, tmode: "slider", tfixed: null, hoverTime: false };
+const LIMIT_DEFAULTS = { fan: 180, hstep: 4, mintws: 0, maxtws: 0, maxhs: 0, mintwa: 0, maxtwa: 180, barriers: true };
+const OPTS_DEFAULTS = { step: 0, radius: 0.1, current: true, v: 2, tmode: "slider", tfixed: null, hoverTime: false, ...LIMIT_DEFAULTS };
 const COLS_KEY = "racenav.compare.cols";
 const COLOURS = ["#c2185b", "#1565c0", "#2e7d32", "#ef6c00", "#6a1b9a", "#00838f", "#5d4037", "#455a64", "#d81b60", "#7cb342"];
 
@@ -116,6 +117,20 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
   }
   $("rt-current").checked = opts.current;
   $("rt-current").onchange = (e) => { opts.current = e.target.checked; save(OPTS_KEY, opts); };
+  // limits and barriers
+  const LIMIT_IDS = { fan: "rt-fan", hstep: "rt-hstep", mintws: "rt-mintws", maxtws: "rt-maxtws", maxhs: "rt-maxhs", mintwa: "rt-mintwa", maxtwa: "rt-maxtwa" };
+  function showLimits() {
+    for (const [k, id] of Object.entries(LIMIT_IDS)) $(id).value = opts[k];
+    $("rt-barriers").checked = opts.barriers;
+    const on = Object.keys(LIMIT_IDS).some((k) => Number(opts[k]) !== LIMIT_DEFAULTS[k]);
+    $("rt-limits").querySelector("summary").textContent = on ? "Limits and barriers (limits on)" : "Limits and barriers";
+  }
+  for (const [k, id] of Object.entries(LIMIT_IDS)) {
+    $(id).onchange = (e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= 0) { opts[k] = v; save(OPTS_KEY, opts); } showLimits(); };
+  }
+  $("rt-barriers").onchange = (e) => { opts.barriers = e.target.checked; save(OPTS_KEY, opts); };
+  $("rt-limits-reset").onclick = () => { Object.assign(opts, LIMIT_DEFAULTS); save(OPTS_KEY, opts); showLimits(); };
+  showLimits();
   $("rt-hovertime").checked = opts.hoverTime;
   $("rt-hovertime").onchange = (e) => { opts.hoverTime = e.target.checked; save(OPTS_KEY, opts); };
 
@@ -163,7 +178,12 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
     return {
       start: c.start, marks: c.marks.map((m) => [m.lon, m.lat]), t0: startTime(), grib_path: grib.path, polar_path: b.polar, safety_depth: getSafetyDepth(), avoid: getAvoid?.() ?? { dangers: true, farms: true },
       params: { step_s: opts.step * 60, efficiency: b.eff / 100, tack_s: b.tack, gybe_s: b.gybe,
-                arrival_nm: opts.radius, use_current: opts.current, keep_isochrones_every: 1 },
+                arrival_nm: opts.radius, use_current: opts.current, keep_isochrones_every: 1,
+                fan_deg: Math.min(180, Math.max(30, Number(opts.fan) || 180)), heading_step_deg: Math.min(15, Math.max(1, Number(opts.hstep) || 4)),
+                min_tws: Number(opts.mintws) || 0, max_tws: Number(opts.maxtws) || 0, max_hs: Number(opts.maxhs) || 0,
+                min_twa: Number(opts.mintwa) || 0, max_twa: Number(opts.maxtwa) || 180 },
+      mark_opts: c.marks.map((m) => ({ rounding: m.rounding || "", radius_nm: Number(m.radius_nm) || 0 })),
+      use_barriers: opts.barriers,
       // for saving and reopening: names and library links of the course
       grib_name: grib.name, course_name: c.name, route_id: c.routeId,
       start_ref: c.startRef ? { ...c.startRef } : null, mark_refs: c.marks.map((m) => ({ ...m })),
@@ -216,7 +236,9 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
       const av = r.request.avoid ?? {};
       const extra = [av.dangers !== false && "dangers", av.farms !== false && "marine farms"].filter(Boolean).join(", ");
       const charts = r.obstacles?.charts ? `, land, < ${r.request.safety_depth} m${extra ? `, ${extra}` : ""} avoided` : ", no chart: land not avoided";
-      msg(`${it.name}: arrives ${fmt(r.arrival, true)} (${hm(r.arrival - r.t0)}), ${secs} s${charts}.`, "good");
+      const bars = r.barriers ? `, ${r.barriers} barrier${r.barriers > 1 ? "s" : ""}` : "";
+      const waves = typeof r.waves_from === "string" && r.waves_from.startsWith("none") ? ` Wave limit not applied: no wave GRIB loaded.` : "";
+      msg(`${it.name}: arrives ${fmt(r.arrival, true)} (${hm(r.arrival - r.t0)}), ${secs} s${charts}${bars}.${waves}`, waves ? "warn" : "good");
     } else if (r.status === "grib end") {
       msg(`${it.name}: the weather runs out first. ${r.message}`, "warn");
     } else {

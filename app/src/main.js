@@ -13,6 +13,7 @@ import { setupRuler } from "./ruler.js";
 import { setupGribTools } from "./gribtools.js";
 import { setupWindArrows } from "./windarrows.js";
 import { poiImage } from "./poi.js";
+import { setupBarriers } from "./barriers.js";
 import { setupRoute, markImage } from "./route.js";
 import { setupRouting } from "./routing.js";
 import { setupBoat } from "./boat.js";
@@ -143,6 +144,7 @@ let features = null;
 let ruler = null;
 let gribTools = null;
 let arrows = null;
+let barriers = null;
 
 /** A short message at the bottom of the chart ("" hides it); gone after `ms` if given. */
 let toastTimer = null;
@@ -170,6 +172,7 @@ map.on("load", () => {
   ruler = setupRuler(map, { before: "track", ui, library, route, toast, getVariation: () => vessel.variation });
   setupTracks(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn),
     status: (s) => { document.getElementById("lib-status").textContent = s; } });
+  barriers = setupBarriers(map, { before: "track", library, toast });
   arrows = setupWindArrows(map, { before: "boat" });
   const wa = document.getElementById("inst-arrows");
   wa.checked = arrows.enabled();
@@ -366,6 +369,7 @@ const ctx = document.getElementById("ctx");
 let ctxAt = null;
 let ctxMark = null; // library mark under the right-click, if any
 let ctxRuler = null; // ruler under the right-click: { rid, i, points }
+let ctxBarrier = null; // barrier under the right-click: { id, i, active, name }
 map.on("contextmenu", (e) => {
   e.originalEvent.preventDefault();
   ctxAt = [e.lngLat.lng, e.lngLat.lat];
@@ -377,6 +381,13 @@ map.on("contextmenu", (e) => {
   // a ruler under the right-click: delete it, a point of it, or save it as a route
   ctxRuler = ruler?.isArmed() ? null : ruler?.hitAt(e.point) ?? null;
   for (const el of ctx.querySelectorAll(".ruler-item")) el.hidden = !ctxRuler;
+  ctxBarrier = ctxRuler || barriers?.isDrawing() ? null : barriers?.hitAt(e.point) ?? null;
+  for (const el of ctx.querySelectorAll(".bar-item")) el.hidden = !ctxBarrier;
+  if (ctxBarrier) {
+    ctx.querySelector('[data-act="bar-pt"]').hidden = ctxBarrier.i == null;
+    ctx.querySelector('[data-act="bar-toggle"]').textContent = ctxBarrier.active ? `Switch “${ctxBarrier.name}” off` : `Switch “${ctxBarrier.name}” on`;
+    ctx.querySelector('[data-act="bar-del"]').textContent = `Delete “${ctxBarrier.name}”`;
+  }
   if (ctxRuler) {
     ctx.querySelector('[data-act="ruler-pt"]').hidden = ctxRuler.i == null;
     ctx.querySelector('[data-act="ruler-all"]').hidden = ruler.count() < 2;
@@ -395,7 +406,7 @@ map.on("contextmenu", (e) => {
   boatBtn.disabled = signalKActive();
   boatBtn.title = boatBtn.disabled ? "Signal K is plotting the boat: press Live to pause it first" : "";
   ctx.style.left = `${Math.min(e.point.x, window.innerWidth - 200)}px`;
-  ctx.style.top = `${Math.min(e.point.y, window.innerHeight - (ctxRuler ? 300 : 180))}px`;
+  ctx.style.top = `${Math.min(e.point.y, window.innerHeight - (ctxRuler || ctxBarrier ? 320 : 200))}px`;
   ctx.hidden = false;
 });
 document.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -414,6 +425,9 @@ ctx.addEventListener("click", (e) => {
   if (act === "ruler-pt" && ctxRuler) ruler.deletePoint(ctxRuler.rid, ctxRuler.i);
   if (act === "ruler-del" && ctxRuler) ruler.deleteRuler(ctxRuler.rid);
   if (act === "ruler-all") ruler.deleteAll();
+  if (act === "bar-pt" && ctxBarrier) barriers.deletePoint(ctxBarrier.id, ctxBarrier.i);
+  if (act === "bar-del" && ctxBarrier) barriers.remove(ctxBarrier.id);
+  if (act === "bar-toggle" && ctxBarrier) barriers.toggle(ctxBarrier.id);
   ctx.hidden = true;
 });
 map.on("click", () => { ctx.hidden = true; });

@@ -17,12 +17,23 @@
 //!    interpolated within the step and the route is traced back.
 //!
 //! Marks are routed leg by leg: each leg starts where and when the last one
-//! arrived. Rounding sides are not handled yet (roadmap phase 3).
+//! arrived. A mark is reached by entering its arrival circle (its own radius,
+//! or the routing's), "as close as possible" (a 0.01 NM circle), or rounded to
+//! port or starboard: then the leg ends on crossing the line abeam of the mark
+//! on the side the boat must pass, at least the mark's clearance off, and the
+//! mark is a disc the boat may not cut through on that leg and the next.
+//!
+//! Limits drop parts of the fan: headings outside ±`fan_deg` of the bearing to
+//! the mark, true wind angles outside `min_twa`..`max_twa`; and points where
+//! the wind is outside `min_tws`..`max_tws` or the waves above `max_hs` are
+//! not sailed on from. User barriers (lines, zones, discs) are obstacles like
+//! the chart (see [`barriers`]).
 //!
 //! Wind outside the GRIB's time span or area stops a branch; if every branch
 //! stops, the result says so and gives the closest approach, rather than
 //! inventing weather.
 
+pub mod barriers;
 pub mod raster;
 
 use nav_core::{norm180, norm360, LatLon};
@@ -30,6 +41,7 @@ use polar::Polar;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
+pub use barriers::Barriers;
 pub use raster::{Avoid, Raster};
 
 const KN_PER_MS: f64 = 3600.0 / 1852.0;
@@ -46,6 +58,10 @@ pub trait WindSource: Sync {
     fn end_time(&self) -> Option<i64> {
         None
     }
+    /// Significant wave height (m), if known.
+    fn wave_height(&self, _lat: f64, _lon: f64, _t: i64) -> Option<f64> {
+        None
+    }
 }
 
 impl WindSource for grib::GribFile {
@@ -57,6 +73,30 @@ impl WindSource for grib::GribFile {
     }
     fn end_time(&self) -> Option<i64> {
         self.times(grib::Param::WindU).last().copied()
+    }
+    fn wave_height(&self, lat: f64, lon: f64, t: i64) -> Option<f64> {
+        self.value(grib::Param::WaveHeight, lat, lon, t)
+    }
+}
+
+/// Wind (and current) from one source, waves from another (e.g. GFS + GFS-Wave).
+pub struct WithWaves<'a> {
+    pub wind: &'a dyn WindSource,
+    pub waves: &'a dyn WindSource,
+}
+
+impl WindSource for WithWaves<'_> {
+    fn wind(&self, lat: f64, lon: f64, t: i64) -> Option<(f64, f64)> {
+        self.wind.wind(lat, lon, t)
+    }
+    fn current(&self, lat: f64, lon: f64, t: i64) -> Option<(f64, f64)> {
+        self.wind.current(lat, lon, t)
+    }
+    fn end_time(&self) -> Option<i64> {
+        self.wind.end_time()
+    }
+    fn wave_height(&self, lat: f64, lon: f64, t: i64) -> Option<f64> {
+        self.waves.wave_height(lat, lon, t).or_else(|| self.wind.wave_height(lat, lon, t))
     }
 }
 
@@ -103,6 +143,16 @@ pub struct Params {
     pub max_detour: f64,
     /// Isochrones returned for display (thinned evenly; 0 = all).
     pub max_isochrones: usize,
+    /// Headings tried: within ± this of the bearing to the mark (180 = all round).
+    pub fan_deg: f64,
+    /// Don't sail on from places with less wind than this, or more (kn; 0 = no limit).
+    pub min_tws: f64,
+    pub max_tws: f64,
+    /// Don't sail on from places with higher waves (Hs, m; 0 = no limit).
+    pub max_hs: f64,
+    /// True wind angles allowed (degrees off the wind, either side).
+    pub min_twa: f64,
+    pub max_twa: f64,
 }
 
 impl Default for Params {
@@ -122,6 +172,12 @@ impl Default for Params {
             cell_nm: 0.0,
             max_detour: 1.6,
             max_isochrones: 60,
+            fan_deg: 180.0,
+            min_tws: 0.0,
+            max_tws: 0.0,
+            max_hs: 0.0,
+            min_twa: 0.0,
+            max_twa: 180.0,
         }
     }
 }
@@ -175,6 +231,88 @@ pub struct RouteResult {
     pub compute_ms: u128,
 }
 
+/// How a mark is to be reached.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Rounding {
+    /// Enter the arrival circle.
+    #[default]
+    Through,
+    /// Leave the mark to port (the boat passes with the mark on its left).
+    Port,
+    /// Leave the mark to starboard.
+    Starboard,
+    /// As close as possible: a 0.01 NM circle.
+    Close,
+}
+
+impl Rounding {
+    /// "port", "stbd"/"starboard", "close", anything else = through.
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "port" => Rounding::Port,
+            "stbd" | "starboard" => Rounding::Starboard,
+            "close" => Rounding::Close,
+            _ => Rounding::Through,
+        }
+    }
+}
+
+/// A course mark with how it is to be reached.
+#[derive(Debug, Clone, Copy)]
+pub struct MarkSpec {
+    pub pos: LatLon,
+    pub rounding: Rounding,
+    /// Arrival radius, or the clearance when rounding (NM); None = the routing's arrival radius.
+    pub radius_nm: Option<f64>,
+}
+
+impl MarkSpec {
+    pub fn at(pos: LatLon) -> Self {
+        MarkSpec { pos, rounding: Rounding::Through, radius_nm: None }
+    }
+}
+
+/// What ends a leg.
+#[derive(Debug, Clone, Copy)]
+enum Goal {
+    /// Enter a circle.
+    Circle { c: LatLon, r: f64 },
+    /// Cross, going forward (along `fwd`), the ray from `m` towards `dir`, at least `clear` NM out.
+    Ray { m: LatLon, dir: f64, fwd: f64, clear: f64 },
+}
+
+impl Goal {
+    /// Fraction along the step a→b where the goal is reached, if it is.
+    fn fraction(&self, a: LatLon, b: LatLon) -> Option<f64> {
+        match *self {
+            Goal::Circle { c, r } => arrival_fraction(a, b, c, r),
+            Goal::Ray { m, dir, fwd, clear } => {
+                let k = m.lat.to_radians().cos();
+                let xy = |p: &LatLon| (norm180(p.lon - m.lon) * 60.0 * k, (p.lat - m.lat) * 60.0);
+                let (ax, ay) = xy(&a);
+                let (bx, by) = xy(&b);
+                let (dx, dy) = (bx - ax, by - ay);
+                let (ux, uy) = (dir.to_radians().sin(), dir.to_radians().cos());
+                let (fx, fy) = (fwd.to_radians().sin(), fwd.to_radians().cos());
+                if dx * fx + dy * fy <= 0.0 {
+                    return None; // crossing backwards
+                }
+                let den = dx * uy - dy * ux;
+                if den.abs() < 1e-12 {
+                    return None;
+                }
+                let t = -(ax * uy - ay * ux) / den;
+                if !(0.0..=1.0).contains(&t) {
+                    return None;
+                }
+                let s = (ax + t * dx) * ux + (ay + t * dy) * uy;
+                (s >= clear && s <= 500.0).then_some(t)
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Node {
     lat: f64,
@@ -189,7 +327,7 @@ struct Node {
     sog: f64,
 }
 
-/// Route from `start` at time `t0` through `marks` in order.
+/// Route from `start` at time `t0` through `marks` in order (each entered within the arrival radius).
 pub fn route(
     start: LatLon,
     t0: i64,
@@ -197,6 +335,22 @@ pub fn route(
     polar: &Polar,
     wind: &dyn WindSource,
     obstacles: Option<&Raster>,
+    p: &Params,
+) -> RouteResult {
+    let specs: Vec<MarkSpec> = marks.iter().map(|m| MarkSpec::at(*m)).collect();
+    route_marks(start, t0, &specs, polar, wind, obstacles, &Barriers::default(), p)
+}
+
+/// Route from `start` at time `t0` through `marks` (with rounding and radius), avoiding `barriers` too.
+#[allow(clippy::too_many_arguments)]
+pub fn route_marks(
+    start: LatLon,
+    t0: i64,
+    marks: &[MarkSpec],
+    polar: &Polar,
+    wind: &dyn WindSource,
+    obstacles: Option<&Raster>,
+    barriers: &Barriers,
     p: &Params,
 ) -> RouteResult {
     let clock = std::time::Instant::now();
@@ -220,8 +374,18 @@ pub fn route(
             return res;
         }
     }
+    if barriers.blocked(start) {
+        res.status = "start blocked".into();
+        res.message = "The start is inside a barrier (zone or barrier mark). Move it, or switch that barrier off.".into();
+        return res;
+    }
+    if let Some(i) = marks.iter().position(|m| barriers.blocked(m.pos)) {
+        res.status = "mark blocked".into();
+        res.message = format!("Mark {} is inside a barrier (zone or barrier mark). Move the mark, or switch that barrier off.", i + 1);
+        return res;
+    }
     if let Some(r) = obstacles {
-        if let Some(i) = marks.iter().position(|m| r.blocked(m.lat, m.lon)) {
+        if let Some(i) = marks.iter().position(|m| r.blocked(m.pos.lat, m.pos.lon)) {
             res.status = "mark blocked".into();
             res.message = format!(
                 "Mark {} is on land or in water shallower than the safety depth. Marks must be in navigable water: move it off the rock or into the channel.",
@@ -233,8 +397,28 @@ pub fn route(
     }
     let mut from = start;
     let mut t = t0 as f64;
+    let disc = |m: &MarkSpec| -> Option<([f64; 2], f64)> {
+        matches!(m.rounding, Rounding::Port | Rounding::Starboard).then(|| ([m.pos.lon, m.pos.lat], m.radius_nm.unwrap_or(p.arrival_nm).max(0.005)))
+    };
     for (i, mark) in marks.iter().enumerate() {
-        let leg = route_leg(from, t, *mark, polar, wind, obstacles, p, &mut res);
+        // the course point before this mark (not where the last leg ended): sets the side of a rounding
+        let prev = if i == 0 { start } else { marks[i - 1].pos };
+        let goal = match mark.rounding {
+            Rounding::Through => Goal::Circle { c: mark.pos, r: mark.radius_nm.unwrap_or(p.arrival_nm) },
+            Rounding::Close => Goal::Circle { c: mark.pos, r: 0.01 },
+            Rounding::Port | Rounding::Starboard => {
+                let fwd = if prev.distance_to(&mark.pos) > 1e-6 { prev.bearing_to(&mark.pos) } else { from.bearing_to(&mark.pos) };
+                let dir = if mark.rounding == Rounding::Port { fwd + 90.0 } else { fwd - 90.0 };
+                Goal::Ray { m: mark.pos, dir: norm360(dir), fwd, clear: mark.radius_nm.unwrap_or(p.arrival_nm) }
+            }
+        };
+        // this mark (if rounded) and the last one (if it was rounded) can't be cut through
+        let mut leg_barriers = barriers.clone();
+        leg_barriers.discs.extend(disc(mark));
+        if i > 0 {
+            leg_barriers.discs.extend(disc(&marks[i - 1]));
+        }
+        let leg = route_leg(from, t, mark.pos, goal, polar, wind, obstacles, &leg_barriers, p, &mut res);
         let n = res.legs.len();
         res.legs.push(leg.leg);
         // drop the duplicate join point between legs
@@ -279,12 +463,16 @@ fn route_leg(
     start: LatLon,
     t0: f64,
     dest: LatLon,
+    goal: Goal,
     polar: &Polar,
     wind: &dyn WindSource,
     obstacles: Option<&Raster>,
+    barriers: &Barriers,
     p: &Params,
     res: &mut RouteResult,
 ) -> LegOut {
+    let barriers = (!barriers.is_empty()).then_some(barriers);
+    let limits = p.min_tws > 0.0 || p.max_tws > 0.0 || p.max_hs > 0.0 || p.min_twa > 0.0 || p.max_twa < 180.0 || p.fan_deg < 180.0;
     let vmax = polar.speeds.iter().flatten().fold(0.0f64, |a, &b| a.max(b)) * p.efficiency;
     let direct = start.distance_to(&dest);
     let step_s = if p.step_s > 0.0 { p.step_s } else { auto_step_s(direct, vmax, obstacles.is_some()) };
@@ -296,7 +484,7 @@ fn route_leg(
     let grid_mode = match p.pruning.as_str() {
         "grid" => true,
         "sectors" => false,
-        _ => obstacles.is_some(),
+        _ => obstacles.is_some() || barriers.is_some(),
     };
     let cell_nm = if p.cell_nm > 0.0 { p.cell_nm } else { (vmax * dt_h * 0.5).max(0.02) };
     let cell_deg = cell_nm / 60.0;
@@ -331,10 +519,25 @@ fn route_leg(
                 let here = LatLon::new(n.lat, n.lon);
                 let mut out: Vec<(Node, Option<f64>)> = Vec::new();
                 let Some((tws, twd)) = w else { return out.into_iter() };
+                // limits on where the boat may sail on from (not the start itself)
+                if n.parent != usize::MAX {
+                    if (p.max_tws > 0.0 && tws > p.max_tws) || (p.min_tws > 0.0 && tws < p.min_tws) {
+                        return out.into_iter();
+                    }
+                    if p.max_hs > 0.0 && wind.wave_height(n.lat, n.lon, t.round() as i64).is_some_and(|h| h > p.max_hs) {
+                        return out.into_iter();
+                    }
+                }
                 let mut hs: Vec<f64> = headings.clone();
+                if p.fan_deg < 180.0 {
+                    hs.retain(|h| norm180(h - brg_dest).abs() <= p.fan_deg);
+                }
                 hs.push(brg_dest); // always try straight at the mark
                 for h in hs {
                     let twa = norm180(twd - h); // + = wind from starboard
+                    if twa.abs() < p.min_twa || twa.abs() > p.max_twa {
+                        continue;
+                    }
                     let bsp = polar.bsp(twa.abs(), tws) * p.efficiency;
                     if bsp < 0.05 {
                         continue;
@@ -369,8 +572,13 @@ fn route_leg(
                             continue;
                         }
                     }
-                    // Arrival: does this step reach the arrival circle?
-                    let arrive = arrival_fraction(here, np, dest, p.arrival_nm).map(|f| {
+                    if let Some(b) = barriers {
+                        if !b.segment_clear([n.lon, n.lat], [np.lon, np.lat]) {
+                            continue;
+                        }
+                    }
+                    // Arrival: does this step reach the goal (circle or rounding line)?
+                    let arrive = goal.fraction(here, np).map(|f| {
                         // time spent: penalty first, then sailing
                         let pen_h = dt_h - hours;
                         t + (pen_h + f * hours) * 3600.0
@@ -403,6 +611,9 @@ fn route_leg(
                     status = "no wind data".into();
                     message = format!("The GRIB has no wind for the route at {} (outside its area).", grib::fmt_run(tf as i64));
                 }
+            } else if limits || barriers.is_some() {
+                status = "blocked".into();
+                message = "Every heading is blocked by land, shallow water, barriers or the routing limits (wind, waves, angles).".into();
             } else {
                 status = "blocked".into();
                 message = "Every heading is blocked by land or shallow water.".into();
@@ -413,7 +624,7 @@ fn route_leg(
         // Earliest arrival this step finishes the leg.
         if let Some((node, ta)) = cands.iter().filter_map(|(n, a)| a.map(|ta| (n, ta))).min_by(|a, b| a.1.total_cmp(&b.1)) {
             let parent = node.parent;
-            let arrive_pt = interpolate_arrival(&nodes[parent], node, dest, p.arrival_nm);
+            let arrive_pt = interpolate_arrival(&nodes[parent], node, &goal);
             let mut chain = trace(&nodes, parent);
             let mut last = *node;
             last.lat = arrive_pt.lat;
@@ -826,16 +1037,73 @@ fn arrival_fraction(a: LatLon, b: LatLon, c: LatLon, r_nm: f64) -> Option<f64> {
     (0.0..=1.0).contains(&f).then_some(f)
 }
 
-fn interpolate_arrival(a: &Node, b: &Node, dest: LatLon, r_nm: f64) -> LatLon {
+fn interpolate_arrival(a: &Node, b: &Node, goal: &Goal) -> LatLon {
     let pa = LatLon::new(a.lat, a.lon);
     let pb = LatLon::new(b.lat, b.lon);
-    let f = arrival_fraction(pa, pb, dest, r_nm).unwrap_or(1.0);
+    let f = goal.fraction(pa, pb).unwrap_or(1.0);
     LatLon::new(a.lat + (b.lat - a.lat) * f, a.lon + norm180(b.lon - a.lon) * f)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn spec(pos: LatLon, rounding: Rounding) -> MarkSpec {
+        MarkSpec { pos, rounding, radius_nm: Some(0.2) }
+    }
+
+    /// A mark on the way, then a finish to the north-west: rounding to port the
+    /// route passes east of the mark; to starboard it goes round the west side.
+    #[test]
+    fn rounding_sides() {
+        let pol = test_polar();
+        let start = LatLon::new(-41.0, 173.0);
+        let m = start.destination(0.0, 6.0);
+        let fin = m.destination(270.0, 4.0);
+        let wind = SteadyWind { tws: 10.0, twd: 90.0 }; // easterly: reaching north, running west
+        let p = Params { step_s: 300.0, ..Params::default() };
+        let run = |r: Rounding| route_marks(start, 0, &[spec(m, r), MarkSpec::at(fin)], &pol, &wind, None, &Barriers::default(), &p);
+        for (r, east) in [(Rounding::Port, true), (Rounding::Starboard, false)] {
+            let res = run(r);
+            assert_eq!(res.status, "arrived", "{:?}: {}", r, res.message);
+            let leg1_end = res.legs[0].arrival.unwrap();
+            let pt = res.points.iter().find(|q| q.t == leg1_end).copied().unwrap_or(*res.points.iter().min_by_key(|q| (q.t - leg1_end).abs()).unwrap());
+            let dx = (pt.lon - m.lon) * 60.0 * m.lat.to_radians().cos();
+            assert!(if east { dx > 0.19 } else { dx < -0.19 }, "{r:?}: leg 1 ends {dx:.2} NM east of the mark");
+            // no point of the route within the clearance of the mark
+            for q in &res.points {
+                let d = LatLon::new(q.lat, q.lon).distance_to(&m);
+                assert!(d > 0.15, "{r:?}: passes {d:.2} NM from the mark");
+            }
+        }
+        // through: the route just touches the arrival circle
+        let res = run(Rounding::Through);
+        assert_eq!(res.status, "arrived");
+    }
+
+    /// A fence across the direct line makes the route go round its end.
+    #[test]
+    fn barrier_line_and_limits() {
+        let pol = test_polar();
+        let start = LatLon::new(-41.0, 173.0);
+        let dest = start.destination(90.0, 10.0);
+        let wind = SteadyWind { tws: 10.0, twd: 0.0 };
+        let p = Params { step_s: 300.0, ..Params::default() };
+        let free = route_marks(start, 0, &[MarkSpec::at(dest)], &pol, &wind, None, &Barriers::default(), &p);
+        let mid = start.destination(90.0, 5.0);
+        let fence = Barriers { lines: vec![vec![[mid.lon, mid.lat - 0.05], [mid.lon, mid.lat + 0.2]]], ..Default::default() };
+        let r = route_marks(start, 0, &[MarkSpec::at(dest)], &pol, &wind, None, &fence, &p);
+        assert_eq!(r.status, "arrived", "{}", r.message);
+        assert!(r.distance_nm > free.distance_nm + 0.5, "{} vs {}", r.distance_nm, free.distance_nm);
+        assert!(r.points.iter().any(|q| q.lat < mid.lat - 0.05), "goes round the south end");
+        // a beam reach isn't allowed with max TWA 60: no way east
+        let lim = Params { max_twa: 60.0, ..p.clone() };
+        let r2 = route_marks(start, 0, &[MarkSpec::at(dest)], &pol, &wind, None, &Barriers::default(), &lim);
+        assert!(r2.distance_nm > free.distance_nm + 1.0 || r2.status != "arrived", "{} {}", r2.status, r2.distance_nm);
+        // too much wind everywhere: stuck after the first step
+        let r3 = route_marks(start, 0, &[MarkSpec::at(dest)], &pol, &wind, None, &Barriers::default(), &Params { max_tws: 8.0, ..p.clone() });
+        assert_eq!(r3.status, "blocked", "{}", r3.message);
+    }
 
     /// A simple, smooth test polar: 6 kn reaching, slower upwind, nothing inside 40°.
     fn test_polar() -> Polar {

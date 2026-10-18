@@ -5,6 +5,7 @@
 //!
 //! ```text
 //! <dir>/marks.json             every mark, shared by all routes
+//! <dir>/barriers.json          barrier lines and zones the router avoids
 //! <dir>/routes/<id>.json       one route: an ordered list of mark ids
 //! <dir>/routings/<id>.json     one saved routing: its inputs and the result
 //! <dir>/tracks/<id>.json       one track (logged or imported), see [`tracks`]
@@ -55,13 +56,37 @@ pub struct Mark {
     pub notes: String,
     /// Groups marks, e.g. "Coastal Classic 2026" or "RNZYS".
     pub group: String,
+    /// When above 0: the router keeps this far off (NM), unless the mark is on the course.
+    pub barrier_nm: f64,
     /// Unix seconds.
     pub modified: i64,
 }
 
 impl Default for Mark {
     fn default() -> Self {
-        Mark { id: String::new(), name: String::new(), lat: 0.0, lon: 0.0, kind: "mark".into(), notes: String::new(), group: String::new(), modified: 0 }
+        Mark { id: String::new(), name: String::new(), lat: 0.0, lon: 0.0, kind: "mark".into(), notes: String::new(), group: String::new(), barrier_nm: 0.0, modified: 0 }
+    }
+}
+
+/// A barrier the router avoids: a line it may not cross, or a zone it may not enter.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Barrier {
+    pub id: String,
+    pub name: String,
+    /// "line" or "zone".
+    pub kind: String,
+    /// [lon, lat] points (a zone is closed implicitly).
+    pub points: Vec<[f64; 2]>,
+    /// Switched off barriers are kept but not used.
+    pub active: bool,
+    pub notes: String,
+    pub modified: i64,
+}
+
+impl Default for Barrier {
+    fn default() -> Self {
+        Barrier { id: String::new(), name: String::new(), kind: "line".into(), points: Vec::new(), active: true, notes: String::new(), modified: 0 }
     }
 }
 
@@ -70,8 +95,10 @@ impl Default for Mark {
 #[serde(default)]
 pub struct RouteMark {
     pub mark: String,
-    /// "port", "stbd" or empty (pass through). Not used by the router yet.
+    /// "port", "stbd", "close" (as close as possible) or empty (enter the arrival circle).
     pub rounding: String,
+    /// Arrival radius, or clearance when rounding, NM (0 = the routing's arrival radius).
+    pub radius_nm: f64,
 }
 
 /// An ordered list of marks.
@@ -205,6 +232,46 @@ impl Library {
             return Err(Error::NotFound(id.into()));
         }
         self.write_marks(&all)
+    }
+
+    // ---------- barriers ----------
+
+    pub fn barriers(&self) -> Result<Vec<Barrier>> {
+        let p = self.dir.join("barriers.json");
+        if !p.exists() {
+            return Ok(Vec::new());
+        }
+        Ok(serde_json::from_slice(&std::fs::read(p)?)?)
+    }
+
+    /// Add or update a barrier (an empty id makes a new one, named "Barrier n" when unnamed).
+    pub fn save_barrier(&self, mut b: Barrier) -> Result<Barrier> {
+        let mut all = self.barriers()?;
+        b.modified = now();
+        if b.name.trim().is_empty() {
+            b.name = (1..).map(|k| format!("Barrier {k}")).find(|n| !all.iter().any(|x| &x.name == n)).unwrap();
+        }
+        match all.iter_mut().find(|x| !b.id.is_empty() && x.id == b.id) {
+            Some(x) => *x = b.clone(),
+            None => {
+                if b.id.is_empty() {
+                    b.id = new_id("b");
+                }
+                all.push(b.clone());
+            }
+        }
+        write_json(&self.dir.join("barriers.json"), &all)?;
+        Ok(b)
+    }
+
+    pub fn delete_barrier(&self, id: &str) -> Result<()> {
+        let mut all = self.barriers()?;
+        let n = all.len();
+        all.retain(|b| b.id != id);
+        if all.len() == n {
+            return Err(Error::NotFound(id.into()));
+        }
+        write_json(&self.dir.join("barriers.json"), &all)
     }
 
     // ---------- routes ----------
@@ -349,6 +416,7 @@ impl Library {
                 kind: if w.sym.to_ascii_lowercase().contains("buoy") { "mark".into() } else { "waypoint".into() },
                 notes: w.desc.clone(),
                 group: group.to_string(),
+                barrier_nm: 0.0,
                 modified: now(),
             };
             rep.marks_added += 1;
@@ -361,7 +429,7 @@ impl Library {
         }
         let mut new_routes = Vec::new();
         for (k, r) in data.routes.iter().enumerate() {
-            let ids: Vec<RouteMark> = r.points.iter().map(|w| RouteMark { mark: find_or_add(w, &mut rep), rounding: String::new() }).collect();
+            let ids: Vec<RouteMark> = r.points.iter().map(|w| RouteMark { mark: find_or_add(w, &mut rep), ..Default::default() }).collect();
             let name = if r.name.trim().is_empty() { format!("Imported route {}", k + 1) } else { r.name.trim().to_string() };
             new_routes.push(Route { id: String::new(), name, notes: String::new(), start: None, start_mark: None, marks: ids, modified: 0 });
         }
@@ -518,6 +586,24 @@ mod tests {
     fn temp_lib(tag: &str) -> Library {
         let d = std::env::temp_dir().join(format!("racenav-lib-{tag}-{}", new_id("")));
         Library::open(d).unwrap()
+    }
+
+    #[test]
+    fn barriers_round_trip() {
+        let dir = std::env::temp_dir().join(format!("racenav-bar-{}", std::process::id()));
+        let lib = Library::open(&dir).unwrap();
+        let b = lib.save_barrier(Barrier { kind: "zone".into(), points: vec![[174.0, -36.0], [174.1, -36.0], [174.1, -35.9]], ..Default::default() }).unwrap();
+        assert_eq!(b.name, "Barrier 1");
+        assert!(b.active);
+        let mut b2 = b.clone();
+        b2.active = false;
+        lib.save_barrier(b2).unwrap();
+        let all = lib.barriers().unwrap();
+        assert_eq!(all.len(), 1);
+        assert!(!all[0].active);
+        lib.delete_barrier(&b.id).unwrap();
+        assert!(lib.barriers().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

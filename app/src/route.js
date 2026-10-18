@@ -11,7 +11,19 @@ function load(key, defaults) {
 }
 function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* ignore */ } }
 
+/** A circle of `nm` round `c` ([lon, lat]) as a closed line. */
+function ring(c, nm) {
+  const out = [];
+  const k = Math.cos((c[1] * Math.PI) / 180);
+  for (let i = 0; i <= 48; i++) {
+    const a = (i / 48) * 2 * Math.PI;
+    out.push([c[0] + (Math.sin(a) * nm) / 60 / k, c[1] + (Math.cos(a) * nm) / 60]);
+  }
+  return out;
+}
+
 export function setupRoute(map, { library, getBoat, getArrivalNm }) {
+  const roundingRadius = () => Math.max(Number(getArrivalNm?.()) || 0.1, 0.02);
   const $ = (id) => document.getElementById(id);
   const listeners = [];
   let legsHidden = false;
@@ -28,7 +40,12 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
 
   // ---------- layers ----------------------------------------------------------
   const empty = { type: "FeatureCollection", features: [] };
-  for (const id of ["rt-marks", "rt-legs"]) map.addSource(id, { type: "geojson", data: empty });
+  for (const id of ["rt-marks", "rt-legs", "rt-round"]) map.addSource(id, { type: "geojson", data: empty });
+  // rounding: the clearance ring, red = leave to port, green = to starboard, black = as close as possible;
+  // a grey dashed ring for an arrival radius of its own
+  map.addLayer({ id: "rt-round", type: "line", source: "rt-round",
+    paint: { "line-color": ["match", ["get", "r"], "port", "#c62828", "stbd", "#2e7d32", "close", "#1d2a33", "#5b6b75"], "line-width": 2,
+             "line-dasharray": ["match", ["get", "r"], "port", ["literal", [1, 0]], "stbd", ["literal", [1, 0]], ["literal", [2, 2]]] } }, "track");
   map.addLayer({ id: "rt-legs", type: "line", source: "rt-legs",
     paint: { "line-color": "#c2185b", "line-width": ["case", ["get", "active"], 2.5, 1.2], "line-dasharray": [4, 3], "line-opacity": 0.8 } }, "track");
   map.addLayer({ id: "rt-marks", type: "symbol", source: "rt-marks",
@@ -56,6 +73,10 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     const legs = [];
     for (let i = 1; i < pts.length; i++) legs.push({ type: "Feature", properties: { active: i - (start ? 1 : 0) === navIndex }, geometry: { type: "LineString", coordinates: [pts[i - 1], pts[i]] } });
     map.getSource("rt-legs").setData({ type: "FeatureCollection", features: legsHidden ? [] : legs });
+    map.getSource("rt-round").setData({ type: "FeatureCollection", features: marks.filter((m) => m.rounding || m.radius_nm > 0).map((m) => {
+      const r = m.rounding === "close" ? 0.02 : m.radius_nm > 0 ? m.radius_nm : roundingRadius();
+      return { type: "Feature", properties: { r: m.rounding || "radius" }, geometry: { type: "LineString", coordinates: ring([m.lon, m.lat], r) } };
+    }) });
     library.hide([startRef?.id, ...marks.map((m) => m.id)].filter(Boolean));
     if (selected !== null && !posOf(selected)) deselect();
     drawSelection();
@@ -87,6 +108,20 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       const li = row(i + 1, "", m.name || `New mark ${i + 1}`, `${m.id ? "" : "not saved · "}${ddm(m.lat, "N", "S")} ${ddm(m.lon, "E", "W")}${leg}`,
         `<button data-act="up" title="Earlier">↑</button><button data-act="down" title="Later">↓</button><button data-act="x" title="Remove from the route (stays in the library)">✕</button>`);
       li.classList.toggle("active", i === navIndex);
+      // how the mark is reached: through its arrival circle, rounded to port/starboard, or as close as possible
+      const rr = document.createElement("div");
+      rr.className = "rnd";
+      rr.innerHTML = `<select title="How the routing reaches this mark"><option value="">Pass through</option><option value="port">Leave to port</option>` +
+        `<option value="stbd">Leave to starboard</option><option value="close">As close as possible</option></select>` +
+        `<input type="number" min="0" max="20" step="0.05" title="Arrival radius, or clearance when rounding (NM; empty = the routing's arrival radius)" placeholder="radius">`;
+      const [sel, rad] = rr.children;
+      sel.value = m.rounding || "";
+      rad.value = m.radius_nm > 0 ? m.radius_nm : "";
+      rad.disabled = m.rounding === "close";
+      sel.onchange = () => { m.rounding = sel.value; changed(); };
+      rad.onchange = () => { const v = Number(rad.value); m.radius_nm = Number.isFinite(v) && v > 0 ? v : 0; changed(); };
+      li.querySelector(".main").append(rr);
+      rr.onclick = (e) => e.stopPropagation();
       li.querySelector(".main").onclick = () => map.flyTo({ center: [m.lon, m.lat] });
       li.querySelector('[data-act="up"]').disabled = i === 0;
       li.querySelector('[data-act="down"]').disabled = i === marks.length - 1;
@@ -237,7 +272,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       const sk = startRef && lib.find((x) => x.id === startRef.id);
       if (sk && (sk.lat !== start[1] || sk.lon !== start[0])) await invoke("mark_save", { mark: { ...sk, lon: start[0], lat: start[1] } });
       if (startRef && !sk) startRef = null; // deleted from the library meanwhile
-      const r = await invoke("route_save", { route: { id: routeId ?? "", name, notes: "", start, start_mark: startRef?.id ?? null, marks: marks.map((m) => ({ mark: m.id, rounding: m.rounding || "" })) } });
+      const r = await invoke("route_save", { route: { id: routeId ?? "", name, notes: "", start, start_mark: startRef?.id ?? null, marks: marks.map((m) => ({ mark: m.id, rounding: m.rounding || "", radius_nm: m.radius_nm || 0 })) } });
       routeId = r.id;
       dirty = false;
       persist();
@@ -317,7 +352,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       const refs = req.mark_refs ?? (req.marks ?? []).map((c) => ({ id: null, name: "", lon: c[0], lat: c[1] }));
       marks = refs.map((m) => {
         const now = m.id && lib.find((y) => y.id === m.id);
-        return { id: now ? m.id : null, name: now ? now.name : m.name, lon: m.lon, lat: m.lat, rounding: m.rounding || "" };
+        return { id: now ? m.id : null, name: now ? now.name : m.name, lon: m.lon, lat: m.lat, rounding: m.rounding || "", radius_nm: m.radius_nm || 0 };
       });
       routeId = req.route_id && lib.length ? req.route_id : null;
       $("rt-name").value = req.course_name || "";
@@ -334,8 +369,8 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       const sm = r.start_mark && lib.find((m) => m.id === r.start_mark);
       start = sm ? [sm.lon, sm.lat] : r.start ?? null;
       startRef = sm ? { id: sm.id, name: sm.name } : null;
-      marks = r.marks.map((x) => lib.find((m) => m.id === x.mark)).filter(Boolean)
-        .map((m, i) => ({ id: m.id, name: m.name, lon: m.lon, lat: m.lat, rounding: r.marks[i]?.rounding || "" }));
+      marks = r.marks.map((x) => [x, lib.find((m) => m.id === x.mark)]).filter(([, m]) => m)
+        .map(([x, m]) => ({ id: m.id, name: m.name, lon: m.lon, lat: m.lat, rounding: x.rounding || "", radius_nm: x.radius_nm || 0 }));
       dirty = false;
       navIndex = 0;
       persist();
