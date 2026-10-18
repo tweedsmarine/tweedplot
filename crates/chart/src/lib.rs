@@ -271,7 +271,7 @@ impl ChartStore {
                 let before = layer.len();
                 let col = if kind == Kind::Contour { "valdco" } else { "depth" };
                 self.query(t, bbox, &[col], |vals, g| {
-                    let tg = if kind == Kind::Contour { tp.lines(&g) } else { tp.points(&g) };
+                    let tg = if kind == Kind::Contour { tp.lines(&drop_cell_edges(g)) } else { tp.points(&g) };
                     if let Some(tg) = tg {
                         let mut props = vec![("band", Value::UInt(t.band as u64))];
                         if let Some(v) = vals[0] {
@@ -467,6 +467,70 @@ fn geom_bounds(g: &Geom) -> [f64; 4] {
     b
 }
 
+/// LINZ contours are cut at chart cell edges, and some carry a piece running
+/// along the edge (a straight east–west or north–south line, often a degree
+/// long, drawn across the chart). Split lines at such pieces and drop them:
+/// runs of (nearly, 2e-4°) constant latitude or longitude longer than 0.02°,
+/// and any segment over a degree long (one in the 1:1.5M band runs 21° along
+/// 36.2365°S).
+pub fn drop_cell_edges(g: Geom) -> Geom {
+    let Geom::Lines(lines) = g else { return g };
+    let mut out = Vec::with_capacity(lines.len());
+    for l in lines {
+        let n = l.len();
+        if n < 2 {
+            continue;
+        }
+        // mark segments that belong to a long run of constant latitude or longitude
+        let mut edge = vec![false; n - 1];
+        for axis in 0..2 {
+            let other = 1 - axis;
+            let mut i = 0;
+            while i < n - 1 {
+                let mut j = i;
+                while j < n - 1 && (l[j + 1][other] - l[i][other]).abs() < 2e-4 {
+                    j += 1;
+                }
+                if j > i {
+                    let (lo, hi) = l[i..=j].iter().fold((f64::MAX, f64::MIN), |(lo, hi), p| (lo.min(p[axis]), hi.max(p[axis])));
+                    if hi - lo > 0.02 {
+                        for e in edge.iter_mut().take(j).skip(i) {
+                            *e = true;
+                        }
+                    }
+                    i = j;
+                } else {
+                    i += 1;
+                }
+            }
+        }
+        // and any single segment over a degree long (no contour runs 60 NM straight)
+        for k in 0..n - 1 {
+            if (l[k + 1][0] - l[k][0]).abs().max((l[k + 1][1] - l[k][1]).abs()) > 1.0 {
+                edge[k] = true;
+            }
+        }
+        let mut cur: Vec<[f64; 2]> = Vec::new();
+        for k in 0..n - 1 {
+            if edge[k] {
+                if cur.len() >= 2 {
+                    out.push(std::mem::take(&mut cur));
+                }
+                cur.clear();
+                continue;
+            }
+            if cur.is_empty() {
+                cur.push(l[k]);
+            }
+            cur.push(l[k + 1]);
+        }
+        if cur.len() >= 2 {
+            out.push(cur);
+        }
+    }
+    Geom::Lines(out)
+}
+
 fn classify(table: &str) -> Option<(Kind, u8)> {
     let t = table.to_ascii_lowercase();
     match t.as_str() {
@@ -652,6 +716,26 @@ impl TileProj {
             .map(|p| [p[0].round() as i32, p[1].round() as i32])
             .collect();
         (!out.is_empty()).then_some(TileGeom::Points(out))
+    }
+}
+
+#[cfg(test)]
+mod edge_tests {
+    use super::*;
+
+    #[test]
+    fn drops_contour_pieces_along_cell_edges() {
+        let g = Geom::Lines(vec![
+            vec![[172.9, -36.2365], [172.91, -36.2365], [172.92, -36.2365], [174.4, -36.2365]], // all edge, in short steps: gone
+            vec![[174.0, -36.0], [174.01, -36.1], [174.01, -36.3], [174.02, -36.31]],         // a north–south edge in the middle: split
+            vec![[174.0, -36.0], [174.01, -36.0], [174.05, -36.02]],                          // short flat piece: kept
+            vec![[180.0, -36.2367198], [158.6, -36.2364045]],                                  // the real one: gone
+        ]);
+        let Geom::Lines(out) = drop_cell_edges(g) else { panic!() };
+        assert_eq!(out.len(), 3, "{out:?}");
+        assert_eq!(out[0], vec![[174.0, -36.0], [174.01, -36.1]]);
+        assert_eq!(out[1], vec![[174.01, -36.3], [174.02, -36.31]]);
+        assert_eq!(out[2].len(), 3);
     }
 }
 
