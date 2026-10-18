@@ -9,6 +9,7 @@
 mod decode;
 mod grib1;
 pub mod aec;
+pub mod combine;
 pub mod compare;
 pub mod verify;
 pub mod write;
@@ -441,6 +442,17 @@ impl GribFile {
         // NOAA wave files carry no model name: say so when there is no wind in them
         if f.centre == 7 && f.local.is_none() && f.param != Param::WindU && f.discipline == 10 {
             name = "NCEP GFS-Wave".into();
+        }
+        // wind with a wave model's fields in the same file (combined on download or with Combine)
+        // (not when one model's file holds both, as Meltemus files do)
+        if f.param == Param::WindU {
+            if let Some(w) = self.index.get(&Param::WaveHeight).and_then(|ix| ix.first()).map(|&i| &self.fields[i]) {
+                let other = model_name(w.local.as_ref(), w.centre) != model_name(f.local.as_ref(), f.centre);
+                let noaa = f.centre == 7 && f.local.is_none() && w.local.is_none();
+                if other || noaa {
+                    name.push_str(" + waves");
+                }
+            }
         }
         (name, f.ref_time)
     }

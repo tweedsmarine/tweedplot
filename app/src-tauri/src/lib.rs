@@ -95,13 +95,24 @@ async fn gribdl_start(app: tauri::AppHandle, req: gribdl::Request) -> Result<ser
         let progress = |done: usize, total: usize, bytes: u64| {
             let _ = app.emit("gribdl-progress", serde_json::json!({ "stage": label, "done": done, "total": total, "bytes": bytes }));
         };
-        let path = gribdl::download(&req, &run, &dir, &progress, &DL_CANCEL).map_err(|e| e.to_string())?;
-        Ok::<_, String>(serde_json::json!({ "path": path, "run": run, "name": label }))
+        let d = gribdl::download_ex(&req, &run, &dir, &progress, &DL_CANCEL).map_err(|e| e.to_string())?;
+        Ok::<_, String>(serde_json::json!({ "path": d.path, "run": run, "name": label, "note": d.note }))
     })
     .await
     .map_err(|e| e.to_string());
     DL_BUSY.store(false, Ordering::SeqCst);
     res?
+}
+
+/// Put a wave GRIB into the same file as the wind GRIB of the same run
+/// (`<wind file>+waves.grb2` beside the wind file). Returns the new file's path.
+#[tauri::command]
+async fn grib_combine(a: String, b: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        grib::combine::combine(std::path::Path::new(&a), std::path::Path::new(&b)).map(|p| p.to_string_lossy().into_owned()).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Open a mailto: link (a Saildocs request) in the mail program, or a web link from the manual in the browser.
@@ -1274,7 +1285,7 @@ pub fn run() {
             routings_list, routing_get, routing_save, routing_delete, gpx_export, gpx_write, gpx_import,
             rec_status, rec_start, rec_stop, tracks_list, track_get, track_update, track_delete, track_export,
             yb_open, yb_refresh, yb_races, yb_history,
-            gribdl_models, gribdl_estimate, gribdl_start, gribdl_cancel, open_url
+            gribdl_models, gribdl_estimate, gribdl_start, gribdl_cancel, open_url, grib_combine
         ])
         .register_asynchronous_uri_scheme_protocol("chart", |_ctx, request, responder| {
             let path = request.uri().path().to_string();

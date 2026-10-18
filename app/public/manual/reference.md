@@ -285,6 +285,13 @@ Right-click the chart > **Meteogram here**: every loaded GRIB's forecast at that
 
 ![A meteogram south of Africa with ECMWF IFS (blue) and GFS (red): wind speed with gusts dashed, direction and pressure, the violet line at the slider time. The models agree on the blow on Tuesday and part company after Saturday](img/04-meteogram.jpg)
 
+**Wind and waves in one file**
+
+Wind and waves come from different models: GFS with GFS-Wave, ECMWF IFS or AIFS with the ECMWF wave model. RaceNav can keep them in one file, so one GRIB shows the wind, the waves, the GRIB-at-cursor readings and the meteogram together, and a routing with a wave limit finds its waves without a second file.
+
+- **When downloading**: for GFS, ECMWF IFS or AIFS, tick **Waves … in the same file**. The wave model is downloaded for the same run, area and steps and written into the same file, named `…+waves.grb2`. If the waves can't be had (not on the server yet, say), the wind file is kept and a note says so.
+- **Files you already have**: load the wind GRIB and the wave GRIB of the same run. The Weather drawer offers **Combine**; it writes `<wind file>+waves.grb2`, loads it and unloads the two. The original files are kept.
+
 **Agreement of the loaded GRIBs**
 
 With two or more GRIBs loaded, **Show** offers displays of how much they disagree at the slider time: green where the forecasts agree, red where they don't. Vector disagreement (speed and direction together), speed spread, direction spread (blank in light winds), pressure spread, and run trend (newest run minus oldest: is the forecast getting windier?). The note under the legend lists what is compared. Where the forecasts disagree, plan with margin.

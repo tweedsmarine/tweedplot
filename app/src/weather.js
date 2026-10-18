@@ -252,8 +252,37 @@ export function setupWeather(map, layers) {
       };
       box.append(row);
     }
+    // a wind GRIB and a wave GRIB of the same run: offer to put them in one file
+    const has = (s, p) => s.params.some((x) => x.param === p);
+    const winds = [...loaded].filter(([, s]) => has(s, "WindU") && !has(s, "WaveHeight"));
+    const waves = [...loaded].filter(([, s]) => has(s, "WaveHeight") && !has(s, "WindU"));
+    for (const [wp, ws] of winds) {
+      const match = waves.find(([, vs]) => vs.ref_time === ws.ref_time);
+      if (!match) continue;
+      const [vp, vs] = match;
+      const row = document.createElement("div");
+      row.className = "wx-combine";
+      row.innerHTML = `<span></span><button title="Write one file with the wind and the waves, load it and unload the two">Combine</button>`;
+      row.firstChild.textContent = `${ws.name} and ${vs.name}: same run, wind and waves. Put them in one file?`;
+      row.lastChild.onclick = () => combine(wp, vp);
+      box.append(row);
+    }
     syncMirrors();
     for (const fn of loadedListeners) fn();
+  }
+
+  /** Combine a loaded wind GRIB and wave GRIB of the same run into one file, and load that instead. */
+  async function combine(a, b) {
+    try {
+      alertLine("Combining wind and waves…");
+      const path = await invoke("grib_combine", { a, b });
+      for (const p of [a, b]) { await invoke("grib_unload", { path: p }); loaded.delete(p); if (display === p) display = null; }
+      await load(path);
+      showGrib(path);
+      alertLine(`Wind and waves are now in one file: ${path.split(/[\\/]/).pop()} (the two original files are kept).`);
+    } catch (e) {
+      alertLine(`Could not combine: ${e}`);
+    }
   }
 
   /** Show this loaded GRIB on the chart (the time is kept when it is inside the new GRIB). */

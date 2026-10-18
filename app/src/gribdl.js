@@ -185,7 +185,9 @@ export function setupGribDownload(map, { weather, course }) {
       status(`Downloaded ${r.name} in ${((performance.now() - t0) / 1000).toFixed(0)} s. Loading…`, "good");
       await weather.refreshFiles();
       await weather.load(r.path);
-      status(`${r.name}: downloaded and loaded (${r.path.split(/[\\/]/).pop()}).`, "good");
+      const file = r.path.split(/[\\/]/).pop();
+      if (r.note) status(`${r.name}: downloaded and loaded (${file}). ${r.note}`, "warn");
+      else status(`${r.name}: downloaded and loaded (${file}).`, "good");
     } catch (e) {
       status(String(e) === "cancelled" ? "Download cancelled." : `Download failed: ${e}`, String(e) === "cancelled" ? "warn" : "bad");
     } finally {

@@ -82,6 +82,15 @@ impl Model {
         [Model::Gfs0p25, Model::Gfs0p50, Model::Gfs1p00, Model::GfsWave0p25, Model::EcmwfIfs0p25, Model::EcmwfAifs0p25, Model::EcmwfWave0p25]
     }
 
+    /// The wave model whose fields can go in the same file as this model's wind.
+    pub fn wave_companion(self) -> Option<Model> {
+        match self {
+            Model::Gfs0p25 | Model::Gfs0p50 | Model::Gfs1p00 => Some(Model::GfsWave0p25),
+            Model::EcmwfIfs0p25 | Model::EcmwfAifs0p25 => Some(Model::EcmwfWave0p25),
+            _ => None,
+        }
+    }
+
     pub fn is_ecmwf(self) -> bool {
         matches!(self, Model::EcmwfIfs0p25 | Model::EcmwfAifs0p25 | Model::EcmwfWave0p25)
     }
@@ -95,6 +104,7 @@ impl Model {
                 ParamInfo { id: "rain", name: "Rain rate", fields: 1, default: false },
                 ParamInfo { id: "cape", name: "CAPE (squall risk)", fields: 1, default: false },
                 ParamInfo { id: "temp", name: "Air temperature (2 m)", fields: 1, default: false },
+                ParamInfo { id: "waves", name: "Waves from GFS-Wave in the same file (height, period, direction)", fields: 3, default: false },
             ]
         };
         match self {
@@ -125,6 +135,7 @@ impl Model {
                     ParamInfo { id: "gust", name: "Gusts (where published)", fields: 1, default: false },
                     ParamInfo { id: "mslp", name: "Pressure (MSL)", fields: 1, default: true },
                     ParamInfo { id: "temp", name: "Air temperature (2 m)", fields: 1, default: false },
+                    ParamInfo { id: "waves", name: "Waves from the ECMWF wave model in the same file (height, period, direction)", fields: 3, default: false },
                 ],
                 delay_h: 8,
             },
@@ -138,6 +149,7 @@ impl Model {
                     ParamInfo { id: "wind", name: "Wind at 10 m", fields: 2, default: true },
                     ParamInfo { id: "mslp", name: "Pressure (MSL)", fields: 1, default: true },
                     ParamInfo { id: "temp", name: "Air temperature (2 m)", fields: 1, default: false },
+                    ParamInfo { id: "waves", name: "Waves from the ECMWF wave model in the same file (height, period, direction)", fields: 3, default: false },
                 ],
                 delay_h: 7,
             },
@@ -309,9 +321,11 @@ pub fn download_bytes(req: &Request) -> u64 {
         return estimate_bytes(req);
     }
     let info = req.model.info();
-    let fields: u32 = info.params.iter().filter(|p| req.params.iter().any(|x| x == p.id)).map(|p| p.fields).sum();
+    let wave_extra = req.model.wave_companion().is_some() && req.params.iter().any(|p| p == "waves");
+    let fields: u32 = info.params.iter().filter(|p| p.id != "waves" || !wave_extra).filter(|p| req.params.iter().any(|x| x == p.id)).map(|p| p.fields).sum();
     let per = if req.model == Model::EcmwfWave0p25 { 300_000 } else { 600_000 };
-    fields as u64 * req.model.hours(req.hours, req.every).len() as u64 * per
+    let waves = if wave_extra { 3 * 300_000 * Model::EcmwfWave0p25.hours(req.hours, req.every).len() as u64 } else { 0 };
+    fields as u64 * req.model.hours(req.hours, req.every).len() as u64 * per + waves
 }
 
 /// Rough size of the file written, bytes: grid points × fields × steps at about
@@ -363,6 +377,46 @@ pub type Progress<'a> = &'a (dyn Fn(usize, usize, u64) + Sync);
 
 /// Download every step into `dir`; returns the file written.
 pub fn download(req: &Request, run: &Run, dir: &Path, progress: Progress, cancel: &AtomicBool) -> Result<PathBuf> {
+    download_ex(req, run, dir, progress, cancel).map(|d| d.path)
+}
+
+/// A finished download: the file, and a note when part of it couldn't be had
+/// (the waves for a wind-and-waves file, say).
+#[derive(Debug, Clone, Serialize)]
+pub struct Downloaded {
+    pub path: PathBuf,
+    pub note: Option<String>,
+}
+
+/// Download; with "waves" ticked for a wind model, also download its wave model
+/// (GFS-Wave, ECMWF wave) for the same run, area and steps, and put both in one
+/// file ("…+waves.grb2"). If the waves fail, the wind file is kept and `note` says why.
+pub fn download_ex(req: &Request, run: &Run, dir: &Path, progress: Progress, cancel: &AtomicBool) -> Result<Downloaded> {
+    let wave_model = req.model.wave_companion().filter(|_| req.params.iter().any(|p| p == "waves"));
+    let Some(wm) = wave_model else {
+        return download_one(req, run, dir, progress, cancel).map(|path| Downloaded { path, note: None });
+    };
+    let mut atm = req.clone();
+    atm.params.retain(|p| p != "waves");
+    let wave = Request { model: wm, params: vec!["waves".into(), "period".into()], ..req.clone() };
+    if atm.params.is_empty() {
+        return download_one(&wave, run, dir, progress, cancel).map(|path| Downloaded { path, note: None });
+    }
+    let wind = download_one(&atm, run, dir, progress, cancel)?;
+    match download_one(&wave, run, dir, progress, cancel) {
+        Ok(wv) => {
+            let out = grib::combine::combined_path(&wind);
+            grib::combine::write(&wind, &wv, &out).map_err(|e| Error::Bad(e.to_string()))?;
+            let _ = std::fs::remove_file(&wind);
+            let _ = std::fs::remove_file(&wv);
+            Ok(Downloaded { path: out, note: None })
+        }
+        Err(Error::Cancelled) => Err(Error::Cancelled),
+        Err(e) => Ok(Downloaded { path: wind, note: Some(format!("Wind downloaded; the waves could not be: {e}")) }),
+    }
+}
+
+fn download_one(req: &Request, run: &Run, dir: &Path, progress: Progress, cancel: &AtomicBool) -> Result<PathBuf> {
     if req.model.vars(&req.params).is_empty() {
         return Err(Error::Bad("choose at least one parameter".into()));
     }
@@ -456,6 +510,23 @@ pub(crate) fn file_name(req: &Request, run: &Run, last: u32) -> String {
 mod tests {
     use super::*;
 
+    #[test]
+    fn waves_in_the_same_file() {
+        assert_eq!(Model::EcmwfIfs0p25.wave_companion(), Some(Model::EcmwfWave0p25));
+        assert_eq!(Model::Gfs0p50.wave_companion(), Some(Model::GfsWave0p25));
+        assert_eq!(Model::EcmwfWave0p25.wave_companion(), None);
+        for m in [Model::Gfs0p25, Model::EcmwfIfs0p25, Model::EcmwfAifs0p25] {
+            assert!(m.info().params.iter().any(|p| p.id == "waves"), "{m:?}");
+        }
+        // wind-model filter variables ignore the waves tick (they come from the wave model)
+        let r = Request { model: Model::Gfs0p25, area: [172.0, -41.5, 178.5, -34.0], params: vec!["wind".into(), "waves".into()], hours: 48, every: 3 };
+        assert!(!r.model.vars(&r.params).iter().any(|v| v.contains("HTSGW")));
+        // the ECMWF amount counts wave fields at the wave model's size
+        let e = Request { model: Model::EcmwfIfs0p25, ..r.clone() };
+        let plain = Request { params: vec!["wind".into()], ..e.clone() };
+        assert!(download_bytes(&e) > download_bytes(&plain));
+    }
+
     fn req(model: Model) -> Request {
         Request { model, area: [172.0, -41.5, 178.5, -34.0], params: vec!["wind".into(), "mslp".into()], hours: 240, every: 3 }
     }
@@ -527,6 +598,24 @@ mod tests {
         assert_eq!(g.times(grib::Param::Gust).len(), 1);
         let p = g.value(grib::Param::Mslp, -40.5, 173.5, g.times(grib::Param::Mslp)[0]).unwrap();
         assert!(p > 95_000.0 && p < 105_000.0, "{p}");
+    }
+
+    /// Real GFS and GFS-Wave output of one run, written one after the other: one
+    /// file with wind and waves, named as such.
+    #[test]
+    fn gfs_and_gfswave_in_one_file() {
+        let dir = std::env::temp_dir().join(format!("racenav-gfsw-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (a, b) = (dir.join("GFS_0p25_t.grb2"), dir.join("GFSwave_0p25_t.grb2"));
+        std::fs::write(&a, b64(include_str!("../tests/gfs_0p25_nelson_f003.b64"))).unwrap();
+        std::fs::write(&b, b64(include_str!("../tests/gfswave_0p25_nelson_f003.b64"))).unwrap();
+        let out = grib::combine::combine(&b, &a).unwrap();
+        let g = grib::GribFile::open(&out).unwrap();
+        let t = g.times(grib::Param::WaveHeight)[0];
+        assert!(g.wind(-40.5, 173.5, g.times(grib::Param::WindU)[0]).is_some());
+        assert!(g.value(grib::Param::WaveHeight, -40.5, 173.5, t).is_some() || g.value(grib::Param::WaveHeight, -40.0, 174.5, t).is_some());
+        assert_eq!(g.model().0, "NCEP GFS + waves");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Real GFS-Wave filter output (same run and area): wave height decodes.

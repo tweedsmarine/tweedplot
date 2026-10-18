@@ -427,3 +427,6 @@ table.gt-table tr.gt-best td.nm { font-weight: 700; }
 #manual .man-lightbox .lb-svg { width: min(1200px, 94vw); background: #fff; border-radius: 6px; padding: 12px; }
 #manual .man-lightbox .lb-svg svg { width: 100%; height: auto; display: block; }
 #manual .man-lightbox img[hidden] { display: none; }
+.wx-combine { display: flex; align-items: center; gap: 8px; margin: 4px 0 6px; padding: 6px 8px; background: #eef5fb; border: 1px solid #c9dcee; border-radius: 6px; font-size: 12.5px; color: var(--ink); }
+.wx-combine span { flex: 1; }
+.wx-combine button { flex: none; padding: 4px 10px; }
