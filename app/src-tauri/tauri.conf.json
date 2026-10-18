@@ -35,7 +35,8 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "resources/world_depth.gpkg"
+      "resources/world_depth.gpkg",
+      "resources/polars/*"
     ]
   }
 }

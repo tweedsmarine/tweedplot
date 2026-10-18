@@ -219,7 +219,7 @@ On the day, look again: the latest forecast, a fresh GRIB, the actual conditions
 
 ## Making a power polar
 
-Routing needs a boat speed for every wind angle and strength. For a power boat, a simple table does the job, and it can even capture how the boat slows into a head sea. Save it as a text file ending `.csv` in `racenav-data\polars`, then choose it in the Boat drawer.
+Routing needs a boat speed for every wind angle and strength. For a power boat, a simple table does the job, and it can even capture how the boat slows into a head sea. Save it as a text file ending `.csv`, bring it in with Boat > **Import polar…** (or save it straight into your polar folder: Boat > **Open folder**), then choose it in the Boat drawer.
 
 The first row lists wind speeds (kn); each following row starts with a true wind angle (0 = straight into the wind) followed by the boat's speed at each wind speed, separated by semicolons. An example for a trailer boat that cruises at 22 kn:
 

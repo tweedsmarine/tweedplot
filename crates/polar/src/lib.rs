@@ -71,6 +71,9 @@ impl Polar {
         if tws.is_empty() {
             return Err(PolarError::Empty);
         }
+        if tws.windows(2).any(|w| w[1] <= w[0]) {
+            return Err(PolarError::Parse { line: hline, msg: "wind speeds must go up from left to right".into() });
+        }
 
         let mut rows: Vec<(f64, Vec<f64>)> = Vec::new();
         for (ln, l) in lines {

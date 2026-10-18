@@ -47,7 +47,7 @@ RaceNav runs on Windows 10 or 11 (Intel or ARM) and keeps all its data in plain 
 | --- | --- | --- |
 | `linz` | LINZ chart data (the zip files as downloaded) | See Charts for which datasets to download |
 | `grib` | Weather files, downloaded or copied in | qtVlm's GRIB folder is read too |
-| `polars` | Boat speed tables (polars) | qtVlm's polar folder is read too |
+| `polars` | Your boat speed tables (polars) | See Polars, under Your boat. Without `racenav-data` they live in RaceNav's own data folder |
 | `library` | Marks, routes, barriers, saved routings, tracks, GPX exports | Plain JSON: safe to back up and copy |
 | `tides` | LINZ tide tables | Downloaded from the Chart drawer |
 | `tracking` | YB race tracking data | One sub-folder per race |
@@ -184,7 +184,7 @@ RaceNav logs every Signal K session, AIS targets included, while it runs. **Char
 **Lines and arrows on the boat**
 
 - *Heading line* (solid) and *COG line* (dashed orange): each as long as a set time at the boat's speed, or to the edge of the chart. Set in Chart and Signal K > Own boat.
-- *Wind arrows*: true wind (blue) and apparent wind (orange), each pointing the way the wind blows with its tip on the boat and longer as the wind gets stronger. With live data they sit on the boat. When planning (paused, or no live data) they follow the cursor instead, showing the GRIB's true wind there and the apparent wind you would feel on a shown routing's heading and boat speed when the cursor is near that routing. Away from a routing there is no boat to feel it, so only the true wind is shown. Turn them on or off in the Instruments drawer.
+- *Wind arrows*: true wind (blue) and apparent wind (orange), each pointing the way the wind blows with its tip on the boat and longer as the wind gets stronger. With live data they sit on the boat. When planning (paused, or no live data) they follow the cursor instead, showing the GRIB's true wind there and the apparent wind you would feel on a shown routing's heading and boat speed when the cursor is near that routing. Away from a routing there is no boat to feel it, so only the true wind is shown. Expect the apparent wind well forward of the true wind whenever the boat is fast for the wind: at 7 kn on a broad reach (TWA 128°) in 9 kn of true wind, the apparent wind is about 77°, forward of the beam. That is why asymmetric spinnakers are trimmed for a beam reach in light air. Hover a routing point for the exact AWA and AWS. Turn them on or off in the Instruments drawer.
 
 **Damping**
 
@@ -193,6 +193,59 @@ Wave motion makes heading, speed and wind jump about. Chart and Signal K > Dampi
 **Tracks and recording**
 
 Library > Tracks > **Record** logs the boat's track from Signal K while RaceNav runs, even while plotting is paused. It keeps a fix every 10 s while moving, sooner in a tack or gybe, and is saved every 30 s and when the app closes. **New log** finishes one track and starts another. Tracks can be shown, renamed, coloured, exported as GPX, and imported from GPX (from a plotter, Navionics, qtVlm and so on). Click a track for the time, speed and course at that point; tick **Boat at weather time** to see where the boat was at the slider time, which is useful for comparing a race track with the forecast.
+
+**Polars**
+
+A polar is the table of your boat's speed at each true wind angle (TWA) and true wind speed (TWS). Routing, the target speeds and the polar efficiency all come from it, so it is worth getting right. The weather routing tutorial explains what a polar is and why every polar is optimistic; this section is about the files.
+
+*Where RaceNav looks.* Boat > Polar lists two kinds:
+
+| Kind | Where | Notes |
+| --- | --- | --- |
+| Yours | `racenav-data\polars`, or without `racenav-data` the `polars` folder in RaceNav's app data | **Import polar…** copies a file here; **Open folder** opens it in Explorer. Anything you put here yourself appears too |
+| Shipped | Installed with RaceNav, marked *(shipped)* in the list | Replaced on every update: don't edit them. Copy one into your folder under the same name to use your version instead |
+
+RaceNav reads files ending `.pol`, `.csv` or `.txt`, and lists only those it can read. Import checks a file before copying it and says what is wrong if it can't read it. `RACENAV_POLAR_DIR` points your folder elsewhere.
+
+*The format.* A plain text table, the same as qtVlm, OpenCPN, Expedition's text export and most other routers use:
+
+```text
+TWA\TWS	4	6	8	10	12	16	20
+40	3.1	4.5	5.5	6.2	6.6	6.9	7.0
+52	3.9	5.5	6.5	7.1	7.4	7.6	7.7
+90	4.7	6.3	7.2	7.8	8.2	8.8	9.2
+120	4.2	5.9	7.0	7.7	8.2	9.0	9.6
+150	2.8	4.3	5.5	6.6	7.3	8.2	9.1
+180	2.0	3.1	4.1	5.1	6.0	7.3	8.2
+```
+
+- **First line**: any label in the first cell (`TWA\TWS` by custom), then the true wind speeds in knots, increasing from left to right.
+- **Each further line**: a true wind angle in degrees (0 = head to wind, 180 = dead downwind), then the boat speed in knots at each wind speed. Every line needs one speed per wind speed. The angles can be in any order; the same table serves both tacks.
+- **Separators**: semicolons, tabs, commas or spaces. RaceNav works out which from the first line. Use a full stop for decimals (`6.5`, not `6,5`).
+- **Comments**: blank lines and lines starting with `#` are ignored, so you can note the source and date at the top.
+- **The file name** is the polar's name in the list.
+
+*Between and beyond the numbers.* Speeds between the table's angles and wind speeds are interpolated in a straight line both ways. Below the lightest wind speed the speed falls in proportion to zero at 0 kn (unless the table has a 0 kn column, as a power polar does). Above the strongest it holds the last column: RaceNav never extrapolates upwards. Angles inside the first row (inside 40° in the example) are interpolated towards the nearest row; put a row of zeros at 0° (or at the angle the boat stops sailing, about 30° for most yachts) so the routing doesn't think the boat can point higher than it can.
+
+*Where to get one.*
+
+| Source | Notes |
+| --- | --- |
+| ORC certificate | The best start for most racing yachts. The certificate's speed guide is a VPP polar for that boat as measured; copy its table into a text file. The ORC site has certificates for many boats, including sister ships of yours |
+| Designer, builder or class association | Often on request or in the owner's documents. Usually VPP results for a fully crewed boat with new sails |
+| Another router | qtVlm, OpenCPN, Expedition, Adrena and the online sailing games ship or share polars for many production boats. Their quality varies: check against what you know of your boat |
+| Sailmaker | Will often run a VPP for a customer, especially with a new sail plan |
+| Your own logs | The most honest, once you have hours in a range of conditions. Recording tracks builds the data; building a polar from them is planned |
+
+*Making or checking one.*
+
+1. Start from the nearest you can find: your boat's ORC certificate, a sister ship's, or a similar boat's scaled by length.
+2. Check the shape. Upwind speeds should peak in 12–16 kn and level off; the best upwind angle is usually 38–45°, the best downwind angle 140–170° depending on the boat and wind. Speeds that keep climbing in 30+ kn are a VPP with no sea in it.
+3. Compare with the instruments: sail at a steady angle for a few minutes in steady wind, note TWS, TWA and boat speed, and compare with the table. Do this at several angles and wind speeds over a season.
+4. If you are consistently a set fraction below, lower the efficiency in the Boat drawer rather than editing the table. Edit the table (in a spreadsheet, saved as CSV, or any text editor) where it is wrong in shape: a sail you don't carry, an angle the boat can't hold.
+5. Keep the original. Save your version under a new name (`First40_7_ours.pol`) with a `#` line saying what you changed.
+
+For a power boat, see *Making a power polar* in the Route planning tutorial.
 
 ## Instruments
 

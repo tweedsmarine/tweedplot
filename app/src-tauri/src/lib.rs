@@ -536,15 +536,35 @@ pub(crate) fn sk_url() -> String {
     std::env::var("RACENAV_SK_URL").unwrap_or_else(|_| signalk::DEFAULT_URL.to_string())
 }
 
-/// Polar folders: `RACENAV_POLAR_DIR`, `C:\dev\racenav-data\polars`, qtVlm's polar folder.
-fn polar_dirs() -> Vec<PathBuf> {
-    let mut v: Vec<PathBuf> = Vec::new();
+/// Your own polars: `RACENAV_POLAR_DIR`, else `C:\dev\racenav-data\polars` when
+/// racenav-data exists, else `<app data>\polars` (made on first use).
+fn user_polar_dir(app: &tauri::AppHandle) -> PathBuf {
     if let Ok(d) = std::env::var("RACENAV_POLAR_DIR") {
-        v.push(d.into());
+        return PathBuf::from(d);
     }
-    v.push(r"C:\dev\racenav-data\polars".into());
-    v.push(r"C:\Program Files (x86)\qtVlm\polar".into());
-    v.retain(|d| d.is_dir());
+    let dev = PathBuf::from(r"C:\dev\racenav-data");
+    let d = if dev.is_dir() { dev.join("polars") } else { app.path().app_data_dir().map(|p| p.join("polars")).unwrap_or_else(|_| PathBuf::from("polars")) };
+    let _ = std::fs::create_dir_all(&d);
+    d
+}
+
+/// The polars shipped with RaceNav (read only).
+fn bundled_polar_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let candidates = [
+        app.path().resource_dir().ok().map(|d| d.join("resources").join("polars")),
+        app.path().resource_dir().ok().map(|d| d.join("polars")),
+        Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources").join("polars")),
+    ];
+    candidates.into_iter().flatten().find(|d| d.is_dir())
+}
+
+/// Polar folders, yours first: a polar of yours with the same name as a shipped one is used instead.
+fn polar_dirs(app: &tauri::AppHandle) -> Vec<(PathBuf, &'static str)> {
+    let mut v = vec![(user_polar_dir(app), "yours")];
+    if let Some(b) = bundled_polar_dir(app) {
+        v.push((b, "shipped"));
+    }
+    v.retain(|d| d.0.is_dir());
     v
 }
 
@@ -562,9 +582,9 @@ fn polar_speed(path: String, twa: f64, tws: f64) -> Option<f64> {
 }
 
 #[tauri::command]
-fn polar_files() -> Vec<serde_json::Value> {
-    let mut out = Vec::new();
-    for dir in polar_dirs() {
+fn polar_files(app: tauri::AppHandle) -> Vec<serde_json::Value> {
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    for (dir, source) in polar_dirs(&app) {
         let Ok(rd) = std::fs::read_dir(&dir) else { continue };
         for e in rd.flatten() {
             let p = e.path();
@@ -576,15 +596,50 @@ fn polar_files() -> Vec<serde_json::Value> {
             if polar::Polar::from_path(&p).is_err() {
                 continue;
             }
-            out.push(serde_json::json!({
-                "path": p.to_string_lossy(),
-                "name": p.file_stem().map(|f| f.to_string_lossy().into_owned()),
-                "dir": dir,
-            }));
+            let name = p.file_stem().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+            if out.iter().any(|o| o["name"].as_str() == Some(name.as_str())) {
+                continue;
+            }
+            out.push(serde_json::json!({ "path": p.to_string_lossy(), "name": name, "dir": dir, "source": source }));
         }
     }
     out.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
     out
+}
+
+/// Check a polar file's text and copy it into your polar folder. Returns the saved path.
+#[tauri::command]
+fn polar_import(app: tauri::AppHandle, name: String, text: String) -> Result<String, String> {
+    let stem: String = std::path::Path::new(&name)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default()
+        .chars()
+        .map(|c| if c.is_alphanumeric() || " ._-".contains(c) { c } else { '_' })
+        .collect();
+    let stem = stem.trim().to_string();
+    if stem.is_empty() {
+        return Err("The file has no usable name.".into());
+    }
+    polar::Polar::parse(&stem, &text).map_err(|e| format!("Not a polar RaceNav can read ({e}). See Manual > Reference > Polars for the format."))?;
+    let ext = std::path::Path::new(&name).extension().and_then(|x| x.to_str()).unwrap_or("pol").to_ascii_lowercase();
+    let ext = if matches!(ext.as_str(), "csv" | "pol" | "txt") { ext } else { "pol".into() };
+    let dest = user_polar_dir(&app).join(format!("{stem}.{ext}"));
+    std::fs::write(&dest, text).map_err(|e| format!("Could not save {}: {e}", dest.display()))?;
+    Ok(dest.to_string_lossy().into_owned())
+}
+
+/// Open your polar folder in Explorer.
+#[tauri::command]
+fn polar_open_folder(app: tauri::AppHandle) -> Result<String, String> {
+    let d = user_polar_dir(&app);
+    #[cfg(windows)]
+    std::process::Command::new("explorer").arg(&d).spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open").arg(&d).spawn().map_err(|e| e.to_string())?;
+    #[cfg(all(unix, not(target_os = "macos")))]
+    std::process::Command::new("xdg-open").arg(&d).spawn().map_err(|e| e.to_string())?;
+    Ok(d.to_string_lossy().into_owned())
 }
 
 #[derive(serde::Deserialize)]
@@ -1482,7 +1537,7 @@ pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             app_info, chart_info, chart_feature, chart_clearances, cockpit_open, tides_info, tides_stations, tides_curve, tides_download, tides_cancel, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_compare, grib_meteogram, grib_verify_times, grib_verify_scores, grib_verify_track, grib_verify_grid, grib_point,
-            polar_files, polar_speed, route_compute, sk_status,
+            polar_files, polar_import, polar_open_folder, polar_speed, route_compute, sk_status,
             stations_cmd::stations_latest, stations_cmd::station_history,
             live::ais_targets, live::ais_online, live::ais_status, live::ais_set_own, live::ais_tracks, live::replay_logs, live::replay_start, live::replay_control, live::replay_stop,
             lib_info, marks_list, mark_save, mark_delete, barriers_list, barrier_save, barrier_delete, routes_list, route_save, route_delete,

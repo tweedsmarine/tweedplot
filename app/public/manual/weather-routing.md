@@ -93,7 +93,7 @@ A polar is a table (or the curve drawn from it) of boat speed against true wind 
 | Designer or class association | Theoretical (from a velocity prediction program, VPP) for a fully crewed boat in flat water with perfect sails. Optimistic for real sailing |
 | Rating certificates (ORC) | VPP polars from measured boat data; consistent between boats, still optimistic offshore |
 | Your own logged data | The truest, once you have enough hours across the range of angles and wind. Track recording builds the data; building polars from it is planned |
-| Another program's polar file | qtVlm CSV and .pol formats are read directly |
+| Another program's polar file | qtVlm CSV and .pol formats are read directly: Boat > Import polar… (the file format, and where to find polars, are in the Reference manual under Your boat > Polars) |
 
 **Efficiency**
 
