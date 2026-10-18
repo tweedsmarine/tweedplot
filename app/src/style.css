@@ -542,11 +542,19 @@ html[data-palette^="night"] body { background: #fff; } /* black after the invers
 
 /* ---------- cockpit window ---------- */
 body.cockpit { margin: 0; height: 100vh; display: flex; flex-direction: column; background: #10181d; color: #e8eef2; overflow: hidden; }
-#ck-grid { flex: 1; display: grid; gap: 6px; padding: 6px; grid-auto-rows: 1fr; min-height: 0; }
-.tile.ck { min-height: 0; padding: 8px 12px; }
-.tile.ck .lbl { font-size: clamp(12px, 2vh, 22px); }
-.tile.ck .v { font-size: clamp(32px, 9vh, 120px); }
-.tile.ck.wide .v { font-size: clamp(20px, 5vh, 60px); }
+#ck-wrap { flex: 1; position: relative; min-height: 0; display: flex; }
+#ck-grid { flex: 1; display: grid; gap: 6px; padding: 6px; min-height: 0; }
+#ck-handles { position: absolute; inset: 0; pointer-events: none; }
+.ck-h { position: absolute; pointer-events: auto; z-index: 5; touch-action: none; }
+.ck-h.col { top: 6px; bottom: 6px; width: 12px; cursor: col-resize; }
+.ck-h.row { left: 6px; right: 6px; height: 12px; cursor: row-resize; }
+.ck-h:hover, .ck-h:active { background: rgba(74, 163, 223, 0.45); border-radius: 4px; }
+.tile.ck { min-height: 0; min-width: 0; padding: 8px 12px; container-type: size; }
+.tile.ck .lbl { font-size: clamp(11px, 9cqh, 22px); }
+/* digits fill the tile: sized from the tile itself (container units) */
+.tile.ck .v { font-size: max(16px, min(62cqh, 27cqw)); line-height: 1; }
+.tile.ck .v .u { font-size: 0.35em; }
+.tile.ck.wide .v { font-size: max(14px, min(30cqh, 13cqw)); }
 .tile.ck { overflow: hidden; }
 .tile.ck.graphic .v { flex: 1; min-height: 0; display: flex; justify-content: center; align-items: center; }
 .tile.ck.graphic .v svg { height: 100%; width: auto; max-width: 100%; }

@@ -111,7 +111,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
     // leave clicks on the app's own things (course, routings, fleet, marks) to them
     const pad = 6;
     const box = [[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]];
-    const own = map.queryRenderedFeatures(box).some((f) => /^(rt-|lib-|fl-|dl-|boat|tide-)/.test(f.layer.id));
+    const own = map.queryRenderedFeatures(box).some((f) => /^(rt-|lib-|fl-|dl-|boat|tide-|stn-|ais-|alarm-)/.test(f.layer.id));
     if (own) return;
     const hit = map.queryRenderedFeatures(box, { layers: POINTS }).concat(
       map.queryRenderedFeatures(box, { layers: LINES }), map.queryRenderedFeatures(e.point, { layers: ["f-area-hit"] }));

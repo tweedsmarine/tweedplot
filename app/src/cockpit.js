@@ -18,9 +18,77 @@ const save = () => { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch
 let ctx = { v: {}, now: Date.now(), age: Infinity, safetyDepth: 3 };
 let lastMsg = 0;
 
+/** Column widths and row heights as fractions (dragged at the handles). */
+function sizes() {
+  const rows = Math.max(1, Math.ceil(s.tiles.length / s.cols));
+  const fit = (a, n) => { a = Array.isArray(a) ? a.slice(0, n) : []; while (a.length < n) a.push(1); return a; };
+  s.colW = fit(s.colW, s.cols);
+  s.rowH = fit(s.rowH, rows);
+  return rows;
+}
+function applySizes(handles = true) {
+  const g = $("ck-grid");
+  g.style.gridTemplateColumns = s.colW.map((f) => `minmax(0, ${f}fr)`).join(" ");
+  g.style.gridTemplateRows = s.rowH.map((f) => `minmax(0, ${f}fr)`).join(" ");
+  if (handles) requestAnimationFrame(placeHandles);
+}
+/** Drag handles on the boundaries between columns and between rows. */
+function placeHandles() {
+  const g = $("ck-grid"), box = $("ck-handles");
+  box.innerHTML = "";
+  const tiles = [...g.children];
+  if (!tiles.length) return;
+  const gr = g.getBoundingClientRect();
+  const first = (i) => tiles[i]?.getBoundingClientRect();
+  for (let c = 0; c < s.cols - 1; c++) {
+    const a = first(c), b = first(c + 1);
+    if (!a || !b) continue;
+    const h = document.createElement("div");
+    h.className = "ck-h col";
+    h.style.left = `${(a.right + b.left) / 2 - gr.left - 6}px`;
+    h.title = "Drag to widen or narrow these columns";
+    drag(h, "x", c, gr.width);
+    box.append(h);
+  }
+  for (let r = 0; r < s.rowH.length - 1; r++) {
+    const a = first(r * s.cols), b = first((r + 1) * s.cols);
+    if (!a || !b) continue;
+    const h = document.createElement("div");
+    h.className = "ck-h row";
+    h.style.top = `${(a.bottom + b.top) / 2 - gr.top - 6}px`;
+    h.title = "Drag to make these rows taller or shallower";
+    drag(h, "y", r, gr.height);
+    box.append(h);
+  }
+}
+function drag(h, axis, i, total) {
+  h.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    h.setPointerCapture(e.pointerId);
+    const arr = axis === "x" ? s.colW : s.rowH;
+    const sum = arr.reduce((a, b) => a + b, 0);
+    const start = axis === "x" ? e.clientX : e.clientY;
+    const a0 = arr[i], b0 = arr[i + 1];
+    const move = (ev) => {
+      const d = (((axis === "x" ? ev.clientX : ev.clientY) - start) / total) * sum;
+      const min = 0.15 * sum / arr.length;
+      const a = Math.max(min, Math.min(a0 + b0 - min, a0 + d));
+      arr[i] = a; arr[i + 1] = a0 + b0 - a;
+      applySizes(false); // keep this handle while dragging; it follows the pointer
+      if (axis === "x") h.style.left = `${parseFloat(h.dataset.p0) + ((ev.clientX - start))}px`;
+      else h.style.top = `${parseFloat(h.dataset.p0) + ((ev.clientY - start))}px`;
+    };
+    const up = () => { h.removeEventListener("pointermove", move); h.removeEventListener("pointerup", up); save(); placeHandles(); };
+    h.dataset.p0 = axis === "x" ? h.style.left : h.style.top;
+    h.addEventListener("pointermove", move);
+    h.addEventListener("pointerup", up);
+  });
+}
+window.addEventListener("resize", () => requestAnimationFrame(placeHandles));
+
 function build() {
   const g = $("ck-grid");
-  g.style.gridTemplateColumns = `repeat(${s.cols}, 1fr)`;
+  sizes();
   g.innerHTML = "";
   s.tiles.forEach((k, i) => {
     const it = ITEMS[k];
@@ -32,6 +100,7 @@ function build() {
     g.append(t);
   });
   $("ck-cols").textContent = `Columns: ${s.cols}`;
+  applySizes();
   render();
 }
 
@@ -92,7 +161,8 @@ function pal() {
   $("ck-pal").textContent = PAL_NAMES[s.pal];
 }
 $("ck-pal").onclick = () => { s.pal = PALS[(PALS.indexOf(s.pal) + 1) % PALS.length]; save(); pal(); };
-$("ck-cols").onclick = () => { s.cols = (s.cols % 5) + 1; save(); build(); };
+$("ck-cols").onclick = () => { s.cols = (s.cols % 5) + 1; s.colW = null; s.rowH = null; save(); build(); };
+$("ck-even").onclick = () => { s.colW = null; s.rowH = null; save(); build(); };
 $("ck-add").onclick = () => { s.tiles.push("SOG"); save(); build(); menu(s.tiles.length - 1); };
 $("ck-full").onclick = async () => { try { const w = getCurrentWindow(); await w.setFullscreen(!(await w.isFullscreen())); } catch { /* not in Tauri */ } };
 
