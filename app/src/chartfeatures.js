@@ -345,10 +345,15 @@ function obstruction() {
   return g.getImageData(0, 0, 30, 30);
 }
 
+// information symbols are drawn at twice the size of the old ones (more for the small
+// round ones), with thinner lines for the size, so they read beside buoys and rocks
+const SMALL_K = { ca: 1, mf: 1.4, an: 1.5, ab: 1.5, hf: 1.5 };
 function small(kind) {
-  const [c, g] = canvas(30, 30);
+  const k = SMALL_K[kind] ?? 2, n = Math.ceil(30 * k);
+  const [c, g] = canvas(n, n);
+  g.scale(k, k);
   const cx = 15, cy = 15;
-  g.lineWidth = 2; g.strokeStyle = INK; g.fillStyle = INK;
+  g.lineWidth = 2 * Math.min(1, 1.4 / k); g.strokeStyle = INK; g.fillStyle = INK;
   switch (kind) {
     case "lm": g.beginPath(); g.arc(cx, cy, 7, 0, 7); g.stroke(); g.beginPath(); g.arc(cx, cy, 2, 0, 7); g.fill(); break;
     case "rc": g.strokeStyle = MAGENTA; g.lineWidth = 2.5; g.beginPath(); g.arc(cx, cy, 11, 0, 7); g.stroke(); break;
@@ -366,7 +371,7 @@ function small(kind) {
     case "fg": g.strokeStyle = MAGENTA; for (const r of [5, 9, 13]) { g.beginPath(); g.arc(cx - 6, cy, r, -0.6, 0.6); g.stroke(); } break;
     default: g.beginPath(); g.arc(cx, cy, 3, 0, 7); g.fill();
   }
-  return g.getImageData(0, 0, 30, 30);
+  return g.getImageData(0, 0, n, n);
 }
 
 function anchor(g, cx, cy, k, colour = MAGENTA) {

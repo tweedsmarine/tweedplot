@@ -41,6 +41,14 @@ pub fn is_hazard(code: &str) -> bool {
     matches!(code, "UWTROC" | "WRECKS" | "OBSTRN" | "PILPNT" | "OFSPLF" | "MARCUL" | "HULKES" | "BRIDGE" | "CBLOHD" | "PIPOHD")
 }
 
+/// Information a stranger entering port needs to find early (pilot boarding, radio
+/// calling-in points, signal and rescue stations): shown from `INFO_ZOOM` whatever the
+/// chart's SCAMIN, which often hides them until the harbour chart.
+pub fn is_info(code: &str) -> bool {
+    matches!(code, "PILBOP" | "RDOCAL" | "SISTAT" | "RSCSTA")
+}
+pub const INFO_ZOOM: f64 = 9.0;
+
 /// How dangerous a hazard point is, lower first: drying or awash, then of unknown
 /// depth, then by depth over it; other hazards after.
 fn hazard_rank(code: &str, a: &Attrs) -> f64 {
@@ -218,7 +226,7 @@ impl ChartStore {
         self.tables
             .iter()
             .enumerate()
-            .filter(|(_, t)| t.kind == Kind::Feature && (z >= band_minzoom(t.band) || t.class.is_some_and(|c| is_hazard(c.code))))
+            .filter(|(_, t)| t.kind == Kind::Feature && (z >= band_minzoom(t.band) || t.class.is_some_and(|c| is_hazard(c.code) || (is_info(c.code) && z as f64 >= INFO_ZOOM))))
             .collect()
     }
 
@@ -345,7 +353,10 @@ impl ChartStore {
                                 if is_hazard(class.code) && !finer_bands.is_empty() && self.covered(&finer_bands, p) {
                                     continue;
                                 }
-                                let minz = a.num("scamin").map_or(0.0, |s| s57::scamin_zoom(s, p[1]));
+                                let mut minz = a.num("scamin").map_or(0.0, |s| s57::scamin_zoom(s, p[1]));
+                                if is_info(class.code) {
+                                    minz = minz.min(INFO_ZOOM);
+                                }
                                 let hazard = is_hazard(class.code);
                                 if !hazard && !keep(minz) {
                                     continue;
@@ -417,7 +428,7 @@ impl ChartStore {
                             // from the zoom the finer copies show; before that the inside part stays.
                             let gb = geom_bounds(&row.geom);
                             let lat0 = (bbox[1] + bbox[3]) / 2.0;
-                            mine_seen.push((gb, row.vals[1].as_deref().and_then(|s| s.parse().ok()).map_or(0.0, |s| s57::scamin_zoom(s, lat0))));
+                            mine_seen.push((gb, row.vals[1].as_deref().and_then(|s| s.parse().ok()).map_or(0.0, |s| s57::scamin_zoom(s, lat0)).min(if is_info(class.code) { INFO_ZOOM } else { f64::MAX })));
                             // the finer copies of this feature (those overlapping it) show from the
                             // latest of their zooms; with none here, from when that band's usually do
                             let overlap = |b: &[f64; 4]| b[0] <= gb[2] && b[2] >= gb[0] && b[1] <= gb[3] && b[3] >= gb[1];
@@ -440,7 +451,10 @@ impl ChartStore {
                             let geom = geom_cut.as_ref().unwrap_or(&row.geom);
                             let tg = if class.geo == Geo::Line { tp.lines(geom) } else { tp.polygons(geom) };
                             let lat = (bbox[1] + bbox[3]) / 2.0;
-                            let minz = row.vals[1].as_deref().and_then(|s| s.parse().ok()).map_or(0.0, |s| s57::scamin_zoom(s, lat));
+                            let mut minz = row.vals[1].as_deref().and_then(|s| s.parse().ok()).map_or(0.0, |s| s57::scamin_zoom(s, lat));
+                            if is_info(class.code) {
+                                minz = minz.min(INFO_ZOOM);
+                            }
                             if !hazard && !keep(minz) {
                                 return;
                             }
