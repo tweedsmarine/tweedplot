@@ -3,9 +3,9 @@
 //! cargo run --release -p routing --example route_cli -- \
 //!   --grib file.grb2 --polar Morgane_median.csv --chart C:\dev\racenav-data\linz \
 //!   --start -36.838,174.805 --marks -35.565,174.705;-35.258,174.125 \
-//!   [--time 1791720000] [--safety 3] [--step 300] [--eff 1.0] [--out route.geojson]
+//!   [--rounding stbd,stbd,] [--time 1791720000] [--safety 3] [--step 300] [--eff 1.0] [--out route.geojson]
 use nav_core::LatLon;
-use routing::{route, Params, Raster};
+use routing::{route_marks, Barriers, MarkSpec, Params, Raster, Rounding};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -38,7 +38,14 @@ fn main() {
         r
     });
 
-    let r = route(start, t0, &marks, &polar, &grib, raster.as_ref(), &p);
+    // --rounding "stbd,port,," : one per mark (port, stbd, close, or empty = pass through)
+    let rnd: Vec<String> = get("--rounding").map(|s| s.split(',').map(|x| x.trim().to_string()).collect()).unwrap_or_default();
+    let specs: Vec<MarkSpec> = marks
+        .iter()
+        .enumerate()
+        .map(|(i, m)| MarkSpec { pos: *m, rounding: Rounding::parse(rnd.get(i).map(|s| s.as_str()).unwrap_or("")), radius_nm: None })
+        .collect();
+    let r = route_marks(start, t0, &specs, &polar, &grib, raster.as_ref(), &Barriers::default(), &p);
     eprintln!("{}: {}  steps {}  {} ms", r.status, r.message, r.steps, r.compute_ms);
     if let Some(a) = r.arrival {
         let h = (a - t0) as f64 / 3600.0;

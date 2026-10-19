@@ -348,7 +348,9 @@ The list shows each leg's distance. **↑ ↓** reorder marks; **✕** takes a m
 | Leave to starboard | The same, mark on your right | Green ring |
 | As close as possible | Reach within 0.01 NM (about 20 m): a fishing spot, a mooring, a fuel berth | Black ring |
 
-When the course turns towards the mark's side (the mark is inside the turn, as at a windward mark or an out-and-back turning mark), the routing goes right round it and only finishes the leg once it is past the mark on the way to the next one. When the course turns away from that side, passing the mark on the correct side is enough.
+Rounding works like the string rule in the racing rules: a string following the route from the previous mark to the next must go round the mark on the side asked. When the course turns towards that side (the mark is inside the turn: a windward mark, a turning mark you go out to and come back from, an island you sail round), the routing goes right round it. When the course turns away from that side, passing it on the correct side is enough. The routing really goes round, so if the way between the mark and the shore is closed by land, water shallower than the safety depth or a barrier, it stops and says there is no way round on that side, rather than touching the mark and turning back. Then check the rounding side in the sailing instructions, and only lower the safety depth if the water is really safe.
+
+A mark in the middle of an island (as in "leave Little Barrier to starboard") is fine: give it a clearance (radius) that keeps the route off the shore by as much as you want, and the routing rounds the island.
 
 Use the rounding sides for race marks and headlands you must keep off; use a generous radius for marks you only need to pass near (an offshore waypoint) so the routing is not forced through a single point.
 
