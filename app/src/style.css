@@ -89,6 +89,17 @@ details.sub summary { cursor: pointer; font-size: 11px; color: var(--quiet); tex
 .wx-row input[type="range"] { flex: 1.3; }
 .wx-row .val { width: 72px; text-align: right; font-variant-numeric: tabular-nums; color: var(--quiet); font-size: 12px; }
 .wx-row select#wx-shading, .wx-row select#boat-polar { flex: 1.3; }
+.seafilter { margin-top: 6px; user-select: none; }
+.seafilter[hidden], .legend[hidden] { display: none; }
+.seafilter .track { position: relative; height: 18px; margin: 0 8px 12px; background: repeating-linear-gradient(45deg, #e3e8ec 0 4px, #f3f6f8 4px 8px); border-radius: 4px; cursor: pointer; touch-action: none; }
+.seafilter .grad { position: absolute; top: 0; bottom: 0; border-radius: 3px; pointer-events: none; }
+.seafilter .h { position: absolute; top: 18px; width: 0; height: 0; margin-left: -7px; border: 7px solid transparent; border-bottom: 10px solid #1d2a33; border-top: 0; cursor: ew-resize; }
+.seafilter .h.tg { border-bottom-color: #c0392b; }
+.seafilter .h.tg::after { content: ""; position: absolute; left: -1px; top: -18px; width: 2px; height: 18px; background: #c0392b; }
+.seafilter .vals { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--quiet); }
+.seafilter .vals .lo, .seafilter .vals .hi { color: #1d2a33; font-weight: 600; }
+.seafilter .vals .tg { color: #c0392b; font-weight: 600; flex: 1; text-align: center; }
+.seafilter .vals .fit { flex: none; padding: 2px 8px; font-size: 11px; }
 .legend { display: flex; height: 16px; margin-top: 6px; border-radius: 4px; overflow: hidden; }
 .legend span { flex: 1; font-size: 10px; line-height: 16px; text-align: left; padding-left: 2px; color: #1d2a33; }
 #rt-summary { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; margin-top: 4px; }

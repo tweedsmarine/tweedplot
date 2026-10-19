@@ -44,9 +44,11 @@ const VERR_SPD = [[-12, "#2166ac"], [-8, "#4393c3"], [-4, "#92c5de"], [-1.5, "#d
 const VERR_DIR = [[-60, "#2166ac"], [-30, "#4393c3"], [-15, "#92c5de"], [-5, "#d1e5f0"], [5, "#f7f7f7"], [15, "#fddbc7"], [30, "#f4a582"],
   [60, "#d6604d"], [90, "#b2182b"]];
 
-// Ocean: sea temperature and salinity are shown on a colour range fitted to what
-// is in view (`auto`), so fronts and eddies of a few tenths of a degree stand out;
-// these are only the starting ranges.
+// Ocean: sea temperature and salinity (`auto`) are shown through a filter the
+// skipper sets with three pointers under the colour bar: a low and a high limit
+// (nothing shown outside them) and a target, which sits at the middle of the
+// colours with its own bold contour. The colours follow the filter, never the zoom.
+// These scales are only the starting point before a file is loaded.
 const SST = [[8, "#30123b"], [10, "#4145ab"], [12, "#4675ed"], [14, "#39a2fc"], [16, "#1bcfd4"], [18, "#24eca6"], [20, "#61fc6c"],
   [22, "#a4fc3b"], [24, "#d1e834"], [26, "#f3c63a"], [28, "#fe9b2d"], [30, "#f36315"]];
 const SSS = [[33.5, "#30123b"], [34, "#4145ab"], [34.3, "#39a2fc"], [34.6, "#1bcfd4"], [34.9, "#61fc6c"], [35.2, "#d1e834"], [35.5, "#fe9b2d"], [36, "#f36315"]];
@@ -63,6 +65,16 @@ export function autoScale(lo, hi) {
   const step = [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => s >= raw) ?? raw;
   const start = Math.floor(lo / step) * step;
   return TURBO.map((c, i) => [Math.round((start + i * step) * 1000) / 1000, c]);
+}
+
+/** The colours for a sea filter: lo..target over the cool half of TURBO, target..hi over the warm half. */
+export function seaScale(f) {
+  const half = TURBO.length / 2;
+  const lo = f.lo, hi = Math.max(f.hi, f.lo + 1e-3), tg = Math.min(Math.max(f.tg, lo + 1e-4), hi - 1e-4);
+  const out = [];
+  for (let i = 0; i < half; i++) out.push([lo + ((tg - lo) * i) / half, TURBO[i]]);
+  for (let i = 0; i < half; i++) out.push([tg + ((hi - tg) * i) / (half - 1), TURBO[half + i]]);
+  return out;
 }
 
 /** A tidy contour interval giving about `n` lines over lo..hi. */
@@ -114,6 +126,8 @@ const WX_DEFAULTS = { density: 5, size: 1.0, shading: "2", opacity: 0.45, land: 
   isoStep: 4, isoAuto: true,
   // contours over sea temperature and salinity (fronts)
   isotherms: true,
+  // per sea layer: { lo, tg, hi } (see seaScale)
+  seaFilter: {},
   // loaded GRIBs left out of the agreement displays
   cmpOff: [] };
 const DENSITY_POINTS = [80, 150, 300, 500, 900, 1400, 2200, 3500, 6000, 1e9];
@@ -190,7 +204,7 @@ export function setupWeather(map, layers) {
   // isotherms (and salinity contours) over the ocean layers: fronts show as bunched lines
   map.addSource("wx-isotherms", { type: "geojson", data: fc([]) });
   map.addLayer({ id: "wx-isotherms", type: "line", source: "wx-isotherms",
-    paint: { "line-color": "#1d2a33", "line-width": 0.8, "line-opacity": 0.7 } }, beforeTop);
+    paint: { "line-color": "#1d2a33", "line-width": ["case", ["==", ["get", "target"], 1], 2.6, 0.8], "line-opacity": ["case", ["==", ["get", "target"], 1], 0.95, 0.65] } }, beforeTop);
   map.addLayer({ id: "wx-isotherm-labels", type: "symbol", source: "wx-isotherms", filter: ["==", ["geometry-type"], "Point"],
     layout: { "icon-image": ["concat", "lbl:", ["to-string", ["get", "hpa"]]], "icon-allow-overlap": false, "icon-size": 0.75 } }, beforeTop);
   if (!map.hasImage("wave-arrow")) map.addImage("wave-arrow", waveArrow(), { pixelRatio: 2 });
@@ -614,34 +628,20 @@ export function setupWeather(map, layers) {
         }
       }
       showCompareNote(layer, gs);
-      // ocean layers: fit the colours to the values in view, and contour them
+      // ocean layers: colours from the skipper's filter (not the view); contours within it
       let contours = [];
       if (layer.auto && gs && !gs.error) {
-        const [w, s, e, n] = bbox;
-        const vis = [];
-        for (let j = 0; j < gs.nj; j++) {
-          const lat = gs.lat0 + j * gs.dlat;
-          if (lat < s || lat > n) continue;
-          for (let i = 0; i < gs.ni; i++) {
-            const lon = gs.lon0 + i * gs.dlon;
-            const v = gs.values[j * gs.ni + i];
-            if (v != null && lon >= w && lon <= e) vis.push(v);
-          }
-        }
-        if (vis.length > 4) {
-          vis.sort((a, b) => a - b);
-          const lo = vis[Math.floor(vis.length * 0.02)], hi = vis[Math.ceil(vis.length * 0.98) - 1];
-          const sc = autoScale(lo, hi);
-          if (JSON.stringify(sc) !== JSON.stringify(layer.scale)) {
-            layer.scale = sc;
-            if (wx.shading !== "off") map.setPaintProperty("wx-cells", "fill-color", shadingExpression(wx.shading, layer));
-            drawLegend();
-          }
-          if (layer.contour && wx.isotherms) {
-            const step = niceStep(lo, hi);
-            const dp = step < 0.1 ? 2 : step < 1 ? 1 : 0;
-            contours = isobars(gs, step).map((f) => ({ ...f, properties: { hpa: +(Math.round(f.properties.hpa / step) * step).toFixed(dp) } }));
-          }
+        const f = wx.seaFilter[wx.layer];
+        const r = seaRange[wx.layer];
+        if (!f || !r || r.path !== (oceanPath(layer) ?? display)) ensureSeaRange(wx.layer, layer);
+        if (f && layer.contour && wx.isotherms) {
+          const step = niceStep(f.lo, f.hi);
+          const dp = step < 0.1 ? 2 : step < 1 ? 1 : 0;
+          contours = isobars(gs, step)
+            .map((x) => ({ ...x, properties: { hpa: +(Math.round(x.properties.hpa / step) * step).toFixed(dp) } }))
+            .filter((x) => x.properties.hpa >= f.lo - 1e-9 && x.properties.hpa <= f.hi + 1e-9);
+          // the target's own line
+          contours.push(...isobars(gs, 0, [f.tg]).map((x) => ({ ...x, properties: { hpa: +f.tg.toFixed(dp + 1), target: 1 } })));
         }
       }
       map.getSource("wx-isotherms").setData(fc(contours));
@@ -759,9 +759,114 @@ export function setupWeather(map, layers) {
   const landSel = $("wx-land");
   landSel.value = wx.land;
   landSel.onchange = () => { wx.land = landSel.value; saveWx(); map.moveLayer("wx-cells", shadingBefore()); };
+  // ---------- sea filter: low, target, high ----------------------------------------------
+  // The range of each sea layer's values over the whole loaded file (the slider's
+  // track), worked out once per file, never from the view.
+  const seaRange = {};
+  let rangeBusy = null;
+  async function ensureSeaRange(key, layer) {
+    const path = oceanPath(layer) ?? display;
+    if (!path || rangeBusy === key + path) return;
+    const ps = loaded.get(path)?.params.find((p) => p.param === layer.params[0]);
+    if (!ps) return;
+    rangeBusy = key + path;
+    const g = await invoke("grib_grid", { path, layer: key, t: Math.min(Math.max(t, ps.times[0]), ps.times.at(-1)), bbox: ps.bbox, maxPoints: 60000 }).catch(() => null);
+    rangeBusy = null;
+    const vals = (g?.values ?? []).filter((v) => v != null).sort((a, b) => a - b);
+    if (vals.length < 2) return;
+    const min = vals[Math.floor(vals.length * 0.005)], max = vals[Math.ceil(vals.length * 0.995) - 1];
+    const q = seaQuantum(min, max);
+    const r = { path, min: +(Math.floor(min / q) * q).toFixed(6), max: +(Math.ceil(max / q) * q).toFixed(6) };
+    if (r.max <= r.min) r.max = r.min + q;
+    seaRange[key] = r;
+    const f = wx.seaFilter[key];
+    // first time, or a file whose values lie outside the saved filter: start from the whole range
+    if (!f || f.hi < r.min || f.lo > r.max) {
+      wx.seaFilter[key] = { lo: r.min, hi: r.max, tg: +roundTo((r.min + r.max) / 2, q).toFixed(6) };
+      saveWx();
+    }
+    applyLayer();
+    draw();
+  }
+  /** The step the pointers move in: 0.1 °C, 0.01 PSU or so. */
+  function seaQuantum(lo, hi) {
+    const r = Math.max(hi - lo, 0.01);
+    return 10 ** Math.floor(Math.log10(r / 20));
+  }
+  const roundTo = (v, q) => Math.round(v / q) * q;
+
+  /** The filter widget under the colour bar. */
+  function drawSeaFilter(layer) {
+    const box = $("wx-sea");
+    const f = wx.seaFilter[wx.layer], r = seaRange[wx.layer];
+    box.hidden = !(layer.auto && f && r && wx.shading !== "off");
+    if (box.hidden) return;
+    const span = Math.max(r.max - r.min, 1e-6);
+    const pc = (v) => `${Math.min(100, Math.max(0, ((v - r.min) / span) * 100))}%`;
+    const grad = box.querySelector(".grad");
+    grad.style.left = pc(f.lo);
+    grad.style.width = `calc(${pc(f.hi)} - ${pc(f.lo)})`;
+    const sc = seaScale(f);
+    const w = Math.max(f.hi - f.lo, 1e-6);
+    grad.style.background = `linear-gradient(to right, ${sc.map(([v, c]) => `${c} ${((v - f.lo) / w) * 100}%`).join(", ")}, ${sc.at(-1)[1]} 100%)`;
+    for (const k of ["lo", "tg", "hi"]) box.querySelector(`.h.${k}`).style.left = pc(f[k]);
+    const q = seaQuantum(r.min, r.max);
+    const dp = Math.max(0, -Math.round(Math.log10(q)));
+    const fmtv = (v) => `${v.toFixed(dp)}${layer.unit === "°C" ? "°" : ""}`;
+    box.querySelector(".v.lo").textContent = fmtv(f.lo);
+    box.querySelector(".v.tg").textContent = `target ${fmtv(f.tg)}`;
+    box.querySelector(".v.hi").textContent = fmtv(f.hi);
+    box.querySelector(".v.min").textContent = fmtv(r.min);
+    box.querySelector(".v.max").textContent = fmtv(r.max);
+    box.title = `${layer.label} (${layer.unit}): drag the outer pointers to set the lowest and highest shown, the middle one to the target (bold contour). Fit: back to the whole file's range.`;
+  }
+  // dragging a pointer
+  (() => {
+    const box = $("wx-sea");
+    const track = box.querySelector(".track");
+    let drag = null;
+    track.addEventListener("pointerdown", (e) => {
+      const f = wx.seaFilter[wx.layer], r = seaRange[wx.layer];
+      if (!f || !r) return;
+      const rect = track.getBoundingClientRect();
+      const v = r.min + ((e.clientX - rect.left) / rect.width) * (r.max - r.min);
+      // the pointer clicked, else the nearest one (the target wins a tie)
+      const k = e.target.classList.contains("h") ? [...e.target.classList].find((c) => ["lo", "tg", "hi"].includes(c))
+        : ["tg", "lo", "hi"].reduce((a, b) => (Math.abs(f[b] - v) < Math.abs(f[a] - v) ? b : a));
+      drag = { k, rect };
+      track.setPointerCapture(e.pointerId);
+      move(e);
+    });
+    const move = (e) => {
+      if (!drag) return;
+      const f = wx.seaFilter[wx.layer], r = seaRange[wx.layer];
+      const q = seaQuantum(r.min, r.max);
+      let v = roundTo(r.min + ((e.clientX - drag.rect.left) / drag.rect.width) * (r.max - r.min), q);
+      v = Math.min(r.max, Math.max(r.min, v));
+      if (drag.k === "lo") f.lo = Math.min(v, f.tg - q);
+      else if (drag.k === "hi") f.hi = Math.max(v, f.tg + q);
+      else f.tg = Math.min(Math.max(v, f.lo + q), f.hi - q);
+      f.lo = +f.lo.toFixed(6); f.hi = +f.hi.toFixed(6); f.tg = +f.tg.toFixed(6);
+      applyLayer();
+    };
+    track.addEventListener("pointermove", move);
+    track.addEventListener("pointerup", () => { if (drag) { drag = null; saveWx(); draw(); } });
+    box.querySelector(".fit").onclick = () => {
+      const r = seaRange[wx.layer];
+      if (!r) return;
+      wx.seaFilter[wx.layer] = { lo: r.min, hi: r.max, tg: +roundTo((r.min + r.max) / 2, seaQuantum(r.min, r.max)).toFixed(6) };
+      saveWx(); applyLayer(); draw();
+    };
+  })();
+
   function applyLayer() {
     map.setLayoutProperty("wx-cells", "visibility", wx.shading === "off" ? "none" : "visible");
-    if (wx.shading !== "off") map.setPaintProperty("wx-cells", "fill-color", shadingExpression(wx.shading, LAYERS[wx.layer] ?? LAYERS.wind));
+    const lay = LAYERS[wx.layer] ?? LAYERS.wind;
+    const sf = lay.auto ? wx.seaFilter[wx.layer] : null;
+    if (sf) lay.scale = seaScale(sf);
+    // the sea filter's limits: nothing shown outside them
+    map.setFilter("wx-cells", sf ? ["all", [">=", ["get", "v"], sf.lo], ["<=", ["get", "v"], sf.hi]] : null);
+    if (wx.shading !== "off") map.setPaintProperty("wx-cells", "fill-color", shadingExpression(lay.auto ? "smooth" : wx.shading, lay));
     $("wx-shading-label").textContent = `${(LAYERS[wx.layer] ?? LAYERS.wind).label} shading`;
     drawLegend();
   }
@@ -798,8 +903,10 @@ export function setupWeather(map, layers) {
   function drawLegend() {
     const el = $("wx-legend");
     el.innerHTML = "";
-    if (wx.shading === "off") return;
     const layer = LAYERS[wx.layer] ?? LAYERS.wind;
+    drawSeaFilter(layer);
+    el.hidden = layer.auto && !$("wx-sea").hidden;
+    if (wx.shading === "off" || el.hidden) return;
     if (layer.knots) {
       const step = wx.shading === "smooth" ? 5 : Math.max(Number(wx.shading), wx.shading === "1" ? 2 : Number(wx.shading));
       for (let k = 0; k <= 40; k += step) {
@@ -956,13 +1063,16 @@ function waveArrow() {
  * Isobars every `step` hPa from a pressure grid: marching squares, segments
  * joined into lines, with a label point on each longer line.
  */
-export function isobars(gp, step) {
+export function isobars(gp, step, only = null) {
   const { ni, nj, values: v } = gp;
   const at = (i, j) => v[j * ni + i];
   const pos = (i, j) => [gp.lon0 + i * gp.dlon, gp.lat0 + j * gp.dlat];
-  const lo = Math.min(...v.filter((x) => x != null)), hi = Math.max(...v.filter((x) => x != null));
+  let lo = Infinity, hi = -Infinity;
+  for (const x of v) if (x != null) { if (x < lo) lo = x; if (x > hi) hi = x; }
   const out = [];
-  for (let level = Math.ceil(lo / step) * step; level <= hi; level += step) {
+  const levels = only ?? [];
+  if (!only) for (let level = Math.ceil(lo / step) * step; level <= hi; level += step) levels.push(level);
+  for (const level of levels) {
     const segs = [];
     for (let j = 0; j + 1 < nj; j++) {
       for (let i = 0; i + 1 < ni; i++) {

@@ -60,6 +60,10 @@
           <label id="wx-isotherms-row" title="Contour lines over sea temperature or salinity, at a spacing that suits the range in view: fronts show as lines bunched together"><input id="wx-isotherms" type="checkbox" /> Contours</label>
         </div>
         <div id="wx-legend" class="legend" title="Wind speed, knots"></div>
+        <div id="wx-sea" class="seafilter" hidden>
+          <div class="track"><div class="grad"></div><span class="h lo"></span><span class="h tg"></span><span class="h hi"></span></div>
+          <div class="vals"><span class="v min"></span><span class="v lo"></span><span class="v tg"></span><span class="v hi"></span><span class="v max"></span><button class="fit" title="Back to the whole file's range">Fit</button></div>
+        </div>
         <div id="wx-cmp-note" class="wx-note" hidden></div>
         <div class="wx-row"><button id="wx-verify" title="Score earlier runs against a later run's hour 0 (opens the Verify dock)">Verify runs…</button></div>
         <table id="wx-point"><thead><tr><th>Run</th><th>TWS</th><th>TWD</th><th>Gust</th><th>MSLP</th><th>Hs / Tp</th><th title="Sea temperature · salinity (PSU) · current">Sea</th></tr></thead><tbody></tbody></table>
