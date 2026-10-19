@@ -321,6 +321,15 @@ fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max_points: us
         "cape" => f.grid_at(P::Cape, t)?,
         "mslp" => { let (g, v) = f.grid_at(P::Mslp, t)?; (g, v.iter().map(|x| x / 100.0).collect()) }
         "temp" => { let (g, v) = f.grid_at(P::AirTemp, t)?; (g, v.iter().map(|x| x - 273.15).collect()) }
+        // ocean: °C, PSU, current in knots
+        "sst" => { let (g, v) = f.grid_at(P::SeaTemp, t)?; (g, v.iter().map(|x| x - 273.15).collect()) }
+        "sss" => f.grid_at(P::Salinity, t)?,
+        "subt" => { let (g, v) = f.grid_at(P::SubTemp, t)?; (g, v.iter().map(|x| x - 273.15).collect()) }
+        "subs" => f.grid_at(P::SubSalinity, t)?,
+        "current" => {
+            let ((g, u), (_, v)) = (f.grid_at(P::CurrentU, t)?, f.grid_at(P::CurrentV, t)?);
+            (g, u.iter().zip(&v).map(|(a, b)| (a * a + b * b).sqrt() * KN).collect())
+        }
         _ => return None,
     };
     let turn = ((g.lon0 + g.dlon * (g.ni as f64 - 1.0) / 2.0 - (bbox[0] + bbox[2]) / 2.0) / 360.0).round() * 360.0;
@@ -339,7 +348,9 @@ fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max_points: us
         for i in (i_lo..=i_hi).step_by(stride) {
             ni += 1;
             let x = vals[j * g.ni + i];
-            out.push(x.is_finite().then(|| (x * 10.0).round() / 10.0));
+            // a tenth is plenty for weather; sea temperature fronts and salinity need finer
+            let k = if matches!(layer.as_str(), "sst" | "subt" | "sss" | "subs") { 100.0 } else { 10.0 };
+            out.push(x.is_finite().then(|| (x * k).round() / k));
         }
     }
     Some(serde_json::json!({
@@ -526,6 +537,15 @@ fn grib_point(lat: f64, lon: f64, t: i64) -> Vec<serde_json::Value> {
                 "wavedir": f.value(grib::Param::WaveDir, lat, lon, t).map(|d| d.round()),
                 "temp": f.value(grib::Param::AirTemp, lat, lon, t).map(|k| ((k - 273.15) * 10.0).round() / 10.0),
                 "rain": f.value(grib::Param::Rain, lat, lon, t).map(|r| (r * 36000.0).round() / 10.0),
+                "sst": f.value(grib::Param::SeaTemp, lat, lon, t).map(|k| ((k - 273.15) * 100.0).round() / 100.0),
+                "sss": f.value(grib::Param::Salinity, lat, lon, t).map(|s| (s * 100.0).round() / 100.0),
+                "subt": f.value(grib::Param::SubTemp, lat, lon, t).map(|k| ((k - 273.15) * 100.0).round() / 100.0),
+                "subs": f.value(grib::Param::SubSalinity, lat, lon, t).map(|s| (s * 100.0).round() / 100.0),
+                "depth": f.series(grib::Param::SubTemp).first().or(f.series(grib::Param::SubSalinity).first()).map(|x| x.surface_value),
+                "cur": f.current(lat, lon, t).map(|(u, v)| serde_json::json!({
+                    "kn": ((u * u + v * v).sqrt() * 3600.0 / 1852.0 * 100.0).round() / 100.0,
+                    "set": nav_core::norm360(u.atan2(v).to_degrees()).round(),
+                })),
             })
         })
         .collect()

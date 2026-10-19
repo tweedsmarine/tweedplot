@@ -57,11 +57,12 @@
               <option value="1">1 hPa</option><option value="2">2 hPa</option><option value="3">3 hPa</option><option value="4">4 hPa</option>
               <option value="5">5 hPa</option><option value="8">8 hPa</option><option value="10">10 hPa</option></select>
             <label title="Wider spacing when zoomed out"><input id="wx-isoauto" type="checkbox" /> Auto</label></span>
+          <label id="wx-isotherms-row" title="Contour lines over sea temperature or salinity, at a spacing that suits the range in view: fronts show as lines bunched together"><input id="wx-isotherms" type="checkbox" /> Contours</label>
         </div>
         <div id="wx-legend" class="legend" title="Wind speed, knots"></div>
         <div id="wx-cmp-note" class="wx-note" hidden></div>
         <div class="wx-row"><button id="wx-verify" title="Score earlier runs against a later run's hour 0 (opens the Verify dock)">Verify runs…</button></div>
-        <table id="wx-point"><thead><tr><th>Run</th><th>TWS</th><th>TWD</th><th>Gust</th><th>MSLP</th><th>Hs / Tp</th></tr></thead><tbody></tbody></table>
+        <table id="wx-point"><thead><tr><th>Run</th><th>TWS</th><th>TWD</th><th>Gust</th><th>MSLP</th><th>Hs / Tp</th><th title="Sea temperature · salinity (PSU) · current">Sea</th></tr></thead><tbody></tbody></table>
         <div id="wx-where" class="wx-note">Values at the cursor</div>
         <details class="sub" id="dl-box">
           <summary>Download GRIBs (free)</summary>
@@ -78,7 +79,11 @@
             <label>E</label><input id="dl-e" type="text" title="East edge, degrees (− = west)" />
           </div>
           <div class="wx-row"><label class="grow" for="dl-days">Forecast length</label><select id="dl-days"></select></div>
-          <div class="wx-row"><label class="grow" for="dl-every">Time step</label><select id="dl-every"></select></div>
+          <div class="wx-row" id="dl-every-row"><label class="grow" for="dl-every">Time step</label><select id="dl-every"></select></div>
+          <div class="wx-row" id="dl-depth-row" hidden><label class="grow" for="dl-depth" title="The depth for “Temperature and salinity at a depth”">Depth</label>
+            <select id="dl-depth"><option value="10">10 m</option><option value="20">20 m</option><option value="30">30 m</option><option value="50">50 m</option>
+              <option value="70">70 m</option><option value="100">100 m</option><option value="150">150 m</option><option value="200">200 m</option>
+              <option value="300">300 m</option><option value="500">500 m</option></select></div>
           <div class="wx-row"><span id="dl-size" class="grow wx-note"></span></div>
           <div class="wx-row"><button id="dl-go" class="on grow">Download</button><button id="dl-cancel" disabled>Cancel</button></div>
           <div id="dl-progress" class="progress" hidden><div class="bar"></div><span></span></div>

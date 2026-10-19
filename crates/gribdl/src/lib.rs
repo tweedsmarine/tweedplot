@@ -16,6 +16,7 @@
 
 pub mod data;
 pub mod ecmwf;
+pub mod ocean;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -52,6 +53,9 @@ pub enum Model {
     EcmwfIfs0p25,
     EcmwfAifs0p25,
     EcmwfWave0p25,
+    /// Ocean (see `ocean`): MUR sea surface temperature analyses, and the HYCOM ocean model.
+    MurSst,
+    HycomEspc,
 }
 
 /// What a model offers, for the download dialog.
@@ -79,8 +83,12 @@ pub struct ParamInfo {
 }
 
 impl Model {
-    pub fn all() -> [Model; 7] {
-        [Model::Gfs0p25, Model::Gfs0p50, Model::Gfs1p00, Model::GfsWave0p25, Model::EcmwfIfs0p25, Model::EcmwfAifs0p25, Model::EcmwfWave0p25]
+    pub fn all() -> [Model; 9] {
+        [Model::Gfs0p25, Model::Gfs0p50, Model::Gfs1p00, Model::GfsWave0p25, Model::EcmwfIfs0p25, Model::EcmwfAifs0p25, Model::EcmwfWave0p25, Model::MurSst, Model::HycomEspc]
+    }
+
+    pub fn is_ocean(self) -> bool {
+        matches!(self, Model::MurSst | Model::HycomEspc)
     }
 
     /// The wave model whose fields can go in the same file as this model's wind.
@@ -153,6 +161,30 @@ impl Model {
                     ParamInfo { id: "waves", name: "Waves from the ECMWF wave model in the same file (height, period, direction)", fields: 3, default: false },
                 ],
                 delay_h: 7,
+            },
+            // MUR: `hours` / 24 = how many of the latest daily analyses
+            Model::MurSst => ModelInfo {
+                id: self,
+                name: "MUR sea temperature 1 km (satellite analysis)",
+                res_deg: 0.01,
+                max_hours: 14 * 24,
+                steps: vec![(14 * 24, 24)],
+                params: vec![ParamInfo { id: "sst", name: "Sea surface temperature", fields: 1, default: true }],
+                delay_h: 0,
+            },
+            Model::HycomEspc => ModelInfo {
+                id: self,
+                name: "HYCOM ocean model 1/12° (temperature, salinity, currents)",
+                res_deg: 0.08,
+                max_hours: 192,
+                steps: vec![(192, 1)],
+                params: vec![
+                    ParamInfo { id: "sst", name: "Sea surface temperature", fields: 1, default: true },
+                    ParamInfo { id: "sss", name: "Sea surface salinity", fields: 1, default: true },
+                    ParamInfo { id: "current", name: "Surface currents", fields: 2, default: true },
+                    ParamInfo { id: "depth", name: "Temperature and salinity at a depth (3-hourly)", fields: 2, default: false },
+                ],
+                delay_h: 0,
             },
             Model::EcmwfWave0p25 => ModelInfo {
                 id: self,
@@ -272,6 +304,9 @@ pub struct Request {
     pub hours: u32,
     /// Step between forecast times, hours (1, 3, 6, 12).
     pub every: u32,
+    /// HYCOM: the depth (m) for the "depth" parameter.
+    #[serde(default)]
+    pub depth: f64,
 }
 
 /// A model run: date "YYYYMMDD" and cycle "00"/"06"/"12"/"18".
@@ -333,6 +368,13 @@ pub fn download_bytes(req: &Request) -> u64 {
 /// 1.4 bytes a point after packing, plus headers.
 pub fn estimate_bytes(req: &Request) -> u64 {
     let info = req.model.info();
+    if req.model == Model::MurSst {
+        // 0.01° thinned to at most 1200 a side, one field a day
+        let k = ocean::mur_stride(req.area) as f64;
+        let nx = ((req.area[2] - req.area[0]).abs() / 0.01 / k).floor() + 1.0;
+        let ny = ((req.area[3] - req.area[1]).abs() / 0.01 / k).floor() + 1.0;
+        return ((nx * ny * 1.6 + 200.0) * (req.hours / 24).clamp(1, 14) as f64) as u64;
+    }
     let (l, r) = lon_window(req.area[0], req.area[2]);
     let nx = ((r - l) / info.res_deg).floor() + 1.0;
     let ny = ((req.area[3] - req.area[1]).abs() / info.res_deg).floor() + 1.0;
@@ -354,6 +396,10 @@ pub(crate) fn client() -> Result<reqwest::blocking::Client> {
 pub fn latest_run(model: Model, last_hour: u32, now: i64) -> Result<Run> {
     if model.is_ecmwf() {
         return ecmwf::latest_run(model, last_hour, now);
+    }
+    if model.is_ocean() {
+        // the servers serve the newest data themselves
+        return Ok(Run::at(now - now.rem_euclid(3600)));
     }
     let c = client()?;
     let newest = now - now.rem_euclid(6 * 3600);
@@ -393,6 +439,9 @@ pub struct Downloaded {
 /// (GFS-Wave, ECMWF wave) for the same run, area and steps, and put both in one
 /// file ("…+waves.grb2"). If the waves fail, the wind file is kept and `note` says why.
 pub fn download_ex(req: &Request, run: &Run, dir: &Path, progress: Progress, cancel: &AtomicBool) -> Result<Downloaded> {
+    if req.model.is_ocean() {
+        return ocean::download(req, run.t, dir, progress, cancel).map(|path| Downloaded { path, note: None });
+    }
     let wave_model = req.model.wave_companion().filter(|_| req.params.iter().any(|p| p == "waves"));
     let Some(wm) = wave_model else {
         return download_one(req, run, dir, progress, cancel).map(|path| Downloaded { path, note: None });
@@ -461,7 +510,7 @@ fn download_one(req: &Request, run: &Run, dir: &Path, progress: Progress, cancel
     Ok(path)
 }
 
-fn get_retry(c: &reqwest::blocking::Client, url: &str, cancel: &AtomicBool) -> Result<Vec<u8>> {
+pub(crate) fn get_retry(c: &reqwest::blocking::Client, url: &str, cancel: &AtomicBool) -> Result<Vec<u8>> {
     let mut wait = 2;
     for attempt in 0..4 {
         if cancel.load(Ordering::Relaxed) {
@@ -470,7 +519,13 @@ fn get_retry(c: &reqwest::blocking::Client, url: &str, cancel: &AtomicBool) -> R
         match c.get(url).send() {
             Ok(r) if r.status().is_success() => return r.bytes().map(|b| b.to_vec()).map_err(|e| Error::Http(e.to_string())),
             Ok(r) if r.status().as_u16() == 404 => return Err(Error::Http(format!("not on the server yet ({url})"))),
-            Ok(r) if attempt == 3 => return Err(Error::Http(format!("NOMADS answered HTTP {}", r.status().as_u16()))),
+            Ok(r) if attempt == 3 || r.status().as_u16() == 400 => {
+                let code = r.status().as_u16();
+                let host = url.split('/').nth(2).unwrap_or("the server").to_string();
+                let body = r.text().unwrap_or_default();
+                let why = body.lines().find(|l| !l.trim().is_empty() && !l.trim_start().starts_with('<')).unwrap_or("").chars().take(200).collect::<String>();
+                return Err(Error::Http(format!("{host} answered HTTP {code}{}", if why.is_empty() { String::new() } else { format!(": {why}") })));
+            }
             Err(e) if attempt == 3 => return Err(Error::Http(e.to_string())),
             _ => {}
         }
@@ -490,6 +545,8 @@ pub(crate) fn file_name(req: &Request, run: &Run, last: u32) -> String {
         Model::EcmwfIfs0p25 => "ECMWF_IFS_0p25",
         Model::EcmwfAifs0p25 => "ECMWF_AIFS_0p25",
         Model::EcmwfWave0p25 => "ECMWF_wave_0p25",
+        Model::MurSst => "MUR_SST",
+        Model::HycomEspc => "HYCOM_ESPC",
     };
     let lat = |v: f64| format!("{}{}", v.abs().round(), if v < 0.0 { "S" } else { "N" });
     let lon = |v: f64| {
@@ -520,7 +577,7 @@ mod tests {
             assert!(m.info().params.iter().any(|p| p.id == "waves"), "{m:?}");
         }
         // wind-model filter variables ignore the waves tick (they come from the wave model)
-        let r = Request { model: Model::Gfs0p25, area: [172.0, -41.5, 178.5, -34.0], params: vec!["wind".into(), "waves".into()], hours: 48, every: 3 };
+        let r = Request { model: Model::Gfs0p25, area: [172.0, -41.5, 178.5, -34.0], params: vec!["wind".into(), "waves".into()], hours: 48, every: 3, depth: 0.0 };
         assert!(!r.model.vars(&r.params).iter().any(|v| v.contains("HTSGW")));
         // the ECMWF amount counts wave fields at the wave model's size
         let e = Request { model: Model::EcmwfIfs0p25, ..r.clone() };
@@ -529,7 +586,7 @@ mod tests {
     }
 
     fn req(model: Model) -> Request {
-        Request { model, area: [172.0, -41.5, 178.5, -34.0], params: vec!["wind".into(), "mslp".into()], hours: 240, every: 3 }
+        Request { model, area: [172.0, -41.5, 178.5, -34.0], params: vec!["wind".into(), "mslp".into()], hours: 240, every: 3, depth: 0.0 }
     }
 
     #[test]

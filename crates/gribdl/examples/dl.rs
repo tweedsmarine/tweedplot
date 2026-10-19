@@ -3,7 +3,7 @@ fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
     let model: gribdl::Model = serde_json::from_value(serde_json::Value::String(a[0].clone())).expect("model");
     let b: Vec<f64> = a[1].split(',').map(|x| x.parse().unwrap()).collect();
-    let req = gribdl::Request { model, area: [b[0], b[1], b[2], b[3]], params: a[4..].to_vec(), hours: a[2].parse().unwrap(), every: a[3].parse().unwrap() };
+    let req = gribdl::Request { model, area: [b[0], b[1], b[2], b[3]], params: a[4..].to_vec(), hours: a[2].parse().unwrap(), every: a[3].parse().unwrap(), depth: std::env::var("DEPTH").ok().and_then(|x| x.parse().ok()).unwrap_or(0.0) };
     let now = std::env::var("NOW").ok().and_then(|x| x.parse().ok()).unwrap_or_else(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64);
     let run = gribdl::latest_run(model, *model.hours(req.hours, req.every).last().unwrap(), now).expect("run");
     println!("run {:?}; download ~{} MB", run, gribdl::download_bytes(&req) / 1_000_000);

@@ -44,6 +44,34 @@ const VERR_SPD = [[-12, "#2166ac"], [-8, "#4393c3"], [-4, "#92c5de"], [-1.5, "#d
 const VERR_DIR = [[-60, "#2166ac"], [-30, "#4393c3"], [-15, "#92c5de"], [-5, "#d1e5f0"], [5, "#f7f7f7"], [15, "#fddbc7"], [30, "#f4a582"],
   [60, "#d6604d"], [90, "#b2182b"]];
 
+// Ocean: sea temperature and salinity are shown on a colour range fitted to what
+// is in view (`auto`), so fronts and eddies of a few tenths of a degree stand out;
+// these are only the starting ranges.
+const SST = [[8, "#30123b"], [10, "#4145ab"], [12, "#4675ed"], [14, "#39a2fc"], [16, "#1bcfd4"], [18, "#24eca6"], [20, "#61fc6c"],
+  [22, "#a4fc3b"], [24, "#d1e834"], [26, "#f3c63a"], [28, "#fe9b2d"], [30, "#f36315"]];
+const SSS = [[33.5, "#30123b"], [34, "#4145ab"], [34.3, "#39a2fc"], [34.6, "#1bcfd4"], [34.9, "#61fc6c"], [35.2, "#d1e834"], [35.5, "#fe9b2d"], [36, "#f36315"]];
+const CUR = [[0, "#f7fbff"], [0.25, "#c6dbef"], [0.5, "#9ecae1"], [0.75, "#6baed6"], [1, "#4292c6"], [1.5, "#2171b5"], [2, "#08519c"], [3, "#08306b"]];
+// the colours an auto range is spread over ("turbo": dark blue, cyan, green, yellow, red)
+const TURBO = ["#30123b", "#4145ab", "#4675ed", "#39a2fc", "#1bcfd4", "#24eca6", "#61fc6c", "#a4fc3b", "#d1e834", "#f3c63a", "#fe9b2d", "#f36315", "#d93806", "#a51301"];
+
+/** A colour scale over lo..hi (the visible values), with stops at tidy values. */
+export function autoScale(lo, hi) {
+  if (!(hi > lo)) hi = lo + 0.5;
+  const n = TURBO.length;
+  const raw = (hi - lo) / (n - 1);
+  const p = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => s >= raw) ?? raw;
+  const start = Math.floor(lo / step) * step;
+  return TURBO.map((c, i) => [Math.round((start + i * step) * 1000) / 1000, c]);
+}
+
+/** A tidy contour interval giving about `n` lines over lo..hi. */
+function niceStep(lo, hi, n = 8) {
+  const raw = Math.max((hi - lo) / n, 0.05);
+  const p = 10 ** Math.floor(Math.log10(raw));
+  return [1, 2, 5, 10].map((m) => m * p).find((s) => s >= raw);
+}
+
 /** What can be shaded: the GRIB parameters it needs, unit, colour scale, and values below `min` left clear.
  * `compare`: a display of how much the loaded GRIBs disagree (grib::compare), not of one GRIB. */
 export const LAYERS = {
@@ -56,6 +84,12 @@ export const LAYERS = {
   cape: { label: "CAPE (squalls)", unit: "J/kg", params: ["Cape"], scale: CAPE, min: 100 },
   mslp: { label: "Pressure", unit: "hPa", params: ["Mslp"], scale: PRESS },
   temp: { label: "Air temperature", unit: "°C", params: ["AirTemp"], scale: TEMP },
+  // ocean layers come from whichever loaded file has them, under the shown GRIB's wind barbs
+  sst: { label: "Sea temperature", unit: "°C", params: ["SeaTemp"], scale: SST, auto: true, contour: true, ocean: true },
+  sss: { label: "Salinity", unit: "PSU", params: ["Salinity"], scale: SSS, auto: true, contour: true, ocean: true },
+  subt: { label: "Sea temperature at depth", unit: "°C", params: ["SubTemp"], scale: SST, auto: true, contour: true, ocean: true },
+  subs: { label: "Salinity at depth", unit: "PSU", params: ["SubSalinity"], scale: SSS, auto: true, contour: true, ocean: true },
+  current: { label: "Current", unit: "kn", params: ["CurrentU"], scale: CUR, ocean: true },
   agree_vec: { label: "Wind disagreement (vector)", unit: "kn", params: ["WindU", "WindSpeed"], scale: AGREE_KN, compare: "vector",
     help: "RMS distance of each GRIB's wind from their mean wind: speed and direction together." },
   agree_spd: { label: "Wind speed spread", unit: "kn", params: ["WindU", "WindSpeed"], scale: AGREE_KN, compare: "speed",
@@ -78,6 +112,8 @@ export const LAYERS = {
 const WX_DEFAULTS = { density: 5, size: 1.0, shading: "2", opacity: 0.45, land: "land", layer: "wind", arrows: true, waveArrows: true, isobars: false,
   // isobar interval (hPa), and whether to widen it when zoomed out
   isoStep: 4, isoAuto: true,
+  // contours over sea temperature and salinity (fronts)
+  isotherms: true,
   // loaded GRIBs left out of the agreement displays
   cmpOff: [] };
 const DENSITY_POINTS = [80, 150, 300, 500, 900, 1400, 2200, 3500, 6000, 1e9];
@@ -151,6 +187,12 @@ export function setupWeather(map, layers) {
     paint: { "line-color": "#3d4f5c", "line-width": ["case", ["==", ["%", ["get", "hpa"], 8], 0], 1.6, 0.9], "line-opacity": 0.85 } }, beforeTop);
   map.addLayer({ id: "wx-isobar-labels", type: "symbol", source: "wx-isobars", filter: ["==", ["geometry-type"], "Point"],
     layout: { "icon-image": ["concat", "lbl:", ["to-string", ["get", "hpa"]]], "icon-allow-overlap": false, "icon-size": 0.85 } }, beforeTop);
+  // isotherms (and salinity contours) over the ocean layers: fronts show as bunched lines
+  map.addSource("wx-isotherms", { type: "geojson", data: fc([]) });
+  map.addLayer({ id: "wx-isotherms", type: "line", source: "wx-isotherms",
+    paint: { "line-color": "#1d2a33", "line-width": 0.8, "line-opacity": 0.7 } }, beforeTop);
+  map.addLayer({ id: "wx-isotherm-labels", type: "symbol", source: "wx-isotherms", filter: ["==", ["geometry-type"], "Point"],
+    layout: { "icon-image": ["concat", "lbl:", ["to-string", ["get", "hpa"]]], "icon-allow-overlap": false, "icon-size": 0.75 } }, beforeTop);
   if (!map.hasImage("wave-arrow")) map.addImage("wave-arrow", waveArrow(), { pixelRatio: 2 });
   map.addLayer({ id: "wx-wavedir", type: "symbol", source: "wx-wavedir",
     layout: { "icon-image": "wave-arrow", "icon-rotate": ["get", "dir"], "icon-rotation-alignment": "map",
@@ -200,6 +242,15 @@ export function setupWeather(map, layers) {
       const s = await invoke("grib_load", { path });
       loaded.set(path, s);
       if (!display) display = path;
+      // an ocean file: show it (sea temperature first) under whatever weather is shown
+      const ps = paramsOf(s);
+      const oceanKey = ["sst", "subt", "sss", "current"].find((k) => ps.has(LAYERS[k].params[0]));
+      if (oceanKey && !LAYERS[wx.layer]?.ocean) {
+        wx.layer = oceanKey;
+        if (wx.shading === "off") wx.shading = "smooth";
+        saveWx();
+        applyLayer();
+      }
       renderLoaded();
       setTimes();
       alertLine(`Loaded ${s.name} in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
@@ -311,10 +362,17 @@ export function setupWeather(map, layers) {
       const l = LAYERS[k];
       if (l.compare) return cmp.filter((h) => l.params.some((p) => h.has(p))).length >= 2;
       if (l.verify) return !!verifyTarget && loaded.has(verifyTarget.path);
+      if (l.ocean) return !!oceanPath(l);
       return l.params.some((p) => has.has(p));
     });
   }
   const hasParam = (name) => !!loaded.get(display)?.params.some((p) => p.param === name);
+  /** The file an ocean layer comes from: the shown GRIB if it has it, else the newest loaded one that does. */
+  function oceanPath(l) {
+    const has = (p) => p && paramsOf(loaded.get(p)).has(l.params[0]);
+    if (has(display)) return display;
+    return [...loaded.keys()].reverse().find(has) ?? null;
+  }
   function renderLayers() {
     const av = available();
     if (av.length && !av.includes(wx.layer)) { wx.layer = av[0]; saveWx(); applyLayer(); }
@@ -339,6 +397,7 @@ export function setupWeather(map, layers) {
     $("wx-arrows-row").hidden = !(hasParam("WindU") || hasParam("WindSpeed"));
     $("wx-wavearrows-row").hidden = !hasParam("WaveDir");
     $("wx-isobars-row").hidden = !hasParam("Mslp");
+    $("wx-isotherms-row").hidden = !(LAYERS[wx.layer]?.contour);
   }
   function setTimes() {
     const s = display && loaded.get(display);
@@ -520,6 +579,7 @@ export function setupWeather(map, layers) {
         map.getSource("wx-barbs").setData(fc([]));
         map.getSource("wx-wavedir").setData(fc([]));
         map.getSource("wx-isobars").setData(fc([]));
+        map.getSource("wx-isotherms").setData(fc([]));
         showCompareNote({}, null);
         return;
       }
@@ -536,7 +596,7 @@ export function setupWeather(map, layers) {
             .catch((e) => ({ error: String(e) })) : { error: "Choose a forecast to verify in the Verify dock." })
           : layer.compare
           ? invoke("grib_compare", { paths: comparePaths(), metric: layer.compare, t, bbox, maxPoints: 20000 }).catch((e) => ({ error: String(e) }))
-          : invoke("grib_grid", { path: display, layer: wx.layer, t, bbox, maxPoints: 20000 }).catch(() => null),
+          : invoke("grib_grid", { path: layer.ocean ? oceanPath(layer) ?? display : display, layer: wx.layer, t, bbox, maxPoints: 20000 }).catch(() => null),
         wx.waveArrows && hasParam("WaveDir") ? invoke("grib_grid", { path: display, layer: "wavedir", t, bbox, maxPoints: Math.max(40, arrowPts / 2) }).catch(() => null) : null,
         wx.isobars && hasParam("Mslp") ? invoke("grib_grid", { path: display, layer: "mslp", t, bbox, maxPoints: 20000 }).catch(() => null) : null,
       ]);
@@ -554,6 +614,37 @@ export function setupWeather(map, layers) {
         }
       }
       showCompareNote(layer, gs);
+      // ocean layers: fit the colours to the values in view, and contour them
+      let contours = [];
+      if (layer.auto && gs && !gs.error) {
+        const [w, s, e, n] = bbox;
+        const vis = [];
+        for (let j = 0; j < gs.nj; j++) {
+          const lat = gs.lat0 + j * gs.dlat;
+          if (lat < s || lat > n) continue;
+          for (let i = 0; i < gs.ni; i++) {
+            const lon = gs.lon0 + i * gs.dlon;
+            const v = gs.values[j * gs.ni + i];
+            if (v != null && lon >= w && lon <= e) vis.push(v);
+          }
+        }
+        if (vis.length > 4) {
+          vis.sort((a, b) => a - b);
+          const lo = vis[Math.floor(vis.length * 0.02)], hi = vis[Math.ceil(vis.length * 0.98) - 1];
+          const sc = autoScale(lo, hi);
+          if (JSON.stringify(sc) !== JSON.stringify(layer.scale)) {
+            layer.scale = sc;
+            if (wx.shading !== "off") map.setPaintProperty("wx-cells", "fill-color", shadingExpression(wx.shading, layer));
+            drawLegend();
+          }
+          if (layer.contour && wx.isotherms) {
+            const step = niceStep(lo, hi);
+            const dp = step < 0.1 ? 2 : step < 1 ? 1 : 0;
+            contours = isobars(gs, step).map((f) => ({ ...f, properties: { hpa: +(Math.round(f.properties.hpa / step) * step).toFixed(dp) } }));
+          }
+        }
+      }
+      map.getSource("wx-isotherms").setData(fc(contours));
       if (gs && !gs.error) {
         const hx = gs.dlon / 2, hy = gs.dlat / 2, min = layer.min ?? -Infinity;
         for (let j = 0; j < gs.nj; j++) {
@@ -623,13 +714,23 @@ export function setupWeather(map, layers) {
       if (!cursor || !loaded.size || !times.length) { body.innerHTML = ""; for (const fn of pointListeners) fn(null, cursor); return; }
       const at = cursor, tt = t;
       const rows = await invoke("grib_point", { lat: at[1], lon: at[0], t: tt }).catch(() => []);
-      const shown = (rows || []).find((r) => r.path === display) ?? null;
+      let shown = (rows || []).find((r) => r.path === display) ?? null;
+      // sea readings from whichever loaded file has them (MUR, HYCOM), under the shown GRIB's weather
+      if (shown) {
+        const sea = {};
+        for (const k of ["sst", "sss", "subt", "subs", "cur", "depth"]) {
+          const from = shown[k] != null ? shown : (rows || []).find((r) => r[k] != null);
+          if (from) sea[k] = from[k];
+        }
+        shown = { ...shown, ...sea };
+      }
       for (const fn of pointListeners) fn(shown && { ...shown, t: tt, name: loaded.get(display)?.name ?? shown.name }, at);
       body.innerHTML = "";
       for (const r of rows) {
         const tr = document.createElement("tr");
+        const sea = [r.sst != null ? `${r.sst.toFixed(1)}°C` : "", r.sss != null ? `${r.sss.toFixed(2)}` : "", r.cur ? `${r.cur.kn.toFixed(1)} kn ${String(r.cur.set).padStart(3, "0")}°` : ""].filter(Boolean).join(" · ");
         const cells = [r.name, n(r.tws, 1), r.twd == null ? "—" : String(r.twd).padStart(3, "0") + "°", n(r.gust, 0), n(r.mslp, 0),
-          r.wave == null ? "—" : `${n(r.wave, 1)}${r.period != null ? ` / ${r.period}s` : ""}`];
+          r.wave == null ? "—" : `${n(r.wave, 1)}${r.period != null ? ` / ${r.period}s` : ""}`, sea || "—"];
         for (const c of cells) { const td = document.createElement("td"); td.textContent = c; tr.append(td); }
         if (r.path === display) tr.style.fontWeight = "600";
         body.append(tr);
@@ -690,7 +791,7 @@ export function setupWeather(map, layers) {
   }
   $("wx-isostep").value = String(wx.isoStep);
   $("wx-isostep").onchange = (e) => { wx.isoStep = Number(e.target.value); saveWx(); draw(); };
-  for (const [id, key] of [["wx-arrows", "arrows"], ["wx-wavearrows", "waveArrows"], ["wx-isobars", "isobars"], ["wx-isoauto", "isoAuto"]]) {
+  for (const [id, key] of [["wx-arrows", "arrows"], ["wx-wavearrows", "waveArrows"], ["wx-isobars", "isobars"], ["wx-isoauto", "isoAuto"], ["wx-isotherms", "isotherms"]]) {
     $(id).checked = !!wx[key];
     $(id).onchange = (e) => { wx[key] = e.target.checked; saveWx(); draw(); };
   }
@@ -713,7 +814,7 @@ export function setupWeather(map, layers) {
         const sw = document.createElement("span");
         sw.style.background = c;
         sw.title = `${v} ${layer.unit}`;
-        sw.textContent = v;
+        sw.textContent = layer.auto ? (Math.abs(v) >= 10 && layer.unit === "°C" ? v.toFixed(v % 1 ? 1 : 0) : String(v)) : v;
         el.append(sw);
       }
     }

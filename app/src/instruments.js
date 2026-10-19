@@ -71,6 +71,13 @@ export const ITEMS = {
   GWVD: { label: "GRIB wave dir", unit: "°T", group: "GRIB at cursor", get: (c) => c.grib?.wavedir, fmt: deg3 },
   GRAIN: { label: "GRIB rain", unit: "mm/h", group: "GRIB at cursor", get: (c) => c.grib?.rain, fmt: f1 },
   GTEMP: { label: "GRIB air temp", unit: "°C", group: "GRIB at cursor", get: (c) => c.grib?.temp, fmt: f1 },
+  // the sea, from any loaded ocean file (MUR, HYCOM) at the cursor
+  GSST: { label: "Sea temp", unit: "°C", group: "Sea at cursor", get: (c) => c.grib?.sst, fmt: (x) => x.toFixed(1) },
+  GSSS: { label: "Salinity", unit: "PSU", group: "Sea at cursor", get: (c) => c.grib?.sss, fmt: (x) => x.toFixed(2) },
+  GSUBT: { label: "Temp at depth", unit: "°C", group: "Sea at cursor", get: (c) => c.grib?.subt, fmt: (x) => x.toFixed(1) },
+  GSUBS: { label: "Salinity at depth", unit: "PSU", group: "Sea at cursor", get: (c) => c.grib?.subs, fmt: (x) => x.toFixed(2) },
+  GCUR: { label: "Current", unit: "kn", group: "Sea at cursor", get: (c) => c.grib?.cur?.kn, fmt: (x) => x.toFixed(1) },
+  GSET: { label: "Current set", unit: "°T", group: "Sea at cursor", get: (c) => c.grib?.cur?.set, fmt: deg3 },
   GTIME: { label: "GRIB time", unit: "", group: "GRIB at cursor", wide: true, get: (c) => c.grib?.t, fmt: (t) => new Date(t * 1000).toLocaleString("en-NZ", { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) },
   GSRC: { label: "GRIB", unit: "", group: "GRIB at cursor", wide: true, get: (c) => c.grib?.name, fmt: (s) => esc(s) },
 };

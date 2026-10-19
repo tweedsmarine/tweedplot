@@ -11,6 +11,9 @@ mod grib1;
 pub mod aec;
 pub mod combine;
 pub mod compare;
+pub mod netcdf;
+#[doc(hidden)]
+pub use netcdf::testdata::sample as netcdf_sample_for_tests;
 pub mod verify;
 pub mod write;
 
@@ -63,6 +66,14 @@ pub enum Param {
     CurrentV,
     /// Air temperature at 2 m (K).
     AirTemp,
+    /// Sea surface temperature (K).
+    SeaTemp,
+    /// Sea surface salinity (practical salinity, PSU).
+    Salinity,
+    /// Sea temperature (K) and salinity (PSU) at a depth below the surface: the
+    /// field's `surface_value` (surface type 160) is the depth in metres.
+    SubTemp,
+    SubSalinity,
     Other(u8, u8, u8),
 }
 
@@ -86,6 +97,10 @@ impl Param {
             (10, 0, 11) => Param::WavePeriod,
             (0, 1, 7) => Param::Rain,
             (0, 7, 6) => Param::Cape,
+            (10, 3, 0) if surface == 160 => Param::SubTemp,
+            (10, 3, 0) => Param::SeaTemp,
+            (10, 4, 21) if surface == 160 => Param::SubSalinity,
+            (10, 4, 21) => Param::Salinity,
             (10, 1, 2) => Param::CurrentU,
             (10, 1, 3) => Param::CurrentV,
             (d, c, n) => Param::Other(d, c, n),
@@ -347,9 +362,11 @@ impl GribFile {
     fn bracket_at(&self, p: Param, t: i64) -> Option<(&Field, &Field, f64)> {
         let idx = self.index.get(&p)?;
         let (first, last) = (&self.fields[*idx.first()?], &self.fields[*idx.last()?]);
-        if t < first.valid_time || t > last.valid_time {
+        let (before, after) = hold_s(p);
+        if t < first.valid_time - before || t > last.valid_time + after {
             return None;
         }
+        let t = t.clamp(first.valid_time, last.valid_time);
         let i = idx.partition_point(|&k| self.fields[k].valid_time <= t);
         let a = &self.fields[idx[i - 1]];
         if a.valid_time == t || i == idx.len() {
@@ -559,6 +576,8 @@ pub fn scan(path: impl AsRef<Path>) -> Result<FileInfo, GribError> {
                     Param::Cape => "CAPE",
                     Param::CurrentU | Param::CurrentV => "currents",
                     Param::AirTemp => "temperature",
+                    Param::SeaTemp | Param::SubTemp => "sea temperature",
+                    Param::Salinity | Param::SubSalinity => "salinity",
                     Param::Other(..) => "other",
                 };
                 if !contents.iter().any(|x| x == c) {
@@ -655,12 +674,24 @@ pub fn fmt_area(b: &[f64; 4]) -> String {
     format!("{} {}", lat(b[1], b[3]), lon(west, east))
 }
 
+/// How long an ocean analysis stands either side of its time (s): sea
+/// temperature and salinity change slowly, and a daily analysis (MUR) is a day
+/// or two old by the time it is published. Weather fields stand only at their times.
+pub fn hold_s(p: Param) -> (i64, i64) {
+    match p {
+        Param::SeaTemp | Param::Salinity | Param::SubTemp | Param::SubSalinity => (12 * 3600, 4 * 86400),
+        _ => (0, 0),
+    }
+}
+
 fn bracket<'a>(s: &[&'a Field], t: i64) -> Option<(&'a Field, &'a Field, f64)> {
     let first = s.first()?;
     let last = s.last()?;
-    if t < first.valid_time || t > last.valid_time {
+    let (before, after) = hold_s(first.param);
+    if t < first.valid_time - before || t > last.valid_time + after {
         return None;
     }
+    let t = t.clamp(first.valid_time, last.valid_time);
     let i = s.partition_point(|f| f.valid_time <= t);
     let a = s[i - 1];
     if a.valid_time == t || i == s.len() {
@@ -677,6 +708,8 @@ fn centre_name(c: u16) -> &'static str {
         78 => "DWD",
         85 => "Météo-France",
         98 => "ECMWF",
+        58 => "US Navy (FNMOC)",
+        173 => "NASA",
         _ => "GRIB",
     }
 }

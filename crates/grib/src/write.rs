@@ -63,6 +63,8 @@ fn decimals(f: &Field) -> i32 {
         Param::Mslp => 0,
         Param::WaveHeight | Param::SwellHeight | Param::WindWaveHeight | Param::WavePeriod => 2,
         Param::WaveDir | Param::WindDir => 1,
+        Param::SeaTemp | Param::SubTemp => 2,
+        Param::Salinity | Param::SubSalinity => 3,
         _ => 3,
     }
 }
@@ -102,6 +104,12 @@ fn civil(t: i64) -> (u16, u8, u8, u8, u8, u8) {
 pub const PROCESS_ECMWF_IFS: u8 = 201;
 pub const PROCESS_ECMWF_AIFS: u8 = 202;
 pub const PROCESS_ECMWF_WAM: u8 = 203;
+/// Ocean data racenav converts to GRIB2 from NetCDF (see gribdl::ocean).
+pub const PROCESS_MUR_SST: u8 = 204;
+pub const PROCESS_HYCOM_ESPC: u8 = 205;
+/// GRIB2 originating centres used with them: NASA, US Navy FNMOC.
+pub const CENTRE_NASA: u16 = 173;
+pub const CENTRE_FNMOC: u16 = 58;
 
 /// The model name for a centre and racenav process code, if it is one of ours.
 pub fn process_name(centre: u16, process: u8) -> Option<&'static str> {
@@ -109,6 +117,8 @@ pub fn process_name(centre: u16, process: u8) -> Option<&'static str> {
         (98, PROCESS_ECMWF_IFS) => Some("ECMWF IFS"),
         (98, PROCESS_ECMWF_AIFS) => Some("ECMWF AIFS"),
         (98, PROCESS_ECMWF_WAM) => Some("ECMWF WAM"),
+        (CENTRE_NASA, PROCESS_MUR_SST) => Some("MUR SST 1 km"),
+        (CENTRE_FNMOC, PROCESS_HYCOM_ESPC) => Some("HYCOM ESPC ocean"),
         _ => None,
     }
 }

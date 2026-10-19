@@ -9,6 +9,7 @@ Spec and roadmap: https://claude.ai/code/artifact/e37fa4c3-20c2-4aec-af8f-641714
 | Path | What it is | Status |
 | --- | --- | --- |
 | `crates/nav-core` | Positions, bearings, distances, angle helpers (NM, kn, deg true) | Working, tested |
+| `crates/gribdl` ocean | MUR SST (ERDDAP) and HYCOM ESPC (NCSS) downloads: NetCDF-3 read (`grib::netcdf`) and written as GRIB2 (SeaTemp, Salinity, SubTemp, SubSalinity, currents) | Working; servers not reachable from the dev sandbox, untested live |
 | `crates/polar` | Read qtVlm `.csv` / `.pol` polars, interpolate, best VMG | Working, tested |
 | `crates/grib` | GRIB2 decoding (simple and complex packing, bitmaps, Meltemus JSON section), wind/gust/MSLP/waves/currents in space and time | Working, matches ecCodes on Meltemus files; GRIB1 next |
 | `crates/routing` | Isochrone routing (modified isochrone method) round land and water shallower than the safety depth, multi-leg, tack/gybe penalties, currents | Working, tested |

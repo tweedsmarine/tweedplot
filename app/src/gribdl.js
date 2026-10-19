@@ -7,12 +7,17 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 const KEY = "racenav.gribdl";
-const DEFAULTS = { model: "gfs0p25", params: { gfs: ["wind", "gust", "mslp"], wave: ["waves", "period"] }, area: null, days: 7, every: 3 };
+const DEFAULTS = { model: "gfs0p25", params: { gfs: ["wind", "gust", "mslp"], wave: ["waves", "period"], mur_sst: ["sst"], hycom_espc: ["sst", "sss", "current"] },
+  area: null, days: 7, every: 3, depth: 50 };
+const OCEAN = ["mur_sst", "hycom_espc"];
+/** Which saved parameter list a model uses. */
+const paramKey = (id) => (OCEAN.includes(id) ? id : id.includes("wave") ? "wave" : "gfs");
 
 export function setupGribDownload(map, { weather, course }) {
   const $ = (id) => document.getElementById(id);
   let prefs = structuredClone(DEFAULTS);
   try { Object.assign(prefs, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
+  prefs.params = { ...DEFAULTS.params, ...prefs.params };
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ } };
   let models = [];
   const status = (t, kind = "") => { const el = $("dl-status"); el.textContent = t; el.className = `wx-note ${kind}`; };
@@ -108,7 +113,8 @@ export function setupGribDownload(map, { weather, course }) {
   // ---------- model, parameters, time ----------------------------------------------------------
   function renderParams() {
     const m = model();
-    const key = m.id.includes("wave") ? "wave" : "gfs";
+    const key = paramKey(m.id);
+    const mur = m.id === "mur_sst", hycom = m.id === "hycom_espc";
     const box = $("dl-params");
     box.innerHTML = "";
     for (const p of m.params) {
@@ -121,15 +127,21 @@ export function setupGribDownload(map, { weather, course }) {
         const s = new Set(prefs.params[key]);
         if (cb.checked) s.add(p.id); else s.delete(p.id);
         prefs.params[key] = [...s];
-        save(); estimate();
+        save(); estimate(); showDepth();
       };
       box.append(lab);
     }
     const days = $("dl-days");
     days.innerHTML = "";
-    for (const d of [1, 2, 3, 5, 7, 10, 16]) if (d * 24 <= m.max_hours) days.append(new Option(`${d} day${d > 1 ? "s" : ""}`, String(d)));
-    days.value = String(Math.min(prefs.days, 16));
-    if (!days.value) days.value = "7";
+    // MUR: how many of the latest daily analyses; the others: forecast length
+    days.previousElementSibling.textContent = mur ? "Days of analyses" : "Forecast length";
+    for (const d of (mur ? [1, 2, 3, 5, 7, 14] : [1, 2, 3, 5, 7, 8, 10, 16])) if (d * 24 <= m.max_hours) days.append(new Option(mur ? `last ${d} day${d > 1 ? "s" : ""}` : `${d} day${d > 1 ? "s" : ""}`, String(d)));
+    days.value = String(Math.min(mur ? Math.min(prefs.days, 3) : prefs.days, 16));
+    if (!days.value) days.value = days.options[days.options.length - 1]?.value ?? "1";
+    $("dl-every-row").hidden = mur;
+    $("dl-depth").value = String(prefs.depth ?? 50);
+    showDepth();
+    void hycom;
     const ev = $("dl-every");
     ev.innerHTML = "";
     const fine = m.steps[0][1];
@@ -137,10 +149,16 @@ export function setupGribDownload(map, { weather, course }) {
     ev.value = String(Math.max(prefs.every, fine));
     if (!ev.value) ev.value = String(fine);
   }
+  function showDepth() {
+    const m = model();
+    $("dl-depth-row").hidden = !(m?.id === "hycom_espc" && prefs.params.hycom_espc.includes("depth"));
+  }
+  $("dl-depth").onchange = (e) => { prefs.depth = Number(e.target.value); save(); };
   function request() {
     const m = model();
-    const key = m.id.includes("wave") ? "wave" : "gfs";
-    return { model: m.id, area: prefs.area, params: prefs.params[key], hours: Number($("dl-days").value) * 24, every: Number($("dl-every").value) };
+    const key = paramKey(m.id);
+    return { model: m.id, area: prefs.area, params: prefs.params[key], hours: Number($("dl-days").value) * 24,
+      every: m.id === "mur_sst" ? 24 : Number($("dl-every").value), depth: Number($("dl-depth").value) || 50 };
   }
   async function estimate() {
     if (!models.length) return;
@@ -149,7 +167,10 @@ export function setupGribDownload(map, { weather, course }) {
       const r = await invoke("gribdl_estimate", { req: request() });
       const size = (b) => { const mb = b / 1e6; return mb < 1 ? `${Math.max(1, Math.round(b / 1000))} kB` : `${mb.toFixed(mb < 10 ? 1 : 0)} MB`; };
       const ecmwf = request().model.startsWith("ecmwf");
-      $("dl-size").textContent = ecmwf
+      const mur = request().model === "mur_sst";
+      $("dl-size").textContent = mur
+        ? `About ${size(r.bytes)} · the latest ${Number($("dl-days").value)} daily analys${Number($("dl-days").value) > 1 ? "es" : "is"}${r.bytes > 20e6 ? " · a big area: it comes down thinned (MUR is 1 km)" : ""}`
+        : ecmwf
         ? `File about ${size(r.bytes)}; downloads about ${size(r.download)} (ECMWF publishes whole-globe fields, cut to the area here) · ${r.steps} forecast times to +${r.last} h` +
           (r.last > 144 && !request().model.includes("aifs") ? " · only the 00Z and 12Z runs go past 144 h" : "")
         : `About ${size(r.bytes)} · ${r.steps} forecast times to +${r.last} h`;
@@ -158,8 +179,10 @@ export function setupGribDownload(map, { weather, course }) {
   const SOURCE_NOTE = {
     gfs: "Source: NOAA NOMADS (GFS, GFS-Wave), cut to the area on the server. The newest complete run is used.",
     ecmwf: "Source: ECMWF open data (CC BY 4.0, © ECMWF), from data.ecmwf.int or its AWS mirror. The newest complete run is used.",
+    mur_sst: "Source: NASA JPL MUR SST (free to use and share) via NOAA CoastWatch ERDDAP: a daily 1 km analysis from all the satellites, without cloud gaps, usually a day or two old. Shown until four days after its date.",
+    hycom_espc: "Source: US Navy HYCOM ESPC global ocean model (1/12°, about 9 km) via hycom.org: from the latest analysis out to 8 days. A demonstration service with no guarantee it is up. An area across 180° isn't offered yet.",
   };
-  const showSource = () => status(SOURCE_NOTE[String(prefs.model).startsWith("ecmwf") ? "ecmwf" : "gfs"]);
+  const showSource = () => status(SOURCE_NOTE[OCEAN.includes(prefs.model) ? prefs.model : String(prefs.model).startsWith("ecmwf") ? "ecmwf" : "gfs"]);
   $("dl-model").onchange = (e) => { prefs.model = e.target.value; save(); renderParams(); estimate(); showSource(); };
   $("dl-days").onchange = (e) => { prefs.days = Number(e.target.value); save(); estimate(); };
   $("dl-every").onchange = (e) => { prefs.every = Number(e.target.value); save(); estimate(); };
