@@ -24,6 +24,15 @@ use grib::{Field, Grid, Param};
 
 use crate::{client, get_retry, Error, Model, Progress, Request, Result};
 
+/// HYCOM's subset server is slow (half a minute or more a request): a long timeout.
+fn slow_client() -> Result<reqwest::blocking::Client> {
+    reqwest::blocking::Client::builder()
+        .user_agent(concat!("racenav/", env!("CARGO_PKG_VERSION"), " (sailing navigation)"))
+        .timeout(std::time::Duration::from_secs(420))
+        .build()
+        .map_err(|e| Error::Http(e.to_string()))
+}
+
 pub const ERDDAP: &str = "https://coastwatch.pfeg.noaa.gov/erddap/griddap";
 pub const HYCOM_NCSS: &str = "https://ncss.hycom.org/thredds/ncss";
 
@@ -248,25 +257,41 @@ pub fn download(req: &Request, now: i64, dir: &Path, progress: Progress, cancel:
             // from the last whole 3 hours (the analysis) to the forecast length asked
             let t0 = now - now.rem_euclid(3 * 3600) - 3 * 3600;
             let hours = req.hours.min(192);
-            let total = surf.len().min(1) + deep as usize;
+            // HYCOM asks for no more than a day per request (and its server takes
+            // half a minute or more for each): one request per day and dataset
+            let days = hours.div_ceil(24).max(1);
+            let slow = slow_client()?;
+            let mut jobs: Vec<(&str, Vec<&str>, i64, u32, u32, Option<f64>)> = Vec::new();
+            for d in 0..days {
+                let start = t0 + d as i64 * 86_400;
+                let len = (hours - d * 24).min(24);
+                if !surf.is_empty() {
+                    jobs.push(("ice", surf.clone(), start, len, req.every, None));
+                }
+                if deep {
+                    let dep = if req.depth > 0.0 { req.depth } else { 50.0 };
+                    jobs.push(("ts3z", vec!["water_temp", "salinity"], start, len, req.every.max(3), Some(dep)));
+                }
+            }
+            let total = jobs.len();
             let mut fields = Vec::new();
             let mut bytes = 0u64;
             progress(0, total, 0);
-            if !surf.is_empty() {
-                let url = hycom_url("ice", &surf, req.area, t0, hours, req.every, None)?;
-                let data = get_retry(&c, &url, cancel)?;
+            for (k, (ds, vars, start, len, every, dep)) in jobs.iter().enumerate() {
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    return Err(Error::Cancelled);
+                }
+                // the day's last step only (the next day's request starts on the next one)
+                let span = if *len >= 24 { 24 - every.max(&if *ds == "ice" { 1 } else { 3 }) } else { *len };
+                let url = hycom_url(ds, vars, req.area, *start, span, *every, *dep)?;
+                let data = get_retry(&slow, &url, cancel)?;
                 bytes += data.len() as u64;
-                fields.extend(fields_from_netcdf(&data, grib::write::CENTRE_FNMOC, None)?);
-                progress(1, total, bytes);
+                fields.extend(fields_from_netcdf(&data, grib::write::CENTRE_FNMOC, *dep)?);
+                progress(k + 1, total, bytes);
             }
-            if deep {
-                let d = if req.depth > 0.0 { req.depth } else { 50.0 };
-                let url = hycom_url("ts3z", &["water_temp", "salinity"], req.area, t0, hours, req.every.max(3), Some(d))?;
-                let data = get_retry(&c, &url, cancel)?;
-                bytes += data.len() as u64;
-                fields.extend(fields_from_netcdf(&data, grib::write::CENTRE_FNMOC, Some(d))?);
-                progress(total, total, bytes);
-            }
+            // no time twice (requests meeting at a day boundary)
+            fields.sort_by_key(|f| (f.param, f.valid_time));
+            fields.dedup_by_key(|f| (f.param, f.valid_time));
             // one reference time for the whole file: the first analysis
             let r = fields.iter().map(|f| f.ref_time).min().unwrap_or(t0);
             for f in fields.iter_mut() {
@@ -298,6 +323,31 @@ mod tests {
         let d = hycom_url("ts3z", &["water_temp"], [172.0, -42.0, 175.0, -40.0], 0, 24, 6, Some(50.0)).unwrap();
         assert!(d.contains("timeStride=2&vertCoord=50&accept=netcdf"), "{d}");
         assert!(area_ok([170.0, -45.0, 190.0, -30.0]).is_err());
+    }
+
+    /// Real NCSS output from HYCOM (FMRC_ESPC-D-V02_ice, 20 Oct 2026 00Z and 03Z,
+    /// 41.2–40.8°S 173.0–173.5°E): every variable, the times and the grid come through.
+    #[test]
+    fn reads_real_hycom_output() {
+        let b = crate::tests::b64(include_str!("../tests/hycom_ice_nelson.b64"));
+        let f = fields_from_netcdf(&b, grib::write::CENTRE_FNMOC, None).unwrap();
+        let count = |p: Param| f.iter().filter(|x| x.param == p).count();
+        assert_eq!((count(Param::SeaTemp), count(Param::Salinity), count(Param::CurrentU), count(Param::CurrentV)), (2, 2, 2, 2));
+        assert_eq!(f[0].valid_time, 1_792_281_600 + 2 * 86_400); // 2026-10-20 00Z
+        let g = &f[0].grid;
+        assert_eq!((g.ni, g.nj), (8, 11));
+        assert!((g.dlat - 0.04).abs() < 1e-4 && (g.dlon - 0.08).abs() < 1e-4, "{g:?}");
+        assert!((g.lat0 + 41.2).abs() < 1e-4 && (g.lon0 - 172.96).abs() < 1e-3, "{g:?}");
+        // the row at 41.0°S (j = 5): land then 16.36 °C
+        let sst = f.iter().find(|x| x.param == Param::SeaTemp).unwrap();
+        assert!(sst.values[5 * 8].is_nan());
+        assert!((sst.values[5 * 8 + 1] as f64 - (16.361 + 273.15)).abs() < 0.01, "{}", sst.values[5 * 8 + 1]);
+        let mut bytes = Vec::new();
+        for x in &f {
+            bytes.extend(grib::write::encode(x, grib::write::PROCESS_HYCOM_ESPC));
+        }
+        let gf = grib::GribFile::from_bytes(&bytes);
+        assert!(gf.current(-41.0, 173.3, f[0].valid_time).is_some());
     }
 
     #[test]

@@ -168,7 +168,11 @@ export function setupGribDownload(map, { weather, course }) {
       const size = (b) => { const mb = b / 1e6; return mb < 1 ? `${Math.max(1, Math.round(b / 1000))} kB` : `${mb.toFixed(mb < 10 ? 1 : 0)} MB`; };
       const ecmwf = request().model.startsWith("ecmwf");
       const mur = request().model === "mur_sst";
-      $("dl-size").textContent = mur
+      const hycom = request().model === "hycom_espc";
+      const reqs = Math.ceil(Number($("dl-days").value)) * (request().params.filter((p) => p !== "depth").length ? 1 : 0) + (request().params.includes("depth") ? Math.ceil(Number($("dl-days").value)) : 0);
+      $("dl-size").textContent = hycom
+        ? `About ${size(r.bytes)} · ${r.steps} times to +${r.last} h · ${reqs} request${reqs === 1 ? "" : "s"} (one a day; HYCOM's server takes from a few seconds to a minute or two for each)`
+        : mur
         ? `About ${size(r.bytes)} · the latest ${Number($("dl-days").value)} daily analys${Number($("dl-days").value) > 1 ? "es" : "is"}${r.bytes > 20e6 ? " · a big area: it comes down thinned (MUR is 1 km)" : ""}`
         : ecmwf
         ? `File about ${size(r.bytes)}; downloads about ${size(r.download)} (ECMWF publishes whole-globe fields, cut to the area here) · ${r.steps} forecast times to +${r.last} h` +

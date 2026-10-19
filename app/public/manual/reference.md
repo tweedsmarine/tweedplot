@@ -435,7 +435,7 @@ Two free ocean sources sit in the same Download list, for fishing and for anyone
 | Source | What | Resolution and time | Best for |
 | --- | --- | --- | --- |
 | **MUR sea temperature** | Sea surface temperature analysed from all the satellites, without cloud gaps | About 1 km, one analysis a day, usually a day or two old. **Days of analyses** sets how many of the latest days to fetch | The detail: fronts, eddies, upwelling, river plumes near the coast |
-| **HYCOM ocean model** | Sea surface temperature and salinity, surface currents, and (ticked) temperature and salinity at a **depth** you choose (10–500 m) | About 9 km, from the latest analysis out to an 8-day forecast; hourly at the surface, 3-hourly at depth | Salinity, what is happening below the surface (the thermocline), currents, and where things are heading over the next days |
+| **HYCOM ocean model** | Sea surface temperature and salinity, surface currents, and (ticked) temperature and salinity at a **depth** you choose (10–500 m) | About 9 km, from the latest analysis out to an 8-day forecast, every 3 hours or more (HYCOM's server is very slow on hourly steps). Fetched one day at a time, as HYCOM asks: each day takes from a few seconds to a minute or two, and the progress bar counts them | Salinity, what is happening below the surface (the thermocline), currents, and where things are heading over the next days |
 
 Area, length and step work as for GRIBs; an area across 180° isn't offered yet (split it). The files are saved in the GRIB folder like any other and load straight away.
 

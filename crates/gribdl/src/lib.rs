@@ -177,12 +177,14 @@ impl Model {
                 name: "HYCOM ocean model 1/12° (temperature, salinity, currents)",
                 res_deg: 0.08,
                 max_hours: 192,
-                steps: vec![(192, 1)],
+                // the surface fields are hourly, but the server is very slow on hourly
+                // steps (minutes a day, against seconds at 3-hourly): 3 h is the finest offered
+                steps: vec![(192, 3)],
                 params: vec![
                     ParamInfo { id: "sst", name: "Sea surface temperature", fields: 1, default: true },
                     ParamInfo { id: "sss", name: "Sea surface salinity", fields: 1, default: true },
                     ParamInfo { id: "current", name: "Surface currents", fields: 2, default: true },
-                    ParamInfo { id: "depth", name: "Temperature and salinity at a depth (3-hourly)", fields: 2, default: false },
+                    ParamInfo { id: "depth", name: "Temperature and salinity at a depth", fields: 2, default: false },
                 ],
                 delay_h: 0,
             },
@@ -627,7 +629,7 @@ mod tests {
         assert!(b > 150_000 && b < 600_000, "{b}");
     }
 
-    fn b64(s: &str) -> Vec<u8> {
+    pub(crate) fn b64(s: &str) -> Vec<u8> {
         let val = |c: u8| match c {
             b'A'..=b'Z' => c - b'A',
             b'a'..=b'z' => c - b'a' + 26,
