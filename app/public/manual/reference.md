@@ -120,6 +120,7 @@ Wharves, breakwaters, jetties, pontoons, floating docks and causeways are drawn 
 | **Route round dangers** | Routing keeps off rocks, wrecks and obstructions that dry, are awash, or have less water than the safety depth or an unknown depth |
 | **Route round marine farms** | Routing keeps out of charted marine farms |
 | **Lights, marks, dangers, areas** | Shows the hydrographic features, with **Light sectors** and **Names and labels** on or off |
+| **Chart symbol size** | Scales buoys, beacons, lights, dangers and other chart symbols from 75% to 200% (default 120%) to suit the screen and the viewing distance. Labels grow at half the rate, so they stay clear of each other |
 
 Underwater dangers deeper than the safety contour are shown with their depth only, so the chart stays readable while anything that matters to your boat stands out.
 

@@ -12,7 +12,7 @@ const COLOURS = { 1: "#ffffff", 2: "#111111", 3: "#d7262b", 4: "#1f9a3a", 5: "#2
 const LIGHT = { r: "#d7262b", g: "#1f9a3a", w: "#f4c20d", o: MAGENTA, m: MAGENTA };
 
 const KEY = "racenav.chartfeatures";
-const DEFAULTS = { show: true, sectors: true, names: true, avoidDangers: true, avoidFarms: true };
+const DEFAULTS = { show: true, sectors: true, names: true, avoidDangers: true, avoidFarms: true, symSize: 1.2 };
 
 /** Point symbols; underwater dangers deeper than the safety contour show as their depth only. */
 const pointFilter = (contour) => ["all", ["!", ["in", ["get", "cls"], ["literal", ["LIGHTS", "SEAARE", "LNDRGN"]]]],
@@ -114,6 +114,24 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
     el.onchange = () => { opts[key] = el.checked; save(); apply(); };
   }
   apply();
+
+  // symbol size: the symbols are drawn at twice size, so up to 2x stays sharp; labels grow at half the rate
+  function applySize() {
+    const k = opts.symSize, kl = 1 + (k - 1) / 2;
+    map.setLayoutProperty("f-lights", "icon-size", k);
+    map.setLayoutProperty("f-points", "icon-size", k);
+    map.setLayoutProperty("f-labels", "icon-size", kl);
+    // labels sit beside the symbol: keep them clear of it as it grows
+    map.setLayoutProperty("f-labels", "icon-offset", ["match", ["get", "cls"], "LIGHTS", ["literal", [12 * k / kl, 8 * k / kl]], ["literal", [8 * k / kl, -6 * k / kl]]]);
+    const v = $("set-symsize-v");
+    if (v) v.textContent = `${Math.round(k * 100)}%`;
+  }
+  const sz = $("set-symsize");
+  if (sz) {
+    sz.value = opts.symSize;
+    sz.oninput = () => { opts.symSize = Number(sz.value); save(); applySize(); };
+  }
+  applySize();
 
   // ---------- details on a click ----------------------------------------------------------
   const POINTS = ["f-points", "f-lights"];
