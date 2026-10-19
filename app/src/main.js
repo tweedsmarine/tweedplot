@@ -47,8 +47,10 @@ try { Object.assign(settings, JSON.parse(localStorage.getItem("racenav.chart") |
 function saveSettings() { try { localStorage.setItem("racenav.chart", JSON.stringify(settings)); } catch { /* ignore */ } }
 
 // Chart tiles come from the Rust chart store through the app's own "chart" protocol.
+// The tiles change when the chart data or the drawing code does, so they must never
+// come from the WebView's HTTP cache: a new query each start (and no-store from Rust).
 const TILE_URL = window.RACENAV_TILE_URL
-  ?? (navigator.userAgent.includes("Windows") ? "http://chart.localhost/{z}/{x}/{y}.pbf" : "chart://localhost/{z}/{x}/{y}.pbf");
+  ?? `${navigator.userAgent.includes("Windows") ? "http://chart.localhost" : "chart://localhost"}/{z}/{x}/{y}.pbf?s=${Date.now().toString(36)}`;
 
 // S-52 style depth shades (day palette).
 const DEPTH = { drying: "#a9c8a0", vshallow: "#7fb8e8", mshallow: "#a6cdf0", mdeep: "#c9e1ee", deep: "#e9f3f6" };

@@ -1551,7 +1551,9 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
         [z, x, y] => z.parse::<u8>().ok().zip(x.parse::<u32>().ok()).zip(y.parse::<u32>().ok()),
         _ => None,
     };
-    let builder = Response::builder().header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+    // never cached by the WebView: a tile drawn by an older build or from older data
+    // would otherwise stay on screen (the chart store keeps its own cache in memory)
+    let builder = Response::builder().header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*").header(header::CACHE_CONTROL, "no-store");
     match (parsed, charts()) {
         (Some(((z, x), y)), Some(store)) => builder
             .header(header::CONTENT_TYPE, "application/x-protobuf")
