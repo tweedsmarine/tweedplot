@@ -13,7 +13,20 @@
 //!
 //! A feature class may exist in several scale bands: points from a coarser
 //! band are left out where the finer band has one of the same class within
-//! 150 m, and lines and areas come from the finest band with any in the tile.
+//! 150 m, and a line or area from a coarser band where the finer band charts
+//! the water (its depth areas cover most of the feature). That is decided feature by feature, not tile by
+//! tile, so a feature never changes shape at a tile edge.
+//!
+//! Hazards to the vessel (rocks, wrecks, obstructions, piles, platforms, marine
+//! farms, hulks, bridges, overhead cables and pipelines) are never hidden by
+//! zoom: every band is searched at every zoom, SCAMIN is ignored for them (it
+//! still comes through as `minz`, for those deeper than the safety contour), and
+//! they carry `hz` = 1 so the chart draws them whatever else is switched off.
+//! Where they would pile up at small scales they are thinned to one per few
+//! pixels, keeping the most dangerous, and an area too small to see is also
+//! drawn as its symbol. (IMO's ECDIS performance standard keeps isolated
+//! dangers in the display base, which can't be removed; small-scale chart
+//! displays dropping a reef were behind the Vestas Wind stranding in 2014.)
 
 use std::collections::HashMap;
 
@@ -21,7 +34,61 @@ use crate::clip::{clip_line, quantise};
 use crate::geom::{parse_gpkg, Geom, Ring};
 use crate::mvt::{Layer, TileGeom, Value, EXTENT};
 use crate::s57::{self, Attrs, Geo, Light, TILE_COLS};
-use crate::{band_minzoom, ChartStore, Kind, TableInfo, TileProj};
+use crate::{band_minzoom, geom_bounds, ChartStore, Kind, TableInfo, TileProj};
+
+/// Hazards to the vessel: shown at every zoom (see the module notes).
+pub fn is_hazard(code: &str) -> bool {
+    matches!(code, "UWTROC" | "WRECKS" | "OBSTRN" | "PILPNT" | "OFSPLF" | "MARCUL" | "HULKES" | "BRIDGE" | "CBLOHD" | "PIPOHD")
+}
+
+/// How dangerous a hazard point is, lower first: drying or awash, then of unknown
+/// depth, then by depth over it; other hazards after.
+fn hazard_rank(code: &str, a: &Attrs) -> f64 {
+    match code {
+        "UWTROC" | "WRECKS" | "OBSTRN" => match a.first("watlev") {
+            Some(1) | Some(2) | Some(4) | Some(5) => -2.0,
+            _ => a.num("valsou").unwrap_or(-1.0),
+        },
+        _ => 1000.0,
+    }
+}
+
+/// The part of a line or area geometry outside `cover`: None when nothing is left,
+/// the geometry itself when it doesn't reach the cover.
+fn cut_outside(g: &Geom, cover: &geo::MultiPolygon<f64>) -> Option<Geom> {
+    use geo::{BooleanOps, BoundingRect, Intersects};
+    let ls = |r: &Ring| geo::LineString::from(r.iter().map(|p| (p[0], p[1])).collect::<Vec<_>>());
+    let back = |l: &geo::LineString<f64>| -> Ring { l.coords().map(|c| [c.x, c.y]).collect() };
+    match g {
+        Geom::Polygons(polys) => {
+            let mp = geo::MultiPolygon::new(
+                polys.iter().filter(|r| !r.is_empty()).map(|rings| geo::Polygon::new(ls(&rings[0]), rings[1..].iter().map(ls).collect())).collect(),
+            );
+            if !mp.intersects(cover) {
+                return Some(g.clone());
+            }
+            let d = mp.difference(cover);
+            let out: Vec<Vec<Ring>> = d
+                .0
+                .iter()
+                .filter(|p| p.bounding_rect().is_some_and(|r| r.width() * r.height() > 1e-12))
+                .map(|p| std::iter::once(back(p.exterior())).chain(p.interiors().iter().map(back)).collect())
+                .collect();
+            (!out.is_empty()).then_some(Geom::Polygons(out))
+        }
+        Geom::Lines(lines) => {
+            let ml = geo::MultiLineString::new(lines.iter().map(ls).collect());
+            if !ml.intersects(cover) {
+                return Some(g.clone());
+            }
+            let d = cover.clip(&ml, true);
+            let out: Vec<Ring> = d.0.iter().map(back).filter(|r| r.len() >= 2).collect();
+            (!out.is_empty()).then_some(Geom::Lines(out))
+        }
+        Geom::Points(_) => Some(g.clone()),
+    }
+}
+
 
 /// Light sector radius and limit-line length in tile units (4096 per tile, 8 per pixel).
 const ARC_R: f64 = 440.0;
@@ -97,7 +164,61 @@ impl ChartStore {
     }
 
     fn feature_tables(&self, z: u8) -> Vec<(usize, &TableInfo)> {
-        self.tables.iter().enumerate().filter(|(_, t)| t.kind == Kind::Feature && z >= band_minzoom(t.band)).collect()
+        self.tables
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.kind == Kind::Feature && (z >= band_minzoom(t.band) || t.class.is_some_and(|c| is_hazard(c.code))))
+            .collect()
+    }
+
+    /// Every band's coverage polygons (data areas, CATCOV 1), loaded once.
+    fn coverage(&self) -> &[(u8, [f64; 4], geo::Polygon<f64>)] {
+        self.coverage.get_or_init(|| {
+            let mut out = Vec::new();
+            for t in self.tables.iter().filter(|t| t.kind == Kind::Coverage) {
+                self.query_text(t, [-180.0, -90.0, 190.0, 90.0], &["catcov"], |row| {
+                    if row.vals[0].as_deref().is_some_and(|c| c.trim() == "2") {
+                        return; // "no coverage available"
+                    }
+                    if let Geom::Polygons(polys) = &row.geom {
+                        for rings in polys {
+                            let Some(outer) = rings.first() else { continue };
+                            let ls = |r: &Ring| geo::LineString::from(r.iter().map(|p| (p[0], p[1])).collect::<Vec<_>>());
+                            let poly = geo::Polygon::new(ls(outer), rings[1..].iter().map(ls).collect());
+                            let b = geom_bounds(&Geom::Polygons(vec![vec![outer.clone()]]));
+                            out.push((t.band, b, poly));
+                        }
+                    }
+                });
+            }
+            out
+        })
+    }
+
+    /// The coverage of bands in `bands` that touches `b`, merged.
+    fn cover_in(&self, bands: &[u8], b: [f64; 4]) -> Option<geo::MultiPolygon<f64>> {
+        use geo::BooleanOps;
+        let mut polys: Vec<&geo::Polygon<f64>> = self
+            .coverage()
+            .iter()
+            .filter(|(band, cb, _)| bands.contains(band) && cb[2] >= b[0] && cb[0] <= b[2] && cb[3] >= b[1] && cb[1] <= b[3])
+            .map(|(_, _, p)| p)
+            .collect();
+        let first = polys.pop()?;
+        let mut m = geo::MultiPolygon::new(vec![first.clone()]);
+        for p in polys {
+            m = m.union(&geo::MultiPolygon::new(vec![p.clone()]));
+        }
+        Some(m)
+    }
+
+    /// Whether `p` lies in the coverage of one of `bands`.
+    fn covered(&self, bands: &[u8], p: [f64; 2]) -> bool {
+        use geo::Contains;
+        let pt = geo::Point::new(p[0], p[1]);
+        self.coverage()
+            .iter()
+            .any(|(band, b, poly)| bands.contains(band) && p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3] && poly.contains(&pt))
     }
 
     /// The four feature layers of one tile: [areas, lines, points, light sectors].
@@ -126,13 +247,30 @@ impl ChartStore {
         let keep = |minz: f64| z >= 16 || (z as f64 + 1.0) > minz;
         let e = EXTENT as f64;
         let inside = |p: [f64; 2]| p[0] >= 0.0 && p[0] < e && p[1] >= 0.0 && p[1] < e;
+        // hazard symbols at small scales: one per cell of this many tile units (8 per pixel)
+        let thin = if z >= 12 { 0.0 } else if z >= 9 { 48.0 } else { 96.0 };
+        type Props = Vec<(&'static str, Value)>;
+        let mut hz_pts: HashMap<(i64, i64), (f64, [i32; 2], Props)> = HashMap::new();
+        let mut put_hazard = |px: [f64; 2], rank: f64, props: Props, fpt: &mut Layer| {
+            let q = [px[0].round() as i32, px[1].round() as i32];
+            if thin == 0.0 {
+                fpt.add(&TileGeom::Points(vec![q]), &props);
+                return;
+            }
+            let k = ((px[0] / thin).floor() as i64, (px[1] / thin).floor() as i64);
+            if hz_pts.get(&k).is_none_or(|(r, _, _)| rank < *r) {
+                hz_pts.insert(k, (rank, q, props));
+            }
+        };
 
         for (class, tables) in &groups {
             match class.geo {
                 Geo::Point if class.code == "LIGHTS" => self.render_lights(tp, z, tables, &mut fpt, &mut lsec),
                 Geo::Point => {
                     let mut taken: Vec<([f64; 2], u8)> = Vec::new();
-                    for (ti, t) in tables {
+                    for (k, (ti, t)) in tables.iter().enumerate() {
+                        let mut finer_bands: Vec<u8> = tables[..k].iter().map(|(_, ft)| ft.band).filter(|b| *b > t.band).collect();
+                        finer_bands.dedup();
                         let mut mine = Vec::new();
                         self.query_text(t, bbox, TILE_COLS, |row| {
                             let Geom::Points(pts) = &row.geom else { return };
@@ -141,8 +279,13 @@ impl ChartStore {
                                 if taken.iter().any(|(q, b)| *b > t.band && metres(p, *q) < SAME_M) {
                                     continue;
                                 }
+                                // a finer band charts this spot: its copy (or its absence) stands
+                                if !finer_bands.is_empty() && self.covered(&finer_bands, p) {
+                                    continue;
+                                }
                                 let minz = a.num("scamin").map_or(0.0, |s| s57::scamin_zoom(s, p[1]));
-                                if !keep(minz) {
+                                let hazard = is_hazard(class.code);
+                                if !hazard && !keep(minz) {
                                     continue;
                                 }
                                 // only a feature actually drawn at this zoom hides a coarser band's copy
@@ -173,22 +316,42 @@ impl ChartStore {
                                 if let Some(n) = a.get("objnam") {
                                     props.push(("name", Value::Str(n.into())));
                                 }
-                                fpt.add(&TileGeom::Points(vec![[px[0].round() as i32, px[1].round() as i32]]), &props);
+                                if hazard {
+                                    props.push(("hz", Value::UInt(1)));
+                                    put_hazard(px, hazard_rank(class.code, &a), props, &mut fpt);
+                                } else {
+                                    fpt.add(&TileGeom::Points(vec![[px[0].round() as i32, px[1].round() as i32]]), &props);
+                                }
                             }
                         });
                         taken.extend(mine);
                     }
                 }
                 Geo::Line | Geo::Area => {
+                    let hazard = is_hazard(class.code);
                     let layer = if class.geo == Geo::Line { &mut fln } else { &mut far };
-                    for (ti, t) in tables {
-                        let before = layer.len();
-                        self.query_text(t, bbox, &["objnam", "scamin", "catrea", "restrn", "catmfa", "orient"], |row| {
-                            let tg = if class.geo == Geo::Line { tp.lines(&row.geom) } else { tp.polygons(&row.geom) };
-                            let Some(tg) = tg else { return };
+                    for (k, (ti, t)) in tables.iter().enumerate() {
+                        // the finer bands drawn here: those of this class's tables (finest first)
+                        let mut finer_bands: Vec<u8> = tables[..k].iter().map(|(_, ft)| ft.band).filter(|b| *b > t.band).collect();
+                        finer_bands.dedup();
+                        self.query_text(t, bbox, &["objnam", "scamin", "catrea", "restrn", "catmfa", "orient", "watlev"], |row| {
+                            // Inside a finer band's coverage that band's features are the ones
+                            // to show (a farm or cable is often drawn differently at each scale):
+                            // a coarser band's feature is cut back to outside it, as an ECDIS does.
+                            let mut geom_cut = None;
+                            if !finer_bands.is_empty() {
+                                if let Some(cover) = self.cover_in(&finer_bands, geom_bounds(&row.geom)) {
+                                    match cut_outside(&row.geom, &cover) {
+                                        Some(g) => geom_cut = Some(g),
+                                        None => return, // all of it inside
+                                    }
+                                }
+                            }
+                            let geom = geom_cut.as_ref().unwrap_or(&row.geom);
+                            let tg = if class.geo == Geo::Line { tp.lines(geom) } else { tp.polygons(geom) };
                             let lat = (bbox[1] + bbox[3]) / 2.0;
                             let minz = row.vals[1].as_deref().and_then(|s| s.parse().ok()).map_or(0.0, |s| s57::scamin_zoom(s, lat));
-                            if !keep(minz) {
+                            if !hazard && !keep(minz) {
                                 return;
                             }
                             let mut props = vec![
@@ -198,6 +361,9 @@ impl ChartStore {
                                 ("band", Value::UInt(t.band as u64)),
                                 ("minz", Value::F64((minz * 10.0).round() / 10.0)),
                             ];
+                            if hazard {
+                                props.push(("hz", Value::UInt(1)));
+                            }
                             if let Some(n) = row.vals[0].as_deref().filter(|s| !s.trim().is_empty()) {
                                 props.push(("name", Value::Str(n.trim().into())));
                             }
@@ -207,14 +373,34 @@ impl ChartStore {
                                     props.push(("entry", Value::UInt(1)));
                                 }
                             }
-                            layer.add(&tg, &props);
+                            // a hazard area too small to see at this scale: its symbol as well
+                            if hazard && class.geo == Geo::Area {
+                                let g = geom_bounds(geom);
+                                let (p0, p1) = (tp.px(&[g[0], g[1]]), tp.px(&[g[2], g[3]]));
+                                if (p1[0] - p0[0]).abs().max((p1[1] - p0[1]).abs()) < 64.0 {
+                                    let c = tp.px(&[(g[0] + g[2]) / 2.0, (g[1] + g[3]) / 2.0]);
+                                    let icon = match class.code {
+                                        "MARCUL" => Some("mf".to_string()),
+                                        "OBSTRN" => Some(format!("o|{}", row.vals[6].as_deref().and_then(|v| v.split(',').next()?.trim().parse::<u32>().ok()).unwrap_or(3))),
+                                        _ => None,
+                                    };
+                                    if let (Some(icon), true) = (icon, inside(c)) {
+                                        let mut pp = props.clone();
+                                        pp.push(("icon", Value::Str(icon)));
+                                        put_hazard(c, 500.0, pp, &mut fpt);
+                                    }
+                                }
+                            }
+                            if let Some(tg) = tg {
+                                layer.add(&tg, &props);
+                            }
                         });
-                        if layer.len() > before {
-                            break;
-                        }
                     }
                 }
             }
+        }
+        for (_, (_, q, props)) in hz_pts {
+            fpt.add(&TileGeom::Points(vec![q]), &props);
         }
         [far, fln, fpt, lsec]
     }

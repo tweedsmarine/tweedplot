@@ -15,14 +15,19 @@ const KEY = "racenav.chartfeatures";
 const DEFAULTS = { show: true, sectors: true, names: true, avoidDangers: true, avoidFarms: true };
 
 /** Point symbols; underwater dangers deeper than the safety contour show as their depth only. */
-const pointFilter = (contour) => ["all", minz, ["!", ["in", ["get", "cls"], ["literal", ["LIGHTS", "SEAARE", "LNDRGN"]]]],
-  ["any", ["!", ["has", "dep"]], ["<", ["get", "dep"], contour]]];
+const pointFilter = (contour) => ["all", ["!", ["in", ["get", "cls"], ["literal", ["LIGHTS", "SEAARE", "LNDRGN"]]]],
+  ["any", ["!", ["has", "dep"]], ["<", ["get", "dep"], contour]], ["any", HZ, minzDeep]];
 
 const labelFilter = (contour) => ["all", minz, ["has", "lbl"], ["!", ["in", ["get", "cls"], ["literal", ["SEAARE", "LNDRGN"]]]],
   ["any", ["!", ["has", "dep"]], ["<", ["get", "dep"], contour]]];
 
-/** Zoom filter: a feature shows from its SCAMIN zoom. */
-const minz = ["any", ["!", ["has", "minz"]], [">=", ["zoom"], ["get", "minz"]]];
+/** Zoom filter: a feature shows from its SCAMIN zoom, except hazards to the vessel
+ * (rocks, wrecks, obstructions, farms, piles, platforms, bridges, overhead cables:
+ * `hz` from the chart store), which show at every zoom. Underwater dangers deeper
+ * than the safety contour still follow SCAMIN (the point filters below). */
+const HZ = ["==", ["get", "hz"], 1];
+const minz = ["any", HZ, ["!", ["has", "minz"]], [">=", ["zoom"], ["get", "minz"]]];
+const minzDeep = ["any", ["!", ["has", "minz"]], [">=", ["zoom"], ["get", "minz"]]];
 
 export function setupChartFeatures(map, { before, safetyContour = 5 }) {
   const $ = (id) => document.getElementById(id);
@@ -81,6 +86,10 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
                 "symbol-sort-key": ["match", ["get", "cls"], "LIGHTS", 0, 1] } },
   ];
   for (const l of layers) map.addLayer(l, before);
+  // hazards stay on the chart when chart features are switched off (like an ECDIS's
+  // display base, which can't be removed): these layers keep their hazards then
+  const HAZ_LAYERS = ["f-area-fill", "f-area-hit", "f-area-dash", "f-construct", "f-bridge", "f-area-grey", "f-line-solid", "f-line-dash", "f-points"];
+  const baseFilter = Object.fromEntries(layers.map((l) => [l.id, l.filter]));
   // labels only once there is room
   map.setLayerZoomRange("f-labels", 11, 24);
 
@@ -88,10 +97,12 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
   const NAMES = ["f-names", "f-pnames", "f-labels"];
   function apply() {
     for (const l of layers) {
-      let on = opts.show;
+      const haz = HAZ_LAYERS.includes(l.id);
+      let on = opts.show || haz;
       if (SECTOR.includes(l.id)) on = on && opts.sectors;
       if (NAMES.includes(l.id)) on = on && opts.names;
       map.setLayoutProperty(l.id, "visibility", on ? "visible" : "none");
+      if (haz) map.setFilter(l.id, opts.show ? baseFilter[l.id] : ["all", baseFilter[l.id], HZ]);
     }
   }
   for (const [id, key] of [["set-feat", "show"], ["set-sectors", "sectors"], ["set-featnames", "names"], ["set-avoid-dangers", "avoidDangers"], ["set-avoid-farms", "avoidFarms"]]) {
@@ -151,7 +162,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
 
   return {
     /** Underwater rocks, wrecks and obstructions deeper than this lose their danger symbol. */
-    setSafetyContour: (m) => { map.setFilter("f-points", pointFilter(m)); map.setFilter("f-labels", labelFilter(m)); },
+    setSafetyContour: (m) => { baseFilter["f-points"] = pointFilter(m); baseFilter["f-labels"] = labelFilter(m); map.setFilter("f-labels", labelFilter(m)); apply(); },
     /** Routing options: which charted hazards to keep off. */
     avoid: () => ({ dangers: opts.avoidDangers, farms: opts.avoidFarms }),
   };

@@ -9,6 +9,7 @@ description = "Chart data: LINZ GeoPackage layers (coastline, depth areas, conto
 rusqlite.workspace = true
 zip.workspace = true
 lru.workspace = true
+geo = "0.29"
 thiserror.workspace = true
 serde.workspace = true
 

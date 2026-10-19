@@ -293,7 +293,11 @@ enum Goal {
     /// (-1, to port), counted from `b0` (the bearing of the previous mark). The leg
     /// ends where that is done, at least `clear` NM off.
     /// `near`: the radius of water round the mark it is rounded within (NM).
-    Wrap { m: LatLon, sense: f64, b0: f64, need: f64, clear: f64, near: f64 },
+    /// `exit`: with a next mark (its position, and a radius), the leg ends not on the
+    /// line to the next mark, which may run up a blind inlet, but on leaving that
+    /// circle heading away from the mark towards the next one, when the turn the
+    /// boat has made, plus the bit still to come on the way there, is the rounding.
+    Wrap { m: LatLon, sense: f64, b0: f64, need: f64, clear: f64, near: f64, exit: Option<(LatLon, f64)> },
 }
 
 impl Goal {
@@ -320,10 +324,55 @@ impl Goal {
         }
     }
 
+    /// With an exit: is the rounding done at `p`, the boat `wrap` round?
+    fn exit_done(&self, p: LatLon, wrap: f64) -> bool {
+        let Goal::Wrap { m, sense, need, exit: Some((n, r_exit)), .. } = *self else { return false };
+        if m.distance_to(&p) < r_exit {
+            return false;
+        }
+        let out = m.bearing_to(&p);
+        // heading for the next mark takes the boat away from this one (not back past it)
+        if norm180(p.bearing_to(&n) - out).abs() >= 90.0 {
+            return false;
+        }
+        // and the turn round the mark it will have made there is the rounding asked
+        (wrap + sense * norm180(m.bearing_to(&n) - out) - need).abs() < 90.0
+    }
+
+    /// Already round at the start of a leg?
+    fn done_at_start(&self, p: LatLon) -> bool {
+        match *self {
+            Goal::Circle { .. } => false,
+            Goal::Wrap { exit: Some(_), .. } => self.exit_done(p, self.wrap0(p)),
+            Goal::Wrap { need, .. } => self.wrap0(p) >= need,
+        }
+    }
+
     /// Fraction along the step a→b (the boat at `wrap` round the mark at a) where the goal is reached, if it is.
     fn fraction(&self, a: LatLon, b: LatLon, wrap: f64) -> Option<f64> {
         match *self {
             Goal::Circle { c, r } => arrival_fraction(a, b, c, r),
+            Goal::Wrap { m, exit: Some((_, r_exit)), .. } => {
+                if !self.exit_done(b, wrap + self.sweep(a, b)) {
+                    return None;
+                }
+                // where it leaves the circle, if in this step
+                if m.distance_to(&a) < r_exit {
+                    let k = m.lat.to_radians().cos();
+                    let xy = |p: &LatLon| (norm180(p.lon - m.lon) * 60.0 * k, (p.lat - m.lat) * 60.0);
+                    let (ax, ay) = xy(&a);
+                    let (bx, by) = xy(&b);
+                    let (dx, dy) = (bx - ax, by - ay);
+                    let aa = dx * dx + dy * dy;
+                    let bb = 2.0 * (ax * dx + ay * dy);
+                    let cc = ax * ax + ay * ay - r_exit * r_exit;
+                    let disc = bb * bb - 4.0 * aa * cc;
+                    if aa > 0.0 && disc >= 0.0 {
+                        return Some(((-bb + disc.sqrt()) / (2.0 * aa)).clamp(0.0, 1.0));
+                    }
+                }
+                Some(1.0)
+            }
             Goal::Wrap { m, sense, b0, need, clear, .. } => {
                 if wrap >= need || wrap + self.sweep(a, b) < need {
                     return None;
@@ -480,7 +529,9 @@ pub fn route_marks(
                 while near < 30.0 && (0..36).filter(|k| open(mark.pos.destination(*k as f64 * 10.0, near))).count() < 9 {
                     near *= 1.4;
                 }
-                Goal::Wrap { m: mark.pos, sense, b0, need, clear, near }
+                // with a next mark, the rounding ends heading out towards it, a little way off
+                let exit = marks.get(i + 1).filter(|n| n.pos.distance_to(&mark.pos) > 1e-6).map(|n| (n.pos, near.min(0.5 * mark.pos.distance_to(&n.pos)).max(1.5 * clear)));
+                Goal::Wrap { m: mark.pos, sense, b0, need, clear, near, exit }
             }
         };
         // this mark (if rounded) and the last one (if it was rounded) can't be cut through
@@ -505,7 +556,8 @@ pub fn route_marks(
                     Some(Some((lat, lon, ta))) => (LatLon::new(lat, lon), ta),
                     Some(None) => (from, t), // didn't get there: reported below
                 };
-                if approach.as_ref().is_some_and(|a| a.arrived.is_none()) || goal.wrap0(f2) >= need {
+                let _ = need;
+                if approach.as_ref().is_some_and(|a| a.arrived.is_none()) || goal.done_at_start(f2) {
                     approach.take().unwrap_or_else(|| route_leg(from, t, mark.pos, goal, polar, wind, obstacles, &leg_barriers, p, &mut res))
                 } else {
                     let vmax = polar.speeds.iter().flatten().fold(0.0f64, |a, &b| a.max(b)) * p.efficiency;
@@ -513,7 +565,12 @@ pub fn route_marks(
                         // a tack or gybe must leave most of a step for sailing
                         .max(3.0 * p.tack_s.max(p.gybe_s)).min(600.0);
                     let near_p = Params { step_s: if p.step_s > 0.0 { p.step_s.min(auto) } else { auto }, ..p.clone() };
-                    let round = route_leg(f2, t2, mark.pos, goal, polar, wind, obstacles, &leg_barriers, &near_p, &mut res);
+                    // aim (for pruning) where the rounding ends: out from the mark towards the next
+                    let aim = match goal {
+                        Goal::Wrap { m, exit: Some((n, r_exit)), .. } => m.destination(m.bearing_to(&n), r_exit),
+                        _ => mark.pos,
+                    };
+                    let round = route_leg(f2, t2, aim, goal, polar, wind, obstacles, &leg_barriers, &near_p, &mut res);
                     match approach {
                         None => round,
                         Some(mut a) => {
@@ -631,9 +688,9 @@ fn route_leg(
     // Cells are kept apart by how far round the mark the boat has gone: the same
     // water reached the wrong way round (or not yet round) is a different place.
     let wrapping = matches!(goal, Goal::Wrap { .. });
-    let (wrap_need, wrap_r, wrap_far) = match goal {
-        Goal::Wrap { need, clear, near, .. } => (need, clear.max(0.1), 3.0 * near),
-        Goal::Circle { .. } => (0.0, 0.0, f64::MAX),
+    let (wrap_need, wrap_r, wrap_far, wrap_m) = match goal {
+        Goal::Wrap { m, need, clear, near, .. } => (need, clear.max(0.1), 3.0 * near, m),
+        Goal::Circle { c, .. } => (0.0, 0.0, f64::MAX, c),
     };
     let sheet = |w: f64| ((w + 180.0) / 360.0).floor() as i32;
     let key3 = |lat: f64, lon: f64, w: f64| {
@@ -718,7 +775,7 @@ fn route_leg(
                     let dist = sog * hours;
                     let np = here.destination(cog, dist);
                     let wrap = n.wrap + goal.sweep(here, np);
-                    if wrap < -120.0 || (wrapping && np.distance_to(&dest) > wrap_far) {
+                    if wrap < -120.0 || (wrapping && np.distance_to(&wrap_m) > wrap_far) {
                         continue; // well round the wrong way, or far off: never the fast way round
                     }
                     if grid_mode {
@@ -1302,10 +1359,10 @@ mod tests {
             assert_eq!(res.legs.len(), 2);
             let north = res.points.iter().map(|q| (q.lat - m.lat) * 60.0).fold(f64::MIN, f64::max);
             assert!(north > 0.15, "{r:?}: gets only {north:.2} NM north of the mark");
-            // leg 1 goes all the way round: the bearing from the mark turns a full
-            // circle, clockwise to starboard, anticlockwise to port
-            let t1 = res.legs[0].arrival.unwrap();
-            let leg1: Vec<_> = res.points.iter().filter(|q| q.t <= t1).collect();
+            // the route goes all the way round: the bearing from the mark turns a
+            // full circle between start and finish (both south of it), clockwise to
+            // starboard, anticlockwise to port
+            let leg1: Vec<_> = res.points.iter().collect();
             let turn: f64 = leg1.windows(2).map(|w| norm180(m.bearing_to(&LatLon::new(w[1].lat, w[1].lon)) - m.bearing_to(&LatLon::new(w[0].lat, w[0].lon)))).sum();
             let _ = k;
             if west_in { assert!((turn - 360.0).abs() < 25.0, "{r:?}: turns {turn:.0}") } else { assert!((turn + 360.0).abs() < 25.0, "{r:?}: turns {turn:.0}") }
@@ -1355,6 +1412,31 @@ mod tests {
         let walls = Barriers { lines: vec![vec![[start.lon - w, start.lat - 0.01], [start.lon - w, start.lat + 0.03]], vec![[start.lon + w, start.lat - 0.01], [start.lon + w, start.lat + 0.03]]], ..Default::default() };
         let res = route_marks(start, 0, &[spec(m, Rounding::Starboard), MarkSpec::at(fin)], &pol, &Calm, None, &walls, &p);
         assert_eq!(res.status, "arrived", "{}", res.message);
+    }
+
+    /// An island mark with a blind inlet on the side towards the next mark: the
+    /// route goes round and on, not up the inlet to touch the line to the next mark.
+    #[test]
+    fn no_detour_up_a_blind_inlet() {
+        let pol = test_polar();
+        let start = LatLon::new(-41.0, 173.0);
+        let m = start.destination(0.0, 6.0);
+        let fin = m.destination(260.0, 8.0);
+        let wind = SteadyWind { tws: 10.0, twd: 0.0 };
+        let p = Params { step_s: 300.0, ..Params::default() };
+        let k = m.lat.to_radians().cos();
+        let (dx, dy) = (0.15 / 60.0 / k, 0.15 / 60.0); // island half-size, degrees
+        let (w, n) = (0.6 / 60.0 / k, 0.4 / 60.0); // inlet: 0.6 NM deep west of it, walls to 0.4 NM north
+        let island = vec![[m.lon - dx, m.lat - dy], [m.lon + dx, m.lat - dy], [m.lon + dx, m.lat + dy], [m.lon - dx, m.lat + dy]];
+        // north wall from the island west, then the west wall south: open to the south
+        let walls = vec![vec![[m.lon - dx, m.lat + dy * 0.5], [m.lon - dx - w, m.lat + dy * 0.5]], vec![[m.lon - dx - w, m.lat + dy * 0.5], [m.lon - dx - w, m.lat - n]]];
+        let b = Barriers { zones: vec![island], lines: walls, ..Default::default() };
+        let mut mk = spec(m, Rounding::Starboard);
+        mk.radius_nm = Some(0.25);
+        let res = route_marks(start, 0, &[mk, MarkSpec::at(fin)], &pol, &wind, None, &b, &p);
+        assert_eq!(res.status, "arrived", "{}", res.message);
+        let in_inlet = res.points.iter().filter(|q| q.lon < m.lon - dx && q.lon > m.lon - dx - w && q.lat < m.lat + dy * 0.5 && q.lat > m.lat - dy).count();
+        assert_eq!(in_inlet, 0, "the route goes up the inlet");
     }
 
     /// A mark that is the island itself can be rounded, but not passed through.

@@ -63,6 +63,9 @@ pub enum Kind {
     WorldDepth,
     /// World depth contours (ETOPO areas).
     WorldContour,
+    /// Where a band has chart data (S-57 M_COVR): a finer band's coverage
+    /// replaces the coarser bands' features inside it.
+    Coverage,
 }
 
 #[derive(Debug, Clone)]
@@ -98,6 +101,8 @@ pub struct ChartStore {
     dbs: Vec<Mutex<Connection>>,
     pub tables: Vec<TableInfo>,
     cache: Mutex<lru::LruCache<(u8, u32, u32), Arc<Vec<u8>>>>,
+    /// Coverage polygons of each band, loaded on first use: (band, bbox, polygon).
+    coverage: std::sync::OnceLock<Vec<(u8, [f64; 4], geo::Polygon<f64>)>>,
 }
 
 /// NZ mainland area covered by LINZ Topo50 land: GSHHG polygons wholly inside
@@ -192,6 +197,7 @@ impl ChartStore {
             dbs,
             tables,
             cache: Mutex::new(lru::LruCache::new(NonZeroUsize::new(2048).unwrap())),
+            coverage: std::sync::OnceLock::new(),
         })
     }
 
@@ -456,7 +462,7 @@ pub(crate) fn shift_geom(g: &mut Geom, dlon: f64) {
     }
 }
 
-fn geom_bounds(g: &Geom) -> [f64; 4] {
+pub(crate) fn geom_bounds(g: &Geom) -> [f64; 4] {
     let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
     let mut add = |p: &[f64; 2]| b = [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])];
     match g {
@@ -550,6 +556,8 @@ fn classify(table: &str) -> Option<(Kind, u8)> {
     }
     let kind = if t.contains("coastlines_and_islands") {
         return Some((Kind::Land, 0));
+    } else if t.contains("coverage_polygon") {
+        Kind::Coverage
     } else if t.contains("depth_area") {
         Kind::DepthArea
     } else if t.contains("depth_contour") {
