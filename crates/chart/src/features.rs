@@ -49,6 +49,13 @@ pub fn is_info(code: &str) -> bool {
 }
 pub const INFO_ZOOM: f64 = 9.0;
 
+/// A finer chart's lines and areas are read two zooms before that chart is drawn, for
+/// the ones a coarser chart already shows (its copy can be cut off at its cell's edge):
+/// see `shown_from`.
+fn early_band(z: u8, t: &TableInfo) -> bool {
+    z < band_minzoom(t.band) && z + 2 >= band_minzoom(t.band) && t.class.is_some_and(|c| c.geo != Geo::Point)
+}
+
 /// How dangerous a hazard point is, lower first: drying or awash, then of unknown
 /// depth, then by depth over it; other hazards after.
 fn hazard_rank(code: &str, a: &Attrs) -> f64 {
@@ -226,7 +233,7 @@ impl ChartStore {
         self.tables
             .iter()
             .enumerate()
-            .filter(|(_, t)| t.kind == Kind::Feature && (z >= band_minzoom(t.band) || t.class.is_some_and(|c| is_hazard(c.code) || (is_info(c.code) && z as f64 >= INFO_ZOOM))))
+            .filter(|(_, t)| t.kind == Kind::Feature && (z >= band_minzoom(t.band) || early_band(z, t) || t.class.is_some_and(|c| is_hazard(c.code) || (is_info(c.code) && z as f64 >= INFO_ZOOM))))
             .collect()
     }
 
@@ -350,7 +357,7 @@ impl ChartStore {
                                 // smaller-scale chart was drawn. (Other marks keep the coarser copy
                                 // until the finer one shows, as lights do, so a buoy and its light
                                 // always come together.)
-                                if is_hazard(class.code) && !finer_bands.is_empty() && self.covered(&finer_bands, p) {
+                                if (is_hazard(class.code) || is_info(class.code)) && !finer_bands.is_empty() && self.covered(&finer_bands, p) {
                                     continue;
                                 }
                                 let mut minz = a.num("scamin").map_or(0.0, |s| s57::scamin_zoom(s, p[1]));
@@ -411,6 +418,25 @@ impl ChartStore {
                     let layer = if class.geo == Geo::Line { &mut fln } else { &mut far };
                     // every copy of this class met so far (finer bands first): bounds, minz
                     let mut seen: Vec<([f64; 4], f64)> = Vec::new();
+                    // every copy's bounds and SCAMIN zoom, by band: a finer copy of a feature a
+                    // coarser chart already shows here shows from that zoom too, not its own later
+                    // SCAMIN (a coarser chart's copy is often cut off at the edge of its cell, as
+                    // Lyttelton's dumping grounds are, so the finer whole one has to stand in)
+                    let lat_m = (bbox[1] + bbox[3]) / 2.0;
+                    let mut all_copies: Vec<(u8, [f64; 4], f64)> = Vec::new();
+                    for (_, t) in tables.iter() {
+                        self.query_text(t, bbox, &["scamin"], |row| {
+                            let m = row.vals[0].as_deref().and_then(|s| s.parse().ok()).map_or(0.0, |s| s57::scamin_zoom(s, lat_m));
+                            all_copies.push((t.band, geom_bounds(&row.geom), m));
+                        });
+                    }
+                    let shown_from = |band: u8, gb: &[f64; 4], minz: f64| {
+                        all_copies
+                            .iter()
+                            .filter(|(b, cb, _)| *b < band && cb[0] <= gb[2] && cb[2] >= gb[0] && cb[1] <= gb[3] && cb[3] >= gb[1])
+                            .map(|(_, _, m)| *m)
+                            .fold(minz, f64::min)
+                    };
                     for (k, (ti, t)) in tables.iter().enumerate() {
                         // the finer bands drawn here: those of this class's tables (finest first)
                         let mut finer_bands: Vec<u8> = tables[..k].iter().map(|(_, ft)| ft.band).filter(|b| *b > t.band).collect();
@@ -428,7 +454,8 @@ impl ChartStore {
                             // from the zoom the finer copies show; before that the inside part stays.
                             let gb = geom_bounds(&row.geom);
                             let lat0 = (bbox[1] + bbox[3]) / 2.0;
-                            mine_seen.push((gb, row.vals[1].as_deref().and_then(|s| s.parse().ok()).map_or(0.0, |s| s57::scamin_zoom(s, lat0)).min(if is_info(class.code) { INFO_ZOOM } else { f64::MAX })));
+                            let own = row.vals[1].as_deref().and_then(|s| s.parse().ok()).map_or(0.0, |s| s57::scamin_zoom(s, lat0)).min(if is_info(class.code) { INFO_ZOOM } else { f64::MAX });
+                            mine_seen.push((gb, shown_from(t.band, &gb, own)));
                             // the finer copies of this feature (those overlapping it) show from the
                             // latest of their zooms; with none here, from when that band's usually do
                             let overlap = |b: &[f64; 4]| b[0] <= gb[2] && b[2] >= gb[0] && b[1] <= gb[3] && b[3] >= gb[1];
@@ -455,7 +482,13 @@ impl ChartStore {
                             if is_info(class.code) {
                                 minz = minz.min(INFO_ZOOM);
                             }
+                            let own_minz = minz;
+                            minz = shown_from(t.band, &gb, minz);
                             if !hazard && !keep(minz) {
+                                return;
+                            }
+                            // a chart read early: only its copies of what a coarser chart shows
+                            if early_band(z, t) && minz >= own_minz {
                                 return;
                             }
                             let mut props = vec![

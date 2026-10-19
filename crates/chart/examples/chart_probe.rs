@@ -30,7 +30,7 @@ fn main() {
     for layer in ["fpt", "fln", "far"] {
         for (cls, band, minz, maxz, gx, gy) in chart::mvt::debug_points(&tile, layer) {
             let near = (gx - px).abs() <= r && (gy - py).abs() <= r;
-            let wanted = cls == "LIGHTS" || cls.starts_with("BOY") || cls.starts_with("BCN") || ["RESARE", "CBLSUB", "MARCUL"].contains(&cls.as_str());
+            let wanted = cls == "LIGHTS" || cls.starts_with("BOY") || cls.starts_with("BCN") || ["RESARE", "CBLSUB", "MARCUL", "DMPGRD", "PILBOP"].contains(&cls.as_str());
             if (near || layer != "fpt") && wanted && !cls.is_empty() {
                 let shown = z.floor() >= minz && z.floor() < maxz;
                 println!("  {layer} {cls:7} band {band} minz {minz:>4} maxz {:>4}  at {gx},{gy}  {}", if maxz < 99.0 { format!("{maxz}") } else { "-".into() }, if shown { "shown" } else { "hidden at this zoom" });
