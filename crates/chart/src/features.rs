@@ -279,8 +279,12 @@ impl ChartStore {
                                 if taken.iter().any(|(q, b)| *b > t.band && metres(p, *q) < SAME_M) {
                                     continue;
                                 }
-                                // a finer band charts this spot: its copy (or its absence) stands
-                                if !finer_bands.is_empty() && self.covered(&finer_bands, p) {
+                                // a hazard where a finer band charts the water: the finer band's copy
+                                // (or its absence) stands, even if the coarse copy was moved when the
+                                // smaller-scale chart was drawn. (Other marks keep the coarser copy
+                                // until the finer one shows, as lights do, so a buoy and its light
+                                // always come together.)
+                                if is_hazard(class.code) && !finer_bands.is_empty() && self.covered(&finer_bands, p) {
                                     continue;
                                 }
                                 let minz = a.num("scamin").map_or(0.0, |s| s57::scamin_zoom(s, p[1]));
