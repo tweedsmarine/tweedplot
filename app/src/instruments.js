@@ -73,6 +73,8 @@ export const ITEMS = {
   GTEMP: { label: "GRIB air temp", unit: "°C", group: "GRIB at cursor", get: (c) => c.grib?.temp, fmt: f1 },
   // the sea, from any loaded ocean file (MUR, HYCOM) at the cursor
   GSST: { label: "Sea temp", unit: "°C", group: "Sea at cursor", get: (c) => c.grib?.sst, fmt: (x) => x.toFixed(1) },
+  GSKIN: { label: "Sea temp sat", unit: "°C", group: "Sea at cursor", get: (c) => c.grib?.skin, fmt: (x) => x.toFixed(1) },
+  GCHL: { label: "Chlorophyll", unit: "mg/m³", group: "Sea at cursor", get: (c) => c.grib?.chl, fmt: (x) => (x >= 10 ? x.toFixed(0) : x >= 1 ? x.toFixed(1) : x.toFixed(2)) },
   GSSS: { label: "Salinity", unit: "PSU", group: "Sea at cursor", get: (c) => c.grib?.sss, fmt: (x) => x.toFixed(2) },
   GSUBT: { label: "Temp at depth", unit: "°C", group: "Sea at cursor", get: (c) => c.grib?.subt, fmt: (x) => x.toFixed(1) },
   GSUBS: { label: "Salinity at depth", unit: "PSU", group: "Sea at cursor", get: (c) => c.grib?.subs, fmt: (x) => x.toFixed(2) },
@@ -136,6 +138,8 @@ function cursorLeg(c) {
 
 const CURSOR_PANEL = { id: "pc", x: 0.45, y: 0.02, dir: "row", size: "s", tiles: ["CPOS", "CBRG", "CRNG"] };
 const GRIB_PANEL = { id: "pg", x: 0.45, y: 0.11, dir: "row", size: "s", tiles: ["GTWS", "GTWD", "GGUST", "GMSLP", "GHS"] };
+// shown only while an ocean file is loaded (`sea`)
+const SEA_PANEL = { id: "ps", x: 0.36, y: 0.2, dir: "row", size: "s", sea: true, name: "Sea at cursor", tiles: ["GSST", "GSKIN", "GSSS", "GCUR", "GSET", "GCHL"] };
 
 const DEFAULT_LAYOUT = {
   v: 1,
@@ -145,8 +149,9 @@ const DEFAULT_LAYOUT = {
     { id: "p2", x: 0.86, y: 0.12, dir: "column", size: "s", tiles: ["NEXT", "BTW", "DTW", "TTG", "XTE"] },
     CURSOR_PANEL,
     GRIB_PANEL,
+    SEA_PANEL,
   ],
-  added: ["cursor", "grib"],
+  added: ["cursor", "grib", "sea"],
 };
 
 export function setupInstruments() {
@@ -257,6 +262,12 @@ export function setupInstruments() {
     for (const el of root.children) {
       const p = panel(el.dataset.id);
       if (!p) continue;
+      // the sea panel: only while an ocean file is loaded
+      const off = !!p.sea && !ctx.seaLoaded;
+      if ((el.style.display === "none") !== off) {
+        el.style.display = off ? "none" : "";
+        if (!off) place(el, p);
+      }
       for (const t of el.querySelectorAll(".tile")) {
         const it = ITEMS[p.tiles[Number(t.dataset.i)]];
         if (!it) continue;
@@ -383,6 +394,7 @@ function loadLayout() {
       l.added ??= [];
       if (!l.added.includes("cursor")) { l.panels.push(structuredClone(CURSOR_PANEL)); l.added.push("cursor"); }
       if (!l.added.includes("grib")) { l.panels.push(structuredClone(GRIB_PANEL)); l.added.push("grib"); }
+      if (!l.added.includes("sea")) { l.panels.push(structuredClone(SEA_PANEL)); l.added.push("sea"); }
       return l;
     }
   } catch { /* ignore */ }

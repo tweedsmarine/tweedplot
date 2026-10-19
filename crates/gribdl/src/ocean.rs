@@ -15,6 +15,20 @@
 //!   Public release, unlimited distribution, no guarantee of service.
 //!
 //!   `https://ncss.hycom.org/thredds/ncss/FMRC_ESPC-D-V02_ice/FMRC_ESPC-D-V02_ice_best.ncd?var=sst&var=sss&…&accept=netcdf`
+//!
+//! * **Himawari-9 AHI** (JMA satellite, ACSPO L3C by NOAA STAR, via CoastWatch
+//!   THREDDS): hourly sea surface (sub-skin) temperature at 0.02° (about 2 km)
+//!   where the sky is clear, two or three hours after the hour. One file an
+//!   hour, cut to the area by NCSS; only "best quality" (level 5) pixels kept.
+//!   GHRSST data: free and open.
+//!
+//!   `https://coastwatch.noaa.gov/thredds/ncss/grid/gridH09AHINRTL3CWW00/2026/291/20261018030000-STAR-L3C_GHRSST-SSTsubskin-AHI_H09-ACSPO_V2.90-v02.0-fv01.0.nc?var=sea_surface_temperature&var=quality_level&north=…&accept=netcdf`
+//!
+//! * **Chlorophyll-a** (NOAA CoastWatch, VIIRS on S-NPP and NOAA-20, gap-filled
+//!   by DINEOF): daily, 0.083° (about 9 km), near real time (about three days
+//!   old). Free to use and redistribute.
+//!
+//!   `https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPN20VIIRSDINEOFDaily.nc?chlor_a[last-2:1:last][0][(N):1:(S)][(W):1:(E)]`
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -35,6 +49,13 @@ fn slow_client() -> Result<reqwest::blocking::Client> {
 
 pub const ERDDAP: &str = "https://coastwatch.pfeg.noaa.gov/erddap/griddap";
 pub const HYCOM_NCSS: &str = "https://ncss.hycom.org/thredds/ncss";
+pub const COASTWATCH: &str = "https://coastwatch.noaa.gov";
+const HIMAWARI_DS: &str = "gridH09AHINRTL3CWW00";
+const CHL_DS: &str = "noaacwNPPN20VIIRSDINEOFDaily";
+/// Most points along each side of a Himawari request (0.02°: a 16° box comes every 2nd).
+const HIM_MAX_SIDE: f64 = 800.0;
+/// The quality level kept (5 = clear sky, "recommended for operational use").
+pub const HIM_MIN_QUALITY: f64 = 5.0;
 
 /// Most points along each side of a MUR request (it is 0.01°: a 12° box comes
 /// down at 1 km × 10, every 10th point).
@@ -70,6 +91,71 @@ pub fn mur_url(area: [f64; 4], days: u32) -> Result<String> {
     let k = mur_stride(area);
     let days = days.clamp(1, 14);
     Ok(format!("{ERDDAP}/jplMURSST41.nc?analysed_sst%5Blast-{}:1:last%5D%5B({s:.3}):{k}:({n:.3})%5D%5B({w:.3}):{k}:({e:.3})%5D", days - 1))
+}
+
+/// The ERDDAP request for the last `days` daily chlorophyll analyses (latitude
+/// runs north to south in this dataset).
+pub fn chl_url(area: [f64; 4], days: u32) -> Result<String> {
+    let [w, s, e, n] = area_ok(area)?;
+    let days = days.clamp(1, 14);
+    Ok(format!("{COASTWATCH}/erddap/griddap/{CHL_DS}.nc?chlor_a%5Blast-{}:1:last%5D%5B0%5D%5B({n:.3}):1:({s:.3})%5D%5B({w:.3}):1:({e:.3})%5D", days - 1))
+}
+
+/// The THREDDS catalogue of one day's Himawari files.
+pub fn himawari_catalog_url(t: i64) -> String {
+    let d = chrono::DateTime::from_timestamp(t, 0).unwrap_or_default();
+    format!("{COASTWATCH}/thredds/catalog/{HIMAWARI_DS}/{}/catalog.xml", d.format("%Y/%j"))
+}
+
+/// The hourly files a catalogue lists: (hour as Unix time, file name).
+pub fn himawari_files(catalog: &str) -> Vec<(i64, String)> {
+    let mut out = Vec::new();
+    for part in catalog.split("name=\"").skip(1) {
+        let Some(name) = part.split('"').next() else { continue };
+        if !name.ends_with(".nc") || !name.contains("AHI_H09") || name.len() < 14 {
+            continue;
+        }
+        if let Ok(t) = chrono::NaiveDateTime::parse_from_str(&name[..14], "%Y%m%d%H%M%S") {
+            out.push((t.and_utc().timestamp(), name.to_string()));
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+pub fn him_stride(area: [f64; 4]) -> usize {
+    let side = ((area[2] - area[0]).abs().max((area[3] - area[1]).abs()) / 0.02).max(1.0);
+    (side / HIM_MAX_SIDE).ceil().max(1.0) as usize
+}
+
+/// The NCSS request for one hourly Himawari file, cut to the area.
+pub fn himawari_url(file: &str, area: [f64; 4]) -> Result<String> {
+    let [w, s, e, n] = area_ok(area)?;
+    let t = chrono::NaiveDateTime::parse_from_str(file.get(..14).unwrap_or(""), "%Y%m%d%H%M%S").map_err(|_| Error::Bad(format!("not a Himawari file: {file}")))?;
+    Ok(format!(
+        "{COASTWATCH}/thredds/ncss/grid/{HIMAWARI_DS}/{}/{file}?var=sea_surface_temperature&var=quality_level&north={n:.3}&west={w:.3}&east={e:.3}&south={s:.3}&horizStride={}&accept=netcdf",
+        t.format("%Y/%j"),
+        him_stride(area)
+    ))
+}
+
+/// Each hour shows the latest clear sighting of every point within the hours
+/// downloaded: a gap under cloud keeps the last value seen there (fields in time order).
+pub fn fill_forward(fields: &mut [Field]) {
+    for k in 1..fields.len() {
+        let (a, b) = fields.split_at_mut(k);
+        let prev = &a[k - 1];
+        let f = &mut b[0];
+        if prev.grid != f.grid || prev.param != f.param {
+            continue;
+        }
+        for (v, p) in f.values.iter_mut().zip(&prev.values) {
+            if v.is_nan() {
+                *v = *p;
+            }
+        }
+    }
 }
 
 /// HYCOM: which aggregation, which variables.
@@ -127,6 +213,8 @@ fn kind_of(var: &str, depth: Option<f64>) -> Option<Kind> {
         "salinity" => Kind { param: Param::Salinity, category: 4, number: 21, surface_type: 1, kelvin: false },
         "ssu" | "water_u" => Kind { param: Param::CurrentU, category: 1, number: 2, surface_type: 1, kelvin: false },
         "ssv" | "water_v" => Kind { param: Param::CurrentV, category: 1, number: 3, surface_type: 1, kelvin: false },
+        "sea_surface_temperature" => Kind { param: Param::SkinTemp, category: 3, number: 192, surface_type: 1, kelvin: true },
+        "chlor_a" => Kind { param: Param::Chlorophyll, category: 4, number: 192, surface_type: 1, kelvin: false },
         _ => return None,
     })
 }
@@ -155,6 +243,8 @@ pub fn fields_from_netcdf(bytes: &[u8], centre: u16, depth: Option<f64>) -> Resu
     let lat0 = lats.iter().cloned().fold(f64::MAX, f64::min);
     let grid = Grid::regular(ni, nj, lat0, (lons[0] + 180.0).rem_euclid(360.0) - 180.0, dlat.abs(), dlon.abs());
     let ref_time = times[0];
+    // satellite temperatures: only the pixels of the quality kept
+    let quality = if nc.var("quality_level").is_some() { Some(rd("quality_level")?) } else { None };
     let mut out = Vec::new();
     for v in &nc.vars {
         let Some(k) = kind_of(&v.name, depth) else { continue };
@@ -176,7 +266,11 @@ pub fn fields_from_netcdf(bytes: &[u8], centre: u16, depth: Option<f64>) -> Resu
                 let src_row = if north_first { nj - 1 - j } else { j };
                 for i in 0..ni {
                     let x = vals[base + src_row * ni + i];
-                    if x.is_finite() {
+                    let good = match (&quality, k.param) {
+                        (Some(q), Param::SkinTemp) => q.get(base + src_row * ni + i).is_some_and(|&q| q >= HIM_MIN_QUALITY),
+                        _ => true,
+                    };
+                    if x.is_finite() && good {
                         values[j * ni + i] = (if to_k { x + 273.15 } else { x }) as f32;
                     }
                 }
@@ -202,7 +296,7 @@ pub fn fields_from_netcdf(bytes: &[u8], centre: u16, depth: Option<f64>) -> Resu
         }
     }
     if out.is_empty() {
-        return Err(Error::Bad("no sea temperature, salinity or current values in the area (all land?)".into()));
+        return Err(Error::Bad("no sea values in the area (all land, or all cloud?)".into()));
     }
     Ok(out)
 }
@@ -303,6 +397,70 @@ pub fn download(req: &Request, now: i64, dir: &Path, progress: Progress, cancel:
             write(&fields, grib::write::PROCESS_HYCOM_ESPC, &path)?;
             Ok(path)
         }
+        Model::ChlViirs => {
+            let days = (req.hours / 24).clamp(1, 14);
+            progress(0, 1, 0);
+            let data = get_retry(&c, &chl_url(req.area, days)?, cancel)?;
+            progress(1, 1, data.len() as u64);
+            let fields = fields_from_netcdf(&data, grib::write::CENTRE_NESDIS, None)?;
+            let (t0, t1) = (fields.iter().map(|f| f.valid_time).min().unwrap(), fields.iter().map(|f| f.valid_time).max().unwrap());
+            let path = dir.join(name("CHL_VIIRS", &format!("{}-{}", ymd(t0), ymd(t1)), req.area));
+            write(&fields, grib::write::PROCESS_VIIRS_CHL, &path)?;
+            Ok(path)
+        }
+        Model::Himawari => {
+            let hours = req.hours.clamp(1, 72) as i64;
+            let every = req.every.clamp(1, 6) as i64;
+            let from = now - hours * 3600;
+            // the days' catalogues: which hours are on the server
+            let mut files = Vec::new();
+            let mut day = from - from.rem_euclid(86_400);
+            while day <= now {
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    return Err(Error::Cancelled);
+                }
+                if let Ok(cat) = get_retry(&c, &himawari_catalog_url(day), cancel) {
+                    files.extend(himawari_files(&String::from_utf8_lossy(&cat)));
+                }
+                day += 86_400;
+            }
+            files.retain(|(t, _)| *t >= from && *t <= now && (t / 3600) % every == 0);
+            if files.is_empty() {
+                return Err(Error::Bad("no Himawari hours on the server for that time yet (they come two or three hours after the hour)".into()));
+            }
+            let total = files.len();
+            progress(0, total, 0);
+            let mut fields = Vec::new();
+            let mut bytes = 0u64;
+            let mut cloudy = 0;
+            for (k, (_, file)) in files.iter().enumerate() {
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    return Err(Error::Cancelled);
+                }
+                let data = get_retry(&c, &himawari_url(file, req.area)?, cancel)?;
+                bytes += data.len() as u64;
+                match fields_from_netcdf(&data, grib::write::CENTRE_NESDIS, None) {
+                    Ok(f) => fields.extend(f),
+                    Err(Error::Bad(_)) => cloudy += 1, // all cloud this hour
+                    Err(e) => return Err(e),
+                }
+                progress(k + 1, total, bytes);
+            }
+            if fields.is_empty() {
+                return Err(Error::Bad(format!("all {cloudy} hours were cloudy over the area: no clear-sky sea temperature")));
+            }
+            fields.sort_by_key(|f| f.valid_time);
+            fill_forward(&mut fields);
+            let r = fields[0].valid_time;
+            for f in fields.iter_mut() {
+                f.ref_time = r;
+            }
+            let last = fields.iter().map(|f| f.valid_time).max().unwrap_or(r);
+            let when = chrono::DateTime::from_timestamp(r, 0).unwrap_or_default().format("%Y%m%d_%Hz").to_string();
+            let path = dir.join(name("HIMAWARI_SST", &format!("{when}_{:02}h", (last - r) / 3600 + 1), req.area));
+            write(&fields, grib::write::PROCESS_HIMAWARI_SST, &path)?;
+            Ok(path)
+        }
         _ => Err(Error::Bad("not an ocean model".into())),
     }
 }
@@ -348,6 +506,79 @@ mod tests {
         }
         let gf = grib::GribFile::from_bytes(&bytes);
         assert!(gf.current(-41.0, 173.3, f[0].valid_time).is_some());
+    }
+
+    /// Real Himawari-9 NCSS output (18 Oct 2026 03Z, 41.0–40.8°S 173.0–173.3°E):
+    /// sub-skin temperature, land and lower-quality pixels left out.
+    #[test]
+    fn reads_real_himawari_output() {
+        let b = crate::tests::b64(include_str!("../tests/himawari_nelson.b64"));
+        let f = fields_from_netcdf(&b, grib::write::CENTRE_NESDIS, None).unwrap();
+        assert_eq!(f.len(), 1);
+        let x = &f[0];
+        assert_eq!(x.param, Param::SkinTemp);
+        assert_eq!(x.valid_time, 1_792_292_400); // 2026-10-18 03Z
+        assert_eq!((x.grid.ni, x.grid.nj), (16, 11));
+        assert!((x.grid.dlat - 0.02).abs() < 1e-4 && (x.grid.lat0 + 41.01).abs() < 1e-3, "{:?}", x.grid);
+        let ok: Vec<f32> = x.values.iter().cloned().filter(|v| v.is_finite()).collect();
+        assert!(ok.len() > 100 && ok.len() < 176, "{}", ok.len());
+        // all plausible spring Tasman Bay water (12–18 °C)
+        assert!(ok.iter().all(|v| (285.0..291.5).contains(v)), "{ok:?}");
+        let mut bytes = Vec::new();
+        bytes.extend(grib::write::encode(x, grib::write::PROCESS_HIMAWARI_SST));
+        let g = grib::GribFile::from_bytes(&bytes);
+        assert_eq!(g.model().0, "Himawari-9 SST hourly");
+        assert_eq!(g.times(Param::SkinTemp).len(), 1);
+    }
+
+    /// Real chlorophyll output from CoastWatch ERDDAP (15 and 16 Oct 2026).
+    #[test]
+    fn reads_real_chlorophyll_output() {
+        let b = crate::tests::b64(include_str!("../tests/chl_nelson.b64"));
+        let f = fields_from_netcdf(&b, grib::write::CENTRE_NESDIS, None).unwrap();
+        assert_eq!(f.len(), 2);
+        assert!(f.iter().all(|x| x.param == Param::Chlorophyll));
+        assert_eq!(f[1].valid_time - f[0].valid_time, 86_400);
+        let g = &f[0].grid;
+        assert_eq!((g.ni, g.nj), (5, 5));
+        assert!((g.dlat - 0.08333).abs() < 1e-3, "{g:?}");
+        let ok: Vec<f32> = f[0].values.iter().cloned().filter(|v| v.is_finite()).collect();
+        assert!(!ok.is_empty() && ok.iter().all(|v| (0.01..50.0).contains(v)), "{ok:?}");
+        let mut bytes = Vec::new();
+        for x in &f {
+            bytes.extend(grib::write::encode(x, grib::write::PROCESS_VIIRS_CHL));
+        }
+        let gf = grib::GribFile::from_bytes(&bytes);
+        assert!(gf.skipped.is_empty(), "{:?}", gf.skipped);
+        assert_eq!(gf.times(Param::Chlorophyll).len(), 2);
+    }
+
+    #[test]
+    fn himawari_catalogue_and_urls() {
+        let cat = r#"<dataset name="20261019000000-STAR-L3C_GHRSST-SSTsubskin-AHI_H09-ACSPO_V2.90-v02.0-fv01.0.nc" ID="x"/><dataset name="20261019010000-STAR-L3C_GHRSST-SSTsubskin-AHI_H09-ACSPO_V2.90-v02.0-fv01.0.nc"/><dataset name="latest.xml"/>"#;
+        let f = himawari_files(cat);
+        assert_eq!(f.len(), 2);
+        assert_eq!(f[1].0, 1_792_368_000 + 3600);
+        assert_eq!(himawari_catalog_url(1_792_368_000), "https://coastwatch.noaa.gov/thredds/catalog/gridH09AHINRTL3CWW00/2026/292/catalog.xml");
+        let u = himawari_url(&f[0].1, [172.5, -41.5, 174.5, -40.5]).unwrap();
+        assert!(u.starts_with("https://coastwatch.noaa.gov/thredds/ncss/grid/gridH09AHINRTL3CWW00/2026/292/20261019000000-"), "{u}");
+        assert!(u.ends_with("?var=sea_surface_temperature&var=quality_level&north=-40.500&west=172.500&east=174.500&south=-41.500&horizStride=1&accept=netcdf"), "{u}");
+        let c = chl_url([172.5, -41.5, 174.5, -40.5], 3).unwrap();
+        assert_eq!(c, "https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPN20VIIRSDINEOFDaily.nc?chlor_a%5Blast-2:1:last%5D%5B0%5D%5B(-40.500):1:(-41.500)%5D%5B(172.500):1:(174.500)%5D");
+    }
+
+    #[test]
+    fn cloud_gaps_keep_the_last_clear_value() {
+        let b = crate::tests::b64(include_str!("../tests/himawari_nelson.b64"));
+        let a = fields_from_netcdf(&b, grib::write::CENTRE_NESDIS, None).unwrap().remove(0);
+        let mut later = a.clone();
+        later.valid_time += 3600;
+        later.values.iter_mut().take(20).for_each(|v| *v = f32::NAN);
+        let mut fs = vec![a.clone(), later];
+        fill_forward(&mut fs);
+        for i in 0..20 {
+            assert!(fs[1].values[i].is_nan() == a.values[i].is_nan());
+        }
     }
 
     #[test]

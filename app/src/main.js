@@ -215,6 +215,7 @@ map.on("load", () => {
   const wa = document.getElementById("inst-arrows");
   wa.checked = arrows.enabled();
   wa.onchange = () => { arrows.setEnabled(wa.checked); if (live && lastBoat) arrows.live(lastBoat, vessel); };
+  weather.onLoaded(() => inst.update({ seaLoaded: weather.hasSea() }));
   weather.onPoint((row, at) => {
     inst.update({ grib: row });
     if (!signalKActive()) planningArrows(row, at); // planning, or no live data: arrows on the cursor

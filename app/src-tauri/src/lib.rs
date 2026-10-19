@@ -326,6 +326,9 @@ fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max_points: us
         "sss" => f.grid_at(P::Salinity, t)?,
         "subt" => { let (g, v) = f.grid_at(P::SubTemp, t)?; (g, v.iter().map(|x| x - 273.15).collect()) }
         "subs" => f.grid_at(P::SubSalinity, t)?,
+        "skin" => { let (g, v) = f.grid_at(P::SkinTemp, t)?; (g, v.iter().map(|x| x - 273.15).collect()) }
+        // chlorophyll as log10 mg/m³: shaded, filtered and contoured on a log scale
+        "chl" => { let (g, v) = f.grid_at(P::Chlorophyll, t)?; (g, v.iter().map(|x| if *x > 0.0 { x.log10() } else { f32::NAN }).collect()) }
         "current" => {
             let ((g, u), (_, v)) = (f.grid_at(P::CurrentU, t)?, f.grid_at(P::CurrentV, t)?);
             (g, u.iter().zip(&v).map(|(a, b)| (a * a + b * b).sqrt() * KN).collect())
@@ -349,7 +352,11 @@ fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max_points: us
             ni += 1;
             let x = vals[j * g.ni + i];
             // a tenth is plenty for weather; sea temperature fronts and salinity need finer
-            let k = if matches!(layer.as_str(), "sst" | "subt" | "sss" | "subs") { 100.0 } else { 10.0 };
+            let k = match layer.as_str() {
+                "sst" | "subt" | "sss" | "subs" | "skin" => 100.0,
+                "chl" => 1000.0,
+                _ => 10.0,
+            };
             out.push(x.is_finite().then(|| (x * k).round() / k));
         }
     }
@@ -541,6 +548,8 @@ fn grib_point(lat: f64, lon: f64, t: i64) -> Vec<serde_json::Value> {
                 "sss": f.value(grib::Param::Salinity, lat, lon, t).map(|s| (s * 100.0).round() / 100.0),
                 "subt": f.value(grib::Param::SubTemp, lat, lon, t).map(|k| ((k - 273.15) * 100.0).round() / 100.0),
                 "subs": f.value(grib::Param::SubSalinity, lat, lon, t).map(|s| (s * 100.0).round() / 100.0),
+                "skin": f.value(grib::Param::SkinTemp, lat, lon, t).map(|k| ((k - 273.15) * 100.0).round() / 100.0),
+                "chl": f.value(grib::Param::Chlorophyll, lat, lon, t).map(|c| (c * 1000.0).round() / 1000.0),
                 "depth": f.series(grib::Param::SubTemp).first().or(f.series(grib::Param::SubSalinity).first()).map(|x| x.surface_value),
                 "cur": f.current(lat, lon, t).map(|(u, v)| serde_json::json!({
                     "kn": ((u * u + v * v).sqrt() * 3600.0 / 1852.0 * 100.0).round() / 100.0,

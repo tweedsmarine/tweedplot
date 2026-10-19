@@ -74,6 +74,12 @@ pub enum Param {
     /// field's `surface_value` (surface type 160) is the depth in metres.
     SubTemp,
     SubSalinity,
+    /// Sea surface (sub-skin) temperature seen by a satellite in clear sky, hourly
+    /// (Himawari-9 AHI, K). Local code 10/3/192: kept apart from the analyses
+    /// (MUR, HYCOM) so both can be loaded and read out side by side.
+    SkinTemp,
+    /// Chlorophyll-a concentration (mg m-3), local code 10/4/192.
+    Chlorophyll,
     Other(u8, u8, u8),
 }
 
@@ -97,6 +103,8 @@ impl Param {
             (10, 0, 11) => Param::WavePeriod,
             (0, 1, 7) => Param::Rain,
             (0, 7, 6) => Param::Cape,
+            (10, 3, 192) => Param::SkinTemp,
+            (10, 4, 192) => Param::Chlorophyll,
             (10, 3, 0) if surface == 160 => Param::SubTemp,
             (10, 3, 0) => Param::SeaTemp,
             (10, 4, 21) if surface == 160 => Param::SubSalinity,
@@ -577,6 +585,8 @@ pub fn scan(path: impl AsRef<Path>) -> Result<FileInfo, GribError> {
                     Param::CurrentU | Param::CurrentV => "currents",
                     Param::AirTemp => "temperature",
                     Param::SeaTemp | Param::SubTemp => "sea temperature",
+                    Param::SkinTemp => "satellite sea temperature",
+                    Param::Chlorophyll => "chlorophyll",
                     Param::Salinity | Param::SubSalinity => "salinity",
                     Param::Other(..) => "other",
                 };
@@ -680,6 +690,10 @@ pub fn fmt_area(b: &[f64; 4]) -> String {
 pub fn hold_s(p: Param) -> (i64, i64) {
     match p {
         Param::SeaTemp | Param::Salinity | Param::SubTemp | Param::SubSalinity => (12 * 3600, 4 * 86400),
+        // hourly satellite views: the last stands half a day
+        Param::SkinTemp => (3600, 12 * 3600),
+        // daily, and three days old when published
+        Param::Chlorophyll => (12 * 3600, 6 * 86400),
         _ => (0, 0),
     }
 }
@@ -710,6 +724,7 @@ fn centre_name(c: u16) -> &'static str {
         98 => "ECMWF",
         58 => "US Navy (FNMOC)",
         173 => "NASA",
+        160 => "NOAA NESDIS",
         _ => "GRIB",
     }
 }

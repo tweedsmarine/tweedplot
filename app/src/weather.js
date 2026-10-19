@@ -52,6 +52,12 @@ const VERR_DIR = [[-60, "#2166ac"], [-30, "#4393c3"], [-15, "#92c5de"], [-5, "#d
 const SST = [[8, "#30123b"], [10, "#4145ab"], [12, "#4675ed"], [14, "#39a2fc"], [16, "#1bcfd4"], [18, "#24eca6"], [20, "#61fc6c"],
   [22, "#a4fc3b"], [24, "#d1e834"], [26, "#f3c63a"], [28, "#fe9b2d"], [30, "#f36315"]];
 const SSS = [[33.5, "#30123b"], [34, "#4145ab"], [34.3, "#39a2fc"], [34.6, "#1bcfd4"], [34.9, "#61fc6c"], [35.2, "#d1e834"], [35.5, "#fe9b2d"], [36, "#f36315"]];
+// log10 of mg/m³: 0.03 … 10
+const CHL = [[-1.5, "#30123b"], [-1.2, "#4145ab"], [-1, "#4675ed"], [-0.7, "#39a2fc"], [-0.5, "#1bcfd4"], [-0.3, "#24eca6"], [0, "#61fc6c"],
+  [0.3, "#d1e834"], [0.5, "#fe9b2d"], [0.7, "#f36315"], [1, "#a51301"]];
+/** A chlorophyll value for people: two figures. */
+export const fmtChl = (v) => (v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v >= 0.1 ? v.toFixed(2) : v.toFixed(3));
+const CHL_LEVELS = [0.02, 0.03, 0.05, 0.07, 0.1, 0.15, 0.2, 0.3, 0.5, 0.7, 1, 1.5, 2, 3, 5, 7, 10, 15, 20, 30, 50];
 const CUR = [[0, "#f7fbff"], [0.25, "#c6dbef"], [0.5, "#9ecae1"], [0.75, "#6baed6"], [1, "#4292c6"], [1.5, "#2171b5"], [2, "#08519c"], [3, "#08306b"]];
 // the colours an auto range is spread over ("turbo": dark blue, cyan, green, yellow, red)
 const TURBO = ["#30123b", "#4145ab", "#4675ed", "#39a2fc", "#1bcfd4", "#24eca6", "#61fc6c", "#a4fc3b", "#d1e834", "#f3c63a", "#fe9b2d", "#f36315", "#d93806", "#a51301"];
@@ -101,6 +107,9 @@ export const LAYERS = {
   sss: { label: "Salinity", unit: "PSU", params: ["Salinity"], scale: SSS, auto: true, contour: true, ocean: true },
   subt: { label: "Sea temperature at depth", unit: "°C", params: ["SubTemp"], scale: SST, auto: true, contour: true, ocean: true },
   subs: { label: "Salinity at depth", unit: "PSU", params: ["SubSalinity"], scale: SSS, auto: true, contour: true, ocean: true },
+  skin: { label: "Sea temperature, satellite hourly (Himawari)", unit: "°C", params: ["SkinTemp"], scale: SST, auto: true, contour: true, ocean: true },
+  // chlorophyll is shaded, filtered and contoured on a log scale (the grid comes as log10 mg/m³)
+  chl: { label: "Chlorophyll-a", unit: "mg/m³", params: ["Chlorophyll"], scale: CHL, auto: true, contour: true, ocean: true, log: true },
   current: { label: "Current", unit: "kn", params: ["CurrentU"], scale: CUR, ocean: true },
   agree_vec: { label: "Wind disagreement (vector)", unit: "kn", params: ["WindU", "WindSpeed"], scale: AGREE_KN, compare: "vector",
     help: "RMS distance of each GRIB's wind from their mean wind: speed and direction together." },
@@ -258,7 +267,7 @@ export function setupWeather(map, layers) {
       if (!display) display = path;
       // an ocean file: show it (sea temperature first) under whatever weather is shown
       const ps = paramsOf(s);
-      const oceanKey = ["sst", "subt", "sss", "current"].find((k) => ps.has(LAYERS[k].params[0]));
+      const oceanKey = ["skin", "sst", "chl", "subt", "sss", "current"].find((k) => ps.has(LAYERS[k].params[0]));
       if (oceanKey && !LAYERS[wx.layer]?.ocean) {
         wx.layer = oceanKey;
         if (wx.shading === "off") wx.shading = "smooth";
@@ -634,7 +643,13 @@ export function setupWeather(map, layers) {
         const f = wx.seaFilter[wx.layer];
         const r = seaRange[wx.layer];
         if (!f || !r || r.path !== (oceanPath(layer) ?? display)) ensureSeaRange(wx.layer, layer);
-        if (f && layer.contour && wx.isotherms) {
+        if (f && layer.contour && wx.isotherms && layer.log) {
+          // chlorophyll: lines at tidy values, labelled in mg/m³
+          const lv = CHL_LEVELS.filter((x) => Math.log10(x) >= f.lo - 1e-9 && Math.log10(x) <= f.hi + 1e-9);
+          const pick = lv.length > 9 ? lv.filter((_, i) => i % 2 === 0) : lv;
+          for (const x of pick) contours.push(...isobars(gs, 0, [Math.log10(x)]).map((c) => ({ ...c, properties: { hpa: fmtChl(x) } })));
+          contours.push(...isobars(gs, 0, [f.tg]).map((c) => ({ ...c, properties: { hpa: fmtChl(10 ** f.tg), target: 1 } })));
+        } else if (f && layer.contour && wx.isotherms) {
           const step = niceStep(f.lo, f.hi);
           const dp = step < 0.1 ? 2 : step < 1 ? 1 : 0;
           contours = isobars(gs, step)
@@ -705,6 +720,19 @@ export function setupWeather(map, layers) {
   };
 
   // ---------- comparison table --------------------------------------------------------
+  const SEA_KEYS = ["sst", "skin", "sss", "subt", "subs", "cur", "depth", "chl"];
+  /** The sea values of one file at the cursor, as short labelled pieces. */
+  function seaParts(r) {
+    const out = [];
+    if (r.sst != null) out.push(`Sea ${r.sst.toFixed(1)} °C`);
+    if (r.skin != null) out.push(`Satellite ${r.skin.toFixed(1)} °C`);
+    if (r.sss != null) out.push(`Salinity ${r.sss.toFixed(2)}`);
+    if (r.subt != null) out.push(`${r.depth ?? "?"} m ${r.subt.toFixed(1)} °C`);
+    if (r.subs != null) out.push(`${r.depth ?? "?"} m salinity ${r.subs.toFixed(2)}`);
+    if (r.cur) out.push(`Current ${r.cur.kn.toFixed(1)} kn ${String(r.cur.set).padStart(3, "0")}°`);
+    if (r.chl != null) out.push(`Chl-a ${fmtChl(r.chl)} mg/m³`);
+    return out;
+  }
   let pointTimer = null;
   function updatePoint() {
     if (pointTimer) return;
@@ -718,7 +746,7 @@ export function setupWeather(map, layers) {
       // sea readings from whichever loaded file has them (MUR, HYCOM), under the shown GRIB's weather
       if (shown) {
         const sea = {};
-        for (const k of ["sst", "sss", "subt", "subs", "cur", "depth"]) {
+        for (const k of SEA_KEYS) {
           const from = shown[k] != null ? shown : (rows || []).find((r) => r[k] != null);
           if (from) sea[k] = from[k];
         }
@@ -726,14 +754,32 @@ export function setupWeather(map, layers) {
       }
       for (const fn of pointListeners) fn(shown && { ...shown, t: tt, name: loaded.get(display)?.name ?? shown.name }, at);
       body.innerHTML = "";
+      const seaBox = $("wx-sea-point");
+      seaBox.innerHTML = "";
       for (const r of rows) {
-        const tr = document.createElement("tr");
-        const sea = [r.sst != null ? `${r.sst.toFixed(1)}°C` : "", r.sss != null ? `${r.sss.toFixed(2)}` : "", r.cur ? `${r.cur.kn.toFixed(1)} kn ${String(r.cur.set).padStart(3, "0")}°` : ""].filter(Boolean).join(" · ");
-        const cells = [r.name, n(r.tws, 1), r.twd == null ? "—" : String(r.twd).padStart(3, "0") + "°", n(r.gust, 0), n(r.mslp, 0),
-          r.wave == null ? "—" : `${n(r.wave, 1)}${r.period != null ? ` / ${r.period}s` : ""}`, sea || "—"];
-        for (const c of cells) { const td = document.createElement("td"); td.textContent = c; tr.append(td); }
-        if (r.path === display) tr.style.fontWeight = "600";
-        body.append(tr);
+        const weather = ["tws", "gust", "mslp", "wave", "temp", "rain"].some((k) => r[k] != null);
+        const sea = seaParts(r);
+        // weather in the table; the sea on its own lines under it (an ocean file has no weather)
+        if (weather || !sea.length) {
+          const tr = document.createElement("tr");
+          const cells = [r.name, n(r.tws, 1), r.twd == null ? "—" : String(r.twd).padStart(3, "0") + "°", n(r.gust, 0), n(r.mslp, 0),
+            r.wave == null ? "—" : `${n(r.wave, 1)}${r.period != null ? ` / ${r.period}s` : ""}`];
+          for (const c of cells) { const td = document.createElement("td"); td.textContent = c; tr.append(td); }
+          if (r.path === display) tr.style.fontWeight = "600";
+          body.append(tr);
+        }
+        if (sea.length) {
+          const d = document.createElement("div");
+          d.className = `row${r.path === display ? " shown" : ""}`;
+          const src = document.createElement("span");
+          src.className = "src";
+          src.textContent = r.name;
+          const vals = document.createElement("span");
+          vals.className = "vals";
+          for (const s of sea) { const x = document.createElement("span"); x.textContent = s; vals.append(x); }
+          d.append(src, vals);
+          seaBox.append(d);
+        }
       }
     }, 120);
   }
@@ -812,7 +858,7 @@ export function setupWeather(map, layers) {
     for (const k of ["lo", "tg", "hi"]) box.querySelector(`.h.${k}`).style.left = pc(f[k]);
     const q = seaQuantum(r.min, r.max);
     const dp = Math.max(0, -Math.round(Math.log10(q)));
-    const fmtv = (v) => `${v.toFixed(dp)}${layer.unit === "°C" ? "°" : ""}`;
+    const fmtv = (v) => (layer.log ? fmtChl(10 ** v) : `${v.toFixed(dp)}${layer.unit === "°C" ? "°" : ""}`);
     box.querySelector(".v.lo").textContent = fmtv(f.lo);
     box.querySelector(".v.tg").textContent = `target ${fmtv(f.tg)}`;
     box.querySelector(".v.hi").textContent = fmtv(f.hi);
@@ -920,8 +966,8 @@ export function setupWeather(map, layers) {
       for (const [v, c] of layer.scale) {
         const sw = document.createElement("span");
         sw.style.background = c;
-        sw.title = `${v} ${layer.unit}`;
-        sw.textContent = layer.auto ? (Math.abs(v) >= 10 && layer.unit === "°C" ? v.toFixed(v % 1 ? 1 : 0) : String(v)) : v;
+        sw.title = `${layer.log ? fmtChl(10 ** v) : v} ${layer.unit}`;
+        sw.textContent = layer.log ? fmtChl(10 ** v) : layer.auto ? (Math.abs(v) >= 10 && layer.unit === "°C" ? v.toFixed(v % 1 ? 1 : 0) : String(v)) : v;
         el.append(sw);
       }
     }
@@ -955,6 +1001,11 @@ export function setupWeather(map, layers) {
     onTime: (fn) => { timeListeners.push(fn); },
     /** The shown GRIB's values at the cursor (and slider time) each time they change: fn(row | null, [lon, lat]). */
     onPoint: (fn) => { pointListeners.push(fn); },
+    /** Whether any loaded file has sea data (sea temperature, salinity, currents, chlorophyll). */
+    hasSea: () => [...loaded.values()].some((s) => {
+      const ps = paramsOf(s);
+      return Object.values(LAYERS).some((l) => l.ocean && ps.has(l.params[0]));
+    }),
     /** Called when a GRIB is loaded or unloaded. */
     onLoaded: (fn) => { loadedListeners.push(fn); },
     /** Loaded GRIBs ticked for the agreement displays. */

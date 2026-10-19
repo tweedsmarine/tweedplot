@@ -56,6 +56,9 @@ pub enum Model {
     /// Ocean (see `ocean`): MUR sea surface temperature analyses, and the HYCOM ocean model.
     MurSst,
     HycomEspc,
+    /// Himawari-9 hourly clear-sky sea temperature; daily chlorophyll (VIIRS).
+    Himawari,
+    ChlViirs,
 }
 
 /// What a model offers, for the download dialog.
@@ -83,12 +86,24 @@ pub struct ParamInfo {
 }
 
 impl Model {
-    pub fn all() -> [Model; 9] {
-        [Model::Gfs0p25, Model::Gfs0p50, Model::Gfs1p00, Model::GfsWave0p25, Model::EcmwfIfs0p25, Model::EcmwfAifs0p25, Model::EcmwfWave0p25, Model::MurSst, Model::HycomEspc]
+    pub fn all() -> [Model; 11] {
+        [
+            Model::Gfs0p25,
+            Model::Gfs0p50,
+            Model::Gfs1p00,
+            Model::GfsWave0p25,
+            Model::EcmwfIfs0p25,
+            Model::EcmwfAifs0p25,
+            Model::EcmwfWave0p25,
+            Model::MurSst,
+            Model::Himawari,
+            Model::HycomEspc,
+            Model::ChlViirs,
+        ]
     }
 
     pub fn is_ocean(self) -> bool {
-        matches!(self, Model::MurSst | Model::HycomEspc)
+        matches!(self, Model::MurSst | Model::HycomEspc | Model::Himawari | Model::ChlViirs)
     }
 
     /// The wave model whose fields can go in the same file as this model's wind.
@@ -170,6 +185,26 @@ impl Model {
                 max_hours: 14 * 24,
                 steps: vec![(14 * 24, 24)],
                 params: vec![ParamInfo { id: "sst", name: "Sea surface temperature", fields: 1, default: true }],
+                delay_h: 0,
+            },
+            // Himawari: `hours` = how many hours back from now, `every` = 1, 2, 3 or 6
+            Model::Himawari => ModelInfo {
+                id: self,
+                name: "Himawari-9 sea temperature 2 km, hourly (satellite, clear sky)",
+                res_deg: 0.02,
+                max_hours: 72,
+                steps: vec![(72, 1)],
+                params: vec![ParamInfo { id: "skin", name: "Sea surface temperature (clear sky)", fields: 1, default: true }],
+                delay_h: 0,
+            },
+            // chlorophyll: `hours` / 24 = how many of the latest daily analyses
+            Model::ChlViirs => ModelInfo {
+                id: self,
+                name: "Chlorophyll-a 9 km, daily (VIIRS satellites, gap-filled)",
+                res_deg: 0.0833,
+                max_hours: 14 * 24,
+                steps: vec![(14 * 24, 24)],
+                params: vec![ParamInfo { id: "chl", name: "Chlorophyll-a", fields: 1, default: true }],
                 delay_h: 0,
             },
             Model::HycomEspc => ModelInfo {
@@ -377,6 +412,17 @@ pub fn estimate_bytes(req: &Request) -> u64 {
         let ny = ((req.area[3] - req.area[1]).abs() / 0.01 / k).floor() + 1.0;
         return ((nx * ny * 1.6 + 200.0) * (req.hours / 24).clamp(1, 14) as f64) as u64;
     }
+    if req.model == Model::Himawari {
+        let k = ocean::him_stride(req.area) as f64;
+        let nx = ((req.area[2] - req.area[0]).abs() / 0.02 / k).floor() + 1.0;
+        let ny = ((req.area[3] - req.area[1]).abs() / 0.02 / k).floor() + 1.0;
+        return ((nx * ny * 1.6 + 200.0) * (req.hours / req.every.max(1)).max(1) as f64) as u64;
+    }
+    if req.model == Model::ChlViirs {
+        let nx = ((req.area[2] - req.area[0]).abs() / 0.0833).floor() + 1.0;
+        let ny = ((req.area[3] - req.area[1]).abs() / 0.0833).floor() + 1.0;
+        return ((nx * ny * 2.0 + 200.0) * (req.hours / 24).clamp(1, 14) as f64) as u64;
+    }
     let (l, r) = lon_window(req.area[0], req.area[2]);
     let nx = ((r - l) / info.res_deg).floor() + 1.0;
     let ny = ((req.area[3] - req.area[1]).abs() / info.res_deg).floor() + 1.0;
@@ -549,6 +595,8 @@ pub(crate) fn file_name(req: &Request, run: &Run, last: u32) -> String {
         Model::EcmwfWave0p25 => "ECMWF_wave_0p25",
         Model::MurSst => "MUR_SST",
         Model::HycomEspc => "HYCOM_ESPC",
+        Model::Himawari => "HIMAWARI_SST",
+        Model::ChlViirs => "CHL_VIIRS",
     };
     let lat = |v: f64| format!("{}{}", v.abs().round(), if v < 0.0 { "S" } else { "N" });
     let lon = |v: f64| {
