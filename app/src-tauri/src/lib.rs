@@ -570,11 +570,19 @@ fn grib_point(lat: f64, lon: f64, t: i64) -> Vec<serde_json::Value> {
     files
         .into_iter()
         .map(|(k, f)| {
-            let w = f.wind(lat, lon, t);
-            let kn = |x: Option<f64>| x.map(|v| (v * 3600.0 / 1852.0 * 10.0).round() / 10.0);
-            serde_json::json!({
-                "path": k,
-                "name": f.summary().name,
+            let mut j = point_values(&f, lat, lon, t);
+            j["path"] = k.clone().into();
+            j["name"] = f.summary().name.into();
+            j
+        })
+        .collect()
+}
+
+/// Every value a GRIB has at a point and time, in display units (kn, hPa, m, s, °C…).
+fn point_values(f: &grib::GribFile, lat: f64, lon: f64, t: i64) -> serde_json::Value {
+    let w = f.wind(lat, lon, t);
+    let kn = |x: Option<f64>| x.map(|v| (v * 3600.0 / 1852.0 * 10.0).round() / 10.0);
+    serde_json::json!({
                 "tws": w.map(|w| (w.tws * 10.0).round() / 10.0),
                 "twd": w.map(|w| w.twd.round()),
                 "gust": kn(f.value(grib::Param::Gust, lat, lon, t)),
@@ -595,9 +603,37 @@ fn grib_point(lat: f64, lon: f64, t: i64) -> Vec<serde_json::Value> {
                     "kn": ((u * u + v * v).sqrt() * 3600.0 / 1852.0 * 100.0).round() / 100.0,
                     "set": nav_core::norm360(u.atan2(v).to_degrees()).round(),
                 })),
+})
+}
+
+/// The weather along a route: at each (lat, lon, t), each value from the first loaded
+/// GRIB that has it, the shown one first (so its wind wins; waves or sea data can come
+/// from another file).
+#[tauri::command]
+async fn grib_along(first: Option<String>, pts: Vec<(f64, f64, i64)>) -> Vec<serde_json::Value> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut files: Vec<(String, Arc<grib::GribFile>)> = GRIBS.lock().unwrap().iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        if let Some(p) = &first {
+            files.sort_by_key(|(k, _)| k != p);
+        }
+        pts.iter()
+            .map(|&(lat, lon, t)| {
+                let mut out = serde_json::Map::new();
+                for (_, f) in &files {
+                    if let serde_json::Value::Object(m) = point_values(f, lat, lon, t) {
+                        for (k, v) in m {
+                            if !v.is_null() && !out.contains_key(&k) {
+                                out.insert(k, v);
+                            }
+                        }
+                    }
+                }
+                serde_json::Value::Object(out)
             })
-        })
-        .collect()
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 /// Signal K URL: `RACENAV_SK_URL` environment variable, else the local server.
@@ -1607,7 +1643,7 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            app_info, chart_info, chart_feature, chart_clearances, cockpit_open, tides_info, tides_stations, tides_curve, tides_download, tides_cancel, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_compare, grib_meteogram, grib_verify_times, grib_verify_scores, grib_verify_track, grib_verify_grid, grib_point,
+            app_info, chart_info, chart_feature, chart_clearances, cockpit_open, tides_info, tides_stations, tides_curve, tides_download, tides_cancel, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_compare, grib_meteogram, grib_verify_times, grib_verify_scores, grib_verify_track, grib_verify_grid, grib_point, grib_along,
             polar_files, polar_import, polar_open_folder, polar_speed, route_compute, sk_status,
             stations_cmd::stations_latest, stations_cmd::station_history,
             live::ais_targets, live::ais_online, live::ais_status, live::ais_set_own, live::ais_tracks, live::replay_logs, live::replay_start, live::replay_control, live::replay_stop,

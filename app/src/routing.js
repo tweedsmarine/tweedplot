@@ -554,6 +554,8 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
     msg,
     /** Points of the active routing, for the instruments' targets. */
     activePoints: () => { const a = activeItem(); return a && a.visible ? a.r.points : null; },
+    /** Called whenever the routings on the chart change (computed, shown, made active). */
+    onDraw: (fn) => drawListeners.push(fn),
     /** Show a saved routing (Library panel). */
     async showSaved(id) { const it = await showSaved(id); if (it) ui.openTab("routing", "list"); },
     /** Name (and colour) routings started from this position and time, e.g. "Guillou · fix 15 Oct 20:00Z". */
