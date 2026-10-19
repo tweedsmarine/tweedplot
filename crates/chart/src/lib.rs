@@ -107,6 +107,8 @@ pub struct ChartStore {
     cache: Mutex<lru::LruCache<(u8, u32, u32), Arc<Vec<u8>>>>,
     /// Coverage polygons of each band, loaded on first use: (band, bbox, polygon).
     coverage: std::sync::OnceLock<Vec<(u8, [f64; 4], geo::Polygon<f64>)>>,
+    /// Per feature table: its median SCAMIN (when its features usually start to show).
+    scamin_median: Mutex<std::collections::HashMap<usize, Option<f64>>>,
 }
 
 /// NZ mainland area covered by LINZ Topo50 land: GSHHG polygons wholly inside
@@ -202,6 +204,7 @@ impl ChartStore {
             tables,
             cache: Mutex::new(lru::LruCache::new(NonZeroUsize::new(2048).unwrap())),
             coverage: std::sync::OnceLock::new(),
+            scamin_median: Mutex::new(std::collections::HashMap::new()),
         })
     }
 
@@ -273,14 +276,43 @@ impl ChartStore {
                 }
             });
         }
-        // Contours and soundings: the finest band with data here.
+        // Contours and soundings: the finest band with data here, and where it has none
+        // (outside its coverage) the next band down, cut to outside the finer coverage, so a
+        // tile reaching past a large-scale chart's edge keeps its contours beyond it.
         for kind in [Kind::Contour, Kind::Sounding] {
             let extra = if kind == Kind::Sounding { 1 } else { 0 };
+            let mut drawn: Vec<u8> = Vec::new();
             for t in bands.iter().rev().filter(|t| t.kind == kind && z >= band_minzoom(t.band) + extra) {
+                if drawn.contains(&t.band) {
+                    continue;
+                }
+                // a finer band without coverage polygons: no telling where it stops
+                if drawn.iter().any(|b| !self.coverage().iter().any(|(cb, _, _)| cb == b)) {
+                    break;
+                }
+                let cover = if drawn.is_empty() { None } else { self.cover_in(&drawn, bbox) };
                 let layer = if kind == Kind::Contour { &mut depcnt } else { &mut soundg };
                 let before = layer.len();
                 let col = if kind == Kind::Contour { "valdco" } else { "depth" };
                 self.query(t, bbox, &[col], |vals, g| {
+                    let g = match &cover {
+                        None => g,
+                        Some(c) if kind == Kind::Contour => match features::cut_outside(&g, c) {
+                            Some(g) => g,
+                            None => return,
+                        },
+                        Some(c) => {
+                            let Geom::Points(pts) = g else { return };
+                            let pts: Vec<[f64; 2]> = pts.into_iter().filter(|p| {
+                                use geo::Contains;
+                                !c.contains(&geo::Point::new(p[0], p[1]))
+                            }).collect();
+                            if pts.is_empty() {
+                                return;
+                            }
+                            Geom::Points(pts)
+                        }
+                    };
                     let tg = if kind == Kind::Contour { tp.lines(&drop_cell_edges(g)) } else { tp.points(&g) };
                     if let Some(tg) = tg {
                         let mut props = vec![("band", Value::UInt(t.band as u64))];
@@ -291,7 +323,7 @@ impl ChartStore {
                     }
                 });
                 if layer.len() > before {
-                    break;
+                    drawn.push(t.band);
                 }
             }
         }

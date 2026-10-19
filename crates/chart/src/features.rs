@@ -55,7 +55,7 @@ fn hazard_rank(code: &str, a: &Attrs) -> f64 {
 
 /// The part of a line or area geometry outside `cover`: None when nothing is left,
 /// the geometry itself when it doesn't reach the cover.
-fn cut_outside(g: &Geom, cover: &geo::MultiPolygon<f64>) -> Option<Geom> {
+pub(crate) fn cut_outside(g: &Geom, cover: &geo::MultiPolygon<f64>) -> Option<Geom> {
     use geo::{BooleanOps, BoundingRect, Intersects};
     let ls = |r: &Ring| geo::LineString::from(r.iter().map(|p| (p[0], p[1])).collect::<Vec<_>>());
     let back = |l: &geo::LineString<f64>| -> Ring { l.coords().map(|c| [c.x, c.y]).collect() };
@@ -89,6 +89,40 @@ fn cut_outside(g: &Geom, cover: &geo::MultiPolygon<f64>) -> Option<Geom> {
     }
 }
 
+/// The part of a line or area geometry inside `cover` (None when nothing is).
+fn cut_inside(g: &Geom, cover: &geo::MultiPolygon<f64>) -> Option<Geom> {
+    use geo::{BooleanOps, BoundingRect, Intersects};
+    let ls = |r: &Ring| geo::LineString::from(r.iter().map(|p| (p[0], p[1])).collect::<Vec<_>>());
+    let back = |l: &geo::LineString<f64>| -> Ring { l.coords().map(|c| [c.x, c.y]).collect() };
+    match g {
+        Geom::Polygons(polys) => {
+            let mp = geo::MultiPolygon::new(
+                polys.iter().filter(|r| !r.is_empty()).map(|rings| geo::Polygon::new(ls(&rings[0]), rings[1..].iter().map(ls).collect())).collect(),
+            );
+            if !mp.intersects(cover) {
+                return None;
+            }
+            let d = mp.intersection(cover);
+            let out: Vec<Vec<Ring>> = d
+                .0
+                .iter()
+                .filter(|p| p.bounding_rect().is_some_and(|r| r.width() * r.height() > 1e-12))
+                .map(|p| std::iter::once(back(p.exterior())).chain(p.interiors().iter().map(back)).collect())
+                .collect();
+            (!out.is_empty()).then_some(Geom::Polygons(out))
+        }
+        Geom::Lines(lines) => {
+            let ml = geo::MultiLineString::new(lines.iter().map(ls).collect());
+            if !ml.intersects(cover) {
+                return None;
+            }
+            let d = cover.clip(&ml, false);
+            let out: Vec<Ring> = d.0.iter().map(back).filter(|r| r.len() >= 2).collect();
+            (!out.is_empty()).then_some(Geom::Lines(out))
+        }
+        Geom::Points(_) => None,
+    }
+}
 
 /// Light sector radius and limit-line length in tile units (4096 per tile, 8 per pixel).
 const ARC_R: f64 = 440.0;
@@ -163,6 +197,23 @@ impl ChartStore {
         }
     }
 
+    /// The zoom from which a table's features usually show at latitude `lat`: from its
+    /// median SCAMIN, else its band's.
+    fn takeover_zoom(&self, ti: usize, t: &TableInfo, lat: f64) -> f64 {
+        let med = *self.scamin_median.lock().unwrap().entry(ti).or_insert_with(|| {
+            if !t.cols.iter().any(|c| c == "scamin") {
+                return None;
+            }
+            let conn = self.dbs[t.db].lock().unwrap();
+            let n: i64 = conn.query_row(&format!("SELECT count(scamin) FROM \"{}\"", t.table), [], |r| r.get(0)).unwrap_or(0);
+            if n == 0 {
+                return None;
+            }
+            conn.query_row(&format!("SELECT scamin FROM \"{}\" WHERE scamin IS NOT NULL ORDER BY scamin LIMIT 1 OFFSET {}", t.table, n / 2), [], |r| r.get::<_, f64>(0)).ok()
+        });
+        med.map_or(band_minzoom(t.band) as f64, |s| s57::scamin_zoom(s, lat))
+    }
+
     fn feature_tables(&self, z: u8) -> Vec<(usize, &TableInfo)> {
         self.tables
             .iter()
@@ -172,7 +223,7 @@ impl ChartStore {
     }
 
     /// Every band's coverage polygons (data areas, CATCOV 1), loaded once.
-    fn coverage(&self) -> &[(u8, [f64; 4], geo::Polygon<f64>)] {
+    pub(crate) fn coverage(&self) -> &[(u8, [f64; 4], geo::Polygon<f64>)] {
         self.coverage.get_or_init(|| {
             let mut out = Vec::new();
             for t in self.tables.iter().filter(|t| t.kind == Kind::Coverage) {
@@ -196,7 +247,7 @@ impl ChartStore {
     }
 
     /// The coverage of bands in `bands` that touches `b`, merged.
-    fn cover_in(&self, bands: &[u8], b: [f64; 4]) -> Option<geo::MultiPolygon<f64>> {
+    pub(crate) fn cover_in(&self, bands: &[u8], b: [f64; 4]) -> Option<geo::MultiPolygon<f64>> {
         use geo::BooleanOps;
         let mut polys: Vec<&geo::Polygon<f64>> = self
             .coverage()
@@ -213,7 +264,7 @@ impl ChartStore {
     }
 
     /// Whether `p` lies in the coverage of one of `bands`.
-    fn covered(&self, bands: &[u8], p: [f64; 2]) -> bool {
+    pub(crate) fn covered(&self, bands: &[u8], p: [f64; 2]) -> bool {
         use geo::Contains;
         let pt = geo::Point::new(p[0], p[1]);
         self.coverage()
@@ -347,20 +398,42 @@ impl ChartStore {
                 Geo::Line | Geo::Area => {
                     let hazard = is_hazard(class.code);
                     let layer = if class.geo == Geo::Line { &mut fln } else { &mut far };
+                    // every copy of this class met so far (finer bands first): bounds, minz
+                    let mut seen: Vec<([f64; 4], f64)> = Vec::new();
                     for (k, (ti, t)) in tables.iter().enumerate() {
                         // the finer bands drawn here: those of this class's tables (finest first)
                         let mut finer_bands: Vec<u8> = tables[..k].iter().map(|(_, ft)| ft.band).filter(|b| *b > t.band).collect();
                         finer_bands.dedup();
+                        // when the finer bands' copies of this class start to show here: until
+                        // then this band's copy stands inside their coverage too (maxz)
+                        let lat_c = (bbox[1] + bbox[3]) / 2.0;
+                        let general = tables[..k].iter().filter(|(_, ft)| ft.band > t.band).map(|(fi, ft)| self.takeover_zoom(*fi, ft, lat_c)).fold(f64::MAX, f64::min);
+                        let finer_seen: Vec<([f64; 4], f64)> = std::mem::take(&mut seen);
+                        let mut mine_seen: Vec<([f64; 4], f64)> = Vec::new();
                         self.query_text(t, bbox, &["objnam", "scamin", "catrea", "restrn", "catmfa", "orient", "watlev"], |row| {
                             // Inside a finer band's coverage that band's features are the ones
                             // to show (a farm or cable is often drawn differently at each scale):
-                            // a coarser band's feature is cut back to outside it, as an ECDIS does.
+                            // a coarser band's feature is cut back to outside it, as an ECDIS does,
+                            // from the zoom the finer copies show; before that the inside part stays.
+                            let gb = geom_bounds(&row.geom);
+                            let lat0 = (bbox[1] + bbox[3]) / 2.0;
+                            mine_seen.push((gb, row.vals[1].as_deref().and_then(|s| s.parse().ok()).map_or(0.0, |s| s57::scamin_zoom(s, lat0))));
+                            // the finer copies of this feature (those overlapping it) show from the
+                            // latest of their zooms; with none here, from when that band's usually do
+                            let overlap = |b: &[f64; 4]| b[0] <= gb[2] && b[2] >= gb[0] && b[1] <= gb[3] && b[3] >= gb[1];
+                            let local = finer_seen.iter().filter(|(b, _)| overlap(b)).map(|(_, m)| *m).fold(f64::MIN, f64::max);
+                            let takeover = if local > f64::MIN { local } else { general };
                             let mut geom_cut = None;
+                            let mut inside_part = None;
                             if !finer_bands.is_empty() {
                                 if let Some(cover) = self.cover_in(&finer_bands, geom_bounds(&row.geom)) {
+                                    if !hazard && takeover > z as f64 && takeover < f64::MAX {
+                                        inside_part = cut_inside(&row.geom, &cover);
+                                    }
                                     match cut_outside(&row.geom, &cover) {
                                         Some(g) => geom_cut = Some(g),
-                                        None => return, // all of it inside
+                                        None if inside_part.is_none() => return, // all of it inside
+                                        None => geom_cut = Some(Geom::Lines(vec![])),
                                     }
                                 }
                             }
@@ -411,7 +484,18 @@ impl ChartStore {
                             if let Some(tg) = tg {
                                 layer.add(&tg, &props);
                             }
+                            // the part a finer chart covers, until its copy shows
+                            if let Some(ig) = inside_part {
+                                let itg = if class.geo == Geo::Line { tp.lines(&ig) } else { tp.polygons(&ig) };
+                                if let Some(itg) = itg {
+                                    let mut pp = props.clone();
+                                    pp.push(("maxz", Value::F64((takeover.min(30.0) * 10.0).round() / 10.0)));
+                                    layer.add(&itg, &pp);
+                                }
+                            }
                         });
+                        seen = finer_seen;
+                        seen.extend(mine_seen);
                     }
                 }
             }

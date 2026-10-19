@@ -227,9 +227,9 @@ mod tests {
     }
 }
 
-/// For diagnostics: every point feature of `layer` in an encoded tile as
-/// (cls, band, minz, x, y). A small protobuf reader, not a general decoder.
-pub fn debug_points(tile: &[u8], layer: &str) -> Vec<(String, u64, f64, i64, i64)> {
+/// For diagnostics: every feature of `layer` in an encoded tile as
+/// (cls, band, minz, maxz, x, y of its first point). A small protobuf reader, not a general decoder.
+pub fn debug_points(tile: &[u8], layer: &str) -> Vec<(String, u64, f64, f64, i64, i64)> {
     fn varint(b: &[u8], i: &mut usize) -> u64 {
         let (mut v, mut s) = (0u64, 0);
         while *i < b.len() {
@@ -282,19 +282,20 @@ pub fn debug_points(tile: &[u8], layer: &str) -> Vec<(String, u64, f64, i64, i64
             let feat = fields(fb);
             let tags = feat.iter().find(|x| x.0 == 2).map(|x| packed(x.2)).unwrap_or_default();
             let geom = feat.iter().find(|x| x.0 == 4).map(|x| packed(x.2)).unwrap_or_default();
-            let (mut cls, mut band, mut minz) = (String::new(), 0, 0.0);
+            let (mut cls, mut band, mut minz, mut maxz) = (String::new(), 0, 0.0, 99.0);
             for t in tags.chunks(2) {
                 let (Some(k), Some(v)) = (keys.get(t[0] as usize), vals.get(t[1] as usize)) else { continue };
                 match (k.as_str(), v) {
                     ("cls", Value::Str(s)) => cls = s.clone(),
                     ("band", Value::UInt(u)) => band = *u,
                     ("minz", Value::F64(m)) => minz = *m,
+                    ("maxz", Value::F64(m)) => maxz = *m,
                     _ => {}
                 }
             }
             if geom.len() >= 3 && geom[0] & 7 == 1 {
                 let z = |v: u64| ((v >> 1) as i64) ^ -((v & 1) as i64);
-                out.push((cls, band, minz, z(geom[1]), z(geom[2])));
+                out.push((cls, band, minz, maxz, z(geom[1]), z(geom[2])));
             }
         }
     }
