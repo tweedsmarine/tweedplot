@@ -377,6 +377,7 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
 .ctx hr[hidden], .ctx button[hidden] { display: none; }
 
 /* meteogram and verify (dock) */
+.rs-stats { white-space: pre-wrap; font-family: ui-monospace, Consolas, monospace; font-size: 11px; min-height: 3em; margin: 4px 0; }
 .rw-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; font-size: 12px; }
 .rw-pick label { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
 .rw-pick input[type="number"] { width: 48px; font-size: 12px; padding: 1px 4px; }

@@ -455,6 +455,14 @@
           <button id="replay-play" title="Play this log in place of the live Signal K data">Replay</button></div>
         <div id="replay-note" class="wx-note">Every Signal K session is logged. A replay drives the boat, instruments, AIS targets and alarms as if live; live data waits until it stops. Tracks are not recorded from a replay.</div>
         <div class="wx-note">The buttons at the top right: the Signal K status (green receiving, amber connected but quiet, red not connected), Live ▶ / Paused ❚❚, Follow and Clear track. Pause to plan: right-click the chart to move the boat.</div>
+        <h3>Radar overlay test</h3>
+        <div class="wx-row"><label class="grow" for="rs-rpm">Simulated radar</label>
+          <select id="rs-rpm" title="Antenna speed"><option value="24">24 rpm</option><option value="48" selected>48 rpm</option></select>
+          <select id="rs-res" title="Spokes per turn × samples per spoke"><option value="2048x512">2048 × 512</option><option value="2048x1024" selected>2048 × 1024</option><option value="4096x1024">4096 × 1024</option></select></div>
+        <div class="wx-row"><label class="grow" for="rs-range">Range (NM)</label><input id="rs-range" type="number" min="0.25" max="48" step="0.25" value="3" />
+          <button id="rs-go" title="Start or stop the simulated radar on the boat (or the chart centre)">Start</button></div>
+        <pre id="rs-stats" class="wx-note rs-stats"></pre>
+        <div class="wx-note">Tests the path a real radar will take: echoes made in the Rust core at a real scanner's rate, sent to the chart as raw bytes and drawn by the graphics card. The numbers show whether this PC keeps up (aim: 50–60 frames a second while panning, no growing backlog).</div>
       </section>
 
       <section class="pane" data-pane="inst" data-title="Instruments">

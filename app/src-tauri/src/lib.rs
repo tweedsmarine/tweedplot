@@ -9,6 +9,7 @@
 //! (`http://chart.localhost/...` on Windows).
 
 mod live;
+mod radar_sim;
 mod stations_cmd;
 use std::path::PathBuf;
 use std::collections::BTreeMap;
@@ -1643,7 +1644,7 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            app_info, chart_info, chart_feature, chart_clearances, cockpit_open, tides_info, tides_stations, tides_curve, tides_download, tides_cancel, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_compare, grib_meteogram, grib_verify_times, grib_verify_scores, grib_verify_track, grib_verify_grid, grib_point, grib_along,
+            app_info, chart_info, chart_feature, chart_clearances, cockpit_open, tides_info, tides_stations, tides_curve, tides_download, tides_cancel, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_compare, grib_meteogram, grib_verify_times, grib_verify_scores, grib_verify_track, grib_verify_grid, grib_point, grib_along, radar_sim::radar_sim_start, radar_sim::radar_sim_stop, radar_sim::radar_sim_stats,
             polar_files, polar_import, polar_open_folder, polar_speed, route_compute, sk_status,
             stations_cmd::stations_latest, stations_cmd::station_history,
             live::ais_targets, live::ais_online, live::ais_status, live::ais_set_own, live::ais_tracks, live::replay_logs, live::replay_start, live::replay_control, live::replay_stop,

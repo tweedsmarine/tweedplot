@@ -16,6 +16,7 @@ import { setupTracks } from "./tracks.js";
 import { setupRuler } from "./ruler.js";
 import { setupGribTools } from "./gribtools.js";
 import { setupRouteWeather } from "./routewx.js";
+import { setupRadar } from "./radar.js";
 import { setupWindArrows } from "./windarrows.js";
 import { poiImage } from "./poi.js";
 import { setupBarriers } from "./barriers.js";
@@ -214,6 +215,7 @@ map.on("load", () => {
   setupGribDownload(map, { weather, course: route });
   gribTools = setupGribTools(map, { weather, dock });
   const routeWx = setupRouteWeather(map, { weather, routing, course: route, dock });
+  setupRadar(map, { getBoat: () => lastBoat });
   for (const id of ["rt-wx", "crs-wx"]) { const b = document.getElementById(id); if (b) b.onclick = () => routeWx.open(); }
   document.getElementById("wx-verify").onclick = () => gribTools.openVerify();
   setupTides(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn) });
