@@ -22,6 +22,7 @@
 pub mod bathy;
 pub mod clip;
 pub mod coast;
+pub mod enc;
 pub mod geom;
 pub mod mvt;
 pub mod s57;
@@ -97,7 +98,8 @@ pub fn band_minzoom(band: u8) -> u8 {
         2 => 7,
         3 => 9,
         4 => 11,
-        _ => 13,
+        5 => 13,
+        _ => 14,
     }
 }
 
@@ -143,6 +145,8 @@ impl ChartStore {
                     _ => {}
                 }
             }
+            // S-57 ENC cells anywhere below, converted once into dir/.enc
+            gpkgs.extend(enc::ensure_gpkgs(dir));
             if let Some(g) = coast::ensure_gpkg(dir, &unz)? {
                 gpkgs.push(g);
             }
@@ -454,7 +458,7 @@ impl ChartStore {
     }
 
     fn has_topo50(&self) -> bool {
-        self.tables.iter().any(|t| t.kind == Kind::Land)
+        self.tables.iter().any(|t| t.kind == Kind::Land && t.band == 0)
     }
 
     /// True if GSHHG world land is available.
@@ -653,6 +657,28 @@ fn classify(table: &str) -> Option<(Kind, u8)> {
         };
         let i = coast::RESOLUTIONS.iter().position(|c| res.starts_with(*c) && res.len() == 1)?;
         return Some((kind, i as u8 + 1));
+    }
+    // S-57 ENC cells converted by `enc`: "<layer>_enc_b<band>"
+    if let Some(i) = t.rfind("_enc_b") {
+        let band: u8 = t[i + 6..].parse().ok()?;
+        let kind = if t.starts_with("land_area_polygon") {
+            Kind::Land
+        } else if t.starts_with("lake_polygon") || t.starts_with("river_polygon") {
+            Kind::Lake
+        } else if t.starts_with("coverage_polygon") {
+            Kind::Coverage
+        } else if t.starts_with("depth_area") {
+            Kind::DepthArea
+        } else if t.starts_with("depth_contour") {
+            Kind::Contour
+        } else if t.starts_with("sounding") {
+            Kind::Sounding
+        } else if s57::class_for(&t).is_some() {
+            Kind::Feature
+        } else {
+            return None;
+        };
+        return Some((kind, band));
     }
     if t.contains("coastlines_and_islands") {
         return Some((Kind::Land, 0));

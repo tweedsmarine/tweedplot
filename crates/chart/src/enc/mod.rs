@@ -1,0 +1,384 @@
+//! S-57 ENC cells (`.000` with updates `.001`, `.002` ...) for the chart store.
+//!
+//! Each cell found under a chart folder is converted once into a GeoPackage in that
+//! folder's `.enc` subfolder, laid out like the LINZ layers (`light_points_hydro_enc_b4`
+//! and so on, S-57 attribute acronyms as columns), so the store draws ENC cells with the
+//! same code as the LINZ data. A cell is converted again when it or an update changes,
+//! or when the converter changes ([`VERSION`]). The band comes from the cell's intended
+//! usage (overview 2, general 3, coastal 4, approach 5, harbour and berthing 6).
+
+pub mod catalogue;
+pub mod cell;
+pub mod iso8211;
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use rusqlite::Connection;
+
+use cell::{Cell, Shape};
+
+/// Bump when the conversion changes, so cells are converted again.
+pub const VERSION: u32 = 1;
+
+/// The chart band for a cell's intended usage (DSID INTU).
+pub fn band_for(intu: u8) -> u8 {
+    match intu {
+        1 => 2,
+        2 => 3,
+        3 => 4,
+        4 => 5,
+        5 | 6 => 6,
+        _ => 4,
+    }
+}
+
+/// The table a feature goes in, or None for those the chart doesn't draw.
+fn table_for(acr: &str, prim: u8, band: u8) -> Option<String> {
+    let geo = match prim {
+        1 => crate::s57::Geo::Point,
+        2 => crate::s57::Geo::Line,
+        3 => crate::s57::Geo::Area,
+        _ => return None,
+    };
+    let fixed = match (acr, prim) {
+        ("DEPARE" | "DRGARE", 3) => Some("depth_area_polygon_hydro"),
+        ("DEPCNT", 2) => Some("depth_contour_polyline_hydro"),
+        ("SOUNDG", 1) => Some("sounding_points_hydro"),
+        ("M_COVR", 3) => Some("coverage_polygon_hydro"),
+        ("LNDARE", 3) => Some("land_area_polygon"),
+        ("LAKARE", 3) => Some("lake_polygon_hydro"),
+        ("RIVERS", 3) => Some("river_polygon_hydro"),
+        _ => None,
+    };
+    if let Some(p) = fixed {
+        return Some(format!("{p}_enc_b{band}"));
+    }
+    let c = crate::s57::CLASSES.iter().find(|c| c.code == acr && c.geo == geo)?;
+    Some(format!("{}_hydro_enc_b{band}", c.prefix))
+}
+
+#[derive(Default)]
+struct Table {
+    geo: &'static str,
+    cols: BTreeMap<String, char>,
+    rows: Vec<(Vec<(String, String)>, Vec<u8>, [f64; 4])>,
+}
+
+/// Write a cell's features into a new GeoPackage at `out`. Returns the features written.
+pub fn write_gpkg(c: &Cell, out: &Path) -> Result<usize, rusqlite::Error> {
+    let band = band_for(c.intu);
+    let mut tables: BTreeMap<String, Table> = BTreeMap::new();
+    let mut n = 0;
+    for f in c.features.values() {
+        let Some(acr) = catalogue::object(f.objl) else { continue };
+        let Some(tname) = table_for(acr, f.prim, band) else { continue };
+        let Some(shape) = c.shape(f) else { continue };
+        let mut vals: Vec<(String, String)> = Vec::new();
+        for (k, v) in f.attf.iter().chain(&f.natf) {
+            if let Some((a, ty)) = catalogue::attribute(*k) {
+                let ty = match ty {
+                    b'F' => 'R',
+                    b'I' => 'I',
+                    _ => 'T',
+                };
+                vals.push((a.to_ascii_lowercase(), v.trim().to_string()));
+                let t = tables.entry(tname.clone()).or_default();
+                t.cols.insert(a.to_ascii_lowercase(), ty);
+            }
+        }
+        let t = tables.entry(tname.clone()).or_default();
+        match shape {
+            Shape::Points(pts) if acr == "SOUNDG" => {
+                t.geo = "POINT";
+                t.cols.insert("depth".into(), 'R');
+                for p in pts {
+                    let mut v = vals.clone();
+                    v.push(("depth".into(), format!("{}", p[2])));
+                    t.rows.push((v, gp_point(p[0], p[1]), [p[0], p[0], p[1], p[1]]));
+                }
+            }
+            Shape::Points(pts) => {
+                t.geo = "POINT";
+                let p = pts[0];
+                t.rows.push((vals, gp_point(p[0], p[1]), [p[0], p[0], p[1], p[1]]));
+            }
+            Shape::Lines(ls) => {
+                t.geo = "MULTILINESTRING";
+                let env = envelope(ls.iter().flatten());
+                t.rows.push((vals, gp_lines(&ls, env), env));
+            }
+            Shape::Polygons(ps) => {
+                t.geo = "MULTIPOLYGON";
+                let env = envelope(ps.iter().flat_map(|p| p[0].iter()));
+                t.rows.push((vals, gp_polys(&ps, env), env));
+            }
+        }
+        n += 1;
+    }
+
+    let _ = std::fs::remove_file(out);
+    let tmp = out.with_extension("tmp");
+    let _ = std::fs::remove_file(&tmp);
+    let mut db = Connection::open(&tmp)?;
+    db.execute_batch(
+        "PRAGMA application_id = 1196444487; PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF;
+         CREATE TABLE gpkg_spatial_ref_sys (srs_name TEXT NOT NULL, srs_id INTEGER PRIMARY KEY, organization TEXT NOT NULL,
+           organization_coordsys_id INTEGER NOT NULL, definition TEXT NOT NULL, description TEXT);
+         INSERT INTO gpkg_spatial_ref_sys VALUES ('WGS 84', 4326, 'EPSG', 4326, 'GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]]', NULL);
+         CREATE TABLE gpkg_contents (table_name TEXT PRIMARY KEY, data_type TEXT NOT NULL, identifier TEXT, description TEXT DEFAULT '',
+           last_change DATETIME, min_x DOUBLE, min_y DOUBLE, max_x DOUBLE, max_y DOUBLE, srs_id INTEGER);
+         CREATE TABLE gpkg_geometry_columns (table_name TEXT NOT NULL, column_name TEXT NOT NULL, geometry_type_name TEXT NOT NULL,
+           srs_id INTEGER NOT NULL, z TINYINT NOT NULL, m TINYINT NOT NULL, PRIMARY KEY (table_name, column_name));
+         CREATE TABLE enc_meta (key TEXT PRIMARY KEY, value TEXT);",
+    )?;
+    let tx = db.transaction()?;
+    for (k, v) in [
+        ("version", VERSION.to_string()),
+        ("cell", c.name.clone()),
+        ("edition", c.edition.clone()),
+        ("update", c.update.clone()),
+        ("issue_date", c.issue_date.clone()),
+        ("intended_usage", c.intu.to_string()),
+        ("compilation_scale", c.cscl.to_string()),
+    ] {
+        tx.execute("INSERT INTO enc_meta VALUES (?1, ?2)", rusqlite::params![k, v])?;
+    }
+    for (name, t) in &tables {
+        let cols: String = t.cols.iter().map(|(c, ty)| format!(", \"{c}\" {}", match ty { 'R' => "REAL", 'I' => "INTEGER", _ => "TEXT" })).collect();
+        tx.execute_batch(&format!(
+            "CREATE TABLE \"{name}\" (fid INTEGER PRIMARY KEY, geom BLOB{cols});
+             CREATE VIRTUAL TABLE \"rtree_{name}_geom\" USING rtree(id, minx, maxx, miny, maxy);"
+        ))?;
+        tx.execute("INSERT INTO gpkg_contents (table_name, data_type, identifier, srs_id) VALUES (?1, 'features', ?1, 4326)", [name])?;
+        tx.execute("INSERT INTO gpkg_geometry_columns VALUES (?1, 'geom', ?2, 4326, 0, 0)", rusqlite::params![name, t.geo])?;
+        let names: Vec<&String> = t.cols.keys().collect();
+        let ph: String = (0..names.len()).map(|i| format!(", ?{}", i + 3)).collect();
+        let cl: String = names.iter().map(|c| format!(", \"{c}\"")).collect();
+        let mut ins = tx.prepare(&format!("INSERT INTO \"{name}\" (fid, geom{cl}) VALUES (?1, ?2{ph})"))?;
+        let mut rt = tx.prepare(&format!("INSERT INTO \"rtree_{name}_geom\" VALUES (?1, ?2, ?3, ?4, ?5)"))?;
+        for (i, (vals, blob, env)) in t.rows.iter().enumerate() {
+            let fid = i as i64 + 1;
+            let mut params: Vec<rusqlite::types::Value> = vec![fid.into(), blob.clone().into()];
+            for c in &names {
+                let v = vals.iter().find(|(k, _)| k == *c).map(|(_, v)| v.as_str()).filter(|v| !v.is_empty());
+                params.push(match (v, t.cols[*c]) {
+                    (None, _) => rusqlite::types::Value::Null,
+                    (Some(v), 'R') => v.parse::<f64>().map(Into::into).unwrap_or(rusqlite::types::Value::Null),
+                    (Some(v), 'I') => v.parse::<i64>().map(Into::into).unwrap_or(rusqlite::types::Value::Null),
+                    (Some(v), _) => v.to_string().into(),
+                });
+            }
+            ins.execute(rusqlite::params_from_iter(params))?;
+            rt.execute(rusqlite::params![fid, env[0], env[1], env[2], env[3]])?;
+        }
+    }
+    tx.commit()?;
+    drop(db);
+    std::fs::rename(&tmp, out).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    Ok(n)
+}
+
+fn envelope<'a>(pts: impl Iterator<Item = &'a [f64; 2]>) -> [f64; 4] {
+    let mut e = [f64::MAX, f64::MIN, f64::MAX, f64::MIN];
+    for p in pts {
+        e = [e[0].min(p[0]), e[1].max(p[0]), e[2].min(p[1]), e[3].max(p[1])];
+    }
+    e
+}
+
+fn header(env: Option<[f64; 4]>) -> Vec<u8> {
+    let mut b = vec![b'G', b'P', 0, if env.is_some() { 0x03 } else { 0x01 }];
+    b.extend_from_slice(&4326i32.to_le_bytes());
+    if let Some(e) = env {
+        for v in e {
+            b.extend_from_slice(&v.to_le_bytes());
+        }
+    }
+    b
+}
+
+fn put_pts(b: &mut Vec<u8>, pts: &[[f64; 2]]) {
+    b.extend_from_slice(&(pts.len() as u32).to_le_bytes());
+    for p in pts {
+        b.extend_from_slice(&p[0].to_le_bytes());
+        b.extend_from_slice(&p[1].to_le_bytes());
+    }
+}
+
+fn gp_point(x: f64, y: f64) -> Vec<u8> {
+    let mut b = header(None);
+    b.push(1);
+    b.extend_from_slice(&1u32.to_le_bytes());
+    b.extend_from_slice(&x.to_le_bytes());
+    b.extend_from_slice(&y.to_le_bytes());
+    b
+}
+
+fn gp_lines(ls: &[Vec<[f64; 2]>], env: [f64; 4]) -> Vec<u8> {
+    let mut b = header(Some(env));
+    b.push(1);
+    b.extend_from_slice(&5u32.to_le_bytes());
+    b.extend_from_slice(&(ls.len() as u32).to_le_bytes());
+    for l in ls {
+        b.push(1);
+        b.extend_from_slice(&2u32.to_le_bytes());
+        put_pts(&mut b, l);
+    }
+    b
+}
+
+fn gp_polys(ps: &[Vec<Vec<[f64; 2]>>], env: [f64; 4]) -> Vec<u8> {
+    let mut b = header(Some(env));
+    b.push(1);
+    b.extend_from_slice(&6u32.to_le_bytes());
+    b.extend_from_slice(&(ps.len() as u32).to_le_bytes());
+    for p in ps {
+        b.push(1);
+        b.extend_from_slice(&3u32.to_le_bytes());
+        b.extend_from_slice(&(p.len() as u32).to_le_bytes());
+        for r in p {
+            put_pts(&mut b, r);
+        }
+    }
+    b
+}
+
+/// A base cell and its updates, in order.
+pub struct CellFiles {
+    pub base: PathBuf,
+    pub updates: Vec<PathBuf>,
+}
+
+/// Every ENC base cell under `dir` (not in hidden folders), with its updates.
+pub fn find_cells(dir: &Path) -> Vec<CellFiles> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        let mut files: Vec<PathBuf> = Vec::new();
+        for e in rd.flatten() {
+            let p = e.path();
+            let hidden = p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.'));
+            if p.is_dir() {
+                if !hidden {
+                    stack.push(p);
+                }
+            } else {
+                files.push(p);
+            }
+        }
+        let ext = |p: &Path| p.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+        for b in files.iter().filter(|p| ext(p) == "000") {
+            let stem = b.file_stem().map(|s| s.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
+            let mut updates: Vec<PathBuf> = files
+                .iter()
+                .filter(|p| {
+                    let e = ext(p);
+                    e.len() == 3 && e != "000" && e.bytes().all(|c| c.is_ascii_digit()) && p.file_stem().is_some_and(|s| s.to_string_lossy().to_ascii_uppercase() == stem)
+                })
+                .cloned()
+                .collect();
+            updates.sort_by_key(|p| ext(p));
+            out.push(CellFiles { base: b.clone(), updates });
+        }
+    }
+    out.sort_by(|a, b| a.base.cmp(&b.base));
+    out
+}
+
+fn hash(s: &str) -> u32 {
+    let mut h: u32 = 0x811c_9dc5;
+    for b in s.bytes() {
+        h = (h ^ b as u32).wrapping_mul(0x0100_0193);
+    }
+    h
+}
+
+/// Convert the ENC cells under `dir` that are new or changed into `dir/.enc`, and return
+/// the GeoPackages of all of them. Cells that can't be read (encrypted S-63 cells
+/// without a permit, damaged files) are skipped.
+pub fn ensure_gpkgs(dir: &Path) -> Vec<PathBuf> {
+    let cells = find_cells(dir);
+    if cells.is_empty() {
+        return vec![];
+    }
+    let out_dir = dir.join(".enc");
+    let _ = std::fs::create_dir_all(&out_dir);
+    let mut out = Vec::new();
+    for c in cells {
+        let stem = c.base.file_stem().map(|s| s.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
+        let rel = c.base.parent().and_then(|p| p.strip_prefix(dir).ok()).map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+        let key = format!("{stem}-{:08x}", hash(&rel));
+        let gpkg = out_dir.join(format!("{key}-v{VERSION}.gpkg"));
+        let newest = std::iter::once(&c.base).chain(&c.updates).filter_map(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok()).max();
+        let made = std::fs::metadata(&gpkg).and_then(|m| m.modified()).ok();
+        let fresh = matches!((newest, made), (Some(n), Some(m)) if m >= n);
+        if !fresh {
+            // older conversions of this cell
+            if let Ok(rd) = std::fs::read_dir(&out_dir) {
+                for e in rd.flatten() {
+                    if e.file_name().to_string_lossy().starts_with(&format!("{key}-v")) {
+                        let _ = std::fs::remove_file(e.path());
+                    }
+                }
+            }
+            match Cell::open(&c.base, &c.updates) {
+                Ok(cell) => {
+                    if let Err(e) = write_gpkg(&cell, &gpkg) {
+                        eprintln!("ENC {}: {e}", c.base.display());
+                        continue;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("ENC {}: {e}", c.base.display());
+                    continue;
+                }
+            }
+        }
+        out.push(gpkg);
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A small real cell (from GDAL's test data, MIT licence), checked against GDAL's dump of it.
+    #[test]
+    fn reads_a_cell() {
+        let c = Cell::from_bytes(include_bytes!("../../tests/data/1B5X02NE.000"), &[]).unwrap();
+        assert_eq!((c.name.as_str(), c.intu, c.comf, c.somf), ("1B5X02NE.000", 5, 500000.0, 10.0));
+        let v = &c.vectors[&(110, 2)];
+        assert_eq!(v.coords.len(), 4);
+        assert_eq!(v.coords[0], [-16247245, 30490822, 34]);
+        assert_eq!(c.features.len(), 21);
+        let mut areas = 0;
+        for f in c.features.values() {
+            if let Some(Shape::Polygons(ps)) = c.shape(f) {
+                areas += 1;
+                for r in ps.iter().flatten() {
+                    assert_eq!(r.first(), r.last(), "closed rings");
+                }
+            }
+        }
+        assert_eq!(areas, 9);
+        let dir = std::env::temp_dir().join("enc_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("t.gpkg");
+        assert_eq!(write_gpkg(&c, &out).unwrap(), 13);
+        // the chart store reads it like the LINZ layers
+        let store = crate::ChartStore::open_dirs(&[dir.clone()]).unwrap();
+        assert!(store.tables.iter().any(|t| t.kind == crate::Kind::DepthArea && t.band == 6));
+        assert!(store.tables.iter().any(|t| t.kind == crate::Kind::Land && t.band == 6));
+    }
+
+    #[test]
+    fn tables() {
+        assert_eq!(table_for("LIGHTS", 1, 5).as_deref(), Some("light_points_hydro_enc_b5"));
+        assert_eq!(table_for("DEPARE", 3, 4).as_deref(), Some("depth_area_polygon_hydro_enc_b4"));
+        assert_eq!(table_for("LIGHTS", 3, 4), None);
+        assert_eq!(band_for(5), 6);
+    }
+}

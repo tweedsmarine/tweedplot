@@ -26,7 +26,9 @@ static CHARTS: std::sync::RwLock<Option<Arc<chart::ChartStore>>> = std::sync::Rw
 pub(crate) fn dev_root() -> PathBuf {
     let new = PathBuf::from(r"C:\dev\tweedplot-data");
     let old = PathBuf::from(r"C:\dev\racenav-data");
-    if !new.is_dir() && old.is_dir() {
+    // the old folder until the charts have moved (a new folder with only, say, ENC test
+    // data in it mustn't hide them)
+    if !new.join("linz").is_dir() && old.is_dir() {
         old
     } else {
         new
@@ -1421,6 +1423,14 @@ fn open_charts(handle: tauri::AppHandle) {
     let mut dirs = vec![dir.clone(), coast_dir(&handle), bathy_dir(&handle)];
     if let Some(w) = world_depth_dir(&handle) {
         dirs.push(w);
+    }
+    // S-57 ENC cells (and the IHO S-63/S-64 test data): enc and s63 in the data folders
+    for root in [PathBuf::from(r"C:\dev\tweedplot-data"), PathBuf::from(r"C:\dev\racenav-data")] {
+        dirs.push(root.join("enc"));
+        dirs.push(root.join("s63"));
+    }
+    if let Ok(d) = handle.path().app_data_dir() {
+        dirs.push(d.join("enc"));
     }
     // the first run with a GSHHG download builds the world coastline file (a minute or two)
     let _ = handle.emit("chart-status", serde_json::json!({ "detail": "opening charts" }));
