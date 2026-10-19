@@ -484,7 +484,7 @@ A daily MUR analysis stands for four days after its date, so it still shows at t
 
 It follows the active routing, with its own times and positions (and its TWA in the readout). With no routing, it follows the course (start and marks) at the speed you set, from the weather slider's time. Values come from the GRIB shown on the chart, and anything it doesn't have (waves, sea temperature) from another loaded file that does. Hover a strip to see the boat's place on the chart and every value there; click to move the weather slider to that time. Distance run is marked under the times.
 
-![Weather on route for a Golden Globe Race boat routed from the South Atlantic towards the Indian Ocean: 2689 NM over 16 days, with a gale of 40 kn gusting 55 and 5 to 6 m seas around 26 to 27 October, the purple line marking the slider time](img/11-weather-on-route.jpg)
+![Weather on route for a Golden Globe Race boat routed from the South Atlantic towards the Indian Ocean: 2659 NM over 16 days, with a gale of 40 kn gusting 55 and 5 to 6 m seas around 26 to 27 October; the purple line marks the slider time, and the popup on the chart is the routing at that moment](img/11-weather-on-route.jpg)
 
 **Meteogram**
 
