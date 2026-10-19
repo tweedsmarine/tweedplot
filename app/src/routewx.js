@@ -256,9 +256,18 @@ function draw(rows, strips, W, { hover, pick }) {
   const span = t1 - t0;
   const minor = span > 5 * 86400 ? 21600 : span > 36 * 3600 ? 10800 : 3600;
   for (let t = Math.ceil(t0 / minor) * minor; t <= t1; t += minor) add("line", { x1: x(t), x2: x(t), y1: top, y2: y0 - gap, class: "mg-vgrid" });
-  const lab = span > 4 * 86400 ? 86400 : span > 30 * 3600 ? 43200 : span > 12 * 3600 ? 21600 : 10800;
-  for (let t = Math.ceil(t0 / lab) * lab; t <= t1; t += lab) {
-    add("text", { x: x(t), y: y0 - gap + 14, class: "mg-tick", "text-anchor": "middle" }).textContent = fmt(t, true);
+  // labels at local midnights (date) or local hours, spaced so they never overlap
+  const off = -new Date(t0 * 1000).getTimezoneOffset() * 60; // local time = UTC + off
+  const fits = (sec) => (sec / span) * (W - pad.l - pad.r) >= 96;
+  const lab = [3600, 10800, 21600, 43200, 86400, 2 * 86400, 4 * 86400, 7 * 86400].find(fits) ?? 7 * 86400;
+  const label = (t) => {
+    const d = new Date(t * 1000);
+    if (lab >= 86400 || (((t + off) % 86400) + 86400) % 86400 === 0) return d.toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "short" });
+    return d.toLocaleTimeString("en-NZ", { hour: "2-digit", minute: "2-digit", hour12: false });
+  };
+  const first = Math.ceil((t0 + off) / Math.min(lab, 86400)) * Math.min(lab, 86400) - off;
+  for (let t = first; t <= t1; t += lab) {
+    add("text", { x: x(t), y: y0 - gap + 14, class: "mg-tick", "text-anchor": "middle" }).textContent = label(t);
     const r = rows.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a));
     add("text", { x: x(t), y: y0 - gap + 27, class: "mg-tick", "text-anchor": "middle" }).textContent = `${r.nm.toFixed(0)} NM`;
   }
