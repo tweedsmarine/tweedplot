@@ -279,7 +279,27 @@ pub fn find_cells(dir: &Path) -> Vec<CellFiles> {
                 })
                 .cloned()
                 .collect();
+            // an exchange set's layout, ENC_ROOT/<agency>/<cell>/<edition>/<update>/: the
+            // updates are in the edition folder's other update folders
+            let numeric = |p: Option<&Path>| p.and_then(|p| p.file_name()).is_some_and(|n| n.to_string_lossy().bytes().all(|c| c.is_ascii_digit()));
+            if numeric(b.parent()) && numeric(b.parent().and_then(|p| p.parent())) {
+                let ed = b.parent().unwrap().parent().unwrap();
+                for e in std::fs::read_dir(ed).into_iter().flatten().flatten() {
+                    let d = e.path();
+                    if !d.is_dir() || Some(d.as_path()) == b.parent() || !numeric(Some(&d)) {
+                        continue;
+                    }
+                    for f in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+                        let p = f.path();
+                        let e = ext(&p);
+                        if e.len() == 3 && e != "000" && e.bytes().all(|c| c.is_ascii_digit()) && p.file_stem().is_some_and(|s| s.to_string_lossy().to_ascii_uppercase() == stem) {
+                            updates.push(p);
+                        }
+                    }
+                }
+            }
             updates.sort_by_key(|p| ext(p));
+            updates.dedup_by_key(|p| ext(p));
             out.push(CellFiles { base: b.clone(), updates });
         }
     }

@@ -93,6 +93,12 @@ Drawers slide out from the rail; instrument panels, the time slider and the dock
 
 TweedPlot draws its own vector chart from free data: a world coastline everywhere, and for New Zealand the LINZ hydrographic data with depth areas, contours, soundings, lights, marks, dangers and charted areas.
 
+**ENC cells (S-57)**
+
+TweedPlot also reads official electronic navigational charts in the IHO S-57 format: a base cell (`.000`) and its updates (`.001`, `.002`, ...). Put the cells in `tweedplot-data\enc`, in any folders you like; a whole exchange set (`ENC_ROOT` with its agency, cell, edition and update folders) can be copied in as it is. Each cell is converted once into the `.enc` folder beside it, and again when the cell or an update changes, then drawn in the same style as the LINZ charts. The cell's intended usage sets its scale band: overview, general, coastal, approach, then harbour and berthing.
+
+Updates are applied in order. Encrypted S-63 cells (the format most official ENCs are sold in) are not read yet; they are skipped until TweedPlot can use their permits.
+
 **Getting the New Zealand data**
 
 Download from the [LINZ Data Service](https://data.linz.govt.nz) (free account) as GeoPackage, and put the zip files, unopened, in `tweedplot-data\linz`. TweedPlot reads every scale band it finds and draws the most detailed one available at each place.
