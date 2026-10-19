@@ -219,10 +219,47 @@ impl Raster {
         for s in shallow.drain(..) {
             r.block_outline(&s);
         }
+        let mut land_rings: Vec<Vec<Ring>> = Vec::new();
         store.for_each_land(bbox, |rings| {
             r.fill(rings, BLOCKED);
             r.block_outline(rings);
+            land_rings.push(rings.to_vec());
         });
+        // Lakes are holes in the land: open water again (rivers are left as land for
+        // routing, so no route goes up one) (their islands stay
+        // land), then the charted depths inside them (Lake Taupō), then the shores.
+        let mut lakes: Vec<[f64; 4]> = Vec::new();
+        store.for_each_lake(bbox, false, |rings| {
+            r.fill(rings, FREE);
+            if let Some(b) = ring_bounds(rings) {
+                lakes.push(b);
+            }
+        });
+        if !lakes.is_empty() {
+            let overlaps = |b: [f64; 4]| lakes.iter().any(|l| b[0] <= l[2] && b[2] >= l[0] && b[1] <= l[3] && b[3] >= l[1]);
+            let mut shallow: Vec<Vec<Ring>> = Vec::new();
+            store.for_each_depth_area(bbox, |_, drval1, rings| {
+                let Some(b) = ring_bounds(rings) else { return };
+                // only a depth area wholly inland, inside a lake's box (not the sea's)
+                if !lakes.iter().any(|l| b[0] >= l[0] && b[2] <= l[2] && b[1] >= l[1] && b[3] <= l[3]) || !overlaps(b) {
+                    return;
+                }
+                let sh = drval1.map_or(true, |d| d < safety_depth);
+                r.fill(rings, if sh { BLOCKED } else { FREE });
+                if sh {
+                    shallow.push(rings.to_vec());
+                }
+            });
+            for s in &shallow {
+                r.block_outline(s);
+            }
+            store.for_each_lake(bbox, false, |rings| r.block_outline(rings));
+            for l in &land_rings {
+                if ring_bounds(l).is_some_and(overlaps) {
+                    r.block_outline(l);
+                }
+            }
+        }
         let cell = r.cell_size_m();
         store.for_each_world_land(bbox, cell, |rings| {
             r.fill(rings, BLOCKED);
@@ -265,6 +302,15 @@ impl Raster {
         }
         serde_json::json!({ "type": "Feature", "properties": {}, "geometry": { "type": "MultiPolygon", "coordinates": polys } })
     }
+}
+
+/// [w, s, e, n] of a polygon's rings.
+fn ring_bounds(rings: &[Ring]) -> Option<[f64; 4]> {
+    let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+    for p in rings.iter().flatten() {
+        b = [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])];
+    }
+    (b[0] <= b[2]).then_some(b)
 }
 
 #[cfg(test)]

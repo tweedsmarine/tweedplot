@@ -66,6 +66,10 @@ pub enum Kind {
     /// Where a band has chart data (S-57 M_COVR): a finer band's coverage
     /// replaces the coarser bands' features inside it.
     Coverage,
+    /// Inland water: lakes and wide rivers (LINZ Topo50 lake and river polygons,
+    /// and the hydrographic charts' lake and river areas). Cut out of the Topo50
+    /// land, so the charted depths, or plain water, show through.
+    Lake,
 }
 
 #[derive(Debug, Clone)]
@@ -291,12 +295,28 @@ impl ChartStore {
                 }
             }
         }
+        // Topo50 land, with the lakes and rivers cut out (it has none of its own)
+        let mut topo_land: Vec<Vec<[i32; 2]>> = Vec::new();
         for t in bands.iter().filter(|t| t.kind == Kind::Land) {
             self.query(t, bbox, &[], |_, g| {
-                if let Some(tg) = tp.polygons(&g) {
-                    land.add(&tg, &[]);
+                if let Some(TileGeom::Rings(r)) = tp.polygons(&g) {
+                    topo_land.extend(r);
                 }
             });
+        }
+        if !topo_land.is_empty() {
+            let mut water: Vec<Vec<[i32; 2]>> = Vec::new();
+            for t in self.tables.iter().filter(|t| t.kind == Kind::Lake) {
+                self.query(t, bbox, &[], |_, g| {
+                    if let Some(TileGeom::Rings(r)) = tp.polygons(&g) {
+                        water.extend(r);
+                    }
+                });
+            }
+            let rings = if water.is_empty() { topo_land } else { cut_water(topo_land, water) };
+            if !rings.is_empty() {
+                land.add(&TileGeom::Rings(rings), &[]);
+            }
         }
         // World land at the resolution for this zoom, except inside NZ where Topo50 is drawn.
         let topo = z >= band_minzoom(0) && self.has_topo50();
@@ -369,6 +389,19 @@ impl ChartStore {
                 if let Geom::Polygons(polys) = g {
                     for p in &polys {
                         f(t.band, vals[0], p);
+                    }
+                }
+            });
+        }
+    }
+
+    /// Every lake polygon touching `bbox` (inland water), and the rivers too if `rivers`.
+    pub fn for_each_lake(&self, bbox: [f64; 4], rivers: bool, mut f: impl FnMut(&[geom::Ring])) {
+        for t in self.tables.iter().filter(|t| t.kind == Kind::Lake && (rivers || !t.table.to_ascii_lowercase().contains("river"))) {
+            self.query(t, bbox, &[], |_, g| {
+                if let Geom::Polygons(polys) = g {
+                    for p in &polys {
+                        f(p);
                     }
                 }
             });
@@ -537,6 +570,41 @@ pub fn drop_cell_edges(g: Geom) -> Geom {
     Geom::Lines(out)
 }
 
+/// Land rings minus water rings, in tile units (exteriors positive, holes
+/// negative, as `TileProj::polygons` gives them). Non-zero filling, so
+/// overlapping lakes (Topo50 and a chart's own) count once.
+fn cut_water(land: Vec<Vec<[i32; 2]>>, water: Vec<Vec<[i32; 2]>>) -> Vec<Vec<[i32; 2]>> {
+    use i_overlay::core::fill_rule::FillRule;
+    use i_overlay::core::overlay_rule::OverlayRule;
+    use i_overlay::float::single::SingleFloatOverlay;
+    let f = |v: Vec<Vec<[i32; 2]>>| -> Vec<Vec<[f64; 2]>> { v.into_iter().map(|r| r.into_iter().map(|p| [p[0] as f64, p[1] as f64]).collect()).collect() };
+    let (subj, clip) = (f(land), f(water));
+    let shapes = subj.overlay(&clip, OverlayRule::Difference, FillRule::NonZero);
+    let mut out = Vec::new();
+    for shape in shapes {
+        for (k, c) in shape.into_iter().enumerate() {
+            let mut q: Vec<[i32; 2]> = c.iter().map(|p| [p[0].round() as i32, p[1].round() as i32]).collect();
+            q.dedup();
+            if q.len() > 1 && q.first() == q.last() {
+                q.pop();
+            }
+            if q.len() < 3 {
+                continue;
+            }
+            let a = signed_area(&q);
+            if a == 0 {
+                continue;
+            }
+            // the outer contour positive, holes negative
+            if (k == 0) != (a > 0) {
+                q.reverse();
+            }
+            out.push(q);
+        }
+    }
+    out
+}
+
 fn classify(table: &str) -> Option<(Kind, u8)> {
     let t = table.to_ascii_lowercase();
     match t.as_str() {
@@ -554,8 +622,15 @@ fn classify(table: &str) -> Option<(Kind, u8)> {
         let i = coast::RESOLUTIONS.iter().position(|c| res.starts_with(*c) && res.len() == 1)?;
         return Some((kind, i as u8 + 1));
     }
-    let kind = if t.contains("coastlines_and_islands") {
+    if t.contains("coastlines_and_islands") {
         return Some((Kind::Land, 0));
+    }
+    // Topo50 lakes and rivers: "nz_lake_polygons_topo_150k", "nz_river_polygons_topo_150k"
+    if (t.contains("lake_polygons") || t.contains("river_polygons")) && t.contains("topo") {
+        return Some((Kind::Lake, 0));
+    }
+    let kind = if t.starts_with("lake_polygon") || t.starts_with("river_polygon") {
+        Kind::Lake
     } else if t.contains("coverage_polygon") {
         Kind::Coverage
     } else if t.contains("depth_area") {
@@ -752,11 +827,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn lakes_are_cut_out_of_land() {
+        let sq = |x0: i32, y0: i32, x1: i32, y1: i32| vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+        let pos = |mut r: Vec<[i32; 2]>| { if signed_area(&r) < 0 { r.reverse(); } r };
+        let land = vec![pos(sq(0, 0, 1000, 1000))];
+        // two overlapping lakes (Topo50 and a chart's) and an island in the first
+        let mut island = pos(sq(300, 300, 350, 350));
+        island.reverse();
+        let water = vec![pos(sq(200, 200, 600, 600)), island, pos(sq(500, 500, 700, 700))];
+        let out = cut_water(land, water);
+        let area: i64 = out.iter().map(|r| signed_area(r)).sum::<i64>() / 2;
+        // land 1e6 − (160000 + 40000 − 10000 overlap) + island 2500
+        assert_eq!(area, 1_000_000 - 190_000 + 2_500, "{out:?}");
+        assert!(out.iter().filter(|r| signed_area(r) > 0).count() == 2); // the land and the island
+    }
+
+    #[test]
     fn classifies_linz_tables() {
         assert_eq!(classify("depth_area_polygon_hydro_14k_122k"), Some((Kind::DepthArea, 5)));
         assert_eq!(classify("depth_contour_polyline_hydro_1350k_11500k"), Some((Kind::Contour, 2)));
         assert_eq!(classify("sounding_points_hydro_115mil_and_smaller"), Some((Kind::Sounding, 1)));
         assert_eq!(classify("nz_coastlines_and_islands_polygons_topo_150k"), Some((Kind::Land, 0)));
+        assert_eq!(classify("nz_lake_polygons_topo_150k"), Some((Kind::Lake, 0)));
+        assert_eq!(classify("nz_river_polygons_topo_150k"), Some((Kind::Lake, 0)));
+        assert_eq!(classify("lake_polygon_hydro_14k_122k"), Some((Kind::Lake, 5)));
+        assert_eq!(classify("river_polygon_hydro_190k_1350k"), Some((Kind::Lake, 3)));
         assert_eq!(classify("something_else"), None);
         assert_eq!(classify("light_points_hydro_190k_1350k"), Some((Kind::Feature, 3)));
         assert_eq!(classify("building_single_points_hydro_190k_1350k"), None);

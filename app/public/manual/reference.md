@@ -100,6 +100,7 @@ Download from the [LINZ Data Service](https://data.linz.govt.nz) (free account) 
 | Depth area polygons (each scale band: 1:4k–1:22k, 1:22k–1:90k, 1:90k–1:350k, 1:350k–1:1.5M, 1:1.5M and smaller) | Water depth shading and the routing safety depth |
 | Depth contours and soundings (same bands) | Contours, the safety contour, spot depths |
 | NZ coastlines and islands (Topo50) | The detailed coastline |
+| NZ lake polygons (Topo50), and optionally NZ river polygons (Topo50) | Lakes and wide rivers as water. The coastline layer is land right across them, so without these Lake Taupō, for example, shows as land under its rocks and marks. Where a lake is charted (Taupō is) its depth areas, contours and soundings show; elsewhere it is plain water. The lake and river areas in the hydrographic feature downloads are used too |
 | Hydrographic feature layers (the "121 layers" GeoPackage for each band) | Lights, buoys, beacons, rocks, wrecks, obstructions, marine farms, anchorages and other charted areas |
 
 The open data does not cover every harbour at large scale. Port Nelson's inner channel marks, for example, are only in the official ENC. Add missing marks yourself as library marks with buoy symbols (see Marks).
@@ -488,7 +489,7 @@ Each station shows an arrow pointing downwind, coloured like the wind shading, w
 
 ## Routing
 
-A routing is the fastest way from the start through your marks, given a forecast, your boat's speeds and the chart. RaceNav uses the isochrone method (explained in the Weather routing tutorial) and keeps off land, water shallower than your safety depth, charted dangers, marine farms and your barriers.
+A routing is the fastest way from the start through your marks, given a forecast, your boat's speeds and the chart. RaceNav uses the isochrone method (explained in the Weather routing tutorial) and keeps off land, water shallower than your safety depth, charted dangers, marine farms and your barriers. Lakes (from the Topo50 lake layer) can be routed on, using their charted depths where they have them; rivers are kept as land, so no route goes up one.
 
 **Before you compute**
 

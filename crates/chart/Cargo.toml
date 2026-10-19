@@ -10,6 +10,7 @@ rusqlite.workspace = true
 zip.workspace = true
 lru.workspace = true
 geo = "0.29"
+i_overlay = "1.9"
 thiserror.workspace = true
 serde.workspace = true
 
