@@ -16,6 +16,7 @@ export function setupDock(map) {
   const body = el.querySelector(".dock-body");
   const views = new Map();
   let current = null;
+  const changeListeners = [];
   let prefs = { height: 260 };
   try { Object.assign(prefs, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ } };
@@ -46,6 +47,7 @@ export function setupDock(map) {
       views.get(name).render(body, tools);
     }
     layout();
+    for (const f of changeListeners) f(current);
   }
   el.querySelector(".dock-close").onclick = () => show(null);
 
@@ -65,6 +67,8 @@ export function setupDock(map) {
     show,
     toggle(name) { show(current === name ? null : name); },
     current: () => current,
+    /** Called with the shown view's name (or null) whenever it changes. */
+    onChange: (f) => changeListeners.push(f),
     /** Re-render the shown view (if it is `name`, or any when omitted). */
     refresh(name) { if (current && (!name || name === current)) { tools.innerHTML = ""; body.innerHTML = ""; views.get(current).render(body, tools); } },
   };

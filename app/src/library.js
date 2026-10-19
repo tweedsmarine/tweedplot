@@ -133,6 +133,8 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       marks ||= []; routes ||= []; routings ||= [];
     } catch (e) { status(`Library: ${e}`); }
     draw();
+    if (sel && !byId(sel)) deselectMark(); // the selected mark was deleted
+    if (editing?.id && !byId(editing.id)) closeForm();
     renderGroups();
     renderRoutes(); renderMarks(); renderRoutings();
     for (const f of listeners) f();

@@ -28,6 +28,9 @@ export function setupGribTools(map, { weather, dock }) {
   map.addSource("mg-point", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addLayer({ id: "mg-point", type: "circle", source: "mg-point",
     paint: { "circle-radius": 6, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": "#7b2cbf", "circle-stroke-width": 2.5 } });
+  // the point's ring shows only while its meteogram is open
+  map.setLayoutProperty("mg-point", "visibility", "none");
+  dock.onChange((cur) => map.setLayoutProperty("mg-point", "visibility", cur === "meteogram" ? "visible" : "none"));
   function setPoint(p) {
     point = p;
     map.getSource("mg-point").setData({ type: "FeatureCollection",
