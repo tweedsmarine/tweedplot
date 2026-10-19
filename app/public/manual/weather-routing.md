@@ -42,7 +42,7 @@ A weather model divides the atmosphere into a 3-D grid, starts from the best est
 
 **The main free global models**
 
-| Model | Centre | Grid you can get | Runs a day | Range | In RaceNav |
+| Model | Centre | Grid you can get | Runs a day | Range | In TweedPlot |
 | --- | --- | --- | --- | --- | --- |
 | GFS | NOAA (USA) | 0.25° | 4 | 16 days | Download (NOMADS), Saildocs |
 | IFS | ECMWF (Europe) | 0.25° open data (the model itself runs at about 9 km) | 4 | 15 days (06Z and 18Z runs: 6 days) | Download, Saildocs at 0.4° |
@@ -63,11 +63,11 @@ Forecasts get worse with time ahead. As a rule of thumb: the first two or three 
 
 **Ensembles**
 
-An ensemble runs the same model many times from slightly different starts. Where the members agree the forecast is confident; where they spread, it isn't. RaceNav shows an ensemble's spread on the meteogram and in the agreement displays, and treats each member as a separate forecast when every loaded file is an ensemble.
+An ensemble runs the same model many times from slightly different starts. Where the members agree the forecast is confident; where they spread, it isn't. TweedPlot shows an ensemble's spread on the meteogram and in the agreement displays, and treats each member as a separate forecast when every loaded file is an ensemble.
 
 ## How sure is the forecast?
 
-No single GRIB tells you how much to trust it. Comparing several does. RaceNav gives four ways to compare:
+No single GRIB tells you how much to trust it. Comparing several does. TweedPlot gives four ways to compare:
 
 | Tool | Question it answers |
 | --- | --- |
@@ -113,7 +113,7 @@ For a power boat, see *Making a power polar* in the Route planning tutorial: a s
 
 ## How the router works
 
-RaceNav uses the isochrone method, the standard for sailing routers. An *isochrone* ("equal time") is the line of everywhere the boat could be after a given time.
+TweedPlot uses the isochrone method, the standard for sailing routers. An *isochrone* ("equal time") is the line of everywhere the boat could be after a given time.
 
 ![isochrone routing · steps, fan, land, route](fig/isochrones.svg)
 
@@ -165,7 +165,7 @@ When you can choose when to leave (cruising, delivery, fishing), set a fixed sta
 
 **The gate sweep**
 
-When routings split between options, put a row of gates across the split (Routing > Gates): along a meridian or a parallel, through the options. RaceNav routes through each gate with each GRIB and ranks them by the average time lost against the best gate under each forecast. A gate that is never more than an hour off the best is a safer choice than one that is best under one model and four hours off under another. This is the same idea as an ocean racer's "gates" or waypoint tests, automated.
+When routings split between options, put a row of gates across the split (Routing > Gates): along a meridian or a parallel, through the options. TweedPlot routes through each gate with each GRIB and ranks them by the average time lost against the best gate under each forecast. A gate that is never more than an hour off the best is a safer choice than one that is best under one model and four hours off under another. This is the same idea as an ocean racer's "gates" or waypoint tests, automated.
 
 **Re-route as the forecast updates**
 

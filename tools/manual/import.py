@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Import the RaceNav User Manual into the app (app/public/manual).
+"""Import the TweedPlot User Manual into the app (app/public/manual).
 
 The manual is written as a Claude Doc. Each tab is exported as Markdown; the
 exports replace pictures and diagrams with text placeholders, which this script
@@ -85,7 +85,7 @@ def main():
     for _, name in DIAGRAMS:
         if name in used:
             shutil.copy(figs / name, out / "fig" / name)
-    manual = {"title": "RaceNav User Manual", "updated": datetime.date.today().isoformat(), "tabs": tabs}
+    manual = {"title": "TweedPlot User Manual", "updated": datetime.date.today().isoformat(), "tabs": tabs}
     (out / "manual.json").write_text(json.dumps(manual, indent=2), encoding="utf-8")
     print(f"wrote {out} ({len(tabs)} tabs, {len(used)} pictures)")
 

@@ -1,6 +1,6 @@
 # Route planning
 
-A good passage plan answers three questions before you leave: where is it safe to go, when should you go, and what will you do if things change. This tutorial works through them for any boat, then shows three worked examples in RaceNav.
+A good passage plan answers three questions before you leave: where is it safe to go, when should you go, and what will you do if things change. This tutorial works through them for any boat, then shows three worked examples in TweedPlot.
 
 ## Four stages of every plan
 
@@ -19,17 +19,17 @@ The effort scales with the trip. For a familiar run on a settled day, appraisal 
 
 Gather before you draw. Most passage-planning mistakes are not navigation errors but something nobody looked up: a bar that breaks on the ebb, a reserve you may not anchor in, a forecast nobody read past day one.
 
-- [ ] **Charts** for the whole trip, at a scale that shows the hazards near your route and your bolt holes. In RaceNav, zoom along the route and check the detailed chart is there; note where it isn't.
+- [ ] **Charts** for the whole trip, at a scale that shows the hazards near your route and your bolt holes. In TweedPlot, zoom along the route and check the detailed chart is there; note where it isn't.
 - [ ] **Cruising guide or pilot book** for harbour entrances, anchorages, local winds and hazards the chart doesn't explain.
 - [ ] **Notices to Mariners and local bylaws**: new or moved marks, works, speed limits, marine reserves, no-anchoring areas, race or event closures.
 - [ ] **Tides**: heights for depth over shoals and bars, times for passes and harbour entrances.
-- [ ] **Weather**: the official marine forecast and warnings, plus the models in RaceNav for detail. Look at the whole period of the trip, including the return.
+- [ ] **Weather**: the official marine forecast and warnings, plus the models in TweedPlot for detail. Look at the whole period of the trip, including the return.
 - [ ] **Boat**: speed you can really hold (not the brochure), fuel or water range, condition of engine, rig and safety gear, limits of comfort and safety in wind and sea.
 - [ ] **Crew**: experience, fitness, seasickness, how long they can keep watch, who can take over if the skipper can't.
 - [ ] **Rules**: COLREGs, local rules, the race's sailing instructions (marks, rounding sides, exclusion zones, time limits).
 - [ ] **Communications and shore contact**: VHF channels, a trip report or someone ashore who knows your plan and when to raise the alarm.
 
-Write down what you learn that changes the plan: "bar impassable on the ebb with any swell", "no anchoring between the two cardinals". In RaceNav these become barriers, barrier marks, points of interest with notes, or rounding sides.
+Write down what you learn that changes the plan: "bar impassable on the ebb with any swell", "no anchoring between the two cardinals". In TweedPlot these become barriers, barrier marks, points of interest with notes, or rounding sides.
 
 ## Hazards and safety margins
 
@@ -47,7 +47,7 @@ Start from the deepest point of the boat and add allowances for everything that 
 | Chart and survey error | 0.5–1 m, more in old surveys | Depths in remote areas may date from lead-line surveys |
 | Tide | Use the tide at your time, or assume chart datum (the lowest tide) for a plan that works at any time |  |
 
-Set the result as RaceNav's **safety depth**, and the next charted contour deeper than it as the **safety contour**. The routing will not go shallower, and the chart shades the water inside the safety contour darker so it stands out.
+Set the result as TweedPlot's **safety depth**, and the next charted contour deeper than it as the **safety contour**. The routing will not go shallower, and the chart shades the water inside the safety contour darker so it stands out.
 
 **Clearing distances**
 
@@ -60,7 +60,7 @@ Set the result as RaceNav's **safety depth**, and the next charted contour deepe
 
 A river or harbour bar can break with little warning when swell meets an ebbing tide. Plan bar crossings near high water slack, check the local advice (harbourmaster, Coastguard), and have a plan if it is breaking when you get there. Mark the bar as a point of interest with its rules in the notes.
 
-**Turning margins into RaceNav settings**
+**Turning margins into TweedPlot settings**
 
 | Margin | Set it as |
 | --- | --- |
@@ -75,7 +75,7 @@ A river or harbour bar can break with little warning when swell meets an ebbing 
 
 **Height**
 
-Charted depths are measured from chart datum, close to the lowest tide. The depth you actually have is the charted depth plus the height of tide at that moment. Over a shoal or a bar this decides whether you can cross at all, and when. Click a tide station in RaceNav for the day's curve; when planning, the marker shows the tide at the weather slider time, so you can scrub to your arrival time and read the height. The *rule of twelfths* gives a feel for it: in the six hours from low to high water the tide rises about 1/12, 2/12, 3/12, 3/12, 2/12 and 1/12 of its range in successive hours, so the middle hours change fastest.
+Charted depths are measured from chart datum, close to the lowest tide. The depth you actually have is the charted depth plus the height of tide at that moment. Over a shoal or a bar this decides whether you can cross at all, and when. Click a tide station in TweedPlot for the day's curve; when planning, the marker shows the tide at the weather slider time, so you can scrub to your arrival time and read the height. The *rule of twelfths* gives a feel for it: in the six hours from low to high water the tide rises about 1/12, 2/12, 3/12, 3/12, 2/12 and 1/12 of its range in successive hours, so the middle hours change fastest.
 
 Weather moves the tide too: low pressure and onshore wind raise the sea level, high pressure and offshore wind lower it, by a few decimetres either way.
 
@@ -87,7 +87,7 @@ Tidal streams run hardest through narrow passes, round headlands and across harb
 
 When wind and stream oppose each other, waves grow steeper and closer together, sometimes dangerously so off headlands and on bars. A fresh breeze that is comfortable with the tide can be unpleasant against it. When you scrub the forecast, check the wind direction at the times the stream turns at your critical points.
 
-**In RaceNav**
+**In TweedPlot**
 
 - Tide heights and curves: tide stations (Chart and Signal K > Tides).
 - Ocean currents: GRIBs with currents (for example from an ocean model) can be used in routing with **Use GRIB currents**.
@@ -101,7 +101,7 @@ When wind and stream oppose each other, waves grow steeper and closer together, 
 - **Off headlands by your clearing distance**, so each leg passes outside the danger rather than through it.
 - **Where something changes**: a course alteration, the start of a fairway, a point where you'll decide to continue or turn back.
 - **Named and saved** in the library, so they are reused, not re-invented: "Pepin Island 1 NM N" says more than "WP 7".
-- **Checked leg by leg**: zoom along each leg at a detailed scale and look for anything the leg crosses. The ruler shows bearing and distance; RaceNav's list shows each leg's length.
+- **Checked leg by leg**: zoom along each leg at a detailed scale and look for anything the leg crosses. The ruler shows bearing and distance; TweedPlot's list shows each leg's length.
 
 **Fastest route or chosen route?**
 
@@ -123,7 +123,7 @@ Press **Ruler**, click along the passage, double-click to finish, then right-cli
 
 **Getting it on the plotter**
 
-Library > Routes > GPX exports the route; import it on most plotters and phone apps. With Signal K, the next-mark data (BTW, DTW, XTE, TTG) shows on RaceNav's own instruments.
+Library > Routes > GPX exports the route; import it on most plotters and phone apps. With Signal K, the next-mark data (BTW, DTW, XTE, TTG) shows on TweedPlot's own instruments.
 
 ## Timing, fuel and weather windows
 
@@ -141,7 +141,7 @@ The common guide is the *rule of thirds*: a third of the fuel to get there, a th
 
 **Weather windows**
 
-A window is a period when wind and sea stay inside your limits for the whole trip, return included, with margin either side for delay. To find one in RaceNav:
+A window is a period when wind and sea stay inside your limits for the whole trip, return included, with margin either side for delay. To find one in TweedPlot:
 
 1. Download a GRIB for the area (wind, gusts and waves; a wave GRIB as well if the wind GRIB has none).
 2. Close the drawers and use the time slider with the GRIB-at-cursor panel: scrub through the trip at the places that matter (the exposed headland, the bar, the fishing spot).
@@ -167,7 +167,7 @@ On the day, look again: the latest forecast, a fresh GRIB, the actual conditions
 
 **Monitoring**
 
-- In live mode RaceNav shows the boat, its track and the route; the Route instruments give the next mark's bearing and distance, cross-track error, time to go and ETA.
+- In live mode TweedPlot shows the boat, its track and the route; the Route instruments give the next mark's bearing and distance, cross-track error, time to go and ETA.
 - Compare progress against the plan at each mark: ahead or behind the timetable? Is the weather what was forecast?
 - Record the track (Library > Tracks > Record): afterwards it shows how the plan and reality differed, the best way to plan the next trip better.
 - When conditions or progress drift from the plan, re-plan: a new routing from the boat's position (Course > **From boat**), or the bolt hole.
@@ -206,7 +206,7 @@ On the day, look again: the latest forecast, a fresh GRIB, the actual conditions
 
 *A yacht prepares for a coastal overnight race of about 120 NM, such as the Coastal Classic from Auckland to Russell.*
 
-1. **Read the sailing instructions** and turn every constraint into RaceNav: the start line ends as marks (type Start line end), each course mark with its rounding side, any exclusion zones as barrier zones (with the instruction number in the name), and islands or reefs you must leave on one side as marks on the course.
+1. **Read the sailing instructions** and turn every constraint into TweedPlot: the start line ends as marks (type Start line end), each course mark with its rounding side, any exclusion zones as barrier zones (with the instruction number in the name), and islands or reefs you must leave on one side as marks on the course.
 2. **Margins.** Safety depth for your draft; Route round dangers on. Give headlands you will round a clearance that reflects the night and the likely sea.
 3. **Weather.** From about five days out, download each new GFS and ECMWF run. Load several and use the agreement displays and Verify runs to see where the models disagree and which has been doing better lately.
 4. **Polar and efficiency.** Your polar at 90–95 % for a well-sailed race boat; tack and gybe times for your crew.

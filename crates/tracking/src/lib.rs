@@ -391,7 +391,7 @@ fn write_atomic(p: &Path, bytes: &[u8]) -> Result<()> {
 
 fn get(url: &str) -> Result<String> {
     let client = reqwest::blocking::Client::builder()
-        .user_agent(concat!("racenav/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("TweedPlot/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(40))
         .build()
         .map_err(|e| Error::Http(e.to_string()))?;
@@ -409,7 +409,7 @@ pub fn fetch_setup(key: &str) -> Result<String> {
 
 fn get_bytes(url: &str) -> Result<Vec<u8>> {
     let client = reqwest::blocking::Client::builder()
-        .user_agent(concat!("racenav/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("TweedPlot/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(90))
         .build()
         .map_err(|e| Error::Http(e.to_string()))?;

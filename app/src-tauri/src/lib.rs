@@ -19,6 +19,46 @@ use tauri::{Emitter, Manager};
 
 static CHARTS: std::sync::RwLock<Option<Arc<chart::ChartStore>>> = std::sync::RwLock::new(None);
 /// The open chart store (None until the charts are open).
+/// The developer's data folder: `C:\dev\tweedplot-data`, or the older
+/// `C:\dev\racenav-data` while that is the one there. Without either, data lives in
+/// the app data folder (`%APPDATA%\nz.tweedsmarine.tweedplot`).
+pub(crate) fn dev_root() -> PathBuf {
+    let new = PathBuf::from(r"C:\dev\tweedplot-data");
+    let old = PathBuf::from(r"C:\dev\racenav-data");
+    if !new.is_dir() && old.is_dir() {
+        old
+    } else {
+        new
+    }
+}
+
+/// The app was called RaceNav (identifier nz.tweedsmarine.racenav): on the first start
+/// as TweedPlot, its app data and web view data (settings, layouts, keys) are copied to
+/// the new identifier's folders so nothing is lost.
+pub fn migrate_from_racenav() {
+    fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+        std::fs::create_dir_all(to)?;
+        for e in std::fs::read_dir(from)? {
+            let e = e?;
+            let (src, dst) = (e.path(), to.join(e.file_name()));
+            if e.file_type()?.is_dir() {
+                copy_dir(&src, &dst)?;
+            } else if !dst.exists() {
+                // a locked or half-written file (a web view cache) is skipped, not fatal
+                let _ = std::fs::copy(&src, &dst);
+            }
+        }
+        Ok(())
+    }
+    for var in ["APPDATA", "LOCALAPPDATA"] {
+        let Ok(base) = std::env::var(var) else { continue };
+        let (old, new) = (PathBuf::from(&base).join("nz.tweedsmarine.racenav"), PathBuf::from(&base).join("nz.tweedsmarine.tweedplot"));
+        if old.is_dir() && !new.exists() {
+            let _ = copy_dir(&old, &new);
+        }
+    }
+}
+
 fn charts() -> Option<Arc<chart::ChartStore>> {
     CHARTS.read().unwrap().clone()
 }
@@ -47,7 +87,7 @@ fn grib_dirs() -> Vec<PathBuf> {
     if let Some(d) = DOWNLOAD_DIR.get() {
         v.push(d.clone());
     }
-    v.push(r"C:\dev\racenav-data\grib".into());
+    v.push(dev_root().join("grib"));
     v.push(r"C:\Program Files (x86)\qtVlm\grib".into());
     v.retain(|d| d.is_dir());
     v.dedup();
@@ -66,7 +106,7 @@ fn download_dir(app: &tauri::AppHandle) -> PathBuf {
     if let Ok(d) = std::env::var("RACENAV_GRIB_DIR") {
         return PathBuf::from(d);
     }
-    let dev = PathBuf::from(r"C:\dev\racenav-data");
+    let dev = dev_root();
     if dev.is_dir() {
         return dev.join("grib");
     }
@@ -571,13 +611,13 @@ fn user_polar_dir(app: &tauri::AppHandle) -> PathBuf {
     if let Ok(d) = std::env::var("RACENAV_POLAR_DIR") {
         return PathBuf::from(d);
     }
-    let dev = PathBuf::from(r"C:\dev\racenav-data");
+    let dev = dev_root();
     let d = if dev.is_dir() { dev.join("polars") } else { app.path().app_data_dir().map(|p| p.join("polars")).unwrap_or_else(|_| PathBuf::from("polars")) };
     let _ = std::fs::create_dir_all(&d);
     d
 }
 
-/// The polars shipped with RaceNav (read only).
+/// The polars shipped with TweedPlot (read only).
 fn bundled_polar_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
     let candidates = [
         app.path().resource_dir().ok().map(|d| d.join("resources").join("polars")),
@@ -650,7 +690,7 @@ fn polar_import(app: tauri::AppHandle, name: String, text: String) -> Result<Str
     if stem.is_empty() {
         return Err("The file has no usable name.".into());
     }
-    polar::Polar::parse(&stem, &text).map_err(|e| format!("Not a polar RaceNav can read ({e}). See Manual > Reference > Polars for the format."))?;
+    polar::Polar::parse(&stem, &text).map_err(|e| format!("Not a polar TweedPlot can read ({e}). See Manual > Reference > Polars for the format."))?;
     let ext = std::path::Path::new(&name).extension().and_then(|x| x.to_str()).unwrap_or("pol").to_ascii_lowercase();
     let ext = if matches!(ext.as_str(), "csv" | "pol" | "txt") { ext } else { "pol".into() };
     let dest = user_polar_dir(&app).join(format!("{stem}.{ext}"));
@@ -803,7 +843,7 @@ fn library_dir(app: &tauri::AppHandle) -> PathBuf {
     if let Ok(d) = std::env::var("RACENAV_LIBRARY_DIR") {
         return PathBuf::from(d);
     }
-    let dev = PathBuf::from(r"C:\dev\racenav-data");
+    let dev = dev_root();
     if dev.is_dir() {
         return dev.join("library");
     }
@@ -1069,7 +1109,7 @@ fn tide_dir(app: &tauri::AppHandle) -> PathBuf {
     if let Ok(d) = std::env::var("RACENAV_TIDE_DIR") {
         return PathBuf::from(d);
     }
-    let dev = PathBuf::from(r"C:\dev\racenav-data");
+    let dev = dev_root();
     if dev.is_dir() {
         return dev.join("tides");
     }
@@ -1180,7 +1220,7 @@ fn tracking_dir(app: &tauri::AppHandle) -> PathBuf {
     if let Ok(d) = std::env::var("RACENAV_TRACKING_DIR") {
         return PathBuf::from(d);
     }
-    let dev = PathBuf::from(r"C:\dev\racenav-data");
+    let dev = dev_root();
     if dev.is_dir() {
         return dev.join("tracking");
     }
@@ -1294,7 +1334,7 @@ fn chart_dir(app: &tauri::AppHandle) -> PathBuf {
     if let Ok(d) = std::env::var("RACENAV_CHART_DIR") {
         return PathBuf::from(d);
     }
-    let dev = PathBuf::from(r"C:\dev\racenav-data\linz");
+    let dev = dev_root().join("linz");
     if dev.is_dir() {
         return dev;
     }
@@ -1307,7 +1347,7 @@ fn coast_dir(app: &tauri::AppHandle) -> PathBuf {
     if let Ok(d) = std::env::var("RACENAV_COAST_DIR") {
         return PathBuf::from(d);
     }
-    let dev = PathBuf::from(r"C:\dev\racenav-data");
+    let dev = dev_root();
     if dev.is_dir() {
         return dev.join("coastline");
     }
@@ -1320,7 +1360,7 @@ fn bathy_dir(app: &tauri::AppHandle) -> PathBuf {
     if let Ok(d) = std::env::var("RACENAV_BATHY_DIR") {
         return PathBuf::from(d);
     }
-    let dev = PathBuf::from(r"C:\dev\racenav-data");
+    let dev = dev_root();
     if dev.is_dir() {
         return dev.join("bathy");
     }
@@ -1516,7 +1556,7 @@ async fn cockpit_open(app: tauri::AppHandle) -> Result<(), String> {
         return w.set_focus().map_err(|e| e.to_string());
     }
     tauri::WebviewWindowBuilder::new(&app, "cockpit", tauri::WebviewUrl::App("cockpit.html".into()))
-        .title("RaceNav cockpit")
+        .title("TweedPlot cockpit")
         .inner_size(1024.0, 640.0)
         .min_inner_size(320.0, 240.0)
         .build()

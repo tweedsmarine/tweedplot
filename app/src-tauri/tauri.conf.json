@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "racenav",
+  "productName": "TweedPlot",
   "version": "0.1.0",
-  "identifier": "nz.tweedsmarine.racenav",
+  "identifier": "nz.tweedsmarine.tweedplot",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "racenav",
+        "title": "TweedPlot — Professional Marine Chart Plotter",
         "width": 1280,
         "height": 800,
         "minWidth": 800,
@@ -37,6 +37,12 @@
     "resources": [
       "resources/world_depth.gpkg",
       "resources/polars/*"
-    ]
-  }
+    ],
+    "publisher": "TweedsMarine",
+    "homepage": "https://tweedsmarine.nz",
+    "copyright": "© TweedsMarine",
+    "shortDescription": "TweedPlot: Professional Marine Chart Plotter",
+    "longDescription": "TweedPlot, from TweedsMarine (tweedsmarine.nz): vector charts from LINZ data, weather routing, GRIB and ocean data, AIS, race tracking and instruments."
+  },
+  "mainBinaryName": "TweedPlot"
 }

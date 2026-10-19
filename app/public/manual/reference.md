@@ -1,6 +1,8 @@
-# RaceNav User Manual
+# TweedPlot User Manual
 
-RaceNav plans and sails passages on a Windows PC: charts, weather, routing and live instruments in one app. This tab is the reference; the tutorial tabs teach route planning and weather routing step by step.
+**TweedPlot: Professional Marine Chart Plotter**, from [TweedsMarine](https://tweedsmarine.nz), Nelson.
+
+TweedPlot plans and sails passages on a Windows PC: charts, weather, routing and live instruments in one app. This tab is the reference; the tutorial tabs teach route planning and weather routing step by step.
 
 ## About this manual
 
@@ -25,21 +27,21 @@ This manual is for anyone who plans a passage before they leave the dock: racing
 
 **Safety**
 
-RaceNav is a planning and situational-awareness tool, not a certified navigation system. The charts come from LINZ open data and OpenStreetMap and are not official ENCs; forecasts are model output, not warnings. Keep a proper lookout, carry official charts and publications, check MetService forecasts and warnings before and during every trip, and use your judgement. A routing is a suggestion based on a forecast that will be wrong in places.
+TweedPlot is a planning and situational-awareness tool, not a certified navigation system. The charts come from LINZ open data and OpenStreetMap and are not official ENCs; forecasts are model output, not warnings. Keep a proper lookout, carry official charts and publications, check MetService forecasts and warnings before and during every trip, and use your judgement. A routing is a suggestion based on a forecast that will be wrong in places.
 
-**This manual inside RaceNav**
+**This manual inside TweedPlot**
 
 The manual is built into the app, so the copy you read always matches the version you run, with or without an internet connection. Press **Manual** at the bottom of the rail, or **F1**. The **?** in each drawer's title bar opens the manual at that drawer's section. In the manual, the tabs along the top switch between the reference, the two tutorials and the glossary; **Contents** lists the sections of the open tab; the search box finds a word in every tab; click a picture to see it full size; **Wide** gives the manual most of the window, and **×** or **Esc** closes it.
 
 ## Getting started
 
-RaceNav runs on Windows 10 or 11 (Intel or ARM) and keeps all its data in plain files in one folder, so it can be backed up or copied to another PC.
+TweedPlot runs on Windows 10 or 11 (Intel or ARM) and keeps all its data in plain files in one folder, so it can be backed up or copied to another PC.
 
 **Install**
 
-1. Run the RaceNav installer. (During development it is built from the racenav source; the README explains how.)
-2. Create the data folder `C:\dev\racenav-data` with the sub-folders below, or let RaceNav create them as it needs them.
-3. Start RaceNav. The chart opens on Nelson; the Weather drawer is open.
+1. Run the TweedPlot installer. (During development it is built from the racenav source; the README explains how.)
+2. Create the data folder `C:\dev\tweedplot-data` with the sub-folders below, or let TweedPlot create them as it needs them.
+3. Start TweedPlot. The chart opens on Nelson; the Weather drawer is open.
 
 **The data folder**
 
@@ -47,12 +49,12 @@ RaceNav runs on Windows 10 or 11 (Intel or ARM) and keeps all its data in plain 
 | --- | --- | --- |
 | `linz` | LINZ chart data (the zip files as downloaded) | See Charts for which datasets to download |
 | `grib` | Weather files, downloaded or copied in | qtVlm's GRIB folder is read too |
-| `polars` | Your boat speed tables (polars) | See Polars, under Your boat. Without `racenav-data` they live in RaceNav's own data folder |
+| `polars` | Your boat speed tables (polars) | See Polars, under Your boat. Without `tweedplot-data` they live in TweedPlot's own data folder |
 | `library` | Marks, routes, barriers, saved routings, tracks, GPX exports | Plain JSON: safe to back up and copy |
 | `tides` | LINZ tide tables | Downloaded from the Chart drawer |
 | `tracking` | YB race tracking data | One sub-folder per race |
 
-Advanced: the environment variables `RACENAV_GRIB_DIR`, `RACENAV_POLAR_DIR`, `RACENAV_LIBRARY_DIR` and `RACENAV_SK_URL` point RaceNav elsewhere.
+Advanced: the environment variables `RACENAV_GRIB_DIR`, `RACENAV_POLAR_DIR`, `RACENAV_LIBRARY_DIR` and `RACENAV_SK_URL` point TweedPlot elsewhere.
 
 **First launch checklist**
 
@@ -89,11 +91,11 @@ Drawers slide out from the rail; instrument panels, the time slider and the dock
 
 ## Charts
 
-RaceNav draws its own vector chart from free data: a world coastline everywhere, and for New Zealand the LINZ hydrographic data with depth areas, contours, soundings, lights, marks, dangers and charted areas.
+TweedPlot draws its own vector chart from free data: a world coastline everywhere, and for New Zealand the LINZ hydrographic data with depth areas, contours, soundings, lights, marks, dangers and charted areas.
 
 **Getting the New Zealand data**
 
-Download from the [LINZ Data Service](https://data.linz.govt.nz) (free account) as GeoPackage, and put the zip files, unopened, in `racenav-data\linz`. RaceNav reads every scale band it finds and draws the most detailed one available at each place.
+Download from the [LINZ Data Service](https://data.linz.govt.nz) (free account) as GeoPackage, and put the zip files, unopened, in `tweedplot-data\linz`. TweedPlot reads every scale band it finds and draws the most detailed one available at each place.
 
 | Dataset | Why |
 | --- | --- |
@@ -121,7 +123,7 @@ Underwater dangers deeper than the safety contour are shown with their depth onl
 
 **Hazards are never hidden by zoom.** Rocks, wrecks, obstructions, piles, platforms, marine farms, hulks, bridges and overhead cables and pipelines stay on the chart at every zoom, even with chart features switched off, and even where the chart's own scale-minimum setting (SCAMIN) would hide them. This follows the ECDIS performance standard, which puts isolated dangers in the "display base" that can't be removed, and learns from groundings such as Team Vestas Wind's on the Cargados Carajos Shoals in 2014, where a reef did not show on a racing navigator's chart display at the zoom he was using. Zoomed well out, where symbols would pile up, they are thinned to one every few pixels, keeping the most dangerous (drying and awash first, then the shallowest), and a farm or obstruction too small to see is also drawn as its symbol. Zoom in to see each one. Underwater dangers deeper than your safety contour are the exception: they appear from the scale the chart says, as their depth.
 
-**Where the chart scales meet.** LINZ charts come in scale bands, and the same farm, cable or rock is often drawn differently in each (a 1:190,000 chart may show one big farm block where the 1:122,000 chart shows the separate farms). RaceNav uses each band's coverage, as an ECDIS does: inside the area a larger-scale chart covers, its features are the ones shown, and a smaller-scale chart's features are cut back to outside it. So a feature can change shape at a chart boundary, but never at the edge of a map tile, and nothing comes and goes as you zoom except where the charts themselves differ. Click a light, mark, danger or area for its details: light characteristics, buoy shape and colours, depth over a rock, area restrictions. 
+**Where the chart scales meet.** LINZ charts come in scale bands, and the same farm, cable or rock is often drawn differently in each (a 1:190,000 chart may show one big farm block where the 1:122,000 chart shows the separate farms). TweedPlot uses each band's coverage, as an ECDIS does: inside the area a larger-scale chart covers, its features are the ones shown, and a smaller-scale chart's features are cut back to outside it. So a feature can change shape at a chart boundary, but never at the edge of a map tile, and nothing comes and goes as you zoom except where the charts themselves differ. Click a light, mark, danger or area for its details: light characteristics, buoy shape and colours, depth over a rock, area restrictions. 
 
 ![The popup for the Schnapper Point light at the Nelson harbour entrance: its characteristic Fl(4) R 20s 13m 8M first, then the structure and each sector, with the sector arcs drawn round the light](img/02-light-popup.jpg)
 
@@ -129,11 +131,11 @@ At small scales the world coastline (GSHHG) is drawn, and east of 180° (the Cha
 
 **Chart data: world depths and coastline**
 
-Outside New Zealand, RaceNav shades the sea by depth from free world data. **Chart and Signal K › Chart data** shows what is installed (a green dot) and downloads the rest.
+Outside New Zealand, TweedPlot shades the sea by depth from free world data. **Chart and Signal K › Chart data** shows what is installed (a green dot) and downloads the rest.
 
 | Data | How you get it | What it shows |
 | --- | --- | --- |
-| **World depths** (Natural Earth) | Comes with RaceNav | Depth shading at 0, 200, 1000, 2000 … 10000 m, everywhere |
+| **World depths** (Natural Earth) | Comes with TweedPlot | Depth shading at 0, 200, 1000, 2000 … 10000 m, everywhere |
 | **World coastline** (GSHHG) | **Download**, once, about 150 MB | Every island, at every scale. Until then a coarser outline is drawn. Coastline detail (Standard, More, Most) brings GSHHG's finer levels in when zoomed further out: Most draws the full-resolution coast from zoom 4 instead of zoom 8, a little slower to draw |
 | **Detailed depths** (ETOPO 2022) | **Get for chart view**, for the area on screen, typically 1–5 MB | Finer depth bands from zoom 4 and contours (5 m to 5000 m) from zoom 7 |
 | **NZ charts** (LINZ) | **LINZ…** opens the LINZ Data Service (see above) | The full hydrographic chart |
@@ -146,7 +148,7 @@ Sources and licences: Natural Earth (public domain); GSHHG, Wessel and Smith, Un
 
 **Tides**
 
-Tick **Tide stations** and press **Download LINZ tides** once a year: RaceNav fetches the LINZ tide tables for this year and next (about 90 standard ports plus the secondary ports). Tide stations then appear on the chart. Click one for the day's tide curve, with high and low times and heights, a marker at the current time (or the weather time when planning) and arrows to step through the days. Times are New Zealand time (Chatham Islands time for Chatham ports). Secondary ports are worked from their LINZ time and height differences. These are predictions, not official tide tables, and weather (wind and pressure) can raise or lower the actual tide by several decimetres.
+Tick **Tide stations** and press **Download LINZ tides** once a year: TweedPlot fetches the LINZ tide tables for this year and next (about 90 standard ports plus the secondary ports). Tide stations then appear on the chart. Click one for the day's tide curve, with high and low times and heights, a marker at the current time (or the weather time when planning) and arrows to step through the days. Times are New Zealand time (Chatham Islands time for Chatham ports). Secondary ports are worked from their LINZ time and height differences. These are predictions, not official tide tables, and weather (wind and pressure) can raise or lower the actual tide by several decimetres.
 
 Tidal streams are not shown yet; ocean currents from a GRIB can be used in routing (see Routing).
 
@@ -167,17 +169,17 @@ With dusk and night colours the window's title bar turns dark as well. To get ri
 
 ## Your boat
 
-RaceNav shows your own boat from live instruments, or wherever you put it when planning.
+TweedPlot shows your own boat from live instruments, or wherever you put it when planning.
 
 **Signal K**
 
-RaceNav reads live data (position, heading, speed, wind, depth) from a [Signal K](https://signalk.org) server, normally running on the same PC. Signal K takes NMEA 0183 and NMEA 2000 from your GPS and instruments through a USB adapter or gateway and serves it to any number of apps. RaceNav connects to `ws://localhost:3000` (set `RACENAV_SK_URL` for another address). The top button of the column at the top right shows the connection at all times: green when data is arriving, amber when connected but nothing has arrived for 10 seconds, red with a slash when there is no connection (blinking while it first tries). Hover it for the server address, the time of the last update and what is arriving; click it for the Signal K section of the Chart and Signal K drawer.
+TweedPlot reads live data (position, heading, speed, wind, depth) from a [Signal K](https://signalk.org) server, normally running on the same PC. Signal K takes NMEA 0183 and NMEA 2000 from your GPS and instruments through a USB adapter or gateway and serves it to any number of apps. TweedPlot connects to `ws://localhost:3000` (set `RACENAV_SK_URL` for another address). The top button of the column at the top right shows the connection at all times: green when data is arriving, amber when connected but nothing has arrived for 10 seconds, red with a slash when there is no connection (blinking while it first tries). Hover it for the server address, the time of the last update and what is arriving; click it for the Signal K section of the Chart and Signal K drawer.
 
-No instruments? A GPS dongle into Signal K is enough for position, course and speed. With no Signal K at all, RaceNav works fully in planning mode.
+No instruments? A GPS dongle into Signal K is enough for position, course and speed. With no Signal K at all, TweedPlot works fully in planning mode.
 
 **Replaying a log**
 
-RaceNav logs every Signal K session, AIS targets included, while it runs. **Chart and Signal K › Replay a log** lists the logs by start time, length and size; choose one and press **Replay**. The log then drives the boat, instruments, AIS targets and alarms as if it were live, and the live Signal K data waits until the replay stops. A bar at the top of the chart has pause, speed (1× to 300×), a slider to jump to any time, and **✕** to go back to live data. Tracks are not recorded from a replay. Use it to go over a race, test alarms and settings at the dock, or show someone what happened.
+TweedPlot logs every Signal K session, AIS targets included, while it runs. **Chart and Signal K › Replay a log** lists the logs by start time, length and size; choose one and press **Replay**. The log then drives the boat, instruments, AIS targets and alarms as if it were live, and the live Signal K data waits until the replay stops. A bar at the top of the chart has pause, speed (1× to 300×), a slider to jump to any time, and **✕** to go back to live data. Tracks are not recorded from a replay. Use it to go over a race, test alarms and settings at the dock, or show someone what happened.
 
 **Live and planning**
 
@@ -199,20 +201,20 @@ Wave motion makes heading, speed and wind jump about. Chart and Signal K > Dampi
 
 **Tracks and recording**
 
-Library > Tracks > **Record** logs the boat's track from Signal K while RaceNav runs, even while plotting is paused. It keeps a fix every 10 s while moving, sooner in a tack or gybe, and is saved every 30 s and when the app closes. **New log** finishes one track and starts another. Tracks can be shown, renamed, coloured, exported as GPX, and imported from GPX (from a plotter, Navionics, qtVlm and so on). Click a track for the time, speed and course at that point; tick **Boat at weather time** to see where the boat was at the slider time, which is useful for comparing a race track with the forecast.
+Library > Tracks > **Record** logs the boat's track from Signal K while TweedPlot runs, even while plotting is paused. It keeps a fix every 10 s while moving, sooner in a tack or gybe, and is saved every 30 s and when the app closes. **New log** finishes one track and starts another. Tracks can be shown, renamed, coloured, exported as GPX, and imported from GPX (from a plotter, Navionics, qtVlm and so on). Click a track for the time, speed and course at that point; tick **Boat at weather time** to see where the boat was at the slider time, which is useful for comparing a race track with the forecast.
 
 **Polars**
 
 A polar is the table of your boat's speed at each true wind angle (TWA) and true wind speed (TWS). Routing, the target speeds and the polar efficiency all come from it, so it is worth getting right. The weather routing tutorial explains what a polar is and why every polar is optimistic; this section is about the files.
 
-*Where RaceNav looks.* Boat > Polar lists two kinds:
+*Where TweedPlot looks.* Boat > Polar lists two kinds:
 
 | Kind | Where | Notes |
 | --- | --- | --- |
-| Yours | `racenav-data\polars`, or without `racenav-data` the `polars` folder in RaceNav's app data | **Import polar…** copies a file here; **Open folder** opens it in Explorer. Anything you put here yourself appears too |
-| Shipped | Installed with RaceNav, marked *(shipped)* in the list | Replaced on every update: don't edit them. Copy one into your folder under the same name to use your version instead |
+| Yours | `tweedplot-data\polars`, or without `tweedplot-data` the `polars` folder in TweedPlot's app data | **Import polar…** copies a file here; **Open folder** opens it in Explorer. Anything you put here yourself appears too |
+| Shipped | Installed with TweedPlot, marked *(shipped)* in the list | Replaced on every update: don't edit them. Copy one into your folder under the same name to use your version instead |
 
-RaceNav reads files ending `.pol`, `.csv` or `.txt`, and lists only those it can read. Import checks a file before copying it and says what is wrong if it can't read it. `RACENAV_POLAR_DIR` points your folder elsewhere.
+TweedPlot reads files ending `.pol`, `.csv` or `.txt`, and lists only those it can read. Import checks a file before copying it and says what is wrong if it can't read it. `RACENAV_POLAR_DIR` points your folder elsewhere.
 
 *The format.* A plain text table, the same as qtVlm, OpenCPN, Expedition's text export and most other routers use:
 
@@ -228,11 +230,11 @@ TWA\TWS	4	6	8	10	12	16	20
 
 - **First line**: any label in the first cell (`TWA\TWS` by custom), then the true wind speeds in knots, increasing from left to right.
 - **Each further line**: a true wind angle in degrees (0 = head to wind, 180 = dead downwind), then the boat speed in knots at each wind speed. Every line needs one speed per wind speed. The angles can be in any order; the same table serves both tacks.
-- **Separators**: semicolons, tabs, commas or spaces. RaceNav works out which from the first line. Use a full stop for decimals (`6.5`, not `6,5`).
+- **Separators**: semicolons, tabs, commas or spaces. TweedPlot works out which from the first line. Use a full stop for decimals (`6.5`, not `6,5`).
 - **Comments**: blank lines and lines starting with `#` are ignored, so you can note the source and date at the top.
 - **The file name** is the polar's name in the list.
 
-*Between and beyond the numbers.* Speeds between the table's angles and wind speeds are interpolated in a straight line both ways. Below the lightest wind speed the speed falls in proportion to zero at 0 kn (unless the table has a 0 kn column, as a power polar does). Above the strongest it holds the last column: RaceNav never extrapolates upwards. Angles inside the first row (inside 40° in the example) are interpolated towards the nearest row; put a row of zeros at 0° (or at the angle the boat stops sailing, about 30° for most yachts) so the routing doesn't think the boat can point higher than it can.
+*Between and beyond the numbers.* Speeds between the table's angles and wind speeds are interpolated in a straight line both ways. Below the lightest wind speed the speed falls in proportion to zero at 0 kn (unless the table has a 0 kn column, as a power polar does). Above the strongest it holds the last column: TweedPlot never extrapolates upwards. Angles inside the first row (inside 40° in the example) are interpolated towards the nearest row; put a row of zeros at 0° (or at the angle the boat stops sailing, about 30° for most yachts) so the routing doesn't think the boat can point higher than it can.
 
 *Where to get one.*
 
@@ -312,7 +314,7 @@ Alarms appear in a banner at the top of the chart and sound until silenced. **Si
 
 **Man overboard**
 
-Press the red **MOB** button at the top right the moment someone goes over. RaceNav marks the boat's position (or where it was put when planning) and raises an alarm that shows the time since, and the bearing and distance back to the position, updated every second, with a line from the boat to it on the chart. The position is also saved as a library mark in the group "MOB". **Clear MOB** in the banner, pressed twice, ends it.
+Press the red **MOB** button at the top right the moment someone goes over. TweedPlot marks the boat's position (or where it was put when planning) and raises an alarm that shows the time since, and the bearing and distance back to the position, updated every second, with a line from the boat to it on the chart. The position is also saved as a library mark in the group "MOB". **Clear MOB** in the banner, pressed twice, ends it.
 
 ## AIS targets
 
@@ -321,7 +323,27 @@ Press the red **MOB** button at the top right the moment someone goes over. Race
 - **Signal K**: whatever an AIS receiver or transponder on board passes to the Signal K server.
 - **Online (aisstream.io)**: what volunteer shore stations hear around the area on the chart. Get a free API key by signing in at aisstream.io with a GitHub account, paste it in and press **Go online**. The area follows the chart (up to about 6° across). Coverage has gaps and delays: it is no substitute for a receiver on board.
 
-On the chart, ships are triangles pointing along their heading (class B a little smaller), coloured by type: cargo green, tanker red, passenger blue, fishing orange, sailing and pleasure purple, tugs and special craft teal. A line ahead shows where each will be in 6 minutes. Diamonds are aids to navigation (pink when virtual: nothing is physically there), a circle with a cross is an AIS-SART, MOB device or EPIRB. Targets not heard for a few minutes fade, and go after 20 minutes. Click a target for its name, type, status, speed and course, size, destination, and the range, bearing, CPA and TCPA from your boat.
+On the chart, ships are triangles pointing along their heading (class B a little smaller), coloured by type:
+
+- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#27ae60" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Cargo
+- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#c0392b" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Tanker
+- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#2e6fd8" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Passenger
+- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#e8792e" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Fishing
+- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#9b59b6" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Sailing and pleasure craft
+- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#1abc9c" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Tugs, pilots, search and rescue and other special craft
+- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#f1c40f" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> High-speed craft
+- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#5d6d7e" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Military
+- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#8a96a0" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Other or unknown type
+
+Other AIS targets:
+
+- <span class="mi"><svg viewBox="0 0 20 20"><path d='M10 3 L17 10 L10 17 L3 10 Z' fill='none' stroke='#6a1b9a' stroke-width='2'/></svg></span> Aid to navigation (AtoN): a buoy or beacon with its own AIS
+- <span class="mi"><svg viewBox="0 0 20 20"><path d='M10 3 L17 10 L10 17 L3 10 Z' fill='none' stroke='#c2185b' stroke-width='2'/></svg></span> Virtual aid to navigation: only a broadcast, nothing is physically there
+- <span class="mi"><svg viewBox="0 0 20 20"><circle cx='10' cy='10' r='7' fill='none' stroke='#d00000' stroke-width='2'/><path d='M5 5 L15 15 M15 5 L5 15' stroke='#d00000' stroke-width='2'/></svg></span> AIS-SART, MOB device or EPIRB (always raises an alarm)
+- <span class="mi"><svg viewBox="0 0 20 20"><rect x='4' y='4' width='12' height='12' fill='none' stroke='#5d6d7e' stroke-width='2'/></svg></span> AIS base station
+- <span class="mi"><svg viewBox="0 0 20 20"><path d='M10 2 L11 8 L17 11 L17 13 L11 11 L11 15 L13 17 L7 17 L9 15 L9 11 L3 13 L3 11 L9 8 Z' fill='#e67e22'/></svg></span> Search and rescue aircraft
+
+A line ahead of a moving ship shows where it will be in 6 minutes. Targets not heard for a few minutes fade, and go after 20 minutes. Click a target for its name, type, status, speed and course, size, destination, and the range, bearing, CPA and TCPA from your boat.
 
 The list under the settings sorts targets by range, CPA or name; click one to show it.
 
@@ -329,7 +351,7 @@ The list under the settings sorts targets by range, CPA or name; click one to sh
 
 **Your own boat**: put your MMSI in the **Boat** panel (Own MMSI) and your boat is never shown or alarmed as a target, whichever source hears it.
 
-**Tracks**: tick **Track of the selected target** and the boat you last clicked shows where it has been. Tracks are what RaceNav has heard over the last 6 hours, so they start when the app does.
+**Tracks**: tick **Track of the selected target** and the boat you last clicked shows where it has been. Tracks are what TweedPlot has heard over the last 6 hours, so they start when the app does.
 
 **Own fleet** (Fleet › Own fleet): a list of boats to pick out, such as friends, your company's vessels or a race fleet. Add an MMSI with a name and a group (Friends, Company, Race fleet, Other), or click a boat on the chart › **Add to own fleet**. Own-fleet boats are ringed in their group's colour and named at every zoom; each has a **Track** tick, **Track all** draws them all, and **Only these on the chart** hides every other AIS target. The list shows each boat's speed, distance and how long since it was heard; click one to show it.
 
@@ -387,17 +409,17 @@ Untick a barrier to keep it but not use it; rename it in the list; move its poin
 | Tracks | Logged and imported tracks (see Your boat) |
 | Barriers | Lines and zones (above) |
 
-**GPX** exchanges marks, routes and tracks with plotters, phone apps, qtVlm, OpenCPN and Navionics. Import adds new marks and matches ones you already have by name and position. Exports go to `racenav-data\library\export`.
+**GPX** exchanges marks, routes and tracks with plotters, phone apps, qtVlm, OpenCPN and Navionics. Import adds new marks and matches ones you already have by name and position. Exports go to `tweedplot-data\library\export`.
 
 ## Weather
 
-Weather comes from GRIB files: gridded forecasts from computer models, one value per grid point per forecast time. RaceNav downloads them, reads files from other sources, shows them on the chart, compares several at once, and routes through them. The Weather routing tutorial explains models, resolution and how much to trust them.
+Weather comes from GRIB files: gridded forecasts from computer models, one value per grid point per forecast time. TweedPlot downloads them, reads files from other sources, shows them on the chart, compares several at once, and routes through them. The Weather routing tutorial explains models, resolution and how much to trust them.
 
 **Loading GRIBs (Weather drawer)**
 
 The list shows every GRIB in the GRIB folders, described by model, run time, area and how far ahead it goes rather than by file name. Choose one and **Load** (↻ rescans the folders). Load as many as you like: different models, or several runs of one. One is shown on the chart (its radio button), and the table under the legend gives every loaded GRIB's values at the cursor. A tick beside each loaded GRIB includes it in the agreement displays; × unloads it.
 
-RaceNav reads GRIB2 (including ECMWF's compressed files) and GRIB1 (Saildocs and older tools): wind, gusts, pressure, waves (height, period, direction, swell, wind waves), rain, CAPE, air temperature and ocean currents. Outside a file's area or time span there is no value: a short GRIB never shows as calm.
+TweedPlot reads GRIB2 (including ECMWF's compressed files) and GRIB1 (Saildocs and older tools): wind, gusts, pressure, waves (height, period, direction, swell, wind waves), rain, CAPE, air temperature and ocean currents. Outside a file's area or time span there is no value: a short GRIB never shows as calm.
 
 **Time**
 
@@ -420,7 +442,7 @@ Choices a GRIB doesn't contain are greyed out, and a wave-only GRIB switches to 
 | Source | Models | Notes |
 | --- | --- | --- |
 | NOAA NOMADS | GFS 0.25°, 0.5°, 1° (wind, gusts, pressure, rain, CAPE, air temperature); GFS-Wave 0.25° | Cut to your area on the server: small downloads. Free, US government data |
-| ECMWF open data | IFS 0.25° (wind, pressure, gusts where published, air temperature); AIFS 0.25° (ECMWF's AI model); ECMWF wave 0.25° | Published as whole-globe files: RaceNav fetches only the fields you ticked and cuts them to your area, but downloads far more than the file it keeps (the estimate shows both). CC BY 4.0, © ECMWF. The 06Z and 18Z IFS runs stop at 144 h |
+| ECMWF open data | IFS 0.25° (wind, pressure, gusts where published, air temperature); AIFS 0.25° (ECMWF's AI model); ECMWF wave 0.25° | Published as whole-globe files: TweedPlot fetches only the fields you ticked and cuts them to your area, but downloads far more than the file it keeps (the estimate shows both). CC BY 4.0, © ECMWF. The 06Z and 18Z IFS runs stop at 144 h |
 | NOAA CoastWatch ERDDAP | MUR sea surface temperature, 1 km (ocean, see below) | A satellite analysis, cut to your area on the server. Free to use and share (NASA JPL) |
 | NOAA CoastWatch THREDDS | Himawari-9 hourly sea temperature, 2 km (ocean, see below) | One file an hour, cut to your area on the server. GHRSST data, free and open |
 | NOAA CoastWatch ERDDAP | Chlorophyll-a, 9 km, daily (ocean, see below) | Cut to your area on the server. Free to use and share |
@@ -429,7 +451,7 @@ Choices a GRIB doesn't contain are greyed out, and a wave-only GRIB switches to 
 1. Choose the model and tick the fields.
 2. Set the area: **Draw** a rectangle, use the **Chart view**, or the **Course** with a margin. Edges can be typed.
 3. Choose the forecast length and time step; check the size estimate.
-4. **Download**. RaceNav finds the newest complete run, downloads it, saves it in the GRIB folder and loads it.
+4. **Download**. TweedPlot finds the newest complete run, downloads it, saves it in the GRIB folder and loads it.
 
 **Ocean: sea temperature, salinity, currents and chlorophyll**
 
@@ -460,7 +482,7 @@ Right-click the chart > **Meteogram here**: every loaded GRIB's forecast at that
 
 **Wind and waves in one file**
 
-Wind and waves come from different models: GFS with GFS-Wave, ECMWF IFS or AIFS with the ECMWF wave model. RaceNav can keep them in one file, so one GRIB shows the wind, the waves, the GRIB-at-cursor readings and the meteogram together, and a routing with a wave limit finds its waves without a second file.
+Wind and waves come from different models: GFS with GFS-Wave, ECMWF IFS or AIFS with the ECMWF wave model. TweedPlot can keep them in one file, so one GRIB shows the wind, the waves, the GRIB-at-cursor readings and the meteogram together, and a routing with a wave limit finds its waves without a second file.
 
 - **When downloading**: for GFS, ECMWF IFS or AIFS, tick **Waves … in the same file**. The wave model is downloaded for the same run, area and steps and written into the same file, named `…+waves.grb2`. If the waves can't be had (not on the server yet, say), the wind file is kept and a note says so.
 - **Files you already have**: load the wind GRIB and the wave GRIB of the same run. The Weather drawer offers **Combine**; it writes `<wind file>+waves.grb2`, loads it and unloads the two. The original files are kept.
@@ -489,7 +511,7 @@ Each station shows an arrow pointing downwind, coloured like the wind shading, w
 
 ## Routing
 
-A routing is the fastest way from the start through your marks, given a forecast, your boat's speeds and the chart. RaceNav uses the isochrone method (explained in the Weather routing tutorial) and keeps off land, water shallower than your safety depth, charted dangers, marine farms and your barriers. Lakes (from the Topo50 lake layer) can be routed on, using their charted depths where they have them; rivers are kept as land, so no route goes up one.
+A routing is the fastest way from the start through your marks, given a forecast, your boat's speeds and the chart. TweedPlot uses the isochrone method (explained in the Weather routing tutorial) and keeps off land, water shallower than your safety depth, charted dangers, marine farms and your barriers. Lakes (from the Topo50 lake layer) can be routed on, using their charted depths where they have them; rivers are kept as land, so no route goes up one.
 
 **Before you compute**
 
@@ -553,7 +575,7 @@ The Cursor panel shows the cursor's latitude and longitude and the bearing and r
 
 **Fleet (YB race tracking)**
 
-Fleet › YB race: type the race's YB name (as in `yb.tl/<race>`, for example `ggr2026`) and **Open**. RaceNav downloads the race setup, every boat's published track, then the latest positions every 5 minutes to 3 hours.
+Fleet › YB race: type the race's YB name (as in `yb.tl/<race>`, for example `ggr2026`) and **Open**. TweedPlot downloads the race setup, every boat's published track, then the latest positions every 5 minutes to 3 hours.
 
 - Boats show at their latest fix, or where they were at the weather slider time, so you can replay a race against the forecast.
 - ★ follows a boat (thicker track, name kept first when names would overlap). Choose a class, tracks for all or followed boats, names, and the YB course.
@@ -566,7 +588,7 @@ Positions may be delayed by the race organiser.
 
 | Problem | Likely cause and fix |
 | --- | --- |
-| No detailed NZ chart | The LINZ zips aren't in `racenav-data\linz`, or only small-scale bands were downloaded. Add the bands for the area and restart |
+| No detailed NZ chart | The LINZ zips aren't in `tweedplot-data\linz`, or only small-scale bands were downloaded. Add the bands for the area and restart |
 | A harbour's buoys are missing | The open data has no large-scale coverage there. Add them as library marks with buoy symbols |
 | Signal K button stays red or amber | Red: the server isn't running, or is on another port or PC. Amber: connected, but the server is sending no boat data (check its connections to the GPS and instruments). Hover the button, and check the Chart and Signal K drawer's details and `RACENAV_SK_URL` |
 | Instruments show — | No data for that reading, or more than 10 s old (greyed out) |

@@ -1,5 +1,5 @@
 // Barriers the routing keeps off (Library › Barriers): lines it may not cross
-// and zones it may not enter, kept in racenav-data\library\barriers.json, plus
+// and zones it may not enter, kept in the library folder\barriers.json, plus
 // the clearance rings of library marks given a barrier radius.
 //
 // Draw line / Draw zone → click points, double-click to finish, Esc to stop.

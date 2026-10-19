@@ -1,4 +1,6 @@
-# racenav
+# TweedPlot
+
+**TweedPlot: Professional Marine Chart Plotter**, from [TweedsMarine](https://tweedsmarine.nz). Formerly developed as "racenav": crate names, `RACENAV_*` environment variables and `racenav.*` settings keys keep the old name internally. Data folder: `C:\dev\tweedplot-data`, or the old `C:\dev\racenav-data` while that is the one present; app data `%APPDATA%\nz.tweedsmarine.tweedplot` (copied from the old `nz.tweedsmarine.racenav` on first start).
 
 A modern race navigation app for Windows: chartplotter basics, a GRIB viewer for many runs at once, an in-house routing engine and race tools. Live data comes in through Signal K.
 
@@ -40,7 +42,7 @@ npm install          # first time only
 npm run tauri dev    # first build takes several minutes; later ones are quick
 ```
 
-The app connects to `ws://localhost:3000/signalk/v1/stream?subscribe=self`. To use another server, set `RACENAV_SK_URL` before starting. Every Signal K message is logged to `%APPDATA%\nz.tweedsmarine.racenav\logs\sk-<date>-<time>Z.log`.
+The app connects to `ws://localhost:3000/signalk/v1/stream?subscribe=self`. To use another server, set `RACENAV_SK_URL` before starting. Every Signal K message is logged to `%APPDATA%\nz.tweedsmarine.tweedplot\logs\sk-<date>-<time>Z.log`.
 
 ## Windows builds (GitHub Actions)
 
@@ -50,7 +52,7 @@ The app connects to `ws://localhost:3000/signalk/v1/stream?subscribe=self`. To u
 
 ## Chart data
 
-The app reads LINZ GeoPackage downloads (zipped as downloaded is fine) from `RACENAV_CHART_DIR`, else `C:\dev\racenav-data\linz`, else `%APPDATA%\nz.tweedsmarine.racenav\charts`. On the first run it unzips them into a `.unzipped` folder beside the zips (about 600 MB for all bands); after that, start-up takes a couple of seconds. Layers used:
+The app reads LINZ GeoPackage downloads (zipped as downloaded is fine) from `RACENAV_CHART_DIR`, else `C:\dev\racenav-data\linz`, else `%APPDATA%\nz.tweedsmarine.tweedplot\charts`. On the first run it unzips them into a `.unzipped` folder beside the zips (about 600 MB for all bands); after that, start-up takes a couple of seconds. Layers used:
 
 - NZ Coastlines and Islands Polygons (Topo 1:50k)
 - Depth area polygons, depth contour polylines and sounding points (Hydro), every scale band
@@ -104,7 +106,7 @@ The world depths draw as the `wdepth` tile layer (Natural Earth below zoom 4 fro
 
 Draw the area on the chart (or use the chart view or the course), choose the forecast length (1–16 days) and step, check the size estimate, Download. The newest complete run is found by checking the server, the steps are joined into one file in `racenav-data\grib`, and it is loaded straight away.
 
-**Saildocs email request** (inside Download): for email-only links. Builds the request line from the same area, length and step, e.g. `send GFS:33S,48S,165E,175W|0.25,0.25|0,3..120|WIND,PRMSL`, for GFS, ICON (0.125°) or the free part of ECMWF (0.4°), with the parameters ticked and a size estimate. **Email** opens a message to query@saildocs.com in your mail program; **Copy** copies the line. Save the attached reply in the GRIB folder (Saildocs sends GRIB1, which racenav now reads).
+**Saildocs email request** (inside Download): for email-only links. Builds the request line from the same area, length and step, e.g. `send GFS:33S,48S,165E,175W|0.25,0.25|0,3..120|WIND,PRMSL`, for GFS, ICON (0.125°) or the free part of ECMWF (0.4°), with the parameters ticked and a size estimate. **Email** opens a message to query@saildocs.com in your mail program; **Copy** copies the line. Save the attached reply in the GRIB folder (Saildocs sends GRIB1, which TweedPlot now reads).
 
 GRIB formats read: GRIB2 with simple, complex, complex + spatial differencing and CCSDS packing (ECMWF since 2023), and GRIB1 with simple packing (regular lat/lon), with or without a bitmap.
 
@@ -234,7 +236,7 @@ Floating panels of readings, always on top. Drag a panel by its grip; double-cli
 
 The manual is built into the app: **Manual** on the rail (or F1) opens it in a panel on the right, and the **?** in each drawer's title bar opens it at that drawer's section. Tabs: Reference, Route planning, Weather routing, Glossary; contents, search across every tab, pictures and diagrams full size on click, Wide. External links open in the browser (`open_url` allows mailto:, http: and https: only).
 
-The text is written as a Claude Doc ("RaceNav User Manual") and bundled from `app/public/manual` (Markdown, screenshots in `img/`, diagrams as inline SVG in `fig/`), so every build carries the manual for its own version and it works offline. To update it: export each tab as Markdown, then `python tools/manual/import.py <exports> <screenshots> tools/manual/fig`; the script turns the export's picture and diagram placeholders back into images (by alt text) and SVGs (by caption). The diagram sources are in `tools/manual/fig` (`*.jsx`, rendered with `render.mjs`, needs esbuild). The viewer is `app/src/manual.js` (uses `marked`).
+The text is written as a Claude Doc ("TweedPlot User Manual") and bundled from `app/public/manual` (Markdown, screenshots in `img/`, diagrams as inline SVG in `fig/`), so every build carries the manual for its own version and it works offline. To update it: export each tab as Markdown, then `python tools/manual/import.py <exports> <screenshots> tools/manual/fig`; the script turns the export's picture and diagram placeholders back into images (by alt text) and SVGs (by caption). The diagram sources are in `tools/manual/fig` (`*.jsx`, rendered with `render.mjs`, needs esbuild). The viewer is `app/src/manual.js` (uses `marked`).
 
 ## Front-end layout
 

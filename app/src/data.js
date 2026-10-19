@@ -48,7 +48,7 @@ export function setupData(map, { toast, reloadTiles } = {}) {
     dot("data-etopo-dot", status.etopo.length ? "ok" : "");
     for (const a of status.etopo) {
       const li = document.createElement("li");
-      li.innerHTML = `<span></span>${a.old ? `<button data-act="redo" class="warn" title="Downloaded by an older RaceNav: its shading breaks into stripes when zoomed out. Download this area again">Redo</button>` : ""}<button data-act="zoom" title="Show this area">Show</button><button data-act="del" title="Delete this area">✕</button>`;
+      li.innerHTML = `<span></span>${a.old ? `<button data-act="redo" class="warn" title="Downloaded by an older TweedPlot: its shading breaks into stripes when zoomed out. Download this area again">Redo</button>` : ""}<button data-act="zoom" title="Show this area">Show</button><button data-act="del" title="Delete this area">✕</button>`;
       li.firstChild.textContent = `${fmtArea(a.area)} · ${Math.round(a.spacing)}″ · ${fmtMB(a.bytes)}${a.old ? " · old format" : ""}`;
       li.querySelector('[data-act="redo"]')?.addEventListener("click", async () => {
         if (busy) return;

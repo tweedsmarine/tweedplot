@@ -1,6 +1,6 @@
 # Glossary
 
-Terms used in RaceNav and in this manual.
+Terms used in TweedPlot and in this manual.
 
 | Term | Meaning |
 | --- | --- |
@@ -15,7 +15,7 @@ Terms used in RaceNav and in this manual.
 | Chart datum | The level charted depths are measured from, close to the lowest tide |
 | COG, SOG | Course and speed over the ground (from GPS) |
 | CSV | A text table with values separated by commas or semicolons (polar files) |
-| Dock | The panel along the bottom of the RaceNav window for tables and graphs |
+| Dock | The panel along the bottom of the TweedPlot window for tables and graphs |
 | Drawer | A panel that slides out from the icon rail |
 | ECMWF | European Centre for Medium-Range Weather Forecasts; its main model is the IFS |
 | Efficiency | The percentage of the polar the routing assumes you sail at |

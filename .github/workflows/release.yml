@@ -43,10 +43,10 @@ jobs:
           projectPath: app
           tauriScript: npx tauri
           tagName: v__VERSION__
-          releaseName: RaceNav v__VERSION__
+          releaseName: TweedPlot v__VERSION__
           releaseBody: |
             Alpha test build. Not for navigation.
-            racenav_*_x64-setup.exe for most Windows PCs; racenav_*_arm64-setup.exe for Windows on Arm (Snapdragon, Surface Pro X …).
+            TweedPlot_*_x64-setup.exe for most Windows PCs; TweedPlot_*_arm64-setup.exe for Windows on Arm (Snapdragon, Surface Pro X …).
             The installer is not code-signed yet: Windows SmartScreen will warn ("Windows protected your PC") — choose More info › Run anyway.
           releaseDraft: true
           prerelease: true

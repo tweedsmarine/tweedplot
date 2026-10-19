@@ -34,7 +34,7 @@ pub const MAX_POINTS: u64 = 6_000_000;
 /// Download a large file with progress (`done`, `total` bytes; total 0 if unknown).
 fn fetch_to(url: &str, out: &Path, progress: &(dyn Fn(u64, u64) + Sync), cancel: &AtomicBool) -> Result<()> {
     let c = reqwest::blocking::Client::builder()
-        .user_agent(concat!("racenav/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("TweedPlot/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(std::time::Duration::from_secs(20))
         .timeout(None::<std::time::Duration>)
         .build()

@@ -111,7 +111,7 @@ export function setupManual() {
       renderer.link = ({ href, tokens }) => `<a href="${esc(href)}"${/^https?:/.test(href) ? ' class="ext" title="Opens in your browser"' : ""}>${marked.Parser.parseInline(tokens)}</a>`;
       t.html = marked.parse(t.md, { renderer, gfm: true });
     }
-    body.innerHTML = t.html + `<p class="man-foot">${esc(book.title)} · updated ${esc(book.updated)} · bundled with this version of RaceNav</p>`;
+    body.innerHTML = t.html + `<p class="man-foot">${esc(book.title)} · updated ${esc(book.updated)} · bundled with this version of TweedPlot</p>`;
     // a picture alone in a paragraph: lift the figure out of the <p>
     for (const p of body.querySelectorAll("p > figure:only-child")) p.replaceWith(p.firstChild);
     for (const img of body.querySelectorAll('img[src$=".svg"]')) inlineSvg(img);

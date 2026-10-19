@@ -1,11 +1,15 @@
 // racenav front end: offline chart, own boat, track and instrument panel.
 import * as maplibregl from "maplibre-gl";
+import "@fontsource/atkinson-hyperlegible-next/400.css";
+import "@fontsource/atkinson-hyperlegible-next/600.css";
+import "@fontsource/atkinson-hyperlegible-next/700.css";
 // Bundle MapLibre's web worker with the app so the map works offline.
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 maplibregl.setWorkerUrl(workerUrl);
 import { listen, emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { setupWeather, barbImage } from "./weather.js";
+import { setupBrand } from "./brand.js";
 import { setupChartFeatures, featureImage } from "./chartfeatures.js";
 import { setupTides, tideImage } from "./tides.js";
 import { setupTracks } from "./tracks.js";
@@ -186,6 +190,7 @@ map.on("load", () => {
   window.__weather = weather; // debugging handle
   setupData(map, { toast, reloadTiles: reloadChartTiles });
   setupPalette();
+  setupBrand();
   alarms = setupAlarms(map, {
     getBoat: () => ({ pos: lastBoat, v: vessel, live: live && signalKActive(), connected: skConnected || replayOn, fresh: Date.now() - lastFeed < 5000 }),
     getSafetyDepth: () => settings.safetyDepth,

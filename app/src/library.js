@@ -1,5 +1,5 @@
 // Library panel: the mark library, saved routes and saved routings, GPX in and out.
-// The data lives in JSON files written by the Rust side (racenav-data\library).
+// The data lives in JSON files written by the Rust side (the library folder).
 import { invoke } from "@tauri-apps/api/core";
 import { fmt } from "./weather.js";
 import { distNm } from "./instruments.js";
