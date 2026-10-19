@@ -823,9 +823,10 @@ fn route_leg(
                 if visited.contains(&key) && !stay {
                     continue;
                 }
-                // still in its cell and hardly moved (a tack eating the step, head to wind):
-                // its parent has already done better
-                if stay && parent.parent != usize::MAX && LatLon::new(parent.lat, parent.lon).distance_to(&LatLon::new(n.lat, n.lon)) < 0.1 * cell_nm {
+                // Going round a mark in a working breeze: still in its cell and hardly moved
+                // (a tack eating the step, head to wind), its parent has already done better.
+                // Elsewhere, and in light air anywhere, it stays: a front in a calm waits for wind.
+                if wrapping && stay && n.tws >= 4.0 && parent.parent != usize::MAX && LatLon::new(parent.lat, parent.lon).distance_to(&LatLon::new(n.lat, n.lon)) < 0.1 * cell_nm {
                     continue;
                 }
                 let ll = LatLon::new(n.lat, n.lon);
@@ -1332,6 +1333,28 @@ mod tests {
         assert_eq!(res.status, "blocked", "{}", res.message);
         assert!(res.message.contains("no way round"), "{}", res.message);
         assert!(clock.elapsed().as_secs() < 20);
+    }
+
+    /// A calm at the start, a breeze later: the front waits for the wind rather
+    /// than giving up (the start in a harbour at dusk), also round a mark.
+    #[test]
+    fn waits_out_a_calm() {
+        struct Calm;
+        impl WindSource for Calm {
+            fn wind(&self, _: f64, _: f64, t: i64) -> Option<(f64, f64)> {
+                Some(if t < 3 * 3600 { (0.3, 90.0) } else { (10.0, 90.0) })
+            }
+        }
+        let pol = test_polar();
+        let start = LatLon::new(-41.0, 173.0);
+        let m = start.destination(0.0, 6.0);
+        let fin = start.destination(0.0, 0.5);
+        let p = Params { step_s: 300.0, ..Params::default() };
+        // a channel: barriers either side of the first two miles
+        let w = 0.15 / 60.0;
+        let walls = Barriers { lines: vec![vec![[start.lon - w, start.lat - 0.01], [start.lon - w, start.lat + 0.03]], vec![[start.lon + w, start.lat - 0.01], [start.lon + w, start.lat + 0.03]]], ..Default::default() };
+        let res = route_marks(start, 0, &[spec(m, Rounding::Starboard), MarkSpec::at(fin)], &pol, &Calm, None, &walls, &p);
+        assert_eq!(res.status, "arrived", "{}", res.message);
     }
 
     /// A mark that is the island itself can be rounded, but not passed through.
