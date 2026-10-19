@@ -26,8 +26,10 @@ const labelFilter = (contour) => ["all", minz, ["has", "lbl"], ["!", ["in", ["ge
  * `hz` from the chart store), which show at every zoom. Underwater dangers deeper
  * than the safety contour still follow SCAMIN (the point filters below). */
 const HZ = ["==", ["get", "hz"], 1];
-const minz = ["any", HZ, ["!", ["has", "minz"]], [">=", ["zoom"], ["get", "minz"]]];
-const minzDeep = ["any", ["!", ["has", "minz"]], [">=", ["zoom"], ["get", "minz"]]];
+// `maxz`: a coarser chart's copy of a mark, standing in until the finer chart's copy shows
+const notReplaced = ["any", ["!", ["has", "maxz"]], ["<", ["zoom"], ["get", "maxz"]]];
+const minz = ["all", notReplaced, ["any", HZ, ["!", ["has", "minz"]], [">=", ["zoom"], ["get", "minz"]]]];
+const minzDeep = ["all", notReplaced, ["any", ["!", ["has", "minz"]], [">=", ["zoom"], ["get", "minz"]]]];
 
 export function setupChartFeatures(map, { before, safetyContour = 5 }) {
   const $ = (id) => document.getElementById(id);

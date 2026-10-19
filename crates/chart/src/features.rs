@@ -263,11 +263,15 @@ impl ChartStore {
             }
         };
 
+        // buoys, beacons and other marks drawn in this tile: (position, band, minz)
+        let mut marks: Vec<([f64; 2], u8, f64)> = Vec::new();
         for (class, tables) in &groups {
             match class.geo {
-                Geo::Point if class.code == "LIGHTS" => self.render_lights(tp, z, tables, &mut fpt, &mut lsec),
+                // lights last, so they can follow the marks they stand on (below)
+                Geo::Point if class.code == "LIGHTS" => {}
                 Geo::Point => {
-                    let mut taken: Vec<([f64; 2], u8)> = Vec::new();
+                    // finer-band copies in this tile: (position, band, minz)
+                    let mut taken: Vec<([f64; 2], u8, f64)> = Vec::new();
                     for (k, (ti, t)) in tables.iter().enumerate() {
                         let mut finer_bands: Vec<u8> = tables[..k].iter().map(|(_, ft)| ft.band).filter(|b| *b > t.band).collect();
                         finer_bands.dedup();
@@ -276,7 +280,10 @@ impl ChartStore {
                             let Geom::Points(pts) = &row.geom else { return };
                             let a = Attrs(&row.vals);
                             for &p in pts {
-                                if taken.iter().any(|(q, b)| *b > t.band && metres(p, *q) < SAME_M) {
+                                // a finer chart's copy of this mark: it stands from its own zoom; this
+                                // coarser copy fills in until then (maxz), so the mark never goes missing
+                                let finer = taken.iter().filter(|(q, b, _)| *b > t.band && metres(p, *q) < SAME_M).map(|(_, _, m)| *m).fold(f64::MAX, f64::min);
+                                if finer <= z as f64 {
                                     continue;
                                 }
                                 // a hazard where a finer band charts the water: the finer band's copy
@@ -293,7 +300,10 @@ impl ChartStore {
                                     continue;
                                 }
                                 // only a feature actually drawn at this zoom hides a coarser band's copy
-                                mine.push((p, t.band));
+                                mine.push((p, t.band, minz));
+                                if !hazard {
+                                    marks.push((p, t.band, minz));
+                                }
                                 let px = tp.px(&p);
                                 if !inside(px) {
                                     continue;
@@ -307,6 +317,9 @@ impl ChartStore {
                                     ("band", Value::UInt(t.band as u64)),
                                     ("minz", Value::F64((minz * 10.0).round() / 10.0)),
                                 ];
+                                if finer < f64::MAX {
+                                    props.push(("maxz", Value::F64((finer * 10.0).round() / 10.0)));
+                                }
                                 if let Some(l) = s57::label(class.code, &a) {
                                     props.push(("lbl", Value::Str(l)));
                                 }
@@ -406,10 +419,17 @@ impl ChartStore {
         for (_, (_, q, props)) in hz_pts {
             fpt.add(&TileGeom::Points(vec![q]), &props);
         }
+        if let Some((_, tables)) = groups.iter().find(|(c, _)| c.code == "LIGHTS") {
+            self.render_lights(tp, z, tables, &marks, &mut fpt, &mut lsec);
+        }
         [far, fln, fpt, lsec]
     }
 
-    fn render_lights(&self, tp: &TileProj, z: u8, tables: &[(usize, &TableInfo)], fpt: &mut Layer, lsec: &mut Layer) {
+    /// `marks`: the buoys and beacons drawn in this tile. A light whose mark comes from
+    /// a finer chart (which may not carry the light itself: LINZ's layers are not always
+    /// complete in every band) shows from the same zoom as that mark, so a light's flare
+    /// never stands on the chart without its buoy or beacon.
+    fn render_lights(&self, tp: &TileProj, z: u8, tables: &[(usize, &TableInfo)], marks: &[([f64; 2], u8, f64)], fpt: &mut Layer, lsec: &mut Layer) {
         // lights a little outside the tile still throw sectors into it
         let bbox = tp.lonlat_bbox(LEG_R + 16.0);
         struct Rec {
@@ -438,20 +458,28 @@ impl ChartStore {
         }
         let mut keys: Vec<_> = groups.keys().copied().collect();
         keys.sort_by_key(|k| (std::cmp::Reverse(k.2), k.0, k.1));
-        let mut kept: Vec<([f64; 2], u8)> = Vec::new();
+        let mut kept: Vec<([f64; 2], u8, f64)> = Vec::new();
         let e = EXTENT as f64;
         let keep = |minz: f64| z >= 16 || (z as f64 + 1.0) > minz;
         for k in keys {
             let idx = &groups[&k];
             let first = &recs[idx[0]];
-            if kept.iter().any(|(q, b)| *b > first.band && metres(first.p, *q) < SAME_M) {
+            // a finer chart's copy stands from its own zoom; this one until then
+            let finer = kept.iter().filter(|(q, b, _)| *b > first.band && metres(first.p, *q) < SAME_M).map(|(_, _, m)| *m).fold(f64::MAX, f64::min);
+            if finer <= z as f64 {
                 continue;
             }
-            let minz = idx.iter().map(|&i| recs[i].minz).fold(f64::MAX, f64::min);
+            let mut minz = idx.iter().map(|&i| recs[i].minz).fold(f64::MAX, f64::min);
+            // on a mark: appear no sooner than the first copy of the mark drawn here (a finer
+            // chart may carry the buoy but not its light)
+            let mark = marks.iter().filter(|(q, _, _)| metres(first.p, *q) < SAME_M).map(|(_, _, m)| *m).fold(f64::MAX, f64::min);
+            if mark < f64::MAX {
+                minz = minz.max(mark);
+            }
             if !keep(minz) {
                 continue;
             }
-            kept.push((first.p, first.band));
+            kept.push((first.p, first.band, minz));
             let c = tp.px(&first.p);
             let lights: Vec<Light> = idx.iter().map(|&i| recs[i].light.clone()).collect();
             let cols: Vec<&str> = lights.iter().map(|l| s57::light_colour(&l.colours)).collect();
@@ -465,6 +493,9 @@ impl ChartStore {
                     ("band", Value::UInt(first.band as u64)),
                     ("minz", Value::F64((minz * 10.0).round() / 10.0)),
                 ];
+                if finer < f64::MAX {
+                    props.push(("maxz", Value::F64((finer * 10.0).round() / 10.0)));
+                }
                 let lbl = s57::light_label(&lights);
                 if !lbl.is_empty() {
                     props.push(("lbl", Value::Str(lbl)));
@@ -489,9 +520,11 @@ impl ChartStore {
                 let arc: Vec<[f64; 2]> = (0..=n).map(|i| at(a0 + (a1 - a0) * i as f64 / n as f64, ARC_R)).collect();
                 let col = s57::light_colour(&l.colours);
                 let mz = Value::F64((minz * 10.0).round() / 10.0);
-                add_line(lsec, tp, &arc, &[("col", Value::Str(col.into())), ("k", Value::Str("arc".into())), ("minz", mz.clone())]);
+                // no finer copy: shown at every zoom from minz
+                let mx = Value::F64(if finer < f64::MAX { (finer * 10.0).round() / 10.0 } else { 99.0 });
+                add_line(lsec, tp, &arc, &[("col", Value::Str(col.into())), ("k", Value::Str("arc".into())), ("minz", mz.clone()), ("maxz", mx.clone())]);
                 for b in [a0, a1] {
-                    add_line(lsec, tp, &[c, at(b, LEG_R)], &[("col", Value::Str(col.into())), ("k", Value::Str("leg".into())), ("minz", mz.clone())]);
+                    add_line(lsec, tp, &[c, at(b, LEG_R)], &[("col", Value::Str(col.into())), ("k", Value::Str("leg".into())), ("minz", mz.clone()), ("maxz", mx.clone())]);
                 }
             }
         }

@@ -670,15 +670,23 @@ fn unzip_gpkgs(zip_path: &Path, out_dir: &Path) -> Result<Vec<PathBuf>, ChartErr
             continue;
         }
         let dest = out_dir.join(&name);
-        // Unpack when missing, or when this zip is newer than the copy (two downloads may hold
-        // the same layer: the newest wins once, and then neither rewrites it on every start).
+        // Which zip each unpacked file came from: a sidecar "<name>.src".
+        let src_file = out_dir.join(format!("{}.src", name.to_string_lossy()));
+        let zip_name = zip_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let from = std::fs::read_to_string(&src_file).ok();
+        // Unpack when missing; when this same zip is newer than the copy (a fresh download of
+        // it); or when another zip holds the same layer with more in it. LINZ exports of
+        // several layers can be cut to an area, and a small one must not replace the whole
+        // country's layer from its own download (or win just by being newer).
         let zip_time = std::fs::metadata(zip_path).and_then(|m| m.modified()).ok();
         let stale = match std::fs::metadata(&dest) {
             Err(_) => true,
-            Ok(m) => match (zip_time, m.modified().ok()) {
+            Ok(m) if from.as_deref() == Some(zip_name.as_str()) => match (zip_time, m.modified().ok()) {
                 (Some(z), Some(d)) => z > d,
                 _ => m.len() != f.size(),
             },
+            // unknown origin (unpacked before the sidecar) or another zip: the bigger wins
+            Ok(m) => f.size() > m.len(),
         };
         if stale {
             std::fs::create_dir_all(out_dir)?;
@@ -687,6 +695,7 @@ fn unzip_gpkgs(zip_path: &Path, out_dir: &Path) -> Result<Vec<PathBuf>, ChartErr
             std::io::copy(&mut f, &mut w)?;
             drop(w);
             std::fs::rename(&tmp, &dest)?;
+            let _ = std::fs::write(&src_file, &zip_name);
         }
         out.push(dest);
     }
@@ -825,6 +834,44 @@ mod edge_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_small_export_does_not_replace_a_whole_layer() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join(format!("racenav-unzip-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mk = |name: &str, bytes: usize| {
+            let p = dir.join(name);
+            let mut z = zip::ZipWriter::new(std::fs::File::create(&p).unwrap());
+            z.start_file("light-points-hydro-122k-190k.gpkg", zip::write::SimpleFileOptions::default()).unwrap();
+            z.write_all(&vec![7u8; bytes]).unwrap();
+            z.finish().unwrap();
+            p
+        };
+        let out = dir.join(".unzipped");
+        let size = || std::fs::metadata(out.join("light-points-hydro-122k-190k.gpkg")).unwrap().len();
+        let big = mk("lds-oceania-279layers-GPKG.zip", 5000);
+        unzip_gpkgs(&big, &out).unwrap();
+        // a later, smaller export holding the same layer: kept out, in either order
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let small = mk("lds-oceania-50layers-GPKG.zip", 300);
+        unzip_gpkgs(&small, &out).unwrap();
+        assert_eq!(size(), 5000);
+        unzip_gpkgs(&big, &out).unwrap();
+        assert_eq!(size(), 5000);
+        // a copy unpacked by an older build (no record of its zip) gives way to a bigger one
+        std::fs::remove_file(out.join("light-points-hydro-122k-190k.gpkg.src")).unwrap();
+        std::fs::write(out.join("light-points-hydro-122k-190k.gpkg"), vec![1u8; 300]).unwrap();
+        unzip_gpkgs(&big, &out).unwrap();
+        assert_eq!(size(), 5000);
+        // a fresh download of the same zip replaces its own copy, even if smaller
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        let big2 = mk("lds-oceania-279layers-GPKG.zip", 4800);
+        unzip_gpkgs(&big2, &out).unwrap();
+        assert_eq!(size(), 4800);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn lakes_are_cut_out_of_land() {
