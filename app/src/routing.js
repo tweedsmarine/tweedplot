@@ -474,6 +474,7 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
       const best = {};
       for (const c of defs) {
         if (!c.best || pool.length < 2) continue;
+        if (c.best === "progress" && pool.some((x) => x.r.status === "arrived")) continue;
         const vs = pool.map((x) => val(x, c)).filter((v) => typeof v === "number");
         if (vs.length) best[c.key] = c.best === "min" ? Math.min(...vs) : Math.max(...vs);
       }

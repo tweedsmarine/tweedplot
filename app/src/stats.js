@@ -62,7 +62,9 @@ export function hm(sec) {
 
 /**
  * Columns for the compare table. get(stats, routing) → value or null;
- * best: "min" | "max" marks the best routing in the column.
+ * best: "min" | "max" marks the best routing in the column; "progress": the most,
+ * but only when no routing finished (then distance is progress; once they finish,
+ * Elapsed and Finish show the winner and sailing further is no merit).
  */
 export const STATS = [
   { key: "status", label: "Result", group: "Time", get: (s) => s.status, fmt: (x) => ({ arrived: "Arrived", "grib end": "GRIB ended" })[x] ?? x, def: true },
@@ -70,7 +72,7 @@ export const STATS = [
   { key: "end", label: "Finish / end", group: "Time", get: (s) => s.end, fmt: (x) => fmt(x, true), best: "min", def: true },
   { key: "elapsed", label: "Elapsed", group: "Time", get: (s) => s.elapsed, fmt: hm, best: "min", def: true },
   { key: "toGo", label: "Still to go", group: "Time", get: (s) => s.toGo, fmt: (x) => `${f1(x)} NM`, best: "min" },
-  { key: "distance", label: "Distance", group: "Distance and speed", get: (s) => s.distance, fmt: (x) => `${f1(x)} NM`, best: "min", def: true },
+  { key: "distance", label: "Distance", group: "Distance and speed", get: (s) => s.distance, fmt: (x) => `${f1(x)} NM`, best: "progress", def: true },
   { key: "avgSog", label: "Avg SOG", group: "Distance and speed", get: (s) => s.avgSog, fmt: kn, best: "max", def: true },
   { key: "maxSog", label: "Max SOG", group: "Distance and speed", get: (s) => s.maxSog, fmt: kn },
   { key: "avgBsp", label: "Avg BSP", group: "Distance and speed", get: (s) => s.avgBsp, fmt: kn },
