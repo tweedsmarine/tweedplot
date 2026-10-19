@@ -36,13 +36,13 @@ export function setupStations(map, { weather }) {
   map.addImage("stn-arrow", g.getImageData(0, 0, 32, 32), { sdf: true });
   map.addSource("stations", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addLayer({ id: "stn-dot", type: "circle", source: "stations",
-    paint: { "circle-radius": 9, "circle-color": ["get", "col"], "circle-stroke-color": "#1d2a33", "circle-stroke-width": 2 } });
+    paint: { "circle-radius": 7.2, "circle-color": ["get", "col"], "circle-stroke-color": "#1d2a33", "circle-stroke-width": 1.6 } });
   map.addLayer({ id: "stn-arrow", type: "symbol", source: "stations", filter: ["has", "rot"],
     layout: { "icon-image": "stn-arrow", "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true,
-      "icon-size": ["interpolate", ["linear"], ["get", "kn"], 0, 0.9, 30, 1.9] },
-    paint: { "icon-color": ["get", "col"], "icon-halo-color": "#1d2a33", "icon-halo-width": 2 } });
+      "icon-size": ["interpolate", ["linear"], ["get", "kn"], 0, 0.72, 30, 1.52] },
+    paint: { "icon-color": ["get", "col"], "icon-halo-color": "#1d2a33", "icon-halo-width": 1.6 } });
   map.addLayer({ id: "stn-label", type: "symbol", source: "stations", minzoom: 6.5, filter: ["has", "lbl"],
-    layout: { "icon-image": ["concat", "lbl:", ["get", "lbl"]], "icon-anchor": "left", "icon-offset": [16, 0], "icon-size": 1.25, "icon-allow-overlap": true, "icon-ignore-placement": true } });
+    layout: { "icon-image": ["concat", "lbl:", ["get", "lbl"]], "icon-anchor": "left", "icon-offset": [16, 0], "icon-size": 1.0, "icon-allow-overlap": true, "icon-ignore-placement": true } });
 
   function draw() {
     const vis = s.show ? "visible" : "none";
