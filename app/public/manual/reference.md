@@ -162,6 +162,8 @@ The ☀ button at the top right (or **Chart and Signal K › Display colours**) 
 
 **Brightness** sets how bright dusk and night are. Turn the screen's own brightness down at night too: night colours dim what is drawn, not the backlight.
 
+With dusk and night colours the window's title bar turns dark as well. To get rid of it altogether, press **F11** (or **Full screen** under Display colours) to fill the screen; F11 again switches back. The cockpit window does the same with its own colours and F11.
+
 ## Your boat
 
 RaceNav shows your own boat from live instruments, or wherever you put it when planning.

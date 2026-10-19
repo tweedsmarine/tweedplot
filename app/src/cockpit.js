@@ -3,6 +3,7 @@
 // instrument panels show, once a second, plus the active alarms.
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { setWindowDark, installFullscreenKey } from "./winchrome.js";
 import { ITEMS } from "./instruments.js";
 
 const KEY = "racenav.cockpit";
@@ -159,6 +160,7 @@ function pal() {
   document.documentElement.dataset.palette = s.pal;
   document.documentElement.style.setProperty("--pal-dim", s.pal === "day" ? "1" : s.pal === "dusk" ? "0.75" : "0.6");
   $("ck-pal").textContent = PAL_NAMES[s.pal];
+  setWindowDark(s.pal !== "day");
 }
 $("ck-pal").onclick = () => { s.pal = PALS[(PALS.indexOf(s.pal) + 1) % PALS.length]; save(); pal(); };
 $("ck-cols").onclick = () => { s.cols = (s.cols % 5) + 1; s.colW = null; s.rowH = null; save(); build(); };
@@ -189,5 +191,6 @@ listen("cockpit", ({ payload }) => {
   loud = a.some((x) => !x.acked && x.level === "alarm");
 });
 
+installFullscreenKey();
 pal();
 build();

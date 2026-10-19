@@ -2,6 +2,8 @@
 // the screen (chart, GRIB shading, panels) into a shade of red or green on
 // black, so a glance at the screen doesn't spoil night vision. Done with CSS
 // filters on the whole page: dark-on-light becomes light-on-dark, then one hue.
+import { setWindowDark, toggleFullscreen, installFullscreenKey } from "./winchrome.js";
+
 const KEY = "racenav.palette";
 const MODES = ["day", "dusk", "night-red", "night-green"];
 const NAMES = { day: "day", dusk: "dusk", "night-red": "night (red)", "night-green": "night (green)" };
@@ -24,11 +26,14 @@ export function setupPalette() {
     const next = MODES[(MODES.indexOf(p.mode) + 1) % MODES.length];
     $("palette-btn").title = `Colours: ${NAMES[p.mode]} (click for ${NAMES[next]})`;
     $("palette-btn").classList.toggle("night", p.mode !== "day");
+    setWindowDark(p.mode !== "day");
     try { localStorage.setItem(KEY, JSON.stringify(p)); } catch { /* ignore */ }
   }
   $("palette-btn").onclick = () => { p.mode = MODES[(MODES.indexOf(p.mode) + 1) % MODES.length]; apply(); };
   $("pal-mode").onchange = (e) => { p.mode = e.target.value; apply(); };
   $("pal-dim").oninput = (e) => { if (p.mode !== "day") { p.dim[p.mode] = +e.target.value; apply(); } };
+  $("pal-full").onclick = () => toggleFullscreen();
+  installFullscreenKey();
   apply();
   return { mode: () => p.mode, set: (m) => { if (MODES.includes(m)) { p.mode = m; apply(); } } };
 }
