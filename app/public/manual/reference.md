@@ -85,7 +85,7 @@ Drawers slide out from the rail; instrument panels, the time slider and the dock
 
 - Drag to pan, scroll or pinch to zoom, right-drag or two-finger twist to rotate (the compass button resets north up).
 - On a touch screen a tap sets the cursor (there is no hover), and a long press opens the chart menu.
-- To move a mark, ruler point or barrier point: click it (amber ring), wait for the ring to turn green, then drag. The pause stops marks being moved by accident.
+- To move a course mark, library mark, ruler point or barrier point: click it (amber ring), wait for the ring to turn green, then drag. The pause stops marks being moved by accident. A library mark's new position is saved straight away, and every route using it follows.
 
 ## Charts
 
@@ -360,7 +360,7 @@ Use the rounding sides for race marks and headlands you must keep off; use a gen
 
 **Mark types and points of interest**
 
-In the mark editor (Library > Marks > edit, or right-click > **New library mark here**) choose a type: racing mark, waypoint, start or finish line end, danger, an IALA A buoy (port, starboard, cardinals, isolated danger, safe water, special), or a point of interest: good anchorage, mooring, shelter, fishing spot, diving spot, foul ground, wreck, hazard, landing point, camping spot, hut, viewpoint, water filling, fuel, provisions, note. Each draws with its own symbol. Any of them can be a course mark. Groups (e.g. "RNZYS 2026", "Fishing spots") keep the library tidy.
+In the mark editor (Library > Marks > **Edit**, which opens under that mark in the list, or right-click > **New library mark here**) choose a type: racing mark, waypoint, start or finish line end, danger, an IALA A buoy (port, starboard, cardinals, isolated danger, safe water, special), or a point of interest: good anchorage, mooring, shelter, fishing spot, diving spot, foul ground, wreck, hazard, landing point, camping spot, hut, viewpoint, water filling, fuel, provisions, note. Each draws with its own symbol. Any of them can be a course mark. Groups (e.g. "RNZYS 2026", "Fishing spots") keep the library tidy.
 
 **Barriers**
 

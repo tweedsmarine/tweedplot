@@ -108,6 +108,10 @@ details.sub summary { cursor: pointer; font-size: 11px; color: var(--quiet); tex
 .list li .num.s { background: var(--good); }
 .list li.active { background: #eef5fb; }
 .list li.empty { color: var(--quiet); font-size: 12px; }
+/* a mark opened for editing in its place in the list */
+.list li.editing { background: #eef5fb; }
+.list li.edit-row { display: block; padding: 0 0 6px; border-top: none; background: #eef5fb; }
+.list li.edit-row button { padding: 4px 10px; font-size: 13px; }
 .tabs { display: flex; gap: 4px; margin-bottom: 6px; }
 .tabs button { padding: 6px; }
 .tab[hidden], .edit[hidden] { display: none; }

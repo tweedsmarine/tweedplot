@@ -14,7 +14,7 @@ export const BUOY_ICONS = {
   isolated: "b|4|2,3,2|1|isd", safewater: "b|3|3,1|2|saw", special: "b|4|6||spp",
 };
 
-export function setupLibrary(map, { ui }) {
+export function setupLibrary(map, { ui, toast = () => {} }) {
   const $ = (id) => document.getElementById(id);
   let marks = [];
   let routes = [];
@@ -59,8 +59,72 @@ export function setupLibrary(map, { ui }) {
     map.getSource("lib-marks").setData({ type: "FeatureCollection", features: shown.filter((m) => !hidden.includes(m.id)).map((m) => ({
       type: "Feature", properties: { id: m.id, name: m.name, kind: m.kind }, geometry: { type: "Point", coordinates: [m.lon, m.lat] } })) });
   }
-  map.on("mouseenter", "lib-marks", () => { map.getCanvas().style.cursor = "pointer"; });
-  map.on("mouseleave", "lib-marks", () => { map.getCanvas().style.cursor = ""; });
+  map.on("mouseenter", "lib-marks", () => { if (!dragging) map.getCanvas().style.cursor = "pointer"; });
+  map.on("mouseleave", "lib-marks", () => { if (!dragging) map.getCanvas().style.cursor = ""; });
+
+  // ---------- selecting and moving marks on the chart ----------------------------------
+  // As course marks and barrier points: click a mark (amber ring), wait for the ring to
+  // turn green, then drag it. The new position is saved to the library (and so to every
+  // route using the mark). Clicks while placing course marks or drawing go to those.
+  const ARM_MS = 1200;
+  let sel = null, movable = false, armTimer = null, dragging = false, dragPos = null;
+  map.addSource("lib-sel", { type: "geojson", data: empty });
+  map.addLayer({ id: "lib-sel", type: "circle", source: "lib-sel",
+    paint: { "circle-radius": 15, "circle-color": "rgba(0,0,0,0)", "circle-stroke-width": 4, "circle-stroke-color": "#f0a500" } }, "lib-marks");
+  function drawSel() {
+    const m = sel && (dragPos ? { lon: dragPos[0], lat: dragPos[1] } : byId(sel));
+    map.getSource("lib-sel").setData(m ? { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [m.lon, m.lat] } } : empty);
+    map.setPaintProperty("lib-sel", "circle-stroke-color", movable ? "#2e8b57" : "#f0a500");
+  }
+  function selectMark(id) {
+    clearTimeout(armTimer);
+    sel = id; movable = false; drawSel();
+    const m = byId(id);
+    toast(`${m?.name || "Mark"} selected: wait for the ring to turn green, then drag it. Esc to let go.`);
+    armTimer = setTimeout(() => { movable = true; drawSel(); toast(`Drag ${m?.name || "the mark"} to move it.`); }, ARM_MS);
+  }
+  function deselectMark() { clearTimeout(armTimer); if (sel) toast(""); sel = null; movable = false; drawSel(); }
+  const busy = () => document.querySelector(".armed");
+  map.on("click", (e) => {
+    if (busy() || !prefs.show) return;
+    const f = map.queryRenderedFeatures([[e.point.x - 6, e.point.y - 6], [e.point.x + 6, e.point.y + 6]], { layers: ["lib-marks"] })[0];
+    if (f) { if (f.properties.id !== sel) selectMark(f.properties.id); }
+    else if (sel) deselectMark();
+  });
+  map.on("mousedown", "lib-marks", (e) => {
+    const id = e.features[0].properties.id;
+    if (busy() || e.originalEvent.button !== 0 || !movable || id !== sel) return;
+    e.preventDefault();
+    map.dragPan.disable();
+    dragging = true;
+    map.getCanvas().style.cursor = "grabbing";
+  });
+  map.on("mousemove", (e) => {
+    if (!dragging) return;
+    dragPos = [e.lngLat.lng, e.lngLat.lat];
+    const m = byId(sel);
+    if (m) { m.lon = dragPos[0]; m.lat = dragPos[1]; draw(); }
+    drawSel();
+  });
+  map.on("mouseup", async () => {
+    if (!dragging) return;
+    dragging = false;
+    map.dragPan.enable();
+    map.getCanvas().style.cursor = "";
+    const m = byId(sel);
+    dragPos = null;
+    if (!m) return;
+    try {
+      const saved = await invoke("mark_save", { mark: m });
+      route?.libraryMarkChanged(saved);
+      toast(`Moved ${saved.name || "the mark"} to ${ddm(saved.lat, "N", "S")} ${ddm(saved.lon, "E", "W")}.`, 4000);
+    } catch (err) { toast(`Could not save the mark: ${err}`, 6000); }
+    await refresh();
+    drawSel();
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && sel && document.getElementById("ctx")?.hidden !== false) { deselectMark(); }
+  });
 
   // ---------- data ----------------------------------------------------------
   async function refresh() {
@@ -164,6 +228,7 @@ export function setupLibrary(map, { ui }) {
   function renderMarks() {
     const q = $("lib-search").value.trim().toLowerCase();
     const ul = $("lib-marks");
+    parkForm(); // the edit form lives in the list while open: keep it out of the wipe
     ul.innerHTML = "";
     if ($("lib-f-group").options.length <= 1 && marks.length) renderGroups();
     syncFilterControls();
@@ -174,6 +239,7 @@ export function setupLibrary(map, { ui }) {
     for (const m of list) {
       const used = routes.filter((r) => r.start_mark === m.id || r.marks.some((x) => x.mark === m.id)).length;
       const li = document.createElement("li");
+      li.dataset.id = m.id;
       li.innerHTML = `<div class="main" title="Show on the chart"><b></b><small></small></div><button data-act="start" title="Make this the route's start">Start</button><button data-act="add" title="Add to the end of the route being edited">+ Route</button><button data-act="edit">Edit</button><button data-act="del">✕</button>`;
       li.querySelector("b").textContent = m.name;
       li.querySelector("small").textContent = `${m.group ? m.group + " · " : ""}${ddm(m.lat, "N", "S")} ${ddm(m.lon, "E", "W")}${used ? ` · in ${used} route${used > 1 ? "s" : ""}` : ""}`;
@@ -187,15 +253,43 @@ export function setupLibrary(map, { ui }) {
       });
       ul.append(li);
     }
+    if (editing && !form.hidden) placeForm(editing.id);
   }
   $("lib-search").oninput = renderMarks;
   $("lib-show").checked = prefs.show;
   $("lib-show").onchange = (e) => { prefs.show = e.target.checked; savePrefs(); draw(); };
 
   const form = $("mark-edit");
+  // the form's home when no mark is being edited (just after the list)
+  const formHome = document.createComment("mark-edit");
+  form.before(formHome);
+  function parkForm() { if (form.parentElement?.id === "lib-marks-edit-row" || form.closest("#lib-marks")) formHome.after(form); }
+  /** Open the form in the list, under the mark's row (or where it was, if that row is filtered out). */
+  function placeForm(id) {
+    const ul = $("lib-marks");
+    const li = [...ul.children].find((x) => x.dataset.id === id);
+    if (!li) { formHome.after(form); return; }
+    const row = document.createElement("li");
+    row.className = "edit-row";
+    row.id = "lib-marks-edit-row";
+    row.append(form);
+    li.after(row);
+    li.classList.add("editing");
+  }
+  function closeForm() {
+    form.hidden = true;
+    editing = null;
+    const row = document.getElementById("lib-marks-edit-row");
+    parkForm();
+    row?.remove();
+    $("lib-marks").querySelector("li.editing")?.classList.remove("editing");
+  }
   function editMark(m) {
+    if (!document.getElementById("lib-marks-edit-row") || editing?.id !== m.id) { closeForm(); }
     editing = { ...m };
+    placeForm(m.id);
     form.hidden = false;
+    form.scrollIntoView({ block: "nearest", behavior: "smooth" });
     form.name.value = m.name;
     if (!form.kind.querySelector("optgroup.poi")) {
       const og = document.createElement("optgroup");
@@ -222,13 +316,13 @@ export function setupLibrary(map, { ui }) {
       barrier_nm: Number.isFinite(bn) && bn > 0 ? bn : 0 };
     try {
       const saved = await invoke("mark_save", { mark: m });
-      form.hidden = true;
+      closeForm();
       status(`Saved ${saved.name}.`);
       route?.libraryMarkChanged(saved);
       await refresh();
     } catch (err) { status(String(err)); }
   };
-  form.querySelector('[data-act="cancel"]').onclick = () => { form.hidden = true; };
+  form.querySelector('[data-act="cancel"]').onclick = () => closeForm();
 
   // ---------- routings tab ----------------------------------------------------------
   function renderRoutings() {
