@@ -82,6 +82,14 @@ export const ITEMS = {
   GSET: { label: "Current set", unit: "°T", group: "Sea at cursor", get: (c) => c.grib?.cur?.set, fmt: deg3 },
   GTIME: { label: "GRIB time", unit: "", group: "GRIB at cursor", wide: true, get: (c) => c.grib?.t, fmt: (t) => new Date(t * 1000).toLocaleString("en-NZ", { weekday: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) },
   GSRC: { label: "GRIB", unit: "", group: "GRIB at cursor", wide: true, get: (c) => c.grib?.name, fmt: (s) => esc(s) },
+
+  // man overboard: from the boat to the MOB position (rhumb line), while a MOB is set
+  MOBBRG: { label: "Brg to MOB", unit: "°T", group: "Man overboard", get: (c) => mobLeg(c)?.brg ?? null, fmt: deg3, state: () => "alarm" },
+  MOBRNG: { label: "Rng to MOB", unit: "", group: "Man overboard", get: (c) => mobLeg(c)?.nm ?? null, state: () => "alarm",
+    // metres close in, where it matters most
+    fmt: (x) => (x < 0.2 ? `${Math.round(x * 1852)}<span class="u">m</span>` : `${x < 10 ? x.toFixed(2) : x.toFixed(1)}<span class="u">NM</span>`) },
+  MOBAGO: { label: "Since MOB", unit: "", group: "Man overboard", get: (c) => (c.mob ? (c.now - c.mob.t) / 1000 : null), state: () => "alarm",
+    fmt: (s) => `${Math.floor(s / 60)}<span class="u">min</span>${String(Math.floor(s % 60)).padStart(2, "0")}<span class="u">s</span>` },
 };
 
 // ---------- graphical instruments ----------------------------------------------------------
@@ -131,6 +139,11 @@ ITEMS.COMPASS = { label: "Compass", unit: "", group: "Graphic", live: true, grap
   get: (c) => (c.v.heading == null && c.v.cog == null ? null : { hdg: c.v.heading, cog: c.v.cog, btw: c.wp?.btw }), fmt: compassRose };
 
 /** Rhumb line from the boat to the cursor, or null. */
+function mobLeg(c) {
+  if (!c.mob || c.v.lat == null || c.v.lon == null) return null;
+  return rhumb([c.v.lon, c.v.lat], [c.mob.lon, c.mob.lat]);
+}
+
 function cursorLeg(c) {
   if (!c.cursor || c.v.lat == null || c.v.lon == null) return null;
   return rhumb([c.v.lon, c.v.lat], c.cursor);
@@ -139,6 +152,8 @@ function cursorLeg(c) {
 const CURSOR_PANEL = { id: "pc", x: 0.45, y: 0.02, dir: "row", size: "s", tiles: ["CPOS", "CBRG", "CRNG"] };
 const GRIB_PANEL = { id: "pg", x: 0.45, y: 0.11, dir: "row", size: "s", tiles: ["GTWS", "GTWD", "GGUST", "GMSLP", "GHS"] };
 // shown only while an ocean file is loaded (`sea`)
+// shown only while a man overboard is set (`mob`): big, near the top, below the alarm banner
+const MOB_PANEL = { id: "pm", x: 0.4, y: 0.25, dir: "row", size: "l", mob: true, name: "Man overboard", tiles: ["MOBBRG", "MOBRNG", "MOBAGO"] };
 const SEA_PANEL = { id: "ps", x: 0.36, y: 0.2, dir: "row", size: "s", sea: true, name: "Sea at cursor", tiles: ["GSST", "GSKIN", "GSSS", "GCUR", "GSET", "GCHL"] };
 
 const DEFAULT_LAYOUT = {
@@ -150,6 +165,7 @@ const DEFAULT_LAYOUT = {
     CURSOR_PANEL,
     GRIB_PANEL,
     SEA_PANEL,
+    MOB_PANEL,
   ],
   added: ["cursor", "grib", "sea"],
 };
@@ -262,8 +278,8 @@ export function setupInstruments() {
     for (const el of root.children) {
       const p = panel(el.dataset.id);
       if (!p) continue;
-      // the sea panel: only while an ocean file is loaded
-      const off = !!p.sea && !ctx.seaLoaded;
+      // the sea panel: only while an ocean file is loaded; the MOB panel: only during a MOB
+      const off = (!!p.sea && !ctx.seaLoaded) || (!!p.mob && !ctx.mob);
       if ((el.style.display === "none") !== off) {
         el.style.display = off ? "none" : "";
         if (!off) place(el, p);
@@ -379,7 +395,18 @@ export function setupInstruments() {
   return {
     /** New data: vessel state, route/waypoint and routing targets. */
     update(next) {
+      // a new man overboard: its panel comes up even if it was folded or hidden
+      const newMob = next.mob && !ctx.mob;
       ctx = { ...ctx, ...next, now: Date.now() };
+      if (newMob) {
+        let p = layout.panels.find((x) => x.mob);
+        if (!p) { p = structuredClone(MOB_PANEL); layout.panels.push(p); }
+        p.hidden = false;
+        p.collapsed = false;
+        if (layout.hideAll) layout.hideAll = false;
+        save();
+        build();
+      }
       ctx.age = (Date.now() - (ctx.dataAt ?? 0)) / 1000;
       render();
     },
@@ -395,6 +422,7 @@ function loadLayout() {
       if (!l.added.includes("cursor")) { l.panels.push(structuredClone(CURSOR_PANEL)); l.added.push("cursor"); }
       if (!l.added.includes("grib")) { l.panels.push(structuredClone(GRIB_PANEL)); l.added.push("grib"); }
       if (!l.added.includes("sea")) { l.panels.push(structuredClone(SEA_PANEL)); l.added.push("sea"); }
+      if (!l.added.includes("mob")) { l.panels.push(structuredClone(MOB_PANEL)); l.added.push("mob"); }
       return l;
     }
   } catch { /* ignore */ }

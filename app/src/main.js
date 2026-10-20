@@ -184,6 +184,7 @@ document.getElementById("manual-btn").onclick = () => manual.toggle();
 manual.onToggle((on) => document.getElementById("manual-btn").classList.toggle("on", on));
 document.getElementById("drawer-help").onclick = () => manual.help(ui.current());
 const inst = setupInstruments();
+window.addEventListener("racenav-mob", (e) => inst.update({ mob: e.detail }));
 const boat = setupBoat();
 const dock = setupDock(map);
 let features = null;

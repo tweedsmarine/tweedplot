@@ -122,6 +122,8 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft }) {
 
   // ---------- MOB ----------------------------------------------------------------
   const fmtAgo = (ms) => { const m = Math.floor(ms / 60000), sec = Math.floor((ms % 60000) / 1000); return `${m}:${String(sec).padStart(2, "0")}`; };
+  /** Tell the rest of the app (the MOB instrument panel) that a MOB was set or cleared. */
+  function mobChanged() { window.dispatchEvent(new CustomEvent("racenav-mob", { detail: mob })); }
   function mobAlarm() {
     if (!mob) { clear("mob"); return; }
     const b = getBoat();
@@ -136,7 +138,7 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft }) {
       onClick: () => map.easeTo({ center: [mob.lon, mob.lat], zoom: Math.max(map.getZoom(), 14) }),
       dismiss: () => {
         const btn = banner.querySelector(".alarm.alarm [data-act='dismiss']");
-        if (btn && btn.dataset.sure) { mob = null; save(); clear("mob"); drawGeo(); $("mob-btn").classList.remove("on"); }
+        if (btn && btn.dataset.sure) { mob = null; save(); clear("mob"); drawGeo(); $("mob-btn").classList.remove("on"); mobChanged(); }
         else if (btn) { btn.dataset.sure = "1"; btn.textContent = "Sure?"; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.sure; btn.textContent = "Clear MOB"; } }, 3000); }
       },
       dismissLabel: "Clear MOB",
@@ -152,12 +154,14 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft }) {
     $("mob-btn").classList.add("on");
     mobAlarm();
     drawGeo();
+    mobChanged();
     // keep a record in the library
     const when = new Date(mob.t);
     invoke("mark_save", { mark: { name: `MOB ${when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`, lat: mob.lat, lon: mob.lon, kind: "danger", group: "MOB",
       notes: `Man overboard pressed ${when.toISOString()}` } }).catch(() => {});
   };
   if (mob) { $("mob-btn").classList.add("on"); }
+  setTimeout(mobChanged, 0); // the instruments show a MOB still set from before
 
   // ---------- checks ----------------------------------------------------------------
   let lastPosAt = Date.now();
