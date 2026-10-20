@@ -288,8 +288,9 @@ let vessel = {}; // latest Signal K state
 function boatTime() {
   // planning: the weather slider's time; live: the GPS time, else the clock
   if (!live && weather?.current().t) return weather.current().t;
+  // whole seconds: the Rust commands that take a time want an integer
   const t = Date.parse(vessel.datetime ?? "");
-  return Number.isFinite(t) ? t / 1000 : Date.now() / 1000;
+  return Math.floor(Number.isFinite(t) ? t / 1000 : Date.now() / 1000);
 }
 function feed() {
   const nav = route?.nav() ?? null;

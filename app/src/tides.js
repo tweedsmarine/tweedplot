@@ -18,6 +18,7 @@ function parts(t, tz) {
 }
 /** Unix time of local midnight starting the day that holds `t`. */
 function dayStart(t, tz) {
+  t = Math.floor(t);
   const p = parts(t, tz);
   let s = t - (p.hour * 3600 + p.minute * 60 + p.second);
   // across a daylight change the day is 23 or 25 hours: check and correct once
@@ -98,7 +99,7 @@ export function setupTides(map, { before, getTime, onTime }) {
     const d0 = day ?? dayStart(t, tz);
     const d1 = dayStart(d0 + DAY + 3 * 3600, tz);
     let r;
-    try { r = await invoke("tides_curve", { id, t0: d0, t1: d1 }); } catch (e) { r = { error: String(e) }; }
+    try { r = await invoke("tides_curve", { id, t0: Math.floor(d0), t1: Math.floor(d1) }); } catch (e) { r = { error: String(e) }; }
     current = { id, day: d0, tz, lngLat };
     const el = document.createElement("div");
     el.className = "tide-pop";
