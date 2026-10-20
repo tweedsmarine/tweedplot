@@ -553,6 +553,9 @@ impl ChartStore {
         drop(conn);
         for (vals, blob, shift) in got {
             if let Some(mut g) = parse_gpkg(&blob) {
+                if t.kind == Kind::DepthArea && drop_seam_strips(&mut g) {
+                    continue;
+                }
                 shift_geom(&mut g, -shift);
                 f(&vals, g);
             }
@@ -753,6 +756,38 @@ pub fn drop_cell_edges(g: Geom) -> Geom {
 /// Land rings minus water rings, in tile units (exteriors positive, holes
 /// negative, as `TileProj::polygons` gives them). Non-zero filling, so
 /// overlapping lakes (Topo50 and a chart's own) count once.
+/// Drop the bogus strips in some small-scale depth areas: where a polygon crossed the
+/// 180° meridian it was cut there, and the part west of it came out as a plain
+/// rectangle (four corners, no holes) from 162°E to 180°, land and all. In the LINZ
+/// 1:1.35M-1:11.5M layer they are thin bands of deep water across the northern North
+/// Island, which cut the land away at small scales. Returns true if nothing is left.
+pub(crate) fn drop_seam_strips(g: &mut geom::Geom) -> bool {
+    let geom::Geom::Polygons(polys) = g else { return false };
+    let before = polys.len();
+    polys.retain(|p| {
+        let Some(ext) = p.first() else { return false };
+        if p.len() > 1 || ext.len() > 8 {
+            return true;
+        }
+        let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+        for q in ext {
+            x0 = x0.min(q[0]);
+            x1 = x1.max(q[0]);
+            y0 = y0.min(q[1]);
+            y1 = y1.max(q[1]);
+        }
+        let at_seam = x1 >= 179.999 || x0 <= -179.999;
+        if !at_seam || x1 - x0 < 5.0 {
+            return true;
+        }
+        let n = ext.len();
+        let area = (0..n).map(|i| { let (a, b) = (ext[i], ext[(i + 1) % n]); a[0] * b[1] - b[0] * a[1] }).sum::<f64>().abs() / 2.0;
+        // a plain rectangle filling its box
+        area < 0.97 * (x1 - x0) * (y1 - y0)
+    });
+    polys.is_empty() && before > 0
+}
+
 pub fn cut_water(land: Vec<Vec<[i32; 2]>>, water: Vec<Vec<[i32; 2]>>) -> Vec<Vec<[i32; 2]>> {
     // Clipper2 (a pure Rust port), in tile units: i_overlay ran away on some tiles,
     // asking for tens of gigabytes
@@ -1159,6 +1194,19 @@ mod edge_tests {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn drops_seam_strips_only() {
+        use geom::Geom;
+        let strip = vec![vec![[162.074, -36.2], [180.0, -36.2], [180.0, -35.4], [162.074, -35.4], [162.074, -36.2]]];
+        let real = vec![vec![[178.0, -40.0], [180.0, -40.0], [180.0, -38.0], [179.0, -37.5], [178.0, -38.0], [178.0, -40.0]]];
+        let small = vec![vec![[179.0, -30.0], [180.0, -30.0], [180.0, -29.0], [179.0, -29.0], [179.0, -30.0]]];
+        let mut g = Geom::Polygons(vec![strip.clone(), real.clone(), small.clone()]);
+        assert!(!drop_seam_strips(&mut g));
+        assert_eq!(g, Geom::Polygons(vec![real, small]));
+        let mut only = Geom::Polygons(vec![strip]);
+        assert!(drop_seam_strips(&mut only));
+    }
+
     use super::*;
 
     #[test]
