@@ -855,6 +855,34 @@ mod tests {
     }
 
     #[test]
+    fn installs_permits() {
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/s63");
+        let dir = std::env::temp_dir().join(format!("enc_s63i_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        fn copy(a: &Path, b: &Path) {
+            std::fs::create_dir_all(b).unwrap();
+            for e in std::fs::read_dir(a).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() { copy(&p, &b.join(e.file_name())) } else if e.file_name() != "PERMIT.TXT" { std::fs::copy(&p, b.join(e.file_name())).unwrap(); }
+            }
+        }
+        copy(&src, &dir);
+        let cells = find_cells(&dir);
+        let e = open_cell(&cells[0], &s63_permits(&dir)).err().unwrap().to_string();
+        assert!(e.contains("SSE 11"), "{e}");
+        let text = std::fs::read_to_string(src.join("PERMIT.TXT")).unwrap();
+        let done = install_permits(&dir, &text).unwrap();
+        assert!(done.iter().any(|(c, w)| c == "GB61021B" && w.starts_with("installed")), "{done:?}");
+        assert!(dir.join(".permits/PERMIT.TXT").is_file());
+        assert!(open_cell(&cells[0], &s63_permits(&dir)).is_ok());
+        // installing again keeps one line per cell
+        install_permits(&dir, &text).unwrap();
+        let store = std::fs::read_to_string(dir.join(".permits/PERMIT.TXT")).unwrap();
+        assert_eq!(store.lines().filter(|l| l.starts_with("GB61021B")).count(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn tables() {
         assert_eq!(table_for("LIGHTS", 1, 5).as_deref(), Some("light_points_hydro_enc_b5"));
         assert_eq!(table_for("DEPARE", 3, 4).as_deref(), Some("depth_area_polygon_hydro_enc_b4"));

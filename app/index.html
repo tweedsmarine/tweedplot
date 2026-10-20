@@ -422,6 +422,20 @@
             <p>Natural Earth bathymetry: public domain (naturalearthdata.com). GSHHG coastline: Wessel &amp; Smith, University of Hawaiʻi and NOAA, LGPL 3, downloaded from its home site. ETOPO 2022: NOAA National Centers for Environmental Information, free to use and redistribute (doi:10.25921/fd45-gt74), fetched through NOAA CoastWatch ERDDAP. LINZ hydrographic data: Toitū Te Whenua LINZ, CC BY 4.0. World depths and ETOPO are drawn under the charts for orientation only: they are coarse or interpolated near the coast, and routing does not use them. Not for navigation.</p>
           </details>
         </div>
+        <h3>Encrypted charts (S-63)</h3>
+        <div id="s63-box">
+          <div class="wx-row"><label for="s63-up" title="This system's user permit: give it to your chart supplier when ordering cell permits">User permit</label>
+            <input id="s63-up" class="mono grow" maxlength="28" spellcheck="false" autocomplete="off" />
+            <button id="s63-up-copy" title="Copy the user permit, to send to your chart supplier">Copy</button></div>
+          <div class="wx-row"><span id="s63-up-note" class="grow wx-note"></span><button id="s63-up-set" title="Use the user permit typed in (empty: the IHO test permit)">Use</button></div>
+          <div class="wx-row"><span class="grow wx-note">Cell permits (PERMIT.TXT from your chart supplier)</span>
+            <button id="s63-permits" title="Install the cell permits in a PERMIT.TXT">Install permits…</button><input id="s63-permit-file" type="file" accept=".txt,.TXT" hidden /></div>
+          <div class="wx-row"><span class="grow wx-note">Exchange set (base or update CD, or download)</span>
+            <button id="s63-import" title="Copy an exchange set's folder (the one with ENC_ROOT in it) into TweedPlot's ENC folder">Import exchange set…</button></div>
+          <div id="s63-result" class="wx-note"></div>
+          <details id="s63-permit-details"><summary id="s63-permit-sum">Cell permits</summary><table id="s63-table"><thead><tr><th>Cell</th><th>Expires</th><th>Status</th></tr></thead><tbody></tbody></table></details>
+          <details id="s63-note-details"><summary id="s63-note-sum">Messages</summary><ul id="s63-notes"></ul></details>
+        </div>
         <h3>Display colours</h3>
         <div class="wx-row"><label class="grow" for="pal-mode">Colours</label>
           <select id="pal-mode" title="Day; dusk (dimmer); night red or night green, which keep your night vision (every colour becomes a shade of red or green on black)">

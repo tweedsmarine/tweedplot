@@ -91,6 +91,10 @@ pub fn hw_id_from_user_permit(permit: &str, m_key: &str) -> Result<[u8; 5], S63E
         return Err(S63Error::UserPermit);
     }
     let plain = decrypt_ecb(m_key.as_bytes(), &enc);
+    // the HW_ID is padded with three 03 bytes: anything else means another maker's M_KEY
+    if plain.len() != 8 || plain[5..] != [3, 3, 3] {
+        return Err(S63Error::UserPermit);
+    }
     let mut hw = [0u8; 5];
     hw.copy_from_slice(&plain[..5]);
     Ok(hw)

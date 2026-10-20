@@ -10,6 +10,7 @@
 
 mod live;
 mod radar_sim;
+mod s63_cmd;
 mod stations_cmd;
 use std::path::PathBuf;
 use std::collections::BTreeMap;
@@ -1418,25 +1419,20 @@ fn world_depth_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
 
 /// (Re)open the chart store in the background: LINZ charts, GSHHG coastline,
 /// bundled world depths and downloaded ETOPO areas. Emits chart-ready.
-fn open_charts(handle: tauri::AppHandle) {
+pub(crate) fn open_charts(handle: tauri::AppHandle) {
     let dir = chart_dir(&handle);
     let mut dirs = vec![dir.clone(), coast_dir(&handle), bathy_dir(&handle)];
     if let Some(w) = world_depth_dir(&handle) {
         dirs.push(w);
     }
     // S-57 ENC cells (and the IHO S-63/S-64 test data): enc and s63 in the data folders
-    for root in [PathBuf::from(r"C:\dev\tweedplot-data"), PathBuf::from(r"C:\dev\racenav-data")] {
-        dirs.push(root.join("enc"));
-        dirs.push(root.join("s63"));
-    }
-    if let Ok(d) = handle.path().app_data_dir() {
-        dirs.push(d.join("enc"));
-    }
+    dirs.extend(s63_cmd::enc_dirs(&handle));
     // the first run with a GSHHG download builds the world coastline file (a minute or two)
     let _ = handle.emit("chart-status", serde_json::json!({ "detail": "opening charts" }));
     std::thread::spawn(move || {
         // convert new or changed ENC cells first, saying how far it has got (a big
         // exchange set, such as all of NOAA's, takes a while the first time)
+        chart::enc::clear_notes();
         for d in dirs.iter().filter(|d| d.ends_with("enc") || d.ends_with("s63")) {
             let h = handle.clone();
             let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
@@ -1680,6 +1676,7 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             app_info, chart_info, chart_feature, chart_clearances, cockpit_open, tides_info, tides_stations, tides_curve, tides_download, tides_cancel, grib_files, grib_load, grib_unload, grib_loaded, grib_wind_grid, grib_grid, grib_compare, grib_meteogram, grib_verify_times, grib_verify_scores, grib_verify_track, grib_verify_grid, grib_point, grib_along, radar_sim::radar_sim_start, radar_sim::radar_sim_stop, radar_sim::radar_sim_stats,
             polar_files, polar_import, polar_open_folder, polar_speed, route_compute, sk_status,
@@ -1690,7 +1687,8 @@ pub fn run() {
             rec_status, rec_start, rec_stop, tracks_list, track_get, track_update, track_delete, track_export,
             yb_open, yb_refresh, yb_races, yb_history,
             gribdl_models, gribdl_estimate, gribdl_start, gribdl_cancel, open_url, grib_combine,
-            data_status, data_etopo_plan, data_gshhg, data_etopo, data_etopo_delete, data_cancel, chart_land_detail
+            data_status, data_etopo_plan, data_gshhg, data_etopo, data_etopo_delete, data_cancel, chart_land_detail,
+            s63_cmd::s63_status, s63_cmd::s63_set_user_permit, s63_cmd::s63_install_permits, s63_cmd::s63_import_exchange_set
         ])
         .register_asynchronous_uri_scheme_protocol("chart", |_ctx, request, responder| {
             let path = request.uri().path().to_string();
@@ -1726,6 +1724,7 @@ pub fn run() {
             // Charts: open in the background (the first run unzips the LINZ downloads).
             let _ = std::fs::create_dir_all(coast_dir(app.handle()));
             let _ = std::fs::create_dir_all(bathy_dir(app.handle()));
+            s63_cmd::load(app.handle());
             open_charts(app.handle().clone());
 
             // Signal K, AIS, replay

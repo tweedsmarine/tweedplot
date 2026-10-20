@@ -30,6 +30,7 @@ import { setupGribDownload } from "./gribdl.js";
 import { setupRail } from "./ui.js";
 import { setupManual } from "./manual.js";
 import { setupData } from "./data.js";
+import { setupS63 } from "./s63.js";
 import { setupReplay } from "./replay.js";
 import { setupPalette } from "./palette.js";
 import { setupAlarms } from "./alarms.js";
@@ -192,6 +193,7 @@ map.on("load", () => {
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
   window.__weather = weather; // debugging handle
   setupData(map, { toast, reloadTiles: reloadChartTiles });
+  setupS63({ toast });
   setupPalette();
   setupBrand();
   alarms = setupAlarms(map, {

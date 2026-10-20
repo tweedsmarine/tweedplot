@@ -629,3 +629,18 @@ html[data-palette^="night"] #ck-grid .tile, html[data-palette^="night"] #ck-bar,
 #of-list li .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
 #of-list li select { width: auto; flex: none; font-size: 12px; padding: 3px; }
 #of-list .of-trk { font-size: 12px; white-space: nowrap; }
+
+/* Chart › Encrypted charts (S-63) */
+#s63-box input.mono { font-family: ui-monospace, Consolas, monospace; font-size: 11px; min-width: 0; flex: 1 1 auto; padding: 4px; }
+#s63-box input.mono.bad { outline: 1.5px solid var(--bad); }
+#s63-box details { margin: 4px 0; font-size: 12.5px; }
+#s63-box summary { cursor: pointer; }
+#s63-table { border-collapse: collapse; width: 100%; margin-top: 4px; }
+#s63-table th, #s63-table td { text-align: left; padding: 2px 6px 2px 0; vertical-align: top; }
+#s63-table td:first-child { font-family: ui-monospace, Consolas, monospace; }
+#s63-table td:nth-child(-n+2) { white-space: nowrap; }
+#s63-table tr.expired td, #s63-table tr.bad td { color: var(--bad); }
+#s63-table tr.expiring td { color: #9a6700; }
+#s63-notes { margin: 4px 0 4px 16px; padding: 0; }
+#s63-notes li { margin: 2px 0; }
+#s63-result:empty { display: none; }
