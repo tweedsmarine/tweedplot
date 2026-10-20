@@ -308,8 +308,14 @@ function reloadChartTiles() {
 }
 map.on("load", () => {
   invoke("chart_info").then(chartsLoaded).catch(() => {});
-  listen("chart-ready", ({ payload }) => chartsLoaded(payload));
+  listen("chart-ready", ({ payload }) => { if (encBusy) { encBusy = false; toast("Charts ready", 3000); } chartsLoaded(payload); });
+  // converting ENC cells the first time: show how far it has got
+  listen("chart-status", ({ payload }) => {
+    const d = payload?.detail || "";
+    if (d.startsWith("converting ENC")) { encBusy = true; toast(d.charAt(0).toUpperCase() + d.slice(1)); }
+  });
 });
+let encBusy = false;
 
 function applyChartSettings() {
   map.setPaintProperty("depare", "fill-color", depareColour());

@@ -88,6 +88,17 @@ pub struct TableInfo {
     db: usize,
     rtree: String,
     pk: String,
+    /// Extent of the table's rows [w, s, e, n], so tiles elsewhere skip it without a query
+    /// (thousands of ENC cells each bring their own tables).
+    pub bounds: [f64; 4],
+}
+
+impl TableInfo {
+    /// Whether the table may have rows in `b` (or its copy shifted by 360°).
+    pub(crate) fn touches(&self, b: [f64; 4]) -> bool {
+        let t = self.bounds;
+        wrap_shifts(b).iter().any(|s| t[0] <= b[2] + s && t[2] >= b[0] + s && t[1] <= b[3] && t[3] >= b[1])
+    }
 }
 
 /// Minimum zoom at which a band is drawn.
@@ -201,7 +212,13 @@ impl ChartStore {
                     r.filter_map(Result::ok).map(|c| c.to_ascii_lowercase()).collect()
                 };
                 let class = if kind == Kind::Feature { s57::class_for(&table) } else { None };
-                tables.push(TableInfo { file: path.clone(), table, kind, band, rows, class, cols, db, rtree, pk });
+                let bounds: [f64; 4] = conn
+                    .query_row(&format!("SELECT min(minx), min(miny), max(maxx), max(maxy) FROM \"{rtree}\""), [], |r| {
+                        Ok([r.get::<_, Option<f64>>(0)?, r.get(1)?, r.get(2)?, r.get(3)?])
+                    })
+                    .map(|v| if v.iter().all(Option::is_some) { [v[0].unwrap(), v[1].unwrap(), v[2].unwrap(), v[3].unwrap()] } else { [0.0, 0.0, -1.0, -1.0] })
+                    .unwrap_or([-360.0, -90.0, 360.0, 90.0]);
+                tables.push(TableInfo { file: path.clone(), table, kind, band, rows, class, cols, db, rtree, pk, bounds });
                 any = true;
             }
             if any {
@@ -402,6 +419,9 @@ impl ChartStore {
     }
 
     fn query(&self, t: &TableInfo, b: [f64; 4], cols: &[&str], mut f: impl FnMut(&[Option<f64>], Geom)) {
+        if !t.touches(b) {
+            return;
+        }
         let conn = self.dbs[t.db].lock().unwrap();
         let gcol = t.rtree.trim_start_matches(&format!("rtree_{}_", t.table)).to_string();
         let sel: String = cols.iter().map(|c| format!("t.\"{c}\", ")).collect();

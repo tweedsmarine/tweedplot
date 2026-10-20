@@ -319,29 +319,43 @@ fn hash(s: &str) -> u32 {
 /// the GeoPackages of all of them. Cells that can't be read (encrypted S-63 cells
 /// without a permit, damaged files) are skipped.
 pub fn ensure_gpkgs(dir: &Path) -> Vec<PathBuf> {
+    ensure_gpkgs_with(dir, &mut |_, _, _| {})
+}
+
+/// [`ensure_gpkgs`], telling `progress(converted so far, cells to convert, cell)` as it goes.
+pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str)) -> Vec<PathBuf> {
     let cells = find_cells(dir);
     if cells.is_empty() {
         return vec![];
     }
     let out_dir = dir.join(".enc");
     let _ = std::fs::create_dir_all(&out_dir);
+    // what is there already, read once (a big exchange set has thousands of cells)
+    let existing: Vec<String> = std::fs::read_dir(&out_dir).into_iter().flatten().flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
+    let mtime = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    let plan: Vec<(CellFiles, String, PathBuf, bool)> = cells
+        .into_iter()
+        .map(|c| {
+            let stem = c.base.file_stem().map(|s| s.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
+            let rel = c.base.parent().and_then(|p| p.strip_prefix(dir).ok()).map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+            let key = format!("{stem}-{:08x}", hash(&rel));
+            let gpkg = out_dir.join(format!("{key}-v{VERSION}.gpkg"));
+            let newest = std::iter::once(&c.base).chain(&c.updates).filter_map(|p| mtime(p)).max();
+            let fresh = matches!((newest, mtime(&gpkg)), (Some(n), Some(m)) if m >= n);
+            (c, key, gpkg, fresh)
+        })
+        .collect();
+    let todo = plan.iter().filter(|p| !p.3).count();
+    let mut done = 0;
     let mut out = Vec::new();
-    for c in cells {
-        let stem = c.base.file_stem().map(|s| s.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
-        let rel = c.base.parent().and_then(|p| p.strip_prefix(dir).ok()).map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
-        let key = format!("{stem}-{:08x}", hash(&rel));
-        let gpkg = out_dir.join(format!("{key}-v{VERSION}.gpkg"));
-        let newest = std::iter::once(&c.base).chain(&c.updates).filter_map(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok()).max();
-        let made = std::fs::metadata(&gpkg).and_then(|m| m.modified()).ok();
-        let fresh = matches!((newest, made), (Some(n), Some(m)) if m >= n);
+    for (c, key, gpkg, fresh) in plan {
         if !fresh {
+            let name = c.base.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            progress(done, todo, &name);
+            done += 1;
             // older conversions of this cell
-            if let Ok(rd) = std::fs::read_dir(&out_dir) {
-                for e in rd.flatten() {
-                    if e.file_name().to_string_lossy().starts_with(&format!("{key}-v")) {
-                        let _ = std::fs::remove_file(e.path());
-                    }
-                }
+            for e in existing.iter().filter(|e| e.starts_with(&format!("{key}-v"))) {
+                let _ = std::fs::remove_file(out_dir.join(e));
             }
             match Cell::open(&c.base, &c.updates) {
                 Ok(cell) => {
@@ -357,6 +371,9 @@ pub fn ensure_gpkgs(dir: &Path) -> Vec<PathBuf> {
             }
         }
         out.push(gpkg);
+    }
+    if todo > 0 {
+        progress(todo, todo, "");
     }
     out
 }

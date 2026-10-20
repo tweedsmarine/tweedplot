@@ -185,6 +185,9 @@ impl ChartStore {
     /// Rows of a feature table in `b` [w, s, e, n], with the columns asked for
     /// (None where the table hasn't that column).
     pub(crate) fn query_text(&self, t: &TableInfo, b: [f64; 4], cols: &[&str], mut f: impl FnMut(Row)) {
+        if !t.touches(b) {
+            return;
+        }
         let conn = self.dbs[t.db].lock().unwrap();
         let gcol = t.rtree.trim_start_matches(&format!("rtree_{}_", t.table)).to_string();
         let have: Vec<bool> = cols.iter().map(|c| t.cols.iter().any(|x| x == c)).collect();
@@ -234,7 +237,7 @@ impl ChartStore {
         self.tables
             .iter()
             .enumerate()
-            .filter(|(_, t)| t.kind == Kind::Feature && (z >= starts[(t.band as usize).min(7)] || early_band(z, t) || t.class.is_some_and(|c| is_hazard(c.code) || (is_info(c.code) && z as f64 >= INFO_ZOOM))))
+            .filter(|(_, t)| t.kind == Kind::Feature && t.touches(bbox) && (z >= starts[(t.band as usize).min(7)] || early_band(z, t) || t.class.is_some_and(|c| is_hazard(c.code) || (is_info(c.code) && z as f64 >= INFO_ZOOM))))
             .collect()
     }
 

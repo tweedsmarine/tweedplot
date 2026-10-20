@@ -1434,7 +1434,25 @@ fn open_charts(handle: tauri::AppHandle) {
     }
     // the first run with a GSHHG download builds the world coastline file (a minute or two)
     let _ = handle.emit("chart-status", serde_json::json!({ "detail": "opening charts" }));
-    std::thread::spawn(move || match chart::ChartStore::open_dirs(&dirs) {
+    std::thread::spawn(move || {
+        // convert new or changed ENC cells first, saying how far it has got (a big
+        // exchange set, such as all of NOAA's, takes a while the first time)
+        for d in dirs.iter().filter(|d| d.ends_with("enc") || d.ends_with("s63")) {
+            let h = handle.clone();
+            let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
+            chart::enc::ensure_gpkgs_with(d, &mut |done, todo, name| {
+                if last.elapsed().as_millis() >= 500 || done == todo {
+                    last = std::time::Instant::now();
+                    let _ = h.emit("chart-status", serde_json::json!({ "detail": format!("converting ENC cells: {done} of {todo} {name}") }));
+                }
+            });
+        }
+        open_store(handle, dirs, dir)
+    });
+}
+
+fn open_store(handle: tauri::AppHandle, dirs: Vec<PathBuf>, dir: PathBuf) {
+    match chart::ChartStore::open_dirs(&dirs) {
         Ok(store) => {
             let n = store.tables.len();
             let world = store.has_world_land();
@@ -1444,7 +1462,7 @@ fn open_charts(handle: tauri::AppHandle) {
         Err(e) => {
             let _ = handle.emit("chart-ready", serde_json::json!({ "tables": 0, "dir": dir, "error": e.to_string() }));
         }
-    });
+    }
 }
 
 /// What chart data is installed, for Chart › Chart data.
