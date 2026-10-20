@@ -233,7 +233,17 @@ impl ChartStore {
         if let Some(t) = self.cache.lock().unwrap().get(&(z, x, y)) {
             return t.clone();
         }
+        // TWEEDPLOT_TILE_LOG=1: each tile as it starts and how long it took (finding a tile
+        // that crashes or is slow)
+        let log = std::env::var_os("TWEEDPLOT_TILE_LOG").is_some();
+        let t0 = std::time::Instant::now();
+        if log {
+            eprintln!("tile {z}/{x}/{y} …");
+        }
         let t = Arc::new(self.render(z, x, y));
+        if log {
+            eprintln!("tile {z}/{x}/{y} {} bytes {:.0} ms", t.len(), t0.elapsed().as_secs_f64() * 1000.0);
+        }
         self.cache.lock().unwrap().put((z, x, y), t.clone());
         t
     }
@@ -656,7 +666,7 @@ pub fn drop_cell_edges(g: Geom) -> Geom {
 /// Land rings minus water rings, in tile units (exteriors positive, holes
 /// negative, as `TileProj::polygons` gives them). Non-zero filling, so
 /// overlapping lakes (Topo50 and a chart's own) count once.
-fn cut_water(land: Vec<Vec<[i32; 2]>>, water: Vec<Vec<[i32; 2]>>) -> Vec<Vec<[i32; 2]>> {
+pub fn cut_water(land: Vec<Vec<[i32; 2]>>, water: Vec<Vec<[i32; 2]>>) -> Vec<Vec<[i32; 2]>> {
     use i_overlay::core::fill_rule::FillRule;
     use i_overlay::core::overlay_rule::OverlayRule;
     use i_overlay::float::single::SingleFloatOverlay;
