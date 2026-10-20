@@ -292,6 +292,7 @@ impl ChartStore {
             }
         }
 
+        let mut chart_water: Vec<Vec<[i32; 2]>> = Vec::new();
         let starts = self.band_starts(bbox);
         let start = |b: u8| if b == 0 { band_minzoom(0) } else { starts[(b as usize).min(7)] };
         let mut bands: Vec<&TableInfo> = self.tables.iter().filter(|t| z >= start(t.band)).collect();
@@ -306,6 +307,11 @@ impl ChartStore {
                         if let Some(v) = v {
                             props.push((k, Value::F64(v)));
                         }
+                    }
+                    // where a chart has depths, the world coastline's land gives way (the
+                    // Great Lakes and rivers in NOAA's charts: GSHHG land includes them)
+                    if let TileGeom::Rings(r) = &tg {
+                        chart_water.extend(r.iter().cloned());
                     }
                     depare.add(&tg, &props);
                 }
@@ -389,6 +395,7 @@ impl ChartStore {
         let topo = z >= band_minzoom(0) && self.has_topo50();
         let res = coast::res_for_zoom(z, coast::LAND_DETAIL.load(std::sync::atomic::Ordering::Relaxed));
         let mut wcoast = Layer::new("wcoast");
+        let mut world_land: Vec<Vec<[i32; 2]>> = Vec::new();
         for t in self.tables.iter().filter(|t| matches!(t.kind, Kind::WorldLand | Kind::WorldCoast)) {
             if coast::RESOLUTIONS[(t.band as usize).clamp(1, 5) - 1] != res {
                 continue;
@@ -399,14 +406,20 @@ impl ChartStore {
                     return;
                 }
                 if is_land {
-                    if let Some(tg) = tp.polygons(&g) {
-                        // "w": world land, whose outline is drawn from the wcoast lines
-                        land.add(&tg, &[("w", Value::UInt(1))]);
+                    if let Some(TileGeom::Rings(r)) = tp.polygons(&g) {
+                        world_land.extend(r);
                     }
                 } else if let Some(tg) = tp.lines(&g) {
                     wcoast.add(&tg, &[]);
                 }
             });
+        }
+        if !world_land.is_empty() {
+            let rings = if chart_water.is_empty() { world_land } else { cut_water(world_land, chart_water) };
+            if !rings.is_empty() {
+                // "w": world land, whose outline is drawn from the wcoast lines
+                land.add(&TileGeom::Rings(rings), &[("w", Value::UInt(1))]);
+            }
         }
         let [far, fln, fpt, lsec] = self.render_features(&tp, z);
         mvt::encode_tile(&[wdepth, wdcnt, depare, depcnt, far, land, wcoast, fln, soundg, lsec, fpt])
