@@ -21,6 +21,8 @@ use cell::{Cell, Shape};
 
 /// Bump when the conversion changes, so cells are converted again.
 pub const VERSION: u32 = 2;
+/// Bump when merging changes, so the merged files are made again (the cells needn't be).
+pub const MERGE_VERSION: u32 = 2;
 
 /// The chart band for a cell's intended usage (DSID INTU).
 pub fn band_for(intu: u8) -> u8 {
@@ -404,7 +406,7 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
     let tag = format!("{:08x}", hash(&dir.to_string_lossy()));
     let mut out = Vec::new();
     for (band, files) in by_band {
-        let merged = out_dir.join(format!("all-{tag}-b{band}{suffix}"));
+        let merged = out_dir.join(format!("all-{tag}-b{band}-m{MERGE_VERSION}{suffix}"));
         let stamp: Vec<(String, i64)> = files
             .iter()
             .map(|f| {
@@ -587,7 +589,7 @@ fn merge(files: &[PathBuf], stamp: &[(String, i64)], out: &Path) -> Result<(), r
             db.execute_batch("BEGIN")?;
             for (t, geo) in found {
                 let cols: Vec<(String, String)> = {
-                    let mut st = db.prepare(&format!("SELECT name, type FROM s.pragma_table_info('{t}') WHERE name NOT IN ('fid', 'geom')"))?;
+                    let mut st = db.prepare(&format!("SELECT name, type FROM pragma_table_info('{t}', 's') WHERE name NOT IN ('fid', 'geom')"))?;
                     let v = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.filter_map(Result::ok).collect();
                     v
                 };
@@ -688,6 +690,13 @@ mod tests {
         assert_eq!(std::fs::metadata(&out[0]).unwrap().modified().unwrap(), made, "not made again");
         let store = crate::ChartStore::open_dirs(&[dir.clone()]).unwrap();
         assert!(store.tables.iter().any(|t| t.kind == crate::Kind::DepthArea && t.band == 6 && t.rows == 4));
+        // the attribute values themselves, not the column names (SQLite reads an unknown
+        // "name" as a string)
+        let db = Connection::open(&out[0]).unwrap();
+        let v: Option<f64> = db.query_row("SELECT max(drval1) FROM depth_area_polygon_hydro_enc_b6", [], |r| r.get(0)).unwrap();
+        assert!(v.is_some_and(|d| d > 0.0));
+        let bad: i64 = db.query_row("SELECT count(*) FROM depth_area_polygon_hydro_enc_b6 WHERE typeof(drval1) = 'text'", [], |r| r.get(0)).unwrap();
+        assert_eq!(bad, 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
