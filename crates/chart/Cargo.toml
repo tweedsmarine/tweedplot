@@ -12,6 +12,10 @@ lru.workspace = true
 geo = "0.31"
 rayon.workspace = true
 clipper2-rust = "1.2"
+blowfish = "0.9"
+crc32fast = "1"
+sha1 = "0.10"
+num-bigint = "0.4"
 thiserror.workspace = true
 serde.workspace = true
 

@@ -97,7 +97,9 @@ TweedPlot draws its own vector chart from free data: a world coastline everywher
 
 TweedPlot also reads official electronic navigational charts in the IHO S-57 format: a base cell (`.000`) and its updates (`.001`, `.002`, ...). Put the cells in `tweedplot-data\enc`, in any folders you like; a whole exchange set (`ENC_ROOT` with its agency, cell, edition and update folders) can be copied in as it is. Each cell is converted once into the `.enc` folder beside it, and again when the cell or an update changes, then drawn in the same style as the LINZ charts. The cell's intended usage sets its scale band: overview, general, coastal, approach, then harbour and berthing.
 
-Updates are applied in order. Encrypted S-63 cells (the format most official ENCs are sold in) are not read yet; they are skipped until TweedPlot can use their permits.
+Updates are applied in order. The cells of each scale band are merged into one file in `.enc`, so even thousands of cells (all of NOAA's charts, say) draw quickly.
+
+**Encrypted ENCs (S-63).** Most official ENCs are sold encrypted under the IHO S-63 scheme, with a cell permit for each cell, made for one system. Copy the exchange set as it comes (with its `PERMIT.TXT`) into `tweedplot-data\enc`. For each cell TweedPlot checks the signature file against the IHO's public key (a cell whose origin can't be verified is not opened), checks the permit, decrypts and unzips the cell and its updates, then draws it like any other. A permit that has expired is reported, and the cell is still shown (it may be out of date). For now TweedPlot uses the IHO's generic S-64 test credentials, so only test data can be opened; its own manufacturer credentials and a user permit for each installation come before release.
 
 **Getting the New Zealand data**
 

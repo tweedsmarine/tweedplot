@@ -10,6 +10,7 @@
 pub mod catalogue;
 pub mod cell;
 pub mod iso8211;
+pub mod s63;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -269,7 +270,12 @@ pub fn find_cells(dir: &Path) -> Vec<CellFiles> {
             }
         }
         let ext = |p: &Path| p.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
-        for b in files.iter().filter(|p| ext(p) == "000") {
+        // S-63 signature files share the cell's name with the usage digit as a letter I-N
+        let is_signature = |p: &Path| {
+            let n = p.file_name().map(|n| n.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
+            n.chars().nth(2).is_some_and(|c| ('I'..='N').contains(&c)) && std::fs::read(p).is_ok_and(|b| b.starts_with(b"//") || b.starts_with(b"\xef\xbb\xbf//"))
+        };
+        for b in files.iter().filter(|p| ext(p) == "000" && !is_signature(p)) {
             let stem = b.file_stem().map(|s| s.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
             let mut updates: Vec<PathBuf> = files
                 .iter()
@@ -348,6 +354,8 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
         })
         .collect();
     let todo = plan.iter().filter(|p| p.2.is_none()).count();
+    // S-63 cell permits from any PERMIT.TXT in the folder (only read when a cell needs converting)
+    let permits = if todo > 0 { s63_permits(dir) } else { Default::default() };
     let mut done = 0;
     let mut by_band: BTreeMap<u8, Vec<PathBuf>> = BTreeMap::new();
     for (c, key, fresh) in plan {
@@ -364,7 +372,7 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
                 for e in existing.iter().filter(|e| e.starts_with(&format!("{key}-"))) {
                     let _ = std::fs::remove_file(out_dir.join(e));
                 }
-                let cell = match Cell::open(&c.base, &c.updates) {
+                let cell = match open_cell(&c, &permits) {
                     Ok(cell) => cell,
                     Err(e) => {
                         eprintln!("ENC {}: {e}", c.base.display());
@@ -422,6 +430,120 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
         }
     }
     out
+}
+
+/// The S-63 credentials in use: the system's user permit and the manufacturer key. Until
+/// TweedPlot has its own from the IHO, the IHO's generic S-64 test credentials.
+static PROTECTION: std::sync::RwLock<Option<(String, String)>> = std::sync::RwLock::new(None);
+
+/// Set the user permit and manufacturer key (M_KEY) for decrypting S-63 cells.
+pub fn set_protection(user_permit: &str, m_key: &str) {
+    *PROTECTION.write().unwrap() = Some((user_permit.to_string(), m_key.to_string()));
+}
+
+/// The HW_ID from the configured (or generic test) user permit.
+pub fn hw_id() -> Option<[u8; 5]> {
+    let p = PROTECTION.read().unwrap().clone().unwrap_or_else(|| ("66B5CBFDF7E4139D5B6086C23130".into(), "10121".into()));
+    s63::hw_id_from_user_permit(&p.0, &p.1).ok()
+}
+
+/// The IHO Scheme Administrator's public key (S-63), for checking cell signatures.
+pub const SA_PUBLIC_KEY: &str = "// BIG p
+FCA6 82CE 8E12 CABA 26EF CCF7 110E 526D B078 B05E DECB CD1E B4A2 08F3 AE16 17AE 01F3 5B91 A47E 6DF6 3413 C5E1 2ED0 899B CD13 2ACD 50D9 9151 BDC4 3EE7 3759 2E17.
+// BIG q
+962E DDCC 369C BA8E BB26 0EE6 B6A1 26D9 346E 38C5.
+// BIG g
+6784 71B2 7A9C F44E E91A 49C5 147D B1A9 AAF2 44F0 5A43 4D64 8693 1D2D 1427 1B9E 3503 0B71 FD73 DA17 9069 B32E 2935 630E 1C20 6235 4D0D A20A 6C41 6E50 BE79 4CA4.
+// BIG y
+963F 14E3 2BA5 3729 28F2 4F15 B073 0C49 D31B 28E5 C764 1002 564D B959 95B1 5CF8 800E D54E 3548 67B8 2BB9 597B 1582 69E0 79F0 C4F4 926B 1776 1CC8 9EB7 7C9B 7EF8.
+";
+
+/// Valid cell permits found in PERMIT.TXT files under `dir`, by cell name.
+fn s63_permits(dir: &Path) -> std::collections::HashMap<String, s63::CellPermit> {
+    let mut out = std::collections::HashMap::new();
+    let Some(hw) = hw_id() else { return out };
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+            let p = e.path();
+            let hidden = p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.'));
+            if p.is_dir() {
+                if !hidden {
+                    stack.push(p);
+                }
+            } else if p.file_name().is_some_and(|n| n.eq_ignore_ascii_case("PERMIT.TXT")) {
+                match s63::read_permits(&std::fs::read_to_string(&p).unwrap_or_default(), &hw) {
+                    Ok(v) => {
+                        for (cell, r) in v {
+                            match r {
+                                Ok(pm) => {
+                                    out.insert(cell, pm);
+                                }
+                                Err(e) => eprintln!("S-63 permit {cell} ({}): {e}", p.display()),
+                            }
+                        }
+                    }
+                    Err(e) => eprintln!("S-63 {}: {e}", p.display()),
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Read a cell's file, decrypting it when it is S-63: its signature is checked against
+/// the IHO key (an unauthenticated cell is not decrypted), then it is decrypted with
+/// the cell's permit.
+fn read_cell_file(path: &Path, permits: &std::collections::HashMap<String, s63::CellPermit>) -> Result<Vec<u8>, cell::CellError> {
+    let data = std::fs::read(path)?;
+    // an ISO 8211 file starts with its record length (five digits) and the leader
+    if data.len() > 24 && data[..5].iter().all(u8::is_ascii_digit) && data[6] == b'L' {
+        return Ok(data);
+    }
+    let name = path.file_name().map(|n| n.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
+    let other = |m: String| cell::CellError::Other(m);
+    let permit = permits.get(name.get(..8).unwrap_or("")).ok_or_else(|| other(format!("encrypted (S-63) and no permit for {name}")))?;
+    let sig = s63::signature_name(&name).map(|s| path.with_file_name(s)).ok_or_else(|| other("no signature file".into()))?;
+    let sig = std::fs::read(&sig).map_err(|_| other(format!("no signature file for {name} (SSE 08)")))?;
+    let sa = s63::parse_public_key(SA_PUBLIC_KEY.as_bytes()).map_err(|e| other(e.to_string()))?;
+    s63::verify_cell(&sig, &data, &sa).map_err(|e| other(e.to_string()))?;
+    if permit.expiry.as_str() < today().as_str() {
+        eprintln!("S-63 {name}: the permit expired {} (SSE 25: may be out of date, not for navigation)", permit.expiry);
+    }
+    s63::decrypt_cell(&data, permit).map_err(|e| other(e.to_string()))
+}
+
+fn today() -> String {
+    let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() / 86400) as i64;
+    // days since 1970 to y-m-d (civil from days)
+    let z = d + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + if month <= 2 { 1 } else { 0 };
+    format!("{year:04}{month:02}{day:02}")
+}
+
+/// A cell and its updates, decrypting S-63 files.
+fn open_cell(c: &CellFiles, permits: &std::collections::HashMap<String, s63::CellPermit>) -> Result<Cell, cell::CellError> {
+    let base = read_cell_file(&c.base, permits)?;
+    let mut ups = Vec::new();
+    for u in &c.updates {
+        match read_cell_file(u, permits) {
+            Ok(b) => ups.push(b),
+            Err(e) => {
+                // apply the updates up to the first one that can't be read
+                eprintln!("ENC {}: {e}", u.display());
+                break;
+            }
+        }
+    }
+    let refs: Vec<&[u8]> = ups.iter().map(Vec::as_slice).collect();
+    Cell::from_bytes(&base, &refs)
 }
 
 /// Whether a merged file was made from exactly these cell files (names and times).
@@ -566,6 +688,30 @@ mod tests {
         assert_eq!(std::fs::metadata(&out[0]).unwrap().modified().unwrap(), made, "not made again");
         let store = crate::ChartStore::open_dirs(&[dir.clone()]).unwrap();
         assert!(store.tables.iter().any(|t| t.kind == crate::Kind::DepthArea && t.band == 6 && t.rows == 4));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An S-63 cell from the IHO's S-64 test data (test 6a): its signature is checked,
+    /// it is decrypted with the generic test credentials, and its update applied.
+    #[test]
+    fn decrypts_s63_cells() {
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/s63");
+        let dir = std::env::temp_dir().join(format!("enc_s63_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        fn copy(a: &Path, b: &Path) {
+            std::fs::create_dir_all(b).unwrap();
+            for e in std::fs::read_dir(a).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() { copy(&p, &b.join(e.file_name())) } else { std::fs::copy(&p, b.join(e.file_name())).unwrap(); }
+            }
+        }
+        copy(&src, &dir);
+        let cells = find_cells(&dir);
+        assert_eq!(cells.len(), 1, "signature files are not cells");
+        assert_eq!(cells[0].updates.len(), 1);
+        let c = open_cell(&cells[0], &s63_permits(&dir)).unwrap();
+        assert_eq!((c.name.as_str(), c.update.as_str()), ("GB61021B.000", "1"));
+        assert!(c.features.len() > 200);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
