@@ -147,6 +147,10 @@ window.__map = map; // handy for debugging in devtools
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), "top-left");
 map.addControl(new maplibregl.ScaleControl({ unit: "nautical" }), "bottom-right");
 map.on("load", () => map.addImage("boat", boatIcon(), { pixelRatio: 2 }));
+map.on("error", (e) => {
+  if (e.sourceId === "chart") retryFailedTiles();
+  else if (e.error) console.warn(e.error);
+});
 
 // Sounding figures are drawn on demand: no font files needed offline.
 map.setMissingStyleImageResolver((id) => {
@@ -304,6 +308,15 @@ function chartsLoaded(info) {
   }
   // reload the tiles (asked for before the charts were open, or the chart data changed)
   reloadChartTiles();
+}
+// A chart tile that failed (charts still opening, or a drawing error reported on the
+// terminal) isn't asked for again by the map on its own: ask again a few seconds later,
+// at most every 15 s, so no part of the chart stays blank until it is panned or zoomed.
+let tileRetry = null, lastRetry = 0;
+function retryFailedTiles() {
+  if (tileRetry) return;
+  const wait = Math.max(3000, lastRetry + 15000 - Date.now());
+  tileRetry = setTimeout(() => { tileRetry = null; lastRetry = Date.now(); reloadChartTiles(); }, wait);
 }
 function reloadChartTiles() {
   const src = map.getSource("chart");

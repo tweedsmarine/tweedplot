@@ -1665,13 +1665,53 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
     // would otherwise stay on screen (the chart store keeps its own cache in memory)
     let builder = Response::builder().header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*").header(header::CACHE_CONTROL, "no-store");
     match (parsed, charts()) {
-        (Some(((z, x), y)), Some(store)) => builder
-            .header(header::CONTENT_TYPE, "application/x-protobuf")
-            .body(store.tile(z, x, y).as_ref().clone()),
+        (Some(((z, x), y)), Some(store)) => match store.try_tile(z, x, y) {
+            Some(t) => builder.header(header::CONTENT_TYPE, "application/x-protobuf").body(t.as_ref().clone()),
+            // drawing it failed (reported on the terminal): the chart asks again later
+            None => builder.status(StatusCode::INTERNAL_SERVER_ERROR).body(Vec::new()),
+        },
         (Some(_), None) => builder.status(StatusCode::SERVICE_UNAVAILABLE).body(Vec::new()),
         _ => builder.status(StatusCode::NOT_FOUND).body(Vec::new()),
     }
     .expect("valid response")
+}
+
+/// Chart tiles are drawn by a few worker threads, newest request first: when the chart
+/// is panned or zoomed, the tiles now in view are drawn before the ones it has moved
+/// away from, and a burst of requests doesn't start dozens of threads that all slow
+/// each other down.
+type TileJob = (String, tauri::UriSchemeResponder);
+static TILE_QUEUE: OnceLock<Arc<(Mutex<std::collections::VecDeque<TileJob>>, std::sync::Condvar)>> = OnceLock::new();
+
+fn queue_tile(path: String, responder: tauri::UriSchemeResponder) {
+    let q = TILE_QUEUE.get_or_init(|| {
+        let q = Arc::new((Mutex::new(std::collections::VecDeque::<TileJob>::new()), std::sync::Condvar::new()));
+        let n = std::thread::available_parallelism().map_or(4, |n| n.get()).clamp(2, 12);
+        for i in 0..n {
+            let q = q.clone();
+            std::thread::Builder::new()
+                .name(format!("tiles-{i}"))
+                .spawn(move || loop {
+                    let job = {
+                        let mut jobs = q.0.lock().unwrap_or_else(|e| e.into_inner());
+                        loop {
+                            if let Some(j) = jobs.pop_back() {
+                                break j;
+                            }
+                            jobs = q.1.wait(jobs).unwrap_or_else(|e| e.into_inner());
+                        }
+                    };
+                    let (path, responder) = job;
+                    let r = std::panic::catch_unwind(|| tile_response(&path))
+                        .unwrap_or_else(|_| Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(Vec::new()).expect("valid response"));
+                    responder.respond(r);
+                })
+                .expect("tile thread");
+        }
+        q
+    });
+    q.0.lock().unwrap_or_else(|e| e.into_inner()).push_back((path, responder));
+    q.1.notify_one();
 }
 
 pub fn run() {
@@ -1692,7 +1732,7 @@ pub fn run() {
         ])
         .register_asynchronous_uri_scheme_protocol("chart", |_ctx, request, responder| {
             let path = request.uri().path().to_string();
-            std::thread::spawn(move || responder.respond(tile_response(&path)));
+            queue_tile(path, responder);
         })
         .setup(|app| {
             let dd = download_dir(app.handle());

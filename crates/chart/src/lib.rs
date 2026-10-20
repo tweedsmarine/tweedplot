@@ -202,7 +202,7 @@ impl ChartStore {
             .map(|path| {
                 let k = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 if k % 50 == 0 {
-                    (progress.lock().unwrap())(k, n_files);
+                    (progress.lock().unwrap_or_else(|e| e.into_inner()))(k, n_files);
                 }
                 match open_gpkg(path) {
                     Ok(v) => v,
@@ -235,8 +235,14 @@ impl ChartStore {
 
     /// Encoded MVT tile (possibly empty).
     pub fn tile(&self, z: u8, x: u32, y: u32) -> Arc<Vec<u8>> {
-        if let Some(t) = self.cache.lock().unwrap().get(&(z, x, y)) {
-            return t.clone();
+        self.try_tile(z, x, y).unwrap_or_default()
+    }
+
+    /// [`tile`](Self::tile), or None if drawing it failed (a bug: the panic is reported
+    /// on the terminal with the tile, and nothing is cached, so it is tried again).
+    pub fn try_tile(&self, z: u8, x: u32, y: u32) -> Option<Arc<Vec<u8>>> {
+        if let Some(t) = self.cache.lock().unwrap_or_else(|e| e.into_inner()).get(&(z, x, y)) {
+            return Some(t.clone());
         }
         // TWEEDPLOT_TILE_LOG=1: each tile as it starts and how long it took (finding a tile
         // that crashes or is slow)
@@ -245,17 +251,25 @@ impl ChartStore {
         if log {
             eprintln!("tile {z}/{x}/{y} …");
         }
-        let t = Arc::new(self.render(z, x, y));
+        let drawn = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.render(z, x, y)));
+        let t = match drawn {
+            Ok(t) => Arc::new(t),
+            Err(e) => {
+                let why = e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default();
+                eprintln!("charts: tile {z}/{x}/{y} failed after {:.0} ms: {why}", t0.elapsed().as_secs_f64() * 1000.0);
+                return None;
+            }
+        };
         if log {
             eprintln!("tile {z}/{x}/{y} {} bytes {:.0} ms", t.len(), t0.elapsed().as_secs_f64() * 1000.0);
         }
-        self.cache.lock().unwrap().put((z, x, y), t.clone());
-        t
+        self.cache.lock().unwrap_or_else(|e| e.into_inner()).put((z, x, y), t.clone());
+        Some(t)
     }
 
     /// Forget the rendered tiles (after a drawing setting changes).
     pub fn clear_cache(&self) {
-        self.cache.lock().unwrap().clear();
+        self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
     }
 
     /// The zoom each band starts at in `bbox`: its usual zoom, or earlier where no
@@ -512,7 +526,7 @@ impl ChartStore {
         if !t.touches(b) {
             return;
         }
-        let conn = self.dbs[t.db].lock().unwrap();
+        let conn = self.dbs[t.db].lock().unwrap_or_else(|e| e.into_inner());
         let gcol = t.rtree.trim_start_matches(&format!("rtree_{}_", t.table)).to_string();
         let sel: String = cols.iter().map(|c| format!("t.\"{c}\", ")).collect();
         let sql = format!(

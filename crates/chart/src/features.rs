@@ -237,7 +237,7 @@ impl ChartStore {
         if !t.touches(b) {
             return;
         }
-        let conn = self.dbs[t.db].lock().unwrap();
+        let conn = self.dbs[t.db].lock().unwrap_or_else(|e| e.into_inner());
         let gcol = t.rtree.trim_start_matches(&format!("rtree_{}_", t.table)).to_string();
         let have: Vec<bool> = cols.iter().map(|c| t.cols.iter().any(|x| x == c)).collect();
         let sel: String = cols.iter().zip(&have).map(|(c, h)| if *h { format!("t.\"{c}\", ") } else { "NULL, ".into() }).collect();
@@ -267,11 +267,11 @@ impl ChartStore {
     /// The zoom from which a table's features usually show at latitude `lat`: from its
     /// median SCAMIN, else its band's.
     fn takeover_zoom(&self, ti: usize, t: &TableInfo, lat: f64) -> f64 {
-        let med = *self.scamin_median.lock().unwrap().entry(ti).or_insert_with(|| {
+        let med = *self.scamin_median.lock().unwrap_or_else(|e| e.into_inner()).entry(ti).or_insert_with(|| {
             if !t.cols.iter().any(|c| c == "scamin") {
                 return None;
             }
-            let conn = self.dbs[t.db].lock().unwrap();
+            let conn = self.dbs[t.db].lock().unwrap_or_else(|e| e.into_inner());
             let n: i64 = conn.query_row(&format!("SELECT count(scamin) FROM \"{}\"", t.table), [], |r| r.get(0)).unwrap_or(0);
             if n == 0 {
                 return None;
@@ -780,7 +780,7 @@ impl ChartStore {
     pub fn feature(&self, table: usize, fid: i64) -> Option<FeatureInfo> {
         let t = self.tables.get(table)?;
         let class = t.class?;
-        let conn = self.dbs[t.db].lock().unwrap();
+        let conn = self.dbs[t.db].lock().unwrap_or_else(|e| e.into_inner());
         let gcol = t.rtree.trim_start_matches(&format!("rtree_{}_", t.table)).to_string();
         let cols: Vec<&String> = t.cols.iter().filter(|c| **c != gcol.to_ascii_lowercase() && *c != "fid" && *c != "fidn" && **c != t.pk).collect();
         let sel: String = cols.iter().map(|c| format!("\"{c}\", ")).collect();
