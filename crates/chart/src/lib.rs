@@ -258,9 +258,16 @@ impl ChartStore {
     pub(crate) fn band_starts(&self, bbox: [f64; 4]) -> [u8; 8] {
         let mut out = [0u8; 8];
         let cov = self.coverage();
+        let tile_rect = geo::Rect::new(geo::coord! { x: bbox[0], y: bbox[1] }, geo::coord! { x: bbox[2], y: bbox[3] });
         for (band, o) in out.iter_mut().enumerate() {
             let m = band_minzoom(band as u8);
-            let coarser = band <= 1 || cov.iter().any(|(b, bb, _)| (*b as usize) < band && *b >= 1 && bb[0] <= bbox[2] && bb[2] >= bbox[0] && bb[1] <= bbox[3] && bb[3] >= bbox[1]);
+            // a smaller-scale chart whose coverage itself reaches the tile (not just its
+            // bounding box: a big cell's box can take in a whole lake it doesn't chart)
+            let coarser = band <= 1
+                || cov.iter().any(|(b, bb, poly)| {
+                    use geo::Intersects;
+                    (*b as usize) < band && *b >= 1 && bb[0] <= bbox[2] && bb[2] >= bbox[0] && bb[1] <= bbox[3] && bb[3] >= bbox[1] && poly.intersects(&tile_rect)
+                });
             *o = if coarser { m } else { m.saturating_sub(UNDERSCALE) };
         }
         out
