@@ -99,7 +99,15 @@ TweedPlot also reads official electronic navigational charts in the IHO S-57 for
 
 Updates are applied in order. The cells of each scale band are merged into one file in `.enc`, so even thousands of cells (all of NOAA's charts, say) draw quickly.
 
-**Encrypted ENCs (S-63).** Most official ENCs are sold encrypted under the IHO S-63 scheme, with a cell permit for each cell, made for one system. Copy the exchange set as it comes (with its `PERMIT.TXT`) into `tweedplot-data\enc`. For each cell TweedPlot checks the signature file against the IHO's public key (a cell whose origin can't be verified is not opened), checks the permit, decrypts and unzips the cell and its updates, then draws it like any other. A permit that has expired is reported, and the cell is still shown (it may be out of date). For now TweedPlot uses the IHO's generic S-64 test credentials, so only test data can be opened; its own manufacturer credentials and a user permit for each installation come before release.
+**Encrypted ENCs (S-63).** Most official ENCs are sold encrypted under the IHO S-63 scheme. You buy permits for the cells you want, made for your system, and the charts come as exchange sets (a folder with `ENC_ROOT` in it, on a CD, DVD or download). Everything is done in **Chart › Encrypted charts**:
+
+- **User permit**: your system's identity. **Copy** it and give it to your chart supplier when ordering permits.
+- **SA key**: the IHO Scheme Administrator's key, which proves where cells come from. TweedPlot comes with it (valid to 2033). **Install key…** takes a newer `IHO.CRT` or `IHO.PUB` from the IHO website or your supplier. A key that isn't the IHO's is installed with a warning (SSE 26); an expired or damaged one is refused (SSE 22, SSE 08).
+- **Install permits…**: choose the `PERMIT.TXT` from your supplier. Each permit is checked and the report says which installed, which are wrong (SSE 12, SSE 13) and which expire within 30 days (SSE 20) or have expired (SSE 15). Permits are kept separately for each data server; **Cell permits** lists them, and **Remove** (press twice) takes away one data server's.
+- **Import exchange set…**: choose the exchange set's folder, or the medium if it holds several. Every cell file is checked (signature, permit, decryption, CRC) and the base cells, new editions, re-issues and updates are applied in order. Cancelled cells are removed, with their replacements named. A report lists every cell with what happened and the S-63 code for anything wrong. When an update needs base media you haven't loaded, it says which (load them, then the update again).
+- **Installed ENCs** lists each cell with its edition and update. **Remove all ENCs** clears them (permits and key stay).
+
+While a cell whose permit has expired (SSE 25), or that is behind its data server's latest edition or update (SSE 27), is on the chart, a warning stays at the bottom of the chart: such a cell may be out of date and must not be used for primary navigation. For now TweedPlot uses the IHO's generic S-64 test credentials, so only the IHO test data can be opened; its own manufacturer credentials come before release. An exchange set copied straight into `tweedplot-data\enc` with its `PERMIT.TXT` is still read as before.
 
 **Getting the New Zealand data**
 
