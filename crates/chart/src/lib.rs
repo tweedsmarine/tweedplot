@@ -404,6 +404,7 @@ impl ChartStore {
         }
         // Topo50 land, with the lakes and rivers cut out (it has none of its own)
         let mut topo_land: Vec<Vec<[i32; 2]>> = Vec::new();
+        let mut enc_land: Vec<Vec<[i32; 2]>> = Vec::new();
         for t in bands.iter().filter(|t| t.kind == Kind::Land && t.band == 0) {
             self.query(t, bbox, &[], |_, g| {
                 if let Some(TileGeom::Rings(r)) = tp.polygons(&g) {
@@ -435,12 +436,12 @@ impl ChartStore {
                         },
                     };
                     if let Some(TileGeom::Rings(r)) = tp.polygons(&g) {
-                        topo_land.extend(r);
+                        enc_land.extend(r);
                     }
                 });
             }
         }
-        if !topo_land.is_empty() {
+        if !topo_land.is_empty() || !enc_land.is_empty() {
             let mut water: Vec<Vec<[i32; 2]>> = Vec::new();
             for t in self.tables.iter().filter(|t| t.kind == Kind::Lake) {
                 self.query(t, bbox, &[], |_, g| {
@@ -449,9 +450,20 @@ impl ChartStore {
                     }
                 });
             }
-            let rings = if water.is_empty() { topo_land } else { cut_water(topo_land, water) };
-            if !rings.is_empty() {
-                land.add(&TileGeom::Rings(rings), &[]);
+            if !topo_land.is_empty() {
+                let rings = if water.is_empty() { topo_land } else { cut_water(topo_land, water.clone()) };
+                if !rings.is_empty() {
+                    land.add(&TileGeom::Rings(rings), &[]);
+                }
+            }
+            // ENC land from several cells and scales, merged; marked "enc" so the chart draws
+            // no outline round it (its edges include cell and coverage edges): the coast is
+            // drawn from the cells' own coastline and shoreline construction lines instead
+            if !enc_land.is_empty() {
+                let rings = cut_water(enc_land, water);
+                if !rings.is_empty() {
+                    land.add(&TileGeom::Rings(rings), &[("enc", Value::UInt(1))]);
+                }
             }
         }
         // World land at the resolution for this zoom, except inside NZ where Topo50 is drawn.
@@ -720,43 +732,46 @@ pub fn drop_cell_edges(g: Geom) -> Geom {
 /// negative, as `TileProj::polygons` gives them). Non-zero filling, so
 /// overlapping lakes (Topo50 and a chart's own) count once.
 pub fn cut_water(land: Vec<Vec<[i32; 2]>>, water: Vec<Vec<[i32; 2]>>) -> Vec<Vec<[i32; 2]>> {
-    use i_overlay::core::fill_rule::FillRule;
-    use i_overlay::core::overlay_rule::OverlayRule;
-    use i_overlay::float::single::SingleFloatOverlay;
-    // tidy the rings first (repeated points and flat rings from clipping to the tile)
-    let f = |v: Vec<Vec<[i32; 2]>>| -> Vec<Vec<[f64; 2]>> {
+    // Clipper2 (a pure Rust port), in tile units: i_overlay ran away on some tiles,
+    // asking for tens of gigabytes
+    use clipper2_rust::{boolean_op_tree_64, poly_tree_to_faces64, ClipType, FillRule, Path64, Paths64, Point64, PolyTree64};
+    let paths = |v: Vec<Vec<[i32; 2]>>| -> Paths64 {
         v.into_iter()
             .filter_map(|mut r| {
                 r.dedup();
                 while r.len() > 1 && r.first() == r.last() {
                     r.pop();
                 }
-                (r.len() >= 3 && signed_area(&r) != 0).then(|| r.into_iter().map(|p| [p[0] as f64, p[1] as f64]).collect())
+                (r.len() >= 3 && signed_area(&r) != 0).then(|| r.into_iter().map(|p| Point64::new(p[0] as i64, p[1] as i64)).collect::<Path64>())
             })
             .collect()
     };
-    let (subj, clip) = (f(land), f(water));
-    let shapes = subj.overlay(&clip, OverlayRule::Difference, FillRule::NonZero);
+    let (subj, clip) = (paths(land), paths(water));
+    let mut tree = PolyTree64::new();
+    boolean_op_tree_64(ClipType::Difference, FillRule::NonZero, &subj, &clip, &mut tree);
     let mut out = Vec::new();
-    for shape in shapes {
-        for (k, c) in shape.into_iter().enumerate() {
-            let mut q: Vec<[i32; 2]> = c.iter().map(|p| [p[0].round() as i32, p[1].round() as i32]).collect();
-            q.dedup();
-            if q.len() > 1 && q.first() == q.last() {
-                q.pop();
+    let mut push = |ring: &Path64, outer: bool| {
+        let mut q: Vec<[i32; 2]> = ring.iter().map(|p| [p.x as i32, p.y as i32]).collect();
+        q.dedup();
+        if q.len() < 3 {
+            return false;
+        }
+        let a = signed_area(&q);
+        if a == 0 {
+            return false;
+        }
+        // the outer contour positive, holes negative
+        if outer != (a > 0) {
+            q.reverse();
+        }
+        out.push(q);
+        true
+    };
+    for face in poly_tree_to_faces64(&tree) {
+        if push(&face.outer, true) {
+            for h in &face.holes {
+                push(h, false);
             }
-            if q.len() < 3 {
-                continue;
-            }
-            let a = signed_area(&q);
-            if a == 0 {
-                continue;
-            }
-            // the outer contour positive, holes negative
-            if (k == 0) != (a > 0) {
-                q.reverse();
-            }
-            out.push(q);
         }
     }
     out

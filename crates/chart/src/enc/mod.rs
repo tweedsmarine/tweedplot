@@ -19,7 +19,7 @@ use rusqlite::Connection;
 use cell::{Cell, Shape};
 
 /// Bump when the conversion changes, so cells are converted again.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 /// The chart band for a cell's intended usage (DSID INTU).
 pub fn band_for(intu: u8) -> u8 {
@@ -333,52 +333,189 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
     // what is there already, read once (a big exchange set has thousands of cells)
     let existing: Vec<String> = std::fs::read_dir(&out_dir).into_iter().flatten().flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
     let mtime = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
-    let plan: Vec<(CellFiles, String, PathBuf, bool)> = cells
+    let suffix = format!("-v{VERSION}.gpkg");
+    // each cell's own conversion: "<CELL>-<folder hash>-b<band>-v<version>.gpkg"
+    let plan: Vec<(CellFiles, String, Option<PathBuf>)> = cells
         .into_iter()
         .map(|c| {
             let stem = c.base.file_stem().map(|s| s.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
             let rel = c.base.parent().and_then(|p| p.strip_prefix(dir).ok()).map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
             let key = format!("{stem}-{:08x}", hash(&rel));
-            let gpkg = out_dir.join(format!("{key}-v{VERSION}.gpkg"));
+            let have = existing.iter().find(|e| e.starts_with(&format!("{key}-b")) && e.ends_with(&suffix)).map(|e| out_dir.join(e));
             let newest = std::iter::once(&c.base).chain(&c.updates).filter_map(|p| mtime(p)).max();
-            let fresh = matches!((newest, mtime(&gpkg)), (Some(n), Some(m)) if m >= n);
-            (c, key, gpkg, fresh)
+            let fresh = have.filter(|g| matches!((newest, mtime(g)), (Some(n), Some(m)) if m >= n));
+            (c, key, fresh)
         })
         .collect();
-    let todo = plan.iter().filter(|p| !p.3).count();
+    let todo = plan.iter().filter(|p| p.2.is_none()).count();
     let mut done = 0;
-    let mut out = Vec::new();
-    for (c, key, gpkg, fresh) in plan {
-        if !fresh {
-            let name = c.base.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-            progress(done, todo, &name);
-            if done % 100 == 0 {
-                eprintln!("ENC: converting {} of {todo} ({name})", done + 1);
-            }
-            done += 1;
-            // older conversions of this cell
-            for e in existing.iter().filter(|e| e.starts_with(&format!("{key}-v"))) {
-                let _ = std::fs::remove_file(out_dir.join(e));
-            }
-            match Cell::open(&c.base, &c.updates) {
-                Ok(cell) => {
-                    if let Err(e) = write_gpkg(&cell, &gpkg) {
+    let mut by_band: BTreeMap<u8, Vec<PathBuf>> = BTreeMap::new();
+    for (c, key, fresh) in plan {
+        let gpkg = match fresh {
+            Some(g) => g,
+            None => {
+                let name = c.base.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                progress(done, todo, &name);
+                if done % 100 == 0 {
+                    eprintln!("ENC: converting {} of {todo} ({name})", done + 1);
+                }
+                done += 1;
+                // older conversions of this cell (other versions, notes)
+                for e in existing.iter().filter(|e| e.starts_with(&format!("{key}-"))) {
+                    let _ = std::fs::remove_file(out_dir.join(e));
+                }
+                let cell = match Cell::open(&c.base, &c.updates) {
+                    Ok(cell) => cell,
+                    Err(e) => {
                         eprintln!("ENC {}: {e}", c.base.display());
                         continue;
                     }
-                }
-                Err(e) => {
+                };
+                let g = out_dir.join(format!("{key}-b{}{suffix}", band_for(cell.intu)));
+                if let Err(e) = write_gpkg(&cell, &g) {
                     eprintln!("ENC {}: {e}", c.base.display());
                     continue;
                 }
+                g
             }
+        };
+        let band = gpkg.file_name().and_then(|n| {
+            let n = n.to_string_lossy().to_string();
+            let i = n.rfind("-b")?;
+            n[i + 2..].split('-').next()?.parse::<u8>().ok()
+        });
+        if let Some(b) = band {
+            by_band.entry(b).or_default().push(gpkg);
         }
-        out.push(gpkg);
     }
     if todo > 0 {
         progress(todo, todo, "");
     }
+    // then the cells of each band merged into one file, which is what the chart store
+    // opens: one table per layer and band instead of one per cell (thousands of cells)
+    let tag = format!("{:08x}", hash(&dir.to_string_lossy()));
+    let mut out = Vec::new();
+    for (band, files) in by_band {
+        let merged = out_dir.join(format!("all-{tag}-b{band}{suffix}"));
+        let stamp: Vec<(String, i64)> = files
+            .iter()
+            .map(|f| {
+                let t = mtime(f).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs() as i64);
+                (f.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(), t)
+            })
+            .collect();
+        if !merged_is(&merged, &stamp) {
+            progress(0, 0, &format!("merging band {band} ({} cells)", files.len()));
+            eprintln!("ENC: merging {} cells of band {band}", files.len());
+            if let Err(e) = merge(&files, &stamp, &merged) {
+                eprintln!("ENC: merging band {band}: {e}");
+                continue;
+            }
+        }
+        out.push(merged);
+    }
+    // merged files of bands no longer present
+    for e in existing.iter().filter(|e| e.starts_with(&format!("all-{tag}-"))) {
+        let p = out_dir.join(e);
+        if !out.iter().any(|o| p.starts_with(o) || e.starts_with(&o.file_name().unwrap().to_string_lossy().to_string())) {
+            let _ = std::fs::remove_file(p);
+        }
+    }
     out
+}
+
+/// Whether a merged file was made from exactly these cell files (names and times).
+fn merged_is(merged: &Path, stamp: &[(String, i64)]) -> bool {
+    let Ok(db) = Connection::open_with_flags(merged, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY) else { return false };
+    let Ok(mut st) = db.prepare("SELECT file, mtime FROM merged_from ORDER BY file") else { return false };
+    let Ok(rows) = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))) else { return false };
+    let have: Vec<(String, i64)> = rows.filter_map(Result::ok).collect();
+    let mut want = stamp.to_vec();
+    want.sort();
+    have == want
+}
+
+/// Merge cells' GeoPackages (same table layout) into one.
+fn merge(files: &[PathBuf], stamp: &[(String, i64)], out: &Path) -> Result<(), rusqlite::Error> {
+    let tmp = out.with_extension("tmp");
+    let _ = std::fs::remove_file(&tmp);
+    let db = Connection::open(&tmp)?;
+    db.execute_batch(
+        "PRAGMA application_id = 1196444487; PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF;
+         CREATE TABLE gpkg_spatial_ref_sys (srs_name TEXT NOT NULL, srs_id INTEGER PRIMARY KEY, organization TEXT NOT NULL,
+           organization_coordsys_id INTEGER NOT NULL, definition TEXT NOT NULL, description TEXT);
+         INSERT INTO gpkg_spatial_ref_sys VALUES ('WGS 84', 4326, 'EPSG', 4326, 'GEOGCS[\"WGS 84\"]', NULL);
+         CREATE TABLE gpkg_contents (table_name TEXT PRIMARY KEY, data_type TEXT NOT NULL, identifier TEXT, description TEXT DEFAULT '',
+           last_change DATETIME, min_x DOUBLE, min_y DOUBLE, max_x DOUBLE, max_y DOUBLE, srs_id INTEGER);
+         CREATE TABLE gpkg_geometry_columns (table_name TEXT NOT NULL, column_name TEXT NOT NULL, geometry_type_name TEXT NOT NULL,
+           srs_id INTEGER NOT NULL, z TINYINT NOT NULL, m TINYINT NOT NULL, PRIMARY KEY (table_name, column_name));
+         CREATE TABLE merged_from (file TEXT PRIMARY KEY, mtime INTEGER);
+         CREATE TABLE cells (cell TEXT, edition TEXT, upd TEXT, issue_date TEXT, file TEXT);",
+    )?;
+    // per table: its columns (name, type) and the next fid
+    let mut tables: std::collections::HashMap<String, (Vec<(String, String)>, i64)> = std::collections::HashMap::new();
+    for f in files {
+        db.execute("ATTACH DATABASE ?1 AS s", [f.to_string_lossy().as_ref()])?;
+        let r = (|| -> Result<(), rusqlite::Error> {
+            let found: Vec<(String, String)> = {
+                let mut st = db.prepare("SELECT c.table_name, g.geometry_type_name FROM s.gpkg_contents c JOIN s.gpkg_geometry_columns g ON g.table_name = c.table_name")?;
+                let v = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.filter_map(Result::ok).collect();
+                v
+            };
+            db.execute_batch("BEGIN")?;
+            for (t, geo) in found {
+                let cols: Vec<(String, String)> = {
+                    let mut st = db.prepare(&format!("SELECT name, type FROM s.pragma_table_info('{t}') WHERE name NOT IN ('fid', 'geom')"))?;
+                    let v = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.filter_map(Result::ok).collect();
+                    v
+                };
+                let entry = match tables.get_mut(&t) {
+                    Some(e) => e,
+                    None => {
+                        db.execute_batch(&format!(
+                            "CREATE TABLE \"{t}\" (fid INTEGER PRIMARY KEY, geom BLOB);
+                             CREATE VIRTUAL TABLE \"rtree_{t}_geom\" USING rtree(id, minx, maxx, miny, maxy);"
+                        ))?;
+                        db.execute("INSERT INTO gpkg_contents (table_name, data_type, identifier, srs_id) VALUES (?1, 'features', ?1, 4326)", [&t])?;
+                        db.execute("INSERT INTO gpkg_geometry_columns VALUES (?1, 'geom', ?2, 4326, 0, 0)", rusqlite::params![t, geo])?;
+                        tables.entry(t.clone()).or_insert((Vec::new(), 0))
+                    }
+                };
+                for (c, ty) in &cols {
+                    if !entry.0.iter().any(|(n, _)| n == c) {
+                        db.execute_batch(&format!("ALTER TABLE \"{t}\" ADD COLUMN \"{c}\" {ty}"))?;
+                        entry.0.push((c.clone(), ty.clone()));
+                    }
+                }
+                let off = entry.1;
+                let list: String = cols.iter().map(|(c, _)| format!(", \"{c}\"")).collect();
+                db.execute_batch(&format!(
+                    "INSERT INTO \"{t}\" (fid, geom{list}) SELECT fid + {off}, geom{list} FROM s.\"{t}\";
+                     INSERT INTO \"rtree_{t}_geom\" SELECT id + {off}, minx, maxx, miny, maxy FROM s.\"rtree_{t}_geom\";"
+                ))?;
+                entry.1 = db.query_row(&format!("SELECT coalesce(max(fid), 0) FROM \"{t}\""), [], |r| r.get(0))?;
+            }
+            let meta = |k: &str| -> String { db.query_row("SELECT value FROM s.enc_meta WHERE key = ?1", [k], |r| r.get(0)).unwrap_or_default() };
+            let (c, e, u, d) = (meta("cell"), meta("edition"), meta("update"), meta("issue_date"));
+            db.execute("INSERT INTO cells VALUES (?1, ?2, ?3, ?4, ?5)", rusqlite::params![c, e, u, d, f.file_name().map(|n| n.to_string_lossy().to_string())])?;
+            db.execute_batch("COMMIT")
+        })();
+        if r.is_err() {
+            let _ = db.execute_batch("ROLLBACK");
+        }
+        db.execute("DETACH DATABASE s", [])?;
+        if let Err(e) = r {
+            eprintln!("ENC: merging {}: {e}", f.display());
+        }
+    }
+    for (f, t) in stamp {
+        db.execute("INSERT OR REPLACE INTO merged_from VALUES (?1, ?2)", rusqlite::params![f, t])?;
+    }
+    drop(db);
+    let _ = std::fs::remove_file(out);
+    let _ = std::fs::remove_file(PathBuf::from(format!("{}.tables", out.display())));
+    std::fs::rename(&tmp, out).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -407,11 +544,29 @@ mod tests {
         let dir = std::env::temp_dir().join("enc_test");
         std::fs::create_dir_all(&dir).unwrap();
         let out = dir.join("t.gpkg");
-        assert_eq!(write_gpkg(&c, &out).unwrap(), 13);
+        assert_eq!(write_gpkg(&c, &out).unwrap(), 14);
         // the chart store reads it like the LINZ layers
         let store = crate::ChartStore::open_dirs(&[dir.clone()]).unwrap();
         assert!(store.tables.iter().any(|t| t.kind == crate::Kind::DepthArea && t.band == 6));
         assert!(store.tables.iter().any(|t| t.kind == crate::Kind::Land && t.band == 6));
+    }
+
+    /// A folder of cells becomes one merged file per band, made again only when a cell changes.
+    #[test]
+    fn merges_cells_by_band() {
+        let dir = std::env::temp_dir().join(format!("enc_merge_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("a")).unwrap();
+        std::fs::write(dir.join("a/1B5X02NE.000"), include_bytes!("../../tests/data/1B5X02NE.000")).unwrap();
+        let out = ensure_gpkgs(&dir);
+        assert_eq!(out.len(), 1);
+        assert!(out[0].file_name().unwrap().to_string_lossy().contains("-b6-"));
+        let made = std::fs::metadata(&out[0]).unwrap().modified().unwrap();
+        assert_eq!(ensure_gpkgs(&dir), out);
+        assert_eq!(std::fs::metadata(&out[0]).unwrap().modified().unwrap(), made, "not made again");
+        let store = crate::ChartStore::open_dirs(&[dir.clone()]).unwrap();
+        assert!(store.tables.iter().any(|t| t.kind == crate::Kind::DepthArea && t.band == 6 && t.rows == 4));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

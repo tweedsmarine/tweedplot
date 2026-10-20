@@ -1441,9 +1441,10 @@ fn open_charts(handle: tauri::AppHandle) {
             let h = handle.clone();
             let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
             chart::enc::ensure_gpkgs_with(d, &mut |done, todo, name| {
-                if last.elapsed().as_millis() >= 500 || done == todo {
+                if last.elapsed().as_millis() >= 500 || done == todo || todo == 0 {
                     last = std::time::Instant::now();
-                    let _ = h.emit("chart-status", serde_json::json!({ "detail": format!("converting ENC cells: {done} of {todo} {name}") }));
+                    let detail = if todo == 0 { format!("converting ENC cells: {name}") } else { format!("converting ENC cells: {done} of {todo} {name}") };
+                    let _ = h.emit("chart-status", serde_json::json!({ "detail": detail }));
                 }
             });
         }

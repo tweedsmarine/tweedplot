@@ -124,7 +124,7 @@ const map = new maplibregl.Map({
         paint: { "line-color": css("--coast"), "line-width": 0.8 } },
       { id: "coast-nz", type: "line", source: "land-nz", minzoom: 4,
         paint: { "line-color": css("--coast"), "line-width": 0.8 } },
-      { id: "chart-coast", type: "line", source: "chart", "source-layer": "land", filter: ["!", ["has", "w"]],
+      { id: "chart-coast", type: "line", source: "chart", "source-layer": "land", filter: ["all", ["!", ["has", "w"]], ["!", ["has", "enc"]]],
         paint: { "line-color": css("--coast"), "line-width": 0.9 } },
       { id: "chart-wcoast", type: "line", source: "chart", "source-layer": "wcoast",
         paint: { "line-color": css("--coast"), "line-width": 0.9 } },

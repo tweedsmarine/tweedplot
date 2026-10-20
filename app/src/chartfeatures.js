@@ -59,6 +59,9 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
       paint: { "line-color": MAGENTA, "line-width": 1.1, "line-dasharray": [3, 2] } },
     { id: "f-line-solid", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, cls("NAVLNE", "BRIDGE", "SLCONS", "PONTON", "CAUSWY")],
       paint: { "line-color": INK, "line-width": ["match", ["get", "cls"], "BRIDGE", 2.5, "PONTON", 2.2, "SLCONS", 1.6, "CAUSWY", 1.6, 1] } },
+    // ENC coastlines (the ENC land fill has no outline of its own)
+    { id: "f-coast", type: "line", ...src, "source-layer": "fln", filter: cls("COALNE"),
+      paint: { "line-color": "#8a7a4a", "line-width": 0.9 } },
     { id: "f-line-dash", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, cls("RECTRC", "CBLOHD", "PIPOHD", "FSHFAC")],
       paint: { "line-color": ["match", ["get", "cls"], "RECTRC", INK, "#5b6b75"], "line-width": 1, "line-dasharray": [5, 3] } },
     // light sectors
@@ -100,7 +103,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
   function apply() {
     for (const l of layers) {
       const haz = HAZ_LAYERS.includes(l.id);
-      let on = opts.show || haz;
+      let on = opts.show || haz || l.id === "f-coast"; // the ENC coast is part of the chart base
       if (SECTOR.includes(l.id)) on = on && opts.sectors;
       if (NAMES.includes(l.id)) on = on && opts.names;
       map.setLayoutProperty(l.id, "visibility", on ? "visible" : "none");

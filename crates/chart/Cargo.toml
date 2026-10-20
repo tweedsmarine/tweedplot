@@ -10,8 +10,8 @@ rusqlite.workspace = true
 zip.workspace = true
 lru.workspace = true
 geo = "0.31"
-i_overlay = "4"
 rayon.workspace = true
+clipper2-rust = "1.2"
 thiserror.workspace = true
 serde.workspace = true
 

@@ -71,6 +71,7 @@ pub static CLASSES: &[FeatureClass] = &[
     fc!("PIPOHD", "Overhead pipeline", "pipeline_overhead_polyline", Line),
     fc!("BRIDGE", "Bridge", "bridge_polyline", Line),
     fc!("SLCONS", "Shoreline construction", "shoreline_construction_polyline", Line),
+    fc!("COALNE", "Coastline", "coastline_enc_polyline", Line),
     fc!("PONTON", "Pontoon", "pontoon_polyline", Line),
     fc!("CAUSWY", "Causeway", "causeway_polyline", Line),
     fc!("PIPSOL", "Pipeline", "pipeline_submarine_on_land_polyline", Line),
