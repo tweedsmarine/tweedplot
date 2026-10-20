@@ -9,7 +9,7 @@ fn main() {
         let file = f.get("FILE").and_then(|v| v.text()).unwrap_or("");
         if !file.ends_with(".000") { continue; }
         if let (Some(s), Some(w), Some(n), Some(e)) = (g("SLAT"), g("WLON"), g("NLAT"), g("ELON")) {
-            if w <= b[2] && e >= b[0] && s <= b[3] && n >= b[1] { println!("{file}"); }
+            if w <= b[2] && e >= b[0] && s <= b[3] && n >= b[1] { println!("{file} {s} {w} {n} {e}"); }
         }
     }
 }

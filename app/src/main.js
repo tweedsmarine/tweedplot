@@ -63,6 +63,7 @@ const DEPTH = { drying: "#a9c8a0", vshallow: "#7fb8e8", mshallow: "#a6cdf0", mde
 function depareColour() {
   const d1 = ["coalesce", ["get", "drval1"], 0];
   return ["case",
+    ["has", "lake"], DEPTH.deep,
     ["<", d1, 0], DEPTH.drying,
     ["<", d1, settings.shallow], DEPTH.vshallow,
     ["<", d1, settings.safetyContour], DEPTH.mshallow,

@@ -327,6 +327,18 @@ impl ChartStore {
                 }
             });
         }
+        // ENC lakes and wide rivers (LAKARE, RIVERS areas): water too, often how small-scale
+        // cells chart the Great Lakes; drawn as deep water, and the world land gives way
+        for t in bands.iter().filter(|t| t.kind == Kind::Lake && t.table.contains("_enc_b")) {
+            self.query(t, bbox, &[], |_, g| {
+                if let Some(tg) = tp.polygons(&g) {
+                    if let TileGeom::Rings(r) = &tg {
+                        chart_water.extend(r.iter().cloned());
+                    }
+                    depare.add(&tg, &[("band", Value::UInt(t.band as u64)), ("lake", Value::UInt(1))]);
+                }
+            });
+        }
         // Contours and soundings: the finest band with data here, and where it has none
         // (outside its coverage) the next band down, cut to outside the finer coverage, so a
         // tile reaching past a large-scale chart's edge keeps its contours beyond it.
@@ -670,7 +682,18 @@ pub fn cut_water(land: Vec<Vec<[i32; 2]>>, water: Vec<Vec<[i32; 2]>>) -> Vec<Vec
     use i_overlay::core::fill_rule::FillRule;
     use i_overlay::core::overlay_rule::OverlayRule;
     use i_overlay::float::single::SingleFloatOverlay;
-    let f = |v: Vec<Vec<[i32; 2]>>| -> Vec<Vec<[f64; 2]>> { v.into_iter().map(|r| r.into_iter().map(|p| [p[0] as f64, p[1] as f64]).collect()).collect() };
+    // tidy the rings first (repeated points and flat rings from clipping to the tile)
+    let f = |v: Vec<Vec<[i32; 2]>>| -> Vec<Vec<[f64; 2]>> {
+        v.into_iter()
+            .filter_map(|mut r| {
+                r.dedup();
+                while r.len() > 1 && r.first() == r.last() {
+                    r.pop();
+                }
+                (r.len() >= 3 && signed_area(&r) != 0).then(|| r.into_iter().map(|p| [p[0] as f64, p[1] as f64]).collect())
+            })
+            .collect()
+    };
     let (subj, clip) = (f(land), f(water));
     let shapes = subj.overlay(&clip, OverlayRule::Difference, FillRule::NonZero);
     let mut out = Vec::new();
