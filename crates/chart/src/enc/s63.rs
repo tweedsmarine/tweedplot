@@ -17,25 +17,32 @@ use num_bigint::BigUint;
 use sha1::{Digest, Sha1};
 use std::io::Read;
 
-#[derive(Debug, thiserror::Error, PartialEq)]
+/// S-63 errors, with the scheme's error codes (S-63 section 11).
+#[derive(Debug, thiserror::Error, PartialEq, Clone)]
 pub enum S63Error {
-    /// SSE 12 and similar: not in the expected format
-    #[error("{0} is not in the right format")]
-    Format(&'static str),
-    #[error("user permit check sum is wrong (wrong permit or manufacturer key)")]
-    UserPermit,
-    /// SSE 13
-    #[error("cell permit is invalid (check sum incorrect) or for a different system")]
+    #[error("SSE 08 - The IHO public key is not in the right format")]
+    KeyFormat,
+    #[error("SSE 12 - Cell permit format is incorrect. Contact your data supplier and obtain a new permit file")]
+    PermitFormat,
+    #[error("SSE 13 - Cell permit is invalid (check sum is incorrect) or the cell permit is for a different system. Contact your data supplier and obtain a new or valid permit file")]
     PermitChecksum,
-    /// SSE 21
-    #[error("decryption failed: no valid cell key in the permit")]
+    #[error("SSE 17 - User permit is invalid (check sum is incorrect)")]
+    UserPermit,
+    #[error("SSE 21 - Decryption failed, no valid cell permit found. Permits may be for another system or new permits may be required: contact your supplier to obtain a new licence")]
     Decrypt,
-    /// SSE 06
-    #[error("the SA signed data server certificate is invalid")]
+    #[error("SSE 06 - The SA signed data server certificate is invalid. The SA may have issued a new public key or the ENC may originate from another service")]
     Certificate,
-    /// SSE 09
-    #[error("the ENC signature is invalid")]
+    #[error("SSE 09 - ENC signature is invalid")]
     Signature,
+    #[error("SSE 24 - ENC signature format incorrect, contact your data supplier")]
+    SignatureFormat,
+}
+
+impl S63Error {
+    /// "SSE 13" and so on.
+    pub fn code(&self) -> String {
+        self.to_string().get(..6).unwrap_or("").to_string()
+    }
 }
 
 fn hex(s: &str) -> Option<Vec<u8>> {
@@ -76,9 +83,9 @@ fn encrypt_padded(key: &[u8], data: &[u8]) -> [u8; 8] {
 pub fn hw_id_from_user_permit(permit: &str, m_key: &str) -> Result<[u8; 5], S63Error> {
     let p = permit.trim();
     if p.len() != 28 {
-        return Err(S63Error::Format("user permit"));
+        return Err(S63Error::UserPermit);
     }
-    let enc = hex(&p[..16]).ok_or(S63Error::Format("user permit"))?;
+    let enc = hex(&p[..16]).ok_or(S63Error::UserPermit)?;
     let crc = crc32fast::hash(p[..16].as_bytes());
     if format!("{crc:08X}") != p[16..24].to_ascii_uppercase() {
         return Err(S63Error::UserPermit);
@@ -110,16 +117,16 @@ fn hw_id6(hw: &[u8; 5]) -> [u8; 6] {
 pub fn cell_permit(s: &str, hw: &[u8; 5]) -> Result<([u8; 5], [u8; 5]), S63Error> {
     let s = s.trim();
     if s.len() != 64 || !s.is_ascii() {
-        return Err(S63Error::Format("cell permit"));
+        return Err(S63Error::PermitFormat);
     }
     let key = hw_id6(hw);
     let crc = crc32fast::hash(s[..48].as_bytes());
-    let want = hex(&s[48..]).ok_or(S63Error::Format("cell permit"))?;
+    let want = hex(&s[48..]).ok_or(S63Error::PermitFormat)?;
     if encrypt_padded(&key, &crc.to_be_bytes()).as_slice() != want.as_slice() {
         return Err(S63Error::PermitChecksum);
     }
     let ck = |h: &str| -> Result<[u8; 5], S63Error> {
-        let b = decrypt_ecb(&key, &hex(h).ok_or(S63Error::Format("cell permit"))?);
+        let b = decrypt_ecb(&key, &hex(h).ok_or(S63Error::PermitFormat)?);
         let mut k = [0u8; 5];
         k.copy_from_slice(&b[..5]);
         Ok(k)
@@ -131,9 +138,9 @@ pub fn cell_permit(s: &str, hw: &[u8; 5]) -> Result<([u8; 5], [u8; 5]), S63Error
 /// the cell name with its permit, or with why it can't be used.
 pub fn read_permits(text: &str, hw: &[u8; 5]) -> Result<Vec<(String, Result<CellPermit, S63Error>)>, S63Error> {
     let mut lines = text.lines().map(str::trim).filter(|l| !l.is_empty());
-    let first = lines.next().ok_or(S63Error::Format("PERMIT.TXT"))?;
+    let first = lines.next().ok_or(S63Error::PermitFormat)?;
     if !first.starts_with(":DATE") {
-        return Err(S63Error::Format("PERMIT.TXT"));
+        return Err(S63Error::PermitFormat);
     }
     let mut out = Vec::new();
     for l in lines {
@@ -215,10 +222,10 @@ pub fn parse_public_key(text: &[u8]) -> Result<PublicKey, S63Error> {
     let v = values(text);
     let get = |name: &str| v.iter().find(|(l, _, _)| l.to_ascii_uppercase().contains(name)).map(|x| x.1.clone());
     Ok(PublicKey {
-        p: get("BIG P").ok_or(S63Error::Format("public key"))?,
-        q: get("BIG Q").ok_or(S63Error::Format("public key"))?,
-        g: get("BIG G").ok_or(S63Error::Format("public key"))?,
-        y: get("BIG Y").ok_or(S63Error::Format("public key"))?,
+        p: get("BIG P").ok_or(S63Error::KeyFormat)?,
+        q: get("BIG Q").ok_or(S63Error::KeyFormat)?,
+        g: get("BIG G").ok_or(S63Error::KeyFormat)?,
+        y: get("BIG Y").ok_or(S63Error::KeyFormat)?,
     })
 }
 
@@ -240,13 +247,13 @@ fn dsa_verify(key: &PublicKey, digest: &[u8], r: &BigUint, s: &BigUint) -> bool 
 pub fn verify_cell(signature: &[u8], cell: &[u8], sa: &PublicKey) -> Result<(), S63Error> {
     let v = values(signature);
     if v.len() < 8 {
-        return Err(S63Error::Format("signature file"));
+        return Err(S63Error::SignatureFormat);
     }
     let (r1, s1) = (&v[0].1, &v[1].1);
     let (r2, s2) = (&v[2].1, &v[3].1);
     // the data server's public key file: everything from the third value's header on
     let ds_text = &signature[v[4].2..];
-    let ds = parse_public_key(ds_text)?;
+    let ds = parse_public_key(ds_text).map_err(|_| S63Error::SignatureFormat)?;
     if !dsa_verify(sa, &Sha1::digest(ds_text), r2, s2) {
         return Err(S63Error::Certificate);
     }

@@ -377,7 +377,7 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
                 let cell = match open_cell(&c, &permits) {
                     Ok(cell) => cell,
                     Err(e) => {
-                        eprintln!("ENC {}: {e}", c.base.display());
+                        note(&c.base, e.to_string());
                         continue;
                     }
                 };
@@ -438,15 +438,53 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
 /// TweedPlot has its own from the IHO, the IHO's generic S-64 test credentials.
 static PROTECTION: std::sync::RwLock<Option<(String, String)>> = std::sync::RwLock::new(None);
 
+/// The IHO's generic S-64 test credentials: user permit and manufacturer key (M_KEY).
+pub const TEST_USER_PERMIT: &str = "66B5CBFDF7E4139D5B6086C23130";
+pub const TEST_M_KEY: &str = "10121";
+
 /// Set the user permit and manufacturer key (M_KEY) for decrypting S-63 cells.
 pub fn set_protection(user_permit: &str, m_key: &str) {
-    *PROTECTION.write().unwrap() = Some((user_permit.to_string(), m_key.to_string()));
+    *PROTECTION.write().unwrap() = Some((user_permit.trim().to_ascii_uppercase(), m_key.to_string()));
 }
 
-/// The HW_ID from the configured (or generic test) user permit.
+/// The user permit and M_KEY in use.
+pub fn protection() -> (String, String) {
+    PROTECTION.read().unwrap().clone().unwrap_or_else(|| (TEST_USER_PERMIT.into(), TEST_M_KEY.into()))
+}
+
+/// The HW_ID from the user permit in use.
 pub fn hw_id() -> Option<[u8; 5]> {
-    let p = PROTECTION.read().unwrap().clone().unwrap_or_else(|| ("66B5CBFDF7E4139D5B6086C23130".into(), "10121".into()));
+    let p = protection();
     s63::hw_id_from_user_permit(&p.0, &p.1).ok()
+}
+
+/// What happened to a cell that could not be opened, or opens with a warning (S-63 codes).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Note {
+    pub file: String,
+    pub cell: String,
+    pub text: String,
+}
+
+static NOTES: std::sync::Mutex<Vec<Note>> = std::sync::Mutex::new(Vec::new());
+
+fn note(file: &Path, text: impl Into<String>) {
+    let text = text.into();
+    eprintln!("ENC {}: {text}", file.display());
+    let cell = file.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let mut n = NOTES.lock().unwrap();
+    n.retain(|x| !(x.file == file.display().to_string() && x.text == text));
+    n.push(Note { file: file.display().to_string(), cell, text });
+}
+
+/// Notes from converting cells since the charts were last opened.
+pub fn notes() -> Vec<Note> {
+    NOTES.lock().unwrap().clone()
+}
+
+/// Forget the notes (before the charts are opened again).
+pub fn clear_notes() {
+    NOTES.lock().unwrap().clear();
 }
 
 /// The IHO Scheme Administrator's public key (S-63), for checking cell signatures.
@@ -460,37 +498,117 @@ FCA6 82CE 8E12 CABA 26EF CCF7 110E 526D B078 B05E DECB CD1E B4A2 08F3 AE16 17AE 
 963F 14E3 2BA5 3729 28F2 4F15 B073 0C49 D31B 28E5 C764 1002 564D B959 95B1 5CF8 800E D54E 3548 67B8 2BB9 597B 1582 69E0 79F0 C4F4 926B 1776 1CC8 9EB7 7C9B 7EF8.
 ";
 
-/// Valid cell permits found in PERMIT.TXT files under `dir`, by cell name.
-fn s63_permits(dir: &Path) -> std::collections::HashMap<String, s63::CellPermit> {
-    let mut out = std::collections::HashMap::new();
+/// One permit as found: where, its file's date, and the permit or why it can't be used.
+#[derive(Debug, Clone)]
+pub struct FoundPermit {
+    pub file: PathBuf,
+    /// the PERMIT.TXT :DATE, "YYYYMMDD HH:MM"
+    pub date: String,
+    pub cell: String,
+    pub permit: Result<s63::CellPermit, s63::S63Error>,
+}
+
+fn permit_date(text: &str) -> String {
+    text.lines().find_map(|l| l.trim().strip_prefix(":DATE").map(|d| d.trim().to_string())).unwrap_or_default()
+}
+
+/// Every cell permit in the PERMIT.TXT files under `dir` (installed permits and those that
+/// came with exchange sets), checked against the HW_ID.
+pub fn find_permits(dir: &Path) -> Vec<FoundPermit> {
+    let mut out = Vec::new();
     let Some(hw) = hw_id() else { return out };
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
         for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
             let p = e.path();
-            let hidden = p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.'));
+            let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
             if p.is_dir() {
-                if !hidden {
+                // hidden folders are TweedPlot's own (".enc"), except the installed permits
+                if !name.starts_with('.') || name == ".permits" {
                     stack.push(p);
                 }
-            } else if p.file_name().is_some_and(|n| n.eq_ignore_ascii_case("PERMIT.TXT")) {
-                match s63::read_permits(&std::fs::read_to_string(&p).unwrap_or_default(), &hw) {
-                    Ok(v) => {
-                        for (cell, r) in v {
-                            match r {
-                                Ok(pm) => {
-                                    out.insert(cell, pm);
-                                }
-                                Err(e) => eprintln!("S-63 permit {cell} ({}): {e}", p.display()),
-                            }
-                        }
-                    }
-                    Err(e) => eprintln!("S-63 {}: {e}", p.display()),
+            } else if name.eq_ignore_ascii_case("PERMIT.TXT") {
+                let text = std::fs::read_to_string(&p).unwrap_or_default();
+                let date = permit_date(&text);
+                match s63::read_permits(&text, &hw) {
+                    Ok(v) => out.extend(v.into_iter().map(|(cell, permit)| FoundPermit { file: p.clone(), date: date.clone(), cell, permit })),
+                    Err(e) => note(&p, e.to_string()),
                 }
             }
         }
     }
     out
+}
+
+/// The permit to use for each cell: a valid one from the newest permit file.
+fn s63_permits(dir: &Path) -> std::collections::HashMap<String, s63::CellPermit> {
+    let mut all = find_permits(dir);
+    all.sort_by(|a, b| a.date.cmp(&b.date));
+    let mut out = std::collections::HashMap::new();
+    for f in all {
+        if let Ok(p) = f.permit {
+            out.insert(f.cell, p);
+        }
+    }
+    out
+}
+
+/// Install a PERMIT.TXT: its valid permits replace older ones for the same cells in the
+/// installed permits (`dir/.permits/PERMIT.TXT`). Returns each permit with what was done.
+pub fn install_permits(dir: &Path, text: &str) -> Result<Vec<(String, String)>, s63::S63Error> {
+    let hw = hw_id().ok_or(s63::S63Error::UserPermit)?;
+    let found = s63::read_permits(text, &hw)?;
+    let store = dir.join(".permits").join("PERMIT.TXT");
+    let mut lines: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    if let Ok(old) = std::fs::read_to_string(&store) {
+        for l in old.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with(':')) {
+            lines.insert(l.get(..8).unwrap_or(l).to_string(), l.to_string());
+        }
+    }
+    let now = today();
+    let mut report = Vec::new();
+    let records: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with(':')).collect();
+    for ((cell, r), line) in found.into_iter().zip(records) {
+        let what = match r {
+            Ok(p) => {
+                lines.insert(cell.clone(), line.to_string());
+                if p.expiry < now {
+                    "installed. SSE 15 - Subscription service has expired. Please contact your data supplier to renew the subscription licence".to_string()
+                } else if days_between(&now, &p.expiry) <= 30 {
+                    format!("installed, expires {}. SSE 20 - Subscription service will expire in less than 30 days", p.expiry)
+                } else {
+                    format!("installed, expires {}", p.expiry)
+                }
+            }
+            Err(e) => format!("not installed. {e}"),
+        };
+        report.push((cell, what));
+    }
+    let _ = std::fs::create_dir_all(store.parent().unwrap());
+    let stamp = {
+        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        format!("{} {:02}:{:02}", now, (t / 3600) % 24, (t / 60) % 60)
+    };
+    let mut out = format!(":DATE {stamp}\r\n:VERSION 2\r\n:ENC\r\n");
+    for l in lines.values() {
+        out.push_str(l);
+        out.push_str("\r\n");
+    }
+    std::fs::write(&store, out).map_err(|_| s63::S63Error::PermitFormat)?;
+    Ok(report)
+}
+
+fn days(d: &str) -> i64 {
+    let (y, m, dd): (i64, i64, i64) = (d.get(..4).and_then(|v| v.parse().ok()).unwrap_or(0), d.get(4..6).and_then(|v| v.parse().ok()).unwrap_or(1), d.get(6..8).and_then(|v| v.parse().ok()).unwrap_or(1));
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + dd - 1;
+    era * 146097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719468
+}
+
+fn days_between(a: &str, b: &str) -> i64 {
+    days(b) - days(a)
 }
 
 /// Read a cell's file, decrypting it when it is S-63: its signature is checked against
@@ -504,13 +622,13 @@ fn read_cell_file(path: &Path, permits: &std::collections::HashMap<String, s63::
     }
     let name = path.file_name().map(|n| n.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
     let other = |m: String| cell::CellError::Other(m);
-    let permit = permits.get(name.get(..8).unwrap_or("")).ok_or_else(|| other(format!("encrypted (S-63) and no permit for {name}")))?;
-    let sig = s63::signature_name(&name).map(|s| path.with_file_name(s)).ok_or_else(|| other("no signature file".into()))?;
-    let sig = std::fs::read(&sig).map_err(|_| other(format!("no signature file for {name} (SSE 08)")))?;
+    let permit = permits.get(name.get(..8).unwrap_or("")).ok_or_else(|| other("SSE 11 - Cell permit not found. Load the permit file provided by the data supplier".into()))?;
+    let sig = s63::signature_name(&name).map(|s| path.with_file_name(s)).ok_or_else(|| other("SSE 26 - This ENC is not authenticated by the IHO acting as the Scheme Administrator (no signature file)".into()))?;
+    let sig = std::fs::read(&sig).map_err(|_| other("SSE 26 - This ENC is not authenticated by the IHO acting as the Scheme Administrator (no signature file)".into()))?;
     let sa = s63::parse_public_key(SA_PUBLIC_KEY.as_bytes()).map_err(|e| other(e.to_string()))?;
     s63::verify_cell(&sig, &data, &sa).map_err(|e| other(e.to_string()))?;
     if permit.expiry.as_str() < today().as_str() {
-        eprintln!("S-63 {name}: the permit expired {} (SSE 25: may be out of date, not for navigation)", permit.expiry);
+        note(path, format!("SSE 25 - The permit for ENC {} has expired ({}). This cell may be out of date and MUST NOT be used for primary navigation", &name[..8], permit.expiry));
     }
     s63::decrypt_cell(&data, permit).map_err(|e| other(e.to_string()))
 }
@@ -530,19 +648,31 @@ fn today() -> String {
     format!("{year:04}{month:02}{day:02}")
 }
 
-/// A cell and its updates, decrypting S-63 files.
+/// A cell and its updates, decrypting S-63 files. Updates are applied in sequence from
+/// the base cell's own update number; a missing one stops them there (SSE 23).
 fn open_cell(c: &CellFiles, permits: &std::collections::HashMap<String, s63::CellPermit>) -> Result<Cell, cell::CellError> {
     let base = read_cell_file(&c.base, permits)?;
+    let first = Cell::from_bytes(&base, &[])?;
+    let mut next: u32 = first.update.trim().parse::<u32>().unwrap_or(0) + 1;
     let mut ups = Vec::new();
     for u in &c.updates {
+        let n: u32 = u.extension().and_then(|e| e.to_str()).and_then(|e| e.parse().ok()).unwrap_or(0);
+        if n < next {
+            continue; // already in a re-issued base cell
+        }
+        if n > next {
+            note(u, format!("SSE 23 - Non sequential update, update {next} is missing: updates from {n} on are not applied"));
+            break;
+        }
         match read_cell_file(u, permits) {
             Ok(b) => ups.push(b),
             Err(e) => {
                 // apply the updates up to the first one that can't be read
-                eprintln!("ENC {}: {e}", u.display());
+                note(u, e.to_string());
                 break;
             }
         }
+        next += 1;
     }
     let refs: Vec<&[u8]> = ups.iter().map(Vec::as_slice).collect();
     Cell::from_bytes(&base, &refs)
