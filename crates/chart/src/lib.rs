@@ -118,6 +118,9 @@ pub fn band_minzoom(band: u8) -> u8 {
 /// covers the place (as an ECDIS shows the best chart available, underscaled): an ENC
 /// area with only harbour cells, say, still shows its land and depths zoomed out.
 const UNDERSCALE: u8 = 4;
+/// The same where a smaller-scale chart covers the whole tile: the larger-scale chart
+/// still starts a little before its own scale.
+const UNDERSCALE_COVERED: u8 = 2;
 
 pub struct ChartStore {
     dbs: Vec<Mutex<Connection>>,
@@ -261,14 +264,16 @@ impl ChartStore {
         let tile_rect = geo::Rect::new(geo::coord! { x: bbox[0], y: bbox[1] }, geo::coord! { x: bbox[2], y: bbox[3] });
         for (band, o) in out.iter_mut().enumerate() {
             let m = band_minzoom(band as u8);
-            // a smaller-scale chart whose coverage itself reaches the tile (not just its
-            // bounding box: a big cell's box can take in a whole lake it doesn't chart)
+            // a smaller-scale chart whose coverage takes in the whole tile: then this band
+            // starts only a little early (UNDERSCALE_COVERED), elsewhere well early. Partly
+            // covered tiles count as uncovered, so a large-scale chart fills the gaps a
+            // small-scale one leaves (Oneida Lake beyond the edge of a 1:700,000 cell)
             let coarser = band <= 1
                 || cov.iter().any(|(b, bb, poly)| {
-                    use geo::Intersects;
-                    (*b as usize) < band && *b >= 1 && bb[0] <= bbox[2] && bb[2] >= bbox[0] && bb[1] <= bbox[3] && bb[3] >= bbox[1] && poly.intersects(&tile_rect)
+                    use geo::Contains;
+                    (*b as usize) < band && *b >= 1 && bb[0] <= bbox[0] && bb[2] >= bbox[2] && bb[1] <= bbox[1] && bb[3] >= bbox[3] && poly.contains(&tile_rect)
                 });
-            *o = if coarser { m } else { m.saturating_sub(UNDERSCALE) };
+            *o = if band <= 1 { m } else if coarser { m.saturating_sub(UNDERSCALE_COVERED) } else { m.saturating_sub(UNDERSCALE) };
         }
         out
     }
