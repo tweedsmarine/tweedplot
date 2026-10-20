@@ -68,75 +68,124 @@ fn hazard_rank(code: &str, a: &Attrs) -> f64 {
     }
 }
 
-/// The part of a line or area geometry outside `cover`: None when nothing is left,
-/// the geometry itself when it doesn't reach the cover.
-pub(crate) fn cut_outside(g: &Geom, cover: &geo::MultiPolygon<f64>) -> Option<Geom> {
-    use geo::{BooleanOps, BoundingRect, Intersects};
-    let ls = |r: &Ring| geo::LineString::from(r.iter().map(|p| (p[0], p[1])).collect::<Vec<_>>());
-    let back = |l: &geo::LineString<f64>| -> Ring { l.coords().map(|c| [c.x, c.y]).collect() };
-    match g {
-        Geom::Polygons(polys) => {
-            let mp = geo::MultiPolygon::new(
-                polys.iter().filter(|r| !r.is_empty()).map(|rings| geo::Polygon::new(ls(&rings[0]), rings[1..].iter().map(ls).collect())).collect(),
-            );
-            if !mp.intersects(cover) {
-                return Some(g.clone());
-            }
-            let d = mp.difference(cover);
-            let out: Vec<Vec<Ring>> = d
-                .0
-                .iter()
-                .filter(|p| p.bounding_rect().is_some_and(|r| r.width() * r.height() > 1e-12))
-                .map(|p| std::iter::once(back(p.exterior())).chain(p.interiors().iter().map(back)).collect())
-                .collect();
-            (!out.is_empty()).then_some(Geom::Polygons(out))
-        }
-        Geom::Lines(lines) => {
-            let ml = geo::MultiLineString::new(lines.iter().map(ls).collect());
-            if !ml.intersects(cover) {
-                return Some(g.clone());
-            }
-            let d = cover.clip(&ml, true);
-            let out: Vec<Ring> = d.0.iter().map(back).filter(|r| r.len() >= 2).collect();
-            (!out.is_empty()).then_some(Geom::Lines(out))
-        }
-        Geom::Points(_) => Some(g.clone()),
+// Shape operations with Clipper2 (a pure Rust port) on lon/lat scaled to integers:
+// i_overlay (inside the geo crate's BooleanOps) ran away on some charts, asking for
+// tens of gigabytes.
+const SCALE: f64 = 1e7;
+
+fn to_path(r: &[[f64; 2]], outer: bool) -> clipper2_rust::Path64 {
+    let mut p: clipper2_rust::Path64 = r.iter().map(|q| clipper2_rust::Point64::new((q[0] * SCALE).round() as i64, (q[1] * SCALE).round() as i64)).collect();
+    p.dedup();
+    while p.len() > 1 && p.first() == p.last() {
+        p.pop();
     }
+    // outer rings anticlockwise, holes clockwise, so the non-zero rule merges overlaps
+    let a: f64 = (0..p.len()).map(|k| { let (u, v) = (p[k], p[(k + 1) % p.len()]); u.x as f64 * v.y as f64 - v.x as f64 * u.y as f64 }).sum();
+    if (a > 0.0) != outer {
+        p.reverse();
+    }
+    p
 }
 
-/// The part of a line or area geometry inside `cover` (None when nothing is).
-fn cut_inside(g: &Geom, cover: &geo::MultiPolygon<f64>) -> Option<Geom> {
-    use geo::{BooleanOps, BoundingRect, Intersects};
-    let ls = |r: &Ring| geo::LineString::from(r.iter().map(|p| (p[0], p[1])).collect::<Vec<_>>());
-    let back = |l: &geo::LineString<f64>| -> Ring { l.coords().map(|c| [c.x, c.y]).collect() };
+fn polys_to_paths(polys: &[Vec<Ring>]) -> clipper2_rust::Paths64 {
+    let mut out = clipper2_rust::Paths64::new();
+    for rings in polys {
+        for (k, r) in rings.iter().enumerate() {
+            if r.len() >= 3 {
+                out.push(to_path(r, k == 0));
+            }
+        }
+    }
+    out
+}
+
+fn cover_paths(cover: &geo::MultiPolygon<f64>) -> clipper2_rust::Paths64 {
+    let mut out = clipper2_rust::Paths64::new();
+    for p in &cover.0 {
+        let r = |l: &geo::LineString<f64>| -> Ring { l.coords().map(|c| [c.x, c.y]).collect() };
+        out.push(to_path(&r(p.exterior()), true));
+        for h in p.interiors() {
+            out.push(to_path(&r(h), false));
+        }
+    }
+    out
+}
+
+fn from_path(p: &clipper2_rust::Path64) -> Ring {
+    let mut r: Ring = p.iter().map(|q| [q.x as f64 / SCALE, q.y as f64 / SCALE]).collect();
+    if let Some(f) = r.first().copied() {
+        r.push(f);
+    }
+    r
+}
+
+/// Polygons (as faces with their holes) from a Clipper tree.
+fn tree_polys(tree: &clipper2_rust::PolyTree64) -> Vec<Vec<Ring>> {
+    clipper2_rust::poly_tree_to_faces64(tree)
+        .into_iter()
+        .filter(|f| f.outer.len() >= 3)
+        .map(|f| std::iter::once(from_path(&f.outer)).chain(f.holes.iter().filter(|h| h.len() >= 3).map(from_path)).collect())
+        .collect()
+}
+
+fn clip_geom(g: &Geom, cover: &geo::MultiPolygon<f64>, outside: bool) -> Option<Geom> {
+    use clipper2_rust::{ClipType, Clipper64, FillRule, Paths64, PolyTree64};
+    let ct = if outside { ClipType::Difference } else { ClipType::Intersection };
+    let clip = cover_paths(cover);
     match g {
         Geom::Polygons(polys) => {
-            let mp = geo::MultiPolygon::new(
-                polys.iter().filter(|r| !r.is_empty()).map(|rings| geo::Polygon::new(ls(&rings[0]), rings[1..].iter().map(ls).collect())).collect(),
-            );
-            if !mp.intersects(cover) {
-                return None;
-            }
-            let d = mp.intersection(cover);
-            let out: Vec<Vec<Ring>> = d
-                .0
-                .iter()
-                .filter(|p| p.bounding_rect().is_some_and(|r| r.width() * r.height() > 1e-12))
-                .map(|p| std::iter::once(back(p.exterior())).chain(p.interiors().iter().map(back)).collect())
+            let mut tree = PolyTree64::new();
+            clipper2_rust::boolean_op_tree_64(ct, FillRule::NonZero, &polys_to_paths(polys), &clip, &mut tree);
+            let out: Vec<Vec<Ring>> = tree_polys(&tree)
+                .into_iter()
+                .filter(|p| {
+                    let b = geom_bounds(&Geom::Polygons(vec![vec![p[0].clone()]]));
+                    (b[2] - b[0]) * (b[3] - b[1]) > 1e-12
+                })
                 .collect();
             (!out.is_empty()).then_some(Geom::Polygons(out))
         }
         Geom::Lines(lines) => {
-            let ml = geo::MultiLineString::new(lines.iter().map(ls).collect());
-            if !ml.intersects(cover) {
-                return None;
-            }
-            let d = cover.clip(&ml, false);
-            let out: Vec<Ring> = d.0.iter().map(back).filter(|r| r.len() >= 2).collect();
+            let open: Paths64 = lines
+                .iter()
+                .filter(|l| l.len() >= 2)
+                .map(|l| l.iter().map(|q| clipper2_rust::Point64::new((q[0] * SCALE).round() as i64, (q[1] * SCALE).round() as i64)).collect())
+                .collect();
+            let mut c = Clipper64::new();
+            c.add_open_subject(&open);
+            c.add_clip(&clip);
+            let mut closed = Paths64::new();
+            let mut res = Paths64::new();
+            c.execute(ct, FillRule::NonZero, &mut closed, Some(&mut res));
+            let out: Vec<Ring> = res.iter().filter(|p| p.len() >= 2).map(|p| p.iter().map(|q| [q.x as f64 / SCALE, q.y as f64 / SCALE]).collect()).collect();
             (!out.is_empty()).then_some(Geom::Lines(out))
         }
         Geom::Points(_) => None,
     }
+}
+
+/// The part of a line or area geometry outside `cover`: None when nothing is left,
+/// the geometry itself when it doesn't reach the cover.
+pub(crate) fn cut_outside(g: &Geom, cover: &geo::MultiPolygon<f64>) -> Option<Geom> {
+    if matches!(g, Geom::Points(_)) || !reaches(g, cover) {
+        return Some(g.clone());
+    }
+    clip_geom(g, cover, true)
+}
+
+/// The part of a line or area geometry inside `cover` (None when nothing is).
+fn cut_inside(g: &Geom, cover: &geo::MultiPolygon<f64>) -> Option<Geom> {
+    if matches!(g, Geom::Points(_)) || !reaches(g, cover) {
+        return None;
+    }
+    clip_geom(g, cover, false)
+}
+
+/// Whether the geometry's box meets the cover's box (a quick test before clipping).
+fn reaches(g: &Geom, cover: &geo::MultiPolygon<f64>) -> bool {
+    use geo::BoundingRect;
+    let b = geom_bounds(g);
+    cover.bounding_rect().is_some_and(|r| r.min().x <= b[2] && r.max().x >= b[0] && r.min().y <= b[3] && r.max().y >= b[1])
 }
 
 /// Light sector radius and limit-line length in tile units (4096 per tile, 8 per pixel).
@@ -267,18 +316,22 @@ impl ChartStore {
 
     /// The coverage of bands in `bands` that touches `b`, merged.
     pub(crate) fn cover_in(&self, bands: &[u8], b: [f64; 4]) -> Option<geo::MultiPolygon<f64>> {
-        use geo::BooleanOps;
-        let mut polys: Vec<&geo::Polygon<f64>> = self
+        let polys: Vec<&geo::Polygon<f64>> = self
             .coverage()
             .iter()
             .filter(|(band, cb, _)| bands.contains(band) && cb[2] >= b[0] && cb[0] <= b[2] && cb[3] >= b[1] && cb[1] <= b[3])
             .map(|(_, _, p)| p)
             .collect();
-        let first = polys.pop()?;
-        let mut m = geo::MultiPolygon::new(vec![first.clone()]);
-        for p in polys {
-            m = m.union(&geo::MultiPolygon::new(vec![p.clone()]));
+        if polys.is_empty() {
+            return None;
         }
+        // merged with Clipper2 (see clip_geom)
+        let r = |l: &geo::LineString<f64>| -> Ring { l.coords().map(|c| [c.x, c.y]).collect() };
+        let subj: Vec<Vec<Ring>> = polys.iter().map(|p| std::iter::once(r(p.exterior())).chain(p.interiors().iter().map(r)).collect()).collect();
+        let mut tree = clipper2_rust::PolyTree64::new();
+        clipper2_rust::boolean_op_tree_64(clipper2_rust::ClipType::Union, clipper2_rust::FillRule::NonZero, &polys_to_paths(&subj), &clipper2_rust::Paths64::new(), &mut tree);
+        let ls = |r: &Ring| geo::LineString::from(r.iter().map(|p| (p[0], p[1])).collect::<Vec<_>>());
+        let m = geo::MultiPolygon::new(tree_polys(&tree).iter().map(|rings| geo::Polygon::new(ls(&rings[0]), rings[1..].iter().map(ls).collect())).collect());
         Some(m)
     }
 
