@@ -20,7 +20,7 @@ use std::io::Read;
 /// S-63 errors, with the scheme's error codes (S-63 section 11).
 #[derive(Debug, thiserror::Error, PartialEq, Clone)]
 pub enum S63Error {
-    #[error("SSE 08 - The IHO public key is not in the right format")]
+    #[error("SSE 08 - SA Digital Certificate (X509) file incorrect format. A valid certificate can be obtained from the IHO website or your data supplier")]
     KeyFormat,
     #[error("SSE 12 - Cell permit format is incorrect. Contact your data supplier and obtain a new permit file")]
     PermitFormat,
@@ -246,11 +246,143 @@ fn dsa_verify(key: &PublicKey, digest: &[u8], r: &BigUint, s: &BigUint) -> bool 
     &v == r
 }
 
+/// Whether a DSA public key holds together: g and y are of order q mod p. A key with a
+/// digit missing or changed fails this.
+pub fn key_is_sound(k: &PublicKey) -> bool {
+    let one = BigUint::from(1u32);
+    k.p.bits() >= 512 && k.q.bits() == 160 && k.g < k.p && k.y < k.p && k.y > one && k.g.modpow(&k.q, &k.p) == one && k.y.modpow(&k.q, &k.p) == one
+}
+
+/// An X.509 certificate's DSA public key and its validity ("YYYYMMDD" from, to).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Certificate {
+    pub key: PublicKey,
+    pub not_before: String,
+    pub not_after: String,
+    /// the subject's organisation and common name
+    pub subject: String,
+}
+
+/// One DER element: (tag, contents, rest).
+fn der(b: &[u8]) -> Option<(u8, &[u8], &[u8])> {
+    let tag = *b.first()?;
+    let l0 = *b.get(1)? as usize;
+    let (len, head) = if l0 < 0x80 {
+        (l0, 2)
+    } else {
+        let n = l0 & 0x7f;
+        if n == 0 || n > 4 {
+            return None;
+        }
+        let mut len = 0usize;
+        for i in 0..n {
+            len = (len << 8) | *b.get(2 + i)? as usize;
+        }
+        (len, 2 + n)
+    };
+    let body = b.get(head..head + len)?;
+    Some((tag, body, &b[head + len..]))
+}
+
+fn der_seq(b: &[u8]) -> Option<Vec<(u8, &[u8])>> {
+    let mut out = Vec::new();
+    let mut rest = b;
+    while !rest.is_empty() {
+        let (t, body, r) = der(rest)?;
+        out.push((t, body));
+        rest = r;
+    }
+    Some(out)
+}
+
+fn der_time(tag: u8, b: &[u8]) -> Option<String> {
+    let s = std::str::from_utf8(b).ok()?;
+    match tag {
+        // UTCTime YYMMDDhhmmssZ: 50-99 are 19xx
+        0x17 => {
+            let yy: u32 = s.get(..2)?.parse().ok()?;
+            Some(format!("{}{}", if yy >= 50 { 1900 + yy } else { 2000 + yy }, s.get(2..6)?))
+        }
+        0x18 => Some(s.get(..8)?.to_string()),
+        _ => None,
+    }
+}
+
+/// Read a DER X.509 certificate with a DSA key (IHO.CRT).
+pub fn parse_certificate(b: &[u8]) -> Result<Certificate, S63Error> {
+    let bad = S63Error::KeyFormat;
+    let (t, cert, rest) = der(b).ok_or(bad.clone())?;
+    if t != 0x30 || !rest.iter().all(|&c| c == 0 || c == b'\r' || c == b'\n') {
+        return Err(bad);
+    }
+    let parts = der_seq(cert).ok_or(bad.clone())?;
+    let tbs = der_seq(parts.first().ok_or(bad.clone())?.1).ok_or(bad.clone())?;
+    // [0] version is optional
+    let i = if tbs.first().map(|x| x.0) == Some(0xa0) { 1 } else { 0 };
+    let validity = der_seq(tbs.get(i + 3).ok_or(bad.clone())?.1).ok_or(bad.clone())?;
+    let not_before = validity.first().and_then(|(t, v)| der_time(*t, v)).ok_or(bad.clone())?;
+    let not_after = validity.get(1).and_then(|(t, v)| der_time(*t, v)).ok_or(bad.clone())?;
+    // subject: SET { SEQ { OID, string } } ...; keep O and CN
+    let mut subject = Vec::new();
+    for (_, set) in der_seq(tbs.get(i + 4).ok_or(bad.clone())?.1).unwrap_or_default() {
+        for (_, atv) in der_seq(set).unwrap_or_default() {
+            let v = der_seq(atv).unwrap_or_default();
+            if let (Some((_, oid)), Some((_, val))) = (v.first(), v.get(1)) {
+                if *oid == [0x55, 0x04, 0x0a] || *oid == [0x55, 0x04, 0x03] {
+                    subject.push(String::from_utf8_lossy(val).to_string());
+                }
+            }
+        }
+    }
+    let spki = der_seq(tbs.get(i + 5).ok_or(bad.clone())?.1).ok_or(bad.clone())?;
+    let alg = der_seq(spki.first().ok_or(bad.clone())?.1).ok_or(bad.clone())?;
+    let params = der_seq(alg.get(1).ok_or(bad.clone())?.1).ok_or(bad.clone())?;
+    let int = |x: Option<&(u8, &[u8])>| -> Result<BigUint, S63Error> {
+        match x {
+            Some((0x02, v)) => Ok(BigUint::from_bytes_be(v)),
+            _ => Err(S63Error::KeyFormat),
+        }
+    };
+    let (p, q, g) = (int(params.first())?, int(params.get(1))?, int(params.get(2))?);
+    let bits = spki.get(1).ok_or(bad.clone())?;
+    if bits.0 != 0x03 || bits.1.first() != Some(&0) {
+        return Err(bad);
+    }
+    let (t, y, rest) = der(&bits.1[1..]).ok_or(bad.clone())?;
+    if t != 0x02 || !rest.is_empty() {
+        return Err(bad);
+    }
+    let key = PublicKey { p, q, g, y: BigUint::from_bytes_be(y) };
+    if !key_is_sound(&key) {
+        return Err(bad);
+    }
+    Ok(Certificate { key, not_before, not_after, subject: subject.join(", ") })
+}
+
+/// The four signature parts (R and S twice) are each 20 bytes written as ten groups of
+/// four hex digits ending with ".".
+fn signature_parts_well_formed(signature: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(signature);
+    let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    let mut parts = 0;
+    for (i, l) in lines.iter().enumerate() {
+        if l.starts_with("//") && l.to_ascii_uppercase().contains("SIGNATURE PART") {
+            let Some(data) = lines.get(i + 1).and_then(|d| d.strip_suffix('.')) else { return false };
+            let groups: Vec<&str> = data.split_whitespace().collect();
+            if groups.len() != 10 || !groups.iter().all(|g| g.len() == 4 && g.bytes().all(|c| c.is_ascii_hexdigit())) {
+                return false;
+            }
+            parts += 1;
+        }
+    }
+    parts == 4
+}
+
 /// Check a cell (or update) file against its signature file: the data server's
 /// certificate against the SA key, then the cell against the data server's key.
 pub fn verify_cell(signature: &[u8], cell: &[u8], sa: &PublicKey) -> Result<(), S63Error> {
     let v = values(signature);
-    if v.len() < 8 {
+    if v.len() < 8 || !signature_parts_well_formed(signature) {
         return Err(S63Error::SignatureFormat);
     }
     let (r1, s1) = (&v[0].1, &v[1].1);

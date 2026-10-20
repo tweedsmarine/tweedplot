@@ -11,6 +11,7 @@ pub mod catalogue;
 pub mod cell;
 pub mod iso8211;
 pub mod s63;
+pub mod senc;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -332,7 +333,15 @@ pub fn ensure_gpkgs(dir: &Path) -> Vec<PathBuf> {
 
 /// [`ensure_gpkgs`], telling `progress(converted so far, cells to convert, cell)` as it goes.
 pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str)) -> Vec<PathBuf> {
-    let cells = find_cells(dir);
+    let mut cells = find_cells(dir);
+    // and the cells installed from exchange sets, with their warnings (SSE 25, SSE 27)
+    if senc::Senc::exists(dir) {
+        let s = senc::Senc::open_bare(dir);
+        for (cell, text) in s.display_notes() {
+            note(&dir.join(".senc").join("cells").join(&cell), text);
+        }
+        cells.extend(s.cell_files());
+    }
     if cells.is_empty() {
         return vec![];
     }
@@ -468,7 +477,7 @@ pub struct Note {
 
 static NOTES: std::sync::Mutex<Vec<Note>> = std::sync::Mutex::new(Vec::new());
 
-fn note(file: &Path, text: impl Into<String>) {
+pub(crate) fn note(file: &Path, text: impl Into<String>) {
     let text = text.into();
     eprintln!("ENC {}: {text}", file.display());
     let cell = file.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
@@ -540,14 +549,22 @@ pub fn find_permits(dir: &Path) -> Vec<FoundPermit> {
     out
 }
 
-/// The permit to use for each cell: a valid one from the newest permit file.
-fn s63_permits(dir: &Path) -> std::collections::HashMap<String, s63::CellPermit> {
+type Permits = std::collections::HashMap<String, Vec<s63::CellPermit>>;
+
+/// The permits for each cell, newest permit file first: those in the folder's PERMIT.TXT
+/// files, then those installed with the exchange sets.
+fn s63_permits(dir: &Path) -> Permits {
     let mut all = find_permits(dir);
-    all.sort_by(|a, b| a.date.cmp(&b.date));
-    let mut out = std::collections::HashMap::new();
+    all.sort_by(|a, b| b.date.cmp(&a.date));
+    let mut out: Permits = std::collections::HashMap::new();
     for f in all {
         if let Ok(p) = f.permit {
-            out.insert(f.cell, p);
+            out.entry(f.cell).or_default().push(p);
+        }
+    }
+    if senc::Senc::exists(dir) {
+        for (c, v) in senc::Senc::open_bare(dir).cell_permits() {
+            out.entry(c).or_default().extend(v);
         }
     }
     out
@@ -607,14 +624,14 @@ fn days(d: &str) -> i64 {
     era * 146097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719468
 }
 
-fn days_between(a: &str, b: &str) -> i64 {
+pub fn days_between(a: &str, b: &str) -> i64 {
     days(b) - days(a)
 }
 
 /// Read a cell's file, decrypting it when it is S-63: its signature is checked against
 /// the IHO key (an unauthenticated cell is not decrypted), then it is decrypted with
-/// the cell's permit.
-fn read_cell_file(path: &Path, permits: &std::collections::HashMap<String, s63::CellPermit>) -> Result<Vec<u8>, cell::CellError> {
+/// the cell's permits. Installed cells (in `.senc`) were checked when they were imported.
+fn read_cell_file(path: &Path, permits: &Permits) -> Result<Vec<u8>, cell::CellError> {
     let data = std::fs::read(path)?;
     // an ISO 8211 file starts with its record length (five digits) and the leader
     if data.len() > 24 && data[..5].iter().all(u8::is_ascii_digit) && data[6] == b'L' {
@@ -622,7 +639,11 @@ fn read_cell_file(path: &Path, permits: &std::collections::HashMap<String, s63::
     }
     let name = path.file_name().map(|n| n.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
     let other = |m: String| cell::CellError::Other(m);
-    let permit = permits.get(name.get(..8).unwrap_or("")).ok_or_else(|| other("SSE 11 - Cell permit not found. Load the permit file provided by the data supplier".into()))?;
+    let list = permits.get(name.get(..8).unwrap_or("")).filter(|v| !v.is_empty()).ok_or_else(|| other("SSE 11 - Cell permit not found. Load the permit file provided by the data supplier".into()))?;
+    if path.components().any(|c| c.as_os_str() == ".senc") {
+        return list.iter().find_map(|p| s63::decrypt_cell(&data, p).ok()).ok_or_else(|| other(s63::S63Error::Decrypt.to_string()));
+    }
+    let permit = &list[0];
     let sig = s63::signature_name(&name).map(|s| path.with_file_name(s)).ok_or_else(|| other("SSE 26 - This ENC is not authenticated by the IHO acting as the Scheme Administrator (no signature file)".into()))?;
     let sig = std::fs::read(&sig).map_err(|_| other("SSE 26 - This ENC is not authenticated by the IHO acting as the Scheme Administrator (no signature file)".into()))?;
     let sa = s63::parse_public_key(SA_PUBLIC_KEY.as_bytes()).map_err(|e| other(e.to_string()))?;
@@ -633,7 +654,19 @@ fn read_cell_file(path: &Path, permits: &std::collections::HashMap<String, s63::
     s63::decrypt_cell(&data, permit).map_err(|e| other(e.to_string()))
 }
 
-fn today() -> String {
+static TODAY: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+/// Use this date ("YYYYMMDD") as today for permit and certificate expiry: for running the
+/// IHO S-64 tests, which are set in 2007-2013. None: the computer's date.
+pub fn set_today(d: Option<&str>) {
+    *TODAY.write().unwrap() = d.map(str::to_string);
+}
+
+/// Today as "YYYYMMDD" (UTC).
+pub fn today() -> String {
+    if let Some(d) = TODAY.read().unwrap().clone() {
+        return d;
+    }
     let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() / 86400) as i64;
     // days since 1970 to y-m-d (civil from days)
     let z = d + 719468;
@@ -650,7 +683,7 @@ fn today() -> String {
 
 /// A cell and its updates, decrypting S-63 files. Updates are applied in sequence from
 /// the base cell's own update number; a missing one stops them there (SSE 23).
-fn open_cell(c: &CellFiles, permits: &std::collections::HashMap<String, s63::CellPermit>) -> Result<Cell, cell::CellError> {
+fn open_cell(c: &CellFiles, permits: &Permits) -> Result<Cell, cell::CellError> {
     let base = read_cell_file(&c.base, permits)?;
     let first = Cell::from_bytes(&base, &[])?;
     let mut next: u32 = first.update.trim().parse::<u32>().unwrap_or(0) + 1;
