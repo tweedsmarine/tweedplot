@@ -521,8 +521,8 @@ fn permit_date(text: &str) -> String {
     text.lines().find_map(|l| l.trim().strip_prefix(":DATE").map(|d| d.trim().to_string())).unwrap_or_default()
 }
 
-/// Every cell permit in the PERMIT.TXT files under `dir` (installed permits and those that
-/// came with exchange sets), checked against the HW_ID.
+/// Every cell permit in the PERMIT.TXT files under `dir` (those that came with exchange
+/// sets put in the folder as they are), checked against the HW_ID.
 pub fn find_permits(dir: &Path) -> Vec<FoundPermit> {
     let mut out = Vec::new();
     let Some(hw) = hw_id() else { return out };
@@ -532,8 +532,8 @@ pub fn find_permits(dir: &Path) -> Vec<FoundPermit> {
             let p = e.path();
             let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
             if p.is_dir() {
-                // hidden folders are TweedPlot's own (".enc"), except the installed permits
-                if !name.starts_with('.') || name == ".permits" {
+                // hidden folders are TweedPlot's own (".enc", ".senc")
+                if !name.starts_with('.') {
                     stack.push(p);
                 }
             } else if name.eq_ignore_ascii_case("PERMIT.TXT") {
@@ -568,51 +568,6 @@ fn s63_permits(dir: &Path) -> Permits {
         }
     }
     out
-}
-
-/// Install a PERMIT.TXT: its valid permits replace older ones for the same cells in the
-/// installed permits (`dir/.permits/PERMIT.TXT`). Returns each permit with what was done.
-pub fn install_permits(dir: &Path, text: &str) -> Result<Vec<(String, String)>, s63::S63Error> {
-    let hw = hw_id().ok_or(s63::S63Error::UserPermit)?;
-    let found = s63::read_permits(text, &hw)?;
-    let store = dir.join(".permits").join("PERMIT.TXT");
-    let mut lines: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
-    if let Ok(old) = std::fs::read_to_string(&store) {
-        for l in old.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with(':')) {
-            lines.insert(l.get(..8).unwrap_or(l).to_string(), l.to_string());
-        }
-    }
-    let now = today();
-    let mut report = Vec::new();
-    let records: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with(':')).collect();
-    for ((cell, r), line) in found.into_iter().zip(records) {
-        let what = match r {
-            Ok(p) => {
-                lines.insert(cell.clone(), line.to_string());
-                if p.expiry < now {
-                    "installed. SSE 15 - Subscription service has expired. Please contact your data supplier to renew the subscription licence".to_string()
-                } else if days_between(&now, &p.expiry) <= 30 {
-                    format!("installed, expires {}. SSE 20 - Subscription service will expire in less than 30 days", p.expiry)
-                } else {
-                    format!("installed, expires {}", p.expiry)
-                }
-            }
-            Err(e) => format!("not installed. {e}"),
-        };
-        report.push((cell, what));
-    }
-    let _ = std::fs::create_dir_all(store.parent().unwrap());
-    let stamp = {
-        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-        format!("{} {:02}:{:02}", now, (t / 3600) % 24, (t / 60) % 60)
-    };
-    let mut out = format!(":DATE {stamp}\r\n:VERSION 2\r\n:ENC\r\n");
-    for l in lines.values() {
-        out.push_str(l);
-        out.push_str("\r\n");
-    }
-    std::fs::write(&store, out).map_err(|_| s63::S63Error::PermitFormat)?;
-    Ok(report)
 }
 
 fn days(d: &str) -> i64 {
@@ -884,34 +839,6 @@ mod tests {
         let c = open_cell(&cells[0], &s63_permits(&dir)).unwrap();
         assert_eq!((c.name.as_str(), c.update.as_str()), ("GB61021B.000", "1"));
         assert!(c.features.len() > 200);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn installs_permits() {
-        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/s63");
-        let dir = std::env::temp_dir().join(format!("enc_s63i_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        fn copy(a: &Path, b: &Path) {
-            std::fs::create_dir_all(b).unwrap();
-            for e in std::fs::read_dir(a).unwrap().flatten() {
-                let p = e.path();
-                if p.is_dir() { copy(&p, &b.join(e.file_name())) } else if e.file_name() != "PERMIT.TXT" { std::fs::copy(&p, b.join(e.file_name())).unwrap(); }
-            }
-        }
-        copy(&src, &dir);
-        let cells = find_cells(&dir);
-        let e = open_cell(&cells[0], &s63_permits(&dir)).err().unwrap().to_string();
-        assert!(e.contains("SSE 11"), "{e}");
-        let text = std::fs::read_to_string(src.join("PERMIT.TXT")).unwrap();
-        let done = install_permits(&dir, &text).unwrap();
-        assert!(done.iter().any(|(c, w)| c == "GB61021B" && w.starts_with("installed")), "{done:?}");
-        assert!(dir.join(".permits/PERMIT.TXT").is_file());
-        assert!(open_cell(&cells[0], &s63_permits(&dir)).is_ok());
-        // installing again keeps one line per cell
-        install_permits(&dir, &text).unwrap();
-        let store = std::fs::read_to_string(dir.join(".permits/PERMIT.TXT")).unwrap();
-        assert_eq!(store.lines().filter(|l| l.starts_with("GB61021B")).count(), 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

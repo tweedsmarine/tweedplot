@@ -1688,7 +1688,7 @@ pub fn run() {
             yb_open, yb_refresh, yb_races, yb_history,
             gribdl_models, gribdl_estimate, gribdl_start, gribdl_cancel, open_url, grib_combine,
             data_status, data_etopo_plan, data_gshhg, data_etopo, data_etopo_delete, data_cancel, chart_land_detail,
-            s63_cmd::s63_status, s63_cmd::s63_set_user_permit, s63_cmd::s63_install_permits, s63_cmd::s63_import_exchange_set
+            s63_cmd::s63_status, s63_cmd::s63_set_user_permit, s63_cmd::s63_install_permits, s63_cmd::s63_remove_permits, s63_cmd::s63_install_key, s63_cmd::s63_import_exchange_set, s63_cmd::s63_remove_cells
         ])
         .register_asynchronous_uri_scheme_protocol("chart", |_ctx, request, responder| {
             let path = request.uri().path().to_string();

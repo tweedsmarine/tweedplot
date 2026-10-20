@@ -428,12 +428,17 @@
             <input id="s63-up" class="mono grow" maxlength="28" spellcheck="false" autocomplete="off" />
             <button id="s63-up-copy" title="Copy the user permit, to send to your chart supplier">Copy</button></div>
           <div class="wx-row"><span id="s63-up-note" class="grow wx-note"></span><button id="s63-up-set" title="Use the user permit typed in (empty: the IHO test permit)">Use</button></div>
+          <div class="wx-row"><span class="grow wx-note">SA key: <span id="s63-key">—</span></span>
+            <button id="s63-key-btn" title="Install the Scheme Administrator's certificate (IHO.CRT) or public key (IHO.PUB) from the IHO website or your data supplier">Install key…</button><input id="s63-key-file" type="file" accept=".crt,.CRT,.pub,.PUB" hidden /></div>
           <div class="wx-row"><span class="grow wx-note">Cell permits (PERMIT.TXT from your chart supplier)</span>
             <button id="s63-permits" title="Install the cell permits in a PERMIT.TXT">Install permits…</button><input id="s63-permit-file" type="file" accept=".txt,.TXT" hidden /></div>
-          <div class="wx-row"><span class="grow wx-note">Exchange set (base or update CD, or download)</span>
-            <button id="s63-import" title="Copy an exchange set's folder (the one with ENC_ROOT in it) into TweedPlot's ENC folder">Import exchange set…</button></div>
-          <div id="s63-result" class="wx-note"></div>
-          <details id="s63-permit-details"><summary id="s63-permit-sum">Cell permits</summary><table id="s63-table"><thead><tr><th>Cell</th><th>Expires</th><th>Status</th></tr></thead><tbody></tbody></table></details>
+          <div class="wx-row"><span class="grow wx-note">Exchange set (base or update, CD, DVD or download)</span>
+            <button id="s63-import" title="Import an exchange set: choose its folder (the one with ENC_ROOT in it) or the medium with several">Import exchange set…</button></div>
+          <ul id="s63-report"></ul>
+          <details id="s63-permit-details"><summary id="s63-permit-sum">Cell permits</summary><div id="s63-permit-list"></div></details>
+          <details id="s63-cell-details"><summary id="s63-cell-sum">Installed ENCs</summary>
+            <table id="s63-cells"><thead><tr><th>Cell</th><th>Edition</th><th>Update</th><th>From</th></tr></thead><tbody></tbody></table>
+            <div class="wx-row"><span class="grow"></span><button id="s63-remove-cells" title="Remove every installed ENC (the permits and key stay)">Remove all ENCs</button></div></details>
           <details id="s63-note-details"><summary id="s63-note-sum">Messages</summary><ul id="s63-notes"></ul></details>
         </div>
         <h3>Display colours</h3>
@@ -563,6 +568,7 @@
       <button data-act="bar-del" class="bar-item">Delete barrier</button>
     </div>
     <div id="toast" class="toast" hidden></div>
+    <div id="s63-banner" class="s63-banner" hidden></div>
 
     <div id="cursor" class="cursor">—</div>
     <div class="attribution">Charts: LINZ, CC BY 4.0. Land: © OpenStreetMap contributors. Not for navigation.</div>

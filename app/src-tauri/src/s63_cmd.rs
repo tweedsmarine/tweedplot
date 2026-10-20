@@ -4,7 +4,7 @@
 //! Until TweedPlot has its own manufacturer ID and key from the IHO it uses the IHO's
 //! generic S-64 test credentials: the test user permit, unless another is entered.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use tauri::Manager;
 
@@ -47,59 +47,63 @@ pub fn enc_dirs(app: &tauri::AppHandle) -> Vec<PathBuf> {
     v
 }
 
-/// The user permit in use, every cell permit found (the newest for each cell) and what
-/// happened when the cells were last converted.
-#[tauri::command]
-pub fn s63_status(app: tauri::AppHandle) -> serde_json::Value {
-    let (up, _) = chart::enc::protection();
-    let test = up == chart::enc::TEST_USER_PERMIT;
-    let today = chrono::Utc::now().format("%Y%m%d").to_string();
-    let mut found: Vec<chart::enc::FoundPermit> = enc_dirs(&app).iter().filter(|d| d.is_dir()).flat_map(|d| chart::enc::find_permits(d)).collect();
-    // newest permit file last, so it wins
-    found.sort_by(|a, b| a.date.cmp(&b.date));
-    let mut by_cell: std::collections::BTreeMap<String, serde_json::Value> = std::collections::BTreeMap::new();
-    for f in found {
-        let file = f.file.display().to_string();
-        let v = match f.permit {
-            Ok(p) => {
-                let days = days_between(&today, &p.expiry);
-                let (state, text) = if days < 0 {
-                    ("expired", "SSE 15 - Subscription service has expired. Please contact your data supplier to renew the subscription licence".to_string())
-                } else if days <= 30 {
-                    ("expiring", format!("SSE 20 - Subscription service will expire in less than 30 days ({days} days)"))
-                } else {
-                    ("ok", String::new())
-                };
-                serde_json::json!({ "cell": f.cell, "expiry": p.expiry, "edition": p.edition, "server": p.data_server,
-                    "service": if p.service == 1 { "single purchase" } else { "subscription" }, "state": state, "text": text, "file": file, "date": f.date })
-            }
-            Err(e) => {
-                // an unusable permit doesn't replace a good one for the same cell
-                if by_cell.get(&f.cell).is_some_and(|v| v["state"] != "bad") {
-                    continue;
-                }
-                serde_json::json!({ "cell": f.cell, "state": "bad", "text": e.to_string(), "file": file, "date": f.date })
-            }
-        };
-        by_cell.insert(f.cell, v);
-    }
-    let notes: Vec<serde_json::Value> = chart::enc::notes().into_iter().map(|n| serde_json::json!({ "cell": n.cell, "file": n.file, "text": n.text })).collect();
-    serde_json::json!({
-        "user_permit": up,
-        "test": test,
-        "hw_ok": chart::enc::hw_id().is_some(),
-        "enc_dir": enc_home(&app),
-        "permits": by_cell.into_values().collect::<Vec<_>>(),
-        "notes": notes,
-    })
-}
-
 fn days_between(a: &str, b: &str) -> i64 {
     let d = |s: &str| chrono::NaiveDate::parse_from_str(s, "%Y%m%d").ok();
     match (d(a), d(b)) {
         (Some(a), Some(b)) => (b - a).num_days(),
         _ => -1,
     }
+}
+
+fn senc(app: &tauri::AppHandle) -> chart::enc::senc::Senc {
+    let dir = enc_home(app);
+    let _ = std::fs::create_dir_all(&dir);
+    chart::enc::senc::Senc::open(&dir)
+}
+
+/// The user permit, the SA key, the installed permits (by data server) and cells, and
+/// the messages from opening the charts.
+#[tauri::command]
+pub fn s63_status(app: tauri::AppHandle) -> serde_json::Value {
+    let (up, _) = chart::enc::protection();
+    let s = senc(&app);
+    let today = chart::enc::today();
+    let mut permits = Vec::new();
+    for (ds, list) in s.permits() {
+        for (cell, p) in list {
+            permits.push(match p {
+                Ok(p) => {
+                    let days = days_between(&today, &p.expiry);
+                    let (state, text) = if days < 0 {
+                        ("expired", "SSE 15 - Subscription service has expired. Please contact your data supplier to renew the subscription licence".to_string())
+                    } else if days <= 30 {
+                        ("expiring", format!("SSE 20 - Subscription service will expire in less than 30 days ({days} days)"))
+                    } else {
+                        ("ok", String::new())
+                    };
+                    serde_json::json!({ "ds": ds, "cell": cell, "expiry": p.expiry, "state": state, "text": text, "service": if p.service == 1 { "single purchase" } else { "subscription" } })
+                }
+                Err(e) => serde_json::json!({ "ds": ds, "cell": cell, "state": "bad", "text": e.to_string() }),
+            });
+        }
+    }
+    let shown: std::collections::HashMap<String, String> = s.display_notes().into_iter().collect();
+    let cells: Vec<serde_json::Value> = s
+        .cells()
+        .iter()
+        .map(|(c, i)| serde_json::json!({ "cell": c, "ds": i.ds, "edition": i.edition, "update": i.update, "encrypted": i.encrypted, "warn": shown.get(c), "bbox": s.product(c).and_then(|p| p.bbox) }))
+        .collect();
+    let notes: Vec<serde_json::Value> = chart::enc::notes().into_iter().map(|n| serde_json::json!({ "cell": n.cell, "file": n.file, "text": n.text })).collect();
+    serde_json::json!({
+        "user_permit": up,
+        "test": up == chart::enc::TEST_USER_PERMIT,
+        "hw_ok": chart::enc::hw_id().is_some(),
+        "key": s.key().map(|k| serde_json::json!({ "name": k.name, "sa": k.sa, "not_after": k.not_after, "subject": k.subject })),
+        "enc_dir": enc_home(&app),
+        "permits": permits,
+        "cells": cells,
+        "notes": notes,
+    })
 }
 
 /// Use another user permit (empty: back to the IHO test permit) and reopen the charts.
@@ -118,79 +122,65 @@ pub fn s63_set_user_permit(app: tauri::AppHandle, permit: String) -> Result<Stri
     Ok(p)
 }
 
-/// Install the permits in a PERMIT.TXT (its text) and reopen the charts. Returns what
-/// happened to each permit.
+/// Install the permits in a PERMIT.TXT (its text). Returns what happened to each.
 #[tauri::command]
-pub fn s63_install_permits(app: tauri::AppHandle, text: String) -> Result<Vec<serde_json::Value>, String> {
-    let dir = enc_home(&app);
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let report = chart::enc::install_permits(&dir, &text).map_err(|e| e.to_string())?;
+pub fn s63_install_permits(app: tauri::AppHandle, text: String) -> Vec<chart::enc::senc::Msg> {
+    let r = senc(&app).install_permits(&text);
     crate::open_charts(app);
-    Ok(report.into_iter().map(|(cell, what)| serde_json::json!({ "cell": cell, "text": what })).collect())
+    r
 }
 
-/// Pick an exchange set's folder (with ENC_ROOT, or a CD's folder of them), copy it into
-/// the enc folder and reopen the charts.
+/// Remove one data server's permits.
+#[tauri::command]
+pub fn s63_remove_permits(app: tauri::AppHandle, ds: String) -> bool {
+    let done = senc(&app).remove_permits(&ds);
+    crate::open_charts(app);
+    done
+}
+
+/// Install an SA certificate (IHO.CRT) or public key (IHO.PUB) in place of the one installed.
+#[tauri::command]
+pub fn s63_install_key(app: tauri::AppHandle, name: String, bytes: Vec<u8>) -> Vec<chart::enc::senc::Msg> {
+    senc(&app).install_key(&name, &bytes)
+}
+
+/// Pick an exchange set's folder (with ENC_ROOT in it, or a medium with several) and
+/// import it. Returns the report and reopens the charts.
 #[tauri::command]
 pub async fn s63_import_exchange_set(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    use tauri::Emitter;
     use tauri_plugin_dialog::DialogExt;
     let a = app.clone();
-    let picked = tauri::async_runtime::spawn_blocking(move || a.dialog().file().set_title("Choose the exchange set folder (the one with ENC_ROOT in it)").blocking_pick_folder())
+    let picked = tauri::async_runtime::spawn_blocking(move || a.dialog().file().set_title("Choose the exchange set (the folder with ENC_ROOT in it, or the medium)").blocking_pick_folder())
         .await
         .map_err(|e| e.to_string())?;
     let Some(picked) = picked else { return Ok(serde_json::json!({ "cancelled": true })) };
     let from = picked.into_path().map_err(|e| e.to_string())?;
-    let home = enc_home(&app);
     let a = app.clone();
-    let r = tauri::async_runtime::spawn_blocking(move || import(&from, &home)).await.map_err(|e| e.to_string())??;
-    crate::open_charts(a);
-    Ok(r)
+    let report = tauri::async_runtime::spawn_blocking(move || {
+        let mut s = senc(&a);
+        let mut last = std::time::Instant::now();
+        s.import(&from, &mut |done, total, cell| {
+            if last.elapsed().as_millis() >= 300 {
+                last = std::time::Instant::now();
+                let _ = a.emit("chart-status", serde_json::json!({ "detail": format!("importing ENC cells: {done} of {total} {cell}") }));
+            }
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    crate::open_charts(app);
+    Ok(serde_json::json!({ "report": report }))
 }
 
-fn import(from: &Path, home: &Path) -> Result<serde_json::Value, String> {
-    // ENC_ROOT itself picked: take its parent, which holds SERIAL.ENC and the PERMIT.TXT
-    let from = if from.file_name().is_some_and(|n| n.eq_ignore_ascii_case("ENC_ROOT")) { from.parent().unwrap_or(from) } else { from };
-    let cells = chart::enc::find_cells(from);
-    if cells.is_empty() {
-        return Err(format!("No ENC cells (.000 files) in {}", from.display()));
+/// Remove installed cells: one, or all of them when `cell` is empty.
+#[tauri::command]
+pub fn s63_remove_cells(app: tauri::AppHandle, cell: String) {
+    let mut s = senc(&app);
+    if cell.is_empty() {
+        s.remove_cells();
+    } else {
+        s.remove_cell(&cell);
     }
-    if home.starts_with(from) || from.starts_with(home) {
-        return Err("That folder is TweedPlot's own ENC folder (or holds it).".into());
-    }
-    let serial = std::fs::read_to_string(from.join("SERIAL.ENC")).ok();
-    let name = from.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "exchange set".into());
-    let to = home.join(&name);
-    let mut files = 0usize;
-    copy_dir(from, &to, &mut files).map_err(|e| format!("Copying to {}: {e}", to.display()))?;
-    let encrypted = cells.iter().filter(|c| std::fs::read(&c.base).is_ok_and(|b| !(b.len() > 24 && b[..5].iter().all(u8::is_ascii_digit) && b[6] == b'L'))).count();
-    Ok(serde_json::json!({
-        "to": to,
-        "files": files,
-        "cells": cells.len(),
-        "encrypted": encrypted,
-        "permit_file": from.join("PERMIT.TXT").is_file() || from.join("ENC_ROOT").join("PERMIT.TXT").is_file(),
-        "serial": serial.map(|s| serial_info(&s)),
-    }))
-}
-
-/// SERIAL.ENC (S-63 5.4.1): data server, week, date, base or update, format version, media.
-fn serial_info(s: &str) -> serde_json::Value {
-    let g = |a: usize, b: usize| s.get(a..b).unwrap_or("").trim().to_string();
-    serde_json::json!({ "server": g(0, 2), "week": g(2, 12), "date": g(12, 20), "kind": g(20, 30), "version": g(30, 35), "media": g(35, 41) })
-}
-
-fn copy_dir(from: &Path, to: &Path, files: &mut usize) -> std::io::Result<()> {
-    std::fs::create_dir_all(to)?;
-    for e in std::fs::read_dir(from)? {
-        let e = e?;
-        let p = e.path();
-        let t = to.join(e.file_name());
-        if p.is_dir() {
-            copy_dir(&p, &t, files)?;
-        } else {
-            std::fs::copy(&p, &t)?;
-            *files += 1;
-        }
-    }
-    Ok(())
+    crate::open_charts(app);
 }

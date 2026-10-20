@@ -75,6 +75,9 @@ pub struct Product {
     /// where the base cell is: "B1", "M1;B2", "U1"
     pub location: String,
     pub replaced_by: Vec<String>,
+    /// the cell limits [west, south, east, north]
+    #[serde(default)]
+    pub bbox: Option<[f64; 4]>,
 }
 
 /// The installed SA key (or a key the user installed instead).
@@ -247,7 +250,12 @@ fn read_products(root: &Path) -> BTreeMap<String, Product> {
         let n = |i: usize| f.get(i).and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
         let location = f.get(34).map(|s| s.to_string()).unwrap_or_default();
         let replaced_by = f.get(35).map(|s| s.split(';').map(|c| c.trim().to_string()).filter(|c| c.len() == 8).collect()).unwrap_or_default();
-        out.insert(cell, Product { edition: n(2), update: n(4), location, replaced_by });
+        let d = |i: usize| f.get(i).and_then(|v| v.parse::<f64>().ok());
+        let bbox = match (d(6), d(7), d(8), d(9)) {
+            (Some(s), Some(w), Some(n), Some(e)) => Some([w, s, e, n]),
+            _ => None,
+        };
+        out.insert(cell, Product { edition: n(2), update: n(4), location, replaced_by, bbox });
     }
     out
 }
@@ -338,6 +346,12 @@ impl Senc {
 
     pub fn cells(&self) -> &BTreeMap<String, Installed> {
         &self.state.cells
+    }
+
+    /// An installed cell's entry in its data server's product listing.
+    pub fn product(&self, cell: &str) -> Option<&Product> {
+        let ds = &self.state.cells.get(cell)?.ds;
+        self.state.products.get(ds)?.get(cell).or_else(|| self.state.products.values().find_map(|m| m.get(cell)))
     }
 
     /// Install an SA certificate (IHO.CRT, DER) or public key file (IHO.PUB, text) in

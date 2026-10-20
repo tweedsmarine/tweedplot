@@ -635,12 +635,31 @@ html[data-palette^="night"] #ck-grid .tile, html[data-palette^="night"] #ck-bar,
 #s63-box input.mono.bad { outline: 1.5px solid var(--bad); }
 #s63-box details { margin: 4px 0; font-size: 12.5px; }
 #s63-box summary { cursor: pointer; }
-#s63-table { border-collapse: collapse; width: 100%; margin-top: 4px; }
-#s63-table th, #s63-table td { text-align: left; padding: 2px 6px 2px 0; vertical-align: top; }
-#s63-table td:first-child { font-family: ui-monospace, Consolas, monospace; }
-#s63-table td:nth-child(-n+2) { white-space: nowrap; }
-#s63-table tr.expired td, #s63-table tr.bad td { color: var(--bad); }
-#s63-table tr.expiring td { color: #9a6700; }
+#s63-box table { border-collapse: collapse; width: 100%; margin-top: 4px; }
+#s63-box th, #s63-box td { text-align: left; padding: 2px 6px 2px 0; vertical-align: top; }
+#s63-box td:first-child { font-family: ui-monospace, Consolas, monospace; }
+#s63-box td:nth-child(-n+2) { white-space: nowrap; }
+#s63-box tr.expired td, #s63-box tr.bad td, #s63-box tr.warn td { color: var(--bad); }
+#s63-box tr.expiring td { color: #9a6700; }
+#s63-box .ds-head { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-weight: 600; }
+#s63-box .ds-head span { flex: 1; }
+#s63-box .ds-head button { flex: none; padding: 1px 8px; font-weight: normal; }
+#s63-key.warn { color: #9a6700; }
+#s63-key.bad { color: var(--bad); }
+#s63-report { list-style: none; margin: 4px 0; padding: 0; max-height: 220px; overflow-y: auto; font-size: 12px; }
+#s63-report:empty { display: none; }
+#s63-report li { padding: 1px 0 1px 14px; position: relative; }
+#s63-report li::before { content: "•"; position: absolute; left: 2px; }
+#s63-report li.ok::before { color: var(--good); }
+#s63-report li.warn { color: #9a6700; }
+#s63-report li.error { color: var(--bad); }
+#s63-report li.info { color: var(--quiet); }
+#s63-report li b { font-family: ui-monospace, Consolas, monospace; font-weight: 600; }
 #s63-notes { margin: 4px 0 4px 16px; padding: 0; }
 #s63-notes li { margin: 2px 0; }
-#s63-result:empty { display: none; }
+#s63-box button.warn { border-color: #d08f00; background: #fff3cc; color: #7a5200; }
+/* S-63 permanent warnings for ENCs in view (expired permit, not up to date) */
+.s63-banner { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); z-index: 29; max-width: min(720px, 80vw);
+  background: #fff3cc; color: #5c3d00; border: 1px solid #d08f00; padding: 5px 12px; border-radius: 6px; font-size: 12.5px; pointer-events: none; }
+.s63-banner[hidden] { display: none; }
+.s63-banner div + div { margin-top: 2px; }

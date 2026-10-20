@@ -193,7 +193,7 @@ map.on("load", () => {
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
   window.__weather = weather; // debugging handle
   setupData(map, { toast, reloadTiles: reloadChartTiles });
-  setupS63({ toast });
+  setupS63(map, { toast });
   setupPalette();
   setupBrand();
   alarms = setupAlarms(map, {
