@@ -151,9 +151,12 @@ pub fn parse(text: &str) -> Option<Update> {
             let (l, b) = (g("A") + g("B"), g("C") + g("D"));
             if l > 0.0 {
                 u.length = Some(l);
+                // A: the antenna's distance from the bow; C: from the port side
+                u.from_bow = Some(g("A"));
             }
             if b > 0.0 {
                 u.beam = Some(b);
+                u.from_centre = Some(g("C") - b / 2.0);
             }
         }
     };
@@ -235,6 +238,7 @@ mod tests {
         let s = r#"{"Message":{"ShipStaticData":{"AisVersion":2,"CallSign":"ZMA1234","Destination":"NELSON@@@@","Dimension":{"A":20,"B":10,"C":4,"D":4},"Dte":false,"Eta":{"Day":19,"Hour":12,"Minute":0,"Month":10},"FixType":1,"ImoNumber":0,"MaximumStaticDraught":3.2,"MessageID":5,"Name":"AMALTAL APOLLO@@@@@@","RepeatIndicator":0,"Spare":false,"Type":30,"UserID":512000123,"Valid":true}},"MessageType":"ShipStaticData","MetaData":{"MMSI":512000123}}"#;
         let u = parse(s).unwrap();
         assert_eq!((u.name.as_deref(), u.callsign.as_deref(), u.destination.as_deref(), u.ship_type, u.length, u.beam, u.draught), (Some("AMALTAL APOLLO"), Some("ZMA1234"), Some("NELSON"), Some(30), Some(30.0), Some(8.0), Some(3.2)));
+        assert_eq!((u.from_bow, u.from_centre), (Some(20.0), Some(0.0)));
         let a = r#"{"Message":{"AidsToNavigationReport":{"AssignedMode":false,"AtoN":0,"Dimension":{"A":0,"B":0,"C":0,"D":0},"Fixtype":7,"Latitude":-41.2,"Longitude":173.3,"MessageID":21,"Name":"NELSON WAVE BUOY","NameExtension":"","OffPosition":false,"PositionAccuracy":false,"Raim":false,"RepeatIndicator":0,"Spare":false,"Timestamp":60,"Type":1,"UserID":995121001,"Valid":true,"VirtualAtoN":true}},"MessageType":"AidsToNavigationReport","MetaData":{"MMSI":995121001}}"#;
         let u = parse(a).unwrap();
         assert_eq!((u.kind, u.virtual_aton, u.name.as_deref()), (Some(Kind::Aton), Some(true), Some("NELSON WAVE BUOY")));

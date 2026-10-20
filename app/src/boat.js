@@ -3,7 +3,9 @@
 import { invoke } from "@tauri-apps/api/core";
 
 const KEY = "racenav.boat";
-const DEFAULTS = { polar: "", eff: 100, tack: 60, gybe: 60, airDraft: 0, mmsi: "" };
+const DEFAULTS = { polar: "", eff: 100, tack: 60, gybe: 60, airDraft: 0, mmsi: "",
+  // size and GPS antenna position (m): from the bow, and off the centre line (+ starboard, - port)
+  length: 0, beam: 0, gpsFromBow: 0, gpsFromCentre: 0 };
 
 export function setupBoat() {
   const $ = (id) => document.getElementById(id);
@@ -43,6 +45,20 @@ export function setupBoat() {
     $(id).value = boat[key];
     $(id).onchange = (e) => { const v = Number(e.target.value); if (Number.isFinite(v)) { boat[key] = v; save(); window.dispatchEvent(new Event("racenav-boat")); } };
   }
+  for (const [id, key] of [["boat-len", "length"], ["boat-beam", "beam"], ["boat-gps-bow", "gpsFromBow"]]) {
+    $(id).value = boat[key] || "";
+    $(id).onchange = (e) => { const v = Math.max(0, Number(e.target.value) || 0); boat[key] = v; e.target.value = v || ""; save(); window.dispatchEvent(new Event("racenav-boat")); };
+  }
+  $("boat-gps-side").value = Math.abs(boat.gpsFromCentre) || "";
+  $("boat-gps-dir").value = boat.gpsFromCentre < 0 ? "-1" : "1";
+  const side = () => {
+    const v = Math.max(0, Number($("boat-gps-side").value) || 0);
+    boat.gpsFromCentre = v * Number($("boat-gps-dir").value);
+    save();
+    window.dispatchEvent(new Event("racenav-boat"));
+  };
+  $("boat-gps-side").onchange = side;
+  $("boat-gps-dir").onchange = side;
   $("boat-mmsi").value = boat.mmsi || "";
   $("boat-mmsi").onchange = (e) => {
     const v = e.target.value.replace(/\D/g, "");

@@ -400,6 +400,13 @@
         <div class="wx-row"><label class="grow" for="boat-gybe">Gybe costs (s)</label><input id="boat-gybe" type="number" min="0" step="5" /></div>
         <div class="wx-row"><label class="grow" for="boat-air" title="Height of the top of the mast (or highest point) above the waterline, for the air-draft alarm">Air draft (m)</label><input id="boat-air" type="number" min="0" step="0.1" /></div>
         <div class="wx-row"><label class="grow" for="boat-mmsi" title="Your own AIS MMSI: your boat is then never shown or alarmed as an AIS target">Own MMSI</label><input id="boat-mmsi" type="text" inputmode="numeric" maxlength="9" style="width:110px" /></div>
+        <h3>Size and GPS antenna</h3>
+        <div class="wx-row"><label class="grow" for="boat-len" title="Length overall">Length (m)</label><input id="boat-len" type="number" min="0" step="0.1" /></div>
+        <div class="wx-row"><label class="grow" for="boat-beam">Beam (m)</label><input id="boat-beam" type="number" min="0" step="0.1" /></div>
+        <div class="wx-row"><label class="grow" for="boat-gps-bow" title="How far aft of the bow the GPS antenna is (the position Signal K gives)">GPS antenna from the bow (m)</label><input id="boat-gps-bow" type="number" min="0" step="0.1" /></div>
+        <div class="wx-row"><label class="grow" for="boat-gps-side" title="How far the GPS antenna is off the centre line">off the centre line (m)</label><input id="boat-gps-side" type="number" min="0" step="0.1" style="width:64px" />
+          <select id="boat-gps-dir"><option value="1">to starboard</option><option value="-1">to port</option></select></div>
+        <div class="wx-note">With the length and beam, the boat is drawn to scale, from where its GPS antenna is, when zoomed in far enough (harbour scales).</div>
         <div class="wx-note">Safety depth is set in the Chart panel; routing avoids water shallower than it, and charted dangers and marine farms if ticked there.</div>
       </section>
 

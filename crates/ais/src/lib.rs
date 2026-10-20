@@ -79,6 +79,10 @@ pub struct Target {
     pub class: Option<String>,
     pub length: Option<f64>,
     pub beam: Option<f64>,
+    /// Where its position comes from (its GPS antenna): m aft of the bow, and m to
+    /// starboard of the centre line (negative: to port).
+    pub from_bow: Option<f64>,
+    pub from_centre: Option<f64>,
     pub draught: Option<f64>,
     pub destination: Option<String>,
     /// For an aid to navigation: its type code (AIS message 21) and whether it is virtual (no buoy there).
@@ -135,6 +139,8 @@ impl Target {
                 "navigation.destination.commonName" => self.destination = val.as_str().map(str::to_string),
                 "design.length" => self.length = val.get("overall").and_then(Value::as_f64).or(num()),
                 "design.beam" => self.beam = num(),
+                "sensors.ais.fromBow" => self.from_bow = num(),
+                "sensors.ais.fromCenter" => self.from_centre = num(),
                 "design.draft" => self.draught = val.get("current").or(val.get("maximum")).and_then(Value::as_f64).or(num()),
                 "design.aisShipType" => self.ship_type = val.get("id").and_then(Value::as_u64).map(|v| v as u16),
                 "sensors.ais.class" => self.class = val.as_str().map(str::to_string),
@@ -338,6 +344,8 @@ pub struct Update {
     pub class: Option<&'static str>,
     pub length: Option<f64>,
     pub beam: Option<f64>,
+    pub from_bow: Option<f64>,
+    pub from_centre: Option<f64>,
     pub draught: Option<f64>,
     pub destination: Option<String>,
     pub aton_type: Option<u8>,
@@ -356,7 +364,7 @@ impl Update {
         macro_rules! set {
             ($($f:ident),*) => { $( if self.$f.is_some() { t.$f = self.$f; } )* };
         }
-        set!(name, callsign, cog, sog, heading, status, ship_type, length, beam, draught, destination, aton_type, altitude);
+        set!(name, callsign, cog, sog, heading, status, ship_type, length, beam, from_bow, from_centre, draught, destination, aton_type, altitude);
         if let Some(c) = self.class {
             t.class = Some(c.to_string());
         }

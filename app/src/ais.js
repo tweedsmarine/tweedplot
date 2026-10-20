@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ddm } from "./navmath.js";
 import { distNm, bearing } from "./instruments.js";
+import { hullRing, bigEnough } from "./hull.js";
 
 const KEY = "racenav.ais";
 const DEFAULTS = { show: true, names: true, key: "", online: false, cpaOn: true, cpa: 0.5, tcpa: 12, ignoreMoored: true, sort: "range", selTrack: false,
@@ -113,11 +114,16 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   map.addLayer({ id: "ais-cpa-lbl", type: "symbol", source: "ais-cpa", filter: ["==", ["get", "k"], "lbl"],
     layout: { "icon-image": ["concat", "lbl:", ["get", "text"]], "icon-anchor": "left", "icon-offset": [8, 0], "icon-allow-overlap": true } });
   map.addSource("ais", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  // ships to scale at harbour scales (from their AIS dimensions and antenna position)
+  map.addLayer({ id: "ais-hull", type: "fill", source: "ais", filter: ["==", ["get", "k"], "hull"],
+    paint: { "fill-color": ["get", "col"], "fill-opacity": ["case", ["get", "lost"], 0.15, 0.4] } });
+  map.addLayer({ id: "ais-hull-line", type: "line", source: "ais", filter: ["==", ["get", "k"], "hull"],
+    paint: { "line-color": ["get", "col"], "line-width": 1.5 } });
   map.addLayer({ id: "ais-ring", type: "circle", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "ring"]],
     paint: { "circle-radius": 13, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": ["get", "ring"], "circle-stroke-width": 2.5 } });
   map.addLayer({ id: "ais-vec", type: "line", source: "ais", filter: ["==", ["get", "k"], "vec"],
     paint: { "line-color": ["get", "col"], "line-width": 1.5 } });
-  map.addLayer({ id: "ais-sym", type: "symbol", source: "ais", filter: ["==", ["get", "k"], "t"],
+  map.addLayer({ id: "ais-sym", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["!=", ["get", "big"], true]],
     layout: { "icon-image": ["get", "icon"], "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true,
       "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.5, 12, 0.8] },
     paint: { "icon-color": ["get", "col"], "icon-halo-color": "#1d2a33", "icon-halo-width": 1.2, "icon-opacity": ["case", ["get", "lost"], 0.45, 1] } });
@@ -164,7 +170,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   }
   function draw() {
     const vis = s.show ? "visible" : "none";
-    for (const id of ["ais-vec", "ais-sym", "ais-ring", "ais-fleet-names", "ais-track", "ais-cpa-path", "ais-cpa-line", "ais-cpa-pt", "ais-cpa-lbl"]) map.setLayoutProperty(id, "visibility", vis);
+    for (const id of ["ais-hull", "ais-hull-line", "ais-vec", "ais-sym", "ais-ring", "ais-fleet-names", "ais-track", "ais-cpa-path", "ais-cpa-line", "ais-cpa-pt", "ais-cpa-lbl"]) map.setLayoutProperty(id, "visibility", vis);
     map.setLayoutProperty("ais-names", "visibility", s.show && s.names ? "visible" : "none");
     const f = [];
     const cpaF = [];
@@ -175,6 +181,13 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       const [icon, col, rot] = style(t);
       const lost = isLost(t);
       const props = { k: "t", mmsi: t.mmsi, icon, col: t.mmsi === selected ? "#ffd400" : col, rot, lost };
+      // to scale when zoomed in far enough, if it has sent its size and we know which way it points
+      const dir = t.heading ?? ((t.sog ?? 0) > 1 ? t.cog : null);
+      if (t.kind === "vessel" && t.length > 0 && dir != null && bigEnough(t.length, t.lat, map.getZoom())) {
+        props.big = true;
+        f.push({ type: "Feature", properties: { k: "hull", col: props.col, lost, mmsi: t.mmsi },
+          geometry: { type: "Polygon", coordinates: [hullRing([t.lon, t.lat], dir, { length: t.length, beam: t.beam, fromBow: t.from_bow, fromCentre: t.from_centre })] } });
+      }
       const name = fe?.name || t.name;
       if (name) props.name = name;
       if (fe) props.ring = GROUP_COLOURS[fe.group] ?? GROUP_COLOURS.Other;
@@ -305,9 +318,13 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     const t = selected != null ? targets.get(selected) : null;
     if (popup && t) { popup.setLngLat([t.lon, t.lat]).setHTML(describe(t)); wirePopup(selected); }
   }
-  map.on("click", "ais-sym", (e) => { const f = e.features?.[0]; if (f) openPopup(f.properties.mmsi); });
-  map.on("mouseenter", "ais-sym", () => { map.getCanvas().style.cursor = "pointer"; });
-  map.on("mouseleave", "ais-sym", () => { map.getCanvas().style.cursor = ""; });
+  for (const l of ["ais-sym", "ais-hull"]) {
+    map.on("click", l, (e) => { const f = e.features?.[0]; if (f) openPopup(f.properties.mmsi); });
+    map.on("mouseenter", l, () => { map.getCanvas().style.cursor = "pointer"; });
+    map.on("mouseleave", l, () => { map.getCanvas().style.cursor = ""; });
+  }
+  // symbols or outlines to scale, by zoom
+  map.on("zoomend", () => draw());
 
   // ---------- list ----------------------------------------------------------------
   function renderList() {

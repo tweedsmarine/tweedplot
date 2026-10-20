@@ -35,6 +35,7 @@ import { setupReplay } from "./replay.js";
 import { setupPalette } from "./palette.js";
 import { setupAlarms } from "./alarms.js";
 import { setupAis } from "./ais.js";
+import { hullRing, bigEnough } from "./hull.js";
 import { setupStations } from "./stations.js";
 import { setupInstruments, waypointData, targetAt } from "./instruments.js";
 import { setupLibrary, labelImage } from "./library.js";
@@ -89,6 +90,7 @@ const map = new maplibregl.Map({
       graticule: { type: "geojson", data: graticule(1) },
       track: { type: "geojson", data: line([]) },
       boat: { type: "geojson", data: emptyFC() },
+      "boat-hull": { type: "geojson", data: emptyFC() },
       hdgline: { type: "geojson", data: line([]) },
       cogline: { type: "geojson", data: line([]) },
       chart: { type: "vector", tiles: [TILE_URL], minzoom: 0, maxzoom: 16 },
@@ -137,7 +139,14 @@ const map = new maplibregl.Map({
         paint: { "line-color": "#1d2a33", "line-width": 1.6 } },
       { id: "cogline", type: "line", source: "cogline",
         paint: { "line-color": "#d35400", "line-width": 2, "line-dasharray": [3, 2] } },
-      { id: "boat", type: "symbol", source: "boat",
+      // own boat to scale (Boat panel: length, beam, GPS antenna) at harbour scales
+      { id: "boat-hull", type: "fill", source: "boat-hull", filter: ["==", ["get", "k"], "hull"],
+        paint: { "fill-color": "#d00000", "fill-opacity": 0.35 } },
+      { id: "boat-hull-line", type: "line", source: "boat-hull", filter: ["==", ["get", "k"], "hull"],
+        paint: { "line-color": "#8b0000", "line-width": 1.6 } },
+      { id: "boat-gps", type: "circle", source: "boat-hull", filter: ["==", ["get", "k"], "gps"],
+        paint: { "circle-radius": 3, "circle-color": "#fff", "circle-stroke-color": "#8b0000", "circle-stroke-width": 1.5 } },
+      { id: "boat", type: "symbol", source: "boat", filter: ["!=", ["get", "big"], true],
         layout: { "icon-image": "boat", "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map",
                   "icon-allow-overlap": true, "icon-ignore-placement": true } },
     ],
@@ -438,10 +447,29 @@ liveBtn.onclick = () => {
 };
 const signalKActive = () => live && (skConnected || replayOn) && Date.now() - lastFeed < 15000;
 
+/** The boat on the chart: its symbol, or at harbour scales its outline to scale from
+ *  the Boat panel's length and beam, placed by the GPS antenna. */
+let boatDir = 0;
+function drawBoat() {
+  if (!lastBoat) return;
+  const b = boat.get();
+  const big = b.length > 0 && bigEnough(b.length, lastBoat[1], map.getZoom());
+  setData("boat", { type: "FeatureCollection", features: [{ type: "Feature", properties: { rot: boatDir, big }, geometry: { type: "Point", coordinates: lastBoat } }] });
+  const f = [];
+  if (big) {
+    f.push({ type: "Feature", properties: { k: "hull" }, geometry: { type: "Polygon", coordinates: [hullRing(lastBoat, boatDir, { length: b.length, beam: b.beam, fromBow: b.gpsFromBow || null, fromCentre: b.gpsFromCentre || 0 })] } });
+    f.push({ type: "Feature", properties: { k: "gps" }, geometry: { type: "Point", coordinates: lastBoat } });
+  }
+  setData("boat-hull", { type: "FeatureCollection", features: f });
+}
+map.on("zoomend", drawBoat);
+window.addEventListener("racenav-boat", drawBoat);
+
 /** Put the boat at a position by hand (planning, or when there is no Signal K). */
 function placeBoat(pos) {
   lastBoat = pos;
-  setData("boat", { type: "FeatureCollection", features: [{ type: "Feature", properties: { rot: 0 }, geometry: { type: "Point", coordinates: pos } }] });
+  boatDir = 0;
+  drawBoat();
   drawLines(null);
   feed();
 }
@@ -536,8 +564,8 @@ listen("vessel", ({ payload }) => {
 
   const pos = [v.lon, v.lat];
   lastBoat = pos;
-  const dir = v.heading ?? v.cog ?? 0;
-  setData("boat", { type: "FeatureCollection", features: [{ type: "Feature", properties: { rot: dir }, geometry: { type: "Point", coordinates: pos } }] });
+  boatDir = v.heading ?? v.cog ?? 0;
+  drawBoat();
 
   drawLines(v);
 

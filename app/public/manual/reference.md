@@ -212,6 +212,10 @@ TweedPlot logs every Signal K session, AIS targets included, while it runs. **Ch
 
 **Follow** keeps the chart centred on the boat (dragging the chart turns it off); **Centre** (rail) recentres once; **Clear track** clears the short trail behind the boat.
 
+**Size and GPS antenna**
+
+In the **Boat** panel, set the boat's **Length** and **Beam**, and where its **GPS antenna** is: metres aft of the bow, and metres off the centre line to starboard or port. Signal K gives the antenna's position, not the boat's centre, so on a 20 m boat with the antenna at the stern the bow is 20 m ahead of the position. When you zoom in far enough for the boat to be bigger than its symbol (harbour scales), it is drawn to scale as its outline, pointing along the heading (or the course over ground when there is no heading), with a dot at the antenna. Zoom out again and the symbol comes back.
+
 **Lines and arrows on the boat**
 
 - *Heading line* (solid) and *COG line* (dashed orange): each as long as a set time at the boat's speed, or to the edge of the chart. Set in Chart and Signal K > Own boat.
@@ -372,6 +376,8 @@ A line ahead of a moving ship shows where it will be in 6 minutes (**Course vect
 **Target list**: **Targets** on the rail (or **T**) opens a list over the chart with name, type, range, bearing, CPA, TCPA, speed, course, the age of the last position and the source. Click a heading to sort (again to reverse); distress beacons and dangerous targets always come first. The filter shows all targets, vessels only, those under way, those closing, or only dangerous ones. Click a row to centre the chart on the target and open its details. Drag the list by its title bar and resize it from the corner; it stays where you leave it. The list under the settings in the drawer sorts by range, CPA or name.
 
 **Alarms**: a ship whose closest point of approach (CPA) is less than the limit within the time limit (TCPA) raises a collision alarm; anchored and moored ships can be ignored. An AIS-SART, MOB device or EPIRB always raises an alarm, with its bearing and distance.
+
+**To scale**: at harbour scales, a ship that has sent its size is drawn as its outline at its real size, placed by its GPS antenna (the A, B, C and D distances in its AIS data) and pointing along its heading (or its course when it has no heading and is moving). Click the outline for its details as you would the symbol. Ships whose size or heading isn't known keep their symbol.
 
 **Your own boat**: put your MMSI in the **Boat** panel (Own MMSI) and your boat is never shown or alarmed as a target, whichever source hears it.
 
