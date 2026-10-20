@@ -382,6 +382,7 @@ dependencies = [
  "geo",
  "i_overlay",
  "lru",
+ "rayon",
  "rusqlite",
  "serde",
  "serde_json",

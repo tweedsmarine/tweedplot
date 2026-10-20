@@ -1452,7 +1452,15 @@ fn open_charts(handle: tauri::AppHandle) {
 }
 
 fn open_store(handle: tauri::AppHandle, dirs: Vec<PathBuf>, dir: PathBuf) {
-    match chart::ChartStore::open_dirs(&dirs) {
+    let h = handle.clone();
+    let t0 = std::time::Instant::now();
+    let opened = chart::ChartStore::open_dirs_with(&dirs, &mut |k, n| {
+        // only worth saying when there are a lot (thousands of ENC cells)
+        if t0.elapsed().as_secs() >= 1 {
+            let _ = h.emit("chart-status", serde_json::json!({ "detail": format!("opening charts: {k} of {n} files") }));
+        }
+    });
+    match opened {
         Ok(store) => {
             let n = store.tables.len();
             let world = store.has_world_land();

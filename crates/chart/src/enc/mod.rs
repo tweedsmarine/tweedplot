@@ -352,6 +352,9 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
         if !fresh {
             let name = c.base.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
             progress(done, todo, &name);
+            if done % 100 == 0 {
+                eprintln!("ENC: converting {} of {todo} ({name})", done + 1);
+            }
             done += 1;
             // older conversions of this cell
             for e in existing.iter().filter(|e| e.starts_with(&format!("{key}-v"))) {

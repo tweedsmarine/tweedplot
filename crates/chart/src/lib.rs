@@ -149,6 +149,12 @@ impl ChartStore {
     /// Open the chart data in several folders (LINZ GeoPackages and zips, GSHHG
     /// shapefiles). Missing folders are skipped.
     pub fn open_dirs(dirs: &[PathBuf]) -> Result<Self, ChartError> {
+        Self::open_dirs_with(dirs, &mut |_, _| {})
+    }
+
+    /// [`open_dirs`](Self::open_dirs), telling `progress(files opened, files)` as it goes.
+    pub fn open_dirs_with(dirs: &[PathBuf], progress: &mut (dyn FnMut(usize, usize) + Send)) -> Result<Self, ChartError> {
+        let t0 = std::time::Instant::now();
         let mut gpkgs: Vec<PathBuf> = Vec::new();
         for dir in dirs.iter().filter(|d| d.is_dir()) {
             let unz = dir.join(".unzipped");
@@ -180,51 +186,39 @@ impl ChartStore {
 
         let mut dbs = Vec::new();
         let mut tables = Vec::new();
-        for path in gpkgs {
-            let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
-            let found: Vec<(String, String)> = {
-                let mut st = conn.prepare(
-                    "SELECT c.table_name, g.column_name FROM gpkg_contents c
-                     JOIN gpkg_geometry_columns g ON g.table_name = c.table_name
-                     WHERE c.data_type = 'features'",
-                )?;
-                let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
-                rows.collect::<Result<_, _>>()?
-            };
-            let db = dbs.len();
-            let mut any = false;
-            for (table, gcol) in found {
-                let Some((kind, band)) = classify(&table) else { continue };
-                let rtree = format!("rtree_{table}_{gcol}");
-                let has_rtree: bool = conn
-                    .query_row("SELECT count(*) FROM sqlite_master WHERE name = ?1", [&rtree], |r| r.get::<_, i64>(0))
-                    .map(|n| n > 0)?;
-                if !has_rtree {
-                    continue;
+        let n_files = gpkgs.len();
+        eprintln!("charts: opening {n_files} files ({:.1} s finding them)", t0.elapsed().as_secs_f64());
+        // open the files in parallel (thousands of ENC cells), keep their order
+        use rayon::prelude::*;
+        let done = std::sync::atomic::AtomicUsize::new(0);
+        let progress = std::sync::Mutex::new(progress);
+        let opened: Vec<Option<(Connection, Vec<TableInfo>)>> = gpkgs
+            .par_iter()
+            .map(|path| {
+                let k = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if k % 50 == 0 {
+                    (progress.lock().unwrap())(k, n_files);
                 }
-                let pk: String = conn
-                    .query_row(&format!("SELECT name FROM pragma_table_info('{table}') WHERE pk = 1"), [], |r| r.get(0))
-                    .unwrap_or_else(|_| "fid".into());
-                let rows: i64 = conn.query_row(&format!("SELECT count(*) FROM \"{table}\""), [], |r| r.get(0))?;
-                let cols: Vec<String> = {
-                    let mut st = conn.prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))?;
-                    let r = st.query_map([], |r| r.get::<_, String>(0))?;
-                    r.filter_map(Result::ok).map(|c| c.to_ascii_lowercase()).collect()
-                };
-                let class = if kind == Kind::Feature { s57::class_for(&table) } else { None };
-                let bounds: [f64; 4] = conn
-                    .query_row(&format!("SELECT min(minx), min(miny), max(maxx), max(maxy) FROM \"{rtree}\""), [], |r| {
-                        Ok([r.get::<_, Option<f64>>(0)?, r.get(1)?, r.get(2)?, r.get(3)?])
-                    })
-                    .map(|v| if v.iter().all(Option::is_some) { [v[0].unwrap(), v[1].unwrap(), v[2].unwrap(), v[3].unwrap()] } else { [0.0, 0.0, -1.0, -1.0] })
-                    .unwrap_or([-360.0, -90.0, 360.0, 90.0]);
-                tables.push(TableInfo { file: path.clone(), table, kind, band, rows, class, cols, db, rtree, pk, bounds });
-                any = true;
-            }
-            if any {
-                dbs.push(Mutex::new(conn));
-            }
+                match open_gpkg(path) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!("charts: {}: {e}", path.display());
+                        None
+                    }
+                }
+            })
+            .collect();
+        let progress = progress.into_inner().unwrap();
+        for (conn, ts) in opened.into_iter().flatten() {
+            let db = dbs.len();
+            tables.extend(ts.into_iter().map(|mut t| {
+                t.db = db;
+                t
+            }));
+            dbs.push(Mutex::new(conn));
         }
+        eprintln!("charts: {} tables from {n_files} files open in {:.1} s", tables.len(), t0.elapsed().as_secs_f64());
+        progress(n_files, n_files);
         Ok(Self {
             dbs,
             tables,
@@ -679,6 +673,116 @@ fn cut_water(land: Vec<Vec<[i32; 2]>>, water: Vec<Vec<[i32; 2]>>) -> Vec<Vec<[i3
         }
     }
     out
+}
+
+/// One GeoPackage's chart tables (with `db` 0; set by the caller), or None if it has none.
+/// For the files TweedPlot makes itself (in `.unzipped` and `.enc` folders) the table
+/// details are kept in a `<file>.tables` note beside it, so the next start needn't query
+/// every table of thousands of ENC cells again.
+fn open_gpkg(path: &Path) -> Result<Option<(Connection, Vec<TableInfo>)>, ChartError> {
+    let ours = path.parent().and_then(|p| p.file_name()).is_some_and(|n| n.to_string_lossy().starts_with('.'));
+    if !ours {
+        return open_gpkg_scan(path);
+    }
+    let note = PathBuf::from(format!("{}.tables", path.display()));
+    let stamp = std::fs::metadata(path).ok().map(|m| format!("{} {:?}", m.len(), m.modified().ok()));
+    if let (Some(stamp), Ok(text)) = (&stamp, std::fs::read_to_string(&note)) {
+        let mut lines = text.lines();
+        if lines.next() == Some(stamp.as_str()) {
+            let mut tables = Vec::new();
+            let mut ok = true;
+            for l in lines {
+                let f: Vec<&str> = l.split('\t').collect();
+                let parsed = (|| {
+                    let table = f.first()?.to_string();
+                    let (kind, band) = classify(&table)?;
+                    let b: Vec<f64> = f.get(4)?.split(',').filter_map(|v| v.parse().ok()).collect();
+                    Some(TableInfo {
+                        file: path.to_path_buf(),
+                        class: if kind == Kind::Feature { s57::class_for(&table) } else { None },
+                        rows: f.get(1)?.parse().ok()?,
+                        pk: f.get(2)?.to_string(),
+                        rtree: f.get(3)?.to_string(),
+                        bounds: [*b.first()?, *b.get(1)?, *b.get(2)?, *b.get(3)?],
+                        cols: f.get(5)?.split(',').filter(|c| !c.is_empty()).map(str::to_string).collect(),
+                        table,
+                        kind,
+                        band,
+                        db: 0,
+                    })
+                })();
+                match parsed {
+                    Some(t) => tables.push(t),
+                    None => {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            if ok {
+                if tables.is_empty() {
+                    return Ok(None);
+                }
+                let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+                return Ok(Some((conn, tables)));
+            }
+        }
+    }
+    let got = open_gpkg_scan(path)?;
+    if let Some(stamp) = stamp {
+        let mut text = format!("{stamp}\n");
+        for t in got.iter().flat_map(|g| &g.1) {
+            let b = t.bounds;
+            text.push_str(&format!("{}\t{}\t{}\t{}\t{},{},{},{}\t{}\n", t.table, t.rows, t.pk, t.rtree, b[0], b[1], b[2], b[3], t.cols.join(",")));
+        }
+        let _ = std::fs::write(&note, text);
+    }
+    Ok(got)
+}
+
+fn open_gpkg_scan(path: &Path) -> Result<Option<(Connection, Vec<TableInfo>)>, ChartError> {
+        let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+        let found: Vec<(String, String)> = {
+            let mut st = conn.prepare(
+                "SELECT c.table_name, g.column_name FROM gpkg_contents c
+                 JOIN gpkg_geometry_columns g ON g.table_name = c.table_name
+                 WHERE c.data_type = 'features'",
+            )?;
+            let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            rows.collect::<Result<_, _>>()?
+        };
+        let db = 0;
+        let mut tables = Vec::new();
+        let mut any = false;
+        for (table, gcol) in found {
+            let Some((kind, band)) = classify(&table) else { continue };
+            let rtree = format!("rtree_{table}_{gcol}");
+            let has_rtree: bool = conn
+                .query_row("SELECT count(*) FROM sqlite_master WHERE name = ?1", [&rtree], |r| r.get::<_, i64>(0))
+                .map(|n| n > 0)?;
+            if !has_rtree {
+                continue;
+            }
+            let pk: String = conn
+                .query_row(&format!("SELECT name FROM pragma_table_info('{table}') WHERE pk = 1"), [], |r| r.get(0))
+                .unwrap_or_else(|_| "fid".into());
+            let rows: i64 = conn.query_row(&format!("SELECT count(*) FROM \"{table}\""), [], |r| r.get(0))?;
+            let cols: Vec<String> = {
+                let mut st = conn.prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))?;
+                let r = st.query_map([], |r| r.get::<_, String>(0))?;
+                r.filter_map(Result::ok).map(|c| c.to_ascii_lowercase()).collect()
+            };
+            let class = if kind == Kind::Feature { s57::class_for(&table) } else { None };
+            let bounds: [f64; 4] = conn
+                .query_row(&format!("SELECT min(minx), min(miny), max(maxx), max(maxy) FROM \"{rtree}\""), [], |r| {
+                    Ok([r.get::<_, Option<f64>>(0)?, r.get(1)?, r.get(2)?, r.get(3)?])
+                })
+                .map(|v| if v.iter().all(Option::is_some) { [v[0].unwrap(), v[1].unwrap(), v[2].unwrap(), v[3].unwrap()] } else { [0.0, 0.0, -1.0, -1.0] })
+                .unwrap_or([-360.0, -90.0, 360.0, 90.0]);
+            tables.push(TableInfo { file: path.to_path_buf(), table, kind, band, rows, class, cols, db, rtree, pk, bounds });
+            any = true;
+        }
+        Ok(any.then_some((conn, tables)))
 }
 
 fn classify(table: &str) -> Option<(Kind, u8)> {

@@ -11,6 +11,7 @@ zip.workspace = true
 lru.workspace = true
 geo = "0.29"
 i_overlay = "1.9"
+rayon.workspace = true
 thiserror.workspace = true
 serde.workspace = true
 

@@ -312,7 +312,7 @@ map.on("load", () => {
   // converting ENC cells the first time: show how far it has got
   listen("chart-status", ({ payload }) => {
     const d = payload?.detail || "";
-    if (d.startsWith("converting ENC")) { encBusy = true; toast(d.charAt(0).toUpperCase() + d.slice(1)); }
+    if (d.startsWith("converting ENC") || d.startsWith("opening charts:")) { encBusy = true; toast(d.charAt(0).toUpperCase() + d.slice(1)); }
   });
 });
 let encBusy = false;
