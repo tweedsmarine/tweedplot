@@ -221,6 +221,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     $("rt-start").classList.toggle("armed", mode === "start");
     $("rt-add").classList.toggle("armed", mode === "marks");
     map.getCanvas().style.cursor = mode ? "crosshair" : "";
+    map.getContainer().classList.toggle("drawing", !!mode);
   }
   $("rt-start").onclick = () => arm("start");
   $("rt-add").onclick = () => arm("marks");

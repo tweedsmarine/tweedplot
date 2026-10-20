@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 270" role="img" aria-label="Two ways an AIS report reaches you: straight from the ship by VHF, or through a shore station and the internet" font-size="12.5"><defs><marker id="ain-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--cds-chart-axis)"/></marker></defs>
+<text x="20" y="28" font-size="15" font-weight="600" fill="var(--cds-text-primary)">Two ways an AIS report reaches you</text>
+<g fill="none" stroke="var(--cds-chart-axis)" stroke-width="1.25">
+<rect x="20" y="104" width="120" height="62" rx="8"/>
+<rect x="250" y="56" width="150" height="62" rx="8" fill="var(--cds-chart-categorical-1)" fill-opacity="0.12"/>
+<rect x="250" y="160" width="150" height="62" rx="8"/>
+<rect x="440" y="160" width="140" height="62" rx="8"/>
+<rect x="620" y="104" width="120" height="62" rx="8"/>
+<path d="M140 124L248 90" marker-end="url(#ain-arrow)"/>
+<path d="M140 146L248 186" marker-end="url(#ain-arrow)"/>
+<path d="M400 87L618 126" marker-end="url(#ain-arrow)"/>
+<path d="M400 191H438" marker-end="url(#ain-arrow)"/>
+<path d="M580 186L618 150" marker-end="url(#ain-arrow)"/>
+</g>
+<g text-anchor="middle">
+<text x="80" y="130" font-weight="600" fill="var(--cds-text-primary)">Ship</text><text x="80" y="148" font-size="11.5" fill="var(--cds-text-secondary)">transmits on VHF</text>
+<text x="325" y="82" font-weight="600" fill="var(--cds-text-primary)">Receiver on board</text><text x="325" y="100" font-size="11.5" fill="var(--cds-text-secondary)">via Signal K: seconds</text>
+<text x="325" y="186" font-weight="600" fill="var(--cds-text-primary)">Shore station</text><text x="325" y="204" font-size="11.5" fill="var(--cds-text-secondary)">only if one is in range</text>
+<text x="510" y="186" font-weight="600" fill="var(--cds-text-primary)">Aggregator</text><text x="510" y="204" font-size="11.5" fill="var(--cds-text-secondary)">e.g. aisstream.io</text>
+<text x="680" y="130" font-weight="600" fill="var(--cds-text-primary)">TweedPlot</text><text x="680" y="148" font-size="11.5" fill="var(--cds-text-secondary)">on the chart</text>
+</g>
+<text x="185" y="96" font-size="11.5" fill="var(--cds-text-secondary)" transform="rotate(-17 185 96)">direct, 20–30 NM</text>
+<text x="470" y="245" font-size="11.5" fill="var(--cds-text-secondary)" text-anchor="middle">over the internet: seconds to minutes late, with gaps, filtering and outages along the way</text>
+</svg>

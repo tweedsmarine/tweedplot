@@ -131,6 +131,7 @@ export function setupBarriers(map, { before, library, toast }) {
     $("bar-line").classList.toggle("armed", kind === "line");
     $("bar-zone").classList.toggle("armed", kind === "zone");
     map.getCanvas().style.cursor = kind ? "crosshair" : "";
+    map.getContainer().classList.toggle("drawing", !!kind);
     if (kind) {
       map.doubleClickZoom.disable();
       deselect();

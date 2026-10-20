@@ -343,7 +343,7 @@ Press the red **MOB** button at the top right the moment someone goes over. Twee
 **Fleet › AIS** shows ships, aids to navigation, SAR aircraft and AIS distress beacons on the chart, from two sources merged by MMSI:
 
 - **Signal K**: whatever an AIS receiver or transponder on board passes to the Signal K server.
-- **Online (aisstream.io)**: what volunteer shore stations hear around the area on the chart. Get a free API key by signing in at aisstream.io with a GitHub account, paste it in and press **Go online**. The area follows the chart (up to about 6° across). Coverage has gaps and delays: it is no substitute for a receiver on board.
+- **Online (aisstream.io)**: what volunteer shore stations hear. Get a free API key by signing in at aisstream.io with a GitHub account, paste it in and press **Go online**. **Online area** is the chart view (up to about 6° across), or a **Range** in NM round the chart centre or round your boat (it follows you). Online targets are not for navigation (see the AIS tab): they show in italics, marked "Net", and raise no collision alarm unless **Alarms for internet-only targets too** is ticked.
 
 On the chart, ships are triangles pointing along their heading (class B a little smaller), coloured by type:
 
@@ -365,9 +365,11 @@ Other AIS targets:
 - <span class="mi"><svg viewBox="0 0 20 20"><rect x='4' y='4' width='12' height='12' fill='none' stroke='#5d6d7e' stroke-width='2'/></svg></span> AIS base station
 - <span class="mi"><svg viewBox="0 0 20 20"><path d='M10 2 L11 8 L17 11 L17 13 L11 11 L11 15 L13 17 L7 17 L9 15 L9 11 L3 13 L3 11 L9 8 Z' fill='#e67e22'/></svg></span> Search and rescue aircraft
 
-A line ahead of a moving ship shows where it will be in 6 minutes. Targets not heard for a few minutes fade, and go after 20 minutes. Click a target for its name, type, status, speed and course, size, destination, and the range, bearing, CPA and TCPA from your boat.
+A line ahead of a moving ship shows where it will be in 6 minutes (**Course vectors** sets the time). Targets not heard for a few minutes fade, and go after 20 minutes. Click a target for its name, type, status, speed and course, size, destination, and the range, bearing, CPA and TCPA from your boat.
 
-The list under the settings sorts targets by range, CPA or name; click one to show it.
+**CPA lines** draw, for dangerous targets and the one you clicked (or every target closing within the time limit), dashed lines from your boat and the target to where each will be at the closest point of approach, joined by the CPA line with its distance and time: red inside the alarm limits, amber outside.
+
+**Target list**: **Targets** on the rail (or **T**) opens a list over the chart with name, type, range, bearing, CPA, TCPA, speed, course, the age of the last position and the source. Click a heading to sort (again to reverse); distress beacons and dangerous targets always come first. The filter shows all targets, vessels only, those under way, those closing, or only dangerous ones. Click a row to centre the chart on the target and open its details. Drag the list by its title bar and resize it from the corner; it stays where you leave it. The list under the settings in the drawer sorts by range, CPA or name.
 
 **Alarms**: a ship whose closest point of approach (CPA) is less than the limit within the time limit (TCPA) raises a collision alarm; anchored and moored ships can be ignored. An AIS-SART, MOB device or EPIRB always raises an alarm, with its bearing and distance.
 

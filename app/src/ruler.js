@@ -91,6 +91,7 @@ export function setupRuler(map, { before, ui, library, route, toast, getVariatio
     armed = on;
     btn.classList.toggle("armed", on);
     map.getCanvas().style.cursor = on ? "crosshair" : "";
+    map.getContainer().classList.toggle("drawing", on);
     if (on) {
       map.doubleClickZoom.disable();
       deselect();

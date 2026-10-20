@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" role="img" aria-label="CPA and TCPA: where your boat and the target will be at the closest point of approach" font-size="15">
+<text x="12" y="26" font-size="17" font-weight="600" fill="var(--cds-text-primary)">CPA: how close it passes; TCPA: when</text>
+<g fill="none" stroke-width="2">
+<path d="M70 310L215 180" stroke="#e08a00" stroke-dasharray="7 5"/>
+<path d="M440 80L245 205" stroke="#e08a00" stroke-dasharray="7 5"/>
+<path d="M215 180L245 205" stroke="#d00000" stroke-width="3.5"/>
+</g>
+<g transform="translate(70 310) rotate(48)"><path d="M0 -14L8 10L0 6L-8 10Z" fill="#c0392b" stroke="#1d2a33" stroke-width="1"/></g>
+<g transform="translate(440 80) rotate(237)"><path d="M0 -14L8 10L0 6L-8 10Z" fill="#2e6fd8" stroke="#1d2a33" stroke-width="1"/></g>
+<circle cx="215" cy="180" r="6" fill="#fff" stroke="#d00000" stroke-width="2.5"/>
+<circle cx="245" cy="205" r="6" fill="#fff" stroke="#d00000" stroke-width="2.5"/>
+<text x="92" y="335" fill="var(--cds-text-primary)" font-weight="600">Your boat now</text>
+<text x="468" y="60" fill="var(--cds-text-primary)" font-weight="600" text-anchor="end">Target now</text>
+<text x="205" y="166" text-anchor="end" fill="var(--cds-text-secondary)">you, at the CPA</text>
+<text x="256" y="230" fill="var(--cds-text-secondary)">the target, at the CPA</text>
+<text x="300" y="198" fill="#d00000" font-weight="600">CPA 0.3 NM</text>
+<text x="12" y="70" fill="var(--cds-text-secondary)">TCPA: the time until both</text>
+<text x="12" y="90" fill="var(--cds-text-secondary)">reach those points, if</text>
+<text x="12" y="110" fill="var(--cds-text-secondary)">neither alters course or</text>
+<text x="12" y="130" fill="var(--cds-text-secondary)">speed (here 13 min)</text>
+</svg>

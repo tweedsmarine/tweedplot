@@ -9,7 +9,13 @@ import { ddm } from "./navmath.js";
 import { distNm, bearing } from "./instruments.js";
 
 const KEY = "racenav.ais";
-const DEFAULTS = { show: true, names: true, key: "", online: false, cpaOn: true, cpa: 0.5, tcpa: 12, ignoreMoored: true, sort: "range", selTrack: false };
+const DEFAULTS = { show: true, names: true, key: "", online: false, cpaOn: true, cpa: 0.5, tcpa: 12, ignoreMoored: true, sort: "range", selTrack: false,
+  // course vector length (min); CPA graphics: "none" | "danger" (dangerous and selected) | "all" (every target closing within the TCPA limit)
+  vecMin: 6, cpaDraw: "danger",
+  // internet AIS area: "view" (the chart view) | "centre" (range round the chart centre) | "boat" (range round own boat); range NM
+  netMode: "view", netRange: 30, netAlarms: false,
+  // floating target list
+  win: { open: false, sort: "cpa", dir: 1, filter: "all", x: null, y: null } };
 const FLEET_KEY = "racenav.ownfleet";
 export const GROUP_COLOURS = { Friends: "#2e86de", Company: "#e67e22", "Race fleet": "#d63031", Other: "#8e44ad" };
 const $ = (id) => document.getElementById(id);
@@ -35,7 +41,8 @@ function category(t) {
 const ATON = { 1: "Reference point", 2: "RACON", 3: "Fixed structure", 5: "Light", 9: "Beacon, cardinal N", 13: "Beacon, port", 14: "Beacon, starboard",
   20: "Cardinal buoy N", 21: "Cardinal buoy E", 22: "Cardinal buoy S", 23: "Cardinal buoy W", 24: "Port buoy", 25: "Starboard buoy", 28: "Isolated danger buoy", 29: "Safe water buoy", 30: "Special buoy", 31: "Light vessel / LANBY" };
 
-/** Closest point of approach of target `t` to own boat `o` ({pos, cog, sog}): {cpa NM, tcpa min} or null. */
+/** Closest point of approach of target `t` to own boat `o` ({pos, cog, sog}): {cpa NM, tcpa min,
+ *  range NM, own: [lon, lat] and tgt: [lon, lat] where each will be at the CPA} or null. */
 export function cpaTcpa(o, t) {
   if (!o?.pos || t.lat == null) return null;
   const lat0 = (o.pos[1] * Math.PI) / 180;
@@ -48,7 +55,8 @@ export function cpaTcpa(o, t) {
   if (v2 < 1e-6) return { cpa: range, tcpa: null, range };
   const th = -(p[0] * v[0] + p[1] * v[1]) / v2; // hours
   const c = [p[0] + v[0] * th, p[1] + v[1] * th];
-  return { cpa: Math.hypot(c[0], c[1]), tcpa: th * 60, range };
+  const toLL = (n) => [o.pos[0] + n[0] / (60 * Math.cos(lat0)), o.pos[1] + n[1] / 60];
+  return { cpa: Math.hypot(c[0], c[1]), tcpa: th * 60, range, own: toLL([vo[0] * th, vo[1] * th]), tgt: toLL([p[0] + vt[0] * th, p[1] + vt[1] * th]) };
 }
 
 function addIcons(map) {
@@ -79,6 +87,7 @@ function addIcons(map) {
 export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   let s = { ...DEFAULTS };
   try { Object.assign(s, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* storage unavailable */ }
+  s.win = { ...DEFAULTS.win, ...(s.win || {}) };
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* ignore */ } };
   const targets = new Map(); // mmsi → target
   let online = { connected: false, detail: "off" };
@@ -93,6 +102,16 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   addIcons(map);
   map.addSource("ais-tracks", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addLayer({ id: "ais-track", type: "line", source: "ais-tracks", paint: { "line-color": ["get", "col"], "line-width": 1.8, "line-opacity": 0.85 } });
+  // CPA graphics: where own boat and the target will be at the closest point of approach
+  map.addSource("ais-cpa", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addLayer({ id: "ais-cpa-path", type: "line", source: "ais-cpa", filter: ["==", ["get", "k"], "path"],
+    paint: { "line-color": ["get", "col"], "line-width": 1.4, "line-dasharray": [3, 2], "line-opacity": 0.9 } });
+  map.addLayer({ id: "ais-cpa-line", type: "line", source: "ais-cpa", filter: ["==", ["get", "k"], "cpa"],
+    paint: { "line-color": ["get", "col"], "line-width": 2.5 } });
+  map.addLayer({ id: "ais-cpa-pt", type: "circle", source: "ais-cpa", filter: ["==", ["get", "k"], "pt"],
+    paint: { "circle-radius": 4.5, "circle-color": "#fff", "circle-stroke-color": ["get", "col"], "circle-stroke-width": 2 } });
+  map.addLayer({ id: "ais-cpa-lbl", type: "symbol", source: "ais-cpa", filter: ["==", ["get", "k"], "lbl"],
+    layout: { "icon-image": ["concat", "lbl:", ["get", "text"]], "icon-anchor": "left", "icon-offset": [8, 0], "icon-allow-overlap": true } });
   map.addSource("ais", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addLayer({ id: "ais-ring", type: "circle", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "ring"]],
     paint: { "circle-radius": 13, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": ["get", "ring"], "circle-stroke-width": 2.5 } });
@@ -113,6 +132,26 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     const moving = (t.sog ?? 0) > 2;
     return t.kind === "aton" || t.kind === "base" ? age > 20 * 60 : age > (moving ? 3 : 10) * 60;
   };
+  /** Heard only over the internet (no receiver on board heard it). */
+  const netOnly = (t) => !String(t.source).includes("signalk");
+  /** Centre of the internet AIS area when it is a range (chart centre or own boat), else null. */
+  function netCentre() {
+    if (s.netMode === "boat") return getOwn()?.pos ?? null;
+    if (s.netMode === "centre") { const c = map.getCenter(); return [c.lng, c.lat]; }
+    return null;
+  }
+  /** Whether a target is drawn and listed: not own boat, own fleet only if asked, internet ones inside the range. */
+  function shown(t) {
+    if (t.lat == null || t.mmsi === ownMmsi) return false;
+    if (fleet.only && !inFleet(t.mmsi)) return false;
+    if (netOnly(t)) {
+      const c = netCentre();
+      if (c && distNm(c, [t.lon, t.lat]) > s.netRange) return false;
+    }
+    return true;
+  }
+  /** Closing inside the alarm limits. */
+  const isDanger = (c) => !!(c && c.tcpa != null && c.tcpa > 0 && c.tcpa < s.tcpa && c.cpa < s.cpa);
   function style(t) {
     if (t.kind === "sart" || t.kind === "mob" || t.kind === "epirb") return ["ais-sart", "#d00000", 0];
     if (t.kind === "aton") return ["ais-aton", t.virtual_aton ? "#c2185b" : "#6a1b9a", 0];
@@ -125,13 +164,14 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   }
   function draw() {
     const vis = s.show ? "visible" : "none";
-    for (const id of ["ais-vec", "ais-sym", "ais-ring", "ais-fleet-names", "ais-track"]) map.setLayoutProperty(id, "visibility", vis);
+    for (const id of ["ais-vec", "ais-sym", "ais-ring", "ais-fleet-names", "ais-track", "ais-cpa-path", "ais-cpa-line", "ais-cpa-pt", "ais-cpa-lbl"]) map.setLayoutProperty(id, "visibility", vis);
     map.setLayoutProperty("ais-names", "visibility", s.show && s.names ? "visible" : "none");
     const f = [];
+    const cpaF = [];
+    const own = getOwn();
     for (const t of targets.values()) {
-      if (t.lat == null || t.mmsi === ownMmsi) continue;
+      if (!shown(t)) continue;
       const fe = inFleet(t.mmsi);
-      if (fleet.only && !fe) continue;
       const [icon, col, rot] = style(t);
       const lost = isLost(t);
       const props = { k: "t", mmsi: t.mmsi, icon, col: t.mmsi === selected ? "#ffd400" : col, rot, lost };
@@ -139,14 +179,31 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       if (name) props.name = name;
       if (fe) props.ring = GROUP_COLOURS[fe.group] ?? GROUP_COLOURS.Other;
       f.push({ type: "Feature", properties: props, geometry: { type: "Point", coordinates: [t.lon, t.lat] } });
-      // 6-minute course vector
+      // course vector (6 minutes unless set otherwise)
       if (!lost && (t.sog ?? 0) > 0.5 && t.cog != null && t.kind !== "aton") {
-        const d = (t.sog / 10) / 60; // degrees of latitude in 6 min
+        const d = (t.sog * (s.vecMin || 6) / 60) / 60; // degrees of latitude in the vector's time
         const end = [t.lon + (d * Math.sin((t.cog * Math.PI) / 180)) / Math.cos((t.lat * Math.PI) / 180), t.lat + d * Math.cos((t.cog * Math.PI) / 180)];
         f.push({ type: "Feature", properties: { k: "vec", col }, geometry: { type: "LineString", coordinates: [[t.lon, t.lat], end] } });
       }
+      // the CPA: dashed tracks of both to where they will be, joined by the CPA line
+      if (s.cpaDraw !== "none" && own?.pos && !lost && t.kind === "vessel") {
+        const c = cpaTcpa(own, t);
+        const danger = isDanger(c);
+        const want = t.mmsi === selected || danger || (s.cpaDraw === "all" && c?.tcpa > 0 && c.tcpa < s.tcpa);
+        if (want && c?.tcpa > 0 && c.tcpa <= 120) {
+          const ccol = danger ? "#d00000" : "#e08a00";
+          const line = (k, a, b) => cpaF.push({ type: "Feature", properties: { k, col: ccol }, geometry: { type: "LineString", coordinates: [a, b] } });
+          line("path", [t.lon, t.lat], c.tgt);
+          line("path", own.pos, c.own);
+          line("cpa", c.own, c.tgt);
+          for (const pt of [c.own, c.tgt]) cpaF.push({ type: "Feature", properties: { k: "pt", col: ccol }, geometry: { type: "Point", coordinates: pt } });
+          const mid = [(c.own[0] + c.tgt[0]) / 2, (c.own[1] + c.tgt[1]) / 2];
+          cpaF.push({ type: "Feature", properties: { k: "lbl", text: `CPA ${c.cpa.toFixed(2)} NM · ${Math.round(c.tcpa)} min` }, geometry: { type: "Point", coordinates: mid } });
+        }
+      }
     }
     map.getSource("ais").setData({ type: "FeatureCollection", features: f });
+    map.getSource("ais-cpa").setData({ type: "FeatureCollection", features: cpaF });
     drawTracks();
   }
 
@@ -209,7 +266,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       if (c.tcpa != null) add("CPA / TCPA", c.tcpa > 0 ? `${c.cpa.toFixed(2)} NM in ${Math.round(c.tcpa)} min` : "Moving apart");
     }
     if (t.last_pos) add("Position age", `${Math.round(Date.now() / 1000 - t.last_pos)} s`);
-    add("Heard by", t.source.replace("signalk", "Signal K").replace("aisstream", "aisstream.io").replace("+", " and "));
+    add("Heard by", t.source.replace("signalk", "Signal K").replace("aisstream", "aisstream.io").replace("+", " and ") + (netOnly(t) ? " (internet: may be late or missing, not for navigation)" : ""));
     const fe = inFleet(t.mmsi);
     const btns = `<div class="ais-pop-btns">${fe ? `<span class="wx-note">Own fleet: ${esc(fe.group)}</span><button data-act="track">${fe.track || fleet.trackAll ? "Hide track" : "Show track"}</button><button data-act="unfleet">Remove from own fleet</button>`
       : `<button data-act="fleet">Add to own fleet</button>`}</div>`;
@@ -257,7 +314,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     const ul = $("ais-list");
     if ($("ais-list").closest(".pane")?.hidden) return;
     const own = getOwn();
-    const rows = [...targets.values()].filter((t) => t.lat != null && t.mmsi !== ownMmsi && (!fleet.only || inFleet(t.mmsi))).map((t) => ({ t, c: cpaTcpa(own, t) }));
+    const rows = [...targets.values()].filter(shown).map((t) => ({ t, c: cpaTcpa(own, t) }));
     const key = { range: (r) => r.c?.range ?? 1e9, cpa: (r) => (r.c?.tcpa > 0 ? r.c.cpa : 1e9), name: (r) => (r.t.name ?? "~").toLowerCase() }[s.sort];
     rows.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
     $("ais-count").textContent = rows.length ? `(${rows.length})` : "";
@@ -270,7 +327,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       li.querySelector("b").textContent = inFleet(t.mmsi)?.name || t.name || `MMSI ${t.mmsi}`;
       const [cat] = t.kind === "vessel" ? category(t.ship_type) : [{ aton: "AtoN", aircraft: "SAR aircraft", base: "Base station", sart: "AIS-SART", mob: "MOB", epirb: "EPIRB" }[t.kind]];
       li.querySelector("small").textContent = [cat, t.sog != null ? `${t.sog.toFixed(1)} kn` : null, c ? `${c.range.toFixed(1)} NM` : null,
-        c && c.tcpa > 0 ? `CPA ${c.cpa.toFixed(2)} NM in ${Math.round(c.tcpa)} min` : null, isLost(t) ? "lost" : null].filter(Boolean).join(" · ");
+        c && c.tcpa > 0 ? `CPA ${c.cpa.toFixed(2)} NM in ${Math.round(c.tcpa)} min` : null, isLost(t) ? "lost" : null, netOnly(t) ? "internet" : null].filter(Boolean).join(" · ");
       li.querySelector(".main").onclick = () => { map.easeTo({ center: [t.lon, t.lat], zoom: Math.max(map.getZoom(), 12) }); openPopup(t.mmsi); };
       ul.append(li);
     }
@@ -293,10 +350,12 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
         now.add(id);
         continue;
       }
-      if (!s.cpaOn || !own?.live || t.kind !== "vessel" || isLost(t)) continue;
+      if (!s.cpaOn || !own?.live || t.kind !== "vessel" || isLost(t) || !shown(t)) continue;
+      // internet AIS is late and patchy: no collision alarms from it unless asked
+      if (netOnly(t) && !s.netAlarms) continue;
       if (s.ignoreMoored && (t.status === 1 || t.status === 5)) continue;
       const c = cpaTcpa(own, t);
-      if (c && c.tcpa != null && c.tcpa > 0 && c.tcpa < s.tcpa && c.cpa < s.cpa) {
+      if (isDanger(c)) {
         alarms.raise(id, { level: "alarm", text: `COLLISION RISK ${t.name ?? t.mmsi}: CPA ${c.cpa.toFixed(2)} NM in ${Math.round(c.tcpa)} min`,
           detail: `${c.range.toFixed(2)} NM at ${String(Math.round(bearing(own.pos, [t.lon, t.lat]))).padStart(3, "0")}°T · ${t.sog?.toFixed(1) ?? "?"} kn ${t.cog != null ? Math.round(t.cog) + "°T" : ""} · click to show`,
           onClick: () => { map.easeTo({ center: [t.lon, t.lat] }); openPopup(t.mmsi); } });
@@ -315,20 +374,31 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     for (const m of payload.gone || []) targets.delete(m);
     draw();
     renderList();
+    renderWin();
     checkAlarms();
     statusUi();
   });
   listen("ais-status", ({ payload }) => { online = payload; statusUi(); });
   invoke("ais_targets").then((list) => { for (const t of list || []) targets.set(t.mmsi, t); draw(); }).catch(() => {});
-  setInterval(() => { draw(); renderList(); renderFleet(); checkAlarms(); refreshPopup(); }, 5000);
+  setInterval(() => { draw(); renderList(); renderWin(); renderFleet(); checkAlarms(); refreshPopup(); }, 5000);
 
   // the online feed follows the chart: the view (wider when zoomed out), at most every 5 s
   function boxes() {
+    const centre = netCentre();
+    if (s.netMode !== "view") {
+      if (!centre) return [];
+      const h = Math.min(6, (2 * s.netRange) / 60), w = Math.min(6, h / Math.max(0.1, Math.cos((centre[1] * Math.PI) / 180)));
+      return box(centre[1], centre[0], w, h);
+    }
     const b = map.getBounds();
     const c = map.getCenter();
-    let w = Math.min(6, Math.max(0.5, (b.getEast() - b.getWest()) * 1.2)), h = Math.min(6, Math.max(0.5, (b.getNorth() - b.getSouth()) * 1.2));
-    const lat0 = Math.max(-89, c.lat - h / 2), lat1 = Math.min(89, c.lat + h / 2);
-    let lon0 = c.lng - w / 2, lon1 = c.lng + w / 2;
+    const w = Math.min(6, Math.max(0.5, (b.getEast() - b.getWest()) * 1.2)), h = Math.min(6, Math.max(0.5, (b.getNorth() - b.getSouth()) * 1.2));
+    return box(c.lat, c.lng, w, h);
+  }
+  /** The subscription box(es) [[lat, lon], [lat, lon]] of w × h degrees round a centre, split at the date line. */
+  function box(lat, lng, w, h) {
+    const lat0 = Math.max(-89, lat - h / 2), lat1 = Math.min(89, lat + h / 2);
+    let lon0 = lng - w / 2, lon1 = lng + w / 2;
     const wrap = (x) => ((x + 540) % 360) - 180;
     lon0 = wrap(lon0); lon1 = wrap(lon1);
     if (lon0 <= lon1) return [[[lat0, lon0], [lat1, lon1]]];
@@ -343,7 +413,14 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     lastSub = sig;
     invoke("ais_online", { key, boxes: bx }).catch(() => {});
   }
-  map.on("moveend", () => { clearTimeout(subTimer); subTimer = setTimeout(() => subscribe(false), 5000); });
+  map.on("moveend", () => { if (s.netMode === "boat") return; clearTimeout(subTimer); subTimer = setTimeout(() => subscribe(false), 5000); });
+  // round own boat: asked again when the boat has moved a fifth of the range
+  let subAt = null;
+  setInterval(() => {
+    if (!s.online || s.netMode !== "boat") return;
+    const p = getOwn()?.pos;
+    if (p && (!subAt || distNm(subAt, p) > s.netRange / 5)) { subAt = p; subscribe(false); }
+  }, 5000);
 
   // ---------- settings ----------------------------------------------------------------
   function statusUi() {
@@ -378,6 +455,119 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   $("ais-ignore-moored").onchange = (e) => { s.ignoreMoored = e.target.checked; save(); };
   $("ais-sort").onchange = (e) => { s.sort = e.target.value; save(); renderList(); };
   ui?.onChange?.(() => { renderList(); renderFleet(); });
+  $("ais-net-mode").value = s.netMode;
+  $("ais-net-range").value = s.netRange;
+  $("ais-net-range-row").hidden = s.netMode === "view";
+  $("ais-net-alarms").checked = s.netAlarms;
+  $("ais-vec-min").value = s.vecMin;
+  $("ais-cpa-draw").value = s.cpaDraw;
+  $("ais-net-mode").onchange = (e) => { s.netMode = e.target.value; $("ais-net-range-row").hidden = s.netMode === "view"; save(); subAt = null; subscribe(true); draw(); renderList(); };
+  $("ais-net-range").onchange = (e) => { const v = parseFloat(e.target.value); if (v >= 1) s.netRange = Math.min(180, v); e.target.value = s.netRange; save(); subscribe(true); draw(); renderList(); };
+  $("ais-net-alarms").onchange = (e) => { s.netAlarms = e.target.checked; save(); checkAlarms(); };
+  $("ais-vec-min").onchange = (e) => { const v = parseFloat(e.target.value); if (v >= 1) s.vecMin = Math.min(60, v); e.target.value = s.vecMin; save(); draw(); };
+  $("ais-cpa-draw").onchange = (e) => { s.cpaDraw = e.target.value; save(); draw(); };
+
+  // ---------- floating target list ----------------------------------------------------------------
+  // One row per target from any source: AIS now, radar (MARPA) targets later.
+  const win = $("tgt-win");
+  const typeName = (t) => (t.kind === "vessel" ? category(t.ship_type)[0] : { aton: "AtoN", aircraft: "SAR aircraft", base: "Base station", sart: "AIS-SART", mob: "MOB", epirb: "EPIRB" }[t.kind] ?? t.kind);
+  function winRows() {
+    const own = getOwn();
+    const rows = [];
+    for (const t of targets.values()) {
+      if (!shown(t)) continue;
+      const c = cpaTcpa(own, t);
+      const r = { id: t.mmsi, t, c, name: inFleet(t.mmsi)?.name || t.name || `MMSI ${t.mmsi}`, type: typeName(t),
+        range: c?.range ?? null, brg: own?.pos ? bearing(own.pos, [t.lon, t.lat]) : null,
+        cpa: c?.tcpa > 0 ? c.cpa : null, tcpa: c?.tcpa > 0 ? c.tcpa : null, sog: t.sog ?? null, cog: t.cog ?? null,
+        age: t.last_pos ? Date.now() / 1000 - t.last_pos : null, src: netOnly(t) ? "Net" : t.source.includes("aisstream") ? "AIS+Net" : "AIS",
+        danger: isDanger(c), lost: isLost(t), net: netOnly(t), col: style(t)[1] };
+      const f = s.win.filter;
+      if (f === "vessels" && t.kind !== "vessel") continue;
+      if (f === "moving" && !((t.sog ?? 0) > 0.5)) continue;
+      if (f === "closing" && r.tcpa == null) continue;
+      if (f === "danger" && !r.danger && !["sart", "mob", "epirb"].includes(t.kind)) continue;
+      rows.push(r);
+    }
+    const k = s.win.sort, dir = s.win.dir;
+    rows.sort((a, b) => {
+      // distress first, then dangerous targets, then the column chosen (blanks last)
+      const pa = ["sart", "mob", "epirb"].includes(a.t.kind) ? 0 : a.danger ? 1 : 2, pb = ["sart", "mob", "epirb"].includes(b.t.kind) ? 0 : b.danger ? 1 : 2;
+      if (pa !== pb) return pa - pb;
+      const va = a[k], vb = b[k];
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      return (typeof va === "string" ? va.localeCompare(vb) : va - vb) * dir;
+    });
+    return rows;
+  }
+  const fmt = (v, d = 1) => (v == null ? "—" : v.toFixed(d));
+  const deg = (v) => (v == null ? "—" : String(Math.round(v) % 360).padStart(3, "0"));
+  const age = (v) => (v == null ? "—" : v < 90 ? `${Math.round(v)} s` : v < 5400 ? `${Math.round(v / 60)} min` : `${(v / 3600).toFixed(1)} h`);
+  function renderWin() {
+    if (win.hidden) return;
+    const rows = winRows();
+    $("tgt-count").textContent = `${rows.length}`;
+    for (const th of win.querySelectorAll("th")) {
+      th.classList.toggle("sorted", th.dataset.k === s.win.sort);
+      th.classList.toggle("up", th.dataset.k === s.win.sort && s.win.dir < 0);
+    }
+    const tb = $("tgt-table").tBodies[0];
+    tb.innerHTML = rows.length ? "" : `<tr><td class="empty" colspan="10">No targets${s.win.filter !== "all" ? " for this filter" : ""}. A receiver on board (through Signal K), or online AIS in Fleet › AIS.</td></tr>`;
+    for (const r of rows.slice(0, 300)) {
+      const tr = document.createElement("tr");
+      tr.className = [r.danger ? "danger" : "", r.net ? "net" : "", r.lost ? "lost" : "", r.id === selected ? "sel" : ""].join(" ");
+      if (r.net) tr.title = "Heard over the internet only: may be minutes late or missing. Not for navigation";
+      tr.innerHTML = `<td><span class="sw"></span></td><td></td><td class="n">${fmt(r.range, r.range != null && r.range < 10 ? 2 : 1)}</td><td class="n">${deg(r.brg)}</td>
+        <td class="n">${fmt(r.cpa, 2)}</td><td class="n">${r.tcpa == null ? "—" : Math.round(r.tcpa)}</td><td class="n">${fmt(r.sog)}</td><td class="n">${deg(r.cog)}</td><td class="n">${age(r.age)}</td><td>${r.src}</td>`;
+      tr.cells[0].append(document.createTextNode(r.name));
+      tr.cells[0].querySelector(".sw").style.background = r.col;
+      tr.cells[1].textContent = r.type;
+      tr.onclick = () => { map.easeTo({ center: [r.t.lon, r.t.lat] }); openPopup(r.id); renderWin(); };
+      tb.append(tr);
+    }
+  }
+  for (const th of win.querySelectorAll("th")) {
+    th.onclick = () => {
+      const k = th.dataset.k;
+      if (s.win.sort === k) s.win.dir = -s.win.dir; else { s.win.sort = k; s.win.dir = 1; }
+      save(); renderWin();
+    };
+  }
+  $("tgt-filter").value = s.win.filter;
+  $("tgt-filter").onchange = (e) => { s.win.filter = e.target.value; save(); renderWin(); };
+  function place() {
+    if (s.win.x == null) return;
+    const r = map.getContainer().getBoundingClientRect();
+    win.style.left = `${Math.max(0, Math.min(r.width - 120, s.win.x))}px`;
+    win.style.top = `${Math.max(0, Math.min(r.height - 40, s.win.y))}px`;
+    win.style.right = "auto";
+  }
+  function showWin(on) {
+    s.win.open = on;
+    win.hidden = !on;
+    $("targets-btn").classList.toggle("on", on);
+    save();
+    if (on) { place(); renderWin(); }
+  }
+  $("targets-btn").onclick = () => showWin(win.hidden);
+  $("ais-win-open").onclick = () => showWin(true);
+  $("tgt-close").onclick = () => showWin(false);
+  window.addEventListener("keydown", (e) => {
+    if ((e.key === "t" || e.key === "T") && !e.ctrlKey && !e.altKey && !e.metaKey && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? "")) { showWin(win.hidden); e.preventDefault(); }
+  });
+  // drag by the title bar
+  win.querySelector("header").addEventListener("pointerdown", (e) => {
+    if (e.target.closest("select, button")) return;
+    const r = win.getBoundingClientRect(), m = map.getContainer().getBoundingClientRect();
+    const dx = e.clientX - r.left, dy = e.clientY - r.top;
+    const move = (ev) => { s.win.x = ev.clientX - m.left - dx; s.win.y = ev.clientY - m.top - dy; place(); };
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); save(); };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  });
+  showWin(!!s.win.open);
 
   // ---------- own fleet tab ----------------------------------------------------------------
   function renderFleet() {

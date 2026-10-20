@@ -1,6 +1,6 @@
 {
   "title": "TweedPlot User Manual",
-  "updated": "2026-10-19",
+  "updated": "2026-10-21",
   "tabs": [
     {
       "id": "reference",
@@ -16,6 +16,11 @@
       "id": "weather-routing",
       "title": "Weather routing",
       "file": "weather-routing.md"
+    },
+    {
+      "id": "ais",
+      "title": "AIS",
+      "file": "ais.md"
     },
     {
       "id": "glossary",

@@ -26,6 +26,7 @@
       <button data-pane="chart" title="Chart and Signal K"><svg viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></svg><span>Chart</span></button>
       <button data-pane="inst" title="Instrument panels"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 13l4-4"/><path d="M12 5v2M5 13h2M17 13h2"/></svg><span>Instr.</span></button>
       <button id="manual-btn" class="rail-action" title="User manual (F1)"><svg viewBox="0 0 24 24"><path d="M4 5.5C6.5 4.5 9.5 4.5 12 6c2.5-1.5 5.5-1.5 8-.5v13c-2.5-1-5.5-1-8 .5-2.5-1.5-5.5-1.5-8-.5z"/><path d="M12 6v13.5"/></svg><span>Manual</span></button>
+      <button id="targets-btn" class="rail-action" title="Target list: AIS targets with range, bearing, CPA and TCPA (T)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/><circle cx="16" cy="9" r="1.2" fill="currentColor"/></svg><span>Targets</span></button>
       <button id="ruler-btn" class="rail-action" title="Ruler: click points to measure bearing and distance, double-click to finish"><svg viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg><span>Ruler</span></button>
       <button id="centre-boat" class="rail-action" title="Centre the chart on the boat"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><path d="M12 8.5l2.2 6h-4.4z" fill="currentColor"/></svg><span>Centre</span></button>
     </nav>
@@ -250,13 +251,21 @@
           <div class="wx-row"><span class="dot" id="ais-on-dot"></span><span class="grow wx-note" id="ais-on-state">Online (aisstream.io): off</span></div>
           <div class="wx-row"><input id="ais-key" class="grow" type="password" placeholder="aisstream.io API key" autocomplete="off" spellcheck="false" title="Free: sign in at aisstream.io with a GitHub account and copy the key" />
             <button id="ais-online" title="Receive AIS from shore stations for the chart area">Go online</button></div>
-          <div class="wx-note">Online AIS shows what volunteer shore stations hear around the area on the chart (a wider area is asked for when zoomed out, up to about 6°). Get a free key at <a href="#" id="ais-key-link">aisstream.io</a>. Not a substitute for a receiver on board: coverage has gaps and delays.</div>
+          <div class="wx-row"><label class="grow" for="ais-net-mode">Online area</label>
+            <select id="ais-net-mode" title="Which targets to ask the internet for"><option value="view">Chart view</option><option value="centre">Range round the chart centre</option><option value="boat">Range round my boat</option></select></div>
+          <div class="wx-row" id="ais-net-range-row"><label class="grow" for="ais-net-range">Range (NM)</label><input id="ais-net-range" type="number" min="1" max="180" step="1" /></div>
+          <div class="wx-note">Online AIS shows what volunteer shore stations hear (for the chart view, a wider area when zoomed out, up to about 6°). Get a free key at <a href="#" id="ais-key-link">aisstream.io</a>. Not for navigation: coverage has gaps and positions can be minutes old. See Manual › AIS.</div>
           <h3>Collision and distress alarms</h3>
           <div class="wx-row"><label class="grow"><input id="ais-cpa-on" type="checkbox" /> CPA under (NM)</label><input id="ais-cpa" type="number" min="0.05" step="0.05" /></div>
           <div class="wx-row"><label class="grow" for="ais-tcpa">within (min)</label><input id="ais-tcpa" type="number" min="1" step="1" /></div>
           <div class="wx-row"><label class="grow"><input id="ais-ignore-moored" type="checkbox" /> Ignore anchored and moored ships</label></div>
+          <div class="wx-row"><label class="grow" title="Internet AIS can be minutes late or missing: an alarm from it can come late, and no alarm doesn't mean no danger"><input id="ais-net-alarms" type="checkbox" /> Alarms for internet-only targets too</label></div>
           <div class="wx-note">An AIS-SART, MOB device or EPIRB always raises an alarm. CPA alarms work from live data (or a replay).</div>
-          <h3>Targets <span id="ais-count" class="wx-note"></span></h3>
+          <h3>On the chart</h3>
+          <div class="wx-row"><label class="grow" for="ais-vec-min">Course vectors (min)</label><input id="ais-vec-min" type="number" min="1" max="60" step="1" title="How far ahead each target's course line reaches" /></div>
+          <div class="wx-row"><label class="grow" for="ais-cpa-draw">CPA lines</label>
+            <select id="ais-cpa-draw" title="Where your boat and the target will be at the closest point of approach, joined by the CPA line"><option value="danger">Dangerous and selected targets</option><option value="all">Every target closing within the time limit</option><option value="none">None</option></select></div>
+          <h3>Targets <span id="ais-count" class="wx-note"></span><button id="ais-win-open" class="h3-btn" title="Open the target list over the chart (T)">Target list</button></h3>
           <div class="wx-row"><label class="grow" for="ais-sort">Sort by</label><select id="ais-sort"><option value="range">Range</option><option value="cpa">CPA</option><option value="name">Name</option></select></div>
           <ul id="ais-list" class="list"></ul>
         </div>
@@ -572,6 +581,15 @@
       <button data-act="bar-pt" class="bar-item">Delete barrier point</button>
       <button data-act="bar-toggle" class="bar-item">Switch barrier off</button>
       <button data-act="bar-del" class="bar-item">Delete barrier</button>
+    </div>
+    <div id="tgt-win" class="float-win" hidden>
+      <header><b>Targets</b><span id="tgt-count" class="wx-note"></span><span class="grow"></span>
+        <select id="tgt-filter" title="Which targets to list"><option value="all">All</option><option value="vessels">Vessels</option><option value="moving">Under way</option><option value="closing">Closing</option><option value="danger">Dangerous</option></select>
+        <button id="tgt-close" title="Close (T)">✕</button></header>
+      <div class="tgt-scroll"><table id="tgt-table"><thead><tr>
+        <th data-k="name">Name</th><th data-k="type">Type</th><th data-k="range" class="n">Rng</th><th data-k="brg" class="n">Brg</th><th data-k="cpa" class="n">CPA</th><th data-k="tcpa" class="n">TCPA</th><th data-k="sog" class="n">SOG</th><th data-k="cog" class="n">COG</th><th data-k="age" class="n">Age</th><th data-k="src">Src</th>
+      </tr></thead><tbody></tbody></table></div>
+      <footer class="wx-note">NM · °T · min · kn. <i>Net</i>: internet only, not for navigation.</footer>
     </div>
     <div id="toast" class="toast" hidden></div>
     <div id="s63-banner" class="s63-banner" hidden></div>

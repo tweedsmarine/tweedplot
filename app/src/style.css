@@ -663,3 +663,32 @@ html[data-palette^="night"] #ck-grid .tile, html[data-palette^="night"] #ck-bar,
   background: #fff3cc; color: #5c3d00; border: 1px solid #d08f00; padding: 5px 12px; border-radius: 6px; font-size: 12.5px; pointer-events: none; }
 .s63-banner[hidden] { display: none; }
 .s63-banner div + div { margin-top: 2px; }
+/* drawing on the chart (GRIB area, ruler, route marks, barriers): a crosshair whatever
+   the map or a layer under the pointer would show */
+.maplibregl-map.drawing .maplibregl-canvas-container, .maplibregl-map.drawing .maplibregl-canvas { cursor: crosshair !important; }
+/* AIS target list over the chart (later also MARPA) */
+.pane h3 .h3-btn { float: right; padding: 1px 8px; font-size: 11px; font-weight: normal; text-transform: none; letter-spacing: 0; }
+.float-win { position: absolute; z-index: 8; top: 70px; right: 70px; width: 560px; height: 300px; min-width: 300px; min-height: 140px; max-width: calc(100vw - 80px);
+  display: flex; flex-direction: column; background: #fff; color: var(--ink); border: 1px solid #b8c4cc; border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22); resize: both; overflow: hidden; font-size: 12px; }
+.float-win[hidden] { display: none; }
+.float-win header { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--tile-bg); color: var(--tile-ink); cursor: move; user-select: none; }
+.float-win header .wx-note { color: inherit; opacity: 0.75; }
+.float-win header .grow { flex: 1; }
+.float-win header select, .float-win header button { flex: none; width: auto; min-width: 0; font-size: 11px; padding: 1px 6px; cursor: pointer; }
+.float-win footer { padding: 3px 8px; border-top: 1px solid var(--line); }
+.tgt-scroll { flex: 1; overflow: auto; }
+#tgt-table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+#tgt-table th { position: sticky; top: 0; background: #fff; text-align: left; padding: 3px 5px; border-bottom: 1px solid var(--line); cursor: pointer; white-space: nowrap; font-weight: 600; }
+#tgt-table th.n, #tgt-table td.n { text-align: right; }
+#tgt-table th.sorted::after { content: " ▾"; }
+#tgt-table th.sorted.up::after { content: " ▴"; }
+#tgt-table td { padding: 2px 5px; white-space: nowrap; border-bottom: 1px solid var(--line); cursor: pointer; }
+#tgt-table td:first-child { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+#tgt-table tr:hover td { background: rgba(0, 105, 148, 0.08); }
+#tgt-table tr.sel td { background: rgba(255, 212, 0, 0.3); }
+#tgt-table tr.danger td { color: #d00000; font-weight: 600; }
+#tgt-table tr.net td { font-style: italic; opacity: 0.8; }
+#tgt-table tr.lost td { opacity: 0.5; }
+#tgt-table .sw { margin-right: 4px; }
+#tgt-table td.empty { cursor: default; color: var(--quiet); white-space: normal; }

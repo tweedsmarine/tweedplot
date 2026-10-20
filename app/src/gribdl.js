@@ -84,6 +84,7 @@ export function setupGribDownload(map, { weather, course }) {
     drawing = !drawing;
     $("dl-draw").classList.toggle("armed", drawing);
     map.getCanvas().style.cursor = drawing ? "crosshair" : "";
+    map.getContainer().classList.toggle("drawing", drawing);
     if (drawing) { map.dragPan.disable(); status("Drag a rectangle on the chart."); } else map.dragPan.enable();
   };
   map.on("mousedown", (e) => { if (drawing) { from = e.lngLat; e.preventDefault(); } });
@@ -103,6 +104,7 @@ export function setupGribDownload(map, { weather, course }) {
     drawing = false;
     $("dl-draw").classList.remove("armed");
     map.getCanvas().style.cursor = "";
+    map.getContainer().classList.remove("drawing");
     map.dragPan.enable();
     if (a[2] - a[0] < 0.2 || a[3] - a[1] < 0.2) { status("That area is too small: drag a larger rectangle.", "warn"); showArea(); return; }
     setArea(a);
