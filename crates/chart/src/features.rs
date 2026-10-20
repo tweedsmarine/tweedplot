@@ -229,11 +229,12 @@ impl ChartStore {
         med.map_or(band_minzoom(t.band) as f64, |s| s57::scamin_zoom(s, lat))
     }
 
-    fn feature_tables(&self, z: u8) -> Vec<(usize, &TableInfo)> {
+    fn feature_tables(&self, z: u8, bbox: [f64; 4]) -> Vec<(usize, &TableInfo)> {
+        let starts = self.band_starts(bbox);
         self.tables
             .iter()
             .enumerate()
-            .filter(|(_, t)| t.kind == Kind::Feature && (z >= band_minzoom(t.band) || early_band(z, t) || t.class.is_some_and(|c| is_hazard(c.code) || (is_info(c.code) && z as f64 >= INFO_ZOOM))))
+            .filter(|(_, t)| t.kind == Kind::Feature && (z >= starts[(t.band as usize).min(7)] || early_band(z, t) || t.class.is_some_and(|c| is_hazard(c.code) || (is_info(c.code) && z as f64 >= INFO_ZOOM))))
             .collect()
     }
 
@@ -294,7 +295,8 @@ impl ChartStore {
         let mut fpt = Layer::new("fpt");
         let mut lsec = Layer::new("lsec");
         let bbox = tp.lonlat_bbox(crate::BUFFER);
-        let all = self.feature_tables(z);
+        let starts = self.band_starts(bbox);
+        let all = self.feature_tables(z, bbox);
         if all.is_empty() {
             return [far, fln, fpt, lsec];
         }
@@ -488,7 +490,7 @@ impl ChartStore {
                                 return;
                             }
                             // a chart read early: only its copies of what a coarser chart shows
-                            if early_band(z, t) && minz >= own_minz {
+                            if early_band(z, t) && z < starts[(t.band as usize).min(7)] && minz >= own_minz {
                                 return;
                             }
                             let mut props = vec![

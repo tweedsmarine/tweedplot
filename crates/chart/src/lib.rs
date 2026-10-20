@@ -103,6 +103,11 @@ pub fn band_minzoom(band: u8) -> u8 {
     }
 }
 
+/// How many zooms before its usual start a band is drawn where no smaller-scale chart
+/// covers the place (as an ECDIS shows the best chart available, underscaled): an ENC
+/// area with only harbour cells, say, still shows its land and depths zoomed out.
+const UNDERSCALE: u8 = 4;
+
 pub struct ChartStore {
     dbs: Vec<Mutex<Connection>>,
     pub tables: Vec<TableInfo>,
@@ -227,6 +232,19 @@ impl ChartStore {
         self.cache.lock().unwrap().clear();
     }
 
+    /// The zoom each band starts at in `bbox`: its usual zoom, or earlier where no
+    /// smaller-scale band's coverage reaches (see [`UNDERSCALE`]).
+    pub(crate) fn band_starts(&self, bbox: [f64; 4]) -> [u8; 8] {
+        let mut out = [0u8; 8];
+        let cov = self.coverage();
+        for (band, o) in out.iter_mut().enumerate() {
+            let m = band_minzoom(band as u8);
+            let coarser = band <= 1 || cov.iter().any(|(b, bb, _)| (*b as usize) < band && *b >= 1 && bb[0] <= bbox[2] && bb[2] >= bbox[0] && bb[1] <= bbox[3] && bb[3] >= bbox[1]);
+            *o = if coarser { m } else { m.saturating_sub(UNDERSCALE) };
+        }
+        out
+    }
+
     fn render(&self, z: u8, x: u32, y: u32) -> Vec<u8> {
         let tp = TileProj::new(z, x, y);
         let bbox = tp.lonlat_bbox(BUFFER);
@@ -263,7 +281,9 @@ impl ChartStore {
             }
         }
 
-        let mut bands: Vec<&TableInfo> = self.tables.iter().filter(|t| z >= band_minzoom(t.band)).collect();
+        let starts = self.band_starts(bbox);
+        let start = |b: u8| if b == 0 { band_minzoom(0) } else { starts[(b as usize).min(7)] };
+        let mut bands: Vec<&TableInfo> = self.tables.iter().filter(|t| z >= start(t.band)).collect();
         bands.sort_by_key(|t| t.band);
 
         // Depth areas: every visible band, coarse first.
@@ -286,7 +306,7 @@ impl ChartStore {
         for kind in [Kind::Contour, Kind::Sounding] {
             let extra = if kind == Kind::Sounding { 1 } else { 0 };
             let mut drawn: Vec<u8> = Vec::new();
-            for t in bands.iter().rev().filter(|t| t.kind == kind && z >= band_minzoom(t.band) + extra) {
+            for t in bands.iter().rev().filter(|t| t.kind == kind && z >= start(t.band) + extra) {
                 if drawn.contains(&t.band) {
                     continue;
                 }
