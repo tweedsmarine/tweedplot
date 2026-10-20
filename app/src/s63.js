@@ -55,12 +55,16 @@ export function setupS63(map, { toast } = {}) {
   async function refresh() {
     try { status = await invoke("s63_status"); } catch { return; }
     if (!status) return;
-    const up = $("s63-up");
-    if (document.activeElement !== up) up.value = status.user_permit;
-    up.classList.toggle("bad", !status.hw_ok);
-    $("s63-up-note").textContent = status.test
-      ? "IHO test permit (for the S-64 test data; TweedPlot has no manufacturer key of its own yet)"
-      : status.hw_ok ? "Your user permit" : "SSE 17 - Invalid user permit";
+    $("s63-inst").value = status.installation_code || "";
+    $("s63-up").value = status.user_permit || "";
+    $("s63-up").classList.toggle("bad", !status.hw_ok);
+    const act = status.activation;
+    $("s63-act-note").textContent = act?.ok ? `Activated ${fmtDate(act.issued)}${status.real_credentials ? "" : " (IHO test credentials)"}`
+      : act ? `Activation not used: ${act.error}`
+      : status.real_credentials ? "Not activated: send the installation code to Tweedsmarine for an activation code"
+      : "Test build: the IHO test permit is used (for the S-64 test data)";
+    $("s63-act-note").className = `grow wx-note ${act && !act.ok ? "bad" : !act && status.real_credentials ? "warn" : ""}`;
+    $("s63-deact").hidden = !act;
 
     const k = status.key, key = $("s63-key");
     key.textContent = !k ? "none installed (SSE 05)" : `${k.sa ? "IHO Scheme Administrator" : `${k.name}, not the IHO's (SSE 26)`}${k.not_after ? `, valid to ${fmtDate(k.not_after)}` : ""}`;
@@ -134,13 +138,25 @@ export function setupS63(map, { toast } = {}) {
     try { await navigator.clipboard.writeText($("s63-up").value.trim()); report("User permit copied."); } catch { $("s63-up").select(); }
   };
 
-  $("s63-up-set").onclick = async () => {
+  $("s63-inst-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText($("s63-inst").value.trim()); report("Installation code copied: send it to Tweedsmarine."); } catch { $("s63-inst").select(); }
+  };
+
+  $("s63-act-btn").onclick = async () => {
+    const code = $("s63-act").value.trim();
+    if (!code) { report([{ cell: "", level: "error", text: "Paste the activation code from Tweedsmarine first" }]); return; }
     try {
-      const p = await invoke("s63_set_user_permit", { permit: $("s63-up").value });
-      report(`Using user permit ${p}. Opening the charts again…`);
+      const up = await invoke("s63_activate", { code });
+      $("s63-act").value = "";
+      report([{ cell: "", level: "ok", text: `Activated. User permit ${up}: give it to your chart supplier when ordering permits. Opening the charts again…` }]);
     } catch (e) { report([{ cell: "", level: "error", text: String(e) }]); }
     refresh();
   };
+
+  $("s63-deact").onclick = () => twice($("s63-deact"), "Sure? Remove", async () => {
+    try { await invoke("s63_deactivate"); report("Activation removed."); } catch (e) { report([{ cell: "", level: "error", text: String(e) }]); }
+    refresh();
+  });
 
   $("s63-key-btn").onclick = () => $("s63-key-file").click();
   $("s63-key-file").onchange = async (ev) => {

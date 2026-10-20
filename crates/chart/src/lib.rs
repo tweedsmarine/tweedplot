@@ -36,7 +36,7 @@ use std::sync::{Arc, Mutex};
 use clip::{clip_line, clip_ring, quantise, signed_area, simplify, Rect};
 use geom::{parse_gpkg, Geom};
 use mvt::{Layer, TileGeom, Value, EXTENT};
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::Connection;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ChartError {
@@ -833,7 +833,7 @@ fn open_gpkg(path: &Path) -> Result<Option<(Connection, Vec<TableInfo>)>, ChartE
                 if tables.is_empty() {
                     return Ok(None);
                 }
-                let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+                let conn = enc::open_db(path)?;
                 return Ok(Some((conn, tables)));
             }
         }
@@ -851,7 +851,7 @@ fn open_gpkg(path: &Path) -> Result<Option<(Connection, Vec<TableInfo>)>, ChartE
 }
 
 fn open_gpkg_scan(path: &Path) -> Result<Option<(Connection, Vec<TableInfo>)>, ChartError> {
-        let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+        let conn = enc::open_db(path)?;
         let found: Vec<(String, String)> = {
             let mut st = conn.prepare(
                 "SELECT c.table_name, g.column_name FROM gpkg_contents c

@@ -1688,7 +1688,7 @@ pub fn run() {
             yb_open, yb_refresh, yb_races, yb_history,
             gribdl_models, gribdl_estimate, gribdl_start, gribdl_cancel, open_url, grib_combine,
             data_status, data_etopo_plan, data_gshhg, data_etopo, data_etopo_delete, data_cancel, chart_land_detail,
-            s63_cmd::s63_status, s63_cmd::s63_set_user_permit, s63_cmd::s63_install_permits, s63_cmd::s63_remove_permits, s63_cmd::s63_install_key, s63_cmd::s63_import_exchange_set, s63_cmd::s63_remove_cells
+            s63_cmd::s63_status, s63_cmd::s63_activate, s63_cmd::s63_deactivate, s63_cmd::s63_install_permits, s63_cmd::s63_remove_permits, s63_cmd::s63_install_key, s63_cmd::s63_import_exchange_set, s63_cmd::s63_remove_cells
         ])
         .register_asynchronous_uri_scheme_protocol("chart", |_ctx, request, responder| {
             let path = request.uri().path().to_string();
@@ -1724,8 +1724,12 @@ pub fn run() {
             // Charts: open in the background (the first run unzips the LINZ downloads).
             let _ = std::fs::create_dir_all(coast_dir(app.handle()));
             let _ = std::fs::create_dir_all(bathy_dir(app.handle()));
-            s63_cmd::load(app.handle());
-            open_charts(app.handle().clone());
+            // the S-63 activation needs this computer's fingerprint (a second or so)
+            let h = app.handle().clone();
+            std::thread::spawn(move || {
+                s63_cmd::load(&h);
+                open_charts(h);
+            });
 
             // Signal K, AIS, replay
             live::start(app.handle());

@@ -10,6 +10,8 @@
 pub mod catalogue;
 pub mod cell;
 pub mod iso8211;
+pub mod machine;
+pub mod oem;
 pub mod s63;
 pub mod senc;
 
@@ -124,7 +126,7 @@ pub fn write_gpkg(c: &Cell, out: &Path) -> Result<usize, rusqlite::Error> {
     let _ = std::fs::remove_file(out);
     let tmp = out.with_extension("tmp");
     let _ = std::fs::remove_file(&tmp);
-    let mut db = Connection::open(&tmp)?;
+    let mut db = new_db(out, &tmp)?;
     db.execute_batch(
         "PRAGMA application_id = 1196444487; PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF;
          CREATE TABLE gpkg_spatial_ref_sys (srs_name TEXT NOT NULL, srs_id INTEGER PRIMARY KEY, organization TEXT NOT NULL,
@@ -178,9 +180,106 @@ pub fn write_gpkg(c: &Cell, out: &Path) -> Result<usize, rusqlite::Error> {
         }
     }
     tx.commit()?;
-    drop(db);
-    std::fs::rename(&tmp, out).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    finish_db(db, out, &tmp)?;
     Ok(n)
+}
+
+/// Whether a file of TweedPlot's holds data from encrypted cells, sealed on disk.
+pub fn is_sealed(p: &Path) -> bool {
+    p.extension().is_some_and(|e| e == "tpx")
+}
+
+/// A new database for `out`: a file at `tmp`, or in memory when `out` is to be sealed.
+fn new_db(out: &Path, tmp: &Path) -> Result<Connection, rusqlite::Error> {
+    if is_sealed(out) {
+        Connection::open_in_memory()
+    } else {
+        Connection::open(tmp)
+    }
+}
+
+fn io_err(e: impl std::error::Error + Send + Sync + 'static) -> rusqlite::Error {
+    rusqlite::Error::ToSqlConversionFailure(Box::new(e))
+}
+
+/// Put a database made by [`new_db`] in place at `out` (sealed when `out` is a .tpx).
+fn finish_db(db: Connection, out: &Path, tmp: &Path) -> Result<(), rusqlite::Error> {
+    if is_sealed(out) {
+        let data = db.serialize("main")?;
+        let sealed = protect::seal(&data);
+        drop(data);
+        drop(db);
+        std::fs::write(tmp, sealed).map_err(io_err)?;
+    } else {
+        drop(db);
+    }
+    let _ = std::fs::remove_file(out);
+    std::fs::rename(tmp, out).map_err(io_err)
+}
+
+/// Open one of TweedPlot's GeoPackages read-only: a sealed one is unsealed into memory.
+pub fn open_db(path: &Path) -> Result<Connection, rusqlite::Error> {
+    if !is_sealed(path) {
+        return Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX);
+    }
+    let mut db = Connection::open_in_memory()?;
+    load_sealed(&mut db, "main", path)?;
+    Ok(db)
+}
+
+fn load_sealed(db: &mut Connection, schema: &str, path: &Path) -> Result<(), rusqlite::Error> {
+    let sealed = std::fs::read(path).map_err(io_err)?;
+    let plain = protect::unseal(&sealed).ok_or_else(|| io_err(std::io::Error::other(format!("{} can't be unsealed on this computer", path.display()))))?;
+    let n = plain.len();
+    db.deserialize_read_exact(schema, std::io::Cursor::new(plain), n, true)
+}
+
+/// Sealing the chart data made from encrypted (S-63) cells: S-63's licence holds for the
+/// decrypted data too, so it is kept on disk encrypted with a key that only this
+/// installation has (from the computer's fingerprint, the HW_ID and the M_KEY), and
+/// only unsealed into memory.
+pub mod protect {
+    use chacha20poly1305::aead::{Aead, KeyInit};
+    use chacha20poly1305::{ChaCha20Poly1305, Nonce};
+    use sha2::{Digest, Sha256};
+
+    const MAGIC: &[u8; 4] = b"TPX1";
+
+    fn key() -> [u8; 32] {
+        let mut h = Sha256::new();
+        h.update(b"TweedPlot SENC 1");
+        h.update(super::machine::fingerprint());
+        h.update(super::hw_id().unwrap_or([0; 5]));
+        h.update(super::protection().1.as_bytes());
+        h.finalize().into()
+    }
+
+    /// A short tag for the key in use, put in sealed files' names: files sealed with
+    /// another key (another computer or HW_ID) are made again rather than opened.
+    pub fn tag() -> String {
+        let d = Sha256::digest(key());
+        d[..4].iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    pub fn seal(plain: &[u8]) -> Vec<u8> {
+        let mut nonce = [0u8; 12];
+        getrandom::fill(&mut nonce).expect("random numbers");
+        let c = ChaCha20Poly1305::new(&key().into());
+        let body = c.encrypt(Nonce::from_slice(&nonce), plain).expect("encrypt");
+        let mut out = Vec::with_capacity(16 + body.len());
+        out.extend_from_slice(MAGIC);
+        out.extend_from_slice(&nonce);
+        out.extend_from_slice(&body);
+        out
+    }
+
+    pub fn unseal(data: &[u8]) -> Option<Vec<u8>> {
+        if data.len() < 16 || &data[..4] != MAGIC {
+            return None;
+        }
+        let c = ChaCha20Poly1305::new(&key().into());
+        c.decrypt(Nonce::from_slice(&data[4..16]), &data[16..]).ok()
+    }
 }
 
 fn envelope<'a>(pts: impl Iterator<Item = &'a [f64; 2]>) -> [f64; 4] {
@@ -351,14 +450,23 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
     let existing: Vec<String> = std::fs::read_dir(&out_dir).into_iter().flatten().flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
     let mtime = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
     let suffix = format!("-v{VERSION}.gpkg");
-    // each cell's own conversion: "<CELL>-<folder hash>-b<band>-v<version>.gpkg"
+    // cells that were encrypted are kept sealed, with the key's tag in the name
+    let sealed_suffix = format!("-v{VERSION}-k{}.tpx", protect::tag());
+    let encrypted = |p: &Path| -> bool {
+        let mut b = [0u8; 8];
+        std::fs::File::open(p).and_then(|mut f| std::io::Read::read_exact(&mut f, &mut b)).is_ok() && !(b[..5].iter().all(u8::is_ascii_digit) && b[6] == b'L')
+    };
+    // each cell's own conversion: "<CELL>-<folder hash>-b<band>-v<version>.gpkg" (or .tpx)
     let plan: Vec<(CellFiles, String, Option<PathBuf>)> = cells
         .into_iter()
         .map(|c| {
             let stem = c.base.file_stem().map(|s| s.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
             let rel = c.base.parent().and_then(|p| p.strip_prefix(dir).ok()).map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
             let key = format!("{stem}-{:08x}", hash(&rel));
-            let have = existing.iter().find(|e| e.starts_with(&format!("{key}-b")) && e.ends_with(&suffix)).map(|e| out_dir.join(e));
+            let have = existing
+                .iter()
+                .find(|e| e.starts_with(&format!("{key}-b")) && (e.ends_with(&sealed_suffix) || (e.ends_with(&suffix) && !encrypted(&c.base))))
+                .map(|e| out_dir.join(e));
             let newest = std::iter::once(&c.base).chain(&c.updates).filter_map(|p| mtime(p)).max();
             let fresh = have.filter(|g| matches!((newest, mtime(g)), (Some(n), Some(m)) if m >= n));
             (c, key, fresh)
@@ -368,7 +476,7 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
     // S-63 cell permits from any PERMIT.TXT in the folder (only read when a cell needs converting)
     let permits = if todo > 0 { s63_permits(dir) } else { Default::default() };
     let mut done = 0;
-    let mut by_band: BTreeMap<u8, Vec<PathBuf>> = BTreeMap::new();
+    let mut by_band: BTreeMap<(u8, bool), Vec<PathBuf>> = BTreeMap::new();
     for (c, key, fresh) in plan {
         let gpkg = match fresh {
             Some(g) => g,
@@ -390,7 +498,8 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
                         continue;
                     }
                 };
-                let g = out_dir.join(format!("{key}-b{}{suffix}", band_for(cell.intu)));
+                let sfx = if encrypted(&c.base) { &sealed_suffix } else { &suffix };
+                let g = out_dir.join(format!("{key}-b{}{sfx}", band_for(cell.intu)));
                 if let Err(e) = write_gpkg(&cell, &g) {
                     eprintln!("ENC {}: {e}", c.base.display());
                     continue;
@@ -404,7 +513,8 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
             n[i + 2..].split('-').next()?.parse::<u8>().ok()
         });
         if let Some(b) = band {
-            by_band.entry(b).or_default().push(gpkg);
+            let sealed = is_sealed(&gpkg);
+            by_band.entry((b, sealed)).or_default().push(gpkg);
         }
     }
     if todo > 0 {
@@ -414,8 +524,8 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
     // opens: one table per layer and band instead of one per cell (thousands of cells)
     let tag = format!("{:08x}", hash(&dir.to_string_lossy()));
     let mut out = Vec::new();
-    for (band, files) in by_band {
-        let merged = out_dir.join(format!("all-{tag}-b{band}-m{MERGE_VERSION}{suffix}"));
+    for ((band, sealed), files) in by_band {
+        let merged = out_dir.join(format!("all-{tag}-b{band}-m{MERGE_VERSION}{}", if sealed { &sealed_suffix } else { &suffix }));
         let stamp: Vec<(String, i64)> = files
             .iter()
             .map(|f| {
@@ -456,9 +566,15 @@ pub fn set_protection(user_permit: &str, m_key: &str) {
     *PROTECTION.write().unwrap() = Some((user_permit.trim().to_ascii_uppercase(), m_key.to_string()));
 }
 
+/// Forget the user permit set (back to the default: the IHO test permit in a test build,
+/// none in a build with TweedPlot's own credentials).
+pub fn clear_protection() {
+    *PROTECTION.write().unwrap() = None;
+}
+
 /// The user permit and M_KEY in use.
 pub fn protection() -> (String, String) {
-    PROTECTION.read().unwrap().clone().unwrap_or_else(|| (TEST_USER_PERMIT.into(), TEST_M_KEY.into()))
+    PROTECTION.read().unwrap().clone().unwrap_or_else(|| if oem::is_real() { (String::new(), oem::m_key()) } else { (TEST_USER_PERMIT.into(), TEST_M_KEY.into()) })
 }
 
 /// The HW_ID from the user permit in use.
@@ -668,7 +784,10 @@ fn open_cell(c: &CellFiles, permits: &Permits) -> Result<Cell, cell::CellError> 
 
 /// Whether a merged file was made from exactly these cell files (names and times).
 fn merged_is(merged: &Path, stamp: &[(String, i64)]) -> bool {
-    let Ok(db) = Connection::open_with_flags(merged, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY) else { return false };
+    if !merged.is_file() {
+        return false;
+    }
+    let Ok(db) = open_db(merged) else { return false };
     let Ok(mut st) = db.prepare("SELECT file, mtime FROM merged_from ORDER BY file") else { return false };
     let Ok(rows) = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))) else { return false };
     let have: Vec<(String, i64)> = rows.filter_map(Result::ok).collect();
@@ -681,7 +800,7 @@ fn merged_is(merged: &Path, stamp: &[(String, i64)]) -> bool {
 fn merge(files: &[PathBuf], stamp: &[(String, i64)], out: &Path) -> Result<(), rusqlite::Error> {
     let tmp = out.with_extension("tmp");
     let _ = std::fs::remove_file(&tmp);
-    let db = Connection::open(&tmp)?;
+    let mut db = new_db(out, &tmp)?;
     db.execute_batch(
         "PRAGMA application_id = 1196444487; PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF;
          CREATE TABLE gpkg_spatial_ref_sys (srs_name TEXT NOT NULL, srs_id INTEGER PRIMARY KEY, organization TEXT NOT NULL,
@@ -697,7 +816,16 @@ fn merge(files: &[PathBuf], stamp: &[(String, i64)], out: &Path) -> Result<(), r
     // per table: its columns (name, type) and the next fid
     let mut tables: std::collections::HashMap<String, (Vec<(String, String)>, i64)> = std::collections::HashMap::new();
     for f in files {
-        db.execute("ATTACH DATABASE ?1 AS s", [f.to_string_lossy().as_ref()])?;
+        if is_sealed(f) {
+            db.execute("ATTACH DATABASE ':memory:' AS s", [])?;
+            if let Err(e) = load_sealed(&mut db, "s", f) {
+                eprintln!("ENC: merging {}: {e}", f.display());
+                db.execute("DETACH DATABASE s", [])?;
+                continue;
+            }
+        } else {
+            db.execute("ATTACH DATABASE ?1 AS s", [f.to_string_lossy().as_ref()])?;
+        }
         let r = (|| -> Result<(), rusqlite::Error> {
             let found: Vec<(String, String)> = {
                 let mut st = db.prepare("SELECT c.table_name, g.geometry_type_name FROM s.gpkg_contents c JOIN s.gpkg_geometry_columns g ON g.table_name = c.table_name")?;
@@ -753,11 +881,8 @@ fn merge(files: &[PathBuf], stamp: &[(String, i64)], out: &Path) -> Result<(), r
     for (f, t) in stamp {
         db.execute("INSERT OR REPLACE INTO merged_from VALUES (?1, ?2)", rusqlite::params![f, t])?;
     }
-    drop(db);
-    let _ = std::fs::remove_file(out);
     let _ = std::fs::remove_file(PathBuf::from(format!("{}.tables", out.display())));
-    std::fs::rename(&tmp, out).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-    Ok(())
+    finish_db(db, out, &tmp)
 }
 
 #[cfg(test)]

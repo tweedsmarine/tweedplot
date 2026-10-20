@@ -1,11 +1,14 @@
-//! Chart › Encrypted charts (S-63): the system's user permit, cell permits and
-//! importing exchange sets.
+//! Chart › Encrypted charts (S-63): activation (this computer's user permit), the SA
+//! key, cell permits and importing exchange sets.
 //!
-//! Until TweedPlot has its own manufacturer ID and key from the IHO it uses the IHO's
-//! generic S-64 test credentials: the test user permit, unless another is entered.
+//! Activation: the app shows this computer's installation code; Tweedsmarine's
+//! `tweedplot-oem` tool turns it into an activation code holding the user permit, signed
+//! and good only on this computer. A build without TweedPlot's own credentials uses the
+//! IHO's generic S-64 test permit until activated (with a test activation code).
 
 use std::path::PathBuf;
 
+use chart::enc::{machine, oem};
 use tauri::Manager;
 
 const CONFIG: &str = "s63.json";
@@ -14,12 +17,26 @@ fn config_path(app: &tauri::AppHandle) -> Option<PathBuf> {
     app.path().app_data_dir().ok().map(|d| d.join(CONFIG))
 }
 
-/// Set the saved user permit (at start).
+fn saved_activation(app: &tauri::AppHandle) -> Option<String> {
+    let saved = config_path(app).and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())?;
+    saved["activation"].as_str().map(str::to_string).filter(|s| !s.trim().is_empty())
+}
+
+/// Check an activation code for this computer and use its user permit.
+fn apply(code: &str) -> Result<oem::Activation, String> {
+    let a = oem::read_activation(code).map_err(|e| e.to_string())?;
+    let up = oem::check_activation(&a, &machine::fingerprint()).map_err(|e| e.to_string())?;
+    chart::enc::set_protection(&up, &oem::m_key());
+    Ok(a)
+}
+
+/// Use the saved activation (at start, before the charts open). Works out this
+/// computer's fingerprint, which takes a second or so on Windows.
 pub fn load(app: &tauri::AppHandle) {
-    let saved = config_path(app).and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok());
-    let up = saved.as_ref().and_then(|v| v["user_permit"].as_str()).unwrap_or("").trim().to_string();
-    if !up.is_empty() && chart::enc::s63::hw_id_from_user_permit(&up, chart::enc::TEST_M_KEY).is_ok() {
-        chart::enc::set_protection(&up, chart::enc::TEST_M_KEY);
+    if let Some(code) = saved_activation(app) {
+        if let Err(e) = apply(&code) {
+            eprintln!("S-63 activation: {e}");
+        }
     }
 }
 
@@ -64,8 +81,17 @@ fn senc(app: &tauri::AppHandle) -> chart::enc::senc::Senc {
 /// The user permit, the SA key, the installed permits (by data server) and cells, and
 /// the messages from opening the charts.
 #[tauri::command]
-pub fn s63_status(app: tauri::AppHandle) -> serde_json::Value {
+pub async fn s63_status(app: tauri::AppHandle) -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || status(&app)).await.unwrap_or_default()
+}
+
+fn status(app: &tauri::AppHandle) -> serde_json::Value {
+    let app = app.clone();
     let (up, _) = chart::enc::protection();
+    let activation = saved_activation(&app).map(|code| match oem::read_activation(&code).and_then(|a| oem::check_activation(&a, &machine::fingerprint()).map(|_| a)) {
+        Ok(a) => serde_json::json!({ "ok": true, "issued": a.issued }),
+        Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
+    });
     let s = senc(&app);
     let today = chart::enc::today();
     let mut permits = Vec::new();
@@ -97,6 +123,9 @@ pub fn s63_status(app: tauri::AppHandle) -> serde_json::Value {
     serde_json::json!({
         "user_permit": up,
         "test": up == chart::enc::TEST_USER_PERMIT,
+        "real_credentials": oem::is_real(),
+        "installation_code": machine::installation_code(),
+        "activation": activation,
         "hw_ok": chart::enc::hw_id().is_some(),
         "key": s.key().map(|k| serde_json::json!({ "name": k.name, "sa": k.sa, "not_after": k.not_after, "subject": k.subject })),
         "enc_dir": enc_home(&app),
@@ -106,20 +135,28 @@ pub fn s63_status(app: tauri::AppHandle) -> serde_json::Value {
     })
 }
 
-/// Use another user permit (empty: back to the IHO test permit) and reopen the charts.
+/// Activate with a code from Tweedsmarine: saved, used now, and the charts reopened.
 #[tauri::command]
-pub fn s63_set_user_permit(app: tauri::AppHandle, permit: String) -> Result<String, String> {
-    let p = permit.trim().to_ascii_uppercase();
-    let p = if p.is_empty() { chart::enc::TEST_USER_PERMIT.to_string() } else { p };
-    chart::enc::s63::hw_id_from_user_permit(&p, chart::enc::TEST_M_KEY).map_err(|e| e.to_string())?;
-    chart::enc::set_protection(&p, chart::enc::TEST_M_KEY);
+pub async fn s63_activate(app: tauri::AppHandle, code: String) -> Result<String, String> {
+    let code = code.split_whitespace().collect::<String>();
+    let c = code.clone();
+    let a = tauri::async_runtime::spawn_blocking(move || apply(&c)).await.map_err(|e| e.to_string())??;
     if let Some(cfg) = config_path(&app) {
         let _ = std::fs::create_dir_all(cfg.parent().unwrap());
-        let keep = if p == chart::enc::TEST_USER_PERMIT { "" } else { p.as_str() };
-        std::fs::write(&cfg, serde_json::json!({ "user_permit": keep }).to_string()).map_err(|e| format!("Could not save it: {e}"))?;
+        std::fs::write(&cfg, serde_json::json!({ "activation": code }).to_string()).map_err(|e| format!("Activated, but it couldn't be saved: {e}"))?;
     }
     crate::open_charts(app);
-    Ok(p)
+    Ok(a.user_permit)
+}
+
+/// Forget the activation (a test build goes back to the IHO test permit).
+#[tauri::command]
+pub fn s63_deactivate(app: tauri::AppHandle) {
+    if let Some(cfg) = config_path(&app) {
+        let _ = std::fs::remove_file(cfg);
+    }
+    chart::enc::clear_protection();
+    crate::open_charts(app);
 }
 
 /// Install the permits in a PERMIT.TXT (its text). Returns what happened to each.

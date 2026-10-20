@@ -429,7 +429,10 @@ impl Senc {
     /// Install the permits in a PERMIT.TXT: each one goes with its data server's permits,
     /// replacing an older permit for the same cell.
     pub fn install_permits(&mut self, text: &str) -> Vec<Msg> {
-        let Some(hw) = super::hw_id() else { return vec![msg("", Level::Error, s63::S63Error::UserPermit.to_string())] };
+        let Some(hw) = super::hw_id() else {
+            let text = if super::protection().0.is_empty() { "TweedPlot isn't activated for encrypted charts yet: send this computer's installation code to Tweedsmarine for an activation code".to_string() } else { s63::S63Error::UserPermit.to_string() };
+            return vec![msg("", Level::Error, text)];
+        };
         let found = match s63::read_permits(text, &hw) {
             Ok(v) if !v.is_empty() => v,
             _ => return vec![msg("", Level::Error, format!("No cell permits in the file. {SSE11}"))],
@@ -917,7 +920,22 @@ mod tests {
         let files = s.cell_files();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].updates.len(), 1);
-        assert!(!super::super::ensure_gpkgs(&dir).is_empty());
+        let out = super::super::ensure_gpkgs(&dir);
+        assert!(!out.is_empty());
+        // the decrypted data is sealed on disk: no SQLite text in it, and it opens
+        for f in std::fs::read_dir(dir.join(".enc")).unwrap().flatten() {
+            let p = f.path();
+            if p.extension().is_some_and(|e| e == "gpkg") {
+                panic!("plain conversion of an encrypted cell: {}", p.display());
+            }
+            if super::super::is_sealed(&p) {
+                let b = std::fs::read(&p).unwrap();
+                assert!(!b.windows(13).any(|w| w == b"gpkg_contents"));
+            }
+        }
+        assert!(out.iter().all(|p| super::super::is_sealed(p)));
+        let store = crate::ChartStore::open_dirs(&[dir.clone()]).unwrap();
+        assert!(store.tables.iter().any(|t| t.table.contains("_enc_b")), "{:?}", store.tables.iter().map(|t| &t.table).collect::<Vec<_>>());
         super::super::set_today(None);
         let _ = std::fs::remove_dir_all(&dir);
     }
