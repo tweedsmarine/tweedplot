@@ -121,6 +121,8 @@ const UNDERSCALE: u8 = 4;
 /// The same where a smaller-scale chart covers the whole tile: the larger-scale chart
 /// still starts a little before its own scale.
 const UNDERSCALE_COVERED: u8 = 2;
+/// How many zooms before its usual start a chart band's depth areas and land are drawn.
+const SKIN_EARLY: u8 = 6;
 
 pub struct ChartStore {
     dbs: Vec<Mutex<Connection>>,
@@ -317,7 +319,13 @@ impl ChartStore {
         let mut chart_water: Vec<Vec<[i32; 2]>> = Vec::new();
         let starts = self.band_starts(bbox);
         let start = |b: u8| if b == 0 { band_minzoom(0) } else { starts[(b as usize).min(7)] };
-        let mut bands: Vec<&TableInfo> = self.tables.iter().filter(|t| z >= start(t.band)).collect();
+        // the "skin" (depth areas, lakes, land) of every chart band is drawn well before
+        // its features (SKIN_EARLY zooms), whatever covers the place: where a small-scale
+        // chart doesn't chart a lake or river as water (or covers a place without saying
+        // what is there), the larger-scale chart's land and water show instead of none
+        let skin = |t: &TableInfo| matches!(t.kind, Kind::DepthArea | Kind::Lake | Kind::Land) && t.band > 0;
+        let mut bands: Vec<&TableInfo> =
+            self.tables.iter().filter(|t| z >= start(t.band) || (skin(t) && z + SKIN_EARLY >= band_minzoom(t.band))).collect();
         bands.sort_by_key(|t| t.band);
 
         // Depth areas: every visible band, coarse first.
