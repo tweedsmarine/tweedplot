@@ -692,3 +692,6 @@ html[data-palette^="night"] #ck-grid .tile, html[data-palette^="night"] #ck-bar,
 #tgt-table tr.lost td { opacity: 0.5; }
 #tgt-table .sw { margin-right: 4px; }
 #tgt-table td.empty { cursor: default; color: var(--quiet); white-space: normal; }
+/* cockpit: man overboard readings, big, above the other readings while a MOB is set */
+#ck-mob { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 6px 6px 0; height: 30vh; flex: none; }
+#ck-mob[hidden] { display: none; }

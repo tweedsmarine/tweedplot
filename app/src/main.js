@@ -184,7 +184,8 @@ document.getElementById("manual-btn").onclick = () => manual.toggle();
 manual.onToggle((on) => document.getElementById("manual-btn").classList.toggle("on", on));
 document.getElementById("drawer-help").onclick = () => manual.help(ui.current());
 const inst = setupInstruments();
-window.addEventListener("racenav-mob", (e) => inst.update({ mob: e.detail }));
+let mobNow = null; // the man overboard set (alarms), for the cockpit window too
+window.addEventListener("racenav-mob", (e) => { mobNow = e.detail; inst.update({ mob: e.detail }); });
 const boat = setupBoat();
 const dock = setupDock(map);
 let features = null;
@@ -302,7 +303,7 @@ function feed() {
   const v = live ? vessel : { ...vessel, lat: pos?.[1], lon: pos?.[0] };
   inst.update({ v, dataAt: live ? lastFeed : 0, nav, wp, target, safetyDepth: settings.safetyDepth });
   // the cockpit window (if open) shows the same numbers and the alarms
-  emit("cockpit", { v, dataAt: live ? lastFeed : 0, nav, wp, target, safetyDepth: settings.safetyDepth, alarms: alarms?.list() ?? [] }).catch(() => {});
+  emit("cockpit", { v, dataAt: live ? lastFeed : 0, nav, wp, target, safetyDepth: settings.safetyDepth, mob: mobNow, alarms: alarms?.list() ?? [] }).catch(() => {});
 }
 setInterval(feed, 1000);
 

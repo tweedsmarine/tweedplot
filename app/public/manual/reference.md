@@ -340,7 +340,7 @@ Alarms appear in a banner at the top of the chart and sound until silenced. **Si
 
 **Man overboard**
 
-Press the red **MOB** button at the top right the moment someone goes over. TweedPlot marks the boat's position (or where it was put when planning) and raises an alarm that shows the time since, and the bearing and distance back to the position, updated every second, with a line from the boat to it on the chart. A large red **Man overboard** instrument panel comes up below the alarms with **Brg to MOB** (°T), **Rng to MOB** (metres under 0.2 NM, then NM) and **Since MOB** (minutes and seconds), big enough to read from the helm; it comes up even if it was folded or hidden, can be dragged like any panel, and goes when the MOB is cleared. The position is also saved as a library mark in the group "MOB". **Clear MOB** in the banner, pressed twice, ends it.
+Press the red **MOB** button at the top right the moment someone goes over. TweedPlot marks the boat's position (or where it was put when planning) and raises an alarm that shows the time since, and the bearing and distance back to the position, updated every second, with a line from the boat to it on the chart. A large red **Man overboard** instrument panel comes up below the alarms with **Brg to MOB** (°T), **Rng to MOB** (metres under 0.2 NM, then NM) and **Since MOB** (minutes and seconds), big enough to read from the helm; it comes up even if it was folded or hidden, can be dragged like any panel, and goes when the MOB is cleared. The cockpit window shows the same three readings across its top, above its other readings, for as long as the MOB is set. The position is also saved as a library mark in the group "MOB". **Clear MOB** in the banner, pressed twice, ends it.
 
 ## AIS targets
 

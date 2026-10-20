@@ -105,11 +105,28 @@ function build() {
   render();
 }
 
+// man overboard: bearing, range and time since, big, while a MOB is set in the chart window
+const MOB_TILES = ["MOBBRG", "MOBRNG", "MOBAGO"];
+function buildMob() {
+  const m = $("ck-mob");
+  m.innerHTML = "";
+  MOB_TILES.forEach((k, i) => {
+    const t = document.createElement("div");
+    t.className = "tile ck alarm";
+    t.dataset.k = k;
+    t.innerHTML = `<div class="lbl"><span>${esc(ITEMS[k].label)}</span><span class="sd"></span></div><div class="v">—</div>`;
+    m.append(t);
+  });
+}
+
 function render() {
   ctx.now = Date.now();
   ctx.age = (Date.now() - (ctx.dataAt ?? 0)) / 1000;
-  for (const t of $("ck-grid").children) {
-    const it = ITEMS[s.tiles[Number(t.dataset.i)]];
+  const mob = $("ck-mob");
+  if (mob.hidden !== !ctx.mob) { mob.hidden = !ctx.mob; requestAnimationFrame(placeHandles); }
+  const tiles = [...$("ck-grid").children].map((t) => [t, ITEMS[s.tiles[Number(t.dataset.i)]]]);
+  if (ctx.mob) tiles.push(...[...mob.children].map((t) => [t, ITEMS[t.dataset.k]]));
+  for (const [t, it] of tiles) {
     if (!it) continue;
     let val = null;
     try { val = it.get(ctx); } catch { val = null; }
@@ -193,4 +210,5 @@ listen("cockpit", ({ payload }) => {
 
 installFullscreenKey();
 pal();
+buildMob();
 build();
