@@ -399,12 +399,41 @@ impl ChartStore {
         }
         // Topo50 land, with the lakes and rivers cut out (it has none of its own)
         let mut topo_land: Vec<Vec<[i32; 2]>> = Vec::new();
-        for t in bands.iter().filter(|t| t.kind == Kind::Land) {
+        for t in bands.iter().filter(|t| t.kind == Kind::Land && t.band == 0) {
             self.query(t, bbox, &[], |_, g| {
                 if let Some(TileGeom::Rings(r)) = tp.polygons(&g) {
                     topo_land.extend(r);
                 }
             });
+        }
+        // ENC land: the finest chart's land, and a coarser chart's only outside the finer
+        // charts' coverage (a small-scale cell's land can take in a lake or river that the
+        // larger-scale cell charts as water, Oneida Lake for one)
+        {
+            let mut enc: Vec<&&TableInfo> = bands.iter().filter(|t| t.kind == Kind::Land && t.band > 0).collect();
+            enc.sort_by_key(|t| std::cmp::Reverse(t.band));
+            let finer: Vec<u8> = {
+                let mut v: Vec<u8> = bands.iter().filter(|t| t.kind == Kind::DepthArea && t.band > 0).map(|t| t.band).collect();
+                v.sort();
+                v.dedup();
+                v
+            };
+            for t in enc {
+                let above: Vec<u8> = finer.iter().copied().filter(|b| *b > t.band).collect();
+                let cover = if above.is_empty() { None } else { self.cover_in(&above, bbox) };
+                self.query(t, bbox, &[], |_, g| {
+                    let g = match &cover {
+                        None => g,
+                        Some(c) => match features::cut_outside(&g, c) {
+                            Some(g) => g,
+                            None => return,
+                        },
+                    };
+                    if let Some(TileGeom::Rings(r)) = tp.polygons(&g) {
+                        topo_land.extend(r);
+                    }
+                });
+            }
         }
         if !topo_land.is_empty() {
             let mut water: Vec<Vec<[i32; 2]>> = Vec::new();
