@@ -430,6 +430,8 @@ function setStatus(payload) {
   showStatus();
 }
 listen("sk-status", ({ payload }) => setStatus(payload));
+// MOB pressed in the cockpit window: as if pressed here (one MOB at a time)
+listen("cockpit-mob", () => { const b = document.getElementById("mob-btn"); if (!b.classList.contains("on")) b.click(); });
 // The page can load after the first status event was sent: ask for it.
 invoke("sk_status").then(setStatus).catch(() => {});
 setInterval(showStatus, 1000); // data going quiet turns it amber

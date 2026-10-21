@@ -88,6 +88,9 @@ export const ITEMS = {
   MOBRNG: { label: "Rng to MOB", unit: "", group: "Man overboard", get: (c) => mobLeg(c)?.nm ?? null, state: () => "alarm",
     // metres close in, where it matters most
     fmt: (x) => (x < 0.2 ? `${Math.round(x * 1852)}<span class="u">m</span>` : `${x < 10 ? x.toFixed(2) : x.toFixed(1)}<span class="u">NM</span>`) },
+  // where and when MOB was pressed: for the log and a distress call (time in local and UTC)
+  MOBPOS: { label: "MOB at", unit: "", group: "Man overboard", wide: true, get: (c) => c.mob ?? null,
+    fmt: (m) => `${ddm(m.lat, "N", "S")}<br>${ddm(m.lon, "E", "W")}<br><span class="u">${new Date(m.t).toLocaleTimeString("en-NZ", { hour12: false })} · ${new Date(m.t).toISOString().slice(11, 19)} UTC</span>` },
   MOBAGO: { label: "Since MOB", unit: "", group: "Man overboard", get: (c) => (c.mob ? (c.now - c.mob.t) / 1000 : null), state: () => "alarm",
     fmt: (s) => `${Math.floor(s / 60)}<span class="u">min</span>${String(Math.floor(s % 60)).padStart(2, "0")}<span class="u">s</span>` },
 };
@@ -153,7 +156,7 @@ const CURSOR_PANEL = { id: "pc", x: 0.45, y: 0.02, dir: "row", size: "s", tiles:
 const GRIB_PANEL = { id: "pg", x: 0.45, y: 0.11, dir: "row", size: "s", tiles: ["GTWS", "GTWD", "GGUST", "GMSLP", "GHS"] };
 // shown only while an ocean file is loaded (`sea`)
 // shown only while a man overboard is set (`mob`): big, near the top, below the alarm banner
-const MOB_PANEL = { id: "pm", x: 0.4, y: 0.25, dir: "row", size: "l", mob: true, name: "Man overboard", tiles: ["MOBBRG", "MOBRNG", "MOBAGO"] };
+const MOB_PANEL = { id: "pm", x: 0.4, y: 0.25, dir: "row", size: "l", mob: true, name: "Man overboard", tiles: ["MOBBRG", "MOBRNG", "MOBAGO", "MOBPOS"] };
 const SEA_PANEL = { id: "ps", x: 0.36, y: 0.2, dir: "row", size: "s", sea: true, name: "Sea at cursor", tiles: ["GSST", "GSKIN", "GSSS", "GCUR", "GSET", "GCHL"] };
 
 const DEFAULT_LAYOUT = {
@@ -403,6 +406,7 @@ export function setupInstruments() {
         if (!p) { p = structuredClone(MOB_PANEL); layout.panels.push(p); }
         p.hidden = false;
         p.collapsed = false;
+        if (!p.tiles.includes("MOBPOS")) p.tiles.push("MOBPOS");
         if (layout.hideAll) layout.hideAll = false;
         save();
         build();

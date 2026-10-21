@@ -693,5 +693,8 @@ html[data-palette^="night"] #ck-grid .tile, html[data-palette^="night"] #ck-bar,
 #tgt-table .sw { margin-right: 4px; }
 #tgt-table td.empty { cursor: default; color: var(--quiet); white-space: normal; }
 /* cockpit: man overboard readings, big, above the other readings while a MOB is set */
-#ck-mob { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 6px 6px 0; height: 30vh; flex: none; }
+#ck-mob { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.25fr); gap: 6px; padding: 6px 6px 0; height: 30vh; flex: none; }
 #ck-mob[hidden] { display: none; }
+#ck-bar #ck-mob-btn { background: #d00000; color: #fff; border: 0; font-weight: 700; letter-spacing: 0.5px; padding: 10px 26px; font-size: 18px; }
+#ck-bar #ck-mob-btn.on { background: #ffd400; color: #d00000; }
+#ck-mob .tile.wide .v { font-size: max(12px, min(16cqh, 11cqw)); line-height: 1.15; white-space: normal; }

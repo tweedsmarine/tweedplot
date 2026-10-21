@@ -1,7 +1,7 @@
 // The cockpit window: a second window (for a screen at the helm) with large,
 // touch-friendly readings. The chart window sends it the same numbers its
 // instrument panels show, once a second, plus the active alarms.
-import { listen } from "@tauri-apps/api/event";
+import { listen, emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { setWindowDark, installFullscreenKey } from "./winchrome.js";
 import { ITEMS } from "./instruments.js";
@@ -106,13 +106,13 @@ function build() {
 }
 
 // man overboard: bearing, range and time since, big, while a MOB is set in the chart window
-const MOB_TILES = ["MOBBRG", "MOBRNG", "MOBAGO"];
+const MOB_TILES = ["MOBBRG", "MOBRNG", "MOBAGO", "MOBPOS"];
 function buildMob() {
   const m = $("ck-mob");
   m.innerHTML = "";
   MOB_TILES.forEach((k, i) => {
     const t = document.createElement("div");
-    t.className = "tile ck alarm";
+    t.className = `tile ck alarm${ITEMS[k].wide ? " wide" : ""}`;
     t.dataset.k = k;
     t.innerHTML = `<div class="lbl"><span>${esc(ITEMS[k].label)}</span><span class="sd"></span></div><div class="v">—</div>`;
     m.append(t);
@@ -124,6 +124,7 @@ function render() {
   ctx.age = (Date.now() - (ctx.dataAt ?? 0)) / 1000;
   const mob = $("ck-mob");
   if (mob.hidden !== !ctx.mob) { mob.hidden = !ctx.mob; requestAnimationFrame(placeHandles); }
+  $("ck-mob-btn").classList.toggle("on", !!ctx.mob);
   const tiles = [...$("ck-grid").children].map((t) => [t, ITEMS[s.tiles[Number(t.dataset.i)]]]);
   if (ctx.mob) tiles.push(...[...mob.children].map((t) => [t, ITEMS[t.dataset.k]]));
   for (const [t, it] of tiles) {
@@ -183,6 +184,8 @@ $("ck-pal").onclick = () => { s.pal = PALS[(PALS.indexOf(s.pal) + 1) % PALS.leng
 $("ck-cols").onclick = () => { s.cols = (s.cols % 5) + 1; s.colW = null; s.rowH = null; save(); build(); };
 $("ck-even").onclick = () => { s.colW = null; s.rowH = null; save(); build(); };
 $("ck-add").onclick = () => { s.tiles.push("SOG"); save(); build(); menu(s.tiles.length - 1); };
+// MOB at the helm: the chart window marks it (as its own MOB button does) and sends it back
+$("ck-mob-btn").onclick = () => { emit("cockpit-mob", {}).catch(() => {}); };
 $("ck-full").onclick = async () => { try { const w = getCurrentWindow(); await w.setFullscreen(!(await w.isFullscreen())); } catch { /* not in Tauri */ } };
 
 // alarms from the chart window: shown large; a tone while any is not silenced there
