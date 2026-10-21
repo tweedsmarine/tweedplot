@@ -619,10 +619,13 @@
             </div>
             <div class="settings-actions"><span id="settings-status" role="status" aria-live="polite"></span><button type="submit">Save vessel details</button></div>
           </form>
-          <section class="nmea-settings">
+          <section id="nmea-settings-section" class="nmea-settings">
             <h3>NMEA data sources</h3>
-            <p class="settings-note">Configure incoming NMEA 0183 over serial, TCP, or UDP. This stage monitors and validates received sentences; selecting a source to drive the chart and resolving duplicate data sources are not yet enabled.</p>
+            <p class="settings-note">Choose one enabled source to drive the boat, instruments and alarms. Other enabled sources are monitored only, so duplicate feeds cannot compete with the selected source.</p>
             <div id="nmea-sources" class="nmea-sources" aria-live="polite"></div>
+            <h4>Live NMEA data</h4>
+            <div id="nmea-current-data" class="nmea-current-data">Waiting for a valid sentence.</div>
+            <pre id="nmea-raw-viewer" class="nmea-raw-viewer" aria-label="Recent raw NMEA sentences">No NMEA sentences received yet.</pre>
             <form id="nmea-source-form">
               <h4 id="nmea-form-title">Add source</h4>
               <div class="settings-grid">

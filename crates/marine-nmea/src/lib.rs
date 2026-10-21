@@ -229,7 +229,7 @@ impl Observation {
                         self.aws = speed;
                     }
                     "T" => {
-                        self.twd = angle;
+                        self.twa = relative_angle(angle);
                         self.tws = speed;
                     }
                     _ => {}
@@ -251,8 +251,12 @@ impl Observation {
             "DBT" if f.len() >= 5 => {
                 self.depth = number(&f[2]).or_else(|| number(&f[0]).map(|ft| ft * 0.3048))
             }
-            "DBK" if f.len() >= 1 => self.depth_keel = number(&f[0]),
-            "DBS" if f.len() >= 1 => self.depth_surface = number(&f[0]),
+            "DBK" if f.len() >= 4 => {
+                self.depth_keel = number(&f[2]).or_else(|| number(&f[0]).map(|ft| ft * 0.3048));
+            }
+            "DBS" if f.len() >= 4 => {
+                self.depth_surface = number(&f[2]).or_else(|| number(&f[0]).map(|ft| ft * 0.3048));
+            }
             "MTW" if f.len() >= 2 && f[1] == "C" => self.water_temp = number(&f[0]),
             "ZDA" if f.len() >= 4 => {
                 self.datetime = zda_datetime(&f[0], &f[1], &f[2], &f[3]);
@@ -266,8 +270,10 @@ impl Observation {
                 self.heading = Some((magnetic + variation).rem_euclid(360.0));
             }
         }
-        if let (Some(direction), Some(heading)) = (self.twd, self.heading) {
-            self.twa = Some((direction - heading + 180.0).rem_euclid(360.0) - 180.0);
+        if matches!(sentence.formatter.as_str(), "HDT" | "HDG" | "VHW" | "MWD") {
+            if let (Some(direction), Some(heading)) = (self.twd, self.heading) {
+                self.twa = Some((direction - heading + 180.0).rem_euclid(360.0) - 180.0);
+            }
         }
     }
 
@@ -306,6 +312,9 @@ fn speed_knots(value: f64, unit: &str) -> Option<f64> {
 
 fn nmea_coord(value: &str, hemisphere: &str, latitude: bool) -> Option<f64> {
     let raw = number(value)?;
+    if raw < 0.0 {
+        return None;
+    }
     let degrees = (raw / 100.0).floor();
     let minutes = raw - degrees * 100.0;
     if !(0.0..60.0).contains(&minutes) {
@@ -580,7 +589,7 @@ mod tests {
         for body in [
             "IIHDG,123.4,,,3.1,W",
             "WIMWV,225.0,R,10.0,K,A",
-            "WIMWV,225.0,T,10.0,K,A",
+            "WIMWD,225.0,T,224.0,M,10.0,N,5.1,M",
             "SDDPT,12.5,0.3,100.0",
             "GPZDA,201530.00,04,07,2002,00,00",
         ] {
@@ -594,9 +603,14 @@ mod tests {
         assert!((o.aws.unwrap() - 5.399_568).abs() < 1e-6);
         assert_eq!(o.twd, Some(225.0));
         assert!((o.twa.unwrap() - 104.7).abs() < 1e-9);
-        assert!((o.tws.unwrap() - 5.399_568).abs() < 1e-6);
+        assert_eq!(o.tws, Some(10.0));
         assert_eq!(o.depth, Some(12.5));
         assert_eq!(o.datetime.as_deref(), Some("2002-07-04T20:15:30.00Z"));
+
+        let sentence =
+            parse_sentence(frame("WIMWV,225.0,T,10.0,K,A").trim().as_bytes(), 1024).unwrap();
+        o.apply(&sentence);
+        assert_eq!(o.twa, Some(-135.0));
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 **TweedPlot: Professional Marine Chart Plotter**, from [TweedsMarine](https://tweedsmarine.nz). Formerly developed as "racenav": crate names, `RACENAV_*` environment variables and `racenav.*` settings keys keep the old name internally. Data folder: `C:\dev\tweedplot-data`, or the old `C:\dev\racenav-data` while that is the one present; app data `%APPDATA%\nz.tweedsmarine.tweedplot` (copied from the old `nz.tweedsmarine.racenav` on first start).
 
-A modern race navigation app for Windows: chartplotter basics, a GRIB viewer for many runs at once, an in-house routing engine and race tools. Signal K is the current live-data path; native NMEA 0183 support is being built in stages and is not yet connected to the chart or instrument display.
+A modern race navigation app for Windows: chartplotter basics, a GRIB viewer for many runs at once, an in-house routing engine and race tools. Live data can come from Signal K or one selected native NMEA 0183 source; Signal K remains available for replay and as an alternative live source.
 
 Spec and roadmap: https://claude.ai/code/artifact/e37fa4c3-20c2-4aec-af8f-641714f39c27
 
@@ -17,8 +17,8 @@ Spec and roadmap: https://claude.ai/code/artifact/e37fa4c3-20c2-4aec-af8f-641714
 | `crates/routing` | Isochrone routing (modified isochrone method) round land and water shallower than the safety depth, multi-leg, tack/gybe penalties, currents | Working, tested |
 | `crates/chart` | LINZ GeoPackages (Topo50 coastline, depth areas, contours, soundings, all scale bands) served as vector tiles | Working, tested on the full LINZ download |
 | `crates/signalk` | Signal K WebSocket client (`subscribe=all`), own-vessel state (position, COG/SOG, heading, BSP, depth, apparent and true wind, log), true wind worked out when the server has none, other contexts (AIS) passed on, session log and log replay | Working, tested against Signal K playing a Morgane log |
-| `crates/marine-nmea` | NMEA 0183 framing, checksum validation, common sentence decoding, and searchable sentence catalog; unknown valid sentences retained | Parser tested; not yet connected to UI/live vessel arbitration |
-| `app/src-tauri/src/nmea.rs` | Native serial, TCP client and UDP listener source workers; source status and observations; saved source configuration | Settings can configure and monitor sources; observations are not yet selected to drive the chart. COM renumber discovery, priority arbitration and NMEA 2000 remain future work |
+| `crates/marine-nmea` | NMEA 0183 framing, checksum validation, common sentence decoding, and searchable sentence catalog; unknown valid sentences retained | Parser tested; connected to the Settings viewer and selected-source navigation feed |
+| `app/src-tauri/src/nmea.rs` | Native serial, TCP client and UDP listener source workers; source status and observations; saved source configuration | Settings can select one source to drive navigation and inspect recent raw/decoded data; COM renumber discovery, automatic source priorities and NMEA 2000 remain future work |
 | `crates/ais` | AIS targets: Signal K AIS contexts and the aisstream.io WebSocket feed, merged by MMSI, expiry, distress kinds from MMSI | Parsers tested; aisstream.io not yet tried live |
 | `crates/stations` | Weather observations: MetService WIS2 (OGC API), aviationweather.gov METAR, NOAA NDBC buoys | Parsers tested; not yet tried live |
 | `crates/library` | Mark library, routes, saved routings and tracks as JSON files; track recorder; GPX import and export | Working, tested |

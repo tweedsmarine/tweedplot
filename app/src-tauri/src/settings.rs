@@ -140,6 +140,7 @@ fn validate(s: &Settings) -> Result<(), String> {
         return Err("At most 32 NMEA sources can be configured.".into());
     }
     let mut source_ids = std::collections::BTreeSet::new();
+    let mut navigation_sources = 0;
     for source in &s.nmea_sources {
         if source.id.trim().is_empty() || source.id.chars().count() > 80 {
             return Err("Each NMEA source needs an ID of at most 80 characters.".into());
@@ -149,6 +150,15 @@ fn validate(s: &Settings) -> Result<(), String> {
         }
         if source.name.trim().is_empty() || source.name.chars().count() > 100 {
             return Err("Each NMEA source needs a name of at most 100 characters.".into());
+        }
+        if source.use_for_navigation {
+            if !source.enabled {
+                return Err(format!(
+                    "Navigation source '{}' must also be enabled.",
+                    source.name
+                ));
+            }
+            navigation_sources += 1;
         }
         match &source.transport {
             crate::nmea::SourceTransport::Serial { port, baud_rate } => {
@@ -188,6 +198,9 @@ fn validate(s: &Settings) -> Result<(), String> {
                 }
             }
         }
+    }
+    if navigation_sources > 1 {
+        return Err("Choose only one NMEA source to drive navigation.".into());
     }
     match (v.reference_lat, v.reference_lon) {
         (None, None) => {}
@@ -255,12 +268,25 @@ mod tests {
             id: "gps-main".into(),
             name: "Main GPS".into(),
             enabled: true,
+            use_for_navigation: true,
             transport: crate::nmea::SourceTransport::Serial {
                 port: "COM4".into(),
                 baud_rate: 4800,
             },
         });
         assert!(validate(&settings).is_ok());
+        settings.nmea_sources.push(crate::nmea::SourceConfig {
+            id: "gps-backup".into(),
+            name: "Backup GPS".into(),
+            enabled: true,
+            use_for_navigation: true,
+            transport: crate::nmea::SourceTransport::Serial {
+                port: "COM5".into(),
+                baud_rate: 4800,
+            },
+        });
+        assert!(validate(&settings).is_err());
+        settings.nmea_sources.pop();
         settings.nmea_sources[0].transport = crate::nmea::SourceTransport::Serial {
             port: "COM4".into(),
             baud_rate: 1234,

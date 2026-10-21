@@ -27,6 +27,8 @@ pub struct SourceConfig {
     pub id: String,
     pub name: String,
     pub enabled: bool,
+    #[serde(default)]
+    pub use_for_navigation: bool,
     pub transport: SourceTransport,
 }
 
@@ -47,6 +49,7 @@ pub struct SourceStatus {
 
 static SOURCES: Mutex<Vec<watch::Sender<bool>>> = Mutex::new(Vec::new());
 static STATUSES: Mutex<BTreeMap<String, SourceStatus>> = Mutex::new(BTreeMap::new());
+static NAVIGATION_SOURCE: Mutex<Option<String>> = Mutex::new(None);
 static NEXT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 fn emit_status(app: &tauri::AppHandle, status: SourceStatus) {
@@ -80,10 +83,11 @@ fn update_status(
     if valid {
         status.valid_sentences += 1;
         status.state = "receiving".into();
+        status.detail = "Receiving valid NMEA data".into();
         status.last_seen = Some(chrono::Utc::now().to_rfc3339());
     }
     if let Some(sentence) = sentence {
-        status.last_sentence = Some(sentence.formatter.clone());
+        status.last_sentence = Some(sentence.raw.clone());
     }
     let status = status.clone();
     drop(statuses);
@@ -106,6 +110,7 @@ fn invalid_sentence(
         return;
     }
     status.invalid_sentences += 1;
+    status.state = "receiving".into();
     status.detail = error.to_string();
     let status = status.clone();
     drop(statuses);
@@ -146,6 +151,43 @@ fn consume_bytes(
                 ) {
                     eprintln!("Could not publish NMEA observation: {error}");
                 }
+                if source.enabled && source.use_for_navigation && !crate::live::is_replaying() {
+                    let vessel = signalk::VesselState {
+                        lat: observation.lat,
+                        lon: observation.lon,
+                        cog: observation.cog,
+                        sog: observation.sog,
+                        heading: observation.heading,
+                        heading_mag: observation.heading_mag,
+                        variation: observation.variation,
+                        stw: observation.stw,
+                        depth: observation.depth,
+                        depth_keel: observation.depth_keel,
+                        depth_surface: observation.depth_surface,
+                        aws: observation.aws,
+                        awa: observation.awa,
+                        tws: observation.tws,
+                        twa: observation.twa,
+                        twd: observation.twd,
+                        water_temp: observation.water_temp,
+                        datetime: observation.datetime.clone(),
+                        timestamp: Some(chrono::Utc::now().to_rfc3339()),
+                        ..Default::default()
+                    };
+                    crate::rec_vessel(app, &vessel);
+                    if let Err(error) = app.emit(
+                        "vessel",
+                        serde_json::json!({
+                            "source": "nmea0183",
+                            "sourceId": source.id,
+                            "sourceName": source.name,
+                            "replay": false,
+                            "v": vessel,
+                        }),
+                    ) {
+                        eprintln!("Could not publish NMEA vessel data: {error}");
+                    }
+                }
             }
             Err(error) => invalid_sentence(app, &source.id, generation, &error),
         }
@@ -153,6 +195,16 @@ fn consume_bytes(
 }
 
 fn start_sources(app: &tauri::AppHandle, sources: &[SourceConfig]) {
+    let selected = sources
+        .iter()
+        .find(|source| source.enabled && source.use_for_navigation)
+        .map(|source| (source.id.clone(), source.name.clone()));
+    *NAVIGATION_SOURCE.lock().unwrap() = selected.clone().map(|(id, _)| id);
+    let navigation_source =
+        selected.map(|(id, name)| serde_json::json!({ "id": id, "name": name }));
+    if let Err(error) = app.emit("nmea-navigation-source", navigation_source) {
+        eprintln!("Could not publish selected NMEA source: {error}");
+    }
     let mut running = SOURCES.lock().unwrap();
     for stop in running.drain(..) {
         let _ = stop.send(true);
@@ -188,6 +240,10 @@ fn start_sources(app: &tauri::AppHandle, sources: &[SourceConfig]) {
     for status in initial_statuses {
         emit_status(app, status);
     }
+}
+
+pub(crate) fn navigation_source_id() -> Option<String> {
+    NAVIGATION_SOURCE.lock().unwrap().clone()
 }
 
 async fn run_source(
@@ -328,7 +384,7 @@ async fn run_tcp(
                 );
             }
         }
-        if wait_or_stop(stop, Duration::from_secs(2)).await {
+        if *stop.borrow() || wait_or_stop(stop, Duration::from_secs(2)).await {
             break;
         }
     }
@@ -341,60 +397,83 @@ async fn run_udp(
     bind_address: String,
     stop: &mut watch::Receiver<bool>,
 ) {
-    let socket = match tokio::net::UdpSocket::bind(&bind_address).await {
-        Ok(socket) => socket,
-        Err(error) => {
-            update_status(
-                app,
-                &source.id,
-                generation,
-                Some("error"),
-                Some(format!("Could not bind UDP {bind_address}: {error}")),
-                false,
-                None,
-            );
-            return;
-        }
-    };
-    update_status(
-        app,
-        &source.id,
-        generation,
-        Some("connected"),
-        Some(format!(
-            "Listening on UDP {bind_address}; waiting for NMEA data"
-        )),
-        false,
-        None,
-    );
     let mut framer = Framer::default();
     let mut observation = Observation::default();
     let mut buf = [0u8; 65536];
     loop {
-        let received = tokio::select! {
-            _ = stop.changed() => break,
-            result = socket.recv_from(&mut buf) => result,
-        };
-        match received {
-            Ok((n, _peer)) => consume_bytes(
-                app,
-                source,
-                generation,
-                &mut framer,
-                &mut observation,
-                &buf[..n],
-            ),
+        if *stop.borrow() {
+            break;
+        }
+        update_status(
+            app,
+            &source.id,
+            generation,
+            Some("connecting"),
+            Some(format!("Binding UDP {bind_address}")),
+            false,
+            None,
+        );
+        let socket = match tokio::net::UdpSocket::bind(&bind_address).await {
+            Ok(socket) => socket,
             Err(error) => {
                 update_status(
                     app,
                     &source.id,
                     generation,
                     Some("error"),
-                    Some(format!("UDP receive failed: {error}")),
+                    Some(format!(
+                        "Could not bind UDP {bind_address}: {error}; retrying"
+                    )),
                     false,
                     None,
                 );
+                if *stop.borrow() || wait_or_stop(stop, Duration::from_secs(2)).await {
+                    break;
+                }
+                continue;
             }
+        };
+        update_status(
+            app,
+            &source.id,
+            generation,
+            Some("connected"),
+            Some(format!(
+                "Listening on UDP {bind_address}; waiting for NMEA data"
+            )),
+            false,
+            None,
+        );
+        loop {
+            let received = tokio::select! {
+                _ = stop.changed() => break,
+                result = socket.recv_from(&mut buf) => result,
+            };
+            match received {
+                Ok((n, _peer)) => consume_bytes(
+                    app,
+                    source,
+                    generation,
+                    &mut framer,
+                    &mut observation,
+                    &buf[..n],
+                ),
+                Err(error) => {
+                    update_status(
+                        app,
+                        &source.id,
+                        generation,
+                        Some("error"),
+                        Some(format!("UDP receive failed: {error}; retrying")),
+                        false,
+                        None,
+                    );
+                    break;
+                }
+            }
+        }
+        if *stop.borrow() || wait_or_stop(stop, Duration::from_secs(2)).await {
+            break;
         }
     }
 }
@@ -562,6 +641,7 @@ mod tests {
             "id": "gps-main",
             "name": "Main GPS",
             "enabled": true,
+            "useForNavigation": true,
             "transport": { "type": "serial", "port": "COM4", "baudRate": 4800 }
         }))
         .unwrap();
@@ -572,5 +652,6 @@ mod tests {
                 baud_rate: 4800
             }
         );
+        assert!(source.use_for_navigation);
     }
 }

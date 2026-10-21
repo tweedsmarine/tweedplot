@@ -223,7 +223,7 @@ map.on("load", () => {
   setupPalette();
   setupBrand();
   alarms = setupAlarms(map, {
-    getBoat: () => ({ pos: lastBoat, v: vessel, live: live && signalKActive(), connected: skConnected || replayOn, fresh: Date.now() - lastFeed < 5000 }),
+    getBoat: () => ({ pos: lastBoat, v: vessel, live: live && signalKActive(), connected: liveDataConnected(), fresh: Date.now() - lastFeed < 5000 }),
     getSafetyDepth: () => settings.safetyDepth,
     getAirDraft: () => Number(boat.get().airDraft) || 0,
   });
@@ -298,6 +298,7 @@ async function planningArrows(row, at) {
 
 // ---------- instruments ----------------------------------------------------------
 let vessel = {}; // latest Signal K state
+const damping = createDamping((g) => Number(settings[{ motion: "dampMotion", wind: "dampWind", depth: "dampDepth" }[g]]) || 0);
 function boatTime() {
   // planning: the weather slider's time; live: the GPS time, else the clock
   if (!live && weather?.current().t) return weather.current().t;
@@ -407,7 +408,12 @@ document.getElementById("clear-track").onclick = () => { track = []; setData("tr
 let skConnected = false;
 let skDetail = "connecting…";
 let skSeen = false; // a status has arrived (else still connecting)
-let lastData = 0; // ms timestamp of the last live vessel update (the Signal K status)
+let nmeaNavigationSourceId = null;
+let nmeaNavigationSourceName = "";
+let nmeaConnected = false;
+let nmeaSeen = false;
+let nmeaDetail = "";
+let lastData = 0; // ms timestamp of the last update from the selected live-data source
 let lastFeed = 0; // last vessel update, live or replayed (what the boat and instruments show)
 let replayOn = false;
 let alarms = null;
@@ -418,20 +424,64 @@ const SK_STALE_MS = 10000;
  * but quiet for 10 s, red no link), whether plotting is live or paused. */
 function showStatus() {
   const el = document.getElementById("sk-state");
+  const usingNmea = !!nmeaNavigationSourceId;
+  const connected = usingNmea ? nmeaConnected : skConnected;
+  const seen = usingNmea ? nmeaSeen : skSeen;
+  const detail = usingNmea ? nmeaDetail : skDetail;
+  const sourceName = usingNmea ? `NMEA 0183 · ${nmeaNavigationSourceName}` : "Signal K";
   const age = lastData ? Date.now() - lastData : Infinity;
-  const state = !skConnected ? "bad" : age < SK_STALE_MS ? "good" : "stale";
-  el.className = state + (skSeen ? "" : " connecting");
+  const state = !connected ? "bad" : age < SK_STALE_MS ? "good" : "stale";
+  el.className = state + (seen ? "" : " connecting");
   const ago = (ms) => (ms < 90000 ? `${Math.max(1, Math.round(ms / 1000))} s` : ms < 5400000 ? `${Math.round(ms / 60000)} min` : `${(ms / 3600000).toFixed(1)} h`);
   const what = lastRaw ? [["lat", "position"], ["heading", "heading"], ["sog", "speed"], ["stw", "boat speed"], ["aws", "wind"], ["tws", "wind"], ["depth", "depth"], ["depth_keel", "depth"], ["depth_surface", "depth"]]
     .filter(([k]) => lastRaw[k] != null).map(([, w]) => w).filter((w, i, a) => a.indexOf(w) === i).join(", ") : "";
-  const head = !skSeen ? "Signal K: connecting…"
-    : state === "bad" ? "Signal K: not connected"
-    : state === "good" ? "Signal K: receiving data" : "Signal K: connected, no data";
-  el.title = [head, skSeen ? skDetail : "",
-    lastData ? `Last update ${ago(age)} ago${what && state === "good" ? `: ${what}` : ""}` : skConnected ? "No data yet" : "",
+  const head = !seen ? `${sourceName}: connecting…`
+    : state === "bad" ? `${sourceName}: not connected`
+    : state === "good" ? `${sourceName}: receiving data` : `${sourceName}: connected, no data`;
+  el.title = [head, seen ? detail : "",
+    lastData ? `Last update ${ago(age)} ago${what && state === "good" ? `: ${what}` : ""}` : connected ? "No data yet" : "",
     live ? "" : "Plotting paused (planning): the boat stays where you put it",
-    "Click for the Signal K settings"].filter(Boolean).join("\n");
+    usingNmea ? "Click for NMEA source settings" : "Click for the Signal K settings"].filter(Boolean).join("\n");
+  document.getElementById("sk-live").title = live
+    ? `Live: the boat follows ${usingNmea ? `NMEA 0183 · ${nmeaNavigationSourceName}` : "Signal K"}. Click to pause and plan (right-click the chart to move the boat).`
+    : "Paused (planning): the boat stays where you put it. Click to go live.";
 }
+function setNmeaNavigationSource(payload) {
+  const id = payload?.id ?? null;
+  if (id !== nmeaNavigationSourceId) {
+    nmeaConnected = false;
+    nmeaSeen = false;
+    nmeaDetail = "";
+    lastData = 0;
+    lastFeed = 0;
+    lastRaw = null;
+    vessel = {};
+    damping.clear();
+    if (live) {
+      lastBoat = null;
+      setData("boat", emptyFC());
+      setData("boat-hull", emptyFC());
+      drawLines(null);
+      arrows?.clear();
+    }
+    feed();
+  }
+  nmeaNavigationSourceId = id;
+  nmeaNavigationSourceName = payload?.name ?? "";
+  showStatus();
+}
+listen("nmea-navigation-source", ({ payload }) => setNmeaNavigationSource(payload));
+listen("nmea-status", ({ payload }) => {
+  if (!payload || payload.id !== nmeaNavigationSourceId) return;
+  nmeaSeen = true;
+  nmeaConnected = payload.state === "connected" || payload.state === "receiving";
+  nmeaDetail = payload.detail || payload.state;
+  showStatus();
+});
+invoke("nmea_sources_get").then((data) => {
+  const primary = data.sources?.find((source) => source.enabled && source.useForNavigation);
+  setNmeaNavigationSource(primary ? { id: primary.id, name: primary.name } : null);
+}).catch((error) => console.error("Could not load selected NMEA source:", error));
 function setStatus(payload) {
   if (!payload) return;
   if (payload.connected || payload.detail !== "connecting") skSeen = true; // "connecting" = nothing heard yet
@@ -447,8 +497,13 @@ listen("cockpit-mob", () => { const b = document.getElementById("mob-btn"); if (
 invoke("sk_status").then(setStatus).catch(() => {});
 setInterval(showStatus, 1000); // data going quiet turns it amber
 document.getElementById("sk-state").onclick = () => {
-  ui.open("chart");
-  document.getElementById("sk-section")?.scrollIntoView({ block: "start", behavior: "smooth" });
+  if (nmeaNavigationSourceId) {
+    if (document.getElementById("settings").hidden) document.getElementById("settings-btn").click();
+    document.getElementById("nmea-settings-section")?.scrollIntoView({ block: "start", behavior: "smooth" });
+  } else {
+    ui.open("chart");
+    document.getElementById("sk-section")?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
 };
 const liveBtn = document.getElementById("sk-live");
 liveBtn.onclick = () => {
@@ -461,7 +516,8 @@ liveBtn.onclick = () => {
   showStatus();
   feed();
 };
-const signalKActive = () => live && (skConnected || replayOn) && Date.now() - lastFeed < 15000;
+const liveDataConnected = () => nmeaNavigationSourceId ? nmeaConnected || replayOn : skConnected || replayOn;
+const signalKActive = () => live && liveDataConnected() && Date.now() - lastFeed < 15000;
 
 /** The boat on the chart: its symbol, or at harbour scales its outline to scale from
  *  the Settings length and breadth, placed by the GPS antenna. */
@@ -567,13 +623,20 @@ map.on("click", () => { ctx.hidden = true; });
 map.on("movestart", () => { ctx.hidden = true; });
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") ctx.hidden = true; });
 
-const damping = createDamping((g) => Number(settings[{ motion: "dampMotion", wind: "dampWind", depth: "dampDepth" }[g]]) || 0);
 listen("vessel", ({ payload }) => {
   const raw = payload.v ?? payload;
   if (payload.replay) {
     if (!replayOn) return; // a late message after the replay stopped
   } else {
-    if (!skConnected) skConnected = true; // data proves the link is up
+    if (nmeaNavigationSourceId) {
+      if (payload.source !== "nmea0183" || payload.sourceId !== nmeaNavigationSourceId) return;
+      nmeaConnected = true;
+      nmeaSeen = true;
+      nmeaDetail = `Using ${payload.sourceName || nmeaNavigationSourceName}`;
+    } else {
+      if (payload.source === "nmea0183") return;
+      if (!skConnected) skConnected = true; // data proves the link is up
+    }
     const fresh = !lastData || Date.now() - lastData >= SK_STALE_MS;
     lastData = Date.now();
     lastRaw = raw;
