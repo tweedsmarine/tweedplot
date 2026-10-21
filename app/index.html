@@ -22,13 +22,11 @@
       <button data-pane="routing" title="Routing: compute, compare"><svg viewBox="0 0 24 24"><circle cx="5" cy="18" r="2"/><circle cx="19" cy="6" r="2"/><path d="M7 17c5-1 3-8 10-10"/><path d="M6 15c2-6 6-9 11-9" opacity=".5"/></svg><span>Routing</span></button>
       <button data-pane="fleet" title="Fleet: AIS targets and YB race tracking"><svg viewBox="0 0 24 24"><path d="M6 4l3 7H3z"/><path d="M17 9l3 7h-6z"/><path d="M9 15l3 6H6z"/></svg><span>Fleet</span></button>
       <button data-pane="library" title="Marks, routes and saved routings"><svg viewBox="0 0 24 24"><path d="M6 21V4"/><path d="M6 4h11l-3 4 3 4H6"/></svg><span>Library</span></button>
-      <button data-pane="boat" title="Boat and polar"><svg viewBox="0 0 24 24"><path d="M12 3v13"/><path d="M12 4l7 11h-7"/><path d="M11 6L5 15h6"/><path d="M3 18h18l-2 3H5z"/></svg><span>Boat</span></button>
       <button data-pane="chart" title="Chart and Signal K"><svg viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></svg><span>Chart</span></button>
       <button data-pane="inst" title="Instrument panels"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 13l4-4"/><path d="M12 5v2M5 13h2M17 13h2"/></svg><span>Instr.</span></button>
       <button id="manual-btn" class="rail-action" title="User manual (F1)"><svg viewBox="0 0 24 24"><path d="M4 5.5C6.5 4.5 9.5 4.5 12 6c2.5-1.5 5.5-1.5 8-.5v13c-2.5-1-5.5-1-8 .5-2.5-1.5-5.5-1.5-8-.5z"/><path d="M12 6v13.5"/></svg><span>Manual</span></button>
       <button id="targets-btn" class="rail-action" title="Target list: AIS targets with range, bearing, CPA and TCPA (T)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/><circle cx="16" cy="9" r="1.2" fill="currentColor"/></svg><span>Targets</span></button>
-      <button id="ruler-btn" class="rail-action" title="Ruler: click points to measure bearing and distance, double-click to finish"><svg viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg><span>Ruler</span></button>
-      <button id="centre-boat" class="rail-action" title="Centre the chart on the boat"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><path d="M12 8.5l2.2 6h-4.4z" fill="currentColor"/></svg><span>Centre</span></button>
+      <button id="settings-btn" class="rail-action" title="Settings: vessel and data setup" aria-label="Settings"><svg viewBox="0 0 24 24"><path d="M19.14 12.94a7.5 7.5 0 0 0 .06-.94c0-.32-.02-.63-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.3 7.3 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.3 7.3 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.54 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.5 7.5 0 0 0-.06.94c0 .32.02.63.07.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.49.39 1.04.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54a7.3 7.3 0 0 0 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58z"/><circle cx="12" cy="12" r="3.25"/></svg><span>Settings</span></button>
     </nav>
 
     <aside id="drawer" hidden>
@@ -183,7 +181,16 @@
             <div class="wx-row"><label class="grow" for="rt-radius">Arrival radius (NM)</label><input id="rt-radius" type="number" min="0.01" max="20" step="0.05" /></div>
             <div class="wx-row"><label class="grow"><input id="rt-current" type="checkbox" /> Use GRIB currents</label></div>
             <div class="wx-row"><label class="grow" title="Off: the GRIB time only moves with the time slider"><input id="rt-hovertime" type="checkbox" /> Hovering a routing point moves the GRIB time</label></div>
-            <div class="wx-note">Polar, efficiency and tack/gybe costs: Boat panel. Safety depth: Chart panel.</div>
+            <div class="wx-note">Safety depth is set in the Chart panel.</div>
+          </details>
+          <details class="sub">
+            <summary>Boat and polar</summary>
+            <div class="wx-row"><label class="grow" for="boat-polar">Polar</label><select id="boat-polar"></select></div>
+            <div class="wx-row"><button id="boat-polar-import" title="Copy a polar file (.pol, .csv or .txt) into your polar folder">Import polar…</button><button id="boat-polar-folder" title="Open your polar folder">Open folder</button><input id="boat-polar-file" type="file" accept=".pol,.csv,.txt" hidden /></div>
+            <div id="boat-polar-note" class="wx-note"></div>
+            <div class="wx-row"><label class="grow" for="boat-eff">Polar efficiency (%)</label><input id="boat-eff" type="number" min="10" max="150" step="1" /></div>
+            <div class="wx-row"><label class="grow" for="boat-tack">Tack costs (s)</label><input id="boat-tack" type="number" min="0" step="5" /></div>
+            <div class="wx-row"><label class="grow" for="boat-gybe">Gybe costs (s)</label><input id="boat-gybe" type="number" min="0" step="5" /></div>
           </details>
           <details class="sub" id="rt-limits">
             <summary>Limits and barriers</summary>
@@ -270,7 +277,7 @@
           <ul id="ais-list" class="list"></ul>
         </div>
         <div class="tab" data-tab="own" hidden>
-          <div class="wx-note">Boats you want to pick out: friends, your company's vessels, a race fleet. They are ringed in their group's colour and named on the chart, and their tracks can be drawn. Your own boat's MMSI goes in the Boat panel.</div>
+          <div class="wx-note">Boats you want to pick out: friends, your company's vessels, a race fleet. They are ringed in their group's colour and named on the chart, and their tracks can be drawn. Your own boat's MMSI goes in Settings.</div>
           <div class="wx-row"><input id="of-mmsi" type="text" inputmode="numeric" placeholder="MMSI" maxlength="9" style="width:90px" title="The 9-digit MMSI" /><input id="of-name" class="grow" type="text" placeholder="Name (optional)" /></div>
           <div class="wx-row"><select id="of-group" class="grow" title="Group"><option>Friends</option><option>Company</option><option>Race fleet</option><option>Other</option></select><button id="of-add">Add</button></div>
           <div id="of-msg" class="wx-note"></div>
@@ -389,25 +396,6 @@
           <div class="wx-note">Logged tracks keep a fix every 10 s while moving (sooner in a tack or gybe) and are saved in tweedplot-data\library\tracks. GPX writes to the library's export folder.</div>
         </div>
         <div id="lib-status" class="wx-note"></div>
-      </section>
-
-      <section class="pane" data-pane="boat" data-title="Boat">
-        <div class="wx-row"><label class="grow" for="boat-polar">Polar</label><select id="boat-polar"></select></div>
-        <div class="wx-row"><button id="boat-polar-import" title="Copy a polar file (.pol, .csv or .txt) into your polar folder">Import polar…</button><button id="boat-polar-folder" title="Open your polar folder">Open folder</button><input id="boat-polar-file" type="file" accept=".pol,.csv,.txt" hidden /></div>
-        <div id="boat-polar-note" class="wx-note"></div>
-        <div class="wx-row"><label class="grow" for="boat-eff">Polar efficiency (%)</label><input id="boat-eff" type="number" min="10" max="150" step="1" /></div>
-        <div class="wx-row"><label class="grow" for="boat-tack">Tack costs (s)</label><input id="boat-tack" type="number" min="0" step="5" /></div>
-        <div class="wx-row"><label class="grow" for="boat-gybe">Gybe costs (s)</label><input id="boat-gybe" type="number" min="0" step="5" /></div>
-        <div class="wx-row"><label class="grow" for="boat-air" title="Height of the top of the mast (or highest point) above the waterline, for the air-draft alarm">Air draft (m)</label><input id="boat-air" type="number" min="0" step="0.1" /></div>
-        <div class="wx-row"><label class="grow" for="boat-mmsi" title="Your own AIS MMSI: your boat is then never shown or alarmed as an AIS target">Own MMSI</label><input id="boat-mmsi" type="text" inputmode="numeric" maxlength="9" style="width:110px" /></div>
-        <h3>Size and GPS antenna</h3>
-        <div class="wx-row"><label class="grow" for="boat-len" title="Length overall">Length (m)</label><input id="boat-len" type="number" min="0" step="0.1" /></div>
-        <div class="wx-row"><label class="grow" for="boat-beam">Beam (m)</label><input id="boat-beam" type="number" min="0" step="0.1" /></div>
-        <div class="wx-row"><label class="grow" for="boat-gps-bow" title="How far aft of the bow the GPS antenna is (the position Signal K gives)">GPS antenna from the bow (m)</label><input id="boat-gps-bow" type="number" min="0" step="0.1" /></div>
-        <div class="wx-row"><label class="grow" for="boat-gps-side" title="How far the GPS antenna is off the centre line">off the centre line (m)</label><input id="boat-gps-side" type="number" min="0" step="0.1" style="width:64px" />
-          <select id="boat-gps-dir"><option value="1">to starboard</option><option value="-1">to port</option></select></div>
-        <div class="wx-note">With the length and beam, the boat is drawn to scale, from where its GPS antenna is, when zoomed in far enough (harbour scales).</div>
-        <div class="wx-note">Safety depth is set in the Chart panel; routing avoids water shallower than it, and charted dangers and marine farms if ticked there.</div>
       </section>
 
       <section class="pane" data-pane="chart" data-title="Chart and Signal K">
@@ -579,6 +567,7 @@
       <button data-act="libmark">New library mark here</button>
       <button data-act="centre">Centre chart here</button>
       <button data-act="meteogram">Meteogram here</button>
+      <button data-act="ruler-toggle">Start ruler here</button>
       <hr class="ruler-item" />
       <button data-act="ruler-route" class="ruler-item">Save ruler as route</button>
       <button data-act="ruler-pt" class="ruler-item">Delete ruler point</button>
@@ -600,6 +589,67 @@
     </div>
     <div id="toast" class="toast" hidden></div>
     <div id="s63-banner" class="s63-banner" hidden></div>
+
+    <aside id="settings" hidden role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <section class="settings-panel">
+        <header><div><h2 id="settings-title">Settings</h2><p>Vessel details and installation setup</p></div><button id="settings-close" title="Close settings (Esc)">✕</button></header>
+        <div class="settings-content">
+          <form id="vessel-settings">
+            <h3>Vessel identity</h3>
+            <div class="settings-grid">
+              <label>Vessel name<input name="name" type="text" maxlength="100" autocomplete="off" /></label>
+              <label>IMO number<input name="imo" type="text" inputmode="numeric" maxlength="7" placeholder="7 digits" /></label>
+              <label>Call sign<input name="callSign" type="text" maxlength="32" autocomplete="off" /></label>
+              <label>MMSI<input name="mmsi" type="text" inputmode="numeric" maxlength="9" placeholder="9 digits" /></label>
+            </div>
+            <h3>Vessel dimensions <small>metres</small></h3>
+            <div class="settings-grid">
+              <label>Draft<input name="draftM" type="number" min="0" max="200" step="0.01" /></label>
+              <label>Length overall<input name="lengthM" type="number" min="0" max="1000" step="0.1" /></label>
+              <label>Breadth<input name="breadthM" type="number" min="0" max="200" step="0.1" /></label>
+              <label>Air draft<input name="airDraftM" type="number" min="0" max="300" step="0.1" /></label>
+            </div>
+            <h3>Position and GPS antenna</h3>
+            <p class="settings-note">Optional default chart location when the app starts without a GPS fix. A live GPS fix takes precedence, and setting this will not move the chart after you have chosen a location.</p>
+            <div class="settings-grid">
+              <label>Reference latitude<input name="referenceLat" type="number" min="-90" max="90" step="0.000001" placeholder="Optional" /></label>
+              <label>Reference longitude<input name="referenceLon" type="number" min="-180" max="180" step="0.000001" placeholder="Optional" /></label>
+              <label>GPS antenna aft of bow (m)<input name="gpsAntennaFromBowM" type="number" min="0" max="1000" step="0.1" /></label>
+              <label>GPS antenna off centreline (m)<input name="gpsAntennaFromCenterlineM" type="number" min="-500" max="500" step="0.1" placeholder="Port negative" /></label>
+            </div>
+            <div class="settings-actions"><span id="settings-status" role="status" aria-live="polite"></span><button type="submit">Save vessel details</button></div>
+          </form>
+          <section class="nmea-settings">
+            <h3>NMEA data sources</h3>
+            <p class="settings-note">Configure incoming NMEA 0183 over serial, TCP, or UDP. This stage monitors and validates received sentences; selecting a source to drive the chart and resolving duplicate data sources are not yet enabled.</p>
+            <div id="nmea-sources" class="nmea-sources" aria-live="polite"></div>
+            <form id="nmea-source-form">
+              <h4 id="nmea-form-title">Add source</h4>
+              <div class="settings-grid">
+                <label>Source name<input name="name" type="text" maxlength="100" required placeholder="Main GPS" /></label>
+                <label>Connection type<select name="type"><option value="serial">Serial / COM</option><option value="tcp">TCP client</option><option value="udp">UDP listener</option></select></label>
+              </div>
+              <div class="settings-grid" data-nmea-transport="serial">
+                <label>COM port<select name="port" required></select></label>
+                <label>Baud rate<select name="baudRate"><option>4800</option><option>9600</option><option>19200</option><option>38400</option><option>57600</option><option>115200</option><option>230400</option></select></label>
+                <div class="settings-field-action"><button id="nmea-scan-ports" type="button">Rescan COM ports</button></div>
+              </div>
+              <div class="settings-grid" data-nmea-transport="tcp" hidden>
+                <label>Server address (host:port)<input name="address" type="text" placeholder="192.168.1.10:10110" /></label>
+              </div>
+              <div class="settings-grid" data-nmea-transport="udp" hidden>
+                <label>Local bind address<input name="bindAddress" type="text" placeholder="0.0.0.0:10110" /></label>
+              </div>
+              <div class="settings-actions">
+                <span id="nmea-settings-status" role="status" aria-live="polite"></span>
+                <button type="button" id="nmea-source-cancel" hidden>Cancel edit</button>
+                <button type="submit" id="nmea-source-save">Add source</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </section>
+    </aside>
 
     <div id="cursor" class="cursor">—</div>
     <div class="attribution">Charts: LINZ, CC BY 4.0. Land: © OpenStreetMap contributors. Not for navigation.</div>

@@ -1,5 +1,5 @@
 // A ship's outline at its real size on the chart, placed by its GPS antenna: for our own
-// boat (Boat panel) and for AIS targets (their reported dimensions), at harbour scales.
+// boat (Settings) and for AIS targets (their reported dimensions), at harbour scales.
 
 /** Metres per screen pixel at a latitude and zoom (MapLibre's 512-pixel tiles). */
 export function metresPerPixel(lat, zoom) {

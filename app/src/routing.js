@@ -200,7 +200,7 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
   }
   function ready() {
     const c = course.get();
-    if (!getBoatSettings().polar) { msg("Choose a polar in the Boat panel.", "warn"); return false; }
+    if (!getBoatSettings().polar) { msg("Choose a polar in Routing › Boat and polar.", "warn"); return false; }
     if (!c.start || !c.marks.length) { msg("Set a start and at least one mark (Course panel).", "warn"); return false; }
     if (!startTime()) { msg("No start time: load a GRIB or set a time.", "warn"); return false; }
     return true;

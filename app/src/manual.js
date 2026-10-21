@@ -21,7 +21,6 @@ export const PANE_HELP = {
   routing: ["reference", "Routing"],
   fleet: ["reference", "AIS targets"],
   library: ["reference", "Marks, routes and the library"],
-  boat: ["reference", "Your boat"],
   chart: ["reference", "Charts"],
   inst: ["reference", "Instruments"],
 };

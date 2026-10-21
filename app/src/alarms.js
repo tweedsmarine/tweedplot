@@ -222,7 +222,7 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft }) {
     $("anc-drop").textContent = s.anchor ? "Weigh anchor" : "Drop anchor here";
     if (!s.anchor) $("anc-state").textContent = "Off. Drop anchor at the boat's position, then set the swing radius.";
     const air = getAirDraft();
-    $("al-air-note").textContent = air > 0 ? `Air draft ${air} m (Boat panel).` : "Set the air draft in the Boat panel first.";
+    $("al-air-note").textContent = air > 0 ? `Air draft ${air} m (Settings).` : "Set the air draft in Settings first.";
   }
   $("al-shallow").onchange = (e) => { s.shallow = e.target.checked; save(); };
   $("al-shallow-m").onchange = (e) => { const v = parseFloat(e.target.value); s.shallowM = Number.isFinite(v) && v > 0 ? v : null; save(); syncUi(); };

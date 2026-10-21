@@ -1,7 +1,7 @@
 // Ruler: measure bearing and distance on the chart, over one or more legs.
 //
-// Ruler button (left rail) → click to set a point, click again for the next …
-// double-click to finish (the ruler stays on the chart); Esc stops. Each leg is
+// Start from the chart context menu, then click points; double-click to finish
+// (the ruler stays on the chart); Esc stops. Each leg is
 // labelled with its rhumb-line bearing (°T, and °M when Signal K gives the
 // variation) and distance, with the total at the end. Points move like course
 // marks: click one (amber ring), wait for the ring to turn green, then drag.
@@ -86,10 +86,9 @@ export function setupRuler(map, { before, ui, library, route, toast, getVariatio
   map.on("moveend", () => { if (rulers.length || active) draw(); }); // label sides depend on the view
 
   // ---------- drawing a ruler ----------------------------------------------------------
-  const btn = $("ruler-btn");
   function arm(on) {
     armed = on;
-    btn.classList.toggle("armed", on);
+    document.body.classList.toggle("ruler-armed", on);
     map.getCanvas().style.cursor = on ? "crosshair" : "";
     map.getContainer().classList.toggle("drawing", on);
     if (on) {
@@ -122,7 +121,6 @@ export function setupRuler(map, { before, ui, library, route, toast, getVariatio
     arm(false);
     draw();
   }
-  btn.onclick = () => (armed ? finish() : arm(true));
   map.on("click", (e) => {
     if (!armed) return;
     active ??= { id: `r${++n}`, pts: [] };
@@ -253,5 +251,16 @@ export function setupRuler(map, { before, ui, library, route, toast, getVariatio
   }
 
   draw();
-  return { hitAt, deleteRuler, deletePoint, deleteAll, saveAsRoute, count: () => rulers.length, isArmed: () => armed };
+  return {
+    hitAt, deleteRuler, deletePoint, deleteAll, saveAsRoute,
+    startAt(pos) {
+      if (armed) return;
+      arm(true);
+      active = { id: `r${++n}`, pts: [pos] };
+      draw();
+    },
+    finish,
+    count: () => rulers.length,
+    isArmed: () => armed,
+  };
 }

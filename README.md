@@ -2,7 +2,7 @@
 
 **TweedPlot: Professional Marine Chart Plotter**, from [TweedsMarine](https://tweedsmarine.nz). Formerly developed as "racenav": crate names, `RACENAV_*` environment variables and `racenav.*` settings keys keep the old name internally. Data folder: `C:\dev\tweedplot-data`, or the old `C:\dev\racenav-data` while that is the one present; app data `%APPDATA%\nz.tweedsmarine.tweedplot` (copied from the old `nz.tweedsmarine.racenav` on first start).
 
-A modern race navigation app for Windows: chartplotter basics, a GRIB viewer for many runs at once, an in-house routing engine and race tools. Live data comes in through Signal K.
+A modern race navigation app for Windows: chartplotter basics, a GRIB viewer for many runs at once, an in-house routing engine and race tools. Signal K is the current live-data path; native NMEA 0183 support is being built in stages and is not yet connected to the chart or instrument display.
 
 Spec and roadmap: https://claude.ai/code/artifact/e37fa4c3-20c2-4aec-af8f-641714f39c27
 
@@ -17,6 +17,8 @@ Spec and roadmap: https://claude.ai/code/artifact/e37fa4c3-20c2-4aec-af8f-641714
 | `crates/routing` | Isochrone routing (modified isochrone method) round land and water shallower than the safety depth, multi-leg, tack/gybe penalties, currents | Working, tested |
 | `crates/chart` | LINZ GeoPackages (Topo50 coastline, depth areas, contours, soundings, all scale bands) served as vector tiles | Working, tested on the full LINZ download |
 | `crates/signalk` | Signal K WebSocket client (`subscribe=all`), own-vessel state (position, COG/SOG, heading, BSP, depth, apparent and true wind, log), true wind worked out when the server has none, other contexts (AIS) passed on, session log and log replay | Working, tested against Signal K playing a Morgane log |
+| `crates/marine-nmea` | NMEA 0183 framing, checksum validation, common sentence decoding, and searchable sentence catalog; unknown valid sentences retained | Parser tested; not yet connected to UI/live vessel arbitration |
+| `app/src-tauri/src/nmea.rs` | Native serial, TCP client and UDP listener source workers; source status and observations; saved source configuration | Settings can configure and monitor sources; observations are not yet selected to drive the chart. COM renumber discovery, priority arbitration and NMEA 2000 remain future work |
 | `crates/ais` | AIS targets: Signal K AIS contexts and the aisstream.io WebSocket feed, merged by MMSI, expiry, distress kinds from MMSI | Parsers tested; aisstream.io not yet tried live |
 | `crates/stations` | Weather observations: MetService WIS2 (OGC API), aviationweather.gov METAR, NOAA NDBC buoys | Parsers tested; not yet tried live |
 | `crates/library` | Mark library, routes, saved routings and tracks as JSON files; track recorder; GPX import and export | Working, tested |
@@ -206,6 +208,8 @@ Fleet drawer: type the race's YB name (as in `yb.tl/<race>`, e.g. `ggr2026`) and
 
 ## Own boat
 
+Settings (cog at the bottom of the rail) holds the persistent vessel profile: name, IMO, call sign, MMSI, draft, length, breadth, air draft, optional reference position and GPS antenna offsets. The reference position is the chart's initial fallback centre when no live GPS fix is available; it never substitutes for a live fix and does not override a location the user has already chosen. Existing length, breadth, antenna offset, air draft and MMSI values from the former Boat panel's browser settings are migrated on first launch. Polar, efficiency and tack/gybe costs are in Routing › Boat and polar.
+
 Rail, bottom: **Centre** puts the boat in the middle of the chart. Chart drawer, Own boat: a heading line (solid; boat speed through the water, else SOG) and a COG line (dashed orange; SOG), each on or off, each running for a set time (1 min to 48 h) or to the edge of the chart. They are rhumb lines, so straight on the chart. Damping: moving averages of the Signal K readings (course and speed; wind; depth) over 0–60 s, with angles averaged as vectors; position is never damped. The boat symbol, its lines and the instruments all use the damped values.
 
 ## Measuring
@@ -226,8 +230,8 @@ Floating panels of readings, always on top. Drag a panel by its grip; double-cli
 ## Live data: replay, AIS, alarms, stations
 
 - **Replay** (Chart › Replay a log): plays a Signal K session log (`<app data>\logs\sk-*.log`, one `time<TAB>message` line each) in place of the live stream, with pause, speed, seek and stop (`signalk::replay`, commands `replay_logs/start/control/stop`). Live events are dropped while a replay runs; the track recorder ignores replays.
-- **AIS** (Fleet › AIS; Fleet › Own fleet): own MMSI (Boat panel) dropped in `ais::Targets::set_own` (`ais_set_own`); per-target tracks of the last 6 h (`ais_tracks`) drawn for own-fleet boats (localStorage `racenav.ownfleet`: MMSI, name, group, track) and optionally the selected target. Signal K AIS contexts and aisstream.io (free key; the subscription follows the chart view, up to 6°, at most every 5 s) merged in `ais::Targets`; changes go to the page every 2 s (`ais` event). CPA/TCPA in `app/src/ais.js`; collision alarm under a CPA within a TCPA (anchored/moored ignorable); AIS-SART/MOB/EPIRB (MMSI 970/972/974, or nav status 14) always alarm.
-- **Alarms** (`app/src/alarms.js`): banner + Web Audio tones until silenced; shallow water, anchor watch, air draft against charted VERCLR/VERCSA of bridges, overhead cables and pipelines (`chart::ChartStore::clearances`, command `chart_clearances`), position lost, own MOB (also saved as a library mark, group MOB). Other modules raise their own (`alarms.raise/clear`).
+- **AIS** (Fleet › AIS; Fleet › Own fleet): own MMSI (Settings) dropped in `ais::Targets::set_own` (`ais_set_own`); per-target tracks of the last 6 h (`ais_tracks`) drawn for own-fleet boats (localStorage `racenav.ownfleet`: MMSI, name, group, track) and optionally the selected target. Signal K AIS contexts and aisstream.io (free key; the subscription follows the chart view, up to 6°, at most every 5 s) merged in `ais::Targets`; changes go to the page every 2 s (`ais` event). CPA/TCPA in `app/src/ais.js`; collision alarm under a CPA within a TCPA (anchored/moored ignorable); AIS-SART/MOB/EPIRB (MMSI 970/972/974, or nav status 14) always alarm.
+- **Alarms** (`app/src/alarms.js`): banner + Web Audio tones until silenced; shallow water, anchor watch, air draft (Settings) against charted VERCLR/VERCSA of bridges, overhead cables and pipelines (`chart::ChartStore::clearances`, command `chart_clearances`), position lost, own MOB (also saved as a library mark, group MOB). Other modules raise their own (`alarms.raise/clear`).
 - **Weather stations** (Weather › Weather stations and buoys): `stations_latest` (10-minute cache per source) and `station_history`; the popup plots observed wind, gusts and pressure against `grib_meteogram` for the loaded GRIBs, with the mean forecast-minus-observed difference.
 - **Display colours**: day, dusk, night red, night green: CSS filters on the whole page (invert, then an SVG colour matrix to one channel), with already-dark elements inverted first so they stay dark (`app/src/palette.js`).
 - **Cockpit window** (Instruments › Cockpit window, `cockpit.html`): a second Tauri window of large tiles; the chart window emits `cockpit` (the instrument context and the active alarms) once a second.

@@ -618,7 +618,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     const mmsi = $("of-mmsi").value.replace(/\D/g, "");
     if (mmsi.length !== 9) { $("of-msg").textContent = "An MMSI has 9 digits."; return; }
     if (inFleet(mmsi)) { $("of-msg").textContent = "That MMSI is already in the list."; return; }
-    if (Number(mmsi) === ownMmsi) { $("of-msg").textContent = "That is your own MMSI (Boat panel)."; return; }
+    if (Number(mmsi) === ownMmsi) { $("of-msg").textContent = "That is your own MMSI (Settings)."; return; }
     fleet.entries.push({ mmsi, name: $("of-name").value.trim(), group: $("of-group").value, track: false });
     $("of-mmsi").value = ""; $("of-name").value = ""; $("of-msg").textContent = "";
     saveFleet(); renderFleet(); draw();
@@ -629,7 +629,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   $("of-only").onchange = (e) => { fleet.only = e.target.checked; saveFleet(); draw(); renderList(); };
   $("ais-sel-track").checked = s.selTrack;
   $("ais-sel-track").onchange = (e) => { s.selTrack = e.target.checked; save(); loadTracks(); };
-  // our own MMSI (Boat panel) is never a target
+  // our own MMSI (Settings) is never a target
   const syncOwn = () => {
     ownMmsi = Number(getOwnMmsi?.() || 0) || null;
     invoke("ais_set_own", { mmsi: ownMmsi }).catch(() => {});

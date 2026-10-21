@@ -39,6 +39,7 @@ import { hullRing, bigEnough } from "./hull.js";
 import { setupStations } from "./stations.js";
 import { setupInstruments, waypointData, targetAt } from "./instruments.js";
 import { setupLibrary, labelImage } from "./library.js";
+import { setupSettings } from "./settings.js";
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
@@ -139,7 +140,7 @@ const map = new maplibregl.Map({
         paint: { "line-color": "#1d2a33", "line-width": 1.6 } },
       { id: "cogline", type: "line", source: "cogline",
         paint: { "line-color": "#d35400", "line-width": 2, "line-dasharray": [3, 2] } },
-      // own boat to scale (Boat panel: length, beam, GPS antenna) at harbour scales
+      // own boat to scale (Settings: length, breadth, GPS antenna) at harbour scales
       { id: "boat-hull", type: "fill", source: "boat-hull", filter: ["==", ["get", "k"], "hull"],
         paint: { "fill-color": "#d00000", "fill-opacity": 0.35 } },
       { id: "boat-hull-line", type: "line", source: "boat-hull", filter: ["==", ["get", "k"], "hull"],
@@ -152,6 +153,15 @@ const map = new maplibregl.Map({
     ],
   },
 });
+let hasPositionFix = false;
+let chartPositionChosen = false;
+for (const eventName of ["pointerdown", "wheel", "keydown"]) {
+  map.getCanvasContainer().addEventListener(eventName, () => { chartPositionChosen = true; }, { passive: true });
+}
+map.getCanvasContainer().addEventListener("touchstart", () => { chartPositionChosen = true; }, { passive: true });
+function useReferencePosition([lon, lat]) {
+  if (!hasPositionFix && !chartPositionChosen) map.setCenter([lon, lat]);
+}
 window.__map = map; // handy for debugging in devtools
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), "top-left");
 map.addControl(new maplibregl.ScaleControl({ unit: "nautical" }), "bottom-right");
@@ -187,6 +197,7 @@ const inst = setupInstruments();
 let mobNow = null; // the man overboard set (alarms), for the cockpit window too
 window.addEventListener("racenav-mob", (e) => { mobNow = e.detail; inst.update({ mob: e.detail }); });
 const boat = setupBoat();
+setupSettings({ boat, ui, onReferencePosition: useReferencePosition });
 const dock = setupDock(map);
 let features = null;
 let ruler = null;
@@ -453,7 +464,7 @@ liveBtn.onclick = () => {
 const signalKActive = () => live && (skConnected || replayOn) && Date.now() - lastFeed < 15000;
 
 /** The boat on the chart: its symbol, or at harbour scales its outline to scale from
- *  the Boat panel's length and beam, placed by the GPS antenna. */
+ *  the Settings length and breadth, placed by the GPS antenna. */
 let boatDir = 0;
 function drawBoat() {
   if (!lastBoat) return;
@@ -507,6 +518,9 @@ map.on("contextmenu", (e) => {
     ctx.querySelector('[data-act="ruler-pt"]').hidden = ctxRuler.i == null;
     ctx.querySelector('[data-act="ruler-all"]').hidden = ruler.count() < 2;
   }
+  const rulerToggle = ctx.querySelector('[data-act="ruler-toggle"]');
+  rulerToggle.hidden = !!ctxRuler;
+  rulerToggle.textContent = ruler?.isArmed() ? "Finish ruler" : "Start ruler here";
   // selected mark: offer Move (only once its ring is green) and Delete
   const sel = route?.selection();
   for (const el of ctx.querySelectorAll(".sel-item")) el.hidden = !sel;
@@ -520,9 +534,9 @@ map.on("contextmenu", (e) => {
   const boatBtn = ctx.querySelector('[data-act="boat"]');
   boatBtn.disabled = signalKActive();
   boatBtn.title = boatBtn.disabled ? "Signal K is plotting the boat: press Live to pause it first" : "";
-  ctx.style.left = `${Math.min(e.point.x, window.innerWidth - 200)}px`;
-  ctx.style.top = `${Math.min(e.point.y, window.innerHeight - (ctxRuler || ctxBarrier ? 320 : 200))}px`;
   ctx.hidden = false;
+  ctx.style.left = `${Math.max(4, Math.min(e.point.x, window.innerWidth - ctx.offsetWidth - 4))}px`;
+  ctx.style.top = `${Math.max(4, Math.min(e.point.y, window.innerHeight - ctx.offsetHeight - 4))}px`;
 });
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 ctx.addEventListener("click", (e) => {
@@ -536,6 +550,10 @@ ctx.addEventListener("click", (e) => {
   if (act === "libmark") library?.newMarkAt(ctxAt);
   if (act === "centre") map.easeTo({ center: ctxAt });
   if (act === "meteogram") gribTools?.meteogramAt(ctxAt);
+  if (act === "ruler-toggle") {
+    if (ruler.isArmed()) ruler.finish();
+    else ruler.startAt(ctxAt);
+  }
   if (act === "ruler-route" && ctxRuler) ruler.saveAsRoute(ctxRuler.rid);
   if (act === "ruler-pt" && ctxRuler) ruler.deletePoint(ctxRuler.rid, ctxRuler.i);
   if (act === "ruler-del" && ctxRuler) ruler.deleteRuler(ctxRuler.rid);
@@ -561,6 +579,7 @@ listen("vessel", ({ payload }) => {
     lastRaw = raw;
     if (fresh) showStatus();
   }
+  if (Number.isFinite(raw.lat) && Number.isFinite(raw.lon)) hasPositionFix = true;
   lastFeed = Date.now();
   if (!live) return; // planning: leave the boat where it is
   const v = damping.push(raw);
@@ -626,12 +645,6 @@ for (const [id, key] of [["set-hdg-line", "hdgLine"], ["set-cog-line", "cogLine"
   el.checked = !!settings[key];
   el.onchange = () => { settings[key] = el.checked; saveSettings(); drawLines(lineBoat); };
 }
-
-// Centre on the boat (rail button).
-document.getElementById("centre-boat").onclick = () => {
-  if (!lastBoat) return;
-  map.easeTo({ center: lastBoat, duration: 400 });
-};
 
 // ---------- helpers ---------------------------------------------------------
 function setData(id, data) { const s = map.getSource(id); if (s) s.setData(data); }

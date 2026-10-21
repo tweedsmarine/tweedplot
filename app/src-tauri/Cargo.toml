@@ -34,4 +34,6 @@ gribdl.workspace = true
 tides.workspace = true
 ais.workspace = true
 stations.workspace = true
+marine-nmea.workspace = true
+serialport.workspace = true
 chrono.workspace = true

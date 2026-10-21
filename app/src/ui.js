@@ -28,7 +28,7 @@ export function setupRail(map) {
   document.getElementById("drawer-close").onclick = () => open(null);
   window.addEventListener("keydown", (e) => {
     // Esc closes the drawer only when nothing else (menus, modes, selections) wants it
-    if (e.key === "Escape" && !e.defaultPrevented && current && !document.querySelector(".ctx:not([hidden])") && !document.querySelector(".armed")) {
+    if (e.key === "Escape" && !e.defaultPrevented && current && !document.querySelector(".ctx:not([hidden])") && !document.querySelector(".armed") && !document.body.classList.contains("ruler-armed")) {
       if (document.activeElement && drawer.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
       open(null);
     }
@@ -36,7 +36,7 @@ export function setupRail(map) {
 
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(KEY) || "{}").pane; } catch { /* ignore */ }
-  open(saved === undefined ? "weather" : saved === "route" ? "course" : saved);
+  open(saved === undefined ? "weather" : saved === "route" ? "course" : saved === "boat" ? "routing" : saved);
 
   // Tabs inside a pane
   for (const tabs of drawer.querySelectorAll(".tabs")) {
