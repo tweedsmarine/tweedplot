@@ -227,6 +227,7 @@ map.on("load", () => {
     getSafetyDepth: () => settings.safetyDepth,
     getAirDraft: () => Number(boat.get().airDraft) || 0,
   });
+  for (const alarm of pendingNmeaAlarms.splice(0)) alarms.raise(...alarm);
   setupStations(map, { weather });
   document.getElementById("inst-cockpit").onclick = () => invoke("cockpit_open").catch((e) => toast?.(`Cockpit window: ${e}`, 4000));
   setupAis(map, { alarms, ui, getOwnMmsi: () => boat.get().mmsi, getOwn: () => ({ pos: lastBoat, cog: live ? vessel?.cog : null, sog: live ? vessel?.sog : 0, live: live && signalKActive() }) });
@@ -413,10 +414,12 @@ let nmeaNavigationSourceName = "";
 let nmeaConnected = false;
 let nmeaSeen = false;
 let nmeaDetail = "";
+let activeNmeaGroupSources = {};
 let lastData = 0; // ms timestamp of the last update from the selected live-data source
 let lastFeed = 0; // last vessel update, live or replayed (what the boat and instruments show)
 let replayOn = false;
 let alarms = null;
+const pendingNmeaAlarms = [];
 let lastRaw = null; // the last vessel update, for what is arriving
 let live = true;
 const SK_STALE_MS = 10000;
@@ -471,16 +474,33 @@ function setNmeaNavigationSource(payload) {
   showStatus();
 }
 listen("nmea-navigation-source", ({ payload }) => setNmeaNavigationSource(payload));
-listen("nmea-status", ({ payload }) => {
-  if (!payload || payload.id !== nmeaNavigationSourceId) return;
+listen("nmea-mux-status", ({ payload }) => {
+  if (!payload) return;
+  const nextSources = payload.groupSources || {};
+  if (JSON.stringify(nextSources) !== JSON.stringify(activeNmeaGroupSources)) damping.clear();
+  activeNmeaGroupSources = nextSources;
   nmeaSeen = true;
-  nmeaConnected = payload.state === "connected" || payload.state === "receiving";
+  nmeaConnected = !!payload.connected;
   nmeaDetail = payload.detail || payload.state;
+  if (Object.keys(payload.groupSources || {}).length) lastData = Date.now();
   showStatus();
 });
+listen("nmea-failover", ({ payload }) => {
+  if (!payload) return;
+  const id = `nmea-failover-${payload.group}`;
+  const detail = {
+    level: "alarm",
+    text: `${payload.label || payload.group} source changed`,
+    detail: `Using ${payload.to} instead of ${payload.from}. Check the preferred source and connection.`,
+  };
+  if (alarms) {
+    alarms.clear(id);
+    alarms.raise(id, detail);
+  } else pendingNmeaAlarms.push([id, detail]);
+});
 invoke("nmea_sources_get").then((data) => {
-  const primary = data.sources?.find((source) => source.enabled && source.useForNavigation);
-  setNmeaNavigationSource(primary ? { id: primary.id, name: primary.name } : null);
+  const enabled = data.sources?.some((source) => source.enabled);
+  setNmeaNavigationSource(enabled ? { id: "nmea-multiplexer", name: "NMEA multiplexer" } : null);
 }).catch((error) => console.error("Could not load selected NMEA source:", error));
 function setStatus(payload) {
   if (!payload) return;
@@ -629,10 +649,9 @@ listen("vessel", ({ payload }) => {
     if (!replayOn) return; // a late message after the replay stopped
   } else {
     if (nmeaNavigationSourceId) {
-      if (payload.source !== "nmea0183" || payload.sourceId !== nmeaNavigationSourceId) return;
+      if (payload.source !== "nmea0183" || payload.sourceId !== "nmea-multiplexer") return;
       nmeaConnected = true;
       nmeaSeen = true;
-      nmeaDetail = `Using ${payload.sourceName || nmeaNavigationSourceName}`;
     } else {
       if (payload.source === "nmea0183") return;
       if (!skConnected) skConnected = true; // data proves the link is up
@@ -647,7 +666,17 @@ listen("vessel", ({ payload }) => {
   if (!live) return; // planning: leave the boat where it is
   const v = damping.push(raw);
   vessel = v;
-  if (v.lat == null || v.lon == null) { feed(); return; }
+  if (v.lat == null || v.lon == null) {
+    if (payload.source === "nmea0183" && lastBoat) {
+      lastBoat = null;
+      setData("boat", emptyFC());
+      setData("boat-hull", emptyFC());
+      drawLines(null);
+      arrows?.clear();
+    }
+    feed();
+    return;
+  }
 
   const pos = [v.lon, v.lat];
   lastBoat = pos;

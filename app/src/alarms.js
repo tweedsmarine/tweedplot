@@ -186,7 +186,7 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft }) {
     // position lost (live, Signal K connected, no fix for 30 s)
     if (b.live && v.lat != null && b.fresh) lastPosAt = Date.now();
     if (s.posLost && b.live && b.connected && Date.now() - lastPosAt > 30000) {
-      raise("poslost", { level: "warn", text: "POSITION LOST", detail: "No position from Signal K for 30 s: check the GPS" });
+      raise("poslost", { level: "warn", text: "POSITION LOST", detail: "No position data for 30 s: check the navigation source" });
     } else clear("poslost");
     // air draft: charted clearances ahead, every 10 s
     const air = getAirDraft();

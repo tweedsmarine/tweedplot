@@ -57,10 +57,16 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
   const sourceList = document.getElementById("nmea-sources");
   const sourceStatus = document.getElementById("nmea-settings-status");
   const nmeaCurrentData = document.getElementById("nmea-current-data");
+  const nmeaActiveSources = document.getElementById("nmea-active-sources");
   const nmeaRawViewer = document.getElementById("nmea-raw-viewer");
+  const arbitrationBox = document.getElementById("nmea-arbitration");
+  const failoverCheckbox = document.getElementById("nmea-failover-enabled");
+  const staleAfterSelect = document.getElementById("nmea-stale-seconds");
   let saved = null;
   let sources = [];
+  let arbitration = { failoverEnabled: true, staleAfterSeconds: 10, preferredSources: {} };
   let sourceStatuses = new Map();
+  let activeGroupSources = {};
   const latestObservations = new Map();
   const recentSentences = [];
   let editingId = null;
@@ -196,9 +202,10 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       empty.className = "settings-note";
       empty.textContent = "No NMEA sources configured.";
       sourceList.append(empty);
+      renderArbitration();
       return;
     }
-    for (const source of sources) {
+    for (const [index, source] of sources.entries()) {
       const row = document.createElement("div");
       row.className = "nmea-source-row";
       const toggle = document.createElement("input");
@@ -210,21 +217,6 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
           ? { ...item, enabled: toggle.checked, useForNavigation: toggle.checked && item.useForNavigation }
           : item));
       });
-      const primaryLabel = document.createElement("label");
-      primaryLabel.className = "nmea-primary";
-      const primary = document.createElement("input");
-      primary.type = "radio";
-      primary.name = "nmea-navigation-source";
-      primary.checked = !!source.useForNavigation;
-      primary.disabled = !source.enabled;
-      primary.setAttribute("aria-label", `Use ${source.name} for navigation`);
-      primary.addEventListener("change", () => {
-        if (primary.checked) saveSources(sources.map((item) => ({
-          ...item,
-          useForNavigation: item.id === source.id,
-        })));
-      });
-      primaryLabel.append(primary, document.createTextNode("Use for navigation"));
       const description = document.createElement("div");
       description.className = "nmea-source-description";
       const name = document.createElement("b");
@@ -244,6 +236,18 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       edit.type = "button";
       edit.textContent = "Edit";
       edit.addEventListener("click", () => editSource(source));
+      const up = document.createElement("button");
+      up.type = "button";
+      up.textContent = "↑";
+      up.title = "Move earlier in automatic fallback order";
+      up.disabled = index === 0;
+      up.addEventListener("click", () => reorderSource(index, index - 1));
+      const down = document.createElement("button");
+      down.type = "button";
+      down.textContent = "↓";
+      down.title = "Move later in automatic fallback order";
+      down.disabled = index === sources.length - 1;
+      down.addEventListener("click", () => reorderSource(index, index + 1));
       const remove = document.createElement("button");
       remove.type = "button";
       remove.textContent = "Remove";
@@ -251,13 +255,61 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
         saveSources(sources.filter((item) => item.id !== source.id));
         if (editingId === source.id) resetSourceForm();
       });
-      row.append(toggle, primaryLabel, description, edit, remove);
+      row.append(toggle, description, up, down, edit, remove);
       sourceList.append(row);
+    }
+    renderArbitration();
+  }
+
+  const GROUPS = [
+    ["position", "Position"],
+    ["motion", "COG / SOG"],
+    ["heading", "Heading"],
+    ["speedThroughWater", "Speed through water"],
+    ["wind", "Wind"],
+    ["depth", "Depth"],
+    ["waterTemperature", "Water temperature"],
+  ];
+
+  function renderArbitration() {
+    failoverCheckbox.checked = arbitration.failoverEnabled !== false;
+    staleAfterSelect.value = String(arbitration.staleAfterSeconds || 10);
+    arbitrationBox.replaceChildren();
+    for (const [key, label] of GROUPS) {
+      const wrapper = document.createElement("label");
+      wrapper.textContent = `${label} source`;
+      const select = document.createElement("select");
+      select.dataset.group = key;
+      select.add(new Option("Automatic (source order)", ""));
+      for (const source of sources) {
+        const enabledNote = source.enabled ? "" : " · disabled";
+        select.add(new Option(`${source.name}${enabledNote}`, source.id));
+      }
+      select.value = arbitration.preferredSources?.[key] || "";
+      select.addEventListener("change", () => {
+        const preferredSources = { ...arbitration.preferredSources, [key]: select.value };
+        if (!select.value) delete preferredSources[key];
+        saveSources(sources, { ...arbitration, preferredSources });
+      });
+      wrapper.append(select);
+      arbitrationBox.append(wrapper);
     }
   }
 
+  async function reorderSource(from, to) {
+    const next = [...sources];
+    const [source] = next.splice(from, 1);
+    next.splice(to, 0, source);
+    await saveSources(next);
+  }
+
   function sourceStatusText(source, endpoint, state) {
-    return `${endpoint} · ${source.enabled ? (state?.state || "starting") : "disabled"}${state ? ` · ${state.validSentences} valid / ${state.invalidSentences} invalid${state.detail ? ` · ${state.detail}` : ""}` : ""}`;
+    const age = state?.lastSeen ? Date.now() - Date.parse(state.lastSeen) : Infinity;
+    const stale = source.enabled && state?.state === "receiving"
+      && age > Number(arbitration.staleAfterSeconds || 10) * 1000;
+    const status = !source.enabled ? "disabled" : stale ? "stale" : state?.state || "starting";
+    const detail = stale ? `No valid data for ${Math.round(age / 1000)} s` : state?.detail;
+    return `${endpoint} · ${status}${state ? ` · ${state.validSentences} valid / ${state.invalidSentences} invalid${detail ? ` · ${detail}` : ""}` : ""}`;
   }
 
   function updateSourceStatus(payload) {
@@ -274,8 +326,21 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
   }
 
   function renderNmeaData() {
-    const primary = sources.find((source) => source.enabled && source.useForNavigation);
-    const observation = primary && latestObservations.get(primary.id);
+    const observations = Object.entries(activeGroupSources).flatMap(([group, id]) => {
+      const observation = latestObservations.get(id);
+      if (!observation) return [];
+      const fields = {
+        position: ["lat", "lon", "datetime"],
+        motion: ["cog", "sog"],
+        heading: ["heading", "headingMag", "variation"],
+        speedThroughWater: ["stw"],
+        wind: ["aws", "awa", "tws", "twa", "twd"],
+        depth: ["depth", "depthKeel", "depthSurface"],
+        waterTemperature: ["waterTemp"],
+      }[group] || [];
+      return [Object.fromEntries(fields.map((field) => [field, observation[field]]))];
+    });
+    const observation = Object.assign({}, ...observations);
     const labels = [
       ["Position", observation?.lat != null && observation?.lon != null
         ? `${observation.lat.toFixed(5)}, ${observation.lon.toFixed(5)}`
@@ -289,25 +354,37 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       ["Depth", observation?.depth != null ? `${observation.depth.toFixed(1)} m` : null],
       ["Water temp", observation?.waterTemp != null ? `${observation.waterTemp.toFixed(1)} °C` : null],
     ].filter(([, value]) => value != null);
-    nmeaCurrentData.textContent = primary
-      ? `${primary.name}: ${labels.length ? labels.map(([label, value]) => `${label} ${value}`).join(" · ") : "Waiting for supported data fields."}`
-      : "Select an enabled source for navigation to see decoded values here.";
+    nmeaCurrentData.textContent = labels.length
+      ? labels.map(([label, value]) => `${label} ${value}`).join(" · ")
+      : "Waiting for supported data fields from enabled sources.";
     nmeaRawViewer.textContent = recentSentences.length
       ? recentSentences.join("\n")
       : "No NMEA sentences received yet.";
     nmeaRawViewer.scrollTop = nmeaRawViewer.scrollHeight;
   }
 
-  async function saveSources(next) {
+  async function saveSources(next, nextArbitration = arbitration) {
     const save = document.getElementById("nmea-source-save");
     save.disabled = true;
     showSourceStatus("Saving NMEA sources…");
+    const ids = new Set(next.map((source) => source.id));
+    nextArbitration = {
+      ...nextArbitration,
+      preferredSources: Object.fromEntries(
+        Object.entries(nextArbitration.preferredSources || {}).filter(([, id]) => !id || ids.has(id)),
+      ),
+    };
     try {
-      await invoke("nmea_sources_set", { sources: next });
+      await invoke("nmea_sources_set", { sources: next, arbitration: nextArbitration });
       sources = next;
-      if (saved) saved.nmeaSources = next;
+      arbitration = nextArbitration;
+      if (saved) {
+        saved.nmeaSources = next;
+        saved.nmeaArbitration = nextArbitration;
+      }
       sourceStatuses = new Map();
       renderSources();
+      renderActiveSources();
       renderNmeaData();
       showSourceStatus("NMEA sources saved.", "good");
     } catch (error) {
@@ -350,9 +427,14 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       await scanPorts();
       const data = await invoke("nmea_sources_get");
       sources = data.sources || [];
+      arbitration = data.arbitration || arbitration;
       sourceStatuses = new Map((data.statuses || []).map((item) => [item.id, item]));
-      if (saved) saved.nmeaSources = sources;
+      if (saved) {
+        saved.nmeaSources = sources;
+        saved.nmeaArbitration = arbitration;
+      }
       renderSources();
+      renderActiveSources();
       renderNmeaData();
     } catch (error) {
       showSourceStatus(`Could not load NMEA sources: ${error}`, "bad");
@@ -373,6 +455,30 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
     if (recentSentences.length > 100) recentSentences.shift();
     renderNmeaData();
   }).catch((error) => showSourceStatus(`Could not subscribe to NMEA data: ${error}`, "bad"));
+  function renderActiveSources() {
+    const labels = Object.entries(activeGroupSources).map(([group, id]) => {
+      const source = sources.find((item) => item.id === id);
+      const title = GROUPS.find(([key]) => key === group)?.[1] || group;
+      return `${title}: ${source?.name || id}`;
+    });
+    nmeaActiveSources.textContent = labels.length
+      ? `Active sources — ${labels.join(" · ")}`
+      : "No fresh source currently selected for any data group.";
+  }
+
+  listen("nmea-mux-status", ({ payload }) => {
+    if (!payload) return;
+    activeGroupSources = payload.groupSources || {};
+    renderActiveSources();
+    for (const state of sourceStatuses.values()) updateSourceStatus(state);
+    renderNmeaData();
+  }).catch((error) => showSourceStatus(`Could not subscribe to NMEA multiplexer status: ${error}`, "bad"));
+  failoverCheckbox.addEventListener("change", () => {
+    saveSources(sources, { ...arbitration, failoverEnabled: failoverCheckbox.checked });
+  });
+  staleAfterSelect.addEventListener("change", () => {
+    saveSources(sources, { ...arbitration, staleAfterSeconds: Number(staleAfterSelect.value) });
+  });
 
   saveButton.disabled = true;
   invoke("settings_get").then(async (settings) => {

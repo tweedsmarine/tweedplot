@@ -533,7 +533,7 @@
     </div>
     <button id="mob-btn" title="Man overboard: mark the boat's position now, with bearing, distance and time from it until cleared">MOB</button>
     <div id="toolbar" class="ctl-col">
-      <button id="sk-state" class="bad" aria-label="Signal K status" title="Signal K: connecting…">
+      <button id="sk-state" class="bad" aria-label="Live data status" title="Live data: connecting…">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="14" r="2" class="fill"/><path d="M8.5 10.5a5 5 0 0 1 7 0M5.6 7.6a9 9 0 0 1 12.8 0"/><path class="slash" d="M5 19L19 5"/></svg></button>
       <button id="sk-live" class="on" aria-label="Live or paused" title="Live: the boat follows Signal K. Click to pause and plan (right-click the chart to move the boat).">
         <svg viewBox="0 0 24 24"><path class="play fill" d="M8 5.5v13l10-6.5z"/><path class="pause" d="M9 6v12M15 6v12"/></svg></button>
@@ -621,9 +621,20 @@
           </form>
           <section id="nmea-settings-section" class="nmea-settings">
             <h3>NMEA data sources</h3>
-            <p class="settings-note">Choose one enabled source to drive the boat, instruments and alarms. Other enabled sources are monitored only, so duplicate feeds cannot compete with the selected source.</p>
+            <p class="settings-note">Enabled sources are monitored concurrently. TweedPlot chooses a preferred source for each data group; when automatic failover is enabled, it uses the next available source in the configured source order and raises an alarm when the active source changes.</p>
             <div id="nmea-sources" class="nmea-sources" aria-live="polite"></div>
+            <h4>Multiplexer</h4>
+            <div class="wx-row">
+              <label><input id="nmea-failover-enabled" type="checkbox" checked /> Automatic failover</label>
+              <label class="grow" for="nmea-stale-seconds">Source stale after</label>
+              <select id="nmea-stale-seconds">
+                <option value="5">5 s</option><option value="10" selected>10 s</option>
+                <option value="15">15 s</option><option value="30">30 s</option><option value="60">60 s</option>
+              </select>
+            </div>
+            <div id="nmea-arbitration" class="settings-grid"></div>
             <h4>Live NMEA data</h4>
+            <div id="nmea-active-sources" class="nmea-current-data">No active NMEA sources.</div>
             <div id="nmea-current-data" class="nmea-current-data">Waiting for a valid sentence.</div>
             <pre id="nmea-raw-viewer" class="nmea-raw-viewer" aria-label="Recent raw NMEA sentences">No NMEA sentences received yet.</pre>
             <form id="nmea-source-form">

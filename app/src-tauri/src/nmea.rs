@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::Emitter;
 use tokio::io::AsyncReadExt;
 use tokio::sync::watch;
@@ -27,9 +27,104 @@ pub struct SourceConfig {
     pub id: String,
     pub name: String,
     pub enabled: bool,
+    /// Retained for backwards compatibility with pre-arbitration settings.
     #[serde(default)]
     pub use_for_navigation: bool,
     pub transport: SourceTransport,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DataGroup {
+    Position,
+    Motion,
+    Heading,
+    SpeedThroughWater,
+    Wind,
+    Depth,
+    WaterTemperature,
+}
+
+impl DataGroup {
+    pub const ALL: [Self; 7] = [
+        Self::Position,
+        Self::Motion,
+        Self::Heading,
+        Self::SpeedThroughWater,
+        Self::Wind,
+        Self::Depth,
+        Self::WaterTemperature,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Position => "position",
+            Self::Motion => "motion",
+            Self::Heading => "heading",
+            Self::SpeedThroughWater => "speedThroughWater",
+            Self::Wind => "wind",
+            Self::Depth => "depth",
+            Self::WaterTemperature => "waterTemperature",
+        }
+    }
+
+    pub fn is_valid_key(key: &str) -> bool {
+        Self::ALL.iter().any(|group| group.key() == key)
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Position => "Position",
+            Self::Motion => "COG / SOG",
+            Self::Heading => "Heading",
+            Self::SpeedThroughWater => "Speed through water",
+            Self::Wind => "Wind",
+            Self::Depth => "Depth",
+            Self::WaterTemperature => "Water temperature",
+        }
+    }
+}
+
+fn default_failover_enabled() -> bool {
+    true
+}
+
+fn default_stale_after_seconds() -> u64 {
+    10
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ArbitrationConfig {
+    #[serde(default = "default_failover_enabled")]
+    pub failover_enabled: bool,
+    #[serde(default = "default_stale_after_seconds")]
+    pub stale_after_seconds: u64,
+    pub preferred_sources: BTreeMap<String, String>,
+}
+
+impl Default for ArbitrationConfig {
+    fn default() -> Self {
+        Self {
+            failover_enabled: default_failover_enabled(),
+            stale_after_seconds: default_stale_after_seconds(),
+            preferred_sources: BTreeMap::new(),
+        }
+    }
+}
+
+#[derive(Default)]
+struct SourceObservation {
+    observation: Observation,
+    last_seen_by_group: BTreeMap<DataGroup, Instant>,
+}
+
+#[derive(Default)]
+struct Multiplexer {
+    sources: BTreeMap<String, SourceObservation>,
+    active_sources: BTreeMap<DataGroup, Option<String>>,
+    source_configs: Vec<SourceConfig>,
+    arbitration: ArbitrationConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,6 +145,16 @@ pub struct SourceStatus {
 static SOURCES: Mutex<Vec<watch::Sender<bool>>> = Mutex::new(Vec::new());
 static STATUSES: Mutex<BTreeMap<String, SourceStatus>> = Mutex::new(BTreeMap::new());
 static NAVIGATION_SOURCE: Mutex<Option<String>> = Mutex::new(None);
+static MULTIPLEXER: Mutex<Multiplexer> = Mutex::new(Multiplexer {
+    sources: BTreeMap::new(),
+    active_sources: BTreeMap::new(),
+    source_configs: Vec::new(),
+    arbitration: ArbitrationConfig {
+        failover_enabled: true,
+        stale_after_seconds: 10,
+        preferred_sources: BTreeMap::new(),
+    },
+});
 static NEXT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 fn emit_status(app: &tauri::AppHandle, status: SourceStatus) {
@@ -119,6 +224,297 @@ fn invalid_sentence(
     }
 }
 
+fn sentence_groups(sentence: &Sentence, observation: &Observation) -> Vec<DataGroup> {
+    let fields = &sentence.fields;
+    let has_number = |index: usize| {
+        fields
+            .get(index)
+            .and_then(|value| value.parse::<f64>().ok())
+            .is_some_and(f64::is_finite)
+    };
+    let valid_position = match sentence.formatter.as_str() {
+        "RMC" => fields.get(1).is_some_and(|status| status == "A"),
+        "GGA" => fields
+            .get(5)
+            .and_then(|quality| quality.parse::<u8>().ok())
+            .is_some_and(|quality| quality > 0),
+        "GLL" => fields.get(5).is_some_and(|status| status == "A"),
+        _ => false,
+    };
+    let mut groups = Vec::new();
+    if valid_position && observation.lat.is_some() && observation.lon.is_some() {
+        groups.push(DataGroup::Position);
+    }
+    let motion_valid = match sentence.formatter.as_str() {
+        "RMC" => {
+            fields.get(1).is_some_and(|status| status == "A") && (has_number(6) || has_number(7))
+        }
+        "VTG" => has_number(0) || has_number(4) || has_number(6),
+        _ => false,
+    };
+    if motion_valid && (observation.cog.is_some() || observation.sog.is_some()) {
+        groups.push(DataGroup::Motion);
+    }
+    let heading_valid = match sentence.formatter.as_str() {
+        "HDT" => has_number(0) && fields.get(1).is_some_and(|unit| unit == "T"),
+        "HDM" => has_number(0) && fields.get(1).is_some_and(|unit| unit == "M"),
+        "HDG" => has_number(0) || has_number(3),
+        "VHW" => {
+            (has_number(0) && fields.get(1).is_some_and(|unit| unit == "T"))
+                || (has_number(2) && fields.get(3).is_some_and(|unit| unit == "M"))
+        }
+        _ => false,
+    };
+    if heading_valid
+        && (observation.heading.is_some()
+            || observation.heading_mag.is_some()
+            || observation.variation.is_some())
+    {
+        groups.push(DataGroup::Heading);
+    }
+    if sentence.formatter == "VHW"
+        && ((has_number(4) && fields.get(5).is_some_and(|unit| unit == "N"))
+            || (has_number(6) && fields.get(7).is_some_and(|unit| unit == "K")))
+        && observation.stw.is_some()
+    {
+        groups.push(DataGroup::SpeedThroughWater);
+    }
+    let wind_valid = match sentence.formatter.as_str() {
+        "MWV" => {
+            fields.get(4).is_some_and(|status| status == "A") && has_number(0) && has_number(2)
+        }
+        "MWD" => has_number(0) || has_number(4) || has_number(6),
+        _ => false,
+    };
+    if wind_valid
+        && (observation.aws.is_some()
+            || observation.awa.is_some()
+            || observation.tws.is_some()
+            || observation.twa.is_some()
+            || observation.twd.is_some())
+    {
+        groups.push(DataGroup::Wind);
+    }
+    let depth_valid = match sentence.formatter.as_str() {
+        "DPT" => has_number(0),
+        "DBT" | "DBK" | "DBS" => has_number(0) || has_number(2),
+        _ => false,
+    };
+    if depth_valid
+        && (observation.depth.is_some()
+            || observation.depth_keel.is_some()
+            || observation.depth_surface.is_some())
+    {
+        groups.push(DataGroup::Depth);
+    }
+    if sentence.formatter == "MTW"
+        && has_number(0)
+        && fields.get(1).is_some_and(|unit| unit == "C")
+        && observation.water_temp.is_some()
+    {
+        groups.push(DataGroup::WaterTemperature);
+    }
+    groups
+}
+
+fn selected_sources(hub: &mut Multiplexer, now: Instant) -> BTreeMap<DataGroup, Option<String>> {
+    let mut selected = BTreeMap::new();
+    let stale_after = Duration::from_secs(hub.arbitration.stale_after_seconds);
+    for group in DataGroup::ALL {
+        let preferred = hub
+            .arbitration
+            .preferred_sources
+            .get(group.key())
+            .filter(|id| !id.is_empty());
+        let is_fresh = |id: &str| {
+            hub.sources
+                .get(id)
+                .and_then(|source| source.last_seen_by_group.get(&group))
+                .is_some_and(|at| now.duration_since(*at) <= stale_after)
+        };
+        let previous = hub
+            .active_sources
+            .get(&group)
+            .cloned()
+            .flatten()
+            .filter(|id| is_fresh(id));
+        let fallback = || {
+            hub.source_configs
+                .iter()
+                .filter(|source| source.enabled)
+                .find(|source| preferred.is_none_or(|id| source.id != *id) && is_fresh(&source.id))
+                .map(|source| source.id.clone())
+        };
+        let chosen = match preferred {
+            Some(id) if is_fresh(id) => Some(id.clone()),
+            Some(_) if !hub.arbitration.failover_enabled => None,
+            Some(_) => fallback(),
+            None if previous.is_some() => previous,
+            None if hub.arbitration.failover_enabled
+                || !hub.active_sources.get(&group).is_some_and(Option::is_some) =>
+            {
+                fallback()
+            }
+            None => None,
+        };
+        selected.insert(group, chosen);
+    }
+    selected
+}
+
+fn copy_group(vessel: &mut signalk::VesselState, observation: &Observation, group: DataGroup) {
+    match group {
+        DataGroup::Position => {
+            vessel.lat = observation.lat;
+            vessel.lon = observation.lon;
+            vessel.datetime.clone_from(&observation.datetime);
+        }
+        DataGroup::Motion => {
+            vessel.cog = observation.cog;
+            vessel.sog = observation.sog;
+        }
+        DataGroup::Heading => {
+            vessel.heading = observation.heading;
+            vessel.heading_mag = observation.heading_mag;
+            vessel.variation = observation.variation;
+        }
+        DataGroup::SpeedThroughWater => vessel.stw = observation.stw,
+        DataGroup::Wind => {
+            vessel.aws = observation.aws;
+            vessel.awa = observation.awa;
+            vessel.tws = observation.tws;
+            vessel.twa = observation.twa;
+            vessel.twd = observation.twd;
+        }
+        DataGroup::Depth => {
+            vessel.depth = observation.depth;
+            vessel.depth_keel = observation.depth_keel;
+            vessel.depth_surface = observation.depth_surface;
+        }
+        DataGroup::WaterTemperature => vessel.water_temp = observation.water_temp,
+    }
+}
+
+fn publish_multiplexed(app: &tauri::AppHandle, force: bool) {
+    let now = Instant::now();
+    let (vessel, group_sources, switches, changed) = {
+        let mut hub = MULTIPLEXER.lock().unwrap();
+        let selected = selected_sources(&mut hub, now);
+        let changed = selected != hub.active_sources;
+        let switches = DataGroup::ALL
+            .into_iter()
+            .filter_map(|group| {
+                let before = hub.active_sources.get(&group).cloned().flatten();
+                let after = selected.get(&group).cloned().flatten();
+                (before.is_some() && after.is_some() && before != after)
+                    .then(|| (group, before.unwrap(), after.unwrap()))
+            })
+            .collect::<Vec<_>>();
+        hub.active_sources = selected.clone();
+        let mut vessel = signalk::VesselState {
+            timestamp: Some(chrono::Utc::now().to_rfc3339()),
+            ..Default::default()
+        };
+        for (group, source_id) in &selected {
+            if let Some(observation) = source_id
+                .as_ref()
+                .and_then(|id| hub.sources.get(id))
+                .map(|source| &source.observation)
+            {
+                copy_group(&mut vessel, observation, *group);
+            }
+        }
+        (
+            vessel,
+            selected
+                .iter()
+                .filter_map(|(group, source)| {
+                    source.as_ref().map(|source| (group.key(), source.clone()))
+                })
+                .collect::<BTreeMap<_, _>>(),
+            switches,
+            changed,
+        )
+    };
+
+    let group_details = {
+        let hub = MULTIPLEXER.lock().unwrap();
+        DataGroup::ALL
+            .iter()
+            .filter_map(|group| {
+                let id = group_sources.get(group.key())?;
+                let name = hub
+                    .source_configs
+                    .iter()
+                    .find(|source| source.id == *id)
+                    .map(|source| source.name.clone())
+                    .unwrap_or_else(|| id.clone());
+                Some(format!("{}: {name}", group.label()))
+            })
+            .collect::<Vec<_>>()
+    };
+    let any_connected = STATUSES
+        .lock()
+        .unwrap()
+        .values()
+        .any(|status| status.state == "connected" || status.state == "receiving");
+    for (group, from, to) in switches {
+        let (from_name, to_name) = {
+            let hub = MULTIPLEXER.lock().unwrap();
+            let source_name = |id: &str| {
+                hub.source_configs
+                    .iter()
+                    .find(|source| source.id == id)
+                    .map(|source| source.name.clone())
+                    .unwrap_or_else(|| id.to_owned())
+            };
+            (source_name(&from), source_name(&to))
+        };
+        if let Err(error) = app.emit(
+            "nmea-failover",
+            serde_json::json!({
+                "group": group.key(),
+                "label": group.label(),
+                "from": from_name,
+                "to": to_name,
+            }),
+        ) {
+            eprintln!("Could not publish NMEA failover alarm: {error}");
+        }
+    }
+    if let Err(error) = app.emit(
+        "nmea-mux-status",
+        serde_json::json!({
+            "connected": any_connected,
+            "state": if group_sources.is_empty() { "waiting" } else { "receiving" },
+            "detail": if group_details.is_empty() {
+                "Waiting for fresh NMEA data".to_owned()
+            } else {
+                group_details.join(" · ")
+            },
+            "groupSources": group_sources,
+        }),
+    ) {
+        eprintln!("Could not publish NMEA multiplexer status: {error}");
+    }
+    if force || changed {
+        crate::rec_vessel(app, &vessel);
+        if let Err(error) = app.emit(
+            "vessel",
+            serde_json::json!({
+                "source": "nmea0183",
+                "sourceId": "nmea-multiplexer",
+                "sourceName": "NMEA multiplexer",
+                "groupSources": group_sources,
+                "replay": false,
+                "v": vessel,
+            }),
+        ) {
+            eprintln!("Could not publish multiplexed NMEA vessel data: {error}");
+        }
+    }
+}
+
 fn consume_bytes(
     app: &tauri::AppHandle,
     source: &SourceConfig,
@@ -131,6 +527,16 @@ fn consume_bytes(
         match parsed {
             Ok(sentence) => {
                 observation.apply(&sentence);
+                {
+                    let mut hub = MULTIPLEXER.lock().unwrap();
+                    let source_observation = hub.sources.entry(source.id.clone()).or_default();
+                    source_observation.observation = observation.clone();
+                    for group in sentence_groups(&sentence, observation) {
+                        source_observation
+                            .last_seen_by_group
+                            .insert(group, Instant::now());
+                    }
+                }
                 update_status(
                     app,
                     &source.id,
@@ -151,42 +557,8 @@ fn consume_bytes(
                 ) {
                     eprintln!("Could not publish NMEA observation: {error}");
                 }
-                if source.enabled && source.use_for_navigation && !crate::live::is_replaying() {
-                    let vessel = signalk::VesselState {
-                        lat: observation.lat,
-                        lon: observation.lon,
-                        cog: observation.cog,
-                        sog: observation.sog,
-                        heading: observation.heading,
-                        heading_mag: observation.heading_mag,
-                        variation: observation.variation,
-                        stw: observation.stw,
-                        depth: observation.depth,
-                        depth_keel: observation.depth_keel,
-                        depth_surface: observation.depth_surface,
-                        aws: observation.aws,
-                        awa: observation.awa,
-                        tws: observation.tws,
-                        twa: observation.twa,
-                        twd: observation.twd,
-                        water_temp: observation.water_temp,
-                        datetime: observation.datetime.clone(),
-                        timestamp: Some(chrono::Utc::now().to_rfc3339()),
-                        ..Default::default()
-                    };
-                    crate::rec_vessel(app, &vessel);
-                    if let Err(error) = app.emit(
-                        "vessel",
-                        serde_json::json!({
-                            "source": "nmea0183",
-                            "sourceId": source.id,
-                            "sourceName": source.name,
-                            "replay": false,
-                            "v": vessel,
-                        }),
-                    ) {
-                        eprintln!("Could not publish NMEA vessel data: {error}");
-                    }
+                if !crate::live::is_replaying() {
+                    publish_multiplexed(app, true);
                 }
             }
             Err(error) => invalid_sentence(app, &source.id, generation, &error),
@@ -194,16 +566,51 @@ fn consume_bytes(
     }
 }
 
-fn start_sources(app: &tauri::AppHandle, sources: &[SourceConfig]) {
-    let selected = sources
-        .iter()
-        .find(|source| source.enabled && source.use_for_navigation)
-        .map(|source| (source.id.clone(), source.name.clone()));
-    *NAVIGATION_SOURCE.lock().unwrap() = selected.clone().map(|(id, _)| id);
-    let navigation_source =
-        selected.map(|(id, name)| serde_json::json!({ "id": id, "name": name }));
+fn start_sources(
+    app: &tauri::AppHandle,
+    sources: &[SourceConfig],
+    mut arbitration: ArbitrationConfig,
+) {
+    if arbitration.preferred_sources.is_empty() {
+        if let Some(primary) = sources
+            .iter()
+            .find(|source| source.enabled && source.use_for_navigation)
+        {
+            for group in DataGroup::ALL {
+                arbitration
+                    .preferred_sources
+                    .insert(group.key().to_owned(), primary.id.clone());
+            }
+        }
+    }
+    let mux_enabled = sources.iter().any(|source| source.enabled);
+    let navigation_source = mux_enabled
+        .then(|| serde_json::json!({ "id": "nmea-multiplexer", "name": "NMEA multiplexer" }));
+    *NAVIGATION_SOURCE.lock().unwrap() = navigation_source
+        .as_ref()
+        .map(|_| "nmea-multiplexer".to_owned());
+    {
+        let mut hub = MULTIPLEXER.lock().unwrap();
+        hub.sources.clear();
+        hub.active_sources.clear();
+        hub.source_configs = sources.to_vec();
+        hub.arbitration = arbitration;
+    }
     if let Err(error) = app.emit("nmea-navigation-source", navigation_source) {
         eprintln!("Could not publish selected NMEA source: {error}");
+    }
+    static TICKER_STARTED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    if TICKER_STARTED.set(()).is_ok() {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(1));
+            loop {
+                interval.tick().await;
+                if !crate::live::is_replaying() {
+                    publish_multiplexed(&app, false);
+                }
+            }
+        });
     }
     let mut running = SOURCES.lock().unwrap();
     for stop in running.drain(..) {
@@ -240,6 +647,7 @@ fn start_sources(app: &tauri::AppHandle, sources: &[SourceConfig]) {
     for status in initial_statuses {
         emit_status(app, status);
     }
+    publish_multiplexed(app, true);
 }
 
 pub(crate) fn navigation_source_id() -> Option<String> {
@@ -606,27 +1014,47 @@ pub fn nmea_ports() -> Result<Vec<serde_json::Value>, String> {
 #[tauri::command]
 pub fn nmea_sources_get(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let settings = crate::settings::settings_get(app)?;
+    let mut arbitration = settings.nmea_arbitration.clone();
+    if arbitration.preferred_sources.is_empty() {
+        if let Some(primary) = settings
+            .nmea_sources
+            .iter()
+            .find(|source| source.enabled && source.use_for_navigation)
+        {
+            for group in DataGroup::ALL {
+                arbitration
+                    .preferred_sources
+                    .insert(group.key().to_owned(), primary.id.clone());
+            }
+        }
+    }
     let statuses = STATUSES
         .lock()
         .map_err(|error| format!("NMEA status lock failed: {error}"))?;
     Ok(serde_json::json!({
         "sources": settings.nmea_sources,
+        "arbitration": arbitration,
         "statuses": statuses.values().collect::<Vec<_>>(),
     }))
 }
 
 #[tauri::command]
-pub fn nmea_sources_set(app: tauri::AppHandle, sources: Vec<SourceConfig>) -> Result<(), String> {
+pub fn nmea_sources_set(
+    app: tauri::AppHandle,
+    sources: Vec<SourceConfig>,
+    arbitration: ArbitrationConfig,
+) -> Result<(), String> {
     let mut settings = crate::settings::settings_get(app.clone())?;
     settings.nmea_sources = sources;
+    settings.nmea_arbitration = arbitration;
     crate::settings::settings_save(app.clone(), settings.clone())?;
-    start_sources(&app, &settings.nmea_sources);
+    start_sources(&app, &settings.nmea_sources, settings.nmea_arbitration);
     Ok(())
 }
 
 pub fn start(app: &tauri::AppHandle) {
     match crate::settings::settings_get(app.clone()) {
-        Ok(settings) => start_sources(app, &settings.nmea_sources),
+        Ok(settings) => start_sources(app, &settings.nmea_sources, settings.nmea_arbitration),
         Err(error) => eprintln!("Could not load saved NMEA sources: {error}"),
     }
 }
@@ -634,6 +1062,29 @@ pub fn start(app: &tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn source(id: &str) -> SourceConfig {
+        SourceConfig {
+            id: id.into(),
+            name: id.into(),
+            enabled: true,
+            use_for_navigation: false,
+            transport: SourceTransport::Tcp {
+                address: "127.0.0.1:10110".into(),
+            },
+        }
+    }
+
+    fn observed_position(now: Instant) -> SourceObservation {
+        SourceObservation {
+            observation: Observation {
+                lat: Some(-41.0),
+                lon: Some(173.0),
+                ..Default::default()
+            },
+            last_seen_by_group: BTreeMap::from([(DataGroup::Position, now)]),
+        }
+    }
 
     #[test]
     fn source_configuration_uses_explicit_transport_kinds() {
@@ -653,5 +1104,88 @@ mod tests {
             }
         );
         assert!(source.use_for_navigation);
+    }
+
+    #[test]
+    fn source_arbitration_prefers_group_choice_then_fails_over_in_order() {
+        let now = Instant::now();
+        let mut hub = Multiplexer {
+            source_configs: vec![source("backup"), source("preferred")],
+            arbitration: ArbitrationConfig {
+                preferred_sources: BTreeMap::from([("position".into(), "preferred".into())]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        hub.sources.insert("backup".into(), observed_position(now));
+        hub.sources
+            .insert("preferred".into(), observed_position(now));
+
+        assert_eq!(
+            selected_sources(&mut hub, now).get(&DataGroup::Position),
+            Some(&Some("preferred".into()))
+        );
+
+        let backup_time = now - Duration::from_secs(5);
+        hub.sources
+            .insert("backup".into(), observed_position(backup_time));
+        let stale_time = now - Duration::from_secs(11);
+        hub.sources
+            .insert("preferred".into(), observed_position(stale_time));
+        assert_eq!(
+            selected_sources(&mut hub, now).get(&DataGroup::Position),
+            Some(&Some("backup".into()))
+        );
+    }
+
+    #[test]
+    fn disabling_failover_keeps_a_preferred_source_or_returns_no_source() {
+        let now = Instant::now();
+        let stale = now - Duration::from_secs(11);
+        let mut hub = Multiplexer {
+            source_configs: vec![source("preferred"), source("backup")],
+            arbitration: ArbitrationConfig {
+                failover_enabled: false,
+                preferred_sources: BTreeMap::from([("position".into(), "preferred".into())]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        hub.sources
+            .insert("preferred".into(), observed_position(stale));
+        hub.sources.insert("backup".into(), observed_position(now));
+
+        assert_eq!(
+            selected_sources(&mut hub, now).get(&DataGroup::Position),
+            Some(&None)
+        );
+    }
+
+    #[test]
+    fn invalid_sentences_do_not_refresh_accumulated_group_values() {
+        let sentence = Sentence {
+            talker: "GP".into(),
+            formatter: "RMC".into(),
+            fields: vec![
+                "120000".into(),
+                "V".into(),
+                "4100.0".into(),
+                "S".into(),
+                "17300.0".into(),
+                "E".into(),
+                "5.0".into(),
+                "90.0".into(),
+            ],
+            raw: "$GPRMC,...".into(),
+            checksum_valid: true,
+        };
+        let observation = Observation {
+            lat: Some(-41.0),
+            lon: Some(173.0),
+            sog: Some(5.0),
+            cog: Some(90.0),
+            ..Default::default()
+        };
+        assert!(sentence_groups(&sentence, &observation).is_empty());
     }
 }
