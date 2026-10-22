@@ -7,7 +7,7 @@
 // marks: click one (amber ring), wait for the ring to turn green, then drag.
 // Right-click a ruler: delete it, delete a point, or save it as a route.
 import { invoke } from "@tauri-apps/api/core";
-import { rhumb, fmtBrg, fmtNm } from "./navmath.js";
+import { greatCircle, greatCircleGeometry, greatCirclePath, rhumb, fmtBrg, fmtNm } from "./navmath.js";
 
 const KEY = "racenav.rulers";
 const COLOUR = "#c2185b";
@@ -16,7 +16,7 @@ const empty = { type: "FeatureCollection", features: [] };
 
 export function setupRuler(map, { before, ui, library, route, toast, getVariation }) {
   const $ = (id) => document.getElementById(id);
-  let rulers = []; // { id, pts: [[lon, lat], …] }
+  let rulers = []; // { id, pts: [[lon, lat], …], greatCircle? }
   try { rulers = JSON.parse(localStorage.getItem(KEY) || "[]").filter((r) => Array.isArray(r.pts) && r.pts.length > 1); } catch { /* ignore */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(rulers)); } catch { /* ignore */ } };
   let n = rulers.reduce((m, r) => Math.max(m, Number(String(r.id).slice(1)) || 0), 0);
@@ -41,12 +41,12 @@ export function setupRuler(map, { before, ui, library, route, toast, getVariatio
               "icon-allow-overlap": true, "icon-ignore-placement": true } }, before);
 
   const variation = () => { const v = getVariation?.(); return Number.isFinite(v) ? v : null; };
-  function legText(a, b) {
-    const { brg, nm } = rhumb(a, b);
+  function legText(a, b, useGreatCircle = false) {
+    const { brg, nm } = useGreatCircle ? greatCircle(a, b) : rhumb(a, b);
     const v = variation();
     return `${fmtBrg(brg)}°T${v != null ? ` ${fmtBrg(brg - v)}°M` : ""}  ${fmtNm(nm)}`;
   }
-  const total = (pts) => pts.slice(1).reduce((s, p, i) => s + rhumb(pts[i], p).nm, 0);
+  const total = (pts, useGreatCircle = false) => pts.slice(1).reduce((s, p, i) => s + (useGreatCircle ? greatCircle(pts[i], p) : rhumb(pts[i], p)).nm, 0);
 
   function draw() {
     const lines = [], pts = [], labels = [];
@@ -55,11 +55,12 @@ export function setupRuler(map, { before, ui, library, route, toast, getVariatio
       r.pts.forEach((p, i) => pts.push({ type: "Feature", properties: { rid: r.id, i }, geometry: { type: "Point", coordinates: p } }));
       for (let i = 1; i < r.pts.length; i++) {
         const a = r.pts[i - 1], b = r.pts[i];
-        lines.push({ type: "Feature", properties: { rid: r.id, i }, geometry: { type: "LineString", coordinates: [a, b] } });
-        labels.push(label(midpoint(a, b), legText(a, b), a, b));
+        const coords = r.greatCircle ? greatCirclePath(a, b) : [a, b];
+        lines.push({ type: "Feature", properties: { rid: r.id, i }, geometry: r.greatCircle ? greatCircleGeometry(a, b) : { type: "LineString", coordinates: coords } });
+        labels.push(label(coords[Math.floor(coords.length / 2)], legText(a, b, r.greatCircle), a, b));
       }
       if (r.pts.length > 2 && r !== active) {
-        labels.push({ type: "Feature", properties: { lbl: `Total ${fmtNm(total(r.pts))}`, anchor: "top-left", offset: [8, 8] }, geometry: { type: "Point", coordinates: r.pts.at(-1) } });
+        labels.push({ type: "Feature", properties: { lbl: `Total ${fmtNm(total(r.pts, r.greatCircle))}`, anchor: "top-left", offset: [8, 8] }, geometry: { type: "Point", coordinates: r.pts.at(-1) } });
       }
     }
     // the leg being drawn, to the cursor
@@ -76,7 +77,6 @@ export function setupRuler(map, { before, ui, library, route, toast, getVariatio
     map.getSource("ruler-rubber").setData(rubber);
     drawSel();
   }
-  function midpoint(a, b) { return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; }
   /** A leg label beside the middle of the leg, on the side away from the line. */
   function label(at, text, a, b) {
     const pa = map.project(a), pb = map.project(b);
@@ -211,7 +211,14 @@ export function setupRuler(map, { before, ui, library, route, toast, getVariatio
     if (!l) return null;
     const r = find(l.properties.rid);
     if (!r) return null;
-    return { rid: r.id, i: p ? p.properties.i : null, points: r.pts.length };
+    return { rid: r.id, i: p ? p.properties.i : null, points: r.pts.length, greatCircle: Boolean(r.greatCircle) };
+  }
+  function setGreatCircle(rid, enabled) {
+    const r = find(rid);
+    if (!r) return;
+    r.greatCircle = enabled;
+    save();
+    draw();
   }
   function deleteRuler(rid) {
     rulers = rulers.filter((r) => r.id !== rid);
@@ -252,7 +259,7 @@ export function setupRuler(map, { before, ui, library, route, toast, getVariatio
 
   draw();
   return {
-    hitAt, deleteRuler, deletePoint, deleteAll, saveAsRoute,
+    hitAt, deleteRuler, deletePoint, deleteAll, saveAsRoute, setGreatCircle,
     startAt(pos) {
       if (armed) return;
       arm(true);

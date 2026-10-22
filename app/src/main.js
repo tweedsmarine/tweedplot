@@ -593,6 +593,8 @@ map.on("contextmenu", (e) => {
   if (ctxRuler) {
     ctx.querySelector('[data-act="ruler-pt"]').hidden = ctxRuler.i == null;
     ctx.querySelector('[data-act="ruler-all"]').hidden = ruler.count() < 2;
+    ctx.querySelector('[data-act="ruler-great-circle"]').textContent =
+      ctxRuler.greatCircle ? "Show ruler as rhumb line" : "Show ruler as great circle";
   }
   const rulerToggle = ctx.querySelector('[data-act="ruler-toggle"]');
   rulerToggle.hidden = !!ctxRuler;
@@ -631,6 +633,7 @@ ctx.addEventListener("click", (e) => {
     else ruler.startAt(ctxAt);
   }
   if (act === "ruler-route" && ctxRuler) ruler.saveAsRoute(ctxRuler.rid);
+  if (act === "ruler-great-circle" && ctxRuler) ruler.setGreatCircle(ctxRuler.rid, !ctxRuler.greatCircle);
   if (act === "ruler-pt" && ctxRuler) ruler.deletePoint(ctxRuler.rid, ctxRuler.i);
   if (act === "ruler-del" && ctxRuler) ruler.deleteRuler(ctxRuler.rid);
   if (act === "ruler-all") ruler.deleteAll();

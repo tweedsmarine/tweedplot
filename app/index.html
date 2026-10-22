@@ -149,6 +149,7 @@
           <button id="rt-add" title="Click on the chart to add marks in order; click a library mark to reuse it">Add marks</button>
           <button id="rt-undo" title="Remove the last mark">Undo</button>
         </div>
+        <div class="wx-row"><label><input id="rt-great-circle" type="checkbox" /> Draw legs as great circles</label></div>
         <ol id="rt-marklist" class="list"></ol>
         <div class="wx-row"><button id="crs-wx" title="The weather along this course: the active routing if there is one, else the course at a set speed from the weather slider's time">Weather on route</button></div>
         <div id="crs-status" class="wx-note"></div>
@@ -570,6 +571,7 @@
       <button data-act="ruler-toggle">Start ruler here</button>
       <hr class="ruler-item" />
       <button data-act="ruler-route" class="ruler-item">Save ruler as route</button>
+      <button data-act="ruler-great-circle" class="ruler-item">Show ruler as great circle</button>
       <button data-act="ruler-pt" class="ruler-item">Delete ruler point</button>
       <button data-act="ruler-del" class="ruler-item">Delete ruler</button>
       <button data-act="ruler-all" class="ruler-item">Delete all rulers</button>

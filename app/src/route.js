@@ -3,6 +3,7 @@
 import * as maplibregl from "maplibre-gl";
 import { invoke } from "@tauri-apps/api/core";
 import { distNm } from "./instruments.js";
+import { greatCircleGeometry } from "./navmath.js";
 
 const WORK_KEY = "racenav.route.work"; // the route being edited survives a restart
 
@@ -29,13 +30,14 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
   let legsHidden = false;
 
   // The route being edited. Marks: { id (library id, or null until saved), name, lon, lat, rounding }.
-  const work = load(WORK_KEY, { routeId: null, name: "", start: null, startRef: null, marks: [], dirty: false, nav: 0 });
+  const work = load(WORK_KEY, { routeId: null, name: "", start: null, startRef: null, marks: [], dirty: false, nav: 0, greatCircle: false });
   let start = work.start; // [lon, lat]
   let startRef = work.startRef; // { id, name } when the start is a library mark
   let marks = work.marks;
   let routeId = work.routeId;
   let dirty = work.dirty;
   let navIndex = work.nav || 0;
+  let greatCircle = Boolean(work.greatCircle);
   let mode = null; // "start" | "marks" | null
 
   // ---------- layers ----------------------------------------------------------
@@ -54,7 +56,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 12], "icon-allow-overlap": true } });
 
   function persist() {
-    save(WORK_KEY, { routeId, name: $("rt-name").value, start, startRef, marks, dirty, nav: navIndex });
+    save(WORK_KEY, { routeId, name: $("rt-name").value, start, startRef, marks, dirty, nav: navIndex, greatCircle });
   }
   function changed() {
     dirty = true;
@@ -71,7 +73,11 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     // legs, the one being sailed drawn heavier
     const pts = [start, ...marks.map((m) => [m.lon, m.lat])].filter(Boolean);
     const legs = [];
-    for (let i = 1; i < pts.length; i++) legs.push({ type: "Feature", properties: { active: i - (start ? 1 : 0) === navIndex }, geometry: { type: "LineString", coordinates: [pts[i - 1], pts[i]] } });
+    for (let i = 1; i < pts.length; i++) {
+      const leg = [pts[i - 1], pts[i]];
+      legs.push({ type: "Feature", properties: { active: i - (start ? 1 : 0) === navIndex },
+        geometry: greatCircle ? greatCircleGeometry(...leg) : { type: "LineString", coordinates: leg } });
+    }
     map.getSource("rt-legs").setData({ type: "FeatureCollection", features: legsHidden ? [] : legs });
     map.getSource("rt-round").setData({ type: "FeatureCollection", features: marks.filter((m) => m.rounding || m.radius_nm > 0).map((m) => {
       const r = m.rounding === "close" ? 0.02 : m.radius_nm > 0 ? m.radius_nm : roundingRadius();
@@ -82,6 +88,13 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     drawSelection();
     renderList();
   }
+
+  $("rt-great-circle").checked = greatCircle;
+  $("rt-great-circle").onchange = (e) => {
+    greatCircle = e.target.checked;
+    persist();
+    drawMarks();
+  };
 
   function renderList() {
     $("rt-save").textContent = dirty ? "Save*" : "Save";
