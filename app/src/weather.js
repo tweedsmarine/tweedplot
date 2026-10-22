@@ -557,8 +557,9 @@ export function setupWeather(map, layers) {
   mountControls(float.querySelector(".body"), { compact: true });
   function placeFloat() {
     const W = window.innerWidth, H = window.innerHeight;
+    const minX = document.getElementById("rail").getBoundingClientRect().right;
     const dockH = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--dock-h")) || 0;
-    float.style.left = `${Math.max(0, Math.min(W - float.offsetWidth, fl.x * W))}px`;
+    float.style.left = `${Math.max(minX, Math.min(Math.max(minX, W - float.offsetWidth), fl.x * W))}px`;
     float.style.top = `${Math.max(0, Math.min(H - dockH - float.offsetHeight, fl.y * H))}px`;
   }
   function showFloat() {
@@ -575,7 +576,13 @@ export function setupWeather(map, layers) {
       grip.setPointerCapture(e.pointerId);
       const r = float.getBoundingClientRect();
       const dx = e.clientX - r.left, dy = e.clientY - r.top;
-      const move = (ev) => { fl.x = (ev.clientX - dx) / window.innerWidth; fl.y = (ev.clientY - dy) / window.innerHeight; placeFloat(); };
+      const move = (ev) => {
+        const minX = document.getElementById("rail").getBoundingClientRect().right;
+        const x = Math.max(minX, Math.min(Math.max(minX, window.innerWidth - float.offsetWidth), ev.clientX - dx));
+        fl.x = x / window.innerWidth;
+        fl.y = (ev.clientY - dy) / window.innerHeight;
+        placeFloat();
+      };
       const up = () => { grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); saveFl(); };
       grip.addEventListener("pointermove", move);
       grip.addEventListener("pointerup", up);

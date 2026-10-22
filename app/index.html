@@ -26,7 +26,7 @@
       <button data-pane="inst" title="Instrument panels"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 13l4-4"/><path d="M12 5v2M5 13h2M17 13h2"/></svg><span>Instr.</span></button>
       <button id="manual-btn" class="rail-action" title="User manual (F1)"><svg viewBox="0 0 24 24"><path d="M4 5.5C6.5 4.5 9.5 4.5 12 6c2.5-1.5 5.5-1.5 8-.5v13c-2.5-1-5.5-1-8 .5-2.5-1.5-5.5-1.5-8-.5z"/><path d="M12 6v13.5"/></svg><span>Manual</span></button>
       <button id="targets-btn" class="rail-action" title="Target list: AIS targets with range, bearing, CPA and TCPA (T)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/><circle cx="16" cy="9" r="1.2" fill="currentColor"/></svg><span>Targets</span></button>
-      <button id="settings-btn" class="rail-action" title="Settings: vessel and data setup" aria-label="Settings"><svg viewBox="0 0 24 24"><path d="M19.14 12.94a7.5 7.5 0 0 0 .06-.94c0-.32-.02-.63-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.3 7.3 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.3 7.3 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.54 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.5 7.5 0 0 0-.06.94c0 .32.02.63.07.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.49.39 1.04.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54a7.3 7.3 0 0 0 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58z"/><circle cx="12" cy="12" r="3.25"/></svg><span>Settings</span></button>
+      <button id="settings-btn" class="rail-action" data-pane="settings" title="Settings: vessel and data setup" aria-label="Settings"><svg viewBox="0 0 24 24"><path d="M19.14 12.94a7.5 7.5 0 0 0 .06-.94c0-.32-.02-.63-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.3 7.3 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.3 7.3 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.54 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.5 7.5 0 0 0-.06.94c0 .32.02.63.07.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.49.39 1.04.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54a7.3 7.3 0 0 0 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58z"/><circle cx="12" cy="12" r="3.25"/></svg><span>Settings</span></button>
     </nav>
 
     <aside id="drawer" hidden>
@@ -590,9 +590,7 @@
     <div id="toast" class="toast" hidden></div>
     <div id="s63-banner" class="s63-banner" hidden></div>
 
-    <aside id="settings" hidden role="dialog" aria-modal="true" aria-labelledby="settings-title">
-      <section class="settings-panel">
-        <header><div><h2 id="settings-title">Settings</h2><p>Vessel details and installation setup</p></div><button id="settings-close" title="Close settings (Esc)">✕</button></header>
+      <section id="settings" class="pane" data-pane="settings" data-title="Settings" hidden>
         <div class="settings-content">
           <form id="vessel-settings">
             <h3>Vessel identity</h3>
@@ -663,7 +661,6 @@
           </section>
         </div>
       </section>
-    </aside>
 
     <div id="cursor" class="cursor">—</div>
     <div class="attribution">Charts: LINZ, CC BY 4.0. Land: © OpenStreetMap contributors. Not for navigation.</div>

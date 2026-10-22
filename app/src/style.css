@@ -49,7 +49,7 @@ input[type="text"], input[type="search"] { padding: 5px 7px; font-size: 14px; bo
 
 /* ---------- rail and drawer ---------- */
 #rail {
-  position: absolute; left: 0; top: 0; bottom: 0; width: var(--rail-w); z-index: 5;
+  position: absolute; left: 0; top: 0; bottom: 0; width: var(--rail-w); z-index: 7;
   background: var(--brand-navy); display: flex; flex-direction: column; gap: 2px; padding-top: 6px;
   overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
 }
@@ -326,22 +326,7 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
 #rail #manual-btn { margin-top: auto; }
 #rail #settings-btn { position: sticky; bottom: 0; margin-top: 0; background: var(--brand-navy); border-top: 1px solid rgba(255,255,255,0.15); }
 
-#settings {
-  position: fixed; inset: 0; z-index: 12; background: rgba(0, 14, 27, 0.42);
-}
-#settings[hidden] { display: none; }
-.settings-panel {
-  position: absolute; left: var(--rail-w); top: 0; bottom: 0; width: min(680px, calc(100vw - var(--rail-w)));
-  display: flex; flex-direction: column; background: var(--panel-bg); box-shadow: 3px 0 18px rgba(0, 0, 0, 0.28);
-}
-.settings-panel > header {
-  display: flex; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--line);
-}
-.settings-panel > header > div { flex: 1; }
-.settings-panel h2 { margin: 0; font-size: 20px; }
-.settings-panel > header p { margin: 2px 0 0; color: var(--quiet); font-size: 13px; }
-.settings-panel > header button { flex: none; }
-.settings-content { overflow: auto; padding: 10px 20px 24px; }
+.settings-content { padding: 0; }
 .settings-content h3 {
   margin: 20px 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--line);
   font-size: 12px; color: var(--quiet); text-transform: uppercase; letter-spacing: 0.05em;
@@ -370,7 +355,6 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
 .nmea-raw-viewer { max-height: 220px; overflow: auto; padding: 8px; margin: 0; background: #101a20; color: #d9e5e9; border-radius: 4px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 @media (max-width: 560px) {
-  .settings-panel { width: calc(100vw - var(--rail-w)); }
   .settings-grid { grid-template-columns: 1fr; gap: 8px; }
   .nmea-source-row { grid-template-columns: auto minmax(0, 1fr) repeat(4, auto); gap: 5px; }
   .nmea-source-description { grid-column: 2 / 7; grid-row: 1; }

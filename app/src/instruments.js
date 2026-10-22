@@ -175,6 +175,7 @@ const DEFAULT_LAYOUT = {
 
 export function setupInstruments() {
   const root = document.getElementById("inst");
+  const rail = document.getElementById("rail");
   const menu = document.getElementById("tile-menu");
   let layout = loadLayout();
   let ctx = { v: {}, now: Date.now(), age: Infinity, safetyDepth: 3 };
@@ -224,9 +225,10 @@ export function setupInstruments() {
   function place(el, p) {
     const W = window.innerWidth, H = window.innerHeight;
     const w = el.offsetWidth, h = el.offsetHeight;
+    const minX = rail.getBoundingClientRect().right;
     // keep clear of the dock at the bottom when it is open
     const dockH = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--dock-h")) || 0;
-    const x = Math.max(0, Math.min(W - w, p.x * W));
+    const x = Math.max(minX, Math.min(Math.max(minX, W - w), p.x * W));
     const y = Math.max(0, Math.min(H - dockH - h, p.y * H));
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
@@ -255,11 +257,13 @@ export function setupInstruments() {
         if (layout.locked || !moved) return;
         const W = window.innerWidth, H = window.innerHeight;
         let x = ev.clientX - dx, y = ev.clientY - dy;
+        const minX = rail.getBoundingClientRect().right;
         // snap to the screen edges
-        if (x < 12) x = 0;
+        if (x - minX < 12) x = minX;
         if (y < 12) y = 0;
         if (W - (x + r.width) < 12) x = W - r.width;
         if (H - (y + r.height) < 12) y = H - r.height;
+        x = Math.max(minX, Math.min(Math.max(minX, W - r.width), x));
         p.x = x / W; p.y = y / H;
         place(el, p);
       };

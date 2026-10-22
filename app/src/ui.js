@@ -6,6 +6,9 @@ export function setupRail(map) {
   const rail = document.getElementById("rail");
   const drawer = document.getElementById("drawer");
   const title = document.getElementById("drawer-title");
+  for (const pane of document.querySelectorAll(".pane[data-pane]")) {
+    if (!drawer.contains(pane)) drawer.append(pane);
+  }
   const panes = [...drawer.querySelectorAll(".pane")];
   const listeners = [];
   let current = null;

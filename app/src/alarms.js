@@ -72,13 +72,14 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft }) {
   const banner = $("alarm-banner");
   function render() {
     banner.innerHTML = "";
-    const list = [...active.entries()].sort((a, b) => (a[1].level === b[1].level ? a[1].since - b[1].since : a[1].level === "alarm" ? -1 : 1));
+    const list = [...active.entries()].filter(([, a]) => !a.acked)
+      .sort((a, b) => (a[1].level === b[1].level ? a[1].since - b[1].since : a[1].level === "alarm" ? -1 : 1));
     banner.hidden = !list.length;
     for (const [id, a] of list) {
       const row = document.createElement("div");
-      row.className = `alarm ${a.level}${a.acked ? " acked" : ""}`;
+      row.className = `alarm ${a.level}`;
       row.innerHTML = `<div class="txt"><b>${esc(a.text)}</b>${a.detail ? `<small>${esc(a.detail)}</small>` : ""}</div>` +
-        (a.acked ? "" : `<button data-act="ack" title="Silence this alarm (it stays here while the cause lasts)">Silence</button>`) +
+        `<button data-act="ack" title="Silence this alarm; the panel will stay hidden until it clears and returns">Silence</button>` +
         (a.dismiss ? `<button data-act="dismiss" title="${esc(a.dismissTitle || "Dismiss")}">${esc(a.dismissLabel || "✕")}</button>` : "");
       row.querySelector(".txt").onclick = () => a.onClick?.();
       row.querySelector('[data-act="ack"]')?.addEventListener("click", () => ack(id));

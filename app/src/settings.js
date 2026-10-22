@@ -45,8 +45,6 @@ function applyToBoat(profile) {
 }
 
 export function setupSettings({ boat, ui, onReferencePosition }) {
-  const box = document.getElementById("settings");
-  const button = document.getElementById("settings-btn");
   const form = document.getElementById("vessel-settings");
   const status = document.getElementById("settings-status");
   const saveButton = form.querySelector('button[type="submit"]');
@@ -91,24 +89,8 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       onReferencePosition?.([profile.referenceLon, profile.referenceLat]);
     }
   }
-  function open(value) {
-    box.hidden = !value;
-    button.classList.toggle("on", value);
-    if (value) {
-      ui.open(null);
-      form.querySelector("input")?.focus();
-    }
-    window.dispatchEvent(new Event("resize"));
-  }
-
-  button.addEventListener("click", () => open(box.hidden));
-  document.getElementById("settings-close").addEventListener("click", () => open(false));
-  window.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !box.hidden) {
-      event.preventDefault();
-      open(false);
-      button.focus();
-    }
+  ui.onChange((pane) => {
+    if (pane === "settings") form.querySelector("input")?.focus();
   });
 
   form.addEventListener("submit", async (event) => {

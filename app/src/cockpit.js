@@ -204,7 +204,7 @@ setInterval(() => { if (loud) beep(); }, 2000);
 listen("cockpit", ({ payload }) => {
   lastMsg = Date.now();
   ctx = { ...ctx, ...payload };
-  const a = payload.alarms || [];
+  const a = (payload.alarms || []).filter((alarm) => !alarm.acked);
   const box = $("ck-alarms");
   box.hidden = !a.length;
   box.innerHTML = a.map((x) => `<div class="alarm ${x.level}${x.acked ? " acked" : ""}"><b>${esc(x.text)}</b>${x.detail ? `<small>${esc(x.detail)}</small>` : ""}</div>`).join("");
