@@ -622,7 +622,7 @@ export function setupWeather(map, layers) {
       const [g, gs, gw, gp] = await Promise.all([
         wx.arrows && (hasParam("WindU") || hasParam("WindSpeed")) ? invoke("grib_wind_grid", { path: display, t, bbox, maxPoints: arrowPts }).catch(() => null) : null,
         !shade ? null : layer.verify
-          ? (verifyTarget ? invoke("grib_verify_grid", { paths: [], t: verifyTarget.t, forecast: verifyTarget.path, kind: layer.verify, bbox, maxPoints: 20000 })
+          ? (verifyTarget ? invoke("grib_verify_grid", { paths: [], t: verifyTarget.t, at: t, forecast: verifyTarget.path, kind: layer.verify, bbox, maxPoints: 20000 })
             .catch((e) => ({ error: String(e) })) : { error: "Choose a forecast to verify in the Verify dock." })
           : layer.compare
           ? invoke("grib_compare", { paths: comparePaths(), metric: layer.compare, t, bbox, maxPoints: 20000 }).catch((e) => ({ error: String(e) }))
@@ -707,9 +707,9 @@ export function setupWeather(map, layers) {
       const vals = r.values.filter((v) => v != null);
       const ref = r.used.slice(0, -1).map((u) => u.name).join(", ");
       const mean = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-      el.textContent = `${layer.help} ${verifyTarget.name} at +${Math.round(verifyTarget.lead)} h against hour 0 of ${ref}, ${fmt(verifyTarget.t)}.` +
-        (mean != null ? ` In view: mean ${mean.toFixed(1)} ${layer.unit}.` : "") +
-        (t !== verifyTarget.t ? " (The shading is for the verify time, not the slider time.)" : "");
+      const at = t === verifyTarget.t ? `against hour 0 of ${ref}, ${fmt(verifyTarget.t)}` : `against the later run (${ref}) at ${fmt(t)}; hour 0 is ${fmt(verifyTarget.t)}`;
+      el.textContent = `${layer.help} ${verifyTarget.name} at +${Math.round(verifyTarget.lead)} h ${at}.` +
+        (mean != null ? ` In view: mean ${mean.toFixed(1)} ${layer.unit}.` : "");
       return;
     }
     const vals = r.values.filter((v) => v != null);

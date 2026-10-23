@@ -688,11 +688,12 @@ async fn grib_verify_track(paths: Vec<String>, bbox: [f64; 4]) -> Vec<serde_json
     .unwrap_or_default()
 }
 
-/// The error field of the forecast in `forecast` against the reference at verify time `t`; `kind` is vector, speed or direction.
+/// The error field of the forecast in `forecast` against the later run(s) at time `at` (their hour 0 when `at` is the verify time `t`); `kind` is vector, speed or direction.
 #[tauri::command]
 fn grib_verify_grid(
     paths: Vec<String>,
     t: i64,
+    at: i64,
     forecast: String,
     kind: String,
     bbox: [f64; 4],
@@ -713,8 +714,8 @@ fn grib_verify_grid(
         .into_iter()
         .find(|v| v.t == t)
         .ok_or("No GRIB has this time as hour 0.")?;
-    let r = grib::verify::error_grid(&refs, &vt, fi, k, bbox, max_points.clamp(100, 40_000))
-        .ok_or("This GRIB does not forecast that time.")?;
+    let r = grib::verify::error_grid(&refs, &vt, fi, k, at, bbox, max_points.clamp(100, 40_000))
+        .ok_or("Nothing to compare at this time: the forecast and the later run must both cover it (the later run starts at the verify time).")?;
     Ok(
         serde_json::json!({ "lon0": r.lon0, "lat0": r.lat0, "dlon": r.dlon, "dlat": r.dlat, "ni": r.ni, "nj": r.nj, "values": r.values,
         "used": r.used.iter().map(|&i| file_json(&files, i)).collect::<Vec<_>>() }),

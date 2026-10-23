@@ -197,9 +197,10 @@ pub(crate) fn common_grid(files: &[&GribFile], used: &[usize], p: Param, bbox: [
 
 /// A longitude in a file's own range (files stored 0..360 are asked in their longitudes).
 pub(crate) fn own_lon(b: Option<[f64; 4]>, lon: f64) -> f64 {
+    // the chart's longitude may be any number of turns away (panned across world copies)
     match b {
-        Some(b) if lon < b[0] => lon + 360.0,
-        Some(b) if lon > b[2] => lon - 360.0,
+        Some(b) if lon < b[0] => lon + 360.0 * ((b[0] - lon) / 360.0).ceil(),
+        Some(b) if lon > b[2] => lon - 360.0 * ((lon - b[2]) / 360.0).ceil(),
         _ => lon,
     }
 }

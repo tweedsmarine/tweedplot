@@ -13,7 +13,7 @@
 //!   field (missing over land); without one, every point counts.
 //! - **Track record**: the scores averaged over every verify time, by model and lead (≤ 24 h, ≤ 48 h, > 48 h).
 
-use crate::compare::{common_grid, covers, has_wind, layer_value, layer_wind, own_lon, Source};
+use crate::compare::{common_grid, has_wind, layer_value, layer_wind, own_lon, Source};
 use crate::{GribFile, Param};
 
 const KN: f64 = 3600.0 / 1852.0;
@@ -95,18 +95,28 @@ fn from_dir(u: f64, v: f64) -> f64 {
 
 /// A sea test from any loaded wave field: true where waves are given (or everywhere if no file has waves).
 fn sea_mask<'a>(files: &'a [&'a GribFile], t: i64) -> impl Fn(f64, f64) -> bool + 'a {
-    let wave = files.iter().position(|f| !f.any_times(Param::WaveHeight).is_empty());
-    move |lat: f64, lon: f64| match wave {
-        None => true,
-        Some(k) => {
-            let f = files[k];
-            let ts = f.any_times(Param::WaveHeight);
-            // the wave field nearest in time: land is missing in every one of them
-            let near = ts.iter().copied().min_by_key(|x| (x - t).abs()).unwrap();
-            let b = f.any_grid(Param::WaveHeight).map(|g| g.bbox());
-            let inside = b.is_some_and(|b| lat >= b[1] && lat <= b[3]);
-            !inside || layer_value(f, src(f), Param::WaveHeight, lat, own_lon(b, lon), near).is_some_and(f64::is_finite)
+    // each wave file with its area and the field nearest in time (land is missing in every one of them)
+    let waves: Vec<(&GribFile, [f64; 4], i64)> = files
+        .iter()
+        .filter_map(|f| {
+            let near = f.any_times(Param::WaveHeight).into_iter().min_by_key(|x| (x - t).abs())?;
+            Some((*f, f.any_grid(Param::WaveHeight)?.bbox(), near))
+        })
+        .collect();
+    move |lat: f64, lon: f64| {
+        // land only where a wave file covers the point and has no value there
+        let mut covered = false;
+        for (f, b, near) in &waves {
+            let lo = own_lon(Some(*b), lon);
+            if lat < b[1] || lat > b[3] || lo < b[0] || lo > b[2] {
+                continue;
+            }
+            covered = true;
+            if layer_value(f, src(f), Param::WaveHeight, lat, lo, *near).is_some_and(f64::is_finite) {
+                return true;
+            }
         }
+        !covered
     }
 }
 
@@ -196,15 +206,16 @@ pub enum ErrorKind {
     Direction,
 }
 
-/// The error field of one forecast against the reference at a verify time, on a grid like `compare::agreement`'s.
-pub fn error_grid(files: &[&GribFile], vt: &VerifyTime, forecast: usize, kind: ErrorKind, bbox: [f64; 4], max_points: usize) -> Option<crate::compare::AgreementGrid> {
-    if !vt.forecasts.iter().any(|f| f.file == forecast) || !covers(files[forecast], Param::WindU, vt.t) && !covers(files[forecast], Param::WindSpeed, vt.t) {
+/// The error field of one forecast against the reference runs at time `at`, on a grid like `compare::agreement`'s.
+/// At the verify time the reference is their hour 0; at later times it is their own forecast.
+pub fn error_grid(files: &[&GribFile], vt: &VerifyTime, forecast: usize, kind: ErrorKind, at: i64, bbox: [f64; 4], max_points: usize) -> Option<crate::compare::AgreementGrid> {
+    if !vt.forecasts.iter().any(|f| f.file == forecast) || !has_wind(files[forecast], at) || !vt.refs.iter().any(|&r| has_wind(files[r], at)) {
         return None;
     }
     let mut used = vt.refs.clone();
     used.push(forecast);
     let g = common_grid(files, &used, Param::WindU, bbox, max_points);
-    let sea = sea_mask(files, vt.t);
+    let sea = sea_mask(files, at);
     let mut values = Vec::with_capacity(g.ni * g.nj);
     let mut mean_wind = Vec::with_capacity(g.ni * g.nj);
     let f = files[forecast];
@@ -212,8 +223,8 @@ pub fn error_grid(files: &[&GribFile], vt: &VerifyTime, forecast: usize, kind: E
         let lat = g.lat0 + j as f64 * g.step;
         for i in 0..g.ni {
             let lon = g.lon0 + i as f64 * g.step;
-            let (rw, _) = if sea(lat, lon) { reference(files, &vt.refs, &g.boxes, lat, lon, vt.t) } else { (None, None) };
-            let fw = layer_wind(f, src(f), lat, own_lon(g.boxes[forecast], lon), vt.t);
+            let (rw, _) = if sea(lat, lon) {             reference(files, &vt.refs, &g.boxes, lat, lon, at) } else { (None, None) };
+                        let fw = layer_wind(f, src(f), lat, own_lon(g.boxes[forecast], lon), at);
             let v = match (rw, fw) {
                 (Some((ru, rv)), Some((u, v))) => match kind {
                     ErrorKind::Vector => Some(((u - ru).powi(2) + (v - rv).powi(2)).sqrt() * KN),
@@ -319,8 +330,13 @@ mod tests {
         assert!((s.speed_bias_kn + 2.0 * KN).abs() < 1e-6);
         assert!(s.dir_abs_deg.unwrap().abs() < 1e-6);
         assert!((s.msl_bias_hpa.unwrap() - 2.0).abs() < 1e-6);
-        let g = error_grid(&files, vt, 0, ErrorKind::Speed, bbox, 1000).unwrap();
+        let g = error_grid(&files, vt, 0, ErrorKind::Speed, vt.t, bbox, 1000).unwrap();
         assert_eq!(g.values.iter().flatten().next().copied(), Some(-3.9));
+        // the reference run's own forecast 12 h on is still 2 m/s windier than the earlier run's
+        let g = error_grid(&files, vt, 0, ErrorKind::Speed, vt.t + 12 * 3600, bbox, 1000).unwrap();
+        assert_eq!(g.values.iter().flatten().next().copied(), Some(-3.9));
+        // before the reference run starts there is nothing to compare with
+        assert!(error_grid(&files, vt, 0, ErrorKind::Speed, vt.t - 3600, bbox, 1000).is_none());
         let tr = track_record(&files, bbox, 1000);
         assert_eq!(tr.len(), 1);
         assert_eq!((tr[0].band, tr[0].count), ("≤ 24 h", 1));
