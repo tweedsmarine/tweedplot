@@ -21,6 +21,10 @@
   --tile-bg: rgba(16, 28, 36, 0.86);
   --tile-ink: #f2f6f8;
   --tile-quiet: #9fb2bd;
+  --hw-road: #1b2b40;
+  --hw-grid: #60768c;
+  --hw-accent: #45c6f5;
+  --hw-good: #2ecc71;
   --warn-bg: #b77900;
   --warn-ink: #fff;
   --alarm-bg: #c0392b;
@@ -642,6 +646,48 @@ html[data-palette^="night"] body { background: #fff; } /* black after the invers
 .dial .tk { stroke: var(--tile-quiet); stroke-width: 0.6; } .dial .tk2 { stroke: var(--tile-ink); stroke-width: 1.2; }
 .dial .close-stbd { fill: #2e8b57; opacity: 0.55; } .dial .close-port { fill: #c0392b; opacity: 0.55; }
 .dial .hull { fill: none; stroke: var(--tile-quiet); stroke-width: 1.2; }
+.tile.highway-card { min-height: 470px; }
+.tile.highway-card > .lbl { display: none; }
+.ipanel .tile.highway-card { width: min(680px, calc(100vw - var(--rail-w) - 28px)); }
+.tile.highway-card .v { flex: 1; min-height: 0; }
+.hw-dashboard { display: grid; grid-template-rows: auto 48px minmax(130px, 1fr) 60px auto; gap: 7px; width: 100%; height: 100%; min-height: 0; text-align: left; }
+.hw-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.hw-metric { display: flex; min-width: 0; flex-direction: column; justify-content: center; gap: 2px; padding: 5px 9px; border: 1px solid color-mix(in srgb, var(--tile-quiet) 24%, transparent); border-radius: 7px; background: color-mix(in srgb, var(--tile-bg) 84%, transparent); }
+.hw-metric > span { overflow: hidden; color: var(--tile-quiet); font-size: clamp(9px, 1.1vw, 12px); text-overflow: ellipsis; white-space: nowrap; }
+.hw-metric strong { overflow: hidden; color: var(--tile-ink); font-family: ui-monospace, Consolas, monospace; font-size: clamp(17px, 2.5vw, 30px); font-variant-numeric: tabular-nums; line-height: 1.05; text-overflow: ellipsis; white-space: nowrap; }
+.hw-metric small { color: var(--tile-quiet); font-size: 10px; }
+.hw-target strong { color: var(--hw-accent); }
+.hw-ribbon { min-height: 0; overflow: hidden; border-bottom: 1px solid color-mix(in srgb, var(--tile-quiet) 30%, transparent); background: color-mix(in srgb, var(--tile-bg) 58%, transparent); }
+.hw-ribbon svg { display: block; width: 100%; height: 100%; }
+.tile.graphic.highway-card .v .hw-ribbon svg { width: 100%; height: 100%; max-width: none; }
+.hw-ribbon-scale { transition: transform 120ms linear; }
+.hw-ribbon-tick { stroke: var(--hw-grid); stroke-width: 1.5; }
+.hw-ribbon-label { fill: var(--tile-ink); font: 12px ui-monospace, Consolas, monospace; }
+.hw-ribbon-current { fill: var(--tile-ink); font: bold 13px ui-monospace, Consolas, monospace; paint-order: stroke; stroke: var(--tile-bg); stroke-width: 4px; }
+.hw-ribbon-marker { fill: var(--hw-good); }
+.hw-canvas { min-height: 0; overflow: hidden; border: 1px solid color-mix(in srgb, var(--tile-quiet) 18%, transparent); border-radius: 7px; background: linear-gradient(180deg, color-mix(in srgb, var(--tile-bg) 78%, transparent), color-mix(in srgb, var(--hw-road) 92%, transparent)); }
+.hw-canvas svg { display: block; width: 100%; height: 100%; }
+.ipanel .tile.graphic.highway-card .v .hw-canvas svg { width: 100%; height: 100%; }
+.hw-road { fill: color-mix(in srgb, var(--hw-road) 88%, transparent); }
+.hw-rail { fill: none; stroke: var(--hw-grid); stroke-width: 2; opacity: 0.72; }
+.hw-centerline { fill: none; stroke: var(--hw-grid); stroke-dasharray: 5 7; stroke-width: 1.2; opacity: 0.8; }
+.hw-gridline, .hw-lane { fill: none; stroke: var(--hw-grid); stroke-width: 1; opacity: 0.32; }
+.hw-aim { stroke: var(--hw-good); stroke-dasharray: 4 5; stroke-width: 2; }
+.hw-vessel { fill: none; stroke: var(--tile-ink); stroke-linejoin: round; stroke-width: 3; }
+.hw-vessel .hw-boat { fill: var(--tile-bg); }
+.hw-boat-wake { stroke: var(--hw-grid); stroke-width: 3; opacity: 0.7; }
+.hw-runway { transition: transform 220ms ease-out; }
+.hw-steer-row { min-height: 0; background: transparent; }
+.hw-steer-row svg { display: block; width: 100%; height: 100%; }
+.tile.graphic.highway-card .v .hw-steer-row svg { width: 100%; height: 100%; max-width: none; }
+.hw-steer-shaft { fill: none; stroke: var(--hw-accent); stroke-linecap: butt; stroke-width: 16; }
+.hw-steer-arrow { fill: var(--hw-accent); stroke: none; }
+.hw-steer-row.steer-port .hw-steer-shaft, .hw-steer-row.steer-port .hw-steer-arrow { stroke: #f0932b; fill: #f0932b; }
+.hw-steer-row.steer-stbd .hw-steer-shaft, .hw-steer-row.steer-stbd .hw-steer-arrow { stroke: var(--hw-good); fill: var(--hw-good); }
+.hw-bottom { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.hw-bottom .hw-metric strong { font-size: clamp(15px, 2vw, 23px); }
+.tile.mob-highway { outline: 2px solid var(--alarm-bg); outline-offset: 2px; }
+.tile.highway-card.stale .hw-metric strong { color: var(--tile-quiet); }
 .dial .ptr-a { fill: #f0932b; } .dial .ptr-t { fill: #4aa3df; }
 .dial .num { font-size: 12px; font-weight: 700; fill: var(--tile-ink); text-anchor: middle; }
 .dial .num.a { fill: #f0932b; } .dial .num.t { fill: #4aa3df; }
@@ -651,8 +697,16 @@ html[data-palette^="night"] body { background: #fff; } /* black after the invers
 
 /* ---------- cockpit window ---------- */
 body.cockpit { margin: 0; height: 100vh; display: flex; flex-direction: column; background: #10181d; color: #e8eef2; overflow: hidden; }
-#ck-wrap { flex: 1; position: relative; min-height: 0; display: flex; }
+#ck-wrap { flex: 1; position: relative; min-height: 0; display: flex; flex-direction: column; }
 #ck-grid { flex: 1; display: grid; gap: 6px; padding: 6px; min-height: 0; }
+#ck-highway { flex: 0 0 min(65vh, 640px); min-height: 0; width: auto; margin: 6px 6px 0; cursor: default; }
+#ck-highway .hw-canvas svg { width: 100%; height: 100%; }
+#ck-highway .hw-ribbon svg { width: 100%; height: 100%; max-width: none; }
+#ck-highway .hw-steer-row svg { width: 100%; height: 100%; max-width: none; }
+#ck-highway .v { display: flex; flex: 1; min-height: 0; justify-content: center; align-items: stretch; }
+#ck-highway .hw-dashboard { grid-template-rows: auto 48px minmax(90px, 1fr) 60px auto; }
+#ck-grid .tile.highway-card { grid-column: 1 / -1; min-height: min(38vh, 360px); width: auto; }
+#ck-grid .highway-card .hw-dashboard { grid-template-rows: auto 42px minmax(90px, 1fr) 60px auto; }
 #ck-handles { position: absolute; inset: 0; pointer-events: none; }
 .ck-h { position: absolute; pointer-events: auto; z-index: 5; touch-action: none; }
 .ck-h.col { top: 6px; bottom: 6px; width: 12px; cursor: col-resize; }
@@ -680,7 +734,13 @@ body.cockpit { margin: 0; height: 100vh; display: flex; flex-direction: column; 
 #ck-alarms .alarm small { font-size: 0.55em; opacity: 0.9; }
 #ck-alarms .alarm.alarm { background: #c0392b; animation: alarm-flash 1s steps(2, start) infinite; } #ck-alarms .alarm.warn { background: #d08f00; } #ck-alarms .alarm.acked { animation: none; }
 html[data-palette^="night"] body.cockpit { background: #fff; }
-html[data-palette^="night"] #ck-grid .tile, html[data-palette^="night"] #ck-bar, html[data-palette^="night"] #ck-alarms { filter: invert(1); }
+html[data-palette^="night"] #ck-grid .tile, html[data-palette^="night"] #ck-highway, html[data-palette^="night"] #ck-bar, html[data-palette^="night"] #ck-alarms { filter: invert(1); }
+
+@media (max-width: 600px) {
+  .ipanel .tile.highway-card { width: calc(100vw - var(--rail-w) - 20px); min-height: 470px; }
+  .hw-metrics.hw-top { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #ck-highway { flex-basis: min(72vh, 640px); }
+}
 
 .ais-pop-btns { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
 .ais-pop-btns button { padding: 4px 8px; font-size: 12px; }

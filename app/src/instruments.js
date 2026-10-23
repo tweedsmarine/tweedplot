@@ -140,6 +140,200 @@ ITEMS.WDIAL = { label: "Wind", unit: "", group: "Graphic", live: true, graphic: 
   get: (c) => (c.v.awa == null && c.v.twa == null ? null : { awa: c.v.awa, twa: c.v.twa, aws: c.v.aws, tws: c.v.tws }), fmt: windDial };
 ITEMS.COMPASS = { label: "Compass", unit: "", group: "Graphic", live: true, graphic: true,
   get: (c) => (c.v.heading == null && c.v.cog == null ? null : { hdg: c.v.heading, cog: c.v.cog, btw: c.wp?.btw }), fmt: compassRose };
+ITEMS.HIGHWAY = {
+  label: "Highway", unit: "", group: "Graphic", live: true, graphic: true, wide: true, highway: true,
+  get: highwayData, fmt: highwayMarkup, render: renderHighway,
+};
+
+function highwayData(c) {
+  let range = null, bearingToTarget = null, track = null, cts = null, xte = null;
+  if (c.mob && c.v.lat != null && c.v.lon != null) {
+    const leg = mobLeg(c);
+    if (leg) {
+      range = leg.nm;
+      bearingToTarget = leg.brg;
+      track = leg.brg;
+      cts = leg.brg;
+      xte = 0;
+    }
+  } else if (c.nav && c.wp) {
+    range = c.wp.dtw;
+    bearingToTarget = c.wp.btw;
+    track = c.nav.from ? bearing(c.nav.from, [c.nav.next.lon, c.nav.next.lat]) : c.wp.btw;
+    const correction = c.wp.xte == null ? 0 : Math.min(30, Math.atan2(Math.abs(c.wp.xte), Math.max(c.wp.dtw, 0.1)) * 180 / Math.PI);
+    cts = (track - Math.sign(c.wp.xte ?? 0) * correction + 360) % 360;
+    xte = c.wp.xte;
+  }
+  const sog = c.v.sog;
+  const vmg = sog != null && c.v.cog != null && bearingToTarget != null
+    ? sog * Math.cos(rad(c.v.cog - bearingToTarget))
+    : c.mob ? null : c.wp?.vmc ?? null;
+  const ttg = range != null && vmg != null && vmg > 0.1 ? (range / vmg) * 3600 : null;
+  const groundTrackOffset = c.v.heading != null && c.v.cog != null
+    ? ((c.v.cog - c.v.heading + 540) % 360) - 180
+    : 0;
+  const targetHdg = cts == null ? null : (cts - groundTrackOffset + 360) % 360;
+  return {
+    mob: !!c.mob, hdg: c.v.heading, cog: c.v.cog, sog, range, bearing: bearingToTarget,
+    track, cts, targetHdg, xte, vmg, ttg, eta: ttg == null ? null : c.now + ttg * 1000,
+    groundTrackOffset,
+  };
+}
+
+function highwayMarkup() {
+  return `<div class="hw-dashboard">
+    <div class="hw-metrics hw-top">
+      <div class="hw-metric"><span>Heading · HDG</span><strong data-hw="hdg">—</strong></div>
+      <div class="hw-metric hw-target"><span>Course to steer · CTS</span><strong data-hw="cts">—</strong></div>
+      <div class="hw-metric"><span>Speed over ground</span><strong data-hw="sog">—</strong><small>SOG · kn</small></div>
+      <div class="hw-metric"><span data-hw="dtw-label">Distance to waypoint</span><strong data-hw="dtw">—</strong><small>DTW · NM</small></div>
+    </div>
+    <div class="hw-ribbon">
+      <svg viewBox="0 0 600 50" preserveAspectRatio="none" role="img" aria-label="Heading compass ribbon">
+        <g class="hw-ribbon-scale"></g>
+        <path d="M300 0L294 9H306Z" class="hw-ribbon-marker"/>
+        <text x="300" y="20" text-anchor="middle" class="hw-ribbon-current" data-hw="ribbon-heading">—</text>
+      </svg>
+    </div>
+    <div class="hw-canvas">
+      <svg viewBox="0 0 600 300" preserveAspectRatio="none" role="img" aria-label="Perspective navigation highway">
+        <g class="hw-runway">
+          <path d="M235 26L32 290H568L365 26Z" class="hw-road"/>
+          <path d="M235 26L32 290M365 26L568 290" class="hw-rail"/>
+          <path d="M300 26V290" class="hw-centerline"/>
+          <path d="M195 70H405M157 112H443M95 178H505M43 250H557" class="hw-gridline"/>
+          <path d="M260 70L120 290M280 112L205 290M320 112L395 290M340 70L480 290" class="hw-lane"/>
+          <path d="M300 40V88" class="hw-aim"/>
+        </g>
+        <g class="hw-vessel">
+          <path d="M300 188L286 216L290 233H310L314 216Z" class="hw-boat"/>
+          <path d="M273 197A30 30 0 0 1 327 197" class="hw-boat-wake"/>
+        </g>
+      </svg>
+    </div>
+    <div class="hw-steer-row">
+      <svg viewBox="0 0 600 60" preserveAspectRatio="none" role="img" aria-label="Required steering direction">
+        <path class="hw-steer-shaft"/>
+        <path class="hw-steer-arrow"/>
+      </svg>
+    </div>
+    <div class="hw-metrics hw-bottom">
+      <div class="hw-metric hw-xte"><span>Cross-track error · XTE</span><strong data-hw="xte">—</strong></div>
+      <div class="hw-metric"><span>Time to go · TTG</span><strong data-hw="ttg">—</strong><small data-hw="vmg">VMG —</small></div>
+      <div class="hw-metric"><span>Estimated arrival · ETA</span><strong data-hw="eta">—</strong></div>
+    </div>
+  </div>`;
+}
+
+const highwaySmoothing = new WeakMap();
+const HIGHWAY_ANGLE_FIELDS = new Set(["hdg", "cog", "bearing", "track", "cts", "targetHdg"]);
+const highwayRibbonAngles = new WeakMap();
+function smoothHighway(host, value, now) {
+  if (!value) return value;
+  const previous = highwaySmoothing.get(host);
+  if (!previous) {
+    highwaySmoothing.set(host, { value, now });
+    return value;
+  }
+  const alpha = 1 - Math.exp(-Math.max(0, now - previous.now) / 450);
+  const smoothed = { ...value };
+  for (const key of ["hdg", "cog", "sog", "range", "bearing", "track", "cts", "targetHdg", "groundTrackOffset", "xte", "vmg", "ttg", "eta"]) {
+    const current = value[key], old = previous.value[key];
+    if (current == null || !Number.isFinite(current)) { smoothed[key] = null; continue; }
+    if (old == null || !Number.isFinite(old)) { smoothed[key] = current; continue; }
+    if (HIGHWAY_ANGLE_FIELDS.has(key)) {
+      const difference = ((current - old + 540) % 360) - 180;
+      smoothed[key] = (old + difference * alpha + 360) % 360;
+    } else {
+      smoothed[key] = old + (current - old) * alpha;
+    }
+  }
+  highwaySmoothing.set(host, { value: smoothed, now });
+  return smoothed;
+}
+
+function highwayTime(seconds) {
+  if (seconds == null || !Number.isFinite(seconds)) return "—";
+  if (seconds > 99 * 3600) return ">99h";
+  const h = Math.floor(seconds / 3600), m = Math.round((seconds % 3600) / 60);
+  return h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m} min`;
+}
+
+function highwayClock(timestamp) {
+  return timestamp == null || !Number.isFinite(timestamp)
+    ? "—"
+    : new Date(timestamp).toLocaleString("en-NZ", { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+function renderHighway(host, raw, ctx) {
+  host.classList.add("hw-host");
+  if (host.dataset.ready !== "true") {
+    host.innerHTML = highwayMarkup();
+    host.dataset.ready = "true";
+  }
+  const h = smoothHighway(host, raw, ctx.now ?? Date.now());
+  const text = (key, value) => {
+    const node = host.querySelector(`[data-hw="${key}"]`);
+    if (node && node.textContent !== value) node.textContent = value;
+  };
+  const angle = (degrees) => degrees == null ? "—" : `${deg3(degrees)}°`;
+  text("hdg", angle(h?.hdg));
+  text("cts", angle(h?.cts));
+  text("sog", h?.sog == null ? "—" : h.sog.toFixed(1));
+  text("dtw", h?.range == null ? "—" : h.range.toFixed(h.range < 10 ? 2 : 1));
+  text("dtw-label", h?.mob ? "Distance to MOB" : "Distance to waypoint");
+  text("xte", h?.xte == null ? "—" : `${Math.abs(h.xte).toFixed(2)} NM`);
+  text("ttg", highwayTime(h?.ttg));
+  text("vmg", h?.vmg == null ? "VMG —" : `VMG ${h.vmg.toFixed(1)} kn`);
+  text("eta", highwayClock(h?.eta));
+  text("ribbon-heading", h?.hdg == null ? "—" : `${deg3(h.hdg)}°`);
+  const ribbon = host.querySelector(".hw-ribbon-scale");
+  if (ribbon && h?.hdg != null) {
+    let ribbonHeading = highwayRibbonAngles.get(host);
+    if (ribbonHeading == null) {
+      ribbonHeading = h.hdg < 70 ? h.hdg + 360 : h.hdg;
+    } else {
+      ribbonHeading += ((h.hdg - (ribbonHeading % 360) + 540) % 360) - 180;
+    }
+    highwayRibbonAngles.set(host, ribbonHeading);
+    const base = Math.round(ribbonHeading / 10) * 10;
+    const fraction = ribbonHeading - base;
+    let marks = "";
+    for (let i = -9; i <= 9; i++) {
+      const x = 300 + i * 30;
+      const value = base + i * 10;
+      const bearing = ((value % 360) + 360) % 360;
+      marks += `<path d="M${x} 0V22" class="hw-ribbon-tick"/><text x="${x}" y="40" text-anchor="middle" class="hw-ribbon-label">${String(bearing).padStart(3, "0")}</text>`;
+    }
+    if (ribbon.dataset.base !== String(base)) {
+      ribbon.innerHTML = marks;
+      ribbon.dataset.base = String(base);
+    }
+    ribbon.setAttribute("transform", `translate(${(-fraction * 3).toFixed(1)} 0)`);
+  }
+  const delta = h?.hdg != null && h?.targetHdg != null
+    ? ((h.targetHdg - h.hdg + 540) % 360) - 180
+    : null;
+  const steer = host.querySelector(".hw-steer-row");
+  const steerShaft = steer?.querySelector(".hw-steer-shaft");
+  const steerArrow = steer?.querySelector(".hw-steer-arrow");
+  const length = delta == null || Math.abs(delta) < 1 ? 0 : Math.min(250, Math.max(28, Math.abs(delta) * 5));
+  const direction = delta == null ? 0 : Math.sign(delta);
+  const tip = 300 + direction * length;
+  const headBase = tip - direction * 28;
+  if (steerShaft) steerShaft.setAttribute("d", length ? `M300 30L${headBase.toFixed(1)} 30` : "");
+  if (steerArrow) steerArrow.setAttribute("d", length
+    ? `M${tip.toFixed(1)} 30L${headBase.toFixed(1)} 14L${headBase.toFixed(1)} 46Z`
+    : "");
+  steer?.classList.toggle("steer-port", delta != null && delta < -1);
+  steer?.classList.toggle("steer-stbd", delta != null && delta > 1);
+  const runway = host.querySelector(".hw-runway");
+  if (runway) {
+    const offset = Math.max(-1.5, Math.min(1.5, h?.xte ?? 0)) * -48;
+    runway.setAttribute("transform", `translate(${offset.toFixed(1)} 0)`);
+  }
+  host.parentElement?.classList.toggle("mob-highway", !!h?.mob);
+}
 
 /** Rhumb line from the boat to the cursor, or null. */
 function mobLeg(c) {
@@ -157,6 +351,7 @@ const GRIB_PANEL = { id: "pg", x: 0.45, y: 0.11, dir: "row", size: "s", tiles: [
 // shown only while an ocean file is loaded (`sea`)
 // shown only while a man overboard is set (`mob`): big, near the top, below the alarm banner
 const MOB_PANEL = { id: "pm", x: 0.4, y: 0.25, dir: "row", size: "l", mob: true, name: "Man overboard", tiles: ["MOBBRG", "MOBRNG", "MOBAGO", "MOBPOS"] };
+const HIGHWAY_PANEL = { id: "phw", x: 0.35, y: 0.48, dir: "row", size: "l", mob: true, name: "Highway", tiles: ["HIGHWAY"] };
 const SEA_PANEL = { id: "ps", x: 0.36, y: 0.2, dir: "row", size: "s", sea: true, name: "Sea at cursor", tiles: ["GSST", "GSKIN", "GSSS", "GCUR", "GSET", "GCHL"] };
 
 const DEFAULT_LAYOUT = {
@@ -169,8 +364,9 @@ const DEFAULT_LAYOUT = {
     GRIB_PANEL,
     SEA_PANEL,
     MOB_PANEL,
+    HIGHWAY_PANEL,
   ],
-  added: ["cursor", "grib", "sea"],
+  added: ["cursor", "grib", "sea", "mob", "highway"],
 };
 
 export function setupInstruments() {
@@ -209,7 +405,7 @@ export function setupInstruments() {
       if (!p.collapsed) p.tiles.forEach((key, i) => {
         const it = ITEMS[key];
         const t = document.createElement("div");
-        t.className = `tile ${p.size}${it?.wide ? " wide" : ""}${it?.graphic ? " graphic" : ""}`;
+        t.className = `tile ${p.size}${it?.wide ? " wide" : ""}${it?.graphic ? " graphic" : ""}${it?.highway ? " highway-card" : ""}`;
         t.dataset.i = i;
         t.innerHTML = `<div class="lbl"><span>${it ? it.label : key}</span><span class="sd"></span></div><div class="v">—</div>`;
         el.append(t);
@@ -282,6 +478,7 @@ export function setupInstruments() {
 
   // ---------- values ----------------------------------------------------------
   function render() {
+    ctx.now = Date.now();
     for (const el of root.children) {
       const p = panel(el.dataset.id);
       if (!p) continue;
@@ -300,9 +497,12 @@ export function setupInstruments() {
         // a real true/false: classList.toggle(name, undefined) flips the class on every render
         const stale = Boolean(it.live) && ctx.age > STALE_S;
         const state = has && !stale && it.state ? it.state(val, ctx) : "";
-        const html = has ? it.fmt(val) + (it.unit ? `<span class="u">${it.unit}</span>` : "") : "—";
         const v = t.querySelector(".v");
-        if (v.innerHTML !== html) v.innerHTML = html;
+        if (it.render) it.render(v, val, ctx);
+        else {
+          const html = has ? it.fmt(val) + (it.unit ? `<span class="u">${it.unit}</span>` : "") : "—";
+          if (v.innerHTML !== html) v.innerHTML = html;
+        }
         const sd = t.querySelector(".sd");
         const side = has && it.side ? it.side(val) : "";
         sd.className = `sd ${side}`;
@@ -313,7 +513,7 @@ export function setupInstruments() {
       }
     }
   }
-  setInterval(() => { ctx.now = Date.now(); ctx.age = (Date.now() - (ctx.dataAt ?? 0)) / 1000; render(); }, 1000);
+  setInterval(() => { ctx.age = (Date.now() - (ctx.dataAt ?? 0)) / 1000; render(); }, 250);
 
   // ---------- tile menu ----------------------------------------------------------
   root.addEventListener("click", (e) => {
@@ -411,6 +611,10 @@ export function setupInstruments() {
         p.hidden = false;
         p.collapsed = false;
         if (!p.tiles.includes("MOBPOS")) p.tiles.push("MOBPOS");
+        let highwayPanel = layout.panels.find((x) => x.id === HIGHWAY_PANEL.id);
+        if (!highwayPanel) { highwayPanel = structuredClone(HIGHWAY_PANEL); layout.panels.push(highwayPanel); }
+        highwayPanel.hidden = false;
+        highwayPanel.collapsed = false;
         if (layout.hideAll) layout.hideAll = false;
         save();
         build();
@@ -431,6 +635,7 @@ function loadLayout() {
       if (!l.added.includes("grib")) { l.panels.push(structuredClone(GRIB_PANEL)); l.added.push("grib"); }
       if (!l.added.includes("sea")) { l.panels.push(structuredClone(SEA_PANEL)); l.added.push("sea"); }
       if (!l.added.includes("mob")) { l.panels.push(structuredClone(MOB_PANEL)); l.added.push("mob"); }
+      if (!l.added.includes("highway")) { l.panels.push(structuredClone(HIGHWAY_PANEL)); l.added.push("highway"); }
       return l;
     }
   } catch { /* ignore */ }

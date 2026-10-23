@@ -94,7 +94,7 @@ function build() {
   s.tiles.forEach((k, i) => {
     const it = ITEMS[k];
     const t = document.createElement("div");
-    t.className = `tile ck${it?.graphic ? " graphic" : ""}${it?.wide ? " wide" : ""}`;
+    t.className = `tile ck${it?.graphic ? " graphic" : ""}${it?.wide ? " wide" : ""}${it?.highway ? " highway-card" : ""}`;
     t.dataset.i = i;
     t.innerHTML = `<div class="lbl"><span>${esc(it ? it.label : k)}</span><span class="sd"></span></div><div class="v">—</div>`;
     t.onclick = () => menu(i, t.getBoundingClientRect());
@@ -127,6 +127,9 @@ function render() {
   $("ck-mob-btn").classList.toggle("on", !!ctx.mob);
   const tiles = [...$("ck-grid").children].map((t) => [t, ITEMS[s.tiles[Number(t.dataset.i)]]]);
   if (ctx.mob) tiles.push(...[...mob.children].map((t) => [t, ITEMS[t.dataset.k]]));
+  const highway = $("ck-highway");
+  highway.hidden = false;
+  tiles.push([highway, ITEMS.HIGHWAY]);
   for (const [t, it] of tiles) {
     if (!it) continue;
     let val = null;
@@ -134,13 +137,18 @@ function render() {
     const has = val !== null && val !== undefined && !(typeof val === "number" && !Number.isFinite(val));
     const stale = Boolean(it.live) && ctx.age > 10;
     const state = has && !stale && it.state ? it.state(val, ctx) : "";
-    const html = has ? it.fmt(val) + (it.unit ? `<span class="u">${it.unit}</span>` : "") : "—";
     const v = t.querySelector(".v");
-    if (v.innerHTML !== html) v.innerHTML = html;
+    if (it.render) it.render(v, val, ctx);
+    else {
+      const html = has ? it.fmt(val) + (it.unit ? `<span class="u">${it.unit}</span>` : "") : "—";
+      if (v.innerHTML !== html) v.innerHTML = html;
+    }
     const side = has && it.side ? it.side(val) : "";
     const sd = t.querySelector(".sd");
-    sd.className = `sd ${side}`;
-    sd.textContent = side === "port" ? "PORT" : side === "stbd" ? "STBD" : "";
+    if (sd) {
+      sd.className = `sd ${side}`;
+      sd.textContent = side === "port" ? "PORT" : side === "stbd" ? "STBD" : "";
+    }
     t.classList.toggle("stale", stale);
     t.classList.toggle("warn", state === "warn");
     t.classList.toggle("alarm", state === "alarm");
@@ -148,7 +156,7 @@ function render() {
   const quiet = Date.now() - lastMsg > 5000;
   $("ck-state").textContent = quiet ? "Waiting for the chart window…" : ctx.age > 10 ? "No live data" : "Live";
 }
-setInterval(render, 1000);
+setInterval(render, 250);
 
 function menu(i, rect) {
   const m = $("ck-menu");
@@ -184,6 +192,7 @@ $("ck-pal").onclick = () => { s.pal = PALS[(PALS.indexOf(s.pal) + 1) % PALS.leng
 $("ck-cols").onclick = () => { s.cols = (s.cols % 5) + 1; s.colW = null; s.rowH = null; save(); build(); };
 $("ck-even").onclick = () => { s.colW = null; s.rowH = null; save(); build(); };
 $("ck-add").onclick = () => { s.tiles.push("SOG"); save(); build(); menu(s.tiles.length - 1); };
+
 // MOB at the helm: the chart window marks it (as its own MOB button does) and sends it back
 $("ck-mob-btn").onclick = () => { emit("cockpit-mob", {}).catch(() => {}); };
 $("ck-full").onclick = async () => { try { const w = getCurrentWindow(); await w.setFullscreen(!(await w.isFullscreen())); } catch { /* not in Tauri */ } };
