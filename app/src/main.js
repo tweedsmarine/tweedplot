@@ -103,26 +103,26 @@ const map = new maplibregl.Map({
         paint: { "line-color": "#9db8c8", "line-width": 0.5 } },
       // Depth fills sit below weather shading; land fills are added above it below.
       { id: "wdepth", type: "fill", source: "chart", "source-layer": "wdepth",
-        layout: { "fill-sort-key": ["+", ["*", ["get", "src"], 100000], ["get", "d"]] },
+        layout: { visibility: "none", "fill-sort-key": ["+", ["*", ["get", "src"], 100000], ["get", "d"]] },
         paint: { "fill-color": ["step", ["get", "d"], "#a6cdf0", 10, "#b7d8f2", 20, "#c9e1ee", 50, "#dcecf3", 200, "#e4f0f5",
           1000, "#dbeaf2", 2000, "#d3e5ef", 3000, "#cbe0ec", 4000, "#c3dbe9", 5000, "#bbd6e6", 6000, "#b3d1e3"], "fill-antialias": false } },
-      { id: "wdcnt", type: "line", source: "chart", "source-layer": "wdcnt", minzoom: 7,
+      { id: "wdcnt", type: "line", source: "chart", "source-layer": "wdcnt", minzoom: 7, layout: { visibility: "none" },
         paint: { "line-color": "#8fa9b8", "line-width": 0.6, "line-opacity": 0.8 } },
       // LINZ hydrographic chart data (not for navigation)
       { id: "depare", type: "fill", source: "chart", "source-layer": "depare",
-        layout: { "fill-sort-key": ["get", "band"] },
+        layout: { visibility: "none", "fill-sort-key": ["get", "band"] },
         paint: { "fill-color": depareColour(), "fill-antialias": false } },
-      { id: "depcnt", type: "line", source: "chart", "source-layer": "depcnt",
+      { id: "depcnt", type: "line", source: "chart", "source-layer": "depcnt", layout: { visibility: "none" },
         paint: { "line-color": "#7d97a6", "line-width": 0.6 } },
       { id: "safety-contour", type: "line", source: "chart", "source-layer": "depcnt",
-        filter: ["==", ["get", "valdco"], settings.safetyContour],
+        filter: ["==", ["get", "valdco"], settings.safetyContour], layout: { visibility: "none" },
         paint: { "line-color": "#1d2a33", "line-width": 1.6 } },
       // Keep bundled land visible beneath chart fills while vector tiles are opening or retrying.
       { id: "land-world", type: "fill", source: "land-world", maxzoom: 6,
         paint: { "fill-color": css("--land") } },
       { id: "land-nz", type: "fill", source: "land-nz", minzoom: 4,
         paint: { "fill-color": css("--land") } },
-      { id: "chart-world-land", type: "fill", source: "chart", "source-layer": "wland",
+      { id: "chart-world-land", type: "fill", source: "chart", "source-layer": "wland", layout: { visibility: "none" },
         paint: { "fill-color": css("--land"), "fill-antialias": false } },
       // Fallback coastlines stay underneath chart land to avoid duplicate outlines;
       // chart coastlines are drawn over the chart land below.
@@ -130,15 +130,15 @@ const map = new maplibregl.Map({
         paint: { "line-color": css("--coast"), "line-width": 0.8 } },
       { id: "coast-nz", type: "line", source: "land-nz", minzoom: 4,
         paint: { "line-color": css("--coast"), "line-width": 0.8 } },
-      { id: "chart-land", type: "fill", source: "chart", "source-layer": "land",
+      { id: "chart-land", type: "fill", source: "chart", "source-layer": "land", layout: { visibility: "none" },
         // no antialiasing: world land comes in pieces whose shared edges would show as faint lines
         paint: { "fill-color": css("--land"), "fill-antialias": false } },
-      { id: "chart-coast", type: "line", source: "chart", "source-layer": "land", filter: ["all", ["!", ["has", "w"]], ["!", ["has", "enc"]]],
+      { id: "chart-coast", type: "line", source: "chart", "source-layer": "land", layout: { visibility: "none" }, filter: ["all", ["!", ["has", "w"]], ["!", ["has", "enc"]]],
         paint: { "line-color": css("--coast"), "line-width": 0.9 } },
-      { id: "chart-wcoast", type: "line", source: "chart", "source-layer": "wcoast",
+      { id: "chart-wcoast", type: "line", source: "chart", "source-layer": "wcoast", layout: { visibility: "none" },
         paint: { "line-color": css("--coast"), "line-width": 0.9 } },
-      { id: "soundg", type: "symbol", source: "chart", "source-layer": "soundg",
-        layout: { "icon-image": soundingImage(), "icon-allow-overlap": false, "icon-padding": 1 } },
+      { id: "soundg", type: "symbol", source: "chart", "source-layer": "soundg", layout: { visibility: "none", "icon-image": soundingImage(), "icon-allow-overlap": false, "icon-padding": 1 },
+      },
       { id: "track", type: "line", source: "track",
         paint: { "line-color": "#d35400", "line-width": 2 } },
       { id: "hdgline", type: "line", source: "hdgline",
@@ -184,6 +184,18 @@ map.on("load", () => map.addImage("boat", boatIcon(), { pixelRatio: 2 }));
 map.on("error", (e) => {
   if (e.sourceId === "chart") retryFailedTiles();
   else if (e.error) console.warn(e.error);
+});
+map.on("sourcedata", (e) => {
+  if (e.sourceId !== "chart" || e.tile?.state !== "loaded") return;
+  chartTileLoaded = true;
+  clearTimeout(chartTileRetry);
+  chartTileRetry = null;
+  clearTimeout(tileRetry);
+  tileRetry = null;
+  chartTileRetryAttempt = 0;
+  setChartFallbackRange(false);
+  document.getElementById("startup-splash").hidden = true;
+  finishStartupWhenReady();
 });
 
 // Sounding figures are drawn on demand: no font files needed offline.
@@ -233,6 +245,12 @@ const startup = {
   mapLoaded: false, appReady: false, chartsReady: false, chartInfo: null,
   readyAt: 0, finishTimer: null, finished: false, message: "Initialising - please wait", progress: "",
 };
+let chartStoreReady = false;
+let chartTileLoaded = false;
+let chartTileRetry = null;
+let chartTileRetryAttempt = 0;
+let tileRetry = null, lastRetry = 0;
+const CHART_TILE_RETRY_DELAYS = [750, 1500, 3000, 6000, 10000];
 function chartLoadingMessage() {
   if (!startup.progress) return "Loading charts";
   const detail = startup.progress.replace(/^preparing charts:\s*/i, "").replace(/^converting ENC cells:\s*/i, "converting ENC cells: ");
@@ -246,7 +264,7 @@ function startupToast(text) {
 function finishStartupWhenReady() {
   if (startup.finished || !startup.mapLoaded || !startup.appReady || !startup.chartsReady) return;
   const info = startup.chartInfo;
-  if (info.tables > 0 && !map.isSourceLoaded("chart")) return;
+  if (info.tables > 0 && (!chartTileLoaded || !map.isSourceLoaded("chart"))) return;
   const remaining = 900 - (Date.now() - startup.readyAt);
   if (remaining > 0) {
     if (!startup.finishTimer) {
@@ -264,12 +282,20 @@ function finishStartupWhenReady() {
 }
 function noteChartsReady(info) {
   if (!info) return;
+  if (info.ready === true && !info.error && info.tables > 0) chartStoreReady = true;
   chartsLoaded(info);
   if (!startup.chartsReady && (info.ready === true || info.error)) {
     startup.chartsReady = true;
     startup.chartInfo = info;
     startup.readyAt = Date.now();
-    startupToast(info.error ? "Chart loading failed" : info.tables === 0 ? "Charts ready - no charts found" : "Charts ready");
+    startupToast(info.error ? "Chart loading failed" : info.tables === 0 ? "Charts ready - no charts found" : "Charts ready - loading map tiles");
+    if (!info.error && info.tables > 0) {
+      chartStoreReady = true;
+      chartTileLoaded = false;
+      chartTileRetryAttempt = 0;
+      clearTimeout(tileRetry);
+      tileRetry = null;
+    }
   }
   finishStartupWhenReady();
 }
@@ -285,6 +311,8 @@ map.on("load", () => {
     getBoat: () => ({ pos: lastBoat, v: vessel, live: live && signalKActive(), connected: liveDataConnected(), fresh: Date.now() - lastFeed < 5000 }),
     getSafetyDepth: () => settings.safetyDepth,
     getAirDraft: () => Number(boat.get().airDraft) || 0,
+    onMobMarkDeleted: () => library?.refresh(),
+    toast,
   });
   for (const alarm of pendingNmeaAlarms.splice(0)) alarms.raise(...alarm);
   setupStations(map, { weather });
@@ -324,7 +352,7 @@ map.on("load", () => {
   library.onChange(feed);
   feed();
   startup.appReady = true;
-  startupToast(startup.chartsReady ? "Charts ready" : chartLoadingMessage());
+  startupToast(startup.chartsReady ? "Charts ready - loading map tiles" : chartLoadingMessage());
   finishStartupWhenReady();
 });
 
@@ -384,9 +412,16 @@ setInterval(feed, 1000);
 
 // Keep the bundled coastline visible beneath chart tiles as they load.
 let chartMapLoaded = false, pendingChartInfo = null;
+function setChartFallbackRange(loading) {
+  if (!map.getLayer("land-world") || !map.getLayer("coast-world")) return;
+  const maxZoom = loading ? 22 : 6;
+  map.setLayerZoomRange("land-world", 0, maxZoom);
+  map.setLayerZoomRange("coast-world", 0, maxZoom);
+}
 function chartsLoaded(info) {
   if (!info) return;
   window.dispatchEvent(new CustomEvent("racenav-charts", { detail: info }));
+  if (info.ready === false) return;
   if (!(info.tables > 0)) return;
   if (!chartMapLoaded) {
     pendingChartInfo = info;
@@ -395,21 +430,50 @@ function chartsLoaded(info) {
   if (!chartPositionChosen) map.jumpTo(startupCamera);
   map.setLayerZoomRange("land-nz", 4, 6);
   map.setLayerZoomRange("coast-nz", 4, 6);
-  if (tileRetry) { clearTimeout(tileRetry); tileRetry = null; }
-  // reload the tiles (asked for before the charts were open, or the chart data changed)
-  reloadChartTiles();
+  enableChartLayers();
+  setChartFallbackRange(!chartTileLoaded);
+  requestAnimationFrame(() => {
+    map.resize();
+    reloadChartTiles();
+    if (chartStoreReady && !chartTileLoaded) queueChartTileRetry(CHART_TILE_RETRY_DELAYS[0]);
+  });
+}
+function enableChartLayers() {
+  if (!chartMapLoaded || !chartStoreReady) return;
+  for (const layer of map.getStyle().layers) {
+    if (layer.source === "chart") map.setLayoutProperty(layer.id, "visibility", "visible");
+  }
+  features?.setEnabled(true);
 }
 // A failed chart tile isn't automatically requested again by the map. Retry at a
 // bounded rate so transient failures and tiles drawn before chart startup recover.
-let tileRetry = null, lastRetry = 0;
 function retryFailedTiles() {
+  if (chartStoreReady && !chartTileLoaded) {
+    queueChartTileRetry(Math.max(750, lastRetry + 3000 - Date.now()));
+    return;
+  }
   if (tileRetry) return;
   const wait = Math.max(3000, lastRetry + 15000 - Date.now());
   tileRetry = setTimeout(() => { tileRetry = null; lastRetry = Date.now(); reloadChartTiles(); }, wait);
 }
+function queueChartTileRetry(delay) {
+  if (!chartStoreReady || chartTileLoaded || chartTileRetry) return;
+  chartTileRetry = setTimeout(() => {
+    chartTileRetry = null;
+    if (!chartStoreReady || chartTileLoaded) return;
+    if (chartTileRetryAttempt >= CHART_TILE_RETRY_DELAYS.length) {
+      startupToast("Chart tiles still loading - retrying");
+      queueChartTileRetry(CHART_TILE_RETRY_DELAYS.at(-1));
+      return;
+    }
+    lastRetry = Date.now();
+    chartTileRetryAttempt++;
+    reloadChartTiles();
+    queueChartTileRetry(CHART_TILE_RETRY_DELAYS[chartTileRetryAttempt] ?? CHART_TILE_RETRY_DELAYS.at(-1));
+  }, delay);
+}
 function reloadChartTiles() {
-  const src = map.getSource("chart");
-  if (src) src.setTiles([TILE_URL + (TILE_URL.includes("?") ? "&" : "?") + "v=" + Date.now()]);
+  if (map.getSource("chart")) map.refreshTiles("chart");
 }
 let encBusy = false;
 listen("chart-ready", ({ payload }) => {
@@ -435,7 +499,8 @@ listen("chart-status", ({ payload }) => {
 map.on("load", () => {
   chartMapLoaded = true;
   startup.mapLoaded = true;
-  startupToast(startup.chartsReady ? "Charts ready" : chartLoadingMessage());
+  setChartFallbackRange(!chartTileLoaded);
+  startupToast(startup.chartsReady ? "Charts ready - loading map tiles" : chartLoadingMessage());
   if (pendingChartInfo) {
     const info = pendingChartInfo;
     pendingChartInfo = null;
@@ -444,6 +509,15 @@ map.on("load", () => {
   invoke("chart_info").then(noteChartsReady).catch((e) => console.error("chart info:", e));
 });
 map.on("idle", finishStartupWhenReady);
+map.on("moveend", () => {
+  if (chartStoreReady && !chartTileLoaded) {
+    clearTimeout(chartTileRetry);
+    chartTileRetry = null;
+    chartTileRetryAttempt = 0;
+    reloadChartTiles();
+    queueChartTileRetry(100);
+  }
+});
 
 function applyChartSettings() {
   map.setPaintProperty("depare", "fill-color", depareColour());

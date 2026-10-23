@@ -424,8 +424,13 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
 #lib-tracks li .swatch { flex: none; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
 #lib-tracks li input[type="checkbox"] { flex: none; margin: 0 4px 0 0; }
 
+/* Startup stays branded until the chart source has rendered a tile. */
+.startup-splash { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: var(--brand-navy); }
+.startup-splash img { width: 96px; height: 112px; object-fit: contain; }
+.startup-splash[hidden] { display: none; }
+
 /* short messages at the bottom of the chart (ruler hints …) */
-.toast { position: absolute; left: 50%; top: 86px; transform: translateX(-50%); z-index: 30; max-width: 70vw;
+.toast { position: absolute; left: 50%; top: 86px; transform: translateX(-50%); z-index: 50; max-width: 70vw;
   background: var(--tile-bg); color: var(--tile-ink); padding: 6px 12px; border-radius: 6px; font-size: 13px; pointer-events: none; }
 .toast[hidden] { display: none; }
 .ctx hr[hidden], .ctx button[hidden] { display: none; }

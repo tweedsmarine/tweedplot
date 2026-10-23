@@ -36,6 +36,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
   const opts = { ...DEFAULTS };
   try { Object.assign(opts, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(opts)); } catch { /* ignore */ } };
+  let enabled = false;
 
   const src = { source: "chart" };
   const cls = (...c) => ["in", ["get", "cls"], ["literal", c]];
@@ -103,7 +104,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
   function apply() {
     for (const l of layers) {
       const haz = HAZ_LAYERS.includes(l.id);
-      let on = opts.show || haz || l.id === "f-coast"; // the ENC coast is part of the chart base
+      let on = enabled && (opts.show || haz || l.id === "f-coast"); // the ENC coast is part of the chart base
       if (SECTOR.includes(l.id)) on = on && opts.sectors;
       if (NAMES.includes(l.id)) on = on && opts.names;
       map.setLayoutProperty(l.id, "visibility", on ? "visible" : "none");
@@ -184,6 +185,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
   }
 
   return {
+    setEnabled: (on) => { enabled = on; apply(); },
     /** Underwater rocks, wrecks and obstructions deeper than this lose their danger symbol. */
     setSafetyContour: (m) => { baseFilter["f-points"] = pointFilter(m); baseFilter["f-labels"] = labelFilter(m); map.setFilter("f-labels", labelFilter(m)); apply(); },
     /** Routing options: which charted hazards to keep off. */

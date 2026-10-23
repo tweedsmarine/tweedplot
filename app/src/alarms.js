@@ -40,7 +40,7 @@ function makeSound(getVolume) {
   };
 }
 
-export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft }) {
+export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft, onMobMarkDeleted = () => {}, toast = () => {} }) {
   let s = { ...DEFAULTS };
   try { Object.assign(s, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* storage unavailable */ }
   let mob = null;
@@ -72,14 +72,14 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft }) {
   const banner = $("alarm-banner");
   function render() {
     banner.innerHTML = "";
-    const list = [...active.entries()].filter(([, a]) => !a.acked)
+    const list = [...active.entries()].filter(([id, a]) => !a.acked || id === "mob")
       .sort((a, b) => (a[1].level === b[1].level ? a[1].since - b[1].since : a[1].level === "alarm" ? -1 : 1));
     banner.hidden = !list.length;
     for (const [id, a] of list) {
       const row = document.createElement("div");
-      row.className = `alarm ${a.level}`;
+      row.className = `alarm ${a.level}${a.acked ? " acked" : ""}`;
       row.innerHTML = `<div class="txt"><b>${esc(a.text)}</b>${a.detail ? `<small>${esc(a.detail)}</small>` : ""}</div>` +
-        `<button data-act="ack" title="Silence this alarm; the panel will stay hidden until it clears and returns">Silence</button>` +
+        (a.acked ? "" : `<button data-act="ack" title="Silence this alarm; it will remain visible until cleared">Silence</button>`) +
         (a.dismiss ? `<button data-act="dismiss" title="${esc(a.dismissTitle || "Dismiss")}">${esc(a.dismissLabel || "✕")}</button>` : "");
       row.querySelector(".txt").onclick = () => a.onClick?.();
       row.querySelector('[data-act="ack"]')?.addEventListener("click", () => ack(id));
@@ -125,6 +125,33 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft }) {
   const fmtAgo = (ms) => { const m = Math.floor(ms / 60000), sec = Math.floor((ms % 60000) / 1000); return `${m}:${String(sec).padStart(2, "0")}`; };
   /** Tell the rest of the app (the MOB instrument panel) that a MOB was set or cleared. */
   function mobChanged() { window.dispatchEvent(new CustomEvent("racenav-mob", { detail: mob })); }
+  async function deleteMobMark(incident) {
+    try {
+      let id = incident.markId;
+      if (!id) {
+        const note = `Man overboard pressed ${new Date(incident.t).toISOString()}`;
+        const marks = await invoke("marks_list");
+        id = marks.find((mark) => mark.group === "MOB" && mark.notes === note)?.id;
+      }
+      if (id) {
+        await invoke("mark_delete", { id, force: true });
+        onMobMarkDeleted();
+      }
+    } catch (error) {
+      toast(`Could not delete the MOB mark: ${error}`, 6000);
+    }
+  }
+  function clearMob() {
+    const incident = mob;
+    if (!incident) return;
+    mob = null;
+    save();
+    clear("mob");
+    drawGeo();
+    $("mob-btn").classList.remove("on");
+    mobChanged();
+    void deleteMobMark(incident);
+  }
   function mobAlarm() {
     if (!mob) { clear("mob"); return; }
     const b = getBoat();
@@ -139,7 +166,7 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft }) {
       onClick: () => map.easeTo({ center: [mob.lon, mob.lat], zoom: Math.max(map.getZoom(), 14) }),
       dismiss: () => {
         const btn = banner.querySelector(".alarm.alarm [data-act='dismiss']");
-        if (btn && btn.dataset.sure) { mob = null; save(); clear("mob"); drawGeo(); $("mob-btn").classList.remove("on"); mobChanged(); }
+        if (btn && btn.dataset.sure) clearMob();
         else if (btn) { btn.dataset.sure = "1"; btn.textContent = "Sure?"; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.sure; btn.textContent = "Clear MOB"; } }, 3000); }
       },
       dismissLabel: "Clear MOB",
@@ -158,8 +185,20 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft }) {
     mobChanged();
     // keep a record in the library
     const when = new Date(mob.t);
-    invoke("mark_save", { mark: { name: `MOB ${when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`, lat: mob.lat, lon: mob.lon, kind: "danger", group: "MOB",
-      notes: `Man overboard pressed ${when.toISOString()}` } }).catch(() => {});
+    const incident = mob;
+    try {
+      const saved = await invoke("mark_save", { mark: { name: `MOB ${when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`, lat: mob.lat, lon: mob.lon, kind: "danger", group: "MOB",
+        notes: `Man overboard pressed ${when.toISOString()}` } });
+      if (mob === incident) {
+        incident.markId = saved.id;
+        save();
+      } else {
+        await invoke("mark_delete", { id: saved.id, force: true });
+        onMobMarkDeleted();
+      }
+    } catch (error) {
+      toast(`Could not save or remove the MOB mark: ${error}`, 6000);
+    }
   };
   if (mob) { $("mob-btn").classList.add("on"); }
   setTimeout(mobChanged, 0); // the instruments show a MOB still set from before
