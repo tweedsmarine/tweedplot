@@ -3,7 +3,7 @@
 //! Events sent to the front end:
 //! - `sk-status`   `{ connected, detail }`
 //! - `vessel`      own-vessel state (degrees true, knots, metres)
-//! - `chart-ready` `{ tables, dir }` once the chart folder has been opened
+//! - `chart-ready` `{ ready, tables, dir }` once the chart folder has been opened
 //!
 //! The `chart` URI scheme serves vector tiles: `chart://localhost/{z}/{x}/{y}.pbf`
 //! (`http://chart.localhost/...` on Windows).
@@ -23,6 +23,8 @@ use tauri::http::{header, Response, StatusCode};
 use tauri::{Emitter, Manager};
 
 static CHARTS: std::sync::RwLock<Option<Arc<chart::ChartStore>>> = std::sync::RwLock::new(None);
+static CHARTS_READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static CHART_ERROR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 /// The open chart store (None until the charts are open).
 /// The developer's data folder: `C:\dev\tweedplot-data`, or the older
 /// `C:\dev\racenav-data` while that is the one there. Without either, data lives in
@@ -1831,6 +1833,8 @@ pub(crate) fn open_charts(handle: tauri::AppHandle) {
 }
 
 fn open_charts_started(handle: tauri::AppHandle) {
+    CHARTS_READY.store(false, std::sync::atomic::Ordering::Release);
+    *CHART_ERROR.lock().unwrap() = None;
     let dir = chart_dir(&handle);
     let mut dirs = vec![dir.clone(), coast_dir(&handle), bathy_dir(&handle)];
     if let Some(w) = world_depth_dir(&handle) {
@@ -1914,15 +1918,18 @@ fn open_store(
             let n = store.tables.len();
             let world = store.has_world_land();
             *CHARTS.write().unwrap() = Some(Arc::new(store));
+            CHARTS_READY.store(true, std::sync::atomic::Ordering::Release);
             let _ = handle.emit(
                 "chart-ready",
-                serde_json::json!({ "tables": n, "dir": dir, "world_land": world }),
+                serde_json::json!({ "ready": true, "tables": n, "dir": dir, "world_land": world }),
             );
         }
         Err(e) => {
+            *CHART_ERROR.lock().unwrap() = Some(e.to_string());
+            CHARTS_READY.store(true, std::sync::atomic::Ordering::Release);
             let _ = handle.emit(
                 "chart-ready",
-                serde_json::json!({ "tables": 0, "dir": dir, "error": e.to_string() }),
+                serde_json::json!({ "ready": true, "tables": 0, "dir": dir, "error": e.to_string() }),
             );
         }
     }
@@ -2125,15 +2132,19 @@ fn chart_clearances(lat: f64, lon: f64, radius_m: f64) -> Vec<chart::Clearance> 
 /// Summary of the chart folder.
 #[tauri::command]
 fn chart_info() -> serde_json::Value {
+    let ready = CHARTS_READY.load(std::sync::atomic::Ordering::Acquire);
+    let error = CHART_ERROR.lock().unwrap().clone();
     match charts() {
         Some(s) => serde_json::json!({
+            "ready": ready,
             "tables": s.tables.len(),
             "world_land": s.has_world_land(),
+            "error": error,
             "layers": s.tables.iter().map(|t| serde_json::json!({
                 "table": t.table, "kind": format!("{:?}", t.kind), "band": t.band, "rows": t.rows
             })).collect::<Vec<_>>(),
         }),
-        None => serde_json::json!({ "tables": 0 }),
+        None => serde_json::json!({ "ready": ready, "tables": 0, "error": error }),
     }
 }
 

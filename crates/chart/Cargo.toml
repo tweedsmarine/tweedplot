@@ -11,6 +11,7 @@ zip.workspace = true
 lru.workspace = true
 geo = "0.31"
 rayon.workspace = true
+rstar = "0.12"
 clipper2-rust = "1.2"
 blowfish = "0.9"
 crc32fast = "1"

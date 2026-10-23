@@ -229,6 +229,50 @@ function toast(text, ms = 0) {
   el.hidden = !text;
   if (text && ms) toastTimer = setTimeout(() => { el.hidden = true; }, ms);
 }
+const startup = {
+  mapLoaded: false, appReady: false, chartsReady: false, chartInfo: null,
+  readyAt: 0, finishTimer: null, finished: false, message: "Initialising - please wait", progress: "",
+};
+function chartLoadingMessage() {
+  if (!startup.progress) return "Loading charts";
+  const detail = startup.progress.replace(/^preparing charts:\s*/i, "").replace(/^converting ENC cells:\s*/i, "converting ENC cells: ");
+  return `Loading charts - ${detail}`;
+}
+function startupToast(text) {
+  if (startup.finished || startup.message === text) return;
+  startup.message = text;
+  toast(text);
+}
+function finishStartupWhenReady() {
+  if (startup.finished || !startup.mapLoaded || !startup.appReady || !startup.chartsReady) return;
+  const info = startup.chartInfo;
+  if (info.tables > 0 && !map.isSourceLoaded("chart")) return;
+  const remaining = 900 - (Date.now() - startup.readyAt);
+  if (remaining > 0) {
+    if (!startup.finishTimer) {
+      startup.finishTimer = setTimeout(() => {
+        startup.finishTimer = null;
+        finishStartupWhenReady();
+      }, remaining);
+    }
+    return;
+  }
+  startup.finished = true;
+  if (info.error) toast(`Chart loading failed: ${info.error}`, 8000);
+  else if (info.tables > 0) toast("System ready", 3000);
+  else toast("System ready - no charts found", 5000);
+}
+function noteChartsReady(info) {
+  if (!info) return;
+  chartsLoaded(info);
+  if (!startup.chartsReady && (info.ready === true || info.error)) {
+    startup.chartsReady = true;
+    startup.chartInfo = info;
+    startup.readyAt = Date.now();
+    startupToast(info.error ? "Chart loading failed" : info.tables === 0 ? "Charts ready - no charts found" : "Charts ready");
+  }
+  finishStartupWhenReady();
+}
 map.on("load", () => {
   features = setupChartFeatures(map, { before: "track", safetyContour: settings.safetyContour });
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
@@ -279,6 +323,9 @@ map.on("load", () => {
   });
   library.onChange(feed);
   feed();
+  startup.appReady = true;
+  startupToast(startup.chartsReady ? "Charts ready" : chartLoadingMessage());
+  finishStartupWhenReady();
 });
 
 /** Planning: wind arrows at the cursor. True wind from the GRIB at the slider time; near
@@ -366,26 +413,37 @@ function reloadChartTiles() {
 }
 let encBusy = false;
 listen("chart-ready", ({ payload }) => {
-  if (encBusy) { encBusy = false; toast("Charts ready", 3000); }
-  chartsLoaded(payload);
+  if (encBusy) {
+    encBusy = false;
+    if (startup.finished) toast("Charts ready", 3000);
+  }
+  noteChartsReady(payload);
 }).catch((e) => console.error("chart-ready listener:", e));
 // converting ENC cells the first time: show how far it has got
 listen("chart-status", ({ payload }) => {
   const d = payload?.detail || "";
   if (d.startsWith("converting ENC") || d.startsWith("preparing charts:")) {
     encBusy = true;
-    toast(d.charAt(0).toUpperCase() + d.slice(1));
+    if (!startup.finished) {
+      startup.progress = d;
+      if (startup.mapLoaded && !startup.chartsReady) startupToast(chartLoadingMessage());
+    } else {
+      toast(d.charAt(0).toUpperCase() + d.slice(1));
+    }
   }
 }).catch((e) => console.error("chart-status listener:", e));
 map.on("load", () => {
   chartMapLoaded = true;
+  startup.mapLoaded = true;
+  startupToast(startup.chartsReady ? "Charts ready" : chartLoadingMessage());
   if (pendingChartInfo) {
     const info = pendingChartInfo;
     pendingChartInfo = null;
-    chartsLoaded(info);
+    noteChartsReady(info);
   }
-  invoke("chart_info").then(chartsLoaded).catch(() => {});
+  invoke("chart_info").then(noteChartsReady).catch((e) => console.error("chart info:", e));
 });
+map.on("idle", finishStartupWhenReady);
 
 function applyChartSettings() {
   map.setPaintProperty("depare", "fill-color", depareColour());

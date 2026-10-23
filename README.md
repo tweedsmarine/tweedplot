@@ -2,7 +2,7 @@
 
 **TweedPlot: Professional Marine Chart Plotter**, from [TweedsMarine](https://tweedsmarine.nz). Formerly developed as "racenav": crate names, `RACENAV_*` environment variables and `racenav.*` settings keys keep the old name internally. Data folder: `C:\dev\tweedplot-data`, or the old `C:\dev\racenav-data` while that is the one present; app data `%APPDATA%\nz.tweedsmarine.tweedplot` (copied from the old `nz.tweedsmarine.racenav` on first start).
 
-A modern race navigation app for Windows: chartplotter basics, a GRIB viewer for many runs at once, an in-house routing engine and race tools. Live data can come from Signal K or one selected native NMEA 0183 source; Signal K remains available for replay and as an alternative live source.
+A modern race navigation app for Windows: chartplotter basics, a GRIB viewer for many runs at once, an in-house routing engine and race tools. Live data can come from Signal K or the native NMEA multiplexer; Signal K remains available for replay and as an alternative live source.
 
 Spec and roadmap: https://claude.ai/code/artifact/e37fa4c3-20c2-4aec-af8f-641714f39c27
 
@@ -17,8 +17,8 @@ Spec and roadmap: https://claude.ai/code/artifact/e37fa4c3-20c2-4aec-af8f-641714
 | `crates/routing` | Isochrone routing (modified isochrone method) round land and water shallower than the safety depth, multi-leg, tack/gybe penalties, currents | Working, tested |
 | `crates/chart` | LINZ GeoPackages (Topo50 coastline, depth areas, contours, soundings, all scale bands) served as vector tiles | Working, tested on the full LINZ download |
 | `crates/signalk` | Signal K WebSocket client (`subscribe=all`), own-vessel state (position, COG/SOG, heading, BSP, depth, apparent and true wind, log), true wind worked out when the server has none, other contexts (AIS) passed on, session log and log replay | Working, tested against Signal K playing a Morgane log |
-| `crates/marine-nmea` | NMEA 0183 framing, checksum validation, common sentence decoding, and searchable sentence catalog; unknown valid sentences retained | Parser tested; connected to the Settings viewer and selected-source navigation feed |
-| `app/src-tauri/src/nmea.rs` | Native serial, TCP client and UDP listener source workers; source status and observations; saved source configuration | Settings can select one source to drive navigation and inspect recent raw/decoded data; COM renumber discovery, automatic source priorities and NMEA 2000 remain future work |
+| `crates/marine-nmea` | NMEA 0183 framing, checksum validation, common sentence decoding, and searchable sentence catalog; unknown valid sentences retained | Parser tested; connected to the Settings viewer and source-aware multiplexer |
+| `app/src-tauri/src/nmea.rs` | Concurrent native serial, TCP client and UDP listener workers; source status and observations; per-data-group source preferences; automatic failover with alarms | Multiple inputs can drive one composed vessel state. Actisense/NMEA 2000 and protected configuration remain future work; virtual COM output is a release goal; network I/O will be developed with RADAR overlay |
 | `crates/ais` | AIS targets: Signal K AIS contexts and the aisstream.io WebSocket feed, merged by MMSI, expiry, distress kinds from MMSI | Parsers tested; aisstream.io not yet tried live |
 | `crates/stations` | Weather observations: MetService WIS2 (OGC API), aviationweather.gov METAR, NOAA NDBC buoys | Parsers tested; not yet tried live |
 | `crates/library` | Mark library, routes, saved routings and tracks as JSON files; track recorder; GPX import and export | Working, tested |
@@ -46,6 +46,8 @@ npm run tauri dev    # first build takes several minutes; later ones are quick
 
 The app connects to `ws://localhost:3000/signalk/v1/stream?subscribe=self`. To use another server, set `RACENAV_SK_URL` before starting. Every Signal K message is logged to `%APPDATA%\nz.tweedsmarine.tweedplot\logs\sk-<date>-<time>Z.log`.
 
+Configure NMEA inputs and the multiplexer in Settings. Enabled sources are monitored concurrently; each data group (position, COG/SOG, heading, speed through water, wind, depth, and water temperature) can have a preferred source. Automatic failover is enabled by default and uses the configured source order after the preferred source becomes stale. A source switch raises an alarm. NMEA inputs currently feed TweedPlot only; virtual COM output remains a release goal, and network I/O is coordinated with RADAR overlay development.
+
 ## Windows builds (GitHub Actions)
 
 - `.github/workflows/build.yml`: every push to `main` (or **Run workflow** on the Actions tab) runs the Rust tests and builds the NSIS installers for **x64** (`windows-latest`) and **ARM64** (`windows-11-arm`, native). They are on the run page under Artifacts for 30 days.
@@ -60,6 +62,8 @@ The app reads LINZ GeoPackage downloads (zipped as downloaded is fine) from `RAC
 - Depth area polygons, depth contour polylines and sounding points (Hydro), every scale band
 
 Depth shading follows the S-52 day colours, with the safety depth and safety contour set in the panel. LINZ data is CC BY 4.0 and **not for navigation**.
+
+World depths use the bundled Natural Earth bathymetry as a global fallback, including outside downloaded ETOPO regions. ETOPO provides more detailed shading only within its downloaded coverage; it supplements rather than replaces Natural Earth. The 1° graticule is hidden at world scales and appears from zoom 5.
 
 ### Chart features (lights, marks, dangers, areas)
 
@@ -175,7 +179,7 @@ routings\<id>.json    a saved routing: its inputs (start, marks, time, GRIB, pol
 export\*.gpx          GPX written by the app
 ```
 
-Route drawer: name the route and **Save**: new marks go into the library (named WP 1, WP 2 … until renamed), moved library marks are updated. **Navigate** picks the mark being sailed to (it steps on by itself inside the arrival radius); the route instruments use it. Library drawer: Routes (open, GPX, delete), Marks (find, edit name/type/group/position/notes, add to the route, delete; positions can be typed as `36 50.12 S` or `-36.8353`; filters by group, type, in a route or not, and in the chart view, optionally applied to the chart too, kept per PC), Routings (show, delete). **Import GPX** reads waypoints and routes (qtVlm, OpenCPN, Expedition …); a waypoint with the same name as a library mark and within about 50 m becomes that mark. Right-click the chart: **New library mark here**. The start can be a library mark too: in Set start mode click the mark, right-click it (Start route at …), or press **Start** beside it in the Marks list; the route keeps the link (`start_mark`).
+Route drawer: name the route and **Save**: new marks go into the library (named WP 1, WP 2 … until renamed), moved library marks are updated. **Draw legs as great circles** changes the displayed course legs from straight rhumb lines to great-circle arcs; this chart-display choice is kept on this PC. **Navigate** picks the mark being sailed to (it steps on by itself inside the arrival radius); the route instruments use it. Library drawer: Routes (open, GPX, delete), Marks (find, edit name/type/group/position/notes, add to the route, delete; positions can be typed as `36 50.12 S` or `-36.8353`; filters by group, type, in a route or not, and in the chart view, optionally applied to the chart too, kept per PC), Routings (show, delete). **Import GPX** reads waypoints and routes (qtVlm, OpenCPN, Expedition …); a waypoint with the same name as a library mark and within about 50 m becomes that mark. Right-click the chart: **New library mark here**. The start can be a library mark too: in Set start mode click the mark, right-click it (Start route at …), or press **Start** beside it in the Marks list; the route keeps the link (`start_mark`).
 
 ### Tracks
 
@@ -216,7 +220,7 @@ Rail, bottom: **Centre** puts the boat in the middle of the chart. Chart drawer,
 
 **Cursor** instrument tiles (Instruments: add them to any panel; a Cursor panel is added once to existing layouts): the cursor's position, and the bearing (°T) and range from the boat to the cursor. On a touch screen a tap sets the cursor.
 
-**Ruler** (left rail, above Centre): click to set the first point, click again for each further point, double-click to finish; the ruler stays on the chart (Esc stops early). Each leg shows its bearing (°T, and °M when Signal K sends the variation) and distance, with the total at the end; while drawing, the leg to the cursor and the running total follow the mouse. Distances and bearings are rhumb lines, so they match the straight lines on the chart. Points move like course marks: click one (amber ring), wait for the ring to turn green, then drag. Right-click a ruler: **Save ruler as route** (first point the start, the others new library marks; the route opens in the Course panel), **Delete ruler point**, **Delete ruler**, **Delete all rulers**. Rulers are kept between sessions.
+**Ruler** (left rail, above Centre): click to set the first point, click again for each further point, double-click to finish; the ruler stays on the chart (Esc stops early). Each leg shows its bearing (°T, and °M when Signal K sends the variation) and distance, with the total at the end; while drawing, the leg to the cursor and the running total follow the mouse. Rulers use rhumb lines by default; right-click a ruler and choose **Show ruler as great circle** to display great-circle arcs with matching great-circle distances and initial bearings (choose **Show ruler as rhumb line** to switch back). Points move like course marks: click one (amber ring), wait for the ring to turn green, then drag. Right-click a ruler: **Save ruler as route** (first point the start, the others new library marks; the route opens in the Course panel), **Delete ruler point**, **Delete ruler**, **Delete all rulers**. Rulers and their line type are kept between sessions.
 
 ## Instruments
 
