@@ -14,7 +14,7 @@ const DEFAULTS = { show: true, names: true, key: "", online: false, cpaOn: true,
   // course vector length (min); CPA graphics: "none" | "danger" (dangerous and selected) | "all" (every target closing within the TCPA limit)
   vecMin: 6, cpaDraw: "danger",
   // internet AIS area: "view" (the chart view) | "centre" (range round the chart centre) | "boat" (range round own boat); range NM
-  netMode: "view", netRange: 30, netAlarms: false,
+  netMode: "boat", netRange: 30, netAlarms: false,
   // floating target list
   win: { open: false, sort: "cpa", dir: 1, filter: "all", x: null, y: null } };
 const FLEET_KEY = "racenav.ownfleet";

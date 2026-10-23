@@ -390,7 +390,6 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       persist();
       drawMarks();
       for (const f of listeners) f();
-      fit([start, ...marks.map((m) => [m.lon, m.lat])].filter(Boolean));
       status(`Opened “${r.name}”.`);
     },
     /** For the instruments: the leg being sailed and the routing's points. */

@@ -15,6 +15,7 @@ mod s63_cmd;
 mod settings;
 mod stations_cmd;
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -73,6 +74,7 @@ pub fn migrate_from_racenav() {
 fn charts() -> Option<Arc<chart::ChartStore>> {
     CHARTS.read().unwrap().clone()
 }
+
 static DATA_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static DATA_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static GRIBS: Mutex<BTreeMap<String, Arc<grib::GribFile>>> = Mutex::new(BTreeMap::new());
@@ -1825,29 +1827,34 @@ fn world_depth_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
 /// (Re)open the chart store in the background: LINZ charts, GSHHG coastline,
 /// bundled world depths and downloaded ETOPO areas. Emits chart-ready.
 pub(crate) fn open_charts(handle: tauri::AppHandle) {
+    open_charts_started(handle);
+}
+
+fn open_charts_started(handle: tauri::AppHandle) {
     let dir = chart_dir(&handle);
     let mut dirs = vec![dir.clone(), coast_dir(&handle), bathy_dir(&handle)];
     if let Some(w) = world_depth_dir(&handle) {
         dirs.push(w);
     }
     // S-57 ENC cells (and the IHO S-63/S-64 test data): enc and s63 in the data folders
-    dirs.extend(s63_cmd::enc_dirs(&handle));
+    let enc_dirs = s63_cmd::enc_dirs(&handle);
     // the first run with a GSHHG download builds the world coastline file (a minute or two)
     let _ = handle.emit(
         "chart-status",
-        serde_json::json!({ "detail": "opening charts" }),
+        serde_json::json!({ "detail": "preparing charts: finding chart files" }),
     );
     std::thread::spawn(move || {
         // convert new or changed ENC cells first, saying how far it has got (a big
         // exchange set, such as all of NOAA's, takes a while the first time)
         chart::enc::clear_notes();
-        for d in dirs
+        let mut prepared_enc_gpkgs = Vec::new();
+        for d in enc_dirs
             .iter()
             .filter(|d| d.ends_with("enc") || d.ends_with("s63"))
         {
             let h = handle.clone();
             let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
-            chart::enc::ensure_gpkgs_with(d, &mut |done, todo, name| {
+            prepared_enc_gpkgs.extend(chart::enc::ensure_gpkgs_with(d, &mut |done, todo, name| {
                 if last.elapsed().as_millis() >= 500 || done == todo || todo == 0 {
                     last = std::time::Instant::now();
                     let detail = if todo == 0 {
@@ -1857,26 +1864,53 @@ pub(crate) fn open_charts(handle: tauri::AppHandle) {
                     };
                     let _ = h.emit("chart-status", serde_json::json!({ "detail": detail }));
                 }
-            });
+            }));
         }
-        open_store(handle, dirs, dir)
+        open_store(handle, dirs, dir, prepared_enc_gpkgs)
     });
 }
 
-fn open_store(handle: tauri::AppHandle, dirs: Vec<PathBuf>, dir: PathBuf) {
+fn open_store(
+    handle: tauri::AppHandle,
+    dirs: Vec<PathBuf>,
+    dir: PathBuf,
+    prepared_enc_gpkgs: Vec<PathBuf>,
+) {
     let h = handle.clone();
     let t0 = std::time::Instant::now();
-    let opened = chart::ChartStore::open_dirs_with(&dirs, &mut |k, n| {
-        // only worth saying when there are a lot (thousands of ENC cells)
-        if t0.elapsed().as_secs() >= 1 {
-            let _ = h.emit(
-                "chart-status",
-                serde_json::json!({ "detail": format!("opening charts: {k} of {n} files") }),
-            );
-        }
-    });
+    let opened =
+        chart::ChartStore::open_dirs_with_extra_gpkgs(&dirs, &prepared_enc_gpkgs, &mut |k, n| {
+            // only worth saying when there are a lot (thousands of ENC cells)
+            if t0.elapsed().as_secs() >= 1 {
+                let _ = h.emit(
+                    "chart-status",
+                    serde_json::json!({
+                        "detail": format!("preparing charts: opening {k} of {n} files")
+                    }),
+                );
+            }
+        });
     match opened {
         Ok(store) => {
+            let t0 = std::time::Instant::now();
+            let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
+            store.prepare_with_progress(&mut |done, total| {
+                if last.elapsed().as_millis() >= 250 || done == total {
+                    last = std::time::Instant::now();
+                    let _ = handle.emit(
+                        "chart-status",
+                        serde_json::json!({
+                            "detail": format!(
+                                "preparing charts: indexing coverage {done} of {total} tables"
+                            )
+                        }),
+                    );
+                }
+            });
+            log_chart_tile(&format!(
+                "charts: render indexes prepared in {:.1} s",
+                t0.elapsed().as_secs_f64()
+            ));
             let n = store.tables.len();
             let world = store.has_world_land();
             *CHARTS.write().unwrap() = Some(Arc::new(store));
@@ -2016,8 +2050,11 @@ fn data_etopo_delete(app: tauri::AppHandle, file: String) -> Result<(), String> 
     }
     // the store has the file open: reopen without it first, then delete
     *CHARTS.write().unwrap() = None;
-    std::fs::remove_file(&p).map_err(|e| e.to_string())?;
-    open_charts(app);
+    if let Err(e) = std::fs::remove_file(&p) {
+        open_charts_started(app);
+        return Err(e.to_string());
+    }
+    open_charts_started(app);
     Ok(())
 }
 
@@ -2119,76 +2156,151 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
     let builder = Response::builder()
         .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
         .header(header::CACHE_CONTROL, "no-store");
-    match (parsed, charts()) {
-        (Some(((z, x), y)), Some(store)) => match store.try_tile(z, x, y) {
-            Some(t) => builder
-                .header(header::CONTENT_TYPE, "application/x-protobuf")
-                .body(t.as_ref().clone()),
-            // drawing it failed (reported on the terminal): the chart asks again later
+    match parsed {
+        Some(((z, x), y)) => match charts() {
+            Some(store) => match store.try_tile(z, x, y) {
+                Some(t) => builder
+                    .header(header::CONTENT_TYPE, "application/x-protobuf")
+                    .body(t.as_ref().clone()),
+                // drawing it failed (reported on the terminal): the chart asks again later
+                None => builder
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Vec::new()),
+            },
             None => builder
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .status(StatusCode::SERVICE_UNAVAILABLE)
                 .body(Vec::new()),
         },
-        (Some(_), None) => builder
-            .status(StatusCode::SERVICE_UNAVAILABLE)
-            .body(Vec::new()),
-        _ => builder.status(StatusCode::NOT_FOUND).body(Vec::new()),
+        None => builder.status(StatusCode::NOT_FOUND).body(Vec::new()),
     }
     .expect("valid response")
 }
 
-/// Chart tiles are drawn by a few worker threads, newest request first: when the chart
-/// is panned or zoomed, the tiles now in view are drawn before the ones it has moved
-/// away from, and a burst of requests doesn't start dozens of threads that all slow
-/// each other down.
-type TileJob = (String, tauri::UriSchemeResponder);
-static TILE_QUEUE: OnceLock<
-    Arc<(
-        Mutex<std::collections::VecDeque<TileJob>>,
-        std::sync::Condvar,
-    )>,
-> = OnceLock::new();
+/// Chart tiles are drawn newest-request first. Duplicate requests for a tile share
+/// one render while keeping every WebView response alive.
+struct TileJobs {
+    queued: std::collections::VecDeque<String>,
+    queued_at: std::collections::HashMap<String, std::time::Instant>,
+    responders: std::collections::HashMap<String, Vec<tauri::UriSchemeResponder>>,
+}
+
+static TILE_QUEUE: OnceLock<Arc<(Mutex<TileJobs>, std::sync::Condvar)>> = OnceLock::new();
+static TILE_LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
+static TILE_LOG_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn log_chart_tile(message: &str) {
+    eprintln!("{message}");
+    let Some(path) = TILE_LOG_PATH.get() else {
+        return;
+    };
+    let _guard = TILE_LOG_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let reset = std::fs::metadata(path).is_ok_and(|m| m.len() > 1_000_000);
+    let file = if reset {
+        std::fs::File::create(path)
+    } else {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+    };
+    let mut file = match file {
+        Ok(file) => file,
+        Err(e) => {
+            eprintln!("chart tile log {}: {e}", path.display());
+            return;
+        }
+    };
+    let timestamp = chrono::Local::now().to_rfc3339();
+    if let Err(e) = writeln!(file, "{timestamp} {message}") {
+        eprintln!("chart tile log {}: {e}", path.display());
+    }
+}
 
 fn queue_tile(path: String, responder: tauri::UriSchemeResponder) {
     let q = TILE_QUEUE.get_or_init(|| {
         let q = Arc::new((
-            Mutex::new(std::collections::VecDeque::<TileJob>::new()),
+            Mutex::new(TileJobs {
+                queued: std::collections::VecDeque::new(),
+                queued_at: std::collections::HashMap::new(),
+                responders: std::collections::HashMap::new(),
+            }),
             std::sync::Condvar::new(),
         ));
         let n = std::thread::available_parallelism()
-            .map_or(4, |n| n.get())
-            .clamp(2, 12);
+            .map_or(2, |n| n.get().saturating_sub(1).clamp(1, 3));
+        log_chart_tile(&format!("chart tiles: starting {n} workers"));
         for i in 0..n {
             let q = q.clone();
             std::thread::Builder::new()
                 .name(format!("tiles-{i}"))
                 .spawn(move || loop {
-                    let job = {
+                    let (job, enqueued_at, queued_at_start) = {
                         let mut jobs = q.0.lock().unwrap_or_else(|e| e.into_inner());
                         loop {
-                            if let Some(j) = jobs.pop_back() {
-                                break j;
+                            if let Some(path) = jobs.queued.pop_back() {
+                                let enqueued_at = jobs
+                                    .queued_at
+                                    .remove(&path)
+                                    .expect("queued tile has enqueue timestamp");
+                                break (path, enqueued_at, jobs.queued.len());
                             }
                             jobs = q.1.wait(jobs).unwrap_or_else(|e| e.into_inner());
                         }
                     };
-                    let (path, responder) = job;
-                    let r =
-                        std::panic::catch_unwind(|| tile_response(&path)).unwrap_or_else(|_| {
-                            Response::builder()
-                                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                                .body(Vec::new())
-                                .expect("valid response")
-                        });
-                    responder.respond(r);
+                    let wait_ms = enqueued_at.elapsed().as_millis();
+                    let started_at = std::time::Instant::now();
+                    let r = std::panic::catch_unwind(|| tile_response(&job)).unwrap_or_else(|_| {
+                        Response::builder()
+                            .status(StatusCode::INTERNAL_SERVER_ERROR)
+                            .body(Vec::new())
+                            .expect("valid response")
+                    });
+                    let render_ms = started_at.elapsed().as_millis();
+                    let (responders, queued) = {
+                        let mut jobs = q.0.lock().unwrap_or_else(|e| e.into_inner());
+                        (jobs.responders.remove(&job).unwrap_or_default(), jobs.queued.len())
+                    };
+                    let bytes = r.body().len();
+                    let zoom = job
+                        .trim_start_matches('/')
+                        .split('/')
+                        .next()
+                        .and_then(|z| z.parse::<u8>().ok());
+                    let tiny =
+                        zoom.is_some_and(|z| z >= 9) && r.status().is_success() && bytes <= 48;
+                    if !r.status().is_success()
+                        || wait_ms >= 1000
+                        || render_ms >= 1500
+                        || tiny
+                        || std::env::var_os("TWEEDPLOT_TILE_LOG").is_some()
+                    {
+                        log_chart_tile(&format!(
+                            "chart tile {job}: wait={wait_ms}ms render={render_ms}ms status={} bytes={bytes} tiny={tiny} queued={queued_at_start}->{queued} responses={}",
+                            r.status().as_u16(),
+                            responders.len()
+                        ));
+                    }
+                    for responder in responders {
+                        responder.respond(r.clone());
+                    }
                 })
                 .expect("tile thread");
         }
         q
     });
-    q.0.lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .push_back((path, responder));
+    let mut jobs = q.0.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(responders) = jobs.responders.get_mut(&path) {
+        responders.push(responder);
+        return;
+    }
+    jobs.queued.push_back(path.clone());
+    jobs.queued_at
+        .insert(path.clone(), std::time::Instant::now());
+    jobs.responders.insert(path, vec![responder]);
+    drop(jobs);
     q.1.notify_one();
 }
 
@@ -2301,6 +2413,21 @@ pub fn run() {
             queue_tile(path, responder);
         })
         .setup(|app| {
+            match app.path().app_data_dir() {
+                Ok(dir) => match std::fs::create_dir_all(&dir) {
+                    Ok(()) => {
+                        let path = dir.join("chart-tiles.log");
+                        if TILE_LOG_PATH.set(path.clone()).is_err() {
+                            eprintln!("chart tile log path was already initialized");
+                        } else {
+                            eprintln!("chart tile diagnostics: {}", path.display());
+                            log_chart_tile("chart tile diagnostics started");
+                        }
+                    }
+                    Err(e) => eprintln!("chart tile log directory {}: {e}", dir.display()),
+                },
+                Err(e) => eprintln!("chart tile log directory: {e}"),
+            }
             let dd = download_dir(app.handle());
             let _ = std::fs::create_dir_all(&dd);
             let _ = DOWNLOAD_DIR.set(dd);

@@ -229,7 +229,7 @@ export function setupFleet(map, { weather, course, routing, dock, ui }) {
   }
 
   // ---------- open / refresh ----------------------------------------------------------
-  async function open(key) {
+  async function open(key, fitView = true) {
     key = key.trim();
     if (!key) return;
     status("Opening…");
@@ -248,7 +248,7 @@ export function setupFleet(map, { weather, course, routing, dock, ui }) {
       const h = r.meta?.history_fetched;
       if (!h || Date.now() / 1000 - h > 6 * 3600) await loadHistory();
       await refresh();
-      fitFleet();
+      if (fitView) fitFleet();
       schedule();
       loadRaceList();
     } catch (e) { status(`Could not open “${key}”: ${e}`, "bad"); }
@@ -399,7 +399,7 @@ export function setupFleet(map, { weather, course, routing, dock, ui }) {
 
   loadRaceList();
   renderList();
-  if (prefs.race) { $("fl-race").value = prefs.race; open(prefs.race); }
+  if (prefs.race) { $("fl-race").value = prefs.race; open(prefs.race, false); }
   return { refresh, current: () => race };
 }
 

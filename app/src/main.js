@@ -78,10 +78,11 @@ function soundingImage() {
 }
 
 // ---------- chart ----------------------------------------------------------
+const defaultCamera = { center: [173.27, -41.26], zoom: 8 };
+let startupCamera = { ...defaultCamera };
 const map = new maplibregl.Map({
   container: "map",
-  center: [173.27, -41.26], // Nelson
-  zoom: 8,
+  ...defaultCamera,
   attributionControl: false,
   style: {
     version: 8,
@@ -98,8 +99,9 @@ const map = new maplibregl.Map({
     },
     layers: [
       { id: "sea", type: "background", paint: { "background-color": css("--sea") } },
-      { id: "grid", type: "line", source: "graticule", paint: { "line-color": "#9db8c8", "line-width": 0.5 } },
-      // World depths under the charts: Natural Earth (bundled) and downloaded ETOPO areas (not for navigation)
+      { id: "grid", type: "line", source: "graticule", minzoom: 5,
+        paint: { "line-color": "#9db8c8", "line-width": 0.5 } },
+      // Depth fills sit below weather shading; land fills are added above it below.
       { id: "wdepth", type: "fill", source: "chart", "source-layer": "wdepth",
         layout: { "fill-sort-key": ["+", ["*", ["get", "src"], 100000], ["get", "d"]] },
         paint: { "fill-color": ["step", ["get", "d"], "#a6cdf0", 10, "#b7d8f2", 20, "#c9e1ee", 50, "#dcecf3", 200, "#e4f0f5",
@@ -115,19 +117,22 @@ const map = new maplibregl.Map({
       { id: "safety-contour", type: "line", source: "chart", "source-layer": "depcnt",
         filter: ["==", ["get", "valdco"], settings.safetyContour],
         paint: { "line-color": "#1d2a33", "line-width": 1.6 } },
-      // Land fills, then coastlines. Wind shading goes under the land fills
-      // ("land on top") or between the fills and the coastlines ("coastline on top").
+      // Keep bundled land visible beneath chart fills while vector tiles are opening or retrying.
       { id: "land-world", type: "fill", source: "land-world", maxzoom: 6,
         paint: { "fill-color": css("--land") } },
       { id: "land-nz", type: "fill", source: "land-nz", minzoom: 4,
         paint: { "fill-color": css("--land") } },
-      { id: "chart-land", type: "fill", source: "chart", "source-layer": "land",
-        // no antialiasing: world land comes in pieces whose shared edges would show as faint lines
+      { id: "chart-world-land", type: "fill", source: "chart", "source-layer": "wland",
         paint: { "fill-color": css("--land"), "fill-antialias": false } },
+      // Fallback coastlines stay underneath chart land to avoid duplicate outlines;
+      // chart coastlines are drawn over the chart land below.
       { id: "coast-world", type: "line", source: "land-world", maxzoom: 6,
         paint: { "line-color": css("--coast"), "line-width": 0.8 } },
       { id: "coast-nz", type: "line", source: "land-nz", minzoom: 4,
         paint: { "line-color": css("--coast"), "line-width": 0.8 } },
+      { id: "chart-land", type: "fill", source: "chart", "source-layer": "land",
+        // no antialiasing: world land comes in pieces whose shared edges would show as faint lines
+        paint: { "fill-color": css("--land"), "fill-antialias": false } },
       { id: "chart-coast", type: "line", source: "chart", "source-layer": "land", filter: ["all", ["!", ["has", "w"]], ["!", ["has", "enc"]]],
         paint: { "line-color": css("--coast"), "line-width": 0.9 } },
       { id: "chart-wcoast", type: "line", source: "chart", "source-layer": "wcoast",
@@ -155,12 +160,22 @@ const map = new maplibregl.Map({
 });
 let hasPositionFix = false;
 let chartPositionChosen = false;
+let initialPositionChosen = false;
 for (const eventName of ["pointerdown", "wheel", "keydown"]) {
   map.getCanvasContainer().addEventListener(eventName, () => { chartPositionChosen = true; }, { passive: true });
 }
 map.getCanvasContainer().addEventListener("touchstart", () => { chartPositionChosen = true; }, { passive: true });
 function useReferencePosition([lon, lat]) {
-  if (!hasPositionFix && !chartPositionChosen) map.setCenter([lon, lat]);
+  if (!hasPositionFix && !chartPositionChosen) {
+    startupCamera = { center: [lon, lat], zoom: defaultCamera.zoom };
+    map.setCenter([lon, lat]);
+  }
+}
+function useInitialPosition([lon, lat]) {
+  if (initialPositionChosen || chartPositionChosen) return;
+  initialPositionChosen = true;
+  startupCamera = { center: [lon, lat], zoom: 12 };
+  map.jumpTo(startupCamera);
 }
 window.__map = map; // handy for debugging in devtools
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), "top-left");
@@ -320,23 +335,25 @@ function feed() {
 }
 setInterval(feed, 1000);
 
-// When chart data is present, the Topo50 coastline replaces the coarse land from zoom 6.
+// Keep the bundled coastline visible beneath chart tiles as they load.
+let chartMapLoaded = false, pendingChartInfo = null;
 function chartsLoaded(info) {
   if (!info) return;
   window.dispatchEvent(new CustomEvent("racenav-charts", { detail: info }));
   if (!(info.tables > 0)) return;
+  if (!chartMapLoaded) {
+    pendingChartInfo = info;
+    return;
+  }
+  if (!chartPositionChosen) map.jumpTo(startupCamera);
   map.setLayerZoomRange("land-nz", 4, 6);
   map.setLayerZoomRange("coast-nz", 4, 6);
-  if (info.world_land) {
-    // GSHHG world land comes in the chart tiles at every zoom: the bundled coarse land is not needed
-    for (const id of ["land-world", "coast-world", "land-nz", "coast-nz"]) map.setLayoutProperty(id, "visibility", "none");
-  }
+  if (tileRetry) { clearTimeout(tileRetry); tileRetry = null; }
   // reload the tiles (asked for before the charts were open, or the chart data changed)
   reloadChartTiles();
 }
-// A chart tile that failed (charts still opening, or a drawing error reported on the
-// terminal) isn't asked for again by the map on its own: ask again a few seconds later,
-// at most every 15 s, so no part of the chart stays blank until it is panned or zoomed.
+// A failed chart tile isn't automatically requested again by the map. Retry at a
+// bounded rate so transient failures and tiles drawn before chart startup recover.
 let tileRetry = null, lastRetry = 0;
 function retryFailedTiles() {
   if (tileRetry) return;
@@ -347,16 +364,28 @@ function reloadChartTiles() {
   const src = map.getSource("chart");
   if (src) src.setTiles([TILE_URL + (TILE_URL.includes("?") ? "&" : "?") + "v=" + Date.now()]);
 }
-map.on("load", () => {
-  invoke("chart_info").then(chartsLoaded).catch(() => {});
-  listen("chart-ready", ({ payload }) => { if (encBusy) { encBusy = false; toast("Charts ready", 3000); } chartsLoaded(payload); });
-  // converting ENC cells the first time: show how far it has got
-  listen("chart-status", ({ payload }) => {
-    const d = payload?.detail || "";
-    if (d.startsWith("converting ENC") || d.startsWith("opening charts:")) { encBusy = true; toast(d.charAt(0).toUpperCase() + d.slice(1)); }
-  });
-});
 let encBusy = false;
+listen("chart-ready", ({ payload }) => {
+  if (encBusy) { encBusy = false; toast("Charts ready", 3000); }
+  chartsLoaded(payload);
+}).catch((e) => console.error("chart-ready listener:", e));
+// converting ENC cells the first time: show how far it has got
+listen("chart-status", ({ payload }) => {
+  const d = payload?.detail || "";
+  if (d.startsWith("converting ENC") || d.startsWith("preparing charts:")) {
+    encBusy = true;
+    toast(d.charAt(0).toUpperCase() + d.slice(1));
+  }
+}).catch((e) => console.error("chart-status listener:", e));
+map.on("load", () => {
+  chartMapLoaded = true;
+  if (pendingChartInfo) {
+    const info = pendingChartInfo;
+    pendingChartInfo = null;
+    chartsLoaded(info);
+  }
+  invoke("chart_info").then(chartsLoaded).catch(() => {});
+});
 
 function applyChartSettings() {
   map.setPaintProperty("depare", "fill-color", depareColour());
@@ -664,7 +693,12 @@ listen("vessel", ({ payload }) => {
     lastRaw = raw;
     if (fresh) showStatus();
   }
-  if (Number.isFinite(raw.lat) && Number.isFinite(raw.lon)) hasPositionFix = true;
+  const validPosition = Number.isFinite(raw.lat) && raw.lat >= -90 && raw.lat <= 90
+    && Number.isFinite(raw.lon) && raw.lon >= -180 && raw.lon <= 180;
+  if (validPosition) hasPositionFix = true;
+  if (validPosition && !payload.replay && payload.source === "nmea0183") {
+    useInitialPosition([raw.lon, raw.lat]);
+  }
   lastFeed = Date.now();
   if (!live) return; // planning: leave the boat where it is
   const v = damping.push(raw);
