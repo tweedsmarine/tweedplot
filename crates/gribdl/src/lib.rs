@@ -51,8 +51,10 @@ pub enum Model {
     Gfs1p00,
     GfsWave0p25,
     EcmwfIfs0p25,
+    EcmwfIfs0p1,
     EcmwfAifs0p25,
     EcmwfWave0p25,
+    EcmwfWave0p1,
     /// Ocean (see `ocean`): MUR sea surface temperature analyses, and the HYCOM ocean model.
     MurSst,
     HycomEspc,
@@ -86,15 +88,17 @@ pub struct ParamInfo {
 }
 
 impl Model {
-    pub fn all() -> [Model; 11] {
+    pub fn all() -> [Model; 13] {
         [
             Model::Gfs0p25,
             Model::Gfs0p50,
             Model::Gfs1p00,
             Model::GfsWave0p25,
             Model::EcmwfIfs0p25,
+            Model::EcmwfIfs0p1,
             Model::EcmwfAifs0p25,
             Model::EcmwfWave0p25,
+            Model::EcmwfWave0p1,
             Model::MurSst,
             Model::Himawari,
             Model::HycomEspc,
@@ -111,12 +115,13 @@ impl Model {
         match self {
             Model::Gfs0p25 | Model::Gfs0p50 | Model::Gfs1p00 => Some(Model::GfsWave0p25),
             Model::EcmwfIfs0p25 | Model::EcmwfAifs0p25 => Some(Model::EcmwfWave0p25),
+            Model::EcmwfIfs0p1 => Some(Model::EcmwfWave0p1),
             _ => None,
         }
     }
 
     pub fn is_ecmwf(self) -> bool {
-        matches!(self, Model::EcmwfIfs0p25 | Model::EcmwfAifs0p25 | Model::EcmwfWave0p25)
+        matches!(self, Model::EcmwfIfs0p25 | Model::EcmwfIfs0p1 | Model::EcmwfAifs0p25 | Model::EcmwfWave0p25 | Model::EcmwfWave0p1)
     }
 
     pub fn info(self) -> ModelInfo {
@@ -162,6 +167,22 @@ impl Model {
                     ParamInfo { id: "waves", name: "Waves from the ECMWF wave model in the same file (height, period, direction)", fields: 3, default: false },
                 ],
                 delay_h: 8,
+            },
+            Model::EcmwfIfs0p1 => ModelInfo {
+                id: self,
+                name: "ECMWF IFS 0.1° (~9 km)",
+                res_deg: 0.1,
+                max_hours: 360,
+                steps: vec![(144, 3), (360, 6)],
+                params: vec![
+                    ParamInfo { id: "wind", name: "Wind at 10 m", fields: 2, default: true },
+                    ParamInfo { id: "gust", name: "Gusts", fields: 1, default: false },
+                    ParamInfo { id: "mslp", name: "Pressure (MSL)", fields: 1, default: true },
+                    ParamInfo { id: "temp", name: "Air temperature (2 m)", fields: 1, default: false },
+                    ParamInfo { id: "current", name: "Surface currents", fields: 2, default: false },
+                    ParamInfo { id: "waves", name: "Waves from the ECMWF wave model in the same file (height, period, direction)", fields: 3, default: false },
+                ],
+                delay_h: 10,
             },
             Model::EcmwfAifs0p25 => ModelInfo {
                 id: self,
@@ -234,6 +255,18 @@ impl Model {
                     ParamInfo { id: "period", name: "Peak period and mean direction", fields: 2, default: true },
                 ],
                 delay_h: 8,
+            },
+            Model::EcmwfWave0p1 => ModelInfo {
+                id: self,
+                name: "ECMWF wave 0.1° (~9 km)",
+                res_deg: 0.1,
+                max_hours: 360,
+                steps: vec![(144, 3), (360, 6)],
+                params: vec![
+                    ParamInfo { id: "waves", name: "Significant wave height", fields: 1, default: true },
+                    ParamInfo { id: "period", name: "Peak period and mean direction", fields: 2, default: true },
+                ],
+                delay_h: 10,
             },
         }
     }
@@ -396,8 +429,18 @@ pub fn download_bytes(req: &Request) -> u64 {
     let info = req.model.info();
     let wave_extra = req.model.wave_companion().is_some() && req.params.iter().any(|p| p == "waves");
     let fields: u32 = info.params.iter().filter(|p| p.id != "waves" || !wave_extra).filter(|p| req.params.iter().any(|x| x == p.id)).map(|p| p.fields).sum();
-    let per = if req.model == Model::EcmwfWave0p25 { 300_000 } else { 600_000 };
-    let waves = if wave_extra { 3 * 300_000 * Model::EcmwfWave0p25.hours(req.hours, req.every).len() as u64 } else { 0 };
+    let per = match req.model {
+        Model::EcmwfWave0p25 => 300_000,
+        Model::EcmwfIfs0p1 => 3_000_000,
+        Model::EcmwfWave0p1 => 2_000_000,
+        _ => 600_000,
+    };
+    let wave_per = match req.model.wave_companion() {
+        Some(Model::EcmwfWave0p1) => 2_000_000,
+        Some(_) => 300_000,
+        None => 0,
+    };
+    let waves = if wave_extra { 3 * wave_per * Model::EcmwfWave0p25.hours(req.hours, req.every).len() as u64 } else { 0 };
     fields as u64 * req.model.hours(req.hours, req.every).len() as u64 * per + waves
 }
 
@@ -475,8 +518,7 @@ pub fn download(req: &Request, run: &Run, dir: &Path, progress: Progress, cancel
     download_ex(req, run, dir, progress, cancel).map(|d| d.path)
 }
 
-/// A finished download: the file, and a note when part of it couldn't be had
-/// (the waves for a wind-and-waves file, say).
+/// A finished download: the file, and a note when requested data was incomplete.
 #[derive(Debug, Clone, Serialize)]
 pub struct Downloaded {
     pub path: PathBuf,
@@ -492,29 +534,40 @@ pub fn download_ex(req: &Request, run: &Run, dir: &Path, progress: Progress, can
     }
     let wave_model = req.model.wave_companion().filter(|_| req.params.iter().any(|p| p == "waves"));
     let Some(wm) = wave_model else {
-        return download_one(req, run, dir, progress, cancel).map(|path| Downloaded { path, note: None });
+        return download_one(req, run, dir, progress, cancel);
     };
     let mut atm = req.clone();
     atm.params.retain(|p| p != "waves");
     let wave = Request { model: wm, params: vec!["waves".into(), "period".into()], ..req.clone() };
     if atm.params.is_empty() {
-        return download_one(&wave, run, dir, progress, cancel).map(|path| Downloaded { path, note: None });
+        return download_one(&wave, run, dir, progress, cancel);
     }
     let wind = download_one(&atm, run, dir, progress, cancel)?;
     match download_one(&wave, run, dir, progress, cancel) {
         Ok(wv) => {
-            let out = grib::combine::combined_path(&wind);
-            grib::combine::write(&wind, &wv, &out).map_err(|e| Error::Bad(e.to_string()))?;
-            let _ = std::fs::remove_file(&wind);
-            let _ = std::fs::remove_file(&wv);
-            Ok(Downloaded { path: out, note: None })
+            let out = grib::combine::combined_path(&wind.path);
+            grib::combine::write(&wind.path, &wv.path, &out).map_err(|e| Error::Bad(e.to_string()))?;
+            let _ = std::fs::remove_file(&wind.path);
+            let _ = std::fs::remove_file(&wv.path);
+            Ok(Downloaded { path: out, note: merge_notes(wind.note, wv.note) })
         }
         Err(Error::Cancelled) => Err(Error::Cancelled),
-        Err(e) => Ok(Downloaded { path: wind, note: Some(format!("Wind downloaded; the waves could not be: {e}")) }),
+        Err(e) => Ok(Downloaded {
+            path: wind.path,
+            note: merge_notes(wind.note, Some(format!("Wind downloaded; the waves could not be: {e}"))),
+        }),
     }
 }
 
-fn download_one(req: &Request, run: &Run, dir: &Path, progress: Progress, cancel: &AtomicBool) -> Result<PathBuf> {
+fn merge_notes(first: Option<String>, second: Option<String>) -> Option<String> {
+    match (first, second) {
+        (Some(a), Some(b)) => Some(format!("{a} {b}")),
+        (Some(note), None) | (None, Some(note)) => Some(note),
+        (None, None) => None,
+    }
+}
+
+fn download_one(req: &Request, run: &Run, dir: &Path, progress: Progress, cancel: &AtomicBool) -> Result<Downloaded> {
     if req.model.vars(&req.params).is_empty() {
         return Err(Error::Bad("choose at least one parameter".into()));
     }
@@ -522,7 +575,8 @@ fn download_one(req: &Request, run: &Run, dir: &Path, progress: Progress, cancel
         return Err(Error::Bad("the area is not valid".into()));
     }
     if req.model.is_ecmwf() {
-        return ecmwf::download(req, run, dir, progress, cancel);
+        let (path, note) = ecmwf::download(req, run, dir, progress, cancel)?;
+        return Ok(Downloaded { path, note });
     }
     std::fs::create_dir_all(dir)?;
     let hours = req.model.hours(req.hours, req.every);
@@ -555,7 +609,7 @@ fn download_one(req: &Request, run: &Run, dir: &Path, progress: Progress, cancel
     out.flush()?;
     drop(out);
     std::fs::rename(&part, &path)?;
-    Ok(path)
+    Ok(Downloaded { path, note: None })
 }
 
 pub(crate) fn get_retry(c: &reqwest::blocking::Client, url: &str, cancel: &AtomicBool) -> Result<Vec<u8>> {
@@ -591,8 +645,10 @@ pub(crate) fn file_name(req: &Request, run: &Run, last: u32) -> String {
         Model::Gfs1p00 => "GFS_1p00",
         Model::GfsWave0p25 => "GFSwave_0p25",
         Model::EcmwfIfs0p25 => "ECMWF_IFS_0p25",
+        Model::EcmwfIfs0p1 => "ECMWF_IFS_0p1",
         Model::EcmwfAifs0p25 => "ECMWF_AIFS_0p25",
         Model::EcmwfWave0p25 => "ECMWF_wave_0p25",
+        Model::EcmwfWave0p1 => "ECMWF_wave_0p1",
         Model::MurSst => "MUR_SST",
         Model::HycomEspc => "HYCOM_ESPC",
         Model::Himawari => "HIMAWARI_SST",
@@ -621,9 +677,13 @@ mod tests {
     #[test]
     fn waves_in_the_same_file() {
         assert_eq!(Model::EcmwfIfs0p25.wave_companion(), Some(Model::EcmwfWave0p25));
+        assert_eq!(Model::EcmwfIfs0p1.wave_companion(), Some(Model::EcmwfWave0p1));
         assert_eq!(Model::Gfs0p50.wave_companion(), Some(Model::GfsWave0p25));
         assert_eq!(Model::EcmwfWave0p25.wave_companion(), None);
-        for m in [Model::Gfs0p25, Model::EcmwfIfs0p25, Model::EcmwfAifs0p25] {
+        assert!(Model::all().contains(&Model::EcmwfIfs0p1));
+        assert!(Model::all().contains(&Model::EcmwfWave0p1));
+        assert!(Model::EcmwfIfs0p1.info().params.iter().any(|p| p.id == "current" && p.fields == 2));
+        for m in [Model::Gfs0p25, Model::EcmwfIfs0p25, Model::EcmwfIfs0p1, Model::EcmwfAifs0p25] {
             assert!(m.info().params.iter().any(|p| p.id == "waves"), "{m:?}");
         }
         // wind-model filter variables ignore the waves tick (they come from the wave model)
@@ -633,6 +693,10 @@ mod tests {
         let e = Request { model: Model::EcmwfIfs0p25, ..r.clone() };
         let plain = Request { params: vec!["wind".into()], ..e.clone() };
         assert!(download_bytes(&e) > download_bytes(&plain));
+        let hres = Request { model: Model::EcmwfIfs0p1, ..e.clone() };
+        assert!(download_bytes(&hres) > download_bytes(&e));
+        assert_eq!(file_name(&hres, &Run { date: "20261015".into(), hh: "12".into(), t: 0 }, 240),
+            "ECMWF_IFS_0p1_20261015_12z_f000-f240_42S-34S_172E-179E.grb2");
     }
 
     fn req(model: Model) -> Request {

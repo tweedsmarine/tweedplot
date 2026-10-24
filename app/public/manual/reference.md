@@ -172,7 +172,7 @@ Sources and licences: Natural Earth (public domain); GSHHG, Wessel and Smith, Un
 
 Tick **Tide stations** and press **Download LINZ tides** once a year: TweedPlot fetches the LINZ tide tables for this year and next (about 90 standard ports plus the secondary ports). Tide stations then appear on the chart. Click one for the day's tide curve, with high and low times and heights, a marker at the current time (or the weather time when planning) and arrows to step through the days. Times are New Zealand time (Chatham Islands time for Chatham ports). Secondary ports are worked from their LINZ time and height differences. These are predictions, not official tide tables, and weather (wind and pressure) can raise or lower the actual tide by several decimetres.
 
-Tidal streams are not shown yet; ocean currents from a GRIB can be used in routing (see Routing).
+Tidal streams are not shown yet. ECMWF 0.1° surface currents and HYCOM currents are forecast ocean currents; the available documentation does not establish these as tidal-current predictions. Enable **Use GRIB currents** in Routing to include the available fields in a route, but do not rely on them as tidal-stream guidance.
 
 **Display colours: day, dusk and night**
 
@@ -473,7 +473,7 @@ Choices a GRIB doesn't contain are greyed out, and a wave-only GRIB switches to 
 | Source | Models | Notes |
 | --- | --- | --- |
 | NOAA NOMADS | GFS 0.25°, 0.5°, 1° (wind, gusts, pressure, rain, CAPE, air temperature); GFS-Wave 0.25° | Cut to your area on the server: small downloads. Free, US government data |
-| ECMWF open data | IFS 0.25° (wind, pressure, gusts where published, air temperature); AIFS 0.25° (ECMWF's AI model); ECMWF wave 0.25° | Published as whole-globe files: TweedPlot fetches only the fields you ticked and cuts them to your area, but downloads far more than the file it keeps (the estimate shows both). CC BY 4.0, © ECMWF. The 06Z and 18Z IFS runs stop at 144 h |
+| ECMWF open data | IFS 0.1° (~11 km grid; model about 9 km) and 0.25° (wind, pressure, gusts, air temperature); 0.1° IFS surface currents (non-tidal); AIFS 0.25° (ECMWF's AI model); ECMWF wave 0.1° and 0.25° | Free open data, CC BY 4.0, © ECMWF. The 0.1° products arrive about two hours after the 0.25° products; 0.1° surface and pressure-level data are separate global files. TweedPlot fetches only the fields you tick and crops them to your area. Requested 0.1° global fields are cached for reuse across areas (up to 5 GiB; oldest first). IFS 06Z and 18Z runs stop at 144 h |
 | NOAA CoastWatch ERDDAP | MUR sea surface temperature, 1 km (ocean, see below) | A satellite analysis, cut to your area on the server. Free to use and share (NASA JPL) |
 | NOAA CoastWatch THREDDS | Himawari-9 hourly sea temperature, 2 km (ocean, see below) | One file an hour, cut to your area on the server. GHRSST data, free and open |
 | NOAA CoastWatch ERDDAP | Chlorophyll-a, 9 km, daily (ocean, see below) | Cut to your area on the server. Free to use and share |
@@ -483,6 +483,21 @@ Choices a GRIB doesn't contain are greyed out, and a wave-only GRIB switches to 
 2. Set the area: **Draw** a rectangle, use the **Chart view**, or the **Course** with a margin. Edges can be typed.
 3. Choose the forecast length and time step; check the size estimate.
 4. **Download**. TweedPlot finds the newest complete run, downloads it, saves it in the GRIB folder and loads it.
+
+**ECMWF 0.1° product coverage**
+
+The new 0.1° IFS data is the same high-resolution forecast as the 0.25° product, distributed on a finer grid (roughly 11 km north–south). It is free open data, released about two hours later than the 0.25° products. ECMWF publishes surface (`sfc`, including soil-level fields) and pressure-level (`pl`) files separately; the Download choices fetch selected surface fields, not the pressure-level files.
+
+| File | Products available from ECMWF |
+| --- | --- |
+| Surface atmosphere | 10 m and 100 m wind components; 10 m gusts; 2 m temperature and dewpoint; 3-hour maximum and minimum 2 m temperature; mean sea-level and surface pressure; skin temperature; low, medium, high and total cloud cover; most-unstable CAPE |
+| Precipitation and snow | Convective and total precipitation, precipitation rate and type; snowfall; runoff; snow depth, density and albedo |
+| Water and radiation | Total column water and water vapour; cloud ice, cloud liquid water and rain water; surface and top-of-atmosphere shortwave and longwave radiation |
+| Soil, land, ocean and ice | Soil temperature and soil water; land-sea mask and sub-grid orography; eastward and northward sea-water velocity components (surface-current components), sea-surface height and sea-ice thickness; eastward and northward turbulent surface stress |
+| Pressure levels | Geopotential and geopotential height, temperature, U/V wind, specific and relative humidity, vertical velocity, divergence and relative vorticity, at 1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100, 50 and 10 hPa |
+| Wave stream | Significant wave height, mean wave direction, peak/mean/zero-crossing periods, wave-height bands by period, and other wave-model diagnostics |
+
+The surface-current fields are ECMWF's eastward (`sve`) and northward (`svn`) sea-water velocity components; together they describe current speed and direction. Tick **Surface currents** in the **ECMWF IFS 0.1°** download choices to fetch them. ECMWF's open-data product documentation does not specify whether these fields include astronomical tidal-current components, so do not treat them as a tide prediction. They can be drawn with **Show > Current** and included in routing when **Use GRIB currents** is enabled. **Surface currents** from HYCOM are also available in the ocean-model download.
 
 **Ocean: sea temperature, salinity, currents and chlorophyll**
 
@@ -527,7 +542,7 @@ Right-click the chart > **Meteogram here**: every loaded GRIB's forecast at that
 
 Wind and waves come from different models: GFS with GFS-Wave, ECMWF IFS or AIFS with the ECMWF wave model. TweedPlot can keep them in one file, so one GRIB shows the wind, the waves, the GRIB-at-cursor readings and the meteogram together, and a routing with a wave limit finds its waves without a second file.
 
-- **When downloading**: for GFS, ECMWF IFS or AIFS, tick **Waves … in the same file**. The wave model is downloaded for the same run, area and steps and written into the same file, named `…+waves.grb2`. If the waves can't be had (not on the server yet, say), the wind file is kept and a note says so.
+- **When downloading**: for GFS, ECMWF IFS or AIFS, tick **Waves … in the same file**. The wave model at the matching ECMWF resolution is downloaded for the same run, area and steps and written into the same file, named `…+waves.grb2`. If the waves can't be had (not on the server yet, say), the wind file is kept and a note says so.
 - **Files you already have**: load the wind GRIB and the wave GRIB of the same run. The Weather drawer offers **Combine**; it writes `<wind file>+waves.grb2`, loads it and unloads the two. The original files are kept.
 
 **Agreement of the loaded GRIBs**
@@ -569,7 +584,7 @@ A routing is the fastest way from the start through your marks, given a forecast
 | **Start time** | The weather slider time, Now (when you press Compute), or a time you type |
 | Settings > **Time step** | Minutes per isochrone; 0 = automatic (about 80 steps per leg, 5 minutes to 3 hours) |
 | Settings > **Arrival radius** | How close counts as reaching a mark without a radius of its own |
-| Settings > **Use GRIB currents** | Adds ocean currents from the GRIB to the boat's speed |
+| Settings > **Use GRIB currents** | Adds available ocean currents from the GRIB to the boat's speed; ECMWF does not document its 0.1° currents as tidal-stream predictions |
 | Settings > **Hovering a routing point moves the GRIB time** | Off by default, so pointing at the screen doesn't move the forecast |
 | **Limits and barriers** | Below |
 | **Compute** | Routes with the GRIB shown on the chart |
@@ -641,6 +656,6 @@ Positions may be delayed by the race organiser.
 | "Start (or mark) blocked" | It is on land, in water shallower than the safety depth, or inside a barrier: move it |
 | "Every heading is blocked" | Land, shallow water, barriers or limits close every way forward: relax a limit or check the safety depth |
 | The routing hugs a point | A mark without its own radius uses the arrival radius: give offshore waypoints a radius of a mile or more |
-| ECMWF download slow or huge | ECMWF publishes whole-globe fields: choose fewer fields, a shorter forecast or a longer time step |
+| ECMWF download slow or huge | ECMWF publishes whole-globe fields: choose fewer fields, a shorter forecast or a longer time step. 0.1° is much larger per field than 0.25°; requested global fields are cached (up to 5 GiB) and reused for later area requests |
 | Saildocs reply too big | Coarser grid, fewer fields, shorter forecast, smaller area |
 | A panel or the time slider has gone | Instruments drawer: **Show instrument panels**, the tick beside the panel, or **Time slider** |

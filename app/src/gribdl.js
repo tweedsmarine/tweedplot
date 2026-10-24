@@ -198,7 +198,7 @@ export function setupGribDownload(map, { weather, course }) {
   }
   const SOURCE_NOTE = {
     gfs: "Source: NOAA NOMADS (GFS, GFS-Wave), cut to the area on the server. The newest complete run is used.",
-    ecmwf: "Source: ECMWF open data (CC BY 4.0, © ECMWF), from data.ecmwf.int or its AWS mirror. The newest complete run is used.",
+    ecmwf: "Source: ECMWF open data (CC BY 4.0, © ECMWF), from data.ecmwf.int or its AWS mirror. The free 0.1° IFS (~9 km) data arrives about two hours after the 0.25° products; ECMWF does not document the surface currents as tidal-stream predictions. The newest complete run is used.",
     mur_sst: "Source: NASA JPL MUR SST (free to use and share) via NOAA CoastWatch ERDDAP: a daily 1 km analysis from all the satellites, without cloud gaps, usually a day or two old. Shown until four days after its date.",
     himawari: "Source: Himawari-9 (JMA) AHI, processed by NOAA STAR (ACSPO L3C, GHRSST: free and open) via NOAA CoastWatch: hourly, about 2 km, clear sky only (best-quality pixels), two or three hours after the hour. Cloud leaves gaps; each hour keeps the last clear value seen in the hours downloaded.",
     chl_viirs: "Source: NOAA CoastWatch chlorophyll-a from the VIIRS satellites (S-NPP, NOAA-20), gap-filled (DINEOF), daily at about 9 km (free to use and share). Near real time, about three days old. Shown until six days after its date.",

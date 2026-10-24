@@ -45,7 +45,7 @@ A weather model divides the atmosphere into a 3-D grid, starts from the best est
 | Model | Centre | Grid you can get | Runs a day | Range | In TweedPlot |
 | --- | --- | --- | --- | --- | --- |
 | GFS | NOAA (USA) | 0.25° | 4 | 16 days | Download (NOMADS), Saildocs |
-| IFS | ECMWF (Europe) | 0.25° open data (the model itself runs at about 9 km) | 4 | 15 days (06Z and 18Z runs: 6 days) | Download, Saildocs at 0.4° |
+| IFS | ECMWF (Europe) | 0.1° (~11 km grid; model about 9 km) and 0.25° open data | 4 | 15 days (06Z and 18Z runs: 6 days) | Download; Saildocs at 0.4° |
 | AIFS | ECMWF | 0.25° | 4 | 15 days | Download |
 | ICON | DWD (Germany) | 0.125° through Saildocs | 4 | 7.5 days | Saildocs |
 | UKMO global | Met Office (UK) | About 10 km | 4 | 7 days (00Z, 12Z) | Planned |
@@ -55,7 +55,13 @@ AIFS and AIGFS are machine-learning models: trained on decades of past weather, 
 
 **Resolution**
 
-A 0.25° grid has points about 28 km apart north–south (less east–west at high latitude); features smaller than a few grid lengths simply aren't there. Over open ocean that rarely matters. Near coasts, islands and mountains it does: the model's coastline is coarse, and the wind near the land is the model's average over a big square. Treat GRIB wind within a few grid lengths of high land as a rough guide only.
+ECMWF's new **0.1° IFS** forecast is free open data, distributed on a finer grid than its 0.25° product. The grid points are about 11 km apart north–south at 0.1°, versus about 28 km at 0.25°; the finer grid has 6.25 times as many points over the same area. It is published about two hours after the 0.25° data. Both resolutions come from the same high-resolution IFS forecast (about 9 km); the 0.1° data is not a separate higher-resolution model run. ECMWF supplies its 0.1° surface and pressure-level products as separate files; TweedPlot's download choice currently uses the surface forecast fields and waves.
+
+A 0.25° grid has points about 28 km apart north–south (less east–west at high latitude); features smaller than a few grid lengths simply aren't there. The 0.1° grid provides more detail, but neither global grid resolves most sea breezes, headlands or narrow channels. Near coasts, islands and mountains, the wind is still an average over grid cells. Treat GRIB wind within a few grid lengths of high land as a rough guide only; finer spacing does not guarantee a more accurate local forecast.
+
+The 0.1° IFS forecast is available at 3-hour steps through 144 h, then 6-hour steps through 360 h for the 00Z and 12Z runs; 06Z and 18Z runs end at 144 h. Like the other ECMWF open data, its whole-globe fields are range-fetched and cut to the selected area. TweedPlot caches requested 0.1° global fields (up to 5 GiB, oldest first), so another area request for the same run and fields can reuse them.
+
+The 0.1° surface products also include eastward and northward sea-water velocity (`sve`/`svn`). In TweedPlot, tick **Surface currents** when downloading ECMWF IFS 0.1°; the currents can be displayed and included in routing when **Use GRIB currents** is enabled. ECMWF's open-data documentation does not specify whether these fields include astronomical tidal-current components, so do not treat them as tide predictions.
 
 **Lead time**
 
