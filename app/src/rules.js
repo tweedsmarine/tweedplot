@@ -17,26 +17,46 @@ export function flagsOf(x) {
   return x || {};
 }
 
-/** Whether a rule (its flags) is shown with these settings for a boat `length` m long. */
+/** Whether a rule closes an area to a boat: to all commercial fishing, or to one of
+ *  `gear` (MPI's gear codes: 1 prohibited, 2 restricted). No gear: closed to any gear. */
+export function closedFor(f, gear) {
+  if (f.allp) return true;
+  if (!gear?.length) return !!f.prohib;
+  return gear.some((g) => f[g] === 1);
+}
+
+/** Whether a rule (its flags) is shown with these settings for a boat `length` m long.
+ *  `s.restr` false (the default): closed areas only; true: restrictions too. */
 export function applies(f, s, length) {
   const src = f.src || 1;
   if (src === 2 && !s.cust) return false;
   if (src === 3 && !s.vol) return false;
-  if (!s.mine || !s.gear.length) return true;
+  const mine = s.mine && s.gear.length > 0;
   // trawl rules for vessels over 46 m don't bind a boat known to be shorter
-  if (f.v46 && length > 0 && length <= 46) return false;
+  if (mine && f.v46 && length > 0 && length <= 46) return false;
+  if (!s.restr) return closedFor(f, mine ? s.gear : []);
+  if (!mine) return true;
   if (f.allp || src === 2) return true;
   if (s.gear.some((g) => f[g])) return true;
   // no method named: a species or general rule, shown to be safe
   return !ALL_GEAR.some((g) => f[g]);
 }
 
-/** The same test as a MapLibre filter on the tile properties. */
+/** closedFor() as a MapLibre expression on the tile properties. */
+export function closedExpr(gear) {
+  const c = (k) => ["coalesce", ["get", k], 0];
+  if (!gear?.length) return ["any", ["==", c("allp"), 1], ["==", c("prohib"), 1]];
+  return ["any", ["==", c("allp"), 1], ...gear.map((g) => ["==", c(g), 1])];
+}
+
+/** The same test as applies() as a MapLibre filter on the tile properties. */
 export function ruleFilter(s, length) {
   const c = (k) => ["coalesce", ["get", k], 0];
   const src = ["any", ["==", c("src"), 1], ...(s.cust ? [["==", c("src"), 2]] : []), ...(s.vol ? [["==", c("src"), 3]] : [])];
-  if (!s.mine || !s.gear.length) return src;
-  return ["all", src,
-    length > 0 && length <= 46 ? ["!=", c("v46"), 1] : true,
-    ["any", ["==", c("allp"), 1], ["==", c("src"), 2], ...s.gear.map((g) => ["==", c(g), 1]), ["all", ...ALL_GEAR.map((g) => ["==", c(g), 0])]]];
+  const mine = s.mine && s.gear.length > 0;
+  const len = mine && length > 0 && length <= 46 ? ["!=", c("v46"), 1] : true;
+  if (!s.restr) return ["all", src, len, closedExpr(mine ? s.gear : [])];
+  if (!mine) return src;
+  return ["all", src, len,
+    ["any", ["==", c("allp"), 1], ["==", c("src"), 2], ...s.gear.map((g) => ["!=", c(g), 0]), ["all", ...ALL_GEAR.map((g) => ["==", c(g), 0])]]];
 }

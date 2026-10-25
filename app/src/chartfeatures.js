@@ -3,7 +3,7 @@
 // lines, names. The tiles come from the Rust chart store (layers fpt, fln, far,
 // lsec); symbols and labels are drawn here on demand, so nothing needs fetching.
 // Click a feature for all its details.
-import * as maplibregl from "maplibre-gl";
+import { infoBox } from "./infobox.js";
 import { invoke } from "@tauri-apps/api/core";
 
 const MAGENTA = "#b5359a";
@@ -140,7 +140,6 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
   // ---------- details on a click ----------------------------------------------------------
   const POINTS = ["f-points", "f-lights"];
   const LINES = ["f-line-mag", "f-line-solid", "f-line-dash"];
-  let popup = null;
   map.on("click", async (e) => {
     if (!opts.show || document.querySelector(".armed")) return;
     // leave clicks on the app's own things (course, routings, fleet, marks) to them
@@ -148,7 +147,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
     const box = [[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]];
     const own = map.queryRenderedFeatures(box).some((f) => /^(rt-|lib-|fl-|dl-|boat|tide-|stn-|ais-|alarm-)/.test(f.layer.id));
     if (own) return;
-    // inside a fishing rule area, the rules popup (marine.js) stands in for chart areas
+    // inside a fishing rule area, the rules box (marine.js) stands in for chart areas
     const inRule = map.getLayer("mar-rules-fill") && map.getLayoutProperty("mar-rules-fill", "visibility") !== "none"
       && map.queryRenderedFeatures(e.point, { layers: ["mar-rules-fill"] }).length > 0;
     const hit = map.queryRenderedFeatures(box, { layers: POINTS }).concat(
@@ -159,7 +158,6 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
     const list = hit.filter((f) => { const k = `${f.properties.t}/${f.properties.fid}`; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 4);
     const infos = (await Promise.all(list.map((f) => invoke("chart_feature", { t: f.properties.t, fid: f.properties.fid }).catch(() => null)))).filter(Boolean);
     if (!infos.length) return;
-    popup?.remove();
     const el = document.createElement("div");
     el.className = "feat-pop";
     for (const info of infos) {
@@ -180,7 +178,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
     note.className = "wx-note";
     note.textContent = "LINZ chart data, CC BY 4.0. Not for navigation.";
     el.append(note);
-    popup = new maplibregl.Popup({ maxWidth: "340px", closeButton: true }).setLngLat(e.lngLat).setDOMContent(el).addTo(map);
+    infoBox(map, "chart", { width: 360, height: 360 }).open(el, { title: infos.length > 1 ? `${infos.length} chart features` : infos[0].name, at: [e.lngLat.lng, e.lngLat.lat] });
   });
   for (const id of [...POINTS, ...LINES]) {
     map.on("mouseenter", id, () => { if (!document.querySelector(".armed")) map.getCanvas().style.cursor = "pointer"; });

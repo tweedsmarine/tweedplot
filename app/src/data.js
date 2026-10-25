@@ -192,8 +192,16 @@ export function setupData(map, { toast, reloadTiles } = {}) {
     say("Downloading MPI's fishing rules…");
     try {
       const r = await invoke("data_mpi");
-      say(`Fishing rules downloaded: ${r.features} areas${r.failed.length ? `; some sets failed: ${r.failed.join("; ")}` : ""}. Preparing them…`, r.failed.length ? "warn" : "good");
-      toast?.("Fishing rules updated", 3000);
+      const failed = r.failed.length ? `; some sets failed: ${r.failed.join("; ")}` : "";
+      say(`Fishing rules downloaded: ${r.features} areas${failed}. Preparing them…`, r.failed.length ? "warn" : "good");
+      // the charts reopen with the rules built into them: say so when they're ready
+      const ready = (e) => {
+        if (e.detail?.ready === false) return;
+        window.removeEventListener("racenav-charts", ready);
+        say(`Fishing rules ready: ${r.features} areas${failed}. Chart › Boundaries and fishing rules.`, r.failed.length ? "warn" : "good");
+        toast?.("Fishing rules updated", 3000);
+      };
+      window.addEventListener("racenav-charts", ready);
     } catch (e) {
       say(String(e) === "cancelled" ? "Download cancelled." : `Download failed: ${e}`, String(e) === "cancelled" ? "warn" : "bad");
     } finally { setBusy(false); refresh(); }

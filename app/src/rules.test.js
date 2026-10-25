@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { GEAR, applies, ruleFilter, flagsOf } from "./rules.js";
+import { GEAR, applies, ruleFilter, flagsOf, closedFor } from "./rules.js";
 
 /** Evaluate the parts of MapLibre's expression language the filters use. */
 function evalExpr(e, props) {
@@ -18,31 +18,41 @@ function evalExpr(e, props) {
   }
 }
 
+// gear codes as MPI's: 1 prohibited, 2 restricted
 const RULES = [
   { name: "trawl ban", src: 1, prohib: 1, bt: 1, mt: 1 },
   { name: "46 m trawl", src: 1, prohib: 1, v46: 1, bt: 1, mt: 1 },
   { name: "set net ban", src: 1, prohib: 1, sn: 1 },
+  { name: "trawl mesh size", src: 1, bt: 2, mt: 2 },
   { name: "marine reserve", src: 1, prohib: 1, allp: 1 },
-  { name: "paua rule", src: 1 },
-  { name: "mataitai", src: 2, prohib: 1 },
-  { name: "voluntary", src: 3, bt: 1 },
+  { name: "paua rule", src: 1, spec: 1 },
+  { name: "mataitai", src: 2, prohib: 1, allp: 1 },
+  { name: "taiapure", src: 2 },
+  { name: "voluntary", src: 3, prohib: 1, bt: 1 },
 ];
+const names = (s, len) => RULES.filter((r) => applies(r, s, len)).map((r) => r.name);
 
-test("a set netter under 46 m sees set net, all-method, customary and species rules", () => {
-  const s = { cust: true, vol: false, mine: true, gear: ["sn"] };
-  const shown = RULES.filter((r) => applies(r, s, 14)).map((r) => r.name);
-  assert.deepEqual(shown, ["set net ban", "marine reserve", "paua rule", "mataitai"]);
+test("by default only the areas closed to the boat's gear show", () => {
+  assert.deepEqual(names({ cust: true, vol: false, mine: true, gear: ["sn"] }, 14), ["set net ban", "marine reserve", "mataitai"]);
+  assert.deepEqual(names({ cust: false, vol: true, mine: true, gear: ["bt"] }, 14), ["trawl ban", "marine reserve", "voluntary"]);
+  assert.deepEqual(names({ cust: false, vol: true, mine: true, gear: ["bt"] }, 60), ["trawl ban", "46 m trawl", "marine reserve", "voluntary"]);
 });
 
-test("a 60 m trawler sees the 46 m rules, and voluntary closures when asked", () => {
-  const s = { cust: false, vol: true, mine: true, gear: ["bt"] };
-  const shown = RULES.filter((r) => applies(r, s, 60)).map((r) => r.name);
-  assert.deepEqual(shown, ["trawl ban", "46 m trawl", "marine reserve", "paua rule", "voluntary"]);
+test("with no gear chosen, the areas closed to any gear", () => {
+  assert.deepEqual(names({ cust: true, vol: false, mine: false, gear: [] }, 0), ["trawl ban", "46 m trawl", "set net ban", "marine reserve", "mataitai"]);
 });
 
-test("with no gear chosen every rule shows (by source)", () => {
-  const s = { cust: true, vol: false, mine: true, gear: [] };
-  assert.equal(RULES.filter((r) => applies(r, s, 0)).length, 6);
+test("restrictions too, when asked", () => {
+  const s = { cust: true, vol: false, mine: true, gear: ["sn"], restr: true };
+  assert.deepEqual(names(s, 14), ["set net ban", "marine reserve", "paua rule", "mataitai", "taiapure"]);
+  assert.deepEqual(names({ ...s, gear: ["bt"] }, 14), ["trawl ban", "trawl mesh size", "marine reserve", "paua rule", "mataitai", "taiapure"]);
+  assert.equal(names({ ...s, mine: false }, 0).length, 8);
+});
+
+test("a restriction on a method isn't a closure", () => {
+  assert.equal(closedFor({ bt: 2 }, ["bt"]), false);
+  assert.equal(closedFor({ bt: 1 }, ["bt"]), true);
+  assert.equal(closedFor({ bt: 1, prohib: 1 }, ["sn"]), false);
 });
 
 test("the map filter agrees with applies() for every gear, length and source choice", () => {
@@ -51,8 +61,9 @@ test("the map filter agrees with applies() for every gear, length and source cho
     for (const len of lengths)
       for (const cust of [true, false])
         for (const vol of [true, false])
-          for (const mine of [true, false]) {
-            const s = { cust, vol, mine, gear: g };
+          for (const mine of [true, false])
+          for (const restr of [true, false]) {
+            const s = { cust, vol, mine, gear: g, restr };
             const f = ruleFilter(s, len);
             for (const r of RULES) {
               // tiles carry only the non-zero flags

@@ -407,11 +407,12 @@
         <h3>Boundaries and fishing rules</h3>
         <div id="mar-box">
           <div class="wx-row checks"><label title="Territorial sea (12 NM), contiguous zone (24 NM), EEZ (200 NM) and the boundaries agreed with Australia (LINZ)"><input id="mar-bounds" type="checkbox" /> Maritime boundaries</label>
-            <label title="MPI's commercial fishing prohibitions (red) and restrictions (orange), customary areas (purple) and voluntary closures (grey). Click an area for the rule"><input id="mar-rules" type="checkbox" /> Fishing rules</label>
+            <label title="Areas closed to commercial fishing (red: to all, or to the methods ticked below), from MPI. Click an area for the rule"><input id="mar-rules" type="checkbox" /> Fishing rules</label>
             <label title="MPI's fisheries management areas and statistical areas, with their codes (for catch reporting)"><input id="mar-fareas" type="checkbox" /> Fisheries areas</label></div>
           <div class="wx-row checks"><label title="Mātaitai, taiāpure and other customary areas"><input id="mar-cust" type="checkbox" /> Customary areas</label>
             <label title="Areas closed by industry agreement (MPI: boundaries approximate, a guide only)"><input id="mar-vol" type="checkbox" /> Voluntary closures</label></div>
-          <div class="wx-row checks"><label title="Show only the rules for the fishing methods ticked below, and for this vessel's length"><input id="mar-mine" type="checkbox" /> Only the rules for my boat</label></div>
+          <div class="wx-row checks"><label title="Show only the areas closed to the fishing methods ticked below (and to all fishing), for this vessel's length"><input id="mar-mine" type="checkbox" /> Only closures for my boat's methods</label>
+            <label title="Also show restrictions: species, mesh sizes, seasons, gear limits (orange; they cover large areas, often the whole EEZ)"><input id="mar-restr" type="checkbox" /> Restrictions too</label></div>
           <div id="mar-gear" class="mar-gear"></div>
           <div id="mar-len" class="wx-note"></div>
           <div class="wx-row"><label class="grow" title="A warning when the boat is inside, or heading into, an area closed to the methods ticked above (all closed areas if none are ticked)"><input id="mar-alarm" type="checkbox" /> Closed-area alarm, looking ahead</label>

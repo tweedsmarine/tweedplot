@@ -1,14 +1,14 @@
 // AIS targets on the chart: from Signal K (a receiver on board) and online from
 // aisstream.io shore stations, merged in Rust by MMSI. Symbols by kind and
-// ship type, a 6-minute course vector, names, a popup, a target list with CPA
+// ship type, a 6-minute course vector, names, an info box, a target list with CPA
 // and TCPA, and collision / distress alarms.
-import * as maplibregl from "maplibre-gl";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ddm } from "./navmath.js";
 import { distNm, bearing } from "./instruments.js";
 import { hullRing, bigEnough } from "./hull.js";
 import { PRIMARY } from "./role.js";
+import { createInfoBox } from "./infobox.js";
 
 const KEY = "racenav.ais";
 const DEFAULTS = { show: true, names: true, key: "", online: false, cpaOn: true, cpa: 0.5, tcpa: 12, ignoreMoored: true, sort: "range", selTrack: false,
@@ -254,8 +254,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   }
   setInterval(loadTracks, 10000);
 
-  // ---------- popup ----------------------------------------------------------------
-  let popup = null;
+  // ---------- info box ----------------------------------------------------------------
   function describe(t) {
     const own = getOwn();
     const c = cpaTcpa(own, t);
@@ -284,21 +283,21 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     const fe = inFleet(t.mmsi);
     const btns = `<div class="ais-pop-btns">${fe ? `<span class="wx-note">Own fleet: ${esc(fe.group)}</span><button data-act="track">${fe.track || fleet.trackAll ? "Hide track" : "Show track"}</button><button data-act="unfleet">Remove from own fleet</button>`
       : `<button data-act="fleet">Add to own fleet</button>`}</div>`;
-    return `<div class="ais-pop"><b>${esc(fe?.name || t.name || `MMSI ${t.mmsi}`)}</b>${fe?.name && t.name && fe.name !== t.name ? ` <small>(${esc(t.name)})</small>` : ""}<table>${rows.join("")}</table>${btns}</div>`;
+    return `<div class="ais-pop">${fe?.name && t.name && fe.name !== t.name ? `<small>AIS name: ${esc(t.name)}</small>` : ""}<table>${rows.join("")}</table>${btns}</div>`;
   }
+  const infoWin = createInfoBox(map, "ais", { width: 320, height: 380 });
+  const boxTitle = (t) => inFleet(t.mmsi)?.name || t.name || `MMSI ${t.mmsi}`;
   function openPopup(mmsi) {
     const t = targets.get(mmsi);
     if (!t || t.lat == null) return;
     selected = mmsi;
-    popup?.remove();
-    popup = new maplibregl.Popup({ closeButton: true, maxWidth: "320px" }).setLngLat([t.lon, t.lat]).setHTML(describe(t)).addTo(map);
+    infoWin.open(describe(t), { title: boxTitle(t), at: [t.lon, t.lat], onClose: () => { if (selected === mmsi) { selected = null; draw(); loadTracks(); } } });
     wirePopup(mmsi);
-    popup.on("close", () => { if (selected === mmsi) { selected = null; draw(); loadTracks(); } });
     draw();
     loadTracks();
   }
   function wirePopup(mmsi) {
-    const el = popup?.getElement();
+    const el = infoWin.isOpen ? infoWin.body : null;
     if (!el) return;
     el.querySelector('[data-act="fleet"]')?.addEventListener("click", () => {
       const t = targets.get(mmsi);
@@ -317,7 +316,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   }
   function refreshPopup() {
     const t = selected != null ? targets.get(selected) : null;
-    if (popup && t) { popup.setLngLat([t.lon, t.lat]).setHTML(describe(t)); wirePopup(selected); }
+    if (infoWin.isOpen && t) { infoWin.update(describe(t), { title: boxTitle(t), at: t.lat != null ? [t.lon, t.lat] : null }); wirePopup(selected); }
   }
   for (const l of ["ais-sym", "ais-hull"]) {
     map.on("click", l, (e) => { const f = e.features?.[0]; if (f) openPopup(f.properties.mmsi); });

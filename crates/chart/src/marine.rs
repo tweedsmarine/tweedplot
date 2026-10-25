@@ -27,7 +27,7 @@ use crate::gpkgw;
 use crate::ChartError;
 
 /// Bump when the built files change shape.
-const BUILD_VERSION: i64 = 1;
+const BUILD_VERSION: i64 = 2;
 /// Areas bigger than this many points are cut into pieces (a tile reads only its piece).
 const MAX_PIECE: usize = 4000;
 const LINE_CHUNK: usize = 1500;
@@ -522,21 +522,31 @@ struct Rule {
 fn rule_flags(
     src: u8,
     props: &serde_json::Map<String, Value>,
-    prohib_member: bool,
+    all_closed: bool,
     v46: bool,
 ) -> Vec<i64> {
     let b = |name: &str| truthy(field(props, name)) as i64;
-    let allp = b("AllProhibited");
+    // MPI's coded values: gear 0 no, 1 prohibition, 2 restriction; finfish and shellfish
+    // 1 prohibition (all species), 2 restriction, 3 prohibition on named species
+    let code = |name: &str| -> i64 {
+        match field(props, name) {
+            Some(Value::Number(n)) => n.as_f64().map_or(0, |x| x as i64),
+            Some(Value::String(t)) => t.trim().parse().unwrap_or_else(|_| truthy(Some(&Value::String(t.clone()))) as i64),
+            Some(Value::Bool(x)) => *x as i64,
+            _ => 0,
+        }
+    };
+    let allp = (all_closed || code("AllProhibited") == 1 || (code("Finfish") == 1 && code("Shellfish") == 1)) as i64;
     let mut f = vec![
         src as i64,
-        (prohib_member || allp == 1 || src == 2) as i64,
+        0, // prohib: set below, from the gear
         allp,
         v46 as i64,
         b("VesselLimit"),
         b("GearLimit"),
         b("Seasonal"),
         b("Temporary_").max(b("Temporary")),
-        b("SpeciesProhibition"),
+        code("SpeciesProhibition").clamp(0, 3),
     ];
     // MPI's method codes (voluntary closures): "BT, BPT, MW, MPT, SN"
     let codes: Vec<String> = text(props, "MethodCode").split([',', ' ', ';', '/']).filter(|c| !c.is_empty()).map(|c| c.to_ascii_uppercase()).collect();
@@ -559,8 +569,11 @@ fn rule_flags(
         codes.iter().any(|c| names.contains(&c.as_str()) || c == "ALL")
     };
     for (name, short, _) in GEAR {
-        f.push((b(name) == 1 || coded(short)) as i64);
+        let c = code(name);
+        f.push(if coded(short) || c == 1 { 1 } else if c != 0 { 2 } else { 0 });
     }
+    // closed: to all commercial fishing, or to at least one method
+    f[1] = (allp == 1 || f[9..].contains(&1)) as i64;
     f
 }
 
@@ -607,8 +620,10 @@ fn build_rules(jsons: &[PathBuf], out: &Path) -> Result<(), ChartError> {
                     let lname = l["name"].as_str().unwrap_or("").to_string();
                     for f in l["features"]["features"].as_array().into_iter().flatten() {
                         let props = f["properties"].as_object().cloned().unwrap_or_default();
+                        // commercial fishing isn't allowed in a mātaitai
+                        let mataitai = src == 2 && (lname.to_lowercase().contains("taitai") || text(&props, "Name").to_lowercase().contains("taitai"));
                         rules.push(Rule {
-                            flags: rule_flags(src, &props, false, false),
+                            flags: rule_flags(src, &props, mataitai, false),
                             polys: geojson_polygons(&f["geometry"]),
                             lines: geojson_lines(&f["geometry"]),
                             attrs: props,
@@ -753,11 +768,9 @@ fn regs_rules(layers: &[Value]) -> Vec<Rule> {
         if !seen.insert((key, f["geometry"].to_string().len())) {
             return;
         }
-        let prohib = cats.iter().any(|(id, n)| *id == 1 || n.to_ascii_lowercase().contains("prohibition"))
-            || text(&props, "Name").to_ascii_lowercase().contains(" prohibited");
         let v46 = cats.iter().any(|(id, n)| *id == 18 || n.contains("46"));
         out.push(Rule {
-            flags: rule_flags(1, &props, prohib, v46),
+            flags: rule_flags(1, &props, false, v46),
             polys: geojson_polygons(&f["geometry"]),
             lines: geojson_lines(&f["geometry"]),
             layers: cats
@@ -858,6 +871,27 @@ impl crate::ChartStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn closures_from_mpi_codes() {
+        let p = |v: Value| v.as_object().unwrap().clone();
+        let col = |f: &[i64], c: &str| f[RULE_COLS[1..].iter().position(|x| *x == c).unwrap()];
+        // a restriction on trawling (mesh size) closes nothing
+        let f = rule_flags(1, &p(serde_json::json!({"BottomTrawl": 2, "MidwaterTrawl": 2})), false, false);
+        assert_eq!((col(&f, "prohib"), col(&f, "bt"), col(&f, "mt")), (0, 2, 2));
+        // a set net prohibition closes the area to set nets
+        let f = rule_flags(1, &p(serde_json::json!({"SetNet": 1, "BottomTrawl": 2})), false, false);
+        assert_eq!((col(&f, "prohib"), col(&f, "sn"), col(&f, "bt")), (1, 1, 2));
+        // a species prohibition is not a closure
+        let f = rule_flags(1, &p(serde_json::json!({"SpeciesProhibition": 1, "Shellfish": 3})), false, false);
+        assert_eq!((col(&f, "prohib"), col(&f, "allp"), col(&f, "spec")), (0, 0, 1));
+        // all finfish and shellfish prohibited: closed to all
+        let f = rule_flags(1, &p(serde_json::json!({"Finfish": 1, "Shellfish": 1})), false, false);
+        assert_eq!((col(&f, "prohib"), col(&f, "allp")), (1, 1));
+        // voluntary closure method codes
+        let f = rule_flags(3, &p(serde_json::json!({"MethodCode": "BT, BPT, SN"})), false, false);
+        assert_eq!((col(&f, "prohib"), col(&f, "bt"), col(&f, "sn"), col(&f, "ll")), (1, 1, 1, 0));
+    }
     use serde_json::json;
 
     fn square(x: f64, y: f64, s: f64) -> Value {

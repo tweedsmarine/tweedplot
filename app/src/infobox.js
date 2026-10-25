@@ -1,0 +1,137 @@
+// Floating info boxes: what a click on the chart tells you (AIS targets, fishing rules,
+// chart features) in a window that can be moved (by its title bar), resized (its corner)
+// and scrolled, instead of a popup tied to the point that covers the chart round it and
+// can run off the screen. Each kind of box keeps its own place and size. A small ring
+// marks the place the box is about while it's open.
+
+import * as maplibregl from "maplibre-gl";
+
+const KEY = "racenav.infobox.";
+const boxes = new Set();
+
+/**
+ * A box for one kind of information (`kind`: "ais", "rules", ...).
+ * `open(content, { title, at })`: content is an element or HTML; `at` [lon, lat] is marked.
+ */
+export function createInfoBox(map, kind, { title = "", width = 340, height = 320 } = {}) {
+  let st = { w: width, h: height };
+  try { Object.assign(st, JSON.parse(localStorage.getItem(KEY + kind) || "{}")); } catch { /* storage unavailable */ }
+  const save = () => { try { localStorage.setItem(KEY + kind, JSON.stringify(st)); } catch { /* ignore */ } };
+
+  const el = document.createElement("div");
+  el.className = "float-win info-box";
+  el.hidden = true;
+  el.innerHTML = `<header><b class="ib-title"></b><span class="grow"></span><button class="ib-close" title="Close (Esc)">✕</button></header><div class="ib-body"></div>`;
+  document.body.append(el); // over the map (which fills the window), like the target list
+  const body = el.querySelector(".ib-body"), head = el.querySelector("header"), titleEl = el.querySelector(".ib-title");
+  let onClose = null, ring = null;
+
+  const area = () => map.getContainer().getBoundingClientRect();
+  function place() {
+    const r = area();
+    const w = Math.min(st.w, r.width - 16), h = Math.min(st.h, r.height - 16);
+    el.style.width = `${w}px`;
+    el.style.height = `${h}px`;
+    el.style.right = "auto";
+    el.style.left = `${Math.max(4, Math.min(r.width - w - 4, st.x ?? r.width - w - 70))}px`;
+    el.style.top = `${Math.max(4, Math.min(r.height - h - 4, st.y ?? 70))}px`;
+  }
+
+  // first time: beside the point (not on it), on the side with room
+  function besidePoint(at) {
+    if (st.x != null || !at) return;
+    const p = map.project(at), r = area();
+    const w = Math.min(st.w, r.width - 16);
+    st.x = p.x + 30 + w < r.width ? p.x + 30 : p.x - 30 - w;
+    st.y = p.y - 60;
+  }
+
+  head.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button, select, input")) return;
+    const b = el.getBoundingClientRect(), m = area();
+    const dx = e.clientX - b.left, dy = e.clientY - b.top;
+    head.setPointerCapture?.(e.pointerId);
+    const move = (ev) => { st.x = ev.clientX - m.left - dx; st.y = ev.clientY - m.top - dy; place(); };
+    const up = () => { head.removeEventListener("pointermove", move); head.removeEventListener("pointerup", up); save(); };
+    head.addEventListener("pointermove", move);
+    head.addEventListener("pointerup", up);
+    e.preventDefault();
+  });
+  // the corner handle (CSS resize) changes the size: keep it
+  let sizing = null;
+  new ResizeObserver(() => {
+    if (el.hidden) return;
+    const w = el.offsetWidth, h = el.offsetHeight;
+    if (Math.abs(w - st.w) < 2 && Math.abs(h - st.h) < 2) return;
+    st.w = w; st.h = h;
+    clearTimeout(sizing);
+    sizing = setTimeout(save, 300);
+  }).observe(el);
+  window.addEventListener("resize", () => !el.hidden && place());
+  window.addEventListener("racenav-layout", () => !el.hidden && place());
+
+  function mark(at) {
+    if (!at) { ring?.remove(); ring = null; return; }
+    if (!ring) {
+      const d = document.createElement("div");
+      d.className = "ib-ring";
+      ring = new maplibregl.Marker({ element: d });
+    }
+    ring.setLngLat(at).addTo(map);
+  }
+
+  function setContent(content) {
+    const top = body.scrollTop;
+    if (typeof content === "string") body.innerHTML = content;
+    else body.replaceChildren(content);
+    body.scrollTop = top;
+  }
+
+  const api = {
+    element: el,
+    body,
+    get isOpen() { return !el.hidden; },
+    open(content, { title: t = title, at = null, onClose: oc = null } = {}) {
+      const was = !el.hidden;
+      if (was && onClose && onClose !== oc) { const f = onClose; onClose = null; f(); }
+      titleEl.textContent = t;
+      setContent(content);
+      if (!was) body.scrollTop = 0;
+      besidePoint(at);
+      el.hidden = false;
+      place();
+      mark(at);
+      onClose = oc;
+      boxes.add(api);
+    },
+    /** New content (and title, place) without moving the box or its scroll. */
+    update(content, { title: t, at } = {}) {
+      if (el.hidden) return;
+      if (t != null) titleEl.textContent = t;
+      setContent(content);
+      if (at) mark(at);
+    },
+    close() {
+      if (el.hidden) return;
+      el.hidden = true;
+      mark(null);
+      boxes.delete(api);
+      const f = onClose; onClose = null; f?.();
+    },
+  };
+  el.querySelector(".ib-close").onclick = () => api.close();
+  return api;
+}
+
+// Esc closes the box opened last
+window.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || !boxes.size || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? "")) return;
+  [...boxes].pop().close();
+});
+
+const made = new Map();
+/** The one box of a kind (made on first use), for modules that share it. */
+export function infoBox(map, kind, opts) {
+  if (!made.has(kind)) made.set(kind, createInfoBox(map, kind, opts));
+  return made.get(kind);
+}

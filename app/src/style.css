@@ -895,3 +895,11 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 .mar-tag.c { background: #8e44ad; }
 .mar-tag.v { background: #6c7a89; }
 .mar-link { margin: 0 0 8px; }
+
+/* ---------- floating info boxes (infobox.js) ---------- */
+.info-box { box-sizing: border-box; width: 340px; height: 320px; min-width: 220px; min-height: 120px; z-index: 9; }
+.info-box .ib-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.info-box .ib-body { flex: 1; overflow: auto; padding: 6px 8px 8px; }
+.info-box .feat-pop { max-height: none; overflow: visible; }
+.info-box .ais-pop table { width: 100%; }
+.ib-ring { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #ff8c00; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85); pointer-events: none; }
