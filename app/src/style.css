@@ -624,6 +624,23 @@ html.no-tools { --rail-w: 0px !important; --drawer-w: 0px !important; --dock-h: 
 html.no-map #map, html.no-map .cursor, html.no-map .attribution, html.no-map #follow, html.no-map #clear-track { visibility: hidden; }
 html.no-map body { background: #0f1a21; }
 
+/* ---------- Instruments view: a screen of single readings on a 12 × 8 grid (insttiles.js) ---------- */
+#itiles {
+  position: absolute; left: var(--rail-w); right: 50px; top: 48px; bottom: var(--dock-h, 0px); z-index: 5;
+  display: none; box-sizing: border-box; padding: 6px; gap: 4px;
+  grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-rows: repeat(8, minmax(0, 1fr));
+  touch-action: none; user-select: none;
+}
+html[data-view="inst"] #itiles { display: grid; }
+.itile { min-width: 0; min-height: 0; overflow: hidden; }
+.itile:not(.graphic) .v { line-height: 1; }
+.itile.highway-card { padding: 2px; }
+.itile.highway-card .v { position: relative; overflow: hidden; contain: strict; }
+.itile.highway-card .hw-dashboard { position: absolute; left: 0; top: 0; width: 680px; height: 470px; transform-origin: 0 0; }
+.itile-ghost { border: 2px dashed #ffb000; border-radius: 6px; background: rgba(255, 176, 0, 0.12); pointer-events: none; }
+.locked .itile .trsz { display: none; }
+.it-empty { grid-column: 1 / -1; grid-row: 1 / -1; display: flex; align-items: center; justify-content: center; color: #9fb0bb; text-align: center; }
+
 /* ---------- day / dusk / night colours (palette.js) ---------- */
 #palette-btn .moon, #palette-btn.night .sun { display: none; }
 #palette-btn.night .moon { display: inline; }

@@ -4,6 +4,7 @@
 
 import { rhumb } from "./navmath.js";
 import { VIEWS } from "./views.js";
+import { setupTiles } from "./insttiles.js";
 import { columns, spanFromDrag, cleanSpan, moveReading, dropIndex, CELL, ROW } from "./gridmath.js";
 
 const KEY = "racenav.instruments";
@@ -376,12 +377,14 @@ export function setupInstruments() {
   const rail = document.getElementById("rail");
   const menu = document.getElementById("tile-menu");
   let layout = loadLayout();
+  const tiles = setupTiles({ host: document.getElementById("itiles"), menu, items: ITEMS, getLayout: () => layout, save, paint: (t, it, fit) => paintTile(t, it, fit) });
   let ctx = { v: {}, now: Date.now(), age: Infinity, safetyDepth: 3 };
 
   function save() { try { localStorage.setItem(KEY, JSON.stringify(layout)); } catch { /* ignore */ } }
   const view = () => document.documentElement.dataset.view || "plan";
   // a panel without a list of views shows in every view; a man overboard shows everywhere
-  const inView = (p) => p.mob || !p.views || p.views.includes(view());
+  // the Instruments view has no groups: it is one screen of single readings (insttiles.js)
+  const inView = (p) => p.mob || (view() !== "inst" && (!p.views || p.views.includes(view())));
   window.addEventListener("racenav-view", () => build());
   // another window (a monitor, or the main window) changed the shared layout
   window.addEventListener("storage", (e) => {
@@ -395,6 +398,7 @@ export function setupInstruments() {
 
   // ---------- build ----------------------------------------------------------
   function build() {
+    tiles.build();
     root.innerHTML = "";
     root.classList.toggle("locked", !!layout.locked);
     root.hidden = !!layout.hideAll;
@@ -689,30 +693,34 @@ export function setupInstruments() {
       }
       for (const t of el.querySelectorAll(".tile")) {
         const it = ITEMS[p.tiles[Number(t.dataset.i)]];
-        if (!it) continue;
-        let val = null;
-        try { val = it.get(ctx); } catch { val = null; }
-        const has = val !== null && val !== undefined && !(typeof val === "number" && !Number.isFinite(val));
-        // a real true/false: classList.toggle(name, undefined) flips the class on every render
-        const stale = Boolean(it.live) && ctx.age > STALE_S;
-        const state = has && !stale && it.state ? it.state(val, ctx) : "";
-        const v = t.querySelector(".v");
-        if (it.render) it.render(v, val, ctx);
-        else {
-          const html = has ? it.fmt(val) + (it.unit ? `<span class="u">${it.unit}</span>` : "") : "—";
-          if (v.innerHTML !== html) v.innerHTML = html;
-        }
-        const sd = t.querySelector(".sd");
-        const side = has && it.side ? it.side(val) : "";
-        sd.className = `sd ${side}`;
-        sd.textContent = side === "port" ? "PORT" : side === "stbd" ? "STBD" : "";
-        t.classList.toggle("stale", stale);
-        t.classList.toggle("warn", state === "warn");
-        t.classList.toggle("alarm", state === "alarm");
-        if (it.highway && el.classList.contains("free")) fitHighway(v);
-        else if (!it.graphic && el.classList.contains("free")) fitText(t, v);
+        if (it) paintTile(t, it, el.classList.contains("free"));
       }
     }
+    tiles.render();
+  }
+  /** Show one reading in its tile; `fit` scales the text (or the highway) to fill the tile. */
+  function paintTile(t, it, fit) {
+    let val = null;
+    try { val = it.get(ctx); } catch { val = null; }
+    const has = val !== null && val !== undefined && !(typeof val === "number" && !Number.isFinite(val));
+    // a real true/false: classList.toggle(name, undefined) flips the class on every render
+    const stale = Boolean(it.live) && ctx.age > STALE_S;
+    const state = has && !stale && it.state ? it.state(val, ctx) : "";
+    const v = t.querySelector(".v");
+    if (it.render) it.render(v, val, ctx);
+    else {
+      const html = has ? it.fmt(val) + (it.unit ? `<span class="u">${it.unit}</span>` : "") : "—";
+      if (v.innerHTML !== html) v.innerHTML = html;
+    }
+    const sd = t.querySelector(".sd");
+    const side = has && it.side ? it.side(val) : "";
+    sd.className = `sd ${side}`;
+    sd.textContent = side === "port" ? "PORT" : side === "stbd" ? "STBD" : "";
+    t.classList.toggle("stale", stale);
+    t.classList.toggle("warn", state === "warn");
+    t.classList.toggle("alarm", state === "alarm");
+    if (it.highway && fit) fitHighway(v);
+    else if (!it.graphic && fit) fitText(t, v);
   }
   /** Grow or shrink a reading's text to fill its tile (measured at 100 px, then scaled). */
   function fitText(t, v) {
@@ -807,7 +815,7 @@ export function setupInstruments() {
       nm.onclick = (e) => e.stopPropagation();
       nm.onchange = () => { p.name = nm.value.trim() || undefined; save(); build(); };
       const pv = li.querySelector(".pviews");
-      for (const v of VIEWS) {
+      for (const v of VIEWS.filter((x) => x.id !== "inst")) {
         const lab = document.createElement("label");
         lab.title = `Show this group in the ${v.name} view`;
         const c = document.createElement("input");
@@ -841,6 +849,8 @@ export function setupInstruments() {
     for (const p of layout.panels) p.collapsed = fold;
     save(); build();
   };
+  document.getElementById("it-add").onclick = () => { if (!tiles.add()) alert("The Instruments screen is full: make a tile smaller or remove one first."); };
+  document.getElementById("it-reset").onclick = () => tiles.reset();
   lockBtn.onclick = () => { layout.locked = !layout.locked; save(); build(); };
   document.getElementById("inst-all").onchange = (e) => { layout.hideAll = !e.target.checked; save(); build(); };
   document.getElementById("inst-reset").onclick = () => { layout = structuredClone(DEFAULT_LAYOUT); save(); build(); };

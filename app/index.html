@@ -503,6 +503,8 @@
           <button id="inst-lock" title="Stop panels being moved by accident">Lock layout</button>
           <button id="inst-reset" title="Back to the default panels">Reset</button>
         </div>
+        <div class="wx-row"><button id="it-add" title="Add a reading to the Instruments view">Add an instrument</button><button id="it-reset" title="Back to the default Instruments screen">Reset Instruments screen</button></div>
+        <div class="wx-note">The Instruments view is one screen of single readings from the same list as the groups. Drag a tile to move it (under another tile it lines up with that tile's column), drag its corner to size it, click it to change the reading. Groups below are for the chart views.</div>
         <div class="wx-row"><select id="mon-new-view" title="What the new window shows"></select><button id="mon-new" title="Open another window for another screen (drag it there, then Full screen). Open as many as you like.">New monitor window</button></div>
         <ul id="mon-list" class="list"></ul>
         <div class="wx-note">A monitor window is another copy of TweedPlot for another screen. It can show any view, and keeps its own colours (day, dusk or night), view and position, so each screen can suit where it is. Alarms show in every window and can be silenced in any; MOB, Drop and the anchor watch work from any window. Monitor windows reopen where you left them when TweedPlot starts.</div>
@@ -556,6 +558,7 @@
     </div>
 
     <!-- Floating instrument panels -->
+    <div id="itiles"></div>
     <div id="inst"></div>
     <div id="tile-menu" class="ctx" hidden></div>
     <div id="cmp-menu" class="ctx checks" hidden></div>
