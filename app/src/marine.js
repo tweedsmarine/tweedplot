@@ -125,17 +125,18 @@ export function setupMarine(map, { getBoat = () => ({}), getLength = () => 0, al
     const gear = f.allp ? "All commercial fishing" : gearNames(f).join(", ");
     const season = f.seas ? [field(a, "SeasonStart"), field(a, "SeasonEnd")].filter(Boolean).join(" to ") || "seasonal" : null;
     const rows = [
-      ["What", field(a, "ShortDescription")],
+      ["What", field(a, "ShortDescription") || field(a, "Rule_")],
       ["Methods", gear || null],
       ["Species", field(a, "SpeciesCode")],
       ["Vessels", f.v46 ? "Over 46 m" : f.vlim ? "Some vessel sizes (see the regulation)" : null],
       ["Season", season],
       ["Conditions", field(a, "SpecialConditions")],
       ["Category", inf?.layers || null],
-      ["Regulation", [field(a, "Instrument"), field(a, "SectionRule")].filter(Boolean).join(", ") || null],
+      ["Regulation", [field(a, "Instrument") || field(a, "LegalInstrument"), field(a, "SectionRule")].filter(Boolean).join(", ") || null],
+      ["Responsible", field(a, "ResponsibleOrg")],
       ["Temporary", f.tmp ? "Yes (check it is still in force)" : null],
     ].filter(([, v]) => v);
-    const url = field(a, "RegulationURL");
+    const url = [field(a, "RegulationURL"), field(a, "SourceURL"), field(a, "MetadataURL")].find((u) => typeof u === "string" && /^https?:/.test(u.trim()));
     const legal = field(a, "LegalDescription");
     return `<h4><span class="mar-tag ${f.prohib ? "p" : f.src === 2 ? "c" : f.src === 3 ? "v" : "r"}">${kind}</span> ${esc(field(a, "Name") || field(a, "Location") || "Fishing rule")}</h4>
       <table>${rows.map(([k, v]) => `<tr><td>${k}</td><td>${esc(v)}</td></tr>`).join("")}</table>

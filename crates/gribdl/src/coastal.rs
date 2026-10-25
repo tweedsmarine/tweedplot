@@ -23,14 +23,14 @@ fn base() -> String {
 }
 
 fn get_json(c: &reqwest::blocking::Client, url: &str) -> Result<Value> {
-    let r = c.get(url).send().map_err(|e| Error::Http(e.to_string()))?;
+    let r = c.get(url).send().map_err(|e| Error::Http(crate::marine::why(&e)))?;
     if !r.status().is_success() {
         return Err(Error::Http(format!(
             "HTTP {} from {url}",
             r.status().as_u16()
         )));
     }
-    let b = r.bytes().map_err(|e| Error::Http(e.to_string()))?;
+    let b = r.bytes().map_err(|e| Error::Http(crate::marine::why(&e)))?;
     serde_json::from_slice(&b).map_err(|e| Error::Http(format!("{url}: {e}")))
 }
 
@@ -120,7 +120,7 @@ pub fn download(
         .connect_timeout(std::time::Duration::from_secs(20))
         .timeout(None::<std::time::Duration>)
         .build()
-        .map_err(|e| Error::Http(e.to_string()))?;
+        .map_err(|e| Error::Http(crate::marine::why(&e)))?;
     let mut done = 0;
     let mut bytes = 0u64;
     for (i, (name, path)) in paths.iter().enumerate() {
@@ -130,7 +130,7 @@ pub fn download(
         }
         progress(i, paths.len(), bytes);
         let url = format!("{}/{path}", base());
-        let mut r = c.get(&url).send().map_err(|e| Error::Http(e.to_string()))?;
+        let mut r = c.get(&url).send().map_err(|e| Error::Http(crate::marine::why(&e)))?;
         if !r.status().is_success() {
             return Err(Error::Http(format!(
                 "HTTP {} from {url}",

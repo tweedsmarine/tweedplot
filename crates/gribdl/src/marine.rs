@@ -9,7 +9,8 @@
 //! - **Fishing rules** (Ministry for Primary Industries, CC BY 4.0: "Source: Ministry for
 //!   Primary Industries"): commercial fishing regulations, customary areas, voluntary
 //!   closures, and the fisheries management and statistical areas, from MPI's ArcGIS map
-//!   services (`MapServer/<layer>/query`). Saved per service as
+//!   feature services (`FeatureServer/<layer>/query` on geospatial.mpi.govt.nz; the older
+//!   maps.mpi.govt.nz is no longer reachable from New Zealand). Saved per service as
 //!   `<dir>/mpi/<name>.json`: `{key, service, fetched, layers: [{id, name, features}]}`,
 //!   where `features` is a GeoJSON FeatureCollection in longitude and latitude. For the
 //!   regulations, the "all regulations" layer comes with its areas and the category
@@ -22,6 +23,17 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde_json::{json, Value};
 
 use crate::{client, Error, Result};
+
+/// A request error with its causes (reqwest's own message just says "error sending request").
+pub(crate) fn why(e: &reqwest::Error) -> String {
+    let mut s = e.to_string();
+    let mut src = std::error::Error::source(e);
+    while let Some(c) = src {
+        s.push_str(&format!(": {c}"));
+        src = c.source();
+    }
+    s
+}
 
 /// LINZ's maritime boundary zips (shapefiles; the "raw" text versions aren't needed).
 pub const BOUNDARY_ZIPS: &[&str] = &[
@@ -49,7 +61,7 @@ fn linz_base() -> String {
 
 fn mpi_base() -> String {
     std::env::var("RACENAV_MPI_URL")
-        .unwrap_or_else(|_| "https://maps.mpi.govt.nz/wss/service/arcgis1/guest/MARINE".into())
+        .unwrap_or_else(|_| "https://geospatial.mpi.govt.nz/portal/rest/services/MARINE".into())
 }
 
 /// Download LINZ's maritime boundary zips into `dir/boundaries`. A zip that fails is
@@ -72,7 +84,7 @@ pub fn boundaries(
         let r = c
             .get(&url)
             .send()
-            .map_err(|e| Error::Http(e.to_string()))
+            .map_err(|e| Error::Http(why(&e)))
             .and_then(|r| {
                 if !r.status().is_success() {
                     return Err(Error::Http(format!(
@@ -80,7 +92,7 @@ pub fn boundaries(
                         r.status().as_u16()
                     )));
                 }
-                r.bytes().map_err(|e| Error::Http(e.to_string()))
+                r.bytes().map_err(|e| Error::Http(why(&e)))
             });
         match r {
             Ok(b) if b.starts_with(b"PK") => {
@@ -103,24 +115,22 @@ pub fn boundaries(
     Ok((got, failed))
 }
 
-/// MPI services fetched: (file name, kind of data, service name).
-pub const MPI_SERVICES: &[(&str, &str, &str)] = &[
-    (
-        "regs",
-        "regs",
-        "MARINE_Restrictions_CommercialFishingRegulations",
-    ),
-    ("customary", "customary", "MARINE_RestrictionsCustomary"),
-    ("voluntary", "voluntary", "MARINE_VoluntaryClosureAreas"),
-    ("areas_fma", "areas", "MARINE_FMAs"),
-    ("areas_stat", "areas", "MARINE_StatisticalAreas"),
+/// MPI services fetched: (file name, kind of data, service name, the layers wanted: all
+/// when empty).
+pub const MPI_SERVICES: &[(&str, &str, &str, &[i64])] = &[
+    ("regs", "regs", "CommercialFishing", &[]),
+    // mātaitai, s 186 temporary closures, taiāpure (not the coordinate points or rohe moana)
+    ("customary", "customary", "Marine_Customary_Restrictions", &[1, 6, 8]),
+    ("voluntary", "voluntary", "OtherFisheriesManagementAreas", &[1]),
+    ("areas_fma", "areas", "Marine_FMAs", &[7]),
+    ("areas_stat", "areas", "StatisticalAreas", &[2]),
 ];
 
 /// Features asked for in one query (their areas can be big).
 const BATCH: usize = 50;
 
 fn get_json(c: &reqwest::blocking::Client, url: &str) -> Result<Value> {
-    let r = c.get(url).send().map_err(|e| Error::Http(e.to_string()))?;
+    let r = c.get(url).send().map_err(|e| Error::Http(why(&e)))?;
     if !r.status().is_success() {
         return Err(Error::Http(format!(
             "HTTP {} from {url}",
@@ -140,7 +150,7 @@ fn get_json(c: &reqwest::blocking::Client, url: &str) -> Result<Value> {
 
 /// The leaf layers of a map service: (id, name).
 fn service_layers(c: &reqwest::blocking::Client, base: &str) -> Result<Vec<(i64, String)>> {
-    let v = get_json(c, &format!("{base}/MapServer?f=json"))?;
+    let v = get_json(c, &format!("{base}/FeatureServer?f=json"))?;
     let mut out = Vec::new();
     for l in v["layers"].as_array().into_iter().flatten() {
         let group = l["subLayerIds"].as_array().is_some_and(|s| !s.is_empty());
@@ -273,11 +283,11 @@ pub fn mpi(
     std::fs::create_dir_all(&out_dir)?;
     let c = client()?;
     let mut sum = MpiSummary::default();
-    for (file, key, service) in MPI_SERVICES {
+    for (file, key, service, wanted) in MPI_SERVICES {
         if cancel.load(Ordering::Relaxed) {
             return Err(Error::Cancelled);
         }
-        match mpi_service(&c, file, key, service, &out_dir, progress, cancel) {
+        match mpi_service(&c, file, key, service, wanted, &out_dir, progress, cancel) {
             Ok((path, n)) => {
                 sum.files.push(path.to_string_lossy().into_owned());
                 sum.features += n;
@@ -300,12 +310,13 @@ fn mpi_service(
     file: &str,
     key: &str,
     service: &str,
+    wanted: &[i64],
     out_dir: &Path,
     progress: &(dyn Fn(&str, u64, u64) + Sync),
     cancel: &AtomicBool,
 ) -> Result<(PathBuf, usize)> {
     let base = format!("{}/{service}", mpi_base());
-    let layers = service_layers(c, &base)?;
+    let layers: Vec<(i64, String)> = service_layers(c, &base)?.into_iter().filter(|(id, _)| wanted.is_empty() || wanted.contains(id)).collect();
     // the regulations: the "all regulations" layer with its areas, the others just their members
     let all_layer = (key == "regs")
         .then(|| layers.iter().find(|(id, _)| *id == 0).map(|l| l.0))
@@ -314,7 +325,7 @@ fn mpi_service(
     let mut n = 0;
     for (k, (id, name)) in layers.iter().enumerate() {
         progress(service, k as u64, layers.len() as u64);
-        let url = format!("{base}/MapServer/{id}");
+        let url = format!("{base}/FeatureServer/{id}");
         let geometry = all_layer.is_none_or(|a| a == *id);
         let feats = layer_features(c, &url, geometry, cancel)?;
         if geometry {
@@ -399,18 +410,18 @@ mod tests {
         let members =
             json!({"features": [{"attributes": {"OBJECTID": 7, "Name": "A", "Identifier": "R1"}}]});
         // customary: a server that only does Esri JSON
-        let cust_layers = json!({"layers": [{"id": 3, "name": "Mataitai"}]});
+        let cust_layers = json!({"layers": [{"id": 1, "name": "Mataitai Reserves"}, {"id": 3, "name": "Mataitai Reserve Coordinates"}]});
         let cust = json!({"features": [{"attributes": {"OBJECTID": 5, "Name": "M"}, "geometry": {"rings": [[[173.0, -41.0], [173.0, -40.9], [173.1, -40.9], [173.0, -41.0]]]}}]});
         let base = serve(vec![
-            ("CommercialFishingRegulations/MapServer?f=json", regs_layers.to_string()),
-            ("CommercialFishingRegulations/MapServer/0/query?where", json!({"objectIds": [2, 1]}).to_string()),
-            ("CommercialFishingRegulations/MapServer/0/query?objectIds=1,2", all.to_string()),
-            ("CommercialFishingRegulations/MapServer/17/query?where", json!({"objectIds": [7]}).to_string()),
-            ("CommercialFishingRegulations/MapServer/17/query?objectIds=7", members.to_string()),
-            ("RestrictionsCustomary/MapServer?f=json", cust_layers.to_string()),
-            ("RestrictionsCustomary/MapServer/3/query?where", json!({"objectIds": [5]}).to_string()),
-            ("RestrictionsCustomary/MapServer/3/query?objectIds=5&outFields=*&returnGeometry=true&outSR=4326&geometryPrecision=7&f=geojson", json!({"error": {"message": "no geojson"}}).to_string()),
-            ("RestrictionsCustomary/MapServer/3/query?objectIds=5&outFields=*&returnGeometry=true&outSR=4326&geometryPrecision=7&f=json", cust.to_string()),
+            ("CommercialFishing/FeatureServer?f=json", regs_layers.to_string()),
+            ("CommercialFishing/FeatureServer/0/query?where", json!({"objectIds": [2, 1]}).to_string()),
+            ("CommercialFishing/FeatureServer/0/query?objectIds=1,2", all.to_string()),
+            ("CommercialFishing/FeatureServer/17/query?where", json!({"objectIds": [7]}).to_string()),
+            ("CommercialFishing/FeatureServer/17/query?objectIds=7", members.to_string()),
+            ("Customary_Restrictions/FeatureServer?f=json", cust_layers.to_string()),
+            ("Customary_Restrictions/FeatureServer/1/query?where", json!({"objectIds": [5]}).to_string()),
+            ("Customary_Restrictions/FeatureServer/1/query?objectIds=5&outFields=*&returnGeometry=true&outSR=4326&geometryPrecision=7&f=geojson", json!({"error": {"message": "no geojson"}}).to_string()),
+            ("Customary_Restrictions/FeatureServer/1/query?objectIds=5&outFields=*&returnGeometry=true&outSR=4326&geometryPrecision=7&f=json", cust.to_string()),
         ]);
         std::env::set_var("RACENAV_MPI_URL", &base);
         let dir = std::env::temp_dir().join(format!("tp_mpi_{}", std::process::id()));

@@ -538,8 +538,28 @@ fn rule_flags(
         b("Temporary_").max(b("Temporary")),
         b("SpeciesProhibition"),
     ];
-    for (name, _, _) in GEAR {
-        f.push(b(name));
+    // MPI's method codes (voluntary closures): "BT, BPT, MW, MPT, SN"
+    let codes: Vec<String> = text(props, "MethodCode").split([',', ' ', ';', '/']).filter(|c| !c.is_empty()).map(|c| c.to_ascii_uppercase()).collect();
+    let coded = |short: &str| -> bool {
+        let names: &[&str] = match short {
+            "bt" => &["BT", "BPT", "TRAWL"],
+            "mt" => &["MW", "MPT", "MWT", "TRAWL"],
+            "ds" => &["DS"],
+            "ps" => &["PS", "RN"],
+            "bs" => &["BS", "DN"],
+            "sn" => &["SN", "SETNET"],
+            "ll" => &["BLL", "SLL", "LL", "DL", "TL"],
+            "pt" => &["RLP", "CP", "FP", "POT"],
+            "dr" => &["D", "DR", "DREDGE"],
+            "tr" => &["T", "TR", "TROLL"],
+            "hl" => &["HL", "H"],
+            "hd" => &["DI", "DV", "HAND"],
+            _ => &[],
+        };
+        codes.iter().any(|c| names.contains(&c.as_str()) || c == "ALL")
+    };
+    for (name, short, _) in GEAR {
+        f.push((b(name) == 1 || coded(short)) as i64);
     }
     f
 }
@@ -567,7 +587,7 @@ fn build_rules(jsons: &[PathBuf], out: &Path) -> Result<(), ChartError> {
                     let lname = l["name"].as_str().unwrap_or("").to_string();
                     for f in l["features"]["features"].as_array().into_iter().flatten() {
                         let props = f["properties"].as_object().cloned().unwrap_or_default();
-                        let code = ["Name", "FMA", "STAT_AREA", "StatArea", "Code", "Identifier"]
+                        let code = ["FmaId", "StatisticalAreaCode", "Name", "FMA", "STAT_AREA", "StatArea", "Code", "Identifier"]
                             .iter()
                             .map(|n| text(&props, n))
                             .find(|s| !s.is_empty())
@@ -733,9 +753,8 @@ fn regs_rules(layers: &[Value]) -> Vec<Rule> {
         if !seen.insert((key, f["geometry"].to_string().len())) {
             return;
         }
-        let prohib = cats
-            .iter()
-            .any(|(id, n)| *id == 1 || n.to_ascii_lowercase().contains("prohibition"));
+        let prohib = cats.iter().any(|(id, n)| *id == 1 || n.to_ascii_lowercase().contains("prohibition"))
+            || text(&props, "Name").to_ascii_lowercase().contains(" prohibited");
         let v46 = cats.iter().any(|(id, n)| *id == 18 || n.contains("46"));
         out.push(Rule {
             flags: rule_flags(1, &props, prohib, v46),
