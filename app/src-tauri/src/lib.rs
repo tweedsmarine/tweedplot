@@ -2196,11 +2196,11 @@ fn rule_info(rid: i64) -> Option<serde_json::Value> {
 async fn hires_plan(app: tauri::AppHandle, area: [f64; 4]) -> Result<serde_json::Value, String> {
     let dir = hires_dir(&app);
     tauri::async_runtime::spawn_blocking(move || {
-        let names = chart::hires::tile_names(area);
+        let names = chart::hires::file_names(area);
         let av = gribdl::coastal::available(&dir).map_err(|e| e.to_string())?;
         let there: Vec<&String> = names.iter().filter(|n| av.contains_key(*n)).collect();
         let have = there.iter().filter(|n| dir.join(format!("{n}.tiff")).exists()).count();
-        Ok(serde_json::json!({ "tiles": names.len(), "available": there.len(), "have": have }))
+        Ok(serde_json::json!({ "tiles": names.iter().filter(|n| n.len() == 4).count(), "available": there.len(), "have": have }))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -2213,7 +2213,7 @@ async fn hires_download(app: tauri::AppHandle, area: [f64; 4]) -> Result<usize, 
     let dir = hires_dir(&app);
     let h = app.clone();
     let r = tauri::async_runtime::spawn_blocking(move || {
-        let names = chart::hires::tile_names(area);
+        let names = chart::hires::file_names(area);
         let av = gribdl::coastal::available(&dir).map_err(|e| e.to_string())?;
         let want: Vec<(String, String)> = names.into_iter().filter_map(|n| av.get(&n).map(|p| (n, p.clone()))).filter(|(n, _)| !dir.join(format!("{n}.tiff")).exists()).collect();
         if want.len() > 60 {

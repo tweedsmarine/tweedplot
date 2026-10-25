@@ -6,8 +6,9 @@
 //! are deeper than charted depths by roughly half the tidal range. Above 0 m is left
 //! clear (the charts show the land and drying areas).
 //!
-//! The tiles' names give where they are: LINZ's 1:10 000 tiles of the Topo50 sheets
-//! (`BQ31_10000_0401`: sheet BQ31, row 4, column 1), each 4800 m × 7200 m.
+//! LINZ's national collection holds one file per Topo50 sheet (`BQ31`, 24 km × 36 km);
+//! the survey collections hold the sheets' 1:10 000 tiles (`BQ31_10000_0401`: sheet
+//! BQ31, row 4, column 1), each 4800 m × 7200 m. Either kind is read the same way.
 
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
@@ -89,6 +90,21 @@ pub fn tile_names(area: [f64; 4]) -> Vec<String> {
             out.push(format!("{l1}{l2}{sheet_col:02}_10000_{tr:02}{tc:02}"));
         }
     }
+    out
+}
+
+/// The Topo50 sheets and their 1:10 000 tiles covering an area [w, s, e, n]: the names
+/// the files may have, sheets first.
+pub fn file_names(area: [f64; 4]) -> Vec<String> {
+    let tiles = tile_names(area);
+    let mut out: Vec<String> = Vec::new();
+    for t in &tiles {
+        let s = &t[..4];
+        if !out.iter().any(|o| o == s) {
+            out.push(s.to_string());
+        }
+    }
+    out.extend(tiles);
     out
 }
 
@@ -446,6 +462,9 @@ mod tests {
         let names = tile_names([173.25, -41.3, 173.32, -41.24]);
         assert!((2..=12).contains(&names.len()), "{names:?}");
         assert!(names.iter().all(|n| tile_bounds(n).is_some()));
+        let files = file_names([173.25, -41.3, 173.32, -41.24]);
+        assert!(files.iter().any(|n| n == "BQ26" || n == "BQ27"));
+        assert_eq!(files.len(), names.len() + files.iter().filter(|n| n.len() == 4).count());
     }
 
     #[test]
@@ -494,5 +513,49 @@ mod tests {
         assert!(h.tile_png(17, tx + 50, ty).is_none());
         assert!(h.tile_png(8, tx >> 9, ty >> 9).is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod real {
+    /// `RACENAV_TEST_SHEET=/path/BQ26.tiff cargo test -p chart real_sheet -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn real_sheet() {
+        let p = std::path::PathBuf::from(std::env::var("RACENAV_TEST_SHEET").unwrap());
+        let c = crate::cog::Cog::open(&p).unwrap();
+        println!("bounds {:?} levels {}", c.bounds(), c.levels.len());
+        for (i, l) in c.levels.iter().enumerate() {
+            let used = l.counts.iter().filter(|&&n| n > 0).count();
+            println!("level {i}: {}x{} tiles {}x{} with data {used}", l.width, l.height, l.tiles_x(), l.tiles_y());
+            for (k, _) in l.counts.iter().enumerate().filter(|(_, &n)| n > 0) {
+                let r = c.tile(i, k % l.tiles_x(), k / l.tiles_x()).unwrap();
+                let v: Vec<f32> = (0..r.data.len()).filter(|&j| r.valid.as_ref().map_or(true, |m| m[j])).map(|j| r.data[j]).collect();
+                let (mn, mx) = v.iter().fold((f32::MAX, f32::MIN), |a, &x| (a.0.min(x), a.1.max(x)));
+                println!("  tile {k}: {} valid, {mn}..{mx}", v.len());
+            }
+        }
+        let h = super::Hires::open(p.parent().unwrap());
+        let mut drawn = 0;
+        let cov = h.coverage();
+        println!("{cov:?}");
+        for z in [10u8, 12, 14] {
+            let b = cov[0].1;
+            let n = (1u64 << z) as f64;
+            let tx = |lon: f64| ((lon + 180.0) / 360.0 * n) as u32;
+            let ty = |lat: f64| {
+                let r = lat.to_radians();
+                ((1.0 - (r.tan() + 1.0 / r.cos()).ln() / std::f64::consts::PI) / 2.0 * n) as u32
+            };
+            for x in tx(b[0])..=tx(b[2]) {
+                for y in ty(b[3])..=ty(b[1]) {
+                    if h.tile_png(z, x, y).is_some() {
+                        drawn += 1;
+                    }
+                }
+            }
+            println!("z{z}: {drawn} tiles drawn so far");
+        }
+        assert!(drawn > 0);
     }
 }

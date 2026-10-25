@@ -105,7 +105,7 @@ export function setupData(map, { toast, reloadTiles } = {}) {
       const p = await invoke("hires_plan", { area });
       if (me !== hrPlanning) return;
       $("data-hr-plan").textContent = p.available === 0 ? "No high-resolution depths here (not surveyed yet)."
-        : `Chart view: ${p.available} tile${p.available === 1 ? "" : "s"}${p.have ? `, ${p.have} downloaded` : ""} (each 4.8 × 7.2 km, typically 5–40 MB).`;
+        : `Chart view: ${p.available} tile${p.available === 1 ? "" : "s"}${p.have ? `, ${p.have} downloaded` : ""} (Topo50 sheets, each 24 × 36 km; size depends on how much was surveyed).`;
       $("data-hr").disabled = busy || p.available === p.have;
     } catch (e) {
       if (me === hrPlanning) $("data-hr-plan").textContent = `Can't look up the tiles: ${e}`;

@@ -48,7 +48,7 @@ pub struct Level {
     pub tile_w: usize,
     pub tile_h: usize,
     offsets: Vec<u64>,
-    counts: Vec<u64>,
+    pub(crate) counts: Vec<u64>,
     compression: u16,
     /// LERC's extra compression (LercParameters): 0 none, 1 deflate, 2 zstd.
     lerc_extra: u32,
