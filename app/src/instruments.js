@@ -3,6 +3,8 @@
 // "alarm") that styles the tile, ready for user-set warnings and alarms later.
 
 import { rhumb } from "./navmath.js";
+import { VIEWS } from "./views.js";
+import { columns, spanFromDrag, cleanSpan, moveReading, dropIndex, CELL, ROW } from "./gridmath.js";
 
 const KEY = "racenav.instruments";
 const STALE_S = 10;
@@ -377,6 +379,19 @@ export function setupInstruments() {
   let ctx = { v: {}, now: Date.now(), age: Infinity, safetyDepth: 3 };
 
   function save() { try { localStorage.setItem(KEY, JSON.stringify(layout)); } catch { /* ignore */ } }
+  const view = () => document.documentElement.dataset.view || "plan";
+  // a panel without a list of views shows in every view; a man overboard shows everywhere
+  const inView = (p) => p.mob || !p.views || p.views.includes(view());
+  window.addEventListener("racenav-view", () => build());
+  // another window (a monitor, or the main window) changed the shared layout
+  window.addEventListener("storage", (e) => {
+    if (e.key !== KEY || !e.newValue) return;
+    layout = loadLayout();
+    build();
+  });
+  // position and size are kept per view: the chart overlay and the instruments screen differ
+  const geo = (p) => p.vp?.[view()] ?? p;
+  const own = (p) => { p.vp ??= {}; return (p.vp[view()] ??= { x: p.x, y: p.y }); };
 
   // ---------- build ----------------------------------------------------------
   function build() {
@@ -384,9 +399,32 @@ export function setupInstruments() {
     root.classList.toggle("locked", !!layout.locked);
     root.hidden = !!layout.hideAll;
     for (const p of layout.panels) {
-      if (p.hidden) continue;
+      if (p.hidden || !inView(p)) continue;
       const el = document.createElement("div");
-      el.className = `ipanel ${p.collapsed ? "row collapsed" : p.dir} ${p.size}`;
+      const g = geo(p);
+      // a panel holding the highway is always a free grid: its fixed size would be far too big
+      const hasHw = p.tiles.some((k) => ITEMS[k]?.highway);
+      const avail = Math.max(120, window.innerHeight - (parseInt(getComputedStyle(document.documentElement).getPropertyValue("--dock-h")) || 0) - 8);
+      const gw = g.w > 0 ? g.w : hasHw ? 420 : 0;
+      const free = !p.collapsed && gw > 0;
+      el.className = `ipanel ${p.collapsed ? "row collapsed" : free ? "free" : p.dir} ${p.size}`;
+      if (free) {
+        const maxW = Math.max(80, window.innerWidth - rail.getBoundingClientRect().right);
+        const w = Math.min(gw, maxW);
+        const cols = columns(w, p.size);
+        const base = ROW[p.size] ?? ROW.m;
+        // default spans: the highway fills the panel's width, three rows tall
+        p.span = p.tiles.map((k, i) => p.span?.[i] ?? (ITEMS[k]?.highway ? [cols, 3] : null));
+        const area = p.tiles.reduce((n, _, i) => { const [c, r] = cleanSpan(p.span[i]); return n + Math.min(c, cols) * r; }, 0);
+        const rows = Math.max(1, Math.ceil(area / cols));
+        // too many rows for the screen: make the rows shorter, never taller than the screen
+        const rh = Math.max(28, Math.min(base, Math.floor((avail - 24 - rows * 3) / rows)));
+        el.style.width = `${w}px`;
+        el.style.maxHeight = `${avail}px`;
+        if (g.h > 0) el.style.minHeight = `${Math.min(g.h, avail)}px`;
+        el.style.setProperty("--cols", cols);
+        el.style.setProperty("--rh", `${rh}px`);
+      }
       el.dataset.id = p.id;
       const grip = document.createElement("div");
       grip.className = "grip";
@@ -408,8 +446,28 @@ export function setupInstruments() {
         t.className = `tile ${p.size}${it?.wide ? " wide" : ""}${it?.graphic ? " graphic" : ""}${it?.highway ? " highway-card" : ""}`;
         t.dataset.i = i;
         t.innerHTML = `<div class="lbl"><span>${it ? it.label : key}</span><span class="sd"></span></div><div class="v">—</div>`;
+        const sp = cleanSpan(p.span?.[i]);
+        if (free) {
+          const cs = Math.min(sp[0], Number(el.style.getPropertyValue("--cols")) || sp[0]);
+          if (cs > 1) t.style.gridColumn = `span ${cs}`;
+          if (sp[1] > 1) t.style.gridRow = `span ${sp[1]}`;
+          if (!layout.locked) {
+            const h = document.createElement("div");
+            h.className = "trsz";
+            h.title = "Drag to make this reading span more or fewer cells";
+            h.addEventListener("click", (e) => e.stopPropagation());
+            t.append(h);
+          }
+        }
         el.append(t);
       });
+      if (!p.collapsed && !layout.locked) {
+        const h = document.createElement("div");
+        h.className = "prsz";
+        h.title = "Drag to resize this panel; the readings re-flow to fit";
+        el.append(h);
+        resizePanel(el, h, p);
+      }
       root.append(el);
       place(el, p);
       dragByGrip(el, grip, p);
@@ -424,8 +482,9 @@ export function setupInstruments() {
     const minX = rail.getBoundingClientRect().right;
     // keep clear of the dock at the bottom when it is open
     const dockH = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--dock-h")) || 0;
-    const x = Math.max(minX, Math.min(Math.max(minX, W - w), p.x * W));
-    const y = Math.max(0, Math.min(H - dockH - h, p.y * H));
+    const gg = geo(p);
+    const x = Math.max(minX, Math.min(Math.max(minX, W - w), gg.x * W));
+    const y = Math.max(0, Math.min(H - dockH - h, gg.y * H));
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
   }
@@ -460,7 +519,8 @@ export function setupInstruments() {
         if (W - (x + r.width) < 12) x = W - r.width;
         if (H - (y + r.height) < 12) y = H - r.height;
         x = Math.max(minX, Math.min(Math.max(minX, W - r.width), x));
-        p.x = x / W; p.y = y / H;
+        const o = own(p);
+        o.x = x / W; o.y = y / H;
         place(el, p);
       };
       const up = () => {
@@ -474,6 +534,145 @@ export function setupInstruments() {
       grip.addEventListener("pointermove", move);
       grip.addEventListener("pointerup", up);
     });
+  }
+
+  // Resize a panel from its corner: the width sets how many columns of readings fit.
+  function resizePanel(el, handle, p) {
+    handle.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handle.setPointerCapture(e.pointerId);
+      const r = el.getBoundingClientRect();
+      const x0 = e.clientX, y0 = e.clientY;
+      el.classList.add("free");
+      el.style.setProperty("--rh", `${ROW[p.size] ?? ROW.m}px`);
+      const limit = () => ({
+        w: Math.max(60, Math.min(window.innerWidth - r.left, r.width + (lastX - x0))),
+        h: Math.max(40, Math.min(window.innerHeight - 8 - r.top, r.height + (lastY - y0))),
+      });
+      let lastX = x0, lastY = y0;
+      const move = (ev) => {
+        lastX = ev.clientX; lastY = ev.clientY;
+        const s = limit();
+        el.style.width = `${s.w}px`;
+        el.style.minHeight = `${s.h}px`;
+        el.style.setProperty("--cols", columns(s.w, p.size));
+      };
+      const up = () => {
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", up);
+        const s = limit();
+        const o = own(p);
+        o.w = Math.round(s.w); o.h = Math.round(s.h);
+        save(); build();
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", up);
+    });
+  }
+
+  // A reading's corner handle sets how many columns and rows it covers; dragging
+  // the reading itself moves it to another place in this panel or in another one.
+  let swallowClick = false;
+  root.addEventListener("click", (e) => { if (swallowClick) { swallowClick = false; e.stopPropagation(); e.preventDefault(); } }, true);
+  root.addEventListener("pointerdown", (e) => {
+    if (layout.locked || e.button > 0) return;
+    const t = e.target.closest(".tile");
+    if (!t) return;
+    const p = panel(t.parentElement.dataset.id);
+    const i = Number(t.dataset.i);
+    if (!p) return;
+    if (e.target.closest(".trsz")) return startTileResize(e, t, p, i);
+    startTileDrag(e, t, p, i);
+  });
+
+  function startTileResize(e, t, p, i) {
+    e.preventDefault();
+    e.stopPropagation();
+    const h = e.target;
+    h.setPointerCapture(e.pointerId);
+    const r = t.getBoundingClientRect();
+    const [c0, r0] = cleanSpan(p.span?.[i]);
+    const x0 = e.clientX, y0 = e.clientY;
+    let cur = [c0, r0];
+    const move = (ev) => {
+      cur = [spanFromDrag(r.width, ev.clientX - x0, r.width / c0), spanFromDrag(r.height, ev.clientY - y0, r.height / r0)];
+      t.style.gridColumn = `span ${cur[0]}`;
+      t.style.gridRow = `span ${cur[1]}`;
+    };
+    const up = () => {
+      h.removeEventListener("pointermove", move);
+      h.removeEventListener("pointerup", up);
+      p.span = p.tiles.map((_, k) => (k === i ? cur : cleanSpan(p.span?.[k])));
+      save(); build();
+    };
+    h.addEventListener("pointermove", move);
+    h.addEventListener("pointerup", up);
+  }
+
+  function startTileDrag(e, t, p, i) {
+    const x0 = e.clientX, y0 = e.clientY;
+    let dragging = false, mark = null, place_ = null;
+    const clear = () => { mark?.classList.remove("drop-before", "drop-after"); mark = null; };
+    const target = (ev) => {
+      const u = document.elementFromPoint(ev.clientX, ev.clientY);
+      const tt = u?.closest?.(".tile");
+      if (tt && root.contains(tt) && tt !== t) {
+        const q = panel(tt.parentElement.dataset.id);
+        const b = tt.getBoundingClientRect();
+        const wide = !tt.parentElement.classList.contains("column");
+        return { el: tt, q, idx: dropIndex(Number(tt.dataset.i), (ev.clientX - b.left) / b.width, (ev.clientY - b.top) / b.height, wide) };
+      }
+      const pe = u?.closest?.(".ipanel");
+      if (pe && root.contains(pe) && !tt) {
+        const q = panel(pe.dataset.id);
+        return q && !q.collapsed ? { el: null, q, idx: q.tiles.length } : null;
+      }
+      return null;
+    };
+    const move = (ev) => {
+      if (!dragging) {
+        if (Math.abs(ev.clientX - x0) + Math.abs(ev.clientY - y0) < 8) return;
+        dragging = true;
+        t.classList.add("dragging");
+      }
+      clear();
+      place_ = target(ev);
+      if (place_?.el) {
+        mark = place_.el;
+        mark.classList.add(place_.idx > Number(mark.dataset.i) ? "drop-after" : "drop-before");
+      }
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      clear();
+      t.classList.remove("dragging");
+      if (!dragging) return;
+      swallowClick = true;
+      setTimeout(() => { swallowClick = false; }, 50);
+      if (!place_) return;
+      const { q, idx } = place_;
+      if (q === p) {
+        const to = idx > i ? idx - 1 : idx;
+        if (to === i) return;
+        const m = moveReading(p.tiles, p.span, i, to);
+        p.tiles = m.tiles; p.span = m.spans;
+      } else {
+        const key = p.tiles[i], sp = p.span?.[i] ?? null;
+        p.tiles.splice(i, 1);
+        if (p.span) p.span.splice(i, 1);
+        q.span = q.tiles.map((_, k) => q.span?.[k] ?? null);
+        q.tiles.splice(idx, 0, key);
+        q.span.splice(idx, 0, sp);
+        if (!p.tiles.length) layout.panels = layout.panels.filter((x) => x !== p);
+      }
+      save(); build();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   }
 
   // ---------- values ----------------------------------------------------------
@@ -510,8 +709,33 @@ export function setupInstruments() {
         t.classList.toggle("stale", stale);
         t.classList.toggle("warn", state === "warn");
         t.classList.toggle("alarm", state === "alarm");
+        if (it.highway && el.classList.contains("free")) fitHighway(v);
+        else if (!it.graphic && el.classList.contains("free")) fitText(t, v);
       }
     }
+  }
+  /** Grow or shrink a reading's text to fill its tile (measured at 100 px, then scaled). */
+  function fitText(t, v) {
+    const key = `${v.innerHTML}|${t.clientWidth}|${t.clientHeight}`;
+    if (t._fit === key) return;
+    const lbl = t.querySelector(".lbl");
+    const availW = t.clientWidth - 18;
+    const availH = t.clientHeight - (lbl ? lbl.offsetHeight : 0) - 10;
+    if (availW <= 0 || availH <= 0) return;
+    v.style.fontSize = "100px";
+    v.style.width = "max-content";
+    const r = v.getBoundingClientRect();
+    v.style.width = "";
+    const k = Math.min(availW / Math.max(1, r.width), availH / Math.max(1, r.height));
+    v.style.fontSize = `${Math.max(8, Math.min(400, Math.floor(k * 100)))}px`;
+    t._fit = key;
+  }
+  /** Scale the highway's drawing, laid out at its design size, to fill its cell. */
+  function fitHighway(v) {
+    const d = v.querySelector(".hw-dashboard");
+    if (!d || !v.clientWidth || !v.clientHeight) return;
+    const k = Math.min(v.clientWidth / 680, v.clientHeight / 470);
+    d.style.transform = `translate(${((v.clientWidth - 680 * k) / 2).toFixed(1)}px, ${((v.clientHeight - 470 * k) / 2).toFixed(1)}px) scale(${k.toFixed(4)})`;
   }
   setInterval(() => { ctx.age = (Date.now() - (ctx.dataAt ?? 0)) / 1000; render(); }, 250);
 
@@ -534,7 +758,9 @@ export function setupInstruments() {
     }
     html += `<hr><button data-act="add">Add a reading after this one</button><button data-act="remove">Remove this reading</button>`;
     html += `<hr><div class="grp">This panel</div><div class="sizes">${["s", "m", "l"].map((s) => `<button data-size="${s}" class="${p.size === s ? "cur" : ""}">${{ s: "Small", m: "Medium", l: "Large" }[s]}</button>`).join("")}</div>`;
-    html += `<button data-act="dir">${p.dir === "row" ? "Stack vertically" : "Lay out horizontally"}</button><button data-act="delpanel">Remove panel</button>`;
+    html += `<button data-act="dir">${p.dir === "row" ? "Stack vertically" : "Lay out horizontally"}</button>`;
+    if (geo(p).w > 0 || p.span?.some(Boolean)) html += `<button data-act="auto">Automatic size and spans</button>`;
+    html += `<button data-act="delpanel">Remove panel</button>`;
     menu.innerHTML = html;
     menu.hidden = false;
     // keep it on screen
@@ -549,9 +775,10 @@ export function setupInstruments() {
       if (!b) return;
       if (b.dataset.set) p.tiles[i] = b.dataset.set;
       if (b.dataset.size) p.size = b.dataset.size;
-      if (b.dataset.act === "add") p.tiles.splice(i + 1, 0, cur);
-      if (b.dataset.act === "remove") { p.tiles.splice(i, 1); if (!p.tiles.length) layout.panels = layout.panels.filter((x) => x !== p); }
-      if (b.dataset.act === "dir") p.dir = p.dir === "row" ? "column" : "row";
+      if (b.dataset.act === "add") { p.tiles.splice(i + 1, 0, cur); p.span?.splice(i + 1, 0, null); }
+      if (b.dataset.act === "remove") { p.tiles.splice(i, 1); p.span?.splice(i, 1); if (!p.tiles.length) layout.panels = layout.panels.filter((x) => x !== p); }
+      if (b.dataset.act === "dir") { p.dir = p.dir === "row" ? "column" : "row"; if (p.vp?.[view()]) { delete p.vp[view()].w; delete p.vp[view()].h; } }
+      if (b.dataset.act === "auto") { const o = p.vp?.[view()]; if (o) { delete o.w; delete o.h; } p.span = undefined; }
       if (b.dataset.act === "delpanel") layout.panels = layout.panels.filter((x) => x !== p);
       menu.hidden = true;
       save();
@@ -573,13 +800,34 @@ export function setupInstruments() {
     if (!layout.panels.length) ul.innerHTML = `<li class="empty">No panels. Add one.</li>`;
     layout.panels.forEach((p, k) => {
       const li = document.createElement("li");
-      li.innerHTML = `<input type="checkbox" title="Show this panel"><div class="main"><b>Panel ${k + 1}</b><small></small></div><button data-act="fold">${p.collapsed ? "Open" : "Fold"}</button><button data-act="dir">${p.dir === "row" ? "Vertical" : "Horizontal"}</button><button data-act="del">Remove</button>`;
+      li.innerHTML = `<input type="checkbox" title="Show this panel"><div class="main"><input type="text" class="pname" maxlength="40" title="Rename this group of instruments"><small></small><div class="pviews"></div></div><button data-act="fold">${p.collapsed ? "Open" : "Fold"}</button><button data-act="dir">${p.dir === "row" ? "Vertical" : "Horizontal"}</button><button data-act="del">Remove</button>`;
+      const nm = li.querySelector(".pname");
+      nm.value = p.name || "";
+      nm.placeholder = `Panel ${k + 1}`;
+      nm.onclick = (e) => e.stopPropagation();
+      nm.onchange = () => { p.name = nm.value.trim() || undefined; save(); build(); };
+      const pv = li.querySelector(".pviews");
+      for (const v of VIEWS) {
+        const lab = document.createElement("label");
+        lab.title = `Show this group in the ${v.name} view`;
+        const c = document.createElement("input");
+        c.type = "checkbox";
+        c.checked = !p.views || p.views.includes(v.id);
+        c.onchange = () => {
+          const set = new Set(p.views ?? VIEWS.map((x) => x.id));
+          if (c.checked) set.add(v.id); else set.delete(v.id);
+          p.views = VIEWS.map((x) => x.id).filter((id) => set.has(id));
+          save(); build();
+        };
+        lab.append(c, ` ${v.name}`);
+        pv.append(lab);
+      }
       li.querySelector('[data-act="fold"]').onclick = () => toggleCollapsed(p);
       const cb = li.querySelector("input");
       cb.checked = !p.hidden;
       cb.onchange = () => { p.hidden = !cb.checked; save(); build(); };
       li.querySelector("small").textContent = p.tiles.map((t) => ITEMS[t]?.label ?? t).join(", ");
-      li.querySelector('[data-act="dir"]').onclick = () => { p.dir = p.dir === "row" ? "column" : "row"; save(); build(); };
+      li.querySelector('[data-act="dir"]').onclick = () => { p.dir = p.dir === "row" ? "column" : "row"; const o = p.vp?.[view()]; if (o) { delete o.w; delete o.h; } save(); build(); };
       li.querySelector('[data-act="del"]').onclick = () => { layout.panels.splice(k, 1); save(); build(); };
       ul.append(li);
     });
@@ -626,8 +874,9 @@ export function setupInstruments() {
 }
 
 function loadLayout() {
+  let l = null;
   try {
-    const l = JSON.parse(localStorage.getItem(KEY) || "null");
+    l = JSON.parse(localStorage.getItem(KEY) || "null");
     if (l && l.v === 1 && Array.isArray(l.panels)) {
       // panels added in later versions appear once in an existing layout
       l.added ??= [];
@@ -636,10 +885,28 @@ function loadLayout() {
       if (!l.added.includes("sea")) { l.panels.push(structuredClone(SEA_PANEL)); l.added.push("sea"); }
       if (!l.added.includes("mob")) { l.panels.push(structuredClone(MOB_PANEL)); l.added.push("mob"); }
       if (!l.added.includes("highway")) { l.panels.push(structuredClone(HIGHWAY_PANEL)); l.added.push("highway"); }
-      return l;
-    }
+    } else l = null;
+  } catch { l = null; }
+  l ??= structuredClone(DEFAULT_LAYOUT);
+  addCockpitGroup(l);
+  return l;
+}
+
+/** The old cockpit window's readings become a group for the Instruments view, once. */
+function addCockpitGroup(l) {
+  l.added ??= [];
+  if (l.added.includes("cockpit")) return;
+  l.added.push("cockpit");
+  try {
+    const old = JSON.parse(localStorage.getItem("racenav.cockpit") || "null");
+    const tiles = (old?.tiles ?? []).filter((k) => ITEMS[k]);
+    if (!tiles.length) return;
+    const cols = Math.max(1, Math.min(5, Number(old.cols) || 3));
+    l.panels.push({
+      id: "pck", x: 0.03, y: 0.04, dir: "row", size: "l", name: "Cockpit", views: ["inst"], tiles,
+      vp: { inst: { x: 0.03, y: 0.04, w: Math.round(cols * CELL.l) } },
+    });
   } catch { /* ignore */ }
-  return structuredClone(DEFAULT_LAYOUT);
 }
 
 function hm(s) {

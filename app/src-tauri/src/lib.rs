@@ -2101,25 +2101,72 @@ fn chart_feature(t: usize, fid: i64) -> Option<serde_json::Value> {
     }))
 }
 
-/// Open (or bring forward) the cockpit window: large readings for a second screen.
+/// Open a monitor window showing `view` (any number can be open at once): a second screen
+/// for instruments now, radar or sounder views later. Returns the new window's label.
 /// Async: on Windows a window made from a synchronous command deadlocks and stays blank.
 #[tauri::command]
-async fn cockpit_open(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(w) = app.get_webview_window("cockpit") {
-        let _ = w.unminimize();
-        return w.set_focus().map_err(|e| e.to_string());
+async fn monitor_open(
+    app: tauri::AppHandle,
+    view: String,
+    label: Option<String>,
+) -> Result<String, String> {
+    if !view.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') || view.is_empty() {
+        return Err("unknown view".into());
     }
+    // a window that was open before comes back under the same label, so it keeps its colours and place
+    let wanted = label
+        .and_then(|l| l.strip_prefix("monitor-").and_then(|n| n.parse::<u32>().ok()))
+        .filter(|n| *n > 0 && app.get_webview_window(&format!("monitor-{n}")).is_none());
+    let n = wanted.unwrap_or_else(|| {
+        (1u32..)
+            .find(|n| app.get_webview_window(&format!("monitor-{n}")).is_none())
+            .unwrap_or(1)
+    });
+    let label = format!("monitor-{n}");
     tauri::WebviewWindowBuilder::new(
         &app,
-        "cockpit",
-        tauri::WebviewUrl::App("cockpit.html".into()),
+        &label,
+        tauri::WebviewUrl::App(format!("index.html?view={view}").into()),
     )
-    .title("TweedPlot cockpit")
+    .title(format!("TweedPlot monitor {n}"))
     .inner_size(1024.0, 640.0)
     .min_inner_size(320.0, 240.0)
     .build()
-    .map(|_| ())
+    .map(|_| label)
     .map_err(|e| e.to_string())
+}
+
+/// The monitor windows that are open, by label, in number order.
+#[tauri::command]
+fn monitor_list(app: tauri::AppHandle) -> Vec<String> {
+    let mut labels: Vec<String> = app
+        .webview_windows()
+        .into_keys()
+        .filter(|l| l.starts_with("monitor-"))
+        .collect();
+    labels.sort_by_key(|l| l[8..].parse::<u32>().unwrap_or(u32::MAX));
+    labels
+}
+
+/// Bring a monitor window forward.
+#[tauri::command]
+async fn monitor_focus(app: tauri::AppHandle, label: String) -> Result<(), String> {
+    let w = app
+        .get_webview_window(&label)
+        .filter(|_| label.starts_with("monitor-"))
+        .ok_or("no such window")?;
+    let _ = w.unminimize();
+    w.set_focus().map_err(|e| e.to_string())
+}
+
+/// Close a monitor window.
+#[tauri::command]
+async fn monitor_close(app: tauri::AppHandle, label: String) -> Result<(), String> {
+    let w = app
+        .get_webview_window(&label)
+        .filter(|_| label.starts_with("monitor-"))
+        .ok_or("no such window")?;
+    w.close().map_err(|e| e.to_string())
 }
 
 /// Charted vertical clearances (bridges, overhead cables) within `radius_m` of a point, nearest first.
@@ -2319,12 +2366,21 @@ fn queue_tile(path: String, responder: tauri::UriSchemeResponder) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // the main window is the app: closing it closes any monitor windows too
+        .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                window.app_handle().exit(0);
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             app_info,
             chart_info,
             chart_feature,
             chart_clearances,
-            cockpit_open,
+            monitor_open,
+        monitor_list,
+        monitor_focus,
+        monitor_close,
             tides_info,
             tides_stations,
             tides_curve,

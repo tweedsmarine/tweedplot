@@ -145,7 +145,7 @@ export function setupGribDownload(map, { weather, course }) {
       for (const h of [3, 6, 12, 24, 48, 72]) days.append(new Option(`last ${h} hours`, String(h)));
       days.value = String(prefs.himHours ?? 12);
     } else {
-      for (const d of (mur ? [1, 2, 3, 5, 7, 14] : [1, 2, 3, 5, 7, 8, 10, 16])) if (d * 24 <= m.max_hours) days.append(new Option(mur ? `last ${d} day${d > 1 ? "s" : ""}` : `${d} day${d > 1 ? "s" : ""}`, String(d)));
+      for (const d of (mur ? [1, 2, 3, 5, 7, 14] : [1, 2, 3, 5, 7, 8, 10, 12, 15, 16])) if (d * 24 <= m.max_hours) days.append(new Option(mur ? `last ${d} day${d > 1 ? "s" : ""}` : `${d} day${d > 1 ? "s" : ""}`, String(d)));
       days.value = String(Math.min(mur ? Math.min(prefs.days, 3) : prefs.days, 16));
     }
     if (!days.value) days.value = days.options[days.options.length - 1]?.value ?? "1";

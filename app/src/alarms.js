@@ -3,6 +3,8 @@
 // overhead cables, position lost, and the own man-overboard (MOB) button.
 // Other modules (AIS) raise their own through the returned `raise`/`clear`.
 import { invoke } from "@tauri-apps/api/core";
+import { emit, listen } from "@tauri-apps/api/event";
+import { PRIMARY } from "./role.js";
 import { distNm, bearing } from "./instruments.js";
 import { ddm } from "./navmath.js";
 
@@ -45,12 +47,28 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft, onMobMa
   try { Object.assign(s, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* storage unavailable */ }
   let mob = null;
   try { mob = JSON.parse(localStorage.getItem(KEY + ".mob") || "null"); } catch { /* ignore */ }
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(s)); localStorage.setItem(KEY + ".mob", JSON.stringify(mob)); } catch { /* ignore */ } };
+  // The primary window does the alarm work and keeps the MOB and anchor; the other windows
+  // show the alarms it publishes and send it their button presses (silence, MOB, anchor).
+  const command = (act, id) => emit("alarm-cmd", { act, id }).catch(() => {});
+  const save = () => {
+    try {
+      if (PRIMARY) {
+        localStorage.setItem(KEY, JSON.stringify(s));
+        localStorage.setItem(KEY + ".mob", JSON.stringify(mob));
+      } else {
+        const cur = JSON.parse(localStorage.getItem(KEY) || "{}");
+        localStorage.setItem(KEY, JSON.stringify({ ...s, anchor: cur.anchor ?? null }));
+      }
+    } catch { /* ignore */ }
+  };
   const sound = makeSound(() => s.volume);
 
   /** id → {level: "alarm"|"warn", text, detail, acked, since, onClick} */
   const active = new Map();
+  /** what a monitor window shows: the primary's alarms, as plain data */
+  let mirror = [];
   function raise(id, a) {
+    if (!PRIMARY) return;
     const old = active.get(id);
     if (old) {
       Object.assign(old, { ...a, acked: old.acked && old.level === a.level });
@@ -64,15 +82,28 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft, onMobMa
     if (active.delete(id)) render();
   }
   function ack(id) {
+    if (!PRIMARY) { command("ack", id); return; }
     const a = active.get(id);
     if (a) { a.acked = true; render(); }
+  }
+  const entries = () => (PRIMARY
+    ? [...active.entries()]
+    : mirror.map((a) => [a.id, { ...a,
+      dismiss: a.canDismiss ? () => (a.id === "mob" ? confirmMob(() => command("clearmob")) : command("dismiss", a.id)) : null,
+      onClick: a.focus ? () => map.easeTo({ center: a.focus, zoom: Math.max(map.getZoom(), 14) }) : null }]));
+  function publish() {
+    emit("alarm-state", [...active.entries()].map(([id, a]) => ({
+      id, level: a.level, text: a.text, detail: a.detail, acked: a.acked, since: a.since,
+      canDismiss: !!a.dismiss, dismissLabel: a.dismissLabel, dismissTitle: a.dismissTitle,
+      focus: id === "mob" && mob ? [mob.lon, mob.lat] : id === "anchor" && s.anchor ? [s.anchor.lon, s.anchor.lat] : null,
+    }))).catch(() => {});
   }
 
   // ---------- banner ----------------------------------------------------------------
   const banner = $("alarm-banner");
   function render() {
     banner.innerHTML = "";
-    const list = [...active.entries()].filter(([id, a]) => !a.acked || id === "mob")
+    const list = entries().filter(([id, a]) => !a.acked || id === "mob")
       .sort((a, b) => (a[1].level === b[1].level ? a[1].since - b[1].since : a[1].level === "alarm" ? -1 : 1));
     banner.hidden = !list.length;
     for (const [id, a] of list) {
@@ -86,14 +117,15 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft, onMobMa
       row.querySelector('[data-act="dismiss"]')?.addEventListener("click", () => a.dismiss());
       banner.append(row);
     }
+    if (PRIMARY) publish();
   }
   // sound again every few seconds until silenced
-  setInterval(() => {
+  if (PRIMARY) setInterval(() => {
     const loud = [...active.values()].filter((a) => !a.acked);
     if (loud.some((a) => a.level === "alarm")) sound.alarm();
     else if (loud.length && Date.now() % 12000 < 3000) sound.warn();
   }, 3000);
-
+  if (!PRIMARY) listen("alarm-state", ({ payload }) => { mirror = payload || []; render(); });
   // ---------- chart: anchor circle and MOB --------------------------------------------
   map.addSource("alarm-geo", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addLayer({ id: "alarm-anchor", type: "line", source: "alarm-geo", filter: ["==", ["get", "k"], "anchor"],
@@ -141,6 +173,12 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft, onMobMa
       toast(`Could not delete the MOB mark: ${error}`, 6000);
     }
   }
+  /** Clearing a MOB asks twice: the first press turns the button into "Sure?". */
+  function confirmMob(go) {
+    const btn = banner.querySelector(".alarm.alarm [data-act='dismiss']");
+    if (btn && btn.dataset.sure) go();
+    else if (btn) { btn.dataset.sure = "1"; btn.textContent = "Sure?"; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.sure; btn.textContent = "Clear MOB"; } }, 3000); }
+  }
   function clearMob() {
     const incident = mob;
     if (!incident) return;
@@ -164,16 +202,12 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft, onMobMa
       text: `MAN OVERBOARD ${fmtAgo(Date.now() - mob.t)} ago${brg != null ? ` · ${String(Math.round(brg)).padStart(3, "0")}°T ${dist}` : ""}`,
       detail: `${ddm(mob.lat, "N", "S")} ${ddm(mob.lon, "E", "W")} · click to show on the chart`,
       onClick: () => map.easeTo({ center: [mob.lon, mob.lat], zoom: Math.max(map.getZoom(), 14) }),
-      dismiss: () => {
-        const btn = banner.querySelector(".alarm.alarm [data-act='dismiss']");
-        if (btn && btn.dataset.sure) clearMob();
-        else if (btn) { btn.dataset.sure = "1"; btn.textContent = "Sure?"; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.sure; btn.textContent = "Clear MOB"; } }, 3000); }
-      },
+      dismiss: () => confirmMob(clearMob),
       dismissLabel: "Clear MOB",
       dismissTitle: "End the man-overboard (asks again to be sure)",
     });
   }
-  $("mob-btn").onclick = async () => {
+  async function pressMob() {
     const b = getBoat();
     // the boat's position (live or where it was put); the chart centre if there is no boat
     const p = b.pos ?? [map.getCenter().lng, map.getCenter().lat];
@@ -198,6 +232,21 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft, onMobMa
       }
     } catch (error) {
       toast(`Could not save or remove the MOB mark: ${error}`, 6000);
+    }
+  }
+  $("mob-btn").onclick = () => (PRIMARY ? pressMob() : command("mob"));
+
+  // Drop mark: a time-stamped mark at the boat's position, from any window. Unlike MOB it
+  // raises no alarm and changes nothing on screen.
+  $("drop-btn").onclick = async () => {
+    const p = getBoat().pos ?? [map.getCenter().lng, map.getCenter().lat];
+    const when = new Date();
+    try {
+      await invoke("mark_save", { mark: { name: `Drop ${when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`,
+        lat: p[1], lon: p[0], kind: "waypoint", group: "Drops", notes: `Mark dropped ${when.toISOString()}` } });
+      toast("Mark dropped", 1500);
+    } catch (error) {
+      toast(`Could not drop the mark: ${error}`, 6000);
     }
   };
   if (mob) { $("mob-btn").classList.add("on"); }
@@ -247,7 +296,7 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft, onMobMa
     if (mob) mobAlarm();
     drawGeo();
   }
-  setInterval(check, 1000);
+  if (PRIMARY) setInterval(check, 1000);
 
   // ---------- settings (Instruments › Alarms) -------------------------------------------
   function syncUi() {
@@ -272,7 +321,7 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft, onMobMa
   $("al-volume").oninput = (e) => { s.volume = +e.target.value / 100; save(); };
   $("al-test").onclick = () => sound.alarm();
   $("anc-radius").onchange = (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v) && v > 5) s.anchorM = v; save(); drawGeo(); };
-  $("anc-drop").onclick = () => {
+  function anchorToggle() {
     if (s.anchor) { s.anchor = null; clear("anchor"); }
     else {
       const b = getBoat();
@@ -280,9 +329,37 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft, onMobMa
       s.anchor = { lon: b.pos[0], lat: b.pos[1] };
     }
     save(); syncUi(); drawGeo();
-  };
+  }
+  $("anc-drop").onclick = () => (PRIMARY ? anchorToggle() : command("anchor"));
   syncUi();
   window.addEventListener("racenav-boat", syncUi);
+
+  if (PRIMARY) {
+    listen("alarm-cmd", ({ payload: { act, id } }) => {
+      if (act === "ack") ack(id);
+      else if (act === "dismiss") active.get(id)?.dismiss?.();
+      else if (act === "mob") pressMob();
+      else if (act === "clearmob") clearMob();
+      else if (act === "anchor") anchorToggle();
+    });
+    // a monitor window changed the alarm settings
+    window.addEventListener("storage", (e) => {
+      if (e.key !== KEY || !e.newValue) return;
+      try { Object.assign(s, JSON.parse(e.newValue), { anchor: s.anchor }); syncUi(); drawGeo(); } catch { /* ignore */ }
+    });
+  } else {
+    // the MOB and anchor live in storage, written by the primary
+    window.addEventListener("storage", (e) => {
+      try {
+        if (e.key === KEY && e.newValue) Object.assign(s, JSON.parse(e.newValue));
+        else if (e.key === KEY + ".mob") mob = JSON.parse(e.newValue || "null");
+        else return;
+      } catch { return; }
+      $("mob-btn").classList.toggle("on", !!mob);
+      syncUi(); drawGeo(); mobChanged();
+    });
+    setInterval(drawGeo, 1000);
+  }
 
   const list = () => [...active.values()].map((a) => ({ level: a.level, text: a.text, detail: a.detail, acked: a.acked }));
   return { raise, clear, ack, sound, list, active: () => [...active.keys()], sync: syncUi };

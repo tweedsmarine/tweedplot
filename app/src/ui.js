@@ -12,8 +12,11 @@ export function setupRail(map) {
   const panes = [...drawer.querySelectorAll(".pane")];
   const listeners = [];
   let current = null;
+  let started = false;
 
   function open(name) {
+    // opening a panel from anywhere (a click on a target, a menu) must be seen
+    if (name && started && document.documentElement.classList.contains("no-tools")) window.dispatchEvent(new Event("racenav-need-tools"));
     current = name;
     for (const b of rail.querySelectorAll("button")) b.classList.toggle("on", b.dataset.pane === name);
     for (const p of panes) p.hidden = p.dataset.pane !== name;
@@ -40,6 +43,7 @@ export function setupRail(map) {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(KEY) || "{}").pane; } catch { /* ignore */ }
   open(saved === undefined ? "weather" : saved === "route" ? "course" : saved === "boat" ? "routing" : saved);
+  started = true;
 
   // Tabs inside a pane
   for (const tabs of drawer.querySelectorAll(".tabs")) {

@@ -37,6 +37,7 @@ export function setupDock(map) {
     }
   }
   function show(name) {
+    if (name && document.documentElement.classList.contains("no-tools")) window.dispatchEvent(new Event("racenav-need-tools"));
     current = name;
     el.hidden = !name;
     document.body.classList.toggle("dock-open", !!name);

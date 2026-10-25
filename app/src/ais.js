@@ -8,6 +8,7 @@ import { listen } from "@tauri-apps/api/event";
 import { ddm } from "./navmath.js";
 import { distNm, bearing } from "./instruments.js";
 import { hullRing, bigEnough } from "./hull.js";
+import { PRIMARY } from "./role.js";
 
 const KEY = "racenav.ais";
 const DEFAULTS = { show: true, names: true, key: "", online: false, cpaOn: true, cpa: 0.5, tcpa: 12, ignoreMoored: true, sort: "range", selTrack: false,
@@ -423,6 +424,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   }
   let subTimer = null, lastSub = "";
   function subscribe(force) {
+    if (!PRIMARY) return; // one online AIS subscription, owned by the main window
     const key = s.online ? s.key.trim() : "";
     const bx = key ? boxes() : [];
     const sig = key + JSON.stringify(bx.map((b) => b.map((p) => p.map((x) => Math.round(x * 4) / 4))));

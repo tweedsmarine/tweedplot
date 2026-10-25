@@ -6,7 +6,7 @@ import "@fontsource/atkinson-hyperlegible-next/700.css";
 // Bundle MapLibre's web worker with the app so the map works offline.
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 maplibregl.setWorkerUrl(workerUrl);
-import { listen, emit } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { setupWeather, barbImage } from "./weather.js";
 import { setupBrand } from "./brand.js";
@@ -28,6 +28,9 @@ import { createDamping } from "./damping.js";
 import { setupFleet } from "./fleet.js";
 import { setupGribDownload } from "./gribdl.js";
 import { setupRail } from "./ui.js";
+import { setupViews } from "./views.js";
+import { setupMonitors } from "./monitors.js";
+import { setupWindowState } from "./windowstate.js";
 import { setupManual } from "./manual.js";
 import { setupData } from "./data.js";
 import { setupS63 } from "./s63.js";
@@ -214,6 +217,7 @@ let route = null; // the course being edited
 let routing = null;
 let library = null;
 const ui = setupRail(map);
+const views = setupViews(map);
 
 // The user manual (bundled with the app): rail button, F1, ? in each drawer.
 const manual = setupManual();
@@ -221,8 +225,7 @@ document.getElementById("manual-btn").onclick = () => manual.toggle();
 manual.onToggle((on) => document.getElementById("manual-btn").classList.toggle("on", on));
 document.getElementById("drawer-help").onclick = () => manual.help(ui.current());
 const inst = setupInstruments();
-let mobNow = null; // the man overboard set (alarms), for the cockpit window too
-window.addEventListener("racenav-mob", (e) => { mobNow = e.detail; inst.update({ mob: e.detail }); });
+window.addEventListener("racenav-mob", (e) => { inst.update({ mob: e.detail }); });
 const boat = setupBoat();
 setupSettings({ boat, ui, onReferencePosition: useReferencePosition });
 const dock = setupDock(map);
@@ -316,7 +319,8 @@ map.on("load", () => {
   });
   for (const alarm of pendingNmeaAlarms.splice(0)) alarms.raise(...alarm);
   setupStations(map, { weather });
-  document.getElementById("inst-cockpit").onclick = () => invoke("cockpit_open").catch((e) => toast?.(`Cockpit window: ${e}`, 4000));
+  setupMonitors(toast);
+  setupWindowState();
   setupAis(map, { alarms, ui, getOwnMmsi: () => boat.get().mmsi, getOwn: () => ({ pos: lastBoat, cog: live ? vessel?.cog : null, sog: live ? vessel?.sog : 0, live: live && signalKActive() }) });
   setupReplay({ onState: (on) => {
     replayOn = on;
@@ -405,8 +409,6 @@ function feed() {
   const target = pts ? targetAt(pts, boatTime()) : null;
   const v = live ? vessel : { ...vessel, lat: pos?.[1], lon: pos?.[0] };
   inst.update({ v, dataAt: live ? lastFeed : 0, nav, wp, target, safetyDepth: settings.safetyDepth });
-  // the cockpit window (if open) shows the same numbers and the alarms
-  emit("cockpit", { v, dataAt: live ? lastFeed : 0, nav, wp, target, safetyDepth: settings.safetyDepth, mob: mobNow, alarms: alarms?.list() ?? [] }).catch(() => {});
 }
 setInterval(feed, 1000);
 
@@ -672,8 +674,6 @@ function setStatus(payload) {
   showStatus();
 }
 listen("sk-status", ({ payload }) => setStatus(payload));
-// MOB pressed in the cockpit window: as if pressed here (one MOB at a time)
-listen("cockpit-mob", () => { const b = document.getElementById("mob-btn"); if (!b.classList.contains("on")) b.click(); });
 // The page can load after the first status event was sent: ask for it.
 invoke("sk_status").then(setStatus).catch(() => {});
 setInterval(showStatus, 1000); // data going quiet turns it amber

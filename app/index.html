@@ -503,7 +503,9 @@
           <button id="inst-lock" title="Stop panels being moved by accident">Lock layout</button>
           <button id="inst-reset" title="Back to the default panels">Reset</button>
         </div>
-        <div class="wx-row"><button id="inst-cockpit" title="Open a second window of large readings for a screen at the helm (drag it to that screen, then Full screen)">Cockpit window</button><span class="grow wx-note">Large readings for a second screen; touch a reading to change it.</span></div>
+        <div class="wx-row"><select id="mon-new-view" title="What the new window shows"></select><button id="mon-new" title="Open another window for another screen (drag it there, then Full screen). Open as many as you like.">New monitor window</button></div>
+        <ul id="mon-list" class="list"></ul>
+        <div class="wx-note">A monitor window is another copy of TweedPlot for another screen. It can show any view, and keeps its own colours (day, dusk or night), view and position, so each screen can suit where it is. Alarms show in every window and can be silenced in any; MOB, Drop and the anchor watch work from any window. Monitor windows reopen where you left them when TweedPlot starts.</div>
         <div class="wx-row">
           <label class="grow" title="Hide or show every instrument panel (the floating time slider has its own box)"><input id="inst-all" type="checkbox" /> Show instrument panels</label>
           <label title="Show or hide the floating time slider"><input id="inst-slider" type="checkbox" /> Time slider</label>
@@ -519,7 +521,7 @@
         <div id="anc-state" class="wx-note"></div>
         <div class="wx-row"><label class="grow" for="al-volume">Alarm volume</label><input id="al-volume" type="range" min="0" max="100" step="5" /><button id="al-test" title="Play the alarm sound">Test</button></div>
         <div class="wx-note">Alarms show in a banner at the top of the chart and sound until silenced. AIS collision and distress alarms are set in Fleet › AIS. Alarms work from live data (or a replay), not in planning.</div>
-        <div class="wx-note">Drag a panel by its grip (⋮⋮); double-click or double-tap the grip to fold it down to a small title, and again to open it. Tap a reading to change what it shows, add one next to it, resize or remove it. The layout is kept on this PC, so the chart table and the cockpit screen can differ.</div>
+        <div class="wx-note">Drag a panel by its grip (⋮⋮); double-click or double-tap the grip to fold it down to a small title, and again to open it. Tap a reading to change what it shows, add one next to it, resize or remove it. The layout is kept on this PC and shared by all windows; each group has its own position and size in each view. In the list, type a name for each group and tick the views (Navigation, Planning, Instruments) it appears in; a man overboard shows in every view.</div>
       </section>
     </aside>
 
@@ -532,6 +534,7 @@
       <span id="rp-time">—</span>
       <button id="rp-stop" title="Stop the replay and go back to live data">✕</button>
     </div>
+    <button id="drop-btn" title="Drop a mark at the boat's position now, stamped with the time (no alarm)">Drop</button>
     <button id="mob-btn" title="Man overboard: mark the boat's position now, with bearing, distance and time from it until cleared">MOB</button>
     <div id="toolbar" class="ctl-col">
       <button id="sk-state" class="bad" aria-label="Live data status" title="Live data: connecting…">
@@ -540,6 +543,12 @@
         <svg viewBox="0 0 24 24"><path class="play fill" d="M8 5.5v13l10-6.5z"/><path class="pause" d="M9 6v12M15 6v12"/></svg></button>
       <button id="follow" class="on" aria-label="Follow the boat" title="Follow: keep the boat centred (dragging the chart turns it off)">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="1.6" class="fill"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
+      <button id="view-btn" aria-label="View" title="View: Navigation, Planning or Instruments">
+        <svg viewBox="0 0 24 24"></svg></button>
+      <button id="tools-btn" aria-label="Show or hide the panels" title="Show or hide the panels and dock in this view">
+        <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M9 4.5v15"/></svg></button>
+      <button id="chart-btn" aria-label="Show or hide the chart" title="Show or hide the chart in this view">
+        <svg viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></svg></button>
       <button id="palette-btn" aria-label="Day or night colours" title="Colours: day (click for dusk, night red, night green)">
         <svg viewBox="0 0 24 24"><path class="sun" d="M12 7a5 5 0 1 0 0 10a5 5 0 1 0 0-10zM12 1v3M12 20v3M1 12h3M20 12h3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/><path class="moon" d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg></button>
       <button id="clear-track" aria-label="Clear the track trail" title="Clear the trail behind the boat">

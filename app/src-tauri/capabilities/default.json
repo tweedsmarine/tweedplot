@@ -4,12 +4,21 @@
   "description": "Main window: events and the app's own commands",
   "windows": [
     "main",
-    "cockpit"
+    "monitor-*"
   ],
   "permissions": [
     "core:default",
     "core:window:allow-is-fullscreen",
     "core:window:allow-set-fullscreen",
-    "core:window:allow-set-theme"
+    "core:window:allow-set-theme",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-available-monitors",
+    "core:window:allow-outer-position",
+    "core:window:allow-inner-size",
+    "core:window:allow-scale-factor",
+    "core:window:allow-is-maximized"
   ]
 }
