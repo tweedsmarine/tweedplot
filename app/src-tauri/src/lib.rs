@@ -77,6 +77,52 @@ fn charts() -> Option<Arc<chart::ChartStore>> {
     CHARTS.read().unwrap().clone()
 }
 
+/// The downloaded high-resolution depths (LINZ coastal elevation tiles), drawn as images.
+static HIRES: std::sync::RwLock<Option<Arc<chart::hires::Hires>>> = std::sync::RwLock::new(None);
+
+fn hires() -> Option<Arc<chart::hires::Hires>> {
+    HIRES.read().unwrap().clone()
+}
+
+/// (Re)open the high-resolution depth tiles (quick: only their headers are read).
+fn open_hires(app: &tauri::AppHandle) {
+    let h = chart::hires::Hires::open(&hires_dir(app));
+    *HIRES.write().unwrap() = Some(Arc::new(h));
+}
+
+/// High-resolution depths (LINZ coastal elevation GeoTIFFs): `RACENAV_HIRES_DIR`, else
+/// `C:\dev\racenav-data\hires` when racenav-data exists, else `<app data>\hires`.
+fn hires_dir(app: &tauri::AppHandle) -> PathBuf {
+    if let Ok(d) = std::env::var("RACENAV_HIRES_DIR") {
+        return PathBuf::from(d);
+    }
+    let dev = dev_root();
+    if dev.is_dir() {
+        return dev.join("hires");
+    }
+    app.path()
+        .app_data_dir()
+        .map(|p| p.join("hires"))
+        .unwrap_or_else(|_| PathBuf::from("hires"))
+}
+
+/// A clear 256-pixel PNG, for map tiles without high-resolution depths.
+fn clear_png() -> &'static [u8] {
+    static PNG: OnceLock<Vec<u8>> = OnceLock::new();
+    PNG.get_or_init(|| {
+        let mut out = Vec::new();
+        {
+            let mut enc = png::Encoder::new(&mut out, 256, 256);
+            enc.set_color(png::ColorType::Rgba);
+            enc.set_depth(png::BitDepth::Eight);
+            if let Ok(mut w) = enc.write_header() {
+                let _ = w.write_image_data(&vec![0u8; 256 * 256 * 4]);
+            }
+        }
+        out
+    })
+}
+
 static DATA_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static DATA_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static GRIBS: Mutex<BTreeMap<String, Arc<grib::GribFile>>> = Mutex::new(BTreeMap::new());
@@ -2144,6 +2190,94 @@ fn rule_info(rid: i64) -> Option<serde_json::Value> {
     Some(serde_json::json!({ "layers": layers, "attrs": attrs }))
 }
 
+/// The high-resolution depth tiles for `area` ([w, s, e, n]): which exist on LINZ's server
+/// (that list is fetched once a week), and which are downloaded already.
+#[tauri::command]
+async fn hires_plan(app: tauri::AppHandle, area: [f64; 4]) -> Result<serde_json::Value, String> {
+    let dir = hires_dir(&app);
+    tauri::async_runtime::spawn_blocking(move || {
+        let names = chart::hires::tile_names(area);
+        let av = gribdl::coastal::available(&dir).map_err(|e| e.to_string())?;
+        let there: Vec<&String> = names.iter().filter(|n| av.contains_key(*n)).collect();
+        let have = there.iter().filter(|n| dir.join(format!("{n}.tiff")).exists()).count();
+        Ok(serde_json::json!({ "tiles": names.len(), "available": there.len(), "have": have }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Download the high-resolution depth tiles for `area` that aren't here yet (at most 60).
+#[tauri::command]
+async fn hires_download(app: tauri::AppHandle, area: [f64; 4]) -> Result<usize, String> {
+    data_guard()?;
+    let dir = hires_dir(&app);
+    let h = app.clone();
+    let r = tauri::async_runtime::spawn_blocking(move || {
+        let names = chart::hires::tile_names(area);
+        let av = gribdl::coastal::available(&dir).map_err(|e| e.to_string())?;
+        let want: Vec<(String, String)> = names.into_iter().filter_map(|n| av.get(&n).map(|p| (n, p.clone()))).filter(|(n, _)| !dir.join(format!("{n}.tiff")).exists()).collect();
+        if want.len() > 60 {
+            return Err(format!("{} tiles: zoom in to a smaller area (60 at a time)", want.len()));
+        }
+        let progress = |i: usize, n: usize, bytes: u64| {
+            let _ = h.emit("data-progress", serde_json::json!({ "stage": format!("High-resolution depths (LINZ): tile {} of {n}", (i + 1).min(n)), "done": bytes, "total": 0 }));
+        };
+        gribdl::coastal::download(&want, &dir, &progress, &DATA_CANCEL).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string());
+    DATA_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+    let n = r??;
+    open_hires(&app);
+    Ok(n)
+}
+
+/// The high-resolution depth tiles here: name, area, size.
+#[tauri::command]
+fn hires_status(app: tauri::AppHandle) -> serde_json::Value {
+    let dir = hires_dir(&app);
+    let tiles: Vec<serde_json::Value> = hires()
+        .map(|h| {
+            h.coverage()
+                .into_iter()
+                .map(|(name, b)| {
+                    let bytes = std::fs::metadata(dir.join(&name)).map(|m| m.len()).unwrap_or(0);
+                    serde_json::json!({ "name": name, "area": b, "bytes": bytes })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    serde_json::json!({ "dir": dir, "tiles": tiles })
+}
+
+/// Delete downloaded high-resolution depth tiles: one by name, or all with "".
+#[tauri::command]
+fn hires_delete(app: tauri::AppHandle, name: String) -> Result<(), String> {
+    let dir = hires_dir(&app);
+    if name.contains(['/', '\\']) || name.contains("..") {
+        return Err("bad name".into());
+    }
+    *HIRES.write().unwrap() = None; // the files are open
+    let mut err = None;
+    for e in std::fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
+        let p = e.path();
+        let fname = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        if p.extension().is_some_and(|x| x == "tiff") && (name.is_empty() || fname == name) {
+            if let Err(e) = std::fs::remove_file(&p) {
+                err = Some(e.to_string());
+            }
+        }
+    }
+    open_hires(&app);
+    err.map_or(Ok(()), Err)
+}
+
+/// Height (m above NZVD2016) from the high-resolution depths at a place.
+#[tauri::command]
+fn hires_height(lon: f64, lat: f64) -> Option<f32> {
+    hires()?.height_at(lon, lat)
+}
+
 /// Download ETOPO 2022 depths for `area` at `arcsec` (15, 30, 60), write depth
 /// bands and contours to the bathy folder, and reopen the charts.
 #[tauri::command]
@@ -2325,6 +2459,20 @@ fn chart_info() -> serde_json::Value {
 }
 
 fn tile_response(path: &str) -> Response<Vec<u8>> {
+    // high-resolution depth images: /hires/<z>/<x>/<y>.png
+    if let Some(rest) = path.trim_start_matches('/').strip_prefix("hires/") {
+        let p: Vec<u32> = rest.trim_end_matches(".png").split('/').filter_map(|v| v.parse().ok()).collect();
+        let png = match (p.as_slice(), hires()) {
+            ([z, x, y], Some(h)) => h.tile_png(*z as u8, *x, *y).map(|t| t.as_ref().clone()),
+            _ => None,
+        };
+        return Response::builder()
+            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .header(header::CACHE_CONTROL, "no-store")
+            .header(header::CONTENT_TYPE, "image/png")
+            .body(png.unwrap_or_else(|| clear_png().to_vec()))
+            .expect("valid response");
+    }
     let parts: Vec<&str> = path
         .trim_start_matches('/')
         .trim_end_matches(".pbf")
@@ -2511,6 +2659,11 @@ pub fn run() {
         monitor_close,
             data_boundaries,
             data_mpi,
+            hires_plan,
+            hires_download,
+            hires_status,
+            hires_delete,
+            hires_height,
             rules_at,
             rule_info,
             tides_info,
@@ -2669,6 +2822,7 @@ pub fn run() {
             let h = app.handle().clone();
             std::thread::spawn(move || {
                 s63_cmd::load(&h);
+                open_hires(&h);
                 open_charts(h);
             });
 

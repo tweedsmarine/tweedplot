@@ -83,7 +83,59 @@ export function setupData(map, { toast, reloadTiles } = {}) {
     plan();
   }
 
+  // ---------- high-resolution depths (LINZ coastal elevation) ----------------------------
+  let hrPlanning = 0;
+  async function refreshHires() {
+    let h = null;
+    try { h = await invoke("hires_status"); } catch { return; }
+    if (!h) return;
+    const bytes = h.tiles.reduce((a, t) => a + t.bytes, 0);
+    dot("data-hr-dot", h.tiles.length ? "ok" : "");
+    $("data-hr-state").textContent = h.tiles.length ? `${h.tiles.length} tiles, ${fmtMB(bytes)}` : "none (NZ coasts, where surveyed)";
+    $("data-hr-del").hidden = !h.tiles.length;
+  }
+  async function planHires() {
+    const area = viewArea();
+    const z = map.getZoom();
+    const me = ++hrPlanning;
+    if (z < 10) { $("data-hr-plan").textContent = "Zoom in (to about 5 NM range) to get the high-resolution depths for the chart view."; $("data-hr").disabled = true; return; }
+    $("data-hr").disabled = busy;
+    $("data-hr-plan").textContent = "Looking up the tiles for the chart view…";
+    try {
+      const p = await invoke("hires_plan", { area });
+      if (me !== hrPlanning) return;
+      $("data-hr-plan").textContent = p.available === 0 ? "No high-resolution depths here (not surveyed yet)."
+        : `Chart view: ${p.available} tile${p.available === 1 ? "" : "s"}${p.have ? `, ${p.have} downloaded` : ""} (each 4.8 × 7.2 km, typically 5–40 MB).`;
+      $("data-hr").disabled = busy || p.available === p.have;
+    } catch (e) {
+      if (me === hrPlanning) $("data-hr-plan").textContent = `Can't look up the tiles: ${e}`;
+    }
+  }
+  $("data-hr-show").checked = localStorage.getItem("racenav.hires.show") !== "0";
+  $("data-hr-show").onchange = (e) => {
+    try { localStorage.setItem("racenav.hires.show", e.target.checked ? "1" : "0"); } catch { /* ignore */ }
+    if (map.getLayer("hires")) map.setLayoutProperty("hires", "visibility", e.target.checked ? "visible" : "none");
+  };
+  const reloadHires = () => { const src = map.getSource("hires"); if (src?.setTiles) src.setTiles(src.tiles.map((t) => t.replace(/[?&]r=\d+/, "") + `${t.includes("?") ? "&" : "?"}r=${Date.now()}`)); };
+  $("data-hr").onclick = async () => {
+    if (busy) return;
+    setBusy(true);
+    say("Downloading high-resolution depths…");
+    try {
+      const n = await invoke("hires_download", { area: viewArea() });
+      say(n ? `High-resolution depths: ${n} tile${n === 1 ? "" : "s"} downloaded.` : "Already downloaded.", "good");
+      reloadHires();
+    } catch (e) {
+      say(String(e) === "cancelled" ? "Download cancelled." : `Download failed: ${e}`, String(e) === "cancelled" ? "warn" : "bad");
+    } finally { setBusy(false); refreshHires(); planHires(); }
+  };
+  $("data-hr-del").onclick = async () => {
+    try { await invoke("hires_delete", { name: "" }); say("High-resolution depths deleted."); reloadHires(); } catch (e) { say(`Could not delete: ${e}`, "bad"); }
+    refreshHires(); planHires();
+  };
+
   async function plan() {
+    planHires();
     const area = viewArea();
     const res = +$("data-etopo-res").value;
     try {
@@ -95,7 +147,7 @@ export function setupData(map, { toast, reloadTiles } = {}) {
 
   function setBusy(on) {
     busy = on;
-    for (const id of ["data-gshhg", "data-etopo", "data-mb", "data-mpi"]) $(id).disabled = on;
+    for (const id of ["data-gshhg", "data-etopo", "data-mb", "data-mpi", "data-hr"]) $(id).disabled = on;
     $("data-cancel").disabled = !on;
     if (!on) $("data-progress").hidden = true;
   }
@@ -178,6 +230,7 @@ export function setupData(map, { toast, reloadTiles } = {}) {
   map.on("moveend", () => { if (!document.getElementById("data-box").closest(".pane")?.hidden) plan(); });
   window.addEventListener("racenav-charts", refresh);
   refresh();
+  refreshHires();
 
   return { refresh };
 }

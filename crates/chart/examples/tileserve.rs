@@ -7,6 +7,8 @@ fn main() {
     let dirs: Vec<std::path::PathBuf> = dir.split(',').map(Into::into).collect();
     let store = std::sync::Arc::new(chart::ChartStore::open_dirs(&dirs).expect("open charts"));
     let server = tiny_http::Server::http(format!("0.0.0.0:{port}")).expect("bind");
+    // high-resolution depths for testing: TILESERVE_HIRES=<folder>, served at /hires/z/x/y.png
+    let hires = std::env::var("TILESERVE_HIRES").ok().map(|d| chart::hires::Hires::open(std::path::Path::new(&d)));
     println!("serving {} tables on :{port}", store.tables.len());
     for req in server.incoming_requests() {
         let parts: Vec<&str> = req.url().split('?').next().unwrap_or("").trim_start_matches('/').trim_end_matches(".pbf").split('/').collect();
@@ -33,6 +35,22 @@ fn main() {
                 None => "null".into(),
             };
             let _ = req.respond(tiny_http::Response::from_string(body).with_header(cors));
+            continue;
+        }
+        if let (Some(h), ["hires", z, x, y]) = (&hires, parts.as_slice()) {
+            let t0 = std::time::Instant::now();
+            let png = match (z.parse(), x.parse(), y.trim_end_matches(".png").parse()) {
+                (Ok(z), Ok(x), Ok(y)) => h.tile_png(z, x, y),
+                _ => None,
+            };
+            if png.is_some() {
+                eprintln!("hires {z}/{x}/{y} {:.0} ms", t0.elapsed().as_secs_f64() * 1000.0);
+            }
+            let resp = match png {
+                Some(p) => tiny_http::Response::from_data(p.as_ref().clone()).with_header(tiny_http::Header::from_bytes("Content-Type", "image/png").unwrap()),
+                None => tiny_http::Response::from_data(Vec::new()).with_status_code(204),
+            };
+            let _ = req.respond(resp.with_header(cors));
             continue;
         }
         // fishing rules for testing: /rules_at/<lon>/<lat> and /rule/<rid> as JSON

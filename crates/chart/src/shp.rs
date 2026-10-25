@@ -181,6 +181,34 @@ pub fn nztm_to_lonlat(p: Pt) -> Pt {
     [lon.to_degrees(), lat.to_degrees()]
 }
 
+/// Longitude and latitude to NZ Transverse Mercator 2000 (easting, northing).
+pub fn lonlat_to_nztm(p: Pt) -> Pt {
+    let (a, f) = (6_378_137.0_f64, 1.0_f64 / 298.257_222_101);
+    let (k0, lon0, fe, fn_) = (0.9996, 173.0_f64.to_radians(), 1_600_000.0, 10_000_000.0);
+    let e2 = f * (2.0 - f);
+    let ep2 = e2 / (1.0 - e2);
+    let lon = if p[0] < 0.0 { p[0] + 360.0 } else { p[0] };
+    let (phi, lam) = (p[1].to_radians(), lon.to_radians());
+    let (s, c) = (phi.sin(), phi.cos());
+    let n = a / (1.0 - e2 * s * s).sqrt();
+    let t = phi.tan().powi(2);
+    let cc = ep2 * c * c;
+    let aa = (lam - lon0) * c;
+    let m = a
+        * ((1.0 - e2 / 4.0 - 3.0 * e2 * e2 / 64.0 - 5.0 * e2.powi(3) / 256.0) * phi
+            - (3.0 * e2 / 8.0 + 3.0 * e2 * e2 / 32.0 + 45.0 * e2.powi(3) / 1024.0) * (2.0 * phi).sin()
+            + (15.0 * e2 * e2 / 256.0 + 45.0 * e2.powi(3) / 1024.0) * (4.0 * phi).sin()
+            - (35.0 * e2.powi(3) / 3072.0) * (6.0 * phi).sin());
+    let x = fe + k0 * n * (aa + (1.0 - t + cc) * aa.powi(3) / 6.0 + (5.0 - 18.0 * t + t * t + 72.0 * cc - 58.0 * ep2) * aa.powi(5) / 120.0);
+    let y = fn_
+        + k0 * (m
+            + n * phi.tan()
+                * (aa * aa / 2.0
+                    + (5.0 - t + 9.0 * cc + 4.0 * cc * cc) * aa.powi(4) / 24.0
+                    + (61.0 - 58.0 * t + t * t + 600.0 * cc - 330.0 * ep2) * aa.powi(6) / 720.0));
+    [x, y]
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -268,6 +296,11 @@ pub(crate) mod tests {
             (p[0] - 167.754_448).abs() < 1e-5 && (p[1] + 46.833_185).abs() < 1e-5,
             "{p:?}"
         );
+        // and back again (checked with PROJ too)
+        let e = lonlat_to_nztm([172.739_193_967, -34.444_065_991]);
+        assert!((e[0] - 1_576_041.15).abs() < 0.01 && (e[1] - 6_188_574.24).abs() < 0.01, "{e:?}");
+        let e = lonlat_to_nztm([167.754_447_719, -46.833_184_968]);
+        assert!((e[0] - 1_200_000.0).abs() < 0.01 && (e[1] - 4_800_000.0).abs() < 0.01, "{e:?}");
         // a point read as NZTM because its numbers are far too big for degrees
         let shp = polyline_shp(&[vec![
             [1_576_041.15, 6_188_574.24],

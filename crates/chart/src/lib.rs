@@ -22,10 +22,13 @@
 pub mod bathy;
 pub mod clip;
 pub mod coast;
+pub mod cog;
 pub mod enc;
 pub mod features;
 pub mod geom;
 pub mod gpkgw;
+pub mod hires;
+pub mod lerc;
 pub mod marine;
 pub mod mvt;
 pub mod s57;

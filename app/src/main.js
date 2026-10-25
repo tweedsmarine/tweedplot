@@ -102,6 +102,8 @@ const map = new maplibregl.Map({
       hdgline: { type: "geojson", data: line([]) },
       cogline: { type: "geojson", data: line([]) },
       chart: { type: "vector", tiles: [TILE_URL], minzoom: 0, maxzoom: 16 },
+      // high-resolution depths (LINZ coastal elevation, 1 m), drawn in Rust as images
+      hires: { type: "raster", tiles: [TILE_URL.replace("{z}/{x}/{y}.pbf", "hires/{z}/{x}/{y}.png")], tileSize: 256, minzoom: 10, maxzoom: 18 },
     },
     layers: [
       { id: "sea", type: "background", paint: { "background-color": css("--sea") } },
@@ -118,6 +120,9 @@ const map = new maplibregl.Map({
       { id: "depare", type: "fill", source: "chart", "source-layer": "depare",
         layout: { visibility: "none", "fill-sort-key": ["get", "band"] },
         paint: { "fill-color": depareColour(), "fill-antialias": false } },
+      // over the charted depth areas, under the chart's contours (the safety contour stays on top)
+      { id: "hires", type: "raster", source: "hires", minzoom: 10, layout: { visibility: localStorage.getItem("racenav.hires.show") === "0" ? "none" : "visible" },
+        paint: { "raster-opacity": 0.92, "raster-resampling": "linear" } },
       { id: "depcnt", type: "line", source: "chart", "source-layer": "depcnt", layout: { visibility: "none" },
         paint: { "line-color": "#7d97a6", "line-width": 0.6 } },
       { id: "safety-contour", type: "line", source: "chart", "source-layer": "depcnt",
