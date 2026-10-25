@@ -16,6 +16,7 @@
 
 pub mod data;
 pub mod ecmwf;
+pub mod marine;
 pub mod ocean;
 
 use std::io::Write;

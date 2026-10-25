@@ -40,6 +40,17 @@ export function setupData(map, { toast, reloadTiles } = {}) {
       : status.gshhg ? "GSHHG downloaded, being prepared…" : `coarse outline only (GSHHG not downloaded, about ${fmtMB(status.gshhg_bytes)})`;
     $("data-gshhg").hidden = status.gshhg;
     $("data-coast-detail").disabled = !status.world_land;
+    const mb = status.boundaries || {};
+    dot("data-mb-dot", mb.lines > 0 ? "ok" : mb.zips > 0 ? "part" : "");
+    $("data-mb-state").textContent = mb.lines > 0 ? `${mb.zips} files` : mb.zips > 0 ? "downloaded, being prepared…" : "not downloaded";
+    $("data-mb").textContent = mb.zips > 0 ? "Update" : "Download";
+    const mpi = status.mpi || { files: [] };
+    const when = mpi.files.map((f) => f.fetched).filter(Boolean).sort()[0];
+    dot("data-mpi-dot", mpi.pieces > 0 ? "ok" : mpi.files.length ? "part" : "");
+    $("data-mpi-state").textContent = mpi.files.length
+      ? `${mpi.files.length} sets, ${fmtMB(mpi.files.reduce((a, f) => a + f.bytes, 0))}${when ? `, from ${new Date(when).toLocaleDateString()}` : ""}${mpi.pieces > 0 ? "" : " (being prepared…)"}`
+      : "not downloaded (NZ only)";
+    $("data-mpi").textContent = mpi.files.length ? "Update" : "Download";
     dot("data-linz-dot", status.linz_tables > 0 ? "ok" : "");
     $("data-linz-state").textContent = status.linz_tables > 0 ? `${status.linz_tables} layers` : "none (optional, NZ only)";
     $("data-linz").title = `Open the LINZ Data Service in your browser (free account) and download the hydrographic layers as GeoPackage into\n${status.dirs.charts}`;
@@ -84,7 +95,7 @@ export function setupData(map, { toast, reloadTiles } = {}) {
 
   function setBusy(on) {
     busy = on;
-    for (const id of ["data-gshhg", "data-etopo"]) $(id).disabled = on;
+    for (const id of ["data-gshhg", "data-etopo", "data-mb", "data-mpi"]) $(id).disabled = on;
     $("data-cancel").disabled = !on;
     if (!on) $("data-progress").hidden = true;
   }
@@ -105,6 +116,32 @@ export function setupData(map, { toast, reloadTiles } = {}) {
     try {
       await invoke("data_gshhg");
       say("World coastline downloaded. Preparing it (a minute or two the first time)…", "good");
+    } catch (e) {
+      say(String(e) === "cancelled" ? "Download cancelled." : `Download failed: ${e}`, String(e) === "cancelled" ? "warn" : "bad");
+    } finally { setBusy(false); refresh(); }
+  };
+
+  $("data-mb").onclick = async () => {
+    if (busy) return;
+    setBusy(true);
+    say("Downloading the maritime boundaries…");
+    try {
+      const r = await invoke("data_boundaries");
+      say(`Maritime boundaries downloaded (${r.files} files${r.failed.length ? `; not available: ${r.failed.length}` : ""}).`, r.failed.length ? "warn" : "good");
+      if (r.failed.length) console.warn("maritime boundaries:", r.failed);
+    } catch (e) {
+      say(String(e) === "cancelled" ? "Download cancelled." : `Download failed: ${e}`, String(e) === "cancelled" ? "warn" : "bad");
+    } finally { setBusy(false); refresh(); }
+  };
+
+  $("data-mpi").onclick = async () => {
+    if (busy) return;
+    setBusy(true);
+    say("Downloading MPI's fishing rules…");
+    try {
+      const r = await invoke("data_mpi");
+      say(`Fishing rules downloaded: ${r.features} areas${r.failed.length ? `; some sets failed: ${r.failed.join("; ")}` : ""}. Preparing them…`, r.failed.length ? "warn" : "good");
+      toast?.("Fishing rules updated", 3000);
     } catch (e) {
       say(String(e) === "cancelled" ? "Download cancelled." : `Download failed: ${e}`, String(e) === "cancelled" ? "warn" : "bad");
     } finally { setBusy(false); refresh(); }

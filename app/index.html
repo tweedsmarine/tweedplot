@@ -404,6 +404,20 @@
         <div class="wx-row"><label class="grow" for="set-safety-contour">Safety contour (m)</label><input id="set-safety-contour" type="number" min="0" step="1" /></div>
         <div class="wx-row checks"><label title="Routing keeps off rocks, wrecks and obstructions that dry, are awash, or have less water than the safety depth (or an unknown depth)"><input id="set-avoid-dangers" type="checkbox" /> Route round dangers</label>
           <label title="Routing keeps out of charted marine farms"><input id="set-avoid-farms" type="checkbox" /> Route round marine farms</label></div>
+        <h3>Boundaries and fishing rules</h3>
+        <div id="mar-box">
+          <div class="wx-row checks"><label title="Territorial sea (12 NM), contiguous zone (24 NM), EEZ (200 NM) and the boundaries agreed with Australia (LINZ)"><input id="mar-bounds" type="checkbox" /> Maritime boundaries</label>
+            <label title="MPI's commercial fishing prohibitions (red) and restrictions (orange), customary areas (purple) and voluntary closures (grey). Click an area for the rule"><input id="mar-rules" type="checkbox" /> Fishing rules</label>
+            <label title="MPI's fisheries management areas and statistical areas, with their codes (for catch reporting)"><input id="mar-fareas" type="checkbox" /> Fisheries areas</label></div>
+          <div class="wx-row checks"><label title="Mātaitai, taiāpure and other customary areas"><input id="mar-cust" type="checkbox" /> Customary areas</label>
+            <label title="Areas closed by industry agreement (MPI: boundaries approximate, a guide only)"><input id="mar-vol" type="checkbox" /> Voluntary closures</label></div>
+          <div class="wx-row checks"><label title="Show only the rules for the fishing methods ticked below, and for this vessel's length"><input id="mar-mine" type="checkbox" /> Only the rules for my boat</label></div>
+          <div id="mar-gear" class="mar-gear"></div>
+          <div id="mar-len" class="wx-note"></div>
+          <div class="wx-row"><label class="grow" title="A warning when the boat is inside, or heading into, an area closed to the methods ticked above (all closed areas if none are ticked)"><input id="mar-alarm" type="checkbox" /> Closed-area alarm, looking ahead</label>
+            <select id="mar-ahead"><option value="5">5 min</option><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option></select></div>
+          <div class="wx-note">Download the boundaries and rules in Chart data below. Fishing rules are MPI's maps of the regulations: a guide only, the regulations themselves are the law, and temporary closures change; update the rules before a trip.</div>
+        </div>
         <h3>Chart data</h3>
         <div id="data-box">
           <div class="data-item"><span class="dot" id="data-wd-dot"></span><span class="grow"><b>World depths</b>: Natural Earth, bundled (0, 200, 1000 … 10000 m)</span></div>
@@ -419,12 +433,16 @@
               <option value="15">15″ (≈ 460 m)</option><option value="30">30″ (≈ 0.9 km)</option><option value="60">60″ (≈ 1.9 km)</option></select>
             <button id="data-etopo" title="Download depths for the area shown on the chart">Get for chart view</button></div>
           <div id="data-etopo-plan" class="wx-note"></div>
+          <div class="data-item"><span class="dot" id="data-mb-dot"></span><span class="grow"><b>Maritime boundaries</b> (LINZ): <span id="data-mb-state">—</span></span>
+            <button id="data-mb" title="Download the territorial sea, contiguous zone and EEZ limits from LINZ (under 1 MB)">Download</button></div>
+          <div class="data-item"><span class="dot" id="data-mpi-dot"></span><span class="grow"><b>Fishing rules</b> (MPI): <span id="data-mpi-state">—</span></span>
+            <button id="data-mpi" title="Download MPI's commercial fishing regulations, customary areas, voluntary closures and fisheries areas (several MB; update before a trip)">Download</button></div>
           <div class="data-item"><span class="dot" id="data-linz-dot"></span><span class="grow"><b>NZ charts</b> (LINZ): <span id="data-linz-state">—</span></span>
             <button id="data-linz" title="Open the LINZ Data Service in your browser (free account) to download the hydrographic layers as GeoPackage">LINZ…</button></div>
           <div id="data-progress" class="progress" hidden><div class="bar"></div><span></span></div>
           <div class="wx-row"><span id="data-status" class="grow wx-note"></span><button id="data-cancel" disabled>Cancel</button></div>
           <details class="data-src"><summary>Sources and licences</summary>
-            <p>Natural Earth bathymetry: public domain (naturalearthdata.com). GSHHG coastline: Wessel &amp; Smith, University of Hawaiʻi and NOAA, LGPL 3, downloaded from its home site. ETOPO 2022: NOAA National Centers for Environmental Information, free to use and redistribute (doi:10.25921/fd45-gt74), fetched through NOAA CoastWatch ERDDAP. LINZ hydrographic data: Toitū Te Whenua LINZ, CC BY 4.0. World depths and ETOPO are drawn under the charts for orientation only: they are coarse or interpolated near the coast, and routing does not use them. Not for navigation.</p>
+            <p>Natural Earth bathymetry: public domain (naturalearthdata.com). GSHHG coastline: Wessel &amp; Smith, University of Hawaiʻi and NOAA, LGPL 3, downloaded from its home site. ETOPO 2022: NOAA National Centers for Environmental Information, free to use and redistribute (doi:10.25921/fd45-gt74), fetched through NOAA CoastWatch ERDDAP. LINZ hydrographic data: Toitū Te Whenua LINZ, CC BY 4.0. Maritime boundaries: sourced from Land Information New Zealand data, Crown Copyright Reserved. Fishing rules: Source: Ministry for Primary Industries, CC BY 4.0 (a guide to the regulations, not the regulations). World depths and ETOPO are drawn under the charts for orientation only: they are coarse or interpolated near the coast, and routing does not use them. Not for navigation.</p>
           </details>
         </div>
         <h3>Encrypted charts (S-63)</h3>

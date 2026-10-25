@@ -25,8 +25,11 @@ pub mod coast;
 pub mod enc;
 pub mod features;
 pub mod geom;
+pub mod gpkgw;
+pub mod marine;
 pub mod mvt;
 pub mod s57;
+pub mod shp;
 pub use features::{Clearance, FeatureInfo};
 
 use std::num::NonZeroUsize;
@@ -71,6 +74,14 @@ pub enum Kind {
     /// and the hydrographic charts' lake and river areas). Cut out of the Topo50
     /// land, so the charted depths, or plain water, show through.
     Lake,
+    /// Maritime boundary lines (territorial sea, contiguous zone, EEZ): see [`marine`].
+    Boundary,
+    /// Fishing rule areas (MPI), cut into pieces: see [`marine`].
+    Rule,
+    /// Outlines of the fishing rule areas.
+    RuleLine,
+    /// Fisheries management and statistical area outlines (MPI).
+    FishArea,
 }
 
 #[derive(Debug, Clone)]
@@ -141,7 +152,7 @@ fn band_visible(z: u8, band: u8, start: u8, skin_early: Option<u8>) -> bool {
 }
 
 pub struct ChartStore {
-    dbs: Vec<Mutex<Connection>>,
+    pub(crate) dbs: Vec<Mutex<Connection>>,
     pub tables: Vec<TableInfo>,
     cache: Mutex<lru::LruCache<(u8, u32, u32), Arc<Vec<u8>>>>,
     /// Coverage polygons of each band and their spatial index, loaded on first use.
@@ -214,6 +225,12 @@ impl ChartStore {
             gpkgs.extend(enc::ensure_gpkgs(dir));
             if let Some(g) = coast::ensure_gpkg(dir, &unz)? {
                 gpkgs.push(g);
+            }
+            // maritime boundaries and fishing rules from their downloads; a broken
+            // download mustn't stop the charts opening
+            match marine::ensure_gpkgs(dir, &unz) {
+                Ok(v) => gpkgs.extend(v),
+                Err(e) => eprintln!("charts: maritime boundaries / fishing rules: {e}"),
             }
             if unz.is_dir() {
                 for e in std::fs::read_dir(&unz)? {
@@ -725,9 +742,68 @@ impl ChartStore {
             }
         }
         let [far, fln, fpt, lsec] = self.render_features(&tp, z, &starts);
+        let [mbound, rules, rules_ln, fareas] = self.render_marine(&tp, z, bbox);
         mvt::encode_tile(&[
             wland, wdepth, wdcnt, depare, depcnt, far, land, wcoast, fln, soundg, lsec, fpt,
+            mbound, rules, rules_ln, fareas,
         ])
+    }
+
+    /// Maritime boundaries ("mbound": `kind`, `name`), fishing rule areas ("rules") and
+    /// their outlines ("rules_ln", both with the flags of [`marine`]), and fisheries
+    /// management / statistical areas ("fareas": `kind`, `code`). See [`marine`].
+    fn render_marine(&self, tp: &TileProj, z: u8, bbox: [f64; 4]) -> [Layer; 4] {
+        let mut mbound = Layer::new("mbound");
+        let mut rules = Layer::new("rules");
+        let mut rules_ln = Layer::new("rules_ln");
+        let mut fareas = Layer::new("fareas");
+        for t in self.tables.iter() {
+            match t.kind {
+                Kind::Boundary => self.query_text(t, bbox, &["kind", "name"], |row| {
+                    if let Some(tg) = tp.lines(&row.geom) {
+                        let mut props =
+                            vec![("kind", Value::Str(row.vals[0].clone().unwrap_or_default()))];
+                        if let Some(n) = row.vals[1].clone().filter(|n| !n.is_empty()) {
+                            props.push(("name", Value::Str(n)));
+                        }
+                        mbound.add(&tg, &props);
+                    }
+                }),
+                Kind::Rule | Kind::RuleLine if z >= 4 => {
+                    let cols = marine::rule_cols();
+                    self.query(t, bbox, cols, |vals, g| {
+                        let props: Vec<(&str, Value)> = cols
+                            .iter()
+                            .zip(vals)
+                            .filter_map(|(c, v)| {
+                                v.filter(|v| *v != 0.0 || *c == "rid")
+                                    .map(|v| (*c, Value::UInt(v as u64)))
+                            })
+                            .collect();
+                        if t.kind == Kind::Rule {
+                            if let Some(tg) = tp.polygons(&g) {
+                                rules.add(&tg, &props);
+                            }
+                        } else if let Some(tg) = tp.lines(&g) {
+                            rules_ln.add(&tg, &props);
+                        }
+                    })
+                }
+                Kind::FishArea if z >= 4 => self.query_text(t, bbox, &["kind", "code"], |row| {
+                    if let Some(tg) = tp.lines(&row.geom) {
+                        fareas.add(
+                            &tg,
+                            &[
+                                ("kind", Value::Str(row.vals[0].clone().unwrap_or_default())),
+                                ("code", Value::Str(row.vals[1].clone().unwrap_or_default())),
+                            ],
+                        );
+                    }
+                }),
+                _ => {}
+            }
+        }
+        [mbound, rules, rules_ln, fareas]
     }
 
     fn query(
@@ -1313,6 +1389,13 @@ fn classify(table: &str) -> Option<(Kind, u8)> {
         "wdepth_ne" => return Some((Kind::WorldDepth, 1)),
         "wdepth_etopo" => return Some((Kind::WorldDepth, 2)),
         "wdcnt_etopo" => return Some((Kind::WorldContour, 1)),
+        _ => {}
+    }
+    match t.as_str() {
+        "mbound_lines" => return Some((Kind::Boundary, 0)),
+        "mpi_rules" => return Some((Kind::Rule, 0)),
+        "mpi_rules_ln" => return Some((Kind::RuleLine, 0)),
+        "mpi_areas_ln" => return Some((Kind::FishArea, 0)),
         _ => {}
     }
     if let Some(r) = t.strip_prefix("gshhs_") {

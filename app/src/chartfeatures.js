@@ -148,8 +148,11 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
     const box = [[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]];
     const own = map.queryRenderedFeatures(box).some((f) => /^(rt-|lib-|fl-|dl-|boat|tide-|stn-|ais-|alarm-)/.test(f.layer.id));
     if (own) return;
+    // inside a fishing rule area, the rules popup (marine.js) stands in for chart areas
+    const inRule = map.getLayer("mar-rules-fill") && map.getLayoutProperty("mar-rules-fill", "visibility") !== "none"
+      && map.queryRenderedFeatures(e.point, { layers: ["mar-rules-fill"] }).length > 0;
     const hit = map.queryRenderedFeatures(box, { layers: POINTS }).concat(
-      map.queryRenderedFeatures(box, { layers: LINES }), map.queryRenderedFeatures(e.point, { layers: ["f-area-hit"] }));
+      map.queryRenderedFeatures(box, { layers: LINES }), inRule ? [] : map.queryRenderedFeatures(e.point, { layers: ["f-area-hit"] }));
     if (!hit.length) return;
     // several features at one spot (a beacon with its light): show them all
     const seen = new Set();
@@ -404,8 +407,11 @@ function text(style, t) {
     n: `italic 600 21px "Segoe UI", system-ui, sans-serif`,
     t: `600 18px "Segoe UI", system-ui, sans-serif`,
     r: `700 20px "Segoe UI", system-ui, sans-serif`,
+    m: `600 17px "Segoe UI", system-ui, sans-serif`,
+    f: `600 17px "Segoe UI", system-ui, sans-serif`,
   };
-  const ink = { l: MAGENTA, b: INK, d: INK, n: "#2d5f8a", t: "#1e6fb5", r: "#a3134d" };
+  // m: maritime boundaries, f: fisheries areas (marine.js)
+  const ink = { l: MAGENTA, b: INK, d: INK, n: "#2d5f8a", t: "#1e6fb5", r: "#a3134d", m: "#5b2c83", f: "#2e6f8e" };
   const [c0, g0] = canvas(1, 1);
   g0.font = fonts[style];
   const w = Math.ceil(g0.measureText(t).width) + 10;

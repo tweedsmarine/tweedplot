@@ -1840,6 +1840,23 @@ fn bathy_dir(app: &tauri::AppHandle) -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("bathy"))
 }
 
+/// Maritime boundaries and fishing rules (downloads in `boundaries` and `mpi`):
+/// `RACENAV_MARINE_DIR`, else `C:\dev\racenav-data\marine` when racenav-data exists,
+/// else `<app data>\marine`.
+fn marine_dir(app: &tauri::AppHandle) -> PathBuf {
+    if let Ok(d) = std::env::var("RACENAV_MARINE_DIR") {
+        return PathBuf::from(d);
+    }
+    let dev = dev_root();
+    if dev.is_dir() {
+        return dev.join("marine");
+    }
+    app.path()
+        .app_data_dir()
+        .map(|p| p.join("marine"))
+        .unwrap_or_else(|_| PathBuf::from("marine"))
+}
+
 /// The folder holding the bundled world depths (`world_depth.gpkg`).
 fn world_depth_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
     let candidates = [
@@ -1863,7 +1880,7 @@ fn open_charts_started(handle: tauri::AppHandle) {
     CHARTS_READY.store(false, std::sync::atomic::Ordering::Release);
     *CHART_ERROR.lock().unwrap() = None;
     let dir = chart_dir(&handle);
-    let mut dirs = vec![dir.clone(), coast_dir(&handle), bathy_dir(&handle)];
+    let mut dirs = vec![dir.clone(), coast_dir(&handle), bathy_dir(&handle), marine_dir(&handle)];
     if let Some(w) = world_depth_dir(&handle) {
         dirs.push(w);
     }
@@ -1995,14 +2012,42 @@ fn data_status(app: tauri::AppHandle) -> serde_json::Value {
                 .count()
         })
         .unwrap_or(0);
+    let mdir = marine_dir(&app);
+    let boundary_zips = std::fs::read_dir(mdir.join("boundaries"))
+        .map(|rd| rd.flatten().filter(|e| e.path().extension().is_some_and(|x| x == "zip")).count())
+        .unwrap_or(0);
+    let mut mpi = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(mdir.join("mpi")) {
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.extension().is_some_and(|x| x == "json") {
+                let fetched = std::fs::read(&p)
+                    .ok()
+                    .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+                    .and_then(|v| v["fetched"].as_str().map(str::to_string));
+                mpi.push(serde_json::json!({ "name": p.file_stem().map(|n| n.to_string_lossy().into_owned()), "fetched": fetched, "bytes": e.metadata().map(|m| m.len()).unwrap_or(0) }));
+            }
+        }
+    }
+    let (n_bound, n_rules) = store
+        .as_ref()
+        .map(|s| {
+            (
+                s.tables.iter().filter(|t| t.kind == chart::Kind::Boundary).map(|t| t.rows).sum::<i64>(),
+                s.tables.iter().filter(|t| t.kind == chart::Kind::Rule).map(|t| t.rows).sum::<i64>(),
+            )
+        })
+        .unwrap_or((0, 0));
     serde_json::json!({
+        "boundaries": { "zips": boundary_zips, "lines": n_bound },
+        "mpi": { "files": mpi, "pieces": n_rules },
         "world_depth": world_depth_dir(&app).is_some(),
         "gshhg": gshhg,
         "world_land": store.as_ref().is_some_and(|s| s.has_world_land()),
         "gshhg_bytes": gribdl::data::GSHHG_BYTES,
         "etopo": etopo,
         "linz_tables": linz,
-        "dirs": { "charts": chart_dir(&app), "coast": coast, "bathy": bdir },
+        "dirs": { "charts": chart_dir(&app), "coast": coast, "bathy": bdir, "marine": mdir },
         "busy": DATA_BUSY.load(std::sync::atomic::Ordering::SeqCst),
     })
 }
@@ -2040,6 +2085,63 @@ async fn data_gshhg(app: tauri::AppHandle) -> Result<String, String> {
     let path = r??;
     open_charts(app);
     Ok(path)
+}
+
+/// Download LINZ's maritime boundaries (territorial sea, contiguous zone, EEZ, the
+/// outlying islands) and reopen the charts (which builds them). Returns what failed.
+#[tauri::command]
+async fn data_boundaries(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    data_guard()?;
+    let dir = marine_dir(&app);
+    let h = app.clone();
+    let r = tauri::async_runtime::spawn_blocking(move || {
+        let progress = |done: u64, total: u64| {
+            let _ = h.emit("data-progress", serde_json::json!({ "stage": format!("Maritime boundaries (LINZ): file {} of {total}", (done + 1).min(total)), "done": 0, "total": 0 }));
+        };
+        gribdl::marine::boundaries(&dir, &progress, &DATA_CANCEL).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string());
+    DATA_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+    let (got, failed) = r??;
+    open_charts(app);
+    Ok(serde_json::json!({ "files": got, "failed": failed }))
+}
+
+/// Download MPI's fishing rules (commercial fishing regulations, customary areas,
+/// voluntary closures, fisheries management and statistical areas) and reopen the charts.
+#[tauri::command]
+async fn data_mpi(app: tauri::AppHandle) -> Result<gribdl::marine::MpiSummary, String> {
+    data_guard()?;
+    let dir = marine_dir(&app);
+    let h = app.clone();
+    let r = tauri::async_runtime::spawn_blocking(move || {
+        let progress = |stage: &str, done: u64, total: u64| {
+            let name = stage.trim_start_matches("MARINE_").replace('_', " ");
+            let _ = h.emit("data-progress", serde_json::json!({ "stage": format!("Fishing rules (MPI): {name}, layer {} of {total}", (done + 1).min(total.max(1))), "done": 0, "total": 0 }));
+        };
+        gribdl::marine::mpi(&dir, &progress, &DATA_CANCEL).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string());
+    DATA_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+    let sum = r??;
+    open_charts(app);
+    Ok(sum)
+}
+
+/// The fishing rules at each of `points` ([lon, lat]): rule id and flags (see
+/// `chart::marine`). For the closed-area alarm and the rules at the cursor.
+#[tauri::command]
+fn rules_at(points: Vec<[f64; 2]>) -> Vec<Vec<chart::marine::RuleHit>> {
+    charts().map(|s| s.rules_at(&points)).unwrap_or_else(|| vec![Vec::new(); points.len()])
+}
+
+/// One fishing rule's details: the MPI layers it's in and all its attributes.
+#[tauri::command]
+fn rule_info(rid: i64) -> Option<serde_json::Value> {
+    let (layers, attrs) = charts()?.rule_info(rid)?;
+    Some(serde_json::json!({ "layers": layers, "attrs": attrs }))
 }
 
 /// Download ETOPO 2022 depths for `area` at `arcsec` (15, 30, 60), write depth
@@ -2407,6 +2509,10 @@ pub fn run() {
         monitor_list,
         monitor_focus,
         monitor_close,
+            data_boundaries,
+            data_mpi,
+            rules_at,
+            rule_info,
             tides_info,
             tides_stations,
             tides_curve,

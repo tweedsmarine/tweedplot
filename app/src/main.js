@@ -39,6 +39,7 @@ import { setupS63 } from "./s63.js";
 import { setupReplay } from "./replay.js";
 import { setupPalette } from "./palette.js";
 import { setupAlarms } from "./alarms.js";
+import { setupMarine } from "./marine.js";
 import { setupAis } from "./ais.js";
 import { hullRing, bigEnough } from "./hull.js";
 import { setupStations } from "./stations.js";
@@ -328,6 +329,11 @@ map.on("load", () => {
     toast,
   });
   for (const alarm of pendingNmeaAlarms.splice(0)) alarms.raise(...alarm);
+  setupMarine(map, {
+    getBoat: () => ({ pos: lastBoat, cog: vessel?.cog, sog: vessel?.sog, live: live && liveDataConnected() }),
+    getLength: () => Number(boat.get().length) || 0,
+    alarms,
+  });
   setupStations(map, { weather });
   // marks, routes and routings changed in any window (the backend announces every save and delete)
   let libraryTimer = null;
@@ -465,7 +471,8 @@ function chartsLoaded(info) {
 function enableChartLayers() {
   if (!chartMapLoaded || !chartStoreReady) return;
   for (const layer of map.getStyle().layers) {
-    if (layer.source === "chart") map.setLayoutProperty(layer.id, "visibility", "visible");
+    // the boundary and fishing rule layers are switched by marine.js
+    if (layer.source === "chart" && !layer.id.startsWith("mar-")) map.setLayoutProperty(layer.id, "visibility", "visible");
   }
   features?.setEnabled(true);
 }

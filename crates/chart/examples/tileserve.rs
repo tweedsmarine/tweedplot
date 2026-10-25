@@ -1,10 +1,11 @@
 //! Serve chart tiles over HTTP for testing the front end in a browser.
-//! `cargo run --release -p chart --example tileserve -- <folder> [port]`
+//! `cargo run --release -p chart --example tileserve -- <folder>[,<folder>...] [port]`
 //! Tiles at http://localhost:7070/{z}/{x}/{y}.pbf
 fn main() {
     let dir = std::env::args().nth(1).expect("usage: tileserve <folder> [port]");
     let port = std::env::args().nth(2).unwrap_or_else(|| "7070".into());
-    let store = std::sync::Arc::new(chart::ChartStore::open_dir(&dir).expect("open charts"));
+    let dirs: Vec<std::path::PathBuf> = dir.split(',').map(Into::into).collect();
+    let store = std::sync::Arc::new(chart::ChartStore::open_dirs(&dirs).expect("open charts"));
     let server = tiny_http::Server::http(format!("0.0.0.0:{port}")).expect("bind");
     println!("serving {} tables on :{port}", store.tables.len());
     for req in server.incoming_requests() {
@@ -29,6 +30,21 @@ fn main() {
                     i.band,
                     i.attrs.iter().map(|(k, v)| format!("[{},{}]", q(k), q(v))).collect::<Vec<_>>().join(",")
                 ),
+                None => "null".into(),
+            };
+            let _ = req.respond(tiny_http::Response::from_string(body).with_header(cors));
+            continue;
+        }
+        // fishing rules for testing: /rules_at/<lon>/<lat> and /rule/<rid> as JSON
+        if let ["rules_at", lon, lat] = parts.as_slice() {
+            let p = [lon.parse().unwrap_or(0.0), lat.parse().unwrap_or(0.0)];
+            let body = serde_json::to_string(&store.rules_at(&[p])).unwrap();
+            let _ = req.respond(tiny_http::Response::from_string(body).with_header(cors));
+            continue;
+        }
+        if let ["rule", rid] = parts.as_slice() {
+            let body = match store.rule_info(rid.parse().unwrap_or(0)) {
+                Some((layers, attrs)) => serde_json::json!({ "layers": layers, "attrs": attrs }).to_string(),
                 None => "null".into(),
             };
             let _ = req.respond(tiny_http::Response::from_string(body).with_header(cors));

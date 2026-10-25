@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/gridmath.test.js",
+    "test": "node --test src/gridmath.test.js src/rules.test.js",
     "tauri": "tauri"
   },
   "dependencies": {
