@@ -190,7 +190,9 @@ document.getElementById("zoom-in").onclick = () => map.zoomIn();
 document.getElementById("zoom-out").onclick = () => map.zoomOut();
 const northNeedle = document.getElementById("north-needle");
 document.getElementById("north-btn").onclick = () => map.easeTo({ bearing: 0, pitch: 0 });
-map.on("rotate", () => northNeedle.setAttribute("transform", `rotate(${-map.getBearing()} 12 12)`));
+// CSS rotation about the needle's centre (style.css): the SVG transform attribute's own
+// centre would be added to the CSS transform-origin, swinging it out of the button
+map.on("rotate", () => { northNeedle.style.transform = `rotate(${-map.getBearing()}deg)`; });
 map.on("load", () => map.addImage("boat", boatIcon(), { pixelRatio: 2 }));
 map.on("error", (e) => {
   if (e.sourceId === "chart") retryFailedTiles();

@@ -719,7 +719,7 @@ html[data-palette^="night"] .maplibregl-canvas[style*="cursor: grabbing"] { curs
 html.ui-zoom #zoom-btns { display: flex; }
 #zoom-btns button { flex: none; width: 52px; height: 52px; padding: 0; border-radius: 50%; font-size: 28px; line-height: 1; box-shadow: 0 1px 6px rgba(0,0,0,0.35); }
 html.no-map #zoom-btns { display: none; }
-#north-needle { transform-origin: 12px 12px; }
+#north-needle { transform-box: view-box; transform-origin: 12px 12px; }
 
 /* large controls for touch and gloves */
 html.ui-large .ctl-col button { width: 44px; height: 44px; min-height: 44px; }
