@@ -123,11 +123,21 @@ const UNDERSCALE: u8 = 4;
 /// The same where a smaller-scale chart covers the whole tile: the larger-scale chart
 /// still starts a little before its own scale.
 const UNDERSCALE_COVERED: u8 = 2;
-/// How many zooms before its usual start a chart band's depth areas and land are drawn.
+/// How many zooms before its usual start an ENC band's depth areas, lakes and land are
+/// drawn (its "skin"). A small-scale ENC often charts a lake or river as plain land (Lake
+/// Champlain in NOAA's overview cells), or covers a place without saying what is there;
+/// a coarser band's land is cut away where a finer band has coverage, so the finer band's
+/// skin has to be there to fill the hole. Six zooms is what that takes in NOAA's charts.
+const SKIN_EARLY_ENC: u8 = 6;
+/// The same for LINZ open data, whose land comes from Topo50 (with its lakes cut out) and
+/// whose bands are complete: drawing them early only costs time.
 const SKIN_EARLY: u8 = 2;
 
-fn band_visible(z: u8, band: u8, start: u8, skin: bool) -> bool {
-    z >= start || (skin && z.saturating_add(SKIN_EARLY) >= band_minzoom(band))
+/// From this zoom, world land is cut where the charts have water (see `render`).
+const WORLD_CUT_ZOOM: u8 = 7;
+
+fn band_visible(z: u8, band: u8, start: u8, skin_early: Option<u8>) -> bool {
+    z >= start || skin_early.is_some_and(|e| z.saturating_add(e) >= band_minzoom(band))
 }
 
 pub struct ChartStore {
@@ -436,12 +446,19 @@ impl ChartStore {
                 starts[(b as usize).min(7)]
             }
         };
-        // the "skin" (depth areas, lakes, land) of every chart band is drawn well before
-        // its features (SKIN_EARLY zooms), whatever covers the place: where a small-scale
-        // chart doesn't chart a lake or river as water (or covers a place without saying
-        // what is there), the larger-scale chart's land and water show instead of none
+        // the "skin" (depth areas, lakes, land) of every chart band is drawn before its
+        // features (SKIN_EARLY_ENC zooms for ENCs, SKIN_EARLY for LINZ open data), whatever
+        // covers the place: where a small-scale chart doesn't chart a lake or river as water
+        // (or covers a place without saying what is there), the larger-scale chart's land
+        // and water show instead of none
         let skin = |t: &TableInfo| {
-            matches!(t.kind, Kind::DepthArea | Kind::Lake | Kind::Land) && t.band > 0
+            (matches!(t.kind, Kind::DepthArea | Kind::Lake | Kind::Land) && t.band > 0).then(|| {
+                if t.table.contains("_enc_b") {
+                    SKIN_EARLY_ENC
+                } else {
+                    SKIN_EARLY
+                }
+            })
         };
         let mut bands: Vec<&TableInfo> = self
             .tables
@@ -450,10 +467,18 @@ impl ChartStore {
             .collect();
         bands.sort_by_key(|t| t.band);
 
+        // chart water that world land gives way to (from WORLD_CUT_ZOOM)
+        let mut chart_water: Vec<Vec<[i32; 2]>> = Vec::new();
+        let want_water = z >= WORLD_CUT_ZOOM;
         // Depth areas: every visible band, coarse first.
         for t in bands.iter().filter(|t| t.kind == Kind::DepthArea) {
             self.query(t, bbox, &["drval1", "drval2"], |vals, g| {
                 if let Some(tg) = tp.polygons(&g) {
+                    if want_water {
+                        if let TileGeom::Rings(r) = &tg {
+                            chart_water.extend(r.iter().cloned());
+                        }
+                    }
                     let mut props = vec![("band", Value::UInt(t.band as u64))];
                     for (k, v) in [("drval1", vals[0]), ("drval2", vals[1])] {
                         if let Some(v) = v {
@@ -472,6 +497,11 @@ impl ChartStore {
         {
             self.query(t, bbox, &[], |_, g| {
                 if let Some(tg) = tp.polygons(&g) {
+                    if want_water {
+                        if let TileGeom::Rings(r) = &tg {
+                            chart_water.extend(r.iter().cloned());
+                        }
+                    }
                     depare.add(
                         &tg,
                         &[
@@ -559,6 +589,43 @@ impl ChartStore {
                 }
             }
         }
+        // World land at the resolution for this zoom, except inside NZ where Topo50 is drawn.
+        let topo = z >= band_minzoom(0) && self.has_topo50();
+        let res = coast::res_for_zoom(
+            z,
+            coast::LAND_DETAIL.load(std::sync::atomic::Ordering::Relaxed),
+        );
+        let mut wcoast = Layer::new("wcoast");
+        let mut world_land: Vec<Vec<[i32; 2]>> = Vec::new();
+        let mut lakes: Vec<Vec<[i32; 2]>> = Vec::new();
+        let mut lake_islands: Vec<Vec<[i32; 2]>> = Vec::new();
+        for t in self
+            .tables
+            .iter()
+            .filter(|t| matches!(t.kind, Kind::WorldLand | Kind::WorldCoast))
+        {
+            if coast::RESOLUTIONS[(t.band as usize).clamp(1, 5) - 1] != res {
+                continue;
+            }
+            let is_land = t.kind == Kind::WorldLand;
+            let cols: &[&str] = if is_land { &["level"] } else { &[] };
+            self.query(t, bbox, cols, |vals, g| {
+                if topo && inside(geom_bounds(&g), TOPO50_AREA) {
+                    return;
+                }
+                if is_land {
+                    if let Some(TileGeom::Rings(r)) = tp.polygons(&g) {
+                        match vals[0].unwrap_or(1.0) as u8 {
+                            coast::LAKE => lakes.extend(r),
+                            coast::LAKE_ISLAND => lake_islands.extend(r),
+                            _ => world_land.extend(r),
+                        }
+                    }
+                } else if let Some(tg) = tp.lines(&g) {
+                    wcoast.add(&tg, &[]);
+                }
+            });
+        }
         // Topo50 land, with the lakes and rivers cut out (it has none of its own)
         let mut topo_land: Vec<Vec<[i32; 2]>> = Vec::new();
         let mut enc_land: Vec<Vec<[i32; 2]>> = Vec::new();
@@ -632,46 +699,30 @@ impl ChartStore {
             // no outline round it (its edges include cell and coverage edges): the coast is
             // drawn from the cells' own coastline and shoreline construction lines instead
             if !enc_land.is_empty() {
+                // and GSHHG's lakes: a small-scale ENC often charts a lake as land
+                water.extend(lakes.iter().cloned());
                 let rings = cut_water(enc_land, water);
                 if !rings.is_empty() {
                     land.add(&TileGeom::Rings(rings), &[("enc", Value::UInt(1))]);
                 }
             }
         }
-        // World land at the resolution for this zoom, except inside NZ where Topo50 is drawn.
-        let topo = z >= band_minzoom(0) && self.has_topo50();
-        let res = coast::res_for_zoom(
-            z,
-            coast::LAND_DETAIL.load(std::sync::atomic::Ordering::Relaxed),
-        );
-        let mut wcoast = Layer::new("wcoast");
-        let mut world_land: Vec<Vec<[i32; 2]>> = Vec::new();
-        for t in self
-            .tables
-            .iter()
-            .filter(|t| matches!(t.kind, Kind::WorldLand | Kind::WorldCoast))
-        {
-            if coast::RESOLUTIONS[(t.band as usize).clamp(1, 5) - 1] != res {
-                continue;
-            }
-            let is_land = t.kind == Kind::WorldLand;
-            self.query(t, bbox, &[], |_, g| {
-                if topo && inside(geom_bounds(&g), TOPO50_AREA) {
-                    return;
-                }
-                if is_land {
-                    if let Some(TileGeom::Rings(r)) = tp.polygons(&g) {
-                        world_land.extend(r);
-                    }
-                } else if let Some(tg) = tp.lines(&g) {
-                    wcoast.add(&tg, &[]);
-                }
-            });
-        }
         if !world_land.is_empty() {
-            // Draw world land beneath depth fills; avoiding a per-tile boolean difference
-            // against all chart-water polygons keeps broad-scale tiles tractable.
-            wland.add(&TileGeom::Rings(world_land), &[]);
+            // GSHHG land takes in the lakes: cut them out, put their islands back
+            if !lakes.is_empty() {
+                world_land = cut_water(world_land, lakes);
+            }
+            world_land.extend(lake_islands);
+            // where the charts have water (depth areas, ENC lakes and rivers) the world
+            // land gives way, from WORLD_CUT_ZOOM: GSHHG's shore is too coarse for harbours
+            // and leaves out most rivers. Further out a tile would cut thousands of chart
+            // polygons, and the world land's coarseness doesn't show.
+            if z >= WORLD_CUT_ZOOM && !chart_water.is_empty() {
+                world_land = cut_water(world_land, chart_water);
+            }
+            if !world_land.is_empty() {
+                wland.add(&TileGeom::Rings(world_land), &[]);
+            }
         }
         let [far, fln, fpt, lsec] = self.render_features(&tp, z, &starts);
         mvt::encode_tile(&[
@@ -820,8 +871,13 @@ impl ChartStore {
             .iter()
             .filter(|t| t.kind == Kind::WorldLand && t.band == band)
         {
-            self.query(t, bbox, &[], |_, g| {
+            self.query(t, bbox, &["level"], |vals, g| {
                 if topo && inside(geom_bounds(&g), TOPO50_AREA) {
+                    return;
+                }
+                // lakes stay land for routing (as before), so their islands add nothing
+                let level = vals[0].unwrap_or(1.0) as u8;
+                if level == coast::LAKE || level == coast::LAKE_ISLAND {
                     return;
                 }
                 if let Geom::Polygons(polys) = g {
@@ -1651,10 +1707,13 @@ mod tests {
 
     #[test]
     fn chart_skin_does_not_draw_far_below_its_scale() {
-        assert!(!band_visible(2, 2, 3, true));
-        assert!(band_visible(5, 2, 7, true));
-        assert!(band_visible(3, 2, 3, false));
-        assert!(!band_visible(2, 2, 3, false));
+        assert!(!band_visible(2, 2, 3, Some(SKIN_EARLY)));
+        assert!(band_visible(5, 2, 7, Some(SKIN_EARLY)));
+        assert!(band_visible(3, 2, 3, None));
+        assert!(!band_visible(2, 2, 3, None));
+        // ENC skins come six zooms early: band 5 (harbour, zoom 13) from zoom 7
+        assert!(band_visible(7, 5, 11, Some(SKIN_EARLY_ENC)));
+        assert!(!band_visible(6, 5, 11, Some(SKIN_EARLY_ENC)));
     }
 
     #[test]

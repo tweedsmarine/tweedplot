@@ -44,7 +44,18 @@ pub struct Observation {
     pub water_temp: Option<f64>,
     pub datetime: Option<String>,
     pub extra: BTreeMap<String, String>,
+    /// The heading came from a true-heading sensor (HDT, VHW), so a magnetic heading
+    /// doesn't replace it.
+    #[serde(skip)]
+    pub heading_from_true: bool,
+    /// Magnetic headings since the last true one: when the true-heading sensor goes
+    /// quiet (MAG_TAKES_OVER of them), the magnetic heading takes over again.
+    #[serde(skip)]
+    pub mag_since_true: u32,
 }
+
+/// See [`Observation::mag_since_true`].
+const MAG_TAKES_OVER: u32 = 20;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
@@ -168,19 +179,32 @@ pub fn parse_sentence(bytes: &[u8], max_len: usize) -> Result<Sentence, ParseErr
 }
 
 impl Observation {
+    /// Fold one sentence into the observation. A field the sentence leaves empty keeps
+    /// its last value (whether it is still fresh is the multiplexer's business: it only
+    /// counts a data group as heard when the sentence had the numbers).
     pub fn apply(&mut self, sentence: &Sentence) {
+        /// Overwrite only with a value.
+        fn put(slot: &mut Option<f64>, v: Option<f64>) {
+            if v.is_some() {
+                *slot = v;
+            }
+        }
         let f = &sentence.fields;
+        let mut heading_true = None;
         match sentence.formatter.as_str() {
             "RMC" if f.len() >= 9 && f[1] == "A" => {
                 self.position(&f[2], &f[3], &f[4], &f[5]);
-                self.sog = number(&f[6]);
-                self.cog = angle(&f[7]);
+                put(&mut self.sog, number(&f[6]));
+                put(&mut self.cog, angle(&f[7]));
                 if let Some(datetime) = rmc_datetime(&f[8], &f[0]) {
                     self.datetime = Some(datetime);
                 }
-                self.variation = signed(
-                    number(f.get(9).map(String::as_str).unwrap_or("")),
-                    f.get(10).map(String::as_str),
+                put(
+                    &mut self.variation,
+                    signed(
+                        number(f.get(9).map(String::as_str).unwrap_or("")),
+                        f.get(10).map(String::as_str),
+                    ),
                 );
             }
             "GGA" if f.len() >= 9 => {
@@ -192,85 +216,125 @@ impl Observation {
                 self.position(&f[0], &f[1], &f[2], &f[3]);
             }
             "VTG" if f.len() >= 6 => {
-                self.cog = angle(&f[0]);
-                self.sog = if f.get(5).is_some_and(|unit| unit == "N") {
-                    number(&f[4])
-                } else if f.get(7).is_some_and(|unit| unit == "K") {
-                    number(&f[6]).map(|k| k * 0.539_956_8)
-                } else {
-                    None
-                };
+                put(&mut self.cog, angle(&f[0]));
+                put(
+                    &mut self.sog,
+                    if f.get(5).is_some_and(|unit| unit == "N") {
+                        number(&f[4])
+                    } else if f.get(7).is_some_and(|unit| unit == "K") {
+                        number(&f[6]).map(|k| k * 0.539_956_8)
+                    } else {
+                        None
+                    },
+                );
             }
-            "HDT" if f.len() >= 2 && f[1] == "T" => self.heading = angle(&f[0]),
-            "HDM" if f.len() >= 2 && f[1] == "M" => self.heading_mag = angle(&f[0]),
-            "HDG" if f.len() >= 1 => {
-                self.heading_mag = angle(&f[0]);
+            "HDT" if f.len() >= 2 && f[1] == "T" => heading_true = angle(&f[0]),
+            "HDM" if f.len() >= 2 && f[1] == "M" => put(&mut self.heading_mag, angle(&f[0])),
+            "HDG" if !f.is_empty() => {
+                put(&mut self.heading_mag, angle(&f[0]));
                 if f.len() >= 5 {
-                    self.variation = signed(number(&f[3]), f.get(4).map(String::as_str));
+                    put(
+                        &mut self.variation,
+                        signed(number(&f[3]), f.get(4).map(String::as_str)),
+                    );
                 }
             }
             "VHW" if f.len() >= 6 => {
-                self.heading = angle(&f[0]);
-                self.heading_mag = angle(&f[2]);
-                self.stw = if f.get(5).is_some_and(|unit| unit == "N") {
-                    number(&f[4])
-                } else if f.get(7).is_some_and(|unit| unit == "K") {
-                    number(&f[6]).map(|k| k * 0.539_956_8)
-                } else {
-                    None
-                };
+                if f.get(1).is_some_and(|unit| unit == "T") {
+                    heading_true = angle(&f[0]);
+                }
+                if f.get(3).is_some_and(|unit| unit == "M") {
+                    put(&mut self.heading_mag, angle(&f[2]));
+                }
+                put(
+                    &mut self.stw,
+                    if f.get(5).is_some_and(|unit| unit == "N") {
+                        number(&f[4])
+                    } else if f.get(7).is_some_and(|unit| unit == "K") {
+                        number(&f[6]).map(|k| k * 0.539_956_8)
+                    } else {
+                        None
+                    },
+                );
             }
             "MWV" if f.len() >= 5 && f[4] == "A" => {
                 let angle = angle(&f[0]);
                 let speed = number(&f[2]).and_then(|s| speed_knots(s, &f[3]));
                 match f[1].as_str() {
                     "R" => {
-                        self.awa = relative_angle(angle);
-                        self.aws = speed;
+                        put(&mut self.awa, relative_angle(angle));
+                        put(&mut self.aws, speed);
                     }
                     "T" => {
-                        self.twa = relative_angle(angle);
-                        self.tws = speed;
+                        put(&mut self.twa, relative_angle(angle));
+                        put(&mut self.tws, speed);
                     }
                     _ => {}
                 }
             }
             "MWD" if f.len() >= 8 => {
                 if f[1] == "T" {
-                    self.twd = angle(&f[0]);
+                    put(&mut self.twd, angle(&f[0]));
                 }
-                self.tws = if f[5] == "N" {
-                    number(&f[4])
-                } else if f[7] == "M" {
-                    number(&f[6]).map(|m| m * 1.943_844_5)
-                } else {
-                    None
-                };
+                put(
+                    &mut self.tws,
+                    if f[5] == "N" {
+                        number(&f[4])
+                    } else if f[7] == "M" {
+                        number(&f[6]).map(|m| m * 1.943_844_5)
+                    } else {
+                        None
+                    },
+                );
             }
-            "DPT" if f.len() >= 1 => self.depth = number(&f[0]),
-            "DBT" if f.len() >= 5 => {
-                self.depth = number(&f[2]).or_else(|| number(&f[0]).map(|ft| ft * 0.3048))
-            }
-            "DBK" if f.len() >= 4 => {
-                self.depth_keel = number(&f[2]).or_else(|| number(&f[0]).map(|ft| ft * 0.3048));
-            }
-            "DBS" if f.len() >= 4 => {
-                self.depth_surface = number(&f[2]).or_else(|| number(&f[0]).map(|ft| ft * 0.3048));
-            }
-            "MTW" if f.len() >= 2 && f[1] == "C" => self.water_temp = number(&f[0]),
+            "DPT" if !f.is_empty() => put(&mut self.depth, number(&f[0])),
+            "DBT" if f.len() >= 5 => put(
+                &mut self.depth,
+                number(&f[2]).or_else(|| number(&f[0]).map(|ft| ft * 0.3048)),
+            ),
+            "DBK" if f.len() >= 4 => put(
+                &mut self.depth_keel,
+                number(&f[2]).or_else(|| number(&f[0]).map(|ft| ft * 0.3048)),
+            ),
+            "DBS" if f.len() >= 4 => put(
+                &mut self.depth_surface,
+                number(&f[2]).or_else(|| number(&f[0]).map(|ft| ft * 0.3048)),
+            ),
+            "MTW" if f.len() >= 2 && f[1] == "C" => put(&mut self.water_temp, number(&f[0])),
             "ZDA" if f.len() >= 4 => {
-                self.datetime = zda_datetime(&f[0], &f[1], &f[2], &f[3]);
+                if let Some(datetime) = zda_datetime(&f[0], &f[1], &f[2], &f[3]) {
+                    self.datetime = Some(datetime);
+                }
             }
             _ => {}
         }
         self.extra
             .insert(sentence.formatter.clone(), sentence.fields.join(","));
-        if self.heading.is_none() {
+        // True heading: from a true-heading sensor (HDT, VHW true) when there is one,
+        // else the magnetic heading corrected for variation, worked out afresh each time
+        // the magnetic heading comes in (a fluxgate compass sends only HDG or HDM).
+        if heading_true.is_some() {
+            self.heading = heading_true;
+            self.heading_from_true = true;
+            self.mag_since_true = 0;
+        } else if matches!(sentence.formatter.as_str(), "HDG" | "HDM") && self.heading_from_true {
+            self.mag_since_true += 1;
+            if self.mag_since_true >= MAG_TAKES_OVER {
+                self.heading_from_true = false;
+            }
+        }
+        if heading_true.is_none()
+            && !self.heading_from_true
+            && matches!(sentence.formatter.as_str(), "HDG" | "HDM" | "VHW" | "RMC")
+        {
             if let (Some(magnetic), Some(variation)) = (self.heading_mag, self.variation) {
                 self.heading = Some((magnetic + variation).rem_euclid(360.0));
             }
         }
-        if matches!(sentence.formatter.as_str(), "HDT" | "HDG" | "VHW" | "MWD") {
+        if matches!(
+            sentence.formatter.as_str(),
+            "HDT" | "HDG" | "HDM" | "VHW" | "MWD"
+        ) {
             if let (Some(direction), Some(heading)) = (self.twd, self.heading) {
                 self.twa = Some((direction - heading + 180.0).rem_euclid(360.0) - 180.0);
             }
@@ -634,5 +698,51 @@ mod tests {
         .unwrap();
         o.apply(&rmc);
         assert_eq!(o.datetime, None);
+    }
+
+    fn sentence(body: &str) -> Sentence {
+        let c = body.bytes().fold(0u8, |a, b| a ^ b);
+        parse_sentence(format!("${body}*{c:02X}").as_bytes(), DEFAULT_MAX_FRAME_LEN).unwrap()
+    }
+
+    #[test]
+    fn heading_from_a_magnetic_compass_follows_it() {
+        let mut o = Observation::default();
+        o.apply(&sentence("HCHDG,100.0,,,20.0,E"));
+        assert_eq!(o.heading, Some(120.0));
+        o.apply(&sentence("HCHDG,150.0,,,20.0,E"));
+        assert_eq!(o.heading, Some(170.0));
+        // variation from the GPS when the compass doesn't give it
+        o.apply(&sentence("HCHDM,200.0,M"));
+        assert_eq!(o.heading, Some(220.0));
+        // a true heading sensor wins from then on
+        o.apply(&sentence("HEHDT,90.0,T"));
+        o.apply(&sentence("HCHDG,10.0,,,20.0,E"));
+        assert_eq!(o.heading, Some(90.0));
+        assert_eq!(o.heading_mag, Some(10.0));
+        // ...until it goes quiet
+        for _ in 0..MAG_TAKES_OVER {
+            o.apply(&sentence("HCHDG,10.0,,,20.0,E"));
+        }
+        assert_eq!(o.heading, Some(30.0));
+    }
+
+    #[test]
+    fn empty_fields_keep_the_last_value() {
+        let mut o = Observation::default();
+        o.apply(&sentence(
+            "GPRMC,120000,A,3650.0,S,17445.0,E,6.0,90.0,251026,19.5,E",
+        ));
+        o.apply(&sentence("GPVTG,,T,,M,,N,,K"));
+        assert_eq!((o.sog, o.cog), (Some(6.0), Some(90.0)));
+        o.apply(&sentence(
+            "GPRMC,120001,A,3650.0,S,17445.0,E,6.1,91.0,251026,,",
+        ));
+        assert_eq!(o.variation, Some(19.5));
+        assert_eq!(o.sog, Some(6.1));
+        // VHW with only the speed doesn't clear the heading
+        o.apply(&sentence("HCHDG,100.0,,,20.0,E"));
+        o.apply(&sentence("VWVHW,,T,,M,5.2,N,,K"));
+        assert_eq!((o.heading, o.stw), (Some(120.0), Some(5.2)));
     }
 }

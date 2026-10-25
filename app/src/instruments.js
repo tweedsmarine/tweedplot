@@ -177,7 +177,9 @@ function highwayData(c) {
     : 0;
   const targetHdg = cts == null ? null : (cts - groundTrackOffset + 360) % 360;
   return {
-    mob: !!c.mob, hdg: c.v.heading, cog: c.v.cog, sog, range, bearing: bearingToTarget,
+    // no heading sensor: steer by COG (the arrow then shows the turn on the ground track)
+    mob: !!c.mob, hdg: c.v.heading ?? c.v.cog, hdgFromCog: c.v.heading == null && c.v.cog != null,
+    cog: c.v.cog, sog, range, bearing: bearingToTarget,
     track, cts, targetHdg, xte, vmg, ttg, eta: ttg == null ? null : c.now + ttg * 1000,
     groundTrackOffset,
   };
@@ -186,7 +188,7 @@ function highwayData(c) {
 function highwayMarkup() {
   return `<div class="hw-dashboard">
     <div class="hw-metrics hw-top">
-      <div class="hw-metric"><span>Heading · HDG</span><strong data-hw="hdg">—</strong></div>
+      <div class="hw-metric"><span data-hw="hdg-label">Heading · HDG</span><strong data-hw="hdg">—</strong></div>
       <div class="hw-metric hw-target"><span>Course to steer · CTS</span><strong data-hw="cts">—</strong></div>
       <div class="hw-metric"><span>Speed over ground</span><strong data-hw="sog">—</strong><small>SOG · kn</small></div>
       <div class="hw-metric"><span data-hw="dtw-label">Distance to waypoint</span><strong data-hw="dtw">—</strong><small>DTW · NM</small></div>
@@ -281,6 +283,7 @@ function renderHighway(host, raw, ctx) {
   };
   const angle = (degrees) => degrees == null ? "—" : `${deg3(degrees)}°`;
   text("hdg", angle(h?.hdg));
+  text("hdg-label", h?.hdgFromCog ? "Course over ground · COG" : "Heading · HDG");
   text("cts", angle(h?.cts));
   text("sog", h?.sog == null ? "—" : h.sog.toFixed(1));
   text("dtw", h?.range == null ? "—" : h.range.toFixed(h.range < 10 ? 2 : 1));

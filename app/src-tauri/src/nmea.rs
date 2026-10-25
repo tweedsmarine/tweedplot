@@ -156,6 +156,21 @@ static MULTIPLEXER: Mutex<Multiplexer> = Mutex::new(Multiplexer {
     },
 });
 static NEXT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+/// New navigation data since the vessel state was last published (at most 10 a second).
+static VESSEL_DIRTY: AtomicBool = AtomicBool::new(false);
+/// Sources whose status (sentence counts) changed since it was last published.
+static STATUS_DIRTY: Mutex<std::collections::BTreeSet<String>> =
+    Mutex::new(std::collections::BTreeSet::new());
+/// Sentences heard since the last "nmea-observation" event, per source: (name, raw).
+static RECENT: Mutex<BTreeMap<String, (String, Vec<String>)>> = Mutex::new(BTreeMap::new());
+/// AIS messages over NMEA are put together and decoded per source.
+static AIS_DECODERS: Mutex<BTreeMap<String, ais::nmea::Decoder>> = Mutex::new(BTreeMap::new());
+/// How often the vessel state goes to the windows when data is coming in.
+const PUBLISH_EVERY: Duration = Duration::from_millis(100);
+/// How many publish ticks between status and sentence-monitor updates (half a second).
+const MONITOR_TICKS: u32 = 5;
+/// How many publish ticks between forced publishes (stale data must drop out).
+const FORCE_TICKS: u32 = 10;
 
 fn emit_status(app: &tauri::AppHandle, status: SourceStatus) {
     if let Err(error) = app.emit("nmea-status", status) {
@@ -194,10 +209,51 @@ fn update_status(
     if let Some(sentence) = sentence {
         status.last_sentence = Some(sentence.raw.clone());
     }
+    // a sentence counted: published with the next monitor tick, not one event per sentence
+    if state.is_none() && sentence.is_some() {
+        drop(statuses);
+        STATUS_DIRTY.lock().unwrap().insert(id.to_owned());
+        return;
+    }
     let status = status.clone();
     drop(statuses);
     if let Err(error) = app.emit("nmea-status", status) {
         eprintln!("Could not publish NMEA source status: {error}");
+    }
+}
+
+/// Publish the source statuses and the sentences heard since the last time.
+fn publish_monitor(app: &tauri::AppHandle) {
+    let dirty = std::mem::take(&mut *STATUS_DIRTY.lock().unwrap());
+    let statuses: Vec<SourceStatus> = {
+        let all = STATUSES.lock().unwrap();
+        dirty.iter().filter_map(|id| all.get(id).cloned()).collect()
+    };
+    for status in statuses {
+        emit_status(app, status);
+    }
+    let recent = std::mem::take(&mut *RECENT.lock().unwrap());
+    if recent.is_empty() {
+        return;
+    }
+    let hub = MULTIPLEXER.lock().unwrap();
+    for (id, (name, sentences)) in recent {
+        let observation = hub
+            .sources
+            .get(&id)
+            .map(|s| s.observation.clone())
+            .unwrap_or_default();
+        if let Err(error) = app.emit(
+            "nmea-observation",
+            serde_json::json!({
+                "sourceId": id,
+                "sourceName": name,
+                "sentences": sentences,
+                "observation": observation,
+            }),
+        ) {
+            eprintln!("Could not publish NMEA observation: {error}");
+        }
     }
 }
 
@@ -217,11 +273,9 @@ fn invalid_sentence(
     status.invalid_sentences += 1;
     status.state = "receiving".into();
     status.detail = error.to_string();
-    let status = status.clone();
     drop(statuses);
-    if let Err(error) = app.emit("nmea-status", status) {
-        eprintln!("Could not publish NMEA source status: {error}");
-    }
+    let _ = app;
+    STATUS_DIRTY.lock().unwrap().insert(id.to_owned());
 }
 
 fn sentence_groups(sentence: &Sentence, observation: &Observation) -> Vec<DataGroup> {
@@ -482,19 +536,23 @@ fn publish_multiplexed(app: &tauri::AppHandle, force: bool) {
             eprintln!("Could not publish NMEA failover alarm: {error}");
         }
     }
-    if let Err(error) = app.emit(
-        "nmea-mux-status",
-        serde_json::json!({
-            "connected": any_connected,
-            "state": if group_sources.is_empty() { "waiting" } else { "receiving" },
-            "detail": if group_details.is_empty() {
-                "Waiting for fresh NMEA data".to_owned()
-            } else {
-                group_details.join(" · ")
-            },
-            "groupSources": group_sources,
-        }),
-    ) {
+    // the status line: when the sources change, and once a second
+    let status_due = !force || changed;
+    if let Some(Err(error)) = status_due.then(|| {
+        app.emit(
+            "nmea-mux-status",
+            serde_json::json!({
+                "connected": any_connected,
+                "state": if group_sources.is_empty() { "waiting" } else { "receiving" },
+                "detail": if group_details.is_empty() {
+                    "Waiting for fresh NMEA data".to_owned()
+                } else {
+                    group_details.join(" · ")
+                },
+                "groupSources": group_sources,
+            }),
+        )
+    }) {
         eprintln!("Could not publish NMEA multiplexer status: {error}");
     }
     if force || changed {
@@ -526,8 +584,30 @@ fn consume_bytes(
     for parsed in framer.push(bytes) {
         match parsed {
             Ok(sentence) => {
-                observation.apply(&sentence);
                 {
+                    let mut recent = RECENT.lock().unwrap();
+                    let entry = recent
+                        .entry(source.id.clone())
+                        .or_insert_with(|| (source.name.clone(), Vec::new()));
+                    entry.1.push(sentence.raw.clone());
+                    // the monitor shows the last 100; more than that between ticks is dropped
+                    if entry.1.len() > 100 {
+                        entry.1.remove(0);
+                    }
+                }
+                if matches!(sentence.formatter.as_str(), "VDM" | "VDO") {
+                    // AIS: a target for the chart, not navigation data
+                    let update = AIS_DECODERS
+                        .lock()
+                        .unwrap()
+                        .entry(source.id.clone())
+                        .or_default()
+                        .push(&sentence.formatter, &sentence.fields);
+                    if let Some(update) = update {
+                        crate::live::merge_ais(update);
+                    }
+                } else {
+                    observation.apply(&sentence);
                     let mut hub = MULTIPLEXER.lock().unwrap();
                     let source_observation = hub.sources.entry(source.id.clone()).or_default();
                     source_observation.observation = observation.clone();
@@ -536,6 +616,7 @@ fn consume_bytes(
                             .last_seen_by_group
                             .insert(group, Instant::now());
                     }
+                    VESSEL_DIRTY.store(true, Ordering::Relaxed);
                 }
                 update_status(
                     app,
@@ -546,20 +627,6 @@ fn consume_bytes(
                     true,
                     Some(&sentence),
                 );
-                if let Err(error) = app.emit(
-                    "nmea-observation",
-                    serde_json::json!({
-                        "sourceId": source.id,
-                        "sourceName": source.name,
-                        "sentence": sentence,
-                        "observation": observation,
-                    }),
-                ) {
-                    eprintln!("Could not publish NMEA observation: {error}");
-                }
-                if !crate::live::is_replaying() {
-                    publish_multiplexed(app, true);
-                }
             }
             Err(error) => invalid_sentence(app, &source.id, generation, &error),
         }
@@ -592,6 +659,7 @@ fn start_sources(
     {
         let mut hub = MULTIPLEXER.lock().unwrap();
         hub.sources.clear();
+        AIS_DECODERS.lock().unwrap().clear();
         hub.active_sources.clear();
         hub.source_configs = sources.to_vec();
         hub.arbitration = arbitration;
@@ -603,11 +671,23 @@ fn start_sources(
     if TICKER_STARTED.set(()).is_ok() {
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(1));
+            // new data out at most 10 times a second; once a second regardless, so data
+            // that has gone stale drops out; the monitor (counts, sentences) twice a second
+            let mut interval = tokio::time::interval(PUBLISH_EVERY);
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let mut tick = 0u32;
             loop {
                 interval.tick().await;
+                tick = tick.wrapping_add(1);
                 if !crate::live::is_replaying() {
-                    publish_multiplexed(&app, false);
+                    if VESSEL_DIRTY.swap(false, Ordering::Relaxed) {
+                        publish_multiplexed(&app, true);
+                    } else if tick.is_multiple_of(FORCE_TICKS) {
+                        publish_multiplexed(&app, false);
+                    }
+                }
+                if tick.is_multiple_of(MONITOR_TICKS) {
+                    publish_monitor(&app);
                 }
             }
         });

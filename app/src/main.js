@@ -122,7 +122,7 @@ const map = new maplibregl.Map({
       { id: "safety-contour", type: "line", source: "chart", "source-layer": "depcnt",
         filter: ["==", ["get", "valdco"], settings.safetyContour], layout: { visibility: "none" },
         paint: { "line-color": "#1d2a33", "line-width": 1.6 } },
-      // Keep bundled land visible beneath chart fills while vector tiles are opening or retrying.
+      // Bundled land: shown until chart tiles arrive (setChartFallbackRange).
       { id: "land-world", type: "fill", source: "land-world", maxzoom: 6,
         paint: { "fill-color": css("--land") } },
       { id: "land-nz", type: "fill", source: "land-nz", minzoom: 4,
@@ -426,16 +426,22 @@ function feed() {
 }
 setInterval(feed, 1000);
 
-// Keep the bundled coastline visible beneath chart tiles as they load.
+// The bundled land and coast show while the chart tiles load (and when there are no
+// charts). Once tiles arrive they are hidden: the tiles have their own world land, with
+// the lakes and charted water cut out, and the bundled land would cover those.
 let chartMapLoaded = false, pendingChartInfo = null;
+const FALLBACK_LAND = ["land-world", "coast-world", "land-nz", "coast-nz"];
+let chartWorldLand = false; // the chart store has GSHHG world land (chart_info)
 function setChartFallbackRange(loading) {
-  if (!map.getLayer("land-world") || !map.getLayer("coast-world")) return;
-  const maxZoom = loading ? 22 : 6;
-  map.setLayerZoomRange("land-world", 0, maxZoom);
-  map.setLayerZoomRange("coast-world", 0, maxZoom);
+  if (!FALLBACK_LAND.every((id) => map.getLayer(id))) return;
+  const show = loading || !chartWorldLand;
+  for (const id of FALLBACK_LAND) map.setLayoutProperty(id, "visibility", show ? "visible" : "none");
+  map.setLayerZoomRange("land-world", 0, 22);
+  map.setLayerZoomRange("coast-world", 0, 22);
 }
 function chartsLoaded(info) {
   if (!info) return;
+  chartWorldLand = !!info.world_land;
   window.dispatchEvent(new CustomEvent("racenav-charts", { detail: info }));
   if (info.ready === false) return;
   if (!(info.tables > 0)) return;

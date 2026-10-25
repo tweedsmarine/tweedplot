@@ -15,7 +15,9 @@
 //! | `gshhs_h` | high | 6–7 |
 //! | `gshhs_f` | full | 8 and up |
 //!
-//! Levels used: L1 (land and ocean islands) and L5 (Antarctic ice front).
+//! Levels used: L1 (land and ocean islands), L2 (lakes), L3 (islands in lakes) and
+//! L5 (Antarctic ice front). L1 takes in the lakes, so tiles cut the L2 lakes out of
+//! it and put the L3 islands back (the `level` column says which is which).
 //!
 //! Each resolution has land polygons cut into pieces of at most a few thousand
 //! points (`gshhs_<r>`, for the land fill) and the coastline as lines in
@@ -30,9 +32,12 @@ use rusqlite::Connection;
 use crate::ChartError;
 
 pub const RESOLUTIONS: [char; 5] = ['c', 'l', 'i', 'h', 'f'];
-const LEVELS: [u8; 2] = [1, 5];
+const LEVELS: [u8; 4] = [1, 2, 3, 5];
+/// GSHHG level of lake polygons, and of islands in lakes.
+pub const LAKE: u8 = 2;
+pub const LAKE_ISLAND: u8 = 3;
 /// Bump when the built file changes shape, so old builds are redone.
-const BUILD_VERSION: i64 = 2;
+const BUILD_VERSION: i64 = 3;
 /// Land polygons bigger than this are cut into pieces (so a tile reads only
 /// the piece it needs: Eurasia at full resolution is over a million points).
 const MAX_PIECE: usize = 4000;

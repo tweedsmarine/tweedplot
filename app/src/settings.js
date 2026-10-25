@@ -428,13 +428,14 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       updateSourceStatus(payload);
     }
   }).catch((error) => showSourceStatus(`Could not subscribe to NMEA status: ${error}`, "bad"));
+  // the sentences a source sent since the last event (about twice a second)
   listen("nmea-observation", ({ payload }) => {
-    const raw = payload?.sentence?.raw;
-    if (!raw || !payload.sourceId) return;
+    const raws = payload?.sentences ?? (payload?.sentence?.raw ? [payload.sentence.raw] : []);
+    if (!raws.length || !payload.sourceId) return;
     latestObservations.set(payload.sourceId, payload.observation || {});
     const time = new Date().toLocaleTimeString();
-    recentSentences.push(`${time}  ${payload.sourceName || payload.sourceId}  ${raw}`);
-    if (recentSentences.length > 100) recentSentences.shift();
+    for (const raw of raws) recentSentences.push(`${time}  ${payload.sourceName || payload.sourceId}  ${raw}`);
+    if (recentSentences.length > 100) recentSentences.splice(0, recentSentences.length - 100);
     renderNmeaData();
   }).catch((error) => showSourceStatus(`Could not subscribe to NMEA data: ${error}`, "bad"));
   function renderActiveSources() {

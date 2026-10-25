@@ -3,10 +3,12 @@
 //!
 //! Targets come from two places and are merged by MMSI:
 //! - the Signal K server (an AIS receiver on board), see [`Target::apply_signalk`];
+//! - an AIS receiver on an NMEA 0183 port (`!AIVDM`), see [`nmea`];
 //! - an online feed of shore stations, [aisstream.io](https://aisstream.io), see [`stream`].
 //!
 //! Units: degrees true, knots, metres; times are Unix seconds.
 
+pub mod nmea;
 pub mod stream;
 
 use serde::Serialize;

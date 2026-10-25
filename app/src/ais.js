@@ -140,7 +140,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     return t.kind === "aton" || t.kind === "base" ? age > 20 * 60 : age > (moving ? 3 : 10) * 60;
   };
   /** Heard only over the internet (no receiver on board heard it). */
-  const netOnly = (t) => !String(t.source).includes("signalk");
+  const netOnly = (t) => !/signalk|nmea/.test(String(t.source)); // heard on board: Signal K or NMEA 0183
   /** Centre of the internet AIS area when it is a range (chart centre or own boat), else null. */
   function netCentre() {
     if (s.netMode === "boat") return getOwn()?.pos ?? null;
@@ -280,7 +280,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       if (c.tcpa != null) add("CPA / TCPA", c.tcpa > 0 ? `${c.cpa.toFixed(2)} NM in ${Math.round(c.tcpa)} min` : "Moving apart");
     }
     if (t.last_pos) add("Position age", `${Math.round(Date.now() / 1000 - t.last_pos)} s`);
-    add("Heard by", t.source.replace("signalk", "Signal K").replace("aisstream", "aisstream.io").replace("+", " and ") + (netOnly(t) ? " (internet: may be late or missing, not for navigation)" : ""));
+    add("Heard by", t.source.replace("signalk", "Signal K").replace("nmea", "NMEA 0183").replace("aisstream", "aisstream.io").replace("+", " and ") + (netOnly(t) ? " (internet: may be late or missing, not for navigation)" : ""));
     const fe = inFleet(t.mmsi);
     const btns = `<div class="ais-pop-btns">${fe ? `<span class="wx-note">Own fleet: ${esc(fe.group)}</span><button data-act="track">${fe.track || fleet.trackAll ? "Hide track" : "Show track"}</button><button data-act="unfleet">Remove from own fleet</button>`
       : `<button data-act="fleet">Add to own fleet</button>`}</div>`;
@@ -443,10 +443,10 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
 
   // ---------- settings ----------------------------------------------------------------
   function statusUi() {
-    const sk = [...targets.values()].filter((t) => t.source.includes("signalk")).length;
+    const sk = [...targets.values()].filter((t) => !netOnly(t)).length;
     const on = [...targets.values()].filter((t) => t.source.includes("aisstream")).length;
     $("ais-sk-dot").className = `dot ${sk ? "on" : "paused"}`;
-    $("ais-sk-state").textContent = sk ? `Signal K: ${sk} target${sk === 1 ? "" : "s"}` : "Signal K: no AIS targets (no receiver, or nothing in range)";
+    $("ais-sk-state").textContent = sk ? `On board (Signal K or NMEA): ${sk} target${sk === 1 ? "" : "s"}` : "On board (Signal K or NMEA): no AIS targets (no receiver, or nothing in range)";
     $("ais-on-dot").className = `dot ${!s.online ? "paused" : online.connected ? "on" : ""}`;
     $("ais-on-state").textContent = !s.online ? "Online (aisstream.io): off" : online.connected ? `Online (aisstream.io): connected, ${on} target${on === 1 ? "" : "s"}` : `Online (aisstream.io): ${online.detail || "connecting…"}`;
     $("ais-online").textContent = s.online ? "Go offline" : "Go online";

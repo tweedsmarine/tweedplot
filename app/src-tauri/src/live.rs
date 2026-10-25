@@ -22,6 +22,13 @@ fn with_targets<R>(f: impl FnOnce(&mut ais::Targets) -> R) -> R {
     f(g.get_or_insert_with(ais::Targets::default))
 }
 
+/// An AIS target heard over NMEA 0183 (an AIS receiver on a serial or network port).
+pub(crate) fn merge_ais(u: ais::Update) {
+    if !is_replaying() {
+        with_targets(|t| t.merge(u, now_s()));
+    }
+}
+
 pub(crate) fn is_replaying() -> bool {
     REPLAY.lock().unwrap().is_some()
 }
