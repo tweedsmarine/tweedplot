@@ -62,7 +62,7 @@ Advanced: the environment variables `RACENAV_GRIB_DIR`, `RACENAV_POLAR_DIR`, `RA
 - [ ] Boat drawer: choose a polar (sail) and set efficiency and tack/gybe times.
 - [ ] Weather drawer: download or load a GRIB.
 - [ ] Instruments drawer: arrange the panels you want; the layout is kept per PC.
-- [ ] If you have instruments: start your Signal K server; the Signal K button at the top right turns green.
+- [ ] If you have instruments: start your Signal K server (or connect your NMEA source); the Signal K button in the toolbar at the top left turns green.
 
 **The screen**
 
@@ -77,7 +77,10 @@ Drawers slide out from the rail; instrument panels, the time slider and the dock
 | Where | What | How to use it |
 | --- | --- | --- |
 | Left rail | Weather, Course, Routing, Fleet, Library, Boat, Chart, Instruments; Ruler and Centre at the bottom | Click an icon to open its drawer; click again or press Esc to close it. Only one drawer is open at a time |
-| Top right | Four buttons in a column: Signal K status, **Live / Paused**, **Follow**, **Clear track** | Paused = planning: the boat stays where you put it |
+| Top left | The toolbar, a column of buttons: **North up**, Signal K status, **Live / Paused**, **Follow**, **View**, **Panels**, **Chart**, **Day / night colours**, **Clear track**. It moves along when a drawer opens | Paused = planning: the boat stays where you put it. See *Views and monitor windows* under Instruments |
+| Top right | **MOB** (man overboard), alone, the same size and place in every view and every window | One press, no confirmation. See *Alarms and man overboard* |
+| Bottom right | **Drop**: marks the boat's position with the time | No alarm, nothing else changes |
+| Bottom centre | **Zoom out** and **Zoom in**, two round buttons well apart | Shown on touch screens only, unless you change it under *Screen controls* in Settings |
 | Floating panels | Instrument panels and the time slider | Drag by the grip (⋮⋮); double-click the grip to fold a panel |
 | Bottom | The dock: Compare routings, Gates, Fleet, Meteogram, Verify | Opens from buttons in the drawers; drag its top edge to resize |
 | Bottom left | Cursor position | Also in the Cursor instrument |
@@ -85,7 +88,7 @@ Drawers slide out from the rail; instrument panels, the time slider and the dock
 
 **Mouse and touch**
 
-- Drag to pan, scroll or pinch to zoom, right-drag or two-finger twist to rotate (the compass button resets north up).
+- Drag to pan, scroll or pinch to zoom, right-drag or two-finger twist to rotate (the **North up** button at the top of the toolbar turns the chart back to north at the top; its needle shows which way north is).
 - On a touch screen a tap sets the cursor (there is no hover), and a long press opens the chart menu.
 - To move a course mark, library mark, ruler point or barrier point: click it (amber ring), wait for the ring to turn green, then drag. The pause stops marks being moved by accident. A library mark's new position is saved straight away, and every route using it follows.
 
@@ -176,7 +179,7 @@ Tidal streams are not shown yet. ECMWF 0.1° surface currents and HYCOM currents
 
 **Display colours: day, dusk and night**
 
-The ☀ button at the top right (or **Chart and Signal K › Display colours**) steps through four sets of colours:
+The ☀ button in the toolbar at the top left (or **Chart and Signal K › Display colours**) steps through four sets of colours:
 
 | Colours | Use |
 | --- | --- |
@@ -187,7 +190,11 @@ The ☀ button at the top right (or **Chart and Signal K › Display colours**) 
 
 **Brightness** sets how bright dusk and night are. Turn the screen's own brightness down at night too: night colours dim what is drawn, not the backlight.
 
-With dusk and night colours the window's title bar turns dark as well. To get rid of it altogether, press **F11** (or **Full screen** under Display colours) to fill the screen; F11 again switches back. The cockpit window does the same with its own colours and F11.
+**Each window has its own colours.** A monitor window in a lit office can stay on day colours while the one on the fly bridge is on night red. Each window remembers its own setting.
+
+**Night cursors.** In the night modes the mouse pointer is drawn in the night colour (an arrow, a ring over things you can click, a cross while drawing and a four-way mark for dragging the chart), because the system's white pointer would spoil night vision. The pointer is drawn at a fixed brightness; the resize pointers and the text caret stay as Windows draws them. A touch screen has no pointer.
+
+With dusk and night colours the window's title bar turns dark as well. To get rid of it altogether, press **F11** (or **Full screen** under Display colours) to fill the screen; F11 again switches back. Monitor windows do the same with their own colours and F11.
 
 ## Your boat
 
@@ -195,7 +202,7 @@ TweedPlot shows your own boat from live instruments, or wherever you put it when
 
 **Signal K**
 
-TweedPlot reads live data (position, heading, speed, wind, depth) from a [Signal K](https://signalk.org) server, normally running on the same PC. Signal K takes NMEA 0183 and NMEA 2000 from your GPS and instruments through a USB adapter or gateway and serves it to any number of apps. TweedPlot connects to `ws://localhost:3000` (set `RACENAV_SK_URL` for another address). The top button of the column at the top right shows the connection at all times: green when data is arriving, amber when connected but nothing has arrived for 10 seconds, red with a slash when there is no connection (blinking while it first tries). Hover it for the server address, the time of the last update and what is arriving; click it for the Signal K section of the Chart and Signal K drawer.
+TweedPlot reads live data (position, heading, speed, wind, depth) from a [Signal K](https://signalk.org) server, normally running on the same PC. Signal K takes NMEA 0183 and NMEA 2000 from your GPS and instruments through a USB adapter or gateway and serves it to any number of apps. TweedPlot connects to `ws://localhost:3000` (set `RACENAV_SK_URL` for another address). The Signal K button in the toolbar at the top left shows the connection at all times: green when data is arriving, amber when connected but nothing has arrived for 10 seconds, red with a slash when there is no connection (blinking while it first tries). Hover it for the server address, the time of the last update and what is arriving; click it for the Signal K section of the Chart and Signal K drawer.
 
 No instruments? A GPS dongle into Signal K is enough for position, course and speed. With no Signal K at all, TweedPlot works fully in planning mode.
 
@@ -205,7 +212,7 @@ TweedPlot logs every Signal K session, AIS targets included, while it runs. **Ch
 
 **Live and planning**
 
-| Mode | Button (top right) | The boat | Time used by the instruments and routing |
+| Mode | Button (toolbar, top left) | The boat | Time used by the instruments and routing |
 | --- | --- | --- | --- |
 | Live | **Live** | Follows Signal K | Now (GPS time) |
 | Planning | **Paused** | Stays where you put it: right-click > **Move boat here** | The weather slider time |
@@ -284,7 +291,45 @@ For a power boat, see *Making a power polar* in the Route planning tutorial.
 
 ## Instruments
 
-Instrument panels are rows or columns of readings that float over the chart. Make as many as you like, put them anywhere, and keep a different layout on each PC (chart table, laptop, cockpit screen).
+Instrument panels are rows or columns of readings that float over the chart. Make as many as you like, put them anywhere, and keep a different layout on each PC (chart table, laptop, helm screen).
+
+**Views and monitor windows**
+
+A **view** is an arrangement of the same screen. The **View** button in the toolbar (top left) cycles through them:
+
+| View | Shows |
+| --- | --- |
+| **Navigation** | The chart with the rail, drawers and dock tucked away, for use under way |
+| **Planning** | The chart with the rail, drawers and dock, for routes and weather. The layout the app always had |
+| **Instruments** | A screen of single readings, with no chart |
+
+Every option is still available in every view; a view only decides what is shown to begin with. **Panels** and **Chart** (also in the toolbar) show or hide the rail, drawers and dock, and the chart, in the current view.
+
+Each panel (group of instruments) has a name you can edit in the Instruments drawer (the text box in its list entry), and a tick for each view, which says whether the group floats over the chart in that view.
+
+**Monitor windows.** **Instruments › New monitor window** opens another full TweedPlot window for another screen, showing any view you choose. Open as many as you like: the Navigation view on two bridge displays, the Instruments view at the helm, Planning at the chart table. Drag each window to its screen and press **Full screen** (F11).
+
+- Each window has its own view, colours (day, dusk, night), size and position. Monitor windows reopen where you left them when TweedPlot starts.
+- Live data, alarms, marks, routes and the library are shared. Any window can silence or accept an alarm, press **MOB** or **Drop**, set or clear the anchor watch, and pan and zoom its own chart. A mark or route saved in one window appears in every other within a moment, and the route being edited in the Course panel is shown and followed in every window. Keep the route editing to one window at a time, normally the Planning window.
+- Closing a monitor window closes only that window. Closing the main window closes the whole program.
+- Each window can be closed, minimised, maximised and restored with the normal window buttons.
+
+**The Instruments view**
+
+The Instruments view is one screen of tiles, each a single reading, on a grid of 12 columns by 8 rows. It uses the same readings as the floating panels (including the graphic Wind, Compass and Highway), but its tiles are not grouped.
+
+- **Move**: drag a tile. A tile dropped under another locks to that tile's column; it does not shuffle to the left. Tiles snap to the grid and cannot overlap or leave the screen.
+- **Resize**: drag the handle in a tile's bottom right corner. Text and dials scale to fill the tile.
+- **Change a reading**: click (tap) a tile to choose what it shows, or remove it.
+- **Instruments drawer › Add an instrument** puts a new tile in the first free space. **Reset Instruments screen** returns to the default arrangement.
+- Night colours show red (or green) readings on black.
+
+**Screen controls**
+
+**Settings › Screen controls** is kept for each window:
+
+- **Zoom buttons**: Auto shows them only where a touch screen is found. **Show** or **Hide** forces it. They are two round buttons at the bottom centre, well apart.
+- **Large buttons**: Auto enlarges the toolbar, MOB, Drop and zoom buttons on a touch screen. **On** does it on any screen, for gloves.
 
 **Working with panels**
 
@@ -319,13 +364,11 @@ Two readings are drawn rather than written, in the Graphic group of any tile's m
 - **Compass**: heading at the top of a turning card, with course over ground (orange) and the bearing to the next mark (green) on its rim.
 - **Highway**: a stacked navigation display with heading, course to steer (CTS), speed over ground (SOG), waypoint distance (DTW), a full-width heading-following compass ribbon, a perspective track grid, cross-track error (XTE), time to go (TTG) and estimated arrival (ETA). The heading is marked at the ribbon centre and the bearing graduations scroll continuously. The perspective lane shifts with XTE while the vessel stays fixed. CTS steers back toward the active route leg, with the correction limited to 30°. When both heading and course over ground (COG) are available, their signed difference estimates the combined track offset; the target heading compensates for that offset. A horizontal arrow below the highway shows the direction and size of the required heading change. Values ease toward new readings at 4 Hz. During MOB the display switches to direct bearing and range to the MOB position.
 
-**Cockpit window**
-
-**Instruments › Cockpit window** opens a second window of large readings for a screen at the helm. Drag it to that screen and press **Full screen**. The Highway is displayed above the configurable reading grid. Touch a reading to choose what it shows or move it, **+ Reading** adds one, **Columns** sets the grid, and its own day/night button sets its colours. It shows the same navigation data and alarms as the chart window, with a tone while an alarm has not been silenced. Keep the chart window open: it feeds the cockpit window.
+The main window does the work that must happen once, whatever the number of windows: it checks the alarms, plays their sound, and keeps the MOB and anchor watch. Monitor windows show the same alarms and can silence them. Keep the main window open; closing it closes the program.
 
 ## Alarms and man overboard
 
-Alarms appear in a banner at the top of the chart and sound until silenced. **Silence** stops the sound; the alarm stays in the banner while its cause lasts. Click an alarm's text to show its place on the chart. They work from live data (or a replay), not in planning.
+Alarms appear in a banner at the top of the chart and sound until silenced. The banner is in every window; **Silence**, accept and **Clear MOB** work from any of them. **Silence** stops the sound; the alarm stays in the banner while its cause lasts. Click an alarm's text to show its place on the chart. They work from live data (or a replay), not in planning.
 
 **Instruments › Alarms**
 
@@ -341,7 +384,13 @@ Alarms appear in a banner at the top of the chart and sound until silenced. **Si
 
 **Man overboard**
 
-Press the red **MOB** button at the top right the moment someone goes over. TweedPlot marks the boat's position (or where it was put when planning) and raises an alarm that shows the time since, and the bearing and distance back to the position, updated every second, with a line from the boat to it on the chart. A large red **Man overboard** instrument panel comes up below the alarms with **Brg to MOB** (°T), **Rng to MOB** (metres under 0.2 NM, then NM), **Since MOB** (minutes and seconds) and **MOB at** (the position and the time it was pressed, local and UTC, for the log and a distress call), big enough to read from the helm; it comes up even if it was folded or hidden, can be dragged like any panel, and goes when the MOB is cleared. The Highway switches to direct bearing and range to the MOB position. The cockpit window has its own red **MOB** button (bottom left), which marks the MOB just as the chart window's does, and shows the same readings for as long as the MOB is set. Clear the MOB in the chart window. The position is also saved as a library mark in the group "MOB". **Clear MOB** in the banner, pressed twice, ends it.
+Press the red **MOB** button at the top right the moment someone goes over. It is alone in that corner, in the same place and size in every view and in every window, and works with one press and no confirmation: a mistaken press costs little, a delayed one may not. Clearing a MOB asks twice.
+
+TweedPlot marks the boat's position (or where it was put when planning) and raises an alarm that shows the time since, and the bearing and distance back to the position, updated every second, with a line from the boat to it on the chart. A large red **Man overboard** instrument panel comes up below the alarms with **Brg to MOB** (°T), **Rng to MOB** (metres under 0.2 NM, then NM), **Since MOB** (minutes and seconds) and **MOB at** (the position and the time it was pressed, local and UTC, for the log and a distress call), big enough to read from the helm; it comes up even if it was folded or hidden, can be dragged like any panel, and goes when the MOB is cleared. The Highway switches to direct bearing and range to the MOB position. Every window has the MOB button and shows the same readings for as long as the MOB is set, and the MOB can be cleared in any window. The position is also saved as a library mark in the group "MOB". **Clear MOB** in the banner, pressed twice, ends it.
+
+**Drop mark**
+
+The **Drop** button (bottom right of every window) marks the boat's position now and stamps it with the time, as a library mark named "Drop hh:mm:ss" in the group "Drops". Use it for a fish, a pot, a floating object or a depth change. Unlike MOB it raises no alarm and changes no view or instrument. The mark shows in the Library at once, in every window.
 
 ## AIS targets
 

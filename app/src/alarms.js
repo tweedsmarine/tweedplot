@@ -244,7 +244,8 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft, onMobMa
     try {
       await invoke("mark_save", { mark: { name: `Drop ${when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`,
         lat: p[1], lon: p[0], kind: "waypoint", group: "Drops", notes: `Mark dropped ${when.toISOString()}` } });
-      toast("Mark dropped", 1500);
+      toast("Mark dropped", 2500);
+      onMobMarkDeleted(); // refreshes the library and the marks on the chart
     } catch (error) {
       toast(`Could not drop the mark: ${error}`, 6000);
     }

@@ -31,6 +31,8 @@ import { setupRail } from "./ui.js";
 import { setupViews } from "./views.js";
 import { setupMonitors } from "./monitors.js";
 import { setupWindowState } from "./windowstate.js";
+import { setupUiPrefs } from "./uiprefs.js";
+import { setupTooltips } from "./tooltips.js";
 import { setupManual } from "./manual.js";
 import { setupData } from "./data.js";
 import { setupS63 } from "./s63.js";
@@ -181,8 +183,14 @@ function useInitialPosition([lon, lat]) {
   map.jumpTo(startupCamera);
 }
 window.__map = map; // handy for debugging in devtools
-map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), "top-left");
 map.addControl(new maplibregl.ScaleControl({ unit: "nautical" }), "bottom-right");
+setupUiPrefs();
+setupTooltips();
+document.getElementById("zoom-in").onclick = () => map.zoomIn();
+document.getElementById("zoom-out").onclick = () => map.zoomOut();
+const northNeedle = document.getElementById("north-needle");
+document.getElementById("north-btn").onclick = () => map.easeTo({ bearing: 0, pitch: 0 });
+map.on("rotate", () => northNeedle.setAttribute("transform", `rotate(${-map.getBearing()} 12 12)`));
 map.on("load", () => map.addImage("boat", boatIcon(), { pixelRatio: 2 }));
 map.on("error", (e) => {
   if (e.sourceId === "chart") retryFailedTiles();
@@ -319,6 +327,12 @@ map.on("load", () => {
   });
   for (const alarm of pendingNmeaAlarms.splice(0)) alarms.raise(...alarm);
   setupStations(map, { weather });
+  // marks, routes and routings changed in any window (the backend announces every save and delete)
+  let libraryTimer = null;
+  listen("library-changed", () => {
+    clearTimeout(libraryTimer);
+    libraryTimer = setTimeout(() => library?.refresh(), 150);
+  });
   setupMonitors(toast);
   setupWindowState();
   setupAis(map, { alarms, ui, getOwnMmsi: () => boat.get().mmsi, getOwn: () => ({ pos: lastBoat, cog: live ? vessel?.cog : null, sog: live ? vessel?.sog : 0, live: live && signalKActive() }) });
@@ -804,7 +818,7 @@ ctx.addEventListener("click", (e) => {
   ctx.hidden = true;
 });
 map.on("click", () => { ctx.hidden = true; });
-map.on("movestart", () => { ctx.hidden = true; });
+map.on("movestart", (e) => { if (e.originalEvent) ctx.hidden = true; }); // not the boat-follow nudges
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") ctx.hidden = true; });
 
 listen("vessel", ({ payload }) => {
@@ -860,7 +874,7 @@ listen("vessel", ({ payload }) => {
     if (track.length > TRACK_MAX) track.shift();
     setData("track", line(track));
   }
-  if (follow) map.easeTo({ center: pos, duration: 200 });
+  if (follow && ctx.hidden) map.easeTo({ center: pos, duration: 200 }); // the menu stays where it was opened
   arrows?.live(pos, v);
   route?.boatAt(pos);
   feed();

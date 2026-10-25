@@ -246,6 +246,19 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
   $("rt-undo").onclick = () => { marks.pop(); changed(); };
   $("rt-name").value = work.name;
   $("rt-name").oninput = () => { dirty = true; persist(); renderList(); };
+  // the route being edited in another window: follow it, so every window shows and navigates the same route
+  window.addEventListener("storage", (e) => {
+    if (e.key !== WORK_KEY || !e.newValue) return;
+    let w;
+    try { w = JSON.parse(e.newValue); } catch { return; }
+    start = w.start ?? null; startRef = w.startRef ?? null; marks = w.marks ?? []; routeId = w.routeId ?? null;
+    dirty = Boolean(w.dirty); navIndex = w.nav || 0; greatCircle = Boolean(w.greatCircle);
+    if (document.activeElement !== $("rt-name")) $("rt-name").value = w.name || "";
+    $("rt-great-circle").checked = greatCircle;
+    deselect();
+    drawMarks();
+    for (const f of listeners) f();
+  });
   map.on("click", (e) => {
     if (!mode) {
       const hit = map.queryRenderedFeatures(e.point, { layers: ["rt-marks"] })[0];

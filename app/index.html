@@ -538,7 +538,13 @@
     </div>
     <button id="drop-btn" title="Drop a mark at the boat's position now, stamped with the time (no alarm)">Drop</button>
     <button id="mob-btn" title="Man overboard: mark the boat's position now, with bearing, distance and time from it until cleared">MOB</button>
+    <div id="zoom-btns" aria-label="Zoom">
+      <button id="zoom-out" aria-label="Zoom out" title="Zoom out">&minus;</button>
+      <button id="zoom-in" aria-label="Zoom in" title="Zoom in">+</button>
+    </div>
     <div id="toolbar" class="ctl-col">
+      <button id="north-btn" aria-label="North up" title="North up: turn the chart to north at the top">
+        <svg viewBox="0 0 24 24"><g id="north-needle"><path class="fill" d="M12 3l4 9H8z"/><path d="M8 12l4 9 4-9z"/></g></svg></button>
       <button id="sk-state" class="bad" aria-label="Live data status" title="Live data: connecting…">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="14" r="2" class="fill"/><path d="M8.5 10.5a5 5 0 0 1 7 0M5.6 7.6a9 9 0 0 1 12.8 0"/><path class="slash" d="M5 19L19 5"/></svg></button>
       <button id="sk-live" class="on" aria-label="Live or paused" title="Live: the boat follows Signal K. Click to pause and plan (right-click the chart to move the boat).">
@@ -634,6 +640,14 @@
             </div>
             <div class="settings-actions"><span id="settings-status" role="status" aria-live="polite"></span><button type="submit">Save vessel details</button></div>
           </form>
+          <section id="ui-settings" class="ui-settings">
+            <h3>Screen controls <small>this window</small></h3>
+            <p class="settings-note">Auto uses touch detection: zoom buttons and larger controls appear only when a touch screen is present.</p>
+            <div class="wx-row"><label class="grow" for="ui-zoom">Zoom buttons</label>
+              <select id="ui-zoom"><option value="auto">Auto</option><option value="on">Show</option><option value="off">Hide</option></select></div>
+            <div class="wx-row"><label class="grow" for="ui-large">Large buttons</label>
+              <select id="ui-large"><option value="auto">Auto</option><option value="on">On</option><option value="off">Off</option></select></div>
+          </section>
           <section id="nmea-settings-section" class="nmea-settings">
             <h3>NMEA data sources</h3>
             <p class="settings-note">Enabled sources are monitored concurrently. TweedPlot chooses a preferred source for each data group; when automatic failover is enabled, it uses the next available source in the configured source order and raises an alarm when the active source changes.</p>

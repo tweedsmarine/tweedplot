@@ -1210,29 +1210,42 @@ fn barrier_delete(id: String) -> Result<(), String> {
     lib()?.delete_barrier(&id).map_err(es)
 }
 
+/// Tell every window the library changed, so each reloads its marks, routes and routings.
+fn library_changed(app: &tauri::AppHandle) {
+    let _ = app.emit("library-changed", ());
+}
+
 #[tauri::command]
 fn marks_list() -> Result<Vec<library::Mark>, String> {
     lib()?.marks().map_err(es)
 }
 #[tauri::command]
-fn mark_save(mark: library::Mark) -> Result<library::Mark, String> {
-    lib()?.save_mark(mark).map_err(es)
+fn mark_save(app: tauri::AppHandle, mark: library::Mark) -> Result<library::Mark, String> {
+    let m = lib()?.save_mark(mark).map_err(es)?;
+    library_changed(&app);
+    Ok(m)
 }
 #[tauri::command]
-fn mark_delete(id: String, force: bool) -> Result<(), String> {
-    lib()?.delete_mark(&id, force).map_err(es)
+fn mark_delete(app: tauri::AppHandle, id: String, force: bool) -> Result<(), String> {
+    lib()?.delete_mark(&id, force).map_err(es)?;
+    library_changed(&app);
+    Ok(())
 }
 #[tauri::command]
 fn routes_list() -> Result<Vec<library::Route>, String> {
     lib()?.routes().map_err(es)
 }
 #[tauri::command]
-fn route_save(route: library::Route) -> Result<library::Route, String> {
-    lib()?.save_route(route).map_err(es)
+fn route_save(app: tauri::AppHandle, route: library::Route) -> Result<library::Route, String> {
+    let r = lib()?.save_route(route).map_err(es)?;
+    library_changed(&app);
+    Ok(r)
 }
 #[tauri::command]
-fn route_delete(id: String) -> Result<(), String> {
-    lib()?.delete_route(&id).map_err(es)
+fn route_delete(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    lib()?.delete_route(&id).map_err(es)?;
+    library_changed(&app);
+    Ok(())
 }
 #[tauri::command]
 fn routings_list() -> Result<Vec<library::RoutingSummary>, String> {
@@ -1243,12 +1256,19 @@ fn routing_get(id: String) -> Result<library::Routing, String> {
     lib()?.routing(&id).map_err(es)
 }
 #[tauri::command]
-fn routing_save(routing: library::Routing) -> Result<library::RoutingSummary, String> {
-    lib()?.save_routing(routing).map_err(es)
+fn routing_save(
+    app: tauri::AppHandle,
+    routing: library::Routing,
+) -> Result<library::RoutingSummary, String> {
+    let r = lib()?.save_routing(routing).map_err(es)?;
+    library_changed(&app);
+    Ok(r)
 }
 #[tauri::command]
-fn routing_delete(id: String) -> Result<(), String> {
-    lib()?.delete_routing(&id).map_err(es)
+fn routing_delete(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    lib()?.delete_routing(&id).map_err(es)?;
+    library_changed(&app);
+    Ok(())
 }
 /// GPX of marks and routes (empty lists = everything) written to the export folder.
 #[tauri::command]
@@ -1274,8 +1294,14 @@ fn gpx_write(name: String, text: String) -> Result<String, String> {
         .into_owned())
 }
 #[tauri::command]
-fn gpx_import(text: String, group: String) -> Result<library::ImportReport, String> {
-    lib()?.import_gpx(&text, &group).map_err(es)
+fn gpx_import(
+    app: tauri::AppHandle,
+    text: String,
+    group: String,
+) -> Result<library::ImportReport, String> {
+    let r = lib()?.import_gpx(&text, &group).map_err(es)?;
+    library_changed(&app);
+    Ok(r)
 }
 
 // ---------- tracks and the track recorder ----------
