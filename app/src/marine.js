@@ -65,7 +65,10 @@ export function setupMarine(map, { getBoat = () => ({}), getLength = () => 0, al
     "icon-image": ["concat", "txt:m:", ["match", ["get", "kind"], "ts", "12 NM", "cz", "24 NM", "eez", "EEZ 200 NM", "cs", "Continental shelf", "base", "Baseline", "agreed", "Agreed boundary", "Boundary"]],
     "icon-rotation-alignment": "map", "icon-allow-overlap": false } }, above);
 
-  const vis = (id, on) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+  // nothing is drawn until the chart store is open: tiles asked for before then fail (503)
+  let ready = false;
+  window.addEventListener("racenav-charts", (e) => { if (e.detail?.ready !== false && e.detail?.tables > 0) { ready = true; apply(); } });
+  const vis = (id, on) => map.getLayer(id) && map.setLayoutProperty(id, "visibility", on && ready ? "visible" : "none");
   function apply() {
     const len = getLength() || 0;
     for (const k of Object.keys(KINDS)) vis(`mar-bound-${k}`, s.bounds);

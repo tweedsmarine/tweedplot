@@ -508,8 +508,17 @@ function queueChartTileRetry(delay) {
     queueChartTileRetry(CHART_TILE_RETRY_DELAYS[chartTileRetryAttempt] ?? CHART_TILE_RETRY_DELAYS.at(-1));
   }, delay);
 }
+// Chart tiles that failed (503 while the chart store was opening, 500 after a render
+// failure) are dropped and asked for afresh. Not map.refreshTiles: MapLibre's reload puts a
+// failed vector tile back into "loading" before asking again, and a tile already "loading"
+// waits for a load that never comes, so it stayed blank for good.
 function reloadChartTiles() {
-  if (map.getSource("chart")) map.refreshTiles("chart");
+  const tm = map.style?.tileManagers?.chart;
+  if (tm?.clearTiles) {
+    tm.clearTiles();
+    if (map._update) map._update(true); // sources are updated (and the tiles asked for) on the next frame
+    else map.triggerRepaint();
+  } else if (map.getSource("chart")) map.refreshTiles("chart");
 }
 let encBusy = false;
 listen("chart-ready", ({ payload }) => {
