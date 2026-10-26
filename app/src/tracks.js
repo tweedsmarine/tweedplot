@@ -3,7 +3,7 @@
 // boat was at the weather time (replays and comparisons); click a track for the
 // time, SOG and COG there. The recorder itself runs in Rust (it keeps logging
 // while plotting is paused); this module starts and stops it and shows its progress.
-import * as maplibregl from "maplibre-gl";
+import { infoBox } from "./infobox.js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -85,7 +85,6 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
   onTime?.(drawNow);
 
   // click a track: time, SOG and COG at the nearest fix
-  let popup = null;
   map.on("click", "trk-lines", async (e) => {
     if (document.querySelector(".armed")) return;
     const id = e.features[0].properties.id;
@@ -104,11 +103,9 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
     el.className = "feat-pop";
     const rows = [["Time", best[2] == null ? "–" : `${fmtTime(best[2])}:${String(new Date(best[2] * 1000).getSeconds()).padStart(2, "0")}`],
       ["SOG", best[3] == null ? "–" : `${best[3].toFixed(1)} kn`], ["COG", best[4] == null ? "–" : `${Math.round(best[4])}°T`]];
-    el.innerHTML = `<h4></h4><table>${rows.map(() => "<tr><td></td><td></td></tr>").join("")}</table>`;
-    el.querySelector("h4").textContent = s.name;
+    el.innerHTML = `<table>${rows.map(() => "<tr><td></td><td></td></tr>").join("")}</table>`;
     el.querySelectorAll("tr").forEach((tr, i) => { tr.cells[0].textContent = rows[i][0]; tr.cells[1].textContent = rows[i][1]; });
-    popup?.remove();
-    popup = new maplibregl.Popup({ maxWidth: "260px" }).setLngLat([best[0], best[1]]).setDOMContent(el).addTo(map);
+    infoBox(map, "track", { width: 260, height: 170 }).open(el, { title: s.name, at: [best[0], best[1]] });
   });
   map.on("mouseenter", "trk-lines", () => { if (!document.querySelector(".armed")) map.getCanvas().style.cursor = "pointer"; });
   map.on("mouseleave", "trk-lines", () => { if (!document.querySelector(".armed")) map.getCanvas().style.cursor = ""; });

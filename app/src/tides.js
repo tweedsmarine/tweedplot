@@ -1,7 +1,7 @@
-// Tide stations on the chart (LINZ): daily ports and secondary ports, with a popup
+// Tide stations on the chart (LINZ): daily ports and secondary ports, with an info box
 // showing the day's tidal curve, highs and lows, and the height at the planning time.
 // Data comes from the Rust side (tides crate), downloaded once from LINZ.
-import * as maplibregl from "maplibre-gl";
+import { infoBox } from "./infobox.js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -89,8 +89,7 @@ export function setupTides(map, { before, getTime, onTime }) {
   };
   $("tide-cancel").onclick = () => invoke("tides_cancel").catch(() => {});
 
-  // ---------- popup with the curve ----------------------------------------------------------
-  let popup = null;
+  // ---------- info box with the curve ----------------------------------------------------------
   let current = null; // { id, day (start of local day), tz }
   async function show(id, lngLat, day) {
     const t = getTime();
@@ -100,13 +99,12 @@ export function setupTides(map, { before, getTime, onTime }) {
     const d1 = dayStart(d0 + DAY + 3 * 3600, tz);
     let r;
     try { r = await invoke("tides_curve", { id, t0: Math.floor(d0), t1: Math.floor(d1) }); } catch (e) { r = { error: String(e) }; }
-    current = { id, day: d0, tz, lngLat };
+    const shown = (current = { id, day: d0, tz, lngLat });
     const el = document.createElement("div");
     el.className = "tide-pop";
-    el.innerHTML = `<h4></h4><div class="wx-note method"></div>
+    el.innerHTML = `<div class="wx-note method"></div>
       <div class="nav"><button data-d="-1" title="Day before">◀</button><span class="day"></span><button data-d="1" title="Day after">▶</button><button data-d="0" title="The planning time">Now</button></div>
       <div class="svg"></div><table class="ext"></table><div class="wx-note src">LINZ tide predictions. Not official tide tables; not for navigation.</div>`;
-    el.querySelector("h4").textContent = r.name ?? id;
     el.querySelector(".method").textContent = r.error ?? `${r.method}${r.approx ? " (LINZ: data approximate)" : ""}`;
     el.querySelector(".day").textContent = `${dateLabel(d0 + 3600, tz)} (${zoneLabel(d0 + 12 * 3600, tz)})`;
     for (const b of el.querySelectorAll("button")) {
@@ -130,9 +128,7 @@ export function setupTides(map, { before, getTime, onTime }) {
           : r.years?.includes(y) ? "No tides for this day." : `No LINZ tables for ${y}: download them in the Chart panel.`;
       }
     }
-    popup?.remove();
-    popup = new maplibregl.Popup({ maxWidth: "360px", className: "tide-popup" }).setLngLat(lngLat).setDOMContent(el).addTo(map);
-    popup.on("close", () => { if (current?.id === id) current = null; });
+    infoBox(map, "tide", { width: 370, height: 420 }).open(el, { title: r.name ?? id, at: lngLat, onClose: () => { if (current === shown) current = null; } });
   }
   for (const l of ["tide-daily", "tide-sec"]) {
     map.on("click", l, (e) => {
@@ -143,7 +139,7 @@ export function setupTides(map, { before, getTime, onTime }) {
     map.on("mouseenter", l, () => { if (!document.querySelector(".armed")) map.getCanvas().style.cursor = "pointer"; });
     map.on("mouseleave", l, () => { if (!document.querySelector(".armed")) map.getCanvas().style.cursor = ""; });
   }
-  // the planning time moved: follow it if the popup shows that day
+  // the planning time moved: follow it if the box shows that day
   let pending = null;
   onTime?.(() => {
     if (!current || pending) return;

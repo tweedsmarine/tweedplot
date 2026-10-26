@@ -1,5 +1,5 @@
 // Floating info boxes: what a click on the chart tells you (AIS targets, fishing rules,
-// chart features) in a window that can be moved (by its title bar), resized (its corner)
+// chart features, tide stations, weather stations, tracks) in a window that can be moved (by its title bar), resized (its corner)
 // and scrolled, instead of a popup tied to the point that covers the chart round it and
 // can run off the screen. Each kind of box keeps its own place and size. A small ring
 // marks the place the box is about while it's open.

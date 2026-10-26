@@ -1,7 +1,7 @@
 // Weather stations and buoys on the chart (Weather › Weather stations and
-// buoys): the latest wind at each, and a popup with the last 24 h against the
+// buoys): the latest wind at each, and an info box with the last 24 h against the
 // loaded GRIBs (real versus forecast).
-import * as maplibregl from "maplibre-gl";
+import { infoBox } from "./infobox.js";
 import { invoke } from "@tauri-apps/api/core";
 import { PALETTE } from "./weather.js";
 import { ddm } from "./navmath.js";
@@ -81,8 +81,7 @@ export function setupStations(map, { weather }) {
     draw();
   }
 
-  // ---------- popup: latest and the last 24 h against the GRIBs -----------------------------
-  let popup = null;
+  // ---------- info box: latest and the last 24 h against the GRIBs -----------------------------
   function table(o) {
     const rows = [];
     const add = (k, v) => { if (v != null) rows.push(`<tr><th>${k}</th><td>${esc(v)}</td></tr>`); };
@@ -160,10 +159,9 @@ export function setupStations(map, { weather }) {
     return out.length ? `<div class="stn-bias"><b>Forecast minus observed, mean</b><br>${out.join("<br>")}</div>` : "";
   }
   async function open(o) {
-    popup?.remove();
-    popup = new maplibregl.Popup({ maxWidth: "340px" }).setLngLat([o.lon, o.lat])
-      .setHTML(`<div class="stn-pop"><b>${esc(o.name)}</b><table>${table(o)}</table><div class="stn-hist">Loading the last 24 h…</div>${o.raw ? `<code>${esc(o.raw)}</code>` : ""}</div>`).addTo(map);
-    const el = popup.getElement().querySelector(".stn-hist");
+    const box = infoBox(map, "station", { width: 360, height: 460 });
+    box.open(`<div class="stn-pop"><table>${table(o)}</table><div class="stn-hist">Loading the last 24 h…</div>${o.raw ? `<code>${esc(o.raw)}</code>` : ""}</div>`, { title: o.name, at: [o.lon, o.lat] });
+    const el = box.body.querySelector(".stn-hist");
     try {
       const [hist, grib] = await Promise.all([
         invoke("station_history", { id: o.id, lat: o.lat, lon: o.lon, hours: 24 }),
