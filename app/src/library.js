@@ -40,7 +40,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   const isPoi = ["has", ["get", "kind"], ["literal", Object.fromEntries(Object.keys(POI_KINDS).map((k) => [k, 1]))]];
   const isIcon = ["any", isBuoy, isPoi];
   map.addLayer({ id: "lib-marks", type: "circle", source: "lib-marks",
-    paint: { "circle-radius": ["case", isIcon, 11, ["interpolate", ["linear"], ["zoom"], 5, 2.5, 10, 5]],
+    paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, ["case", isIcon, 11, 2.5], 10, ["case", isIcon, 11, 5]],
              // a mark's own colour (from TimeZero and other plotters), else by its type
              "circle-color": ["coalesce", ["get", "colour"], ["match", ["get", "kind"], "danger", "#c0392b", "waypoint", "#5b6b75", "#e67e22"]],
              "circle-opacity": ["case", isIcon, 0, 1], "circle-stroke-opacity": ["case", isIcon, 0, 1],
