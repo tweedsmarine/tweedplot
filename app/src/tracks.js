@@ -4,6 +4,7 @@
 // time, SOG and COG there. The recorder itself runs in Rust (it keeps logging
 // while plotting is paused); this module starts and stops it and shows its progress.
 import { infoBox } from "./infobox.js";
+import { seaScale } from "./weather.js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -21,8 +22,9 @@ function fmtDur(s) {
 
 export function setupTracks(map, { before, getTime, onTime, status }) {
   const $ = (id) => document.getElementById(id);
-  const prefs = { shown: [], atTime: true, colourBy: "track", range: {} };
+  const prefs = { shown: [], atTime: true, colourBy: "track", filter: {} };
   try { Object.assign(prefs, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
+  prefs.filter ||= {};
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ } };
 
   let list = []; // summaries
@@ -51,81 +53,158 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
       try { shown.push([t, await load(t.id)]); } catch { /* gone */ }
     }
     const by = BY[prefs.colourBy];
-    const range = by && rangeOf(by, shown);
+    range = by ? rangeOf(by, shown) : null;
+    const f = range && filterOf(range);
     for (const [t, d] of shown) {
       const colour = colourOf(t);
       for (const seg of d.segments) {
         if (seg.length < 2) continue;
-        if (!range) { feats.push({ type: "Feature", properties: { id: t.id, colour }, geometry: { type: "LineString", coordinates: seg.map((p) => [p[0], p[1]]) } }); continue; }
-        // runs of fixes in the same colour step: one line each (not one per fix)
-        const [lo, hi] = range, step = (hi - lo) / STEPS || 1;
-        const bin = (p) => (p[by.i] == null ? null : Math.max(0, Math.min(STEPS, Math.round((p[by.i] - lo) / step))));
-        let start = 0, b = bin(seg[0]);
+        if (!f) { feats.push({ type: "Feature", properties: { id: t.id, colour }, geometry: { type: "LineString", coordinates: seg.map((p) => [p[0], p[1]]) } }); continue; }
+        // runs of fixes in the same colour step: one line each, not one per fix. Each run is
+        // "in" the band (coloured), "out" of it (thin grey) or without a value (grey).
+        const step = Math.max(range.q, (f.hi - f.lo) / 200);
+        const key = (p) => {
+          const v = p[by.i];
+          if (v == null) return "none";
+          if (v < f.lo || v > f.hi) return "out";
+          return Math.round((v - f.lo) / step);
+        };
+        let start = 0, k0 = key(seg[0]);
         for (let k = 1; k <= seg.length; k++) {
-          const nb = k < seg.length ? bin(seg[k]) : undefined;
-          if (nb !== b || k === seg.length) {
+          const kk = k < seg.length ? key(seg[k]) : undefined;
+          if (kk !== k0 || k === seg.length) {
             const run = seg.slice(start, Math.min(k + 1, seg.length)).map((p) => [p[0], p[1]]);
-            if (run.length > 1) feats.push({ type: "Feature", properties: b == null ? { id: t.id } : { id: t.id, v: lo + b * step }, geometry: { type: "LineString", coordinates: run } });
-            start = k; b = nb;
+            if (run.length > 1) {
+              const props = { id: t.id };
+              if (typeof k0 === "number") {
+                props.v = Math.min(f.hi, f.lo + k0 * step);
+                if (Math.abs(props.v - f.tg) <= step / 2 + 1e-9) props.tg = 1;
+              } else props.x = k0;
+              feats.push({ type: "Feature", properties: props, geometry: { type: "LineString", coordinates: run } });
+            }
+            start = k; k0 = kk;
           }
         }
       }
     }
-    map.setPaintProperty("trk-lines", "line-color", range
-      ? ["case", ["has", "v"], ["interpolate", ["linear"], ["get", "v"], ...by.ramp.flatMap((c, i) => [range[0] + ((range[1] - range[0]) * i) / (by.ramp.length - 1), c])], NO_VALUE]
-      : ["get", "colour"]);
+    if (f) {
+      const sc = seaScale(f);
+      map.setPaintProperty("trk-lines", "line-color", ["case", ["has", "v"], ["interpolate", ["linear"], ["get", "v"], ...sc.flat()], NO_VALUE]);
+      map.setPaintProperty("trk-lines", "line-width", ["case", ["has", "tg"], 5, ["has", "v"], 2.6, 1.2]);
+      map.setPaintProperty("trk-lines", "line-opacity", ["case", ["has", "v"], 0.95, 0.6]);
+    } else {
+      map.setPaintProperty("trk-lines", "line-color", ["get", "colour"]);
+      map.setPaintProperty("trk-lines", "line-width", 2.2);
+      map.setPaintProperty("trk-lines", "line-opacity", 0.9);
+    }
     map.getSource("trk-lines").setData({ type: "FeatureCollection", features: feats });
-    legend(by, range, shown.length);
+    drawFilter(by, shown.length);
     drawNow();
   }
 
   // ---------- colour by sea temperature, depth or speed ----------------------------------
-  const STEPS = 40;
+  // The same filter as the GRIB sea layers (Weather drawer): the outer pointers set the
+  // lowest and highest coloured, the middle one the target (drawn bold); the same colours.
   const NO_VALUE = "#9aa3a8";
   // fix layout from track_get: [lon, lat, t, sog, cog, depth, temp]
   const BY = {
-    temp: { i: 6, name: "Sea temperature", unit: "°C", dp: 1, ramp: ["#313695", "#4575b4", "#74add1", "#abd9e9", "#fee090", "#fdae61", "#f46d43", "#d73027", "#a50026"] },
-    depth: { i: 5, name: "Depth", unit: "m", dp: 0, ramp: ["#ffffb2", "#a1dab4", "#41b6c4", "#2c7fb8", "#253494", "#081d58"] },
-    sog: { i: 3, name: "Speed (SOG)", unit: "kn", dp: 1, ramp: ["#2c7bb6", "#abd9e9", "#ffffbf", "#fdae61", "#d7191c"] },
+    temp: { i: 6, name: "Sea temperature", unit: "°C" },
+    depth: { i: 5, name: "Depth", unit: "m" },
+    sog: { i: 3, name: "Speed (SOG)", unit: "kn" },
   };
-  /** The range to colour over: the one set in the drawer, else most of the shown tracks' values. */
+  let range = null; // { min, max, q } of the shown tracks' values
+  const quantum = (lo, hi) => 10 ** Math.floor(Math.log10(Math.max(hi - lo, 0.01) / 20));
+  const roundTo = (v, q) => +(Math.round(v / q) * q).toFixed(6);
+  /** The span of the shown tracks' values (without the odd wild one). */
   function rangeOf(by, shown) {
-    const set = prefs.range[prefs.colourBy] || [];
     const vals = [];
     let n = 0;
     for (const [, d] of shown) for (const seg of d.segments) n += seg.length;
     const every = Math.max(1, Math.floor(n / 100000));
     let k = 0;
     for (const [, d] of shown) for (const seg of d.segments) for (const p of seg) if (k++ % every === 0 && p[by.i] != null) vals.push(p[by.i]);
-    if (!vals.length) return set[0] != null && set[1] != null ? [set[0], set[1]] : null;
+    if (!vals.length) return null;
     vals.sort((a, b) => a - b);
-    const lo = set[0] ?? vals[Math.floor(vals.length * 0.02)], hi = set[1] ?? vals[Math.floor(vals.length * 0.98)];
-    return hi > lo ? [lo, hi] : [lo, lo + 1];
+    let min = vals[Math.floor(vals.length * 0.005)], max = vals[Math.min(vals.length - 1, Math.floor(vals.length * 0.995))];
+    if (!(max > min)) max = min + 1;
+    const q = quantum(min, max);
+    return { min: roundTo(Math.floor(min / q) * q, q), max: roundTo(Math.ceil(max / q) * q, q), q };
   }
-  // the scale on the chart
+  /** The filter for the shown tracks, kept within their range (whole range at first). */
+  function filterOf(r) {
+    let f = prefs.filter[prefs.colourBy];
+    if (!f || f.hi <= r.min || f.lo >= r.max) f = { lo: r.min, hi: r.max, tg: roundTo((r.min + r.max) / 2, r.q) };
+    const lo = Math.max(r.min, Math.min(f.lo, r.max - r.q)), hi = Math.min(r.max, Math.max(f.hi, lo + r.q));
+    f = { lo, hi, tg: Math.min(hi, Math.max(lo, f.tg)) };
+    prefs.filter[prefs.colourBy] = f;
+    return f;
+  }
+  // the scale on the chart, for when the drawer is closed
   const leg = document.createElement("div");
   leg.className = "trk-legend";
   leg.hidden = true;
   map.getContainer().append(leg);
-  function legend(by, range, count) {
-    const note = $("trk-colour-note");
-    leg.hidden = !by || !count;
-    if (note) note.textContent = by && count && !range ? `The shown tracks have no ${by.name.toLowerCase()} logged.` : "";
-    if (leg.hidden || !range) { leg.hidden = true; return; }
-    const f = (v) => v.toFixed(by.dp);
-    leg.innerHTML = `<b></b><div class="bar"></div><div class="ticks"><span></span><span></span><span></span></div>`;
+  function drawFilter(by, count) {
+    const box = $("trk-sea"), note = $("trk-colour-note");
+    note.textContent = by && count && !range ? `The shown tracks have no ${by.name.toLowerCase()} logged.` : by && !count ? "Tick tracks to show them." : "";
+    const f = range && prefs.filter[prefs.colourBy];
+    box.hidden = leg.hidden = !f;
+    if (!f) return;
+    const r = range, span = Math.max(r.max - r.min, 1e-6);
+    const pc = (v) => `${Math.min(100, Math.max(0, ((v - r.min) / span) * 100))}%`;
+    const sc = seaScale(f), w = Math.max(f.hi - f.lo, 1e-6);
+    const css = `linear-gradient(to right, ${sc.map(([v, c]) => `${c} ${((v - f.lo) / w) * 100}%`).join(", ")}, ${sc.at(-1)[1]} 100%)`;
+    const grad = box.querySelector(".grad");
+    grad.style.left = pc(f.lo);
+    grad.style.width = `calc(${pc(f.hi)} - ${pc(f.lo)})`;
+    grad.style.background = css;
+    for (const k of ["lo", "tg", "hi"]) box.querySelector(`.h.${k}`).style.left = pc(f[k]);
+    const dp = Math.max(0, -Math.round(Math.log10(r.q)));
+    const fmt = (v) => v.toFixed(dp);
+    box.querySelector(".v.lo").textContent = fmt(f.lo);
+    box.querySelector(".v.tg").textContent = `target ${fmt(f.tg)}`;
+    box.querySelector(".v.hi").textContent = fmt(f.hi);
+    box.querySelector(".v.min").textContent = fmt(r.min);
+    box.querySelector(".v.max").textContent = `${fmt(r.max)} ${by.unit}`;
+    box.title = `${by.name} (${by.unit}): drag the outer pointers to set the lowest and highest coloured, the middle one to the target (drawn bold). Fit: back to the shown tracks' whole range.`;
+    leg.innerHTML = `<b></b><div class="bar"></div><div class="ticks"><span></span><span class="tg"></span><span></span></div>`;
     leg.querySelector("b").textContent = `${by.name}, ${by.unit}`;
-    leg.querySelector(".bar").style.background = `linear-gradient(to right, ${by.ramp.join(", ")})`;
+    leg.querySelector(".bar").style.background = css;
     const s = leg.querySelectorAll(".ticks span");
-    s[0].textContent = f(range[0]); s[1].textContent = f((range[0] + range[1]) / 2); s[2].textContent = f(range[1]);
+    s[0].textContent = fmt(f.lo); s[1].textContent = `target ${fmt(f.tg)}`; s[2].textContent = fmt(f.hi);
   }
+  // dragging the pointers (as the GRIB sea filter)
+  (() => {
+    const box = $("trk-sea"), track = box.querySelector(".track");
+    let drag = null;
+    const valueAt = (e) => range.min + ((e.clientX - drag.rect.left) / drag.rect.width) * (range.max - range.min);
+    track.addEventListener("pointerdown", (e) => {
+      const f = prefs.filter[prefs.colourBy];
+      if (!f || !range) return;
+      drag = { rect: track.getBoundingClientRect() };
+      const v = valueAt(e);
+      drag.k = e.target.classList.contains("h") ? [...e.target.classList].find((c) => ["lo", "tg", "hi"].includes(c))
+        : ["tg", "lo", "hi"].reduce((a, b) => (Math.abs(f[b] - v) < Math.abs(f[a] - v) ? b : a));
+      track.setPointerCapture(e.pointerId);
+      move(e);
+    });
+    let pending = null;
+    const move = (e) => {
+      if (!drag) return;
+      const f = prefs.filter[prefs.colourBy], q = range.q;
+      const v = Math.min(range.max, Math.max(range.min, roundTo(valueAt(e), q)));
+      if (drag.k === "lo") f.lo = Math.min(v, f.tg);
+      else if (drag.k === "hi") f.hi = Math.max(v, f.tg);
+      else f.tg = Math.min(Math.max(v, f.lo), f.hi);
+      drawFilter(BY[prefs.colourBy], 1);
+      if (!pending) pending = requestAnimationFrame(() => { pending = null; draw(); });
+    };
+    track.addEventListener("pointermove", move);
+    track.addEventListener("pointerup", () => { if (drag) { drag = null; save(); draw(); } });
+    box.querySelector(".fit").onclick = () => { delete prefs.filter[prefs.colourBy]; save(); draw(); };
+  })();
   function syncColourControls() {
     $("trk-colour-by").value = prefs.colourBy;
-    const by = BY[prefs.colourBy];
-    $("trk-range").hidden = !by;
-    const r = prefs.range[prefs.colourBy] || [];
-    $("trk-min").value = r[0] ?? ""; $("trk-max").value = r[1] ?? "";
-    if (by) { $("trk-unit").textContent = by.unit; }
   }
 
   /** Position of a track at time t (between fixes, straight line), or null outside its times. */
@@ -361,12 +440,6 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
   });
   syncColourControls();
   $("trk-colour-by").onchange = (e) => { prefs.colourBy = e.target.value; syncColourControls(); save(); draw(); };
-  const setRange = () => {
-    const num = (v) => (v.trim() === "" || isNaN(+v) ? null : +v);
-    prefs.range[prefs.colourBy] = [num($("trk-min").value), num($("trk-max").value)];
-    save(); draw();
-  };
-  $("trk-min").onchange = setRange; $("trk-max").onchange = setRange;
   $("trk-time").checked = prefs.atTime;
   $("trk-time").onchange = () => { prefs.atTime = $("trk-time").checked; save(); drawNow(); };
 

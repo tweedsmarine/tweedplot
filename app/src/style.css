@@ -958,3 +958,4 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 .trk-legend[hidden] { display: none; }
 .trk-legend .bar { height: 10px; border-radius: 3px; margin: 4px 0 2px; }
 .trk-legend .ticks { display: flex; justify-content: space-between; }
+.trk-legend .ticks .tg { color: #c0392b; font-weight: 600; }

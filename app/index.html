@@ -387,17 +387,16 @@
             <span id="trk-rec-info" class="grow wx-note"></span>
           </div>
           <div class="wx-row">
-            <button id="trk-import" title="Read tracks (and any marks and routes) from a GPX file">Import GPX…</button>
+            <button id="trk-import" title="Read tracks (and any marks and routes) from a GPX file or a TimeZero .tzd">Import…</button>
             <label class="grow" title="Show where each track's boat was at the weather time"><input id="trk-time" type="checkbox" /> Boat at weather time</label>
           </div>
           <div class="wx-row">
             <label class="grow" title="Colour the shown tracks by what was logged along them">Colour by
               <select id="trk-colour-by"><option value="track">Track colour</option><option value="temp">Sea temperature</option><option value="depth">Depth</option><option value="sog">Speed (SOG)</option></select></label>
           </div>
-          <div id="trk-range" class="wx-row" hidden title="Leave empty for automatic (most of the values on the shown tracks)">
-            <label>From</label><input id="trk-min" type="number" step="any" placeholder="auto" style="width:70px" />
-            <label>to</label><input id="trk-max" type="number" step="any" placeholder="auto" style="width:70px" />
-            <span id="trk-unit" class="wx-note"></span>
+          <div id="trk-sea" class="seafilter" hidden>
+            <div class="track"><div class="grad"></div><span class="h lo"></span><span class="h tg"></span><span class="h hi"></span></div>
+            <div class="vals"><span class="v min"></span><span class="v lo"></span><span class="v tg"></span><span class="v hi"></span><span class="v max"></span><button class="fit" title="Back to the shown tracks' whole range">Fit</button></div>
           </div>
           <div id="trk-colour-note" class="wx-note"></div>
           <div class="wx-row">

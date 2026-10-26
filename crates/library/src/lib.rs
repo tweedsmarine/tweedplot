@@ -500,6 +500,10 @@ impl Library {
             let r = r.as_ref().unwrap();
             rep.not_imported.push(format!("tracks after {} of {} (TimeZero's Tracks.bin: {p})", r.read, r.count));
         }
+        if let Some(r) = r.as_ref().filter(|r| !r.other.is_empty()) {
+            let o: Vec<String> = r.other.iter().map(|(k, n)| format!("{n} {}", k.to_lowercase())).collect();
+            rep.not_imported.push(format!("from the track file: {} (not yet)", o.join(", ")));
+        }
         if r.is_some() && fixes > 0 {
             rep.notes.push(format!("tracks: kept {kept} of {fixes} fixes (a fix every 10 s, sooner in turns){}", if same > 0 { format!("; {same} already here") } else { String::new() }));
         }

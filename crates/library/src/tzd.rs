@@ -241,6 +241,8 @@ mod tests {
 /// One TimeZero track, as stored (every fix, usually 2 s apart).
 #[derive(Debug, Clone, Default)]
 pub struct TzTrack {
+    /// The object's type: "TRACK" (a logged track), "LINE" (a line drawn or brought in from MaxSea).
+    pub kind: String,
     pub name: String,
     pub mobile: String,
     pub colour: String,
@@ -335,14 +337,15 @@ pub fn read_tz_tracks(r: impl Read, mut each: impl FnMut(TzTrack) -> Result<()>)
     let mut b = Bin { r: std::io::BufReader::with_capacity(1 << 20, Counted { r, at: 0 }) };
     let _version = b.u16()?;
     let count = b.u32()? as usize;
-    let mut out = TzTracksRead { count, read: 0, problem: None };
+    let mut out = TzTracksRead { count, ..Default::default() };
     for k in 0..count {
         let at = b.r.get_ref().at - b.r.buffer().len() as u64;
         match read_one(&mut b) {
-            Ok(Some(t)) => {
+            Ok(Some(t)) if t.kind == "TRACK" => {
                 out.read += 1;
                 each(t)?;
             }
+            Ok(Some(t)) => *out.other.entry(t.kind).or_default() += 1,
             Ok(None) => {}
             Err(e) => {
                 // keep what came before; say where it stopped, with the bytes there, so the
@@ -350,7 +353,7 @@ pub fn read_tz_tracks(r: impl Read, mut each: impl FnMut(TzTrack) -> Result<()>)
                 let mut peek = [0u8; 48];
                 let n = b.r.read(&mut peek).unwrap_or(0);
                 let hex: Vec<String> = peek[..n].iter().map(|x| format!("{x:02x}")).collect();
-                out.problem = Some(format!("stopped at track {} of {count} (byte {at}): {e}; next bytes {}", k + 1, hex.join(" ")));
+                out.problem = Some(format!("stopped at object {} of {count} (byte {at}): {e}; next bytes {}", k + 1, hex.join(" ")));
                 break;
             }
         }
@@ -361,7 +364,10 @@ pub fn read_tz_tracks(r: impl Read, mut each: impl FnMut(TzTrack) -> Result<()>)
 /// How a Tracks.bin read went.
 #[derive(Debug, Default)]
 pub struct TzTracksRead {
+    /// Objects in the file (tracks and lines).
     pub count: usize,
+    /// Objects other than tracks, by type ("LINE": n).
+    pub other: std::collections::BTreeMap<String, usize>,
     pub read: usize,
     pub problem: Option<String>,
 }
@@ -379,9 +385,11 @@ impl<R: Read> Read for Counted<R> {
 }
 
 fn read_one<R: Read>(b: &mut Bin<std::io::BufReader<Counted<R>>>) -> Result<Option<TzTrack>> {
+    // TRACK, and LINE (seen in files brought in from MaxSea), share one layout; other
+    // types may too, so any short upper-case name is read the same way
     let tag = b.string()?;
-    if tag != "TRACK" {
-        return Err(Error::Tz(format!("a track starts with {tag:?}, not TRACK")));
+    if tag.is_empty() || tag.len() > 16 || !tag.bytes().all(|c| c.is_ascii_uppercase()) {
+        return Err(Error::Tz(format!("an object starts with {tag:?}, not TRACK or LINE")));
     }
     let g = b.u8()? as u64;
     b.skip(g)?;
@@ -439,7 +447,7 @@ fn read_one<R: Read>(b: &mut Bin<std::io::BufReader<Counted<R>>>) -> Result<Opti
         }
     }
     let common = (0..256).max_by_key(|&i| colours[i]).unwrap_or(0) as u32;
-    Ok(Some(TzTrack { name, mobile, colour: tz_colour(common).into(), points }))
+    Ok(Some(TzTrack { kind: tag, name, mobile, colour: tz_colour(common).into(), points }))
 }
 
 /// The Tracks.bin inside a .tzd / .TzBackup, read as it unzips.
@@ -508,5 +516,59 @@ mod track_tests {
         assert_eq!((got[0].name.as_str(), got[0].colour.as_str()), ("Ownship", "#ffff00"));
         assert_eq!((p.depth, p.sog, p.temp), (Some(121.5), Some(6.13), Some(16.8)));
         assert!((p.cog.unwrap() - 180.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn skips_lines_between_tracks() {
+        // the LINE that stopped sarda's import (TimeZero 4, a line brought in from MaxSea), then a TRACK
+        let s = |v: &mut Vec<u8>, t: &str| {
+            v.push(t.len() as u8);
+            v.extend(t.as_bytes());
+        };
+        let mut v = Vec::new();
+        v.extend(1u16.to_le_bytes());
+        v.extend(2u32.to_le_bytes());
+        s(&mut v, "LINE");
+        v.push(16);
+        v.extend([0x7f, 0x8e, 0x25, 0x5d, 0xbe, 0xa9, 0xe1, 0x11, 0xaa, 0x3f, 0x14, 0xda, 0xe9, 0xcf, 0x4e, 0x2d]);
+        v.push(6);
+        s(&mut v, "PtfMobile");
+        v.extend(5u32.to_le_bytes());
+        v.extend(1u32.to_le_bytes());
+        s(&mut v, "");
+        v.extend(120u32.to_le_bytes());
+        v.extend(4u32.to_le_bytes());
+        for k in 0..4 {
+            v.extend(26u32.to_le_bytes());
+            v.extend((18_970_678.0f32 + k as f32 * 100.0).to_le_bytes());
+            v.extend((-4_637_761.5f32).to_le_bytes());
+            v.extend(0f32.to_le_bytes());
+            v.extend((0x48d8_cdfe_1a46_6715u64).to_le_bytes());
+            v.extend([1, 5, 0, 0, 0, 0]);
+        }
+        s(&mut v, "TRACK");
+        v.push(16);
+        v.extend([0u8; 16]);
+        v.push(0);
+        s(&mut v, "OwnShip");
+        v.extend([0u8; 8]);
+        s(&mut v, "Ownship");
+        v.extend(30u32.to_le_bytes());
+        v.extend(1u32.to_le_bytes());
+        v.extend(26u32.to_le_bytes());
+        v.extend(18_970_678.0f32.to_le_bytes());
+        v.extend((-4_637_761.5f32).to_le_bytes());
+        v.extend(0f32.to_le_bytes());
+        v.extend((0x48d8_cdfe_1a46_6715u64).to_le_bytes());
+        v.extend([1, 9, 0, 0, 0, 0]);
+        let mut got = Vec::new();
+        let r = read_tz_tracks(&v[..], |t| {
+            got.push(t);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(r.problem, None);
+        assert_eq!((r.read, r.other.get("LINE").copied()), (1, Some(1)));
+        assert_eq!(got[0].points.len(), 1);
     }
 }
