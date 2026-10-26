@@ -400,6 +400,11 @@
             <span id="trk-unit" class="wx-note"></span>
           </div>
           <div id="trk-colour-note" class="wx-note"></div>
+          <div class="wx-row">
+            <input id="trk-search" class="grow" type="search" placeholder="Find a track (name, date, notes)" />
+            <button id="trk-delete" title="Delete every track the search lists">Delete listed…</button>
+          </div>
+          <div id="trk-bulk" class="wx-row lib-bulk" hidden><span class="grow"></span><button id="trk-bulk-yes" class="on">Delete</button><button id="trk-bulk-no">Keep</button></div>
           <ul id="lib-tracks" class="list"></ul>
           <form id="trk-edit" class="edit" hidden>
             <div class="wx-row"><label class="grow">Name</label><input name="name" type="text" /></div>

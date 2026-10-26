@@ -1600,6 +1600,20 @@ fn track_delete(id: String) -> Result<(), String> {
     lib()?.delete_track(&id).map_err(es)
 }
 
+/// Delete many tracks (not the one being recorded); returns how many went.
+#[tauri::command]
+fn tracks_delete(ids: Vec<String>) -> Result<usize, String> {
+    let recording = REC.lock().unwrap().as_ref().map(|r| r.track.id.clone());
+    let l = lib()?;
+    let mut n = 0;
+    for id in ids.iter().filter(|id| Some(*id) != recording.as_ref()) {
+        if l.delete_track(id).is_ok() {
+            n += 1;
+        }
+    }
+    Ok(n)
+}
+
 /// Write a track as GPX into the library's export folder; returns the path.
 #[tauri::command]
 fn track_export(id: String) -> Result<String, String> {
@@ -2888,6 +2902,7 @@ pub fn run() {
             track_get,
             track_update,
             track_delete,
+            tracks_delete,
             track_export,
             yb_open,
             yb_refresh,

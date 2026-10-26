@@ -206,8 +206,18 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
       li.textContent = "No tracks yet: press Record, or import a GPX file.";
       ul.append(li);
     }
+    const q = $("trk-search").value.trim().toLowerCase();
+    listed = q ? list.filter((t) => `${t.name} ${t.notes} ${fmtTime(t.stats?.start)}`.toLowerCase().includes(q)) : list;
+    $("trk-delete").disabled = !listed.length;
+    $("trk-bulk").hidden = true;
+    if (q && !listed.length) {
+      const li = document.createElement("li");
+      li.className = "wx-note";
+      li.textContent = "No tracks match.";
+      ul.append(li);
+    }
     // a page at a time: an import from a fishing plotter can bring thousands of tracks
-    for (const t of list.slice(0, pageEnd)) {
+    for (const t of listed.slice(0, pageEnd)) {
       const li = document.createElement("li");
       const st = t.stats || {};
       const recording = rec.on && rec.id === t.id;
@@ -241,17 +251,36 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
       };
       ul.append(li);
     }
-    if (list.length > pageEnd) {
+    if (listed.length > pageEnd) {
       const li = document.createElement("li");
       li.className = "more";
-      li.innerHTML = `<button>Show ${Math.min(PAGE, list.length - pageEnd)} more</button><small></small>`;
-      li.querySelector("small").textContent = ` ${list.length - pageEnd} more tracks, newest first.`;
+      li.innerHTML = `<button>Show ${Math.min(PAGE, listed.length - pageEnd)} more</button><small></small>`;
+      li.querySelector("small").textContent = ` ${listed.length - pageEnd} more tracks, newest first.`;
       li.querySelector("button").onclick = () => { pageEnd += PAGE; render(); };
       ul.append(li);
     }
   }
   const PAGE = 100;
-  let pageEnd = PAGE;
+  let pageEnd = PAGE, listed = [];
+  $("trk-search").oninput = () => { pageEnd = PAGE; render(); };
+  $("trk-delete").onclick = () => {
+    const ids = listed.filter((t) => !(rec.on && rec.id === t.id)).map((t) => t.id);
+    if (!ids.length) return;
+    const all = ids.length === list.length;
+    $("trk-bulk").querySelector("span").textContent = `Delete ${all ? "all " : ""}${ids.length} track${ids.length === 1 ? "" : "s"}${all ? "" : " listed"}? This can't be undone.`;
+    $("trk-bulk").hidden = false;
+    $("trk-bulk-yes").onclick = async () => {
+      $("trk-bulk-yes").disabled = true;
+      try {
+        const n = await invoke("tracks_delete", { ids });
+        for (const id of ids) cache.delete(id);
+        status(`Deleted ${n} track${n === 1 ? "" : "s"}.`);
+      } catch (e) { status(String(e)); }
+      $("trk-bulk-yes").disabled = false;
+      await refresh();
+    };
+  };
+  $("trk-bulk-no").onclick = () => { $("trk-bulk").hidden = true; };
 
   function zoomTo(t) {
     const b = t.stats?.bbox;
