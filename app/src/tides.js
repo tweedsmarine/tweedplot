@@ -55,13 +55,27 @@ export function setupTides(map, { before, getTime, onTime }) {
     map.setLayoutProperty("tide-gauge", "visibility", opts.show && opts.gauges ? "visible" : "none");
   }
 
+  // The tides shown on the chart (gauges, streams) are for the planning time, unless the
+  // tide tables don't cover it (a GRIB from another year): then for now, and the line
+  // under Tide stations says so.
+  let years = [];
+  function tideTime() {
+    const t = Math.floor(getTime());
+    const y = new Date(t * 1000).getUTCFullYear(), now = Math.floor(Date.now() / 1000);
+    if (years.length && !years.includes(y) && years.includes(new Date().getUTCFullYear())) {
+      $("tide-time-note").textContent = `The planning time (${dateLabel(t, "Pacific/Auckland")}) is outside the tide tables (${years.join(", ")}): the gauges and tidal streams show now.`;
+      return now;
+    }
+    $("tide-time-note").textContent = "";
+    return t;
+  }
   // where the tide is now at every station, for the gauges
   let phaseBusy = false;
   async function phases() {
     if (!opts.show || !opts.gauges || phaseBusy || !stations.features.length) return;
     phaseBusy = true;
     try {
-      const list = await invoke("tides_phase", { t: Math.floor(getTime()) });
+      const list = await invoke("tides_phase", { t: tideTime() });
       const by = new Map((list || []).map((p) => [p.id, p]));
       for (const f of stations.features) {
         const p = by.get(f.properties.id);
@@ -86,6 +100,7 @@ export function setupTides(map, { before, getTime, onTime }) {
     } catch (e) { $("tide-status").textContent = `Tides: ${e}`; }
   }
   function showInfo(info) {
+    years = info?.years || [];
     $("tide-status").textContent = info?.stations
       ? `${info.stations} stations (${info.daily} with LINZ daily tables), ${info.years.join(", ") || "no years"}`
       : "No tide data yet: download the LINZ tables.";
@@ -192,7 +207,7 @@ export function setupTides(map, { before, getTime, onTime }) {
   });
 
   load();
-  streams = setupTidalStreams(map, { before, getTime, onTime, isOn: () => opts.streams });
+  streams = setupTidalStreams(map, { before, getTime: tideTime, onTime, isOn: () => opts.streams, status: (t) => { $("ts-status").textContent = t; } });
   return { reload: load };
 }
 

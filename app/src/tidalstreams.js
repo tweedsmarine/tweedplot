@@ -53,7 +53,7 @@ export function tidalImage(id) {
   return null;
 }
 
-export function setupTidalStreams(map, { before, getTime, onTime, isOn }) {
+export function setupTidalStreams(map, { before, getTime, onTime, isOn, status = () => {} }) {
   const empty = { type: "FeatureCollection", features: [] };
   map.addSource("tstreams", { type: "geojson", data: empty });
   const src = { source: "tstreams" };
@@ -72,6 +72,19 @@ export function setupTidalStreams(map, { before, getTime, onTime, isOn }) {
   const LAYERS = ["ts-feb", "ts-feb-lbl", "ts-arrow", "ts-diamond", "ts-rate", "ts-time"];
 
   let panels = [];
+  // how many diamonds the charts have at all, and roughly where (once the charts are open)
+  let counted = false;
+  async function count() {
+    if (counted || !isOn()) return;
+    try {
+      const r = await invoke("tidal_streams", { bbox: [160, -53, 190, -28], t: Math.floor(getTime()) });
+      const ps = r.panels || [];
+      if (!ps.length && !(r.arrows || []).length) { status("No tidal diamonds in the chart data: they come from LINZ's \"Tidal stream panel data points\" layers (in the hydrographic downloads)."); return; }
+      counted = true;
+      const refs = [...new Set(ps.map((p) => p.ref_name).filter(Boolean))].sort();
+      status(`${ps.length} tidal diamonds and ${(r.arrows || []).length} flood/ebb arrows in the charts${refs.length ? `, from high water at ${refs.join(", ")}` : ""}. Zoom in near those ports (from about 1:500,000) to see them.`);
+    } catch { /* charts not ready */ }
+  }
   let busy = false, again = false;
   async function refresh() {
     const on = isOn();
@@ -138,8 +151,9 @@ export function setupTidalStreams(map, { before, getTime, onTime, isOn }) {
   let t0 = null;
   map.on("moveend", () => { clearTimeout(t0); t0 = setTimeout(refresh, 300); });
   onTime?.(() => { clearTimeout(t0); t0 = setTimeout(refresh, 250); });
-  window.addEventListener("racenav-charts", () => setTimeout(refresh, 500));
+  window.addEventListener("racenav-charts", (e) => { if (e.detail?.ready !== false) { counted = false; setTimeout(() => { refresh(); count(); }, 500); } });
   setInterval(refresh, 60_000);
   refresh();
-  return { refresh };
+  count();
+  return { refresh: () => { refresh(); count(); } };
 }

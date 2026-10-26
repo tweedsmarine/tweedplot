@@ -165,7 +165,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
   const POINTS = ["f-points", "f-lights"];
   const LINES = ["f-line-mag", "f-line-solid", "f-line-dash"];
   map.on("click", async (e) => {
-    if (!opts.show || document.querySelector(".armed")) return;
+    if (!enabled || document.querySelector(".armed")) return;
     // leave clicks on the app's own things (course, routings, fleet, marks) to them
     const pad = 6;
     const box = [[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]];
