@@ -33,6 +33,7 @@ pub mod marine;
 pub mod mvt;
 pub mod s57;
 pub mod shp;
+pub mod tidal;
 pub use features::{Clearance, FeatureInfo};
 
 use std::num::NonZeroUsize;

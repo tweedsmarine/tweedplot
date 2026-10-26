@@ -422,6 +422,55 @@ impl TideDb {
         }
     }
 
+    /// A standard port with a daily table, by name (spaces, case and punctuation ignored).
+    pub fn daily_by_name(&self, name: &str) -> Option<&Station> {
+        let k = key(name);
+        self.stations.iter().find(|s| s.kind == Kind::Daily && key(&s.name) == k)
+    }
+
+    /// Where the tide is at `t` between the low and high water either side: 0 at low
+    /// water, 1 at high (LINZ's cosine curve), and whether it is rising.
+    pub fn phase_at(&self, id: &str, t: i64) -> Option<(f64, bool)> {
+        let ext = self.extremes(id, t - 14 * 3600, t + 14 * 3600)?;
+        let i = ext.partition_point(|e| e.t <= t);
+        let (a, b) = (ext.get(i.checked_sub(1)?)?, ext.get(i)?);
+        if b.t - a.t > 14 * 3600 || b.t <= a.t || a.high == b.high {
+            return None;
+        }
+        let x = (t - a.t) as f64 / (b.t - a.t) as f64;
+        let up = (1.0 - (std::f64::consts::PI * x).cos()) / 2.0;
+        Some(if b.high { (up, true) } else { (1.0 - up, false) })
+    }
+
+    /// The high (or low, `high` false) water nearest `t`, within 7 hours, and that tide's
+    /// range as a fraction of the mean spring range (for scaling tidal stream rates).
+    pub fn nearest_reference(&self, id: &str, t: i64, high: bool) -> Option<(i64, Option<f64>)> {
+        let s = self.station(id)?;
+        let ext = self.extremes(id, t - 14 * 3600, t + 14 * 3600)?;
+        let (i, e) = ext.iter().enumerate().filter(|(_, e)| e.high == high).min_by_key(|(_, e)| (e.t - t).abs())?;
+        if (e.t - t).abs() > 7 * 3600 {
+            return None;
+        }
+        let other: Vec<f64> = [i.checked_sub(1).and_then(|j| ext.get(j)), ext.get(i + 1)]
+            .into_iter()
+            .flatten()
+            .filter(|x| x.high != high)
+            .filter_map(|x| x.h)
+            .collect();
+        let spring = match (s.levels.mhws, s.levels.mlws) {
+            (Some(a), Some(b)) if a > b => Some(a - b),
+            _ => None,
+        };
+        let factor = match (e.h, spring) {
+            (Some(h), Some(sp)) if !other.is_empty() => {
+                let o = other.iter().sum::<f64>() / other.len() as f64;
+                Some(((h - o).abs() / sp).clamp(0.2, 1.5))
+            }
+            _ => None,
+        };
+        Some((e.t, factor))
+    }
+
     /// Height at `t` (LINZ cosine curve between the extremes either side).
     pub fn height_at(ext: &[Extreme], t: i64) -> Option<f64> {
         let i = ext.partition_point(|e| e.t <= t);
@@ -579,6 +628,29 @@ pub fn download(dir: &Path, years: &[i32], cancel: &AtomicBool, mut progress: im
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn phase_and_reference() {
+        let mut db = TideDb::default();
+        let hw = 1_800_000_000i64;
+        let ext = vec![
+            Extreme { t: hw - 6 * 3600 - 1200, h: Some(0.5), high: false },
+            Extreme { t: hw, h: Some(3.5), high: true },
+            Extreme { t: hw + 6 * 3600 + 1200, h: Some(0.7), high: false },
+        ];
+        db.series.insert(key("Nelson"), ext);
+        db.stations.push(Station { id: "d:Nelson".into(), name: "Nelson".into(), lat: -41.26, lon: 173.28, kind: Kind::Daily,
+            levels: Levels { mhws: Some(4.0), mlws: Some(0.4), ..Default::default() }, approx: false });
+        assert_eq!(db.daily_by_name("NELSON").unwrap().id, "d:Nelson");
+        let (f, up) = db.phase_at("d:Nelson", hw - 3 * 3600 - 600).unwrap();
+        assert!(up && (f - 0.5).abs() < 0.02, "{f}");
+        let (f, up) = db.phase_at("d:Nelson", hw + 600).unwrap();
+        assert!(!up && f > 0.95);
+        let (t, k) = db.nearest_reference("d:Nelson", hw + 2 * 3600, true).unwrap();
+        assert_eq!(t, hw);
+        assert!((k.unwrap() - 2.9 / 3.6).abs() < 0.01);
+        assert!(db.nearest_reference("d:Nelson", hw + 8 * 3600, true).is_none());
+    }
+
     use super::*;
 
     fn fixtures() -> PathBuf {

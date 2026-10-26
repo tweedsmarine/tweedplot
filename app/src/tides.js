@@ -4,6 +4,7 @@
 import { infoBox } from "./infobox.js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { setupTidalStreams } from "./tidalstreams.js";
 
 const KEY = "racenav.tides";
 const DAY = 86400;
@@ -31,7 +32,7 @@ const zoneLabel = (t, tz) => (new Intl.DateTimeFormat("en-NZ", { timeZone: tz, t
 
 export function setupTides(map, { before, getTime, onTime }) {
   const $ = (id) => document.getElementById(id);
-  const opts = { show: true };
+  const opts = { show: true, gauges: true, streams: true };
   try { Object.assign(opts, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(opts)); } catch { /* ignore */ } };
 
@@ -43,10 +44,37 @@ export function setupTides(map, { before, getTime, onTime }) {
     layout: { "icon-image": icon, "icon-allow-overlap": true, "icon-ignore-placement": true } }, before);
   map.addLayer({ id: "tide-sec", type: "symbol", source: "tides", minzoom: 8, filter: ["!=", ["get", "kind"], "daily"],
     layout: { "icon-image": icon, "icon-allow-overlap": true, "icon-ignore-placement": true } }, "tide-daily");
+  // the tide gauge (SN.1/Circ.243's optional water level part): a bar beside the diamond
+  map.addLayer({ id: "tide-gauge", type: "symbol", source: "tides", minzoom: 8, filter: ["has", "g"],
+    layout: { "icon-image": ["get", "g"], "icon-anchor": "left", "icon-offset": [11, 0], "icon-allow-overlap": true, "icon-ignore-placement": true } }, before);
   map.addLayer({ id: "tide-names", type: "symbol", source: "tides", minzoom: 10,
-    layout: { "icon-image": ["concat", "txt:t:", ["get", "name"]], "icon-anchor": "left", "icon-offset": [13, 0], "icon-allow-overlap": false } }, before);
+    layout: { "icon-image": ["concat", "txt:t:", ["get", "name"]], "icon-anchor": "left", "icon-offset": [23, 0], "icon-allow-overlap": false } }, before);
   const LAYERS = ["tide-daily", "tide-sec", "tide-names"];
-  function apply() { for (const l of LAYERS) map.setLayoutProperty(l, "visibility", opts.show ? "visible" : "none"); }
+  function apply() {
+    for (const l of LAYERS) map.setLayoutProperty(l, "visibility", opts.show ? "visible" : "none");
+    map.setLayoutProperty("tide-gauge", "visibility", opts.show && opts.gauges ? "visible" : "none");
+  }
+
+  // where the tide is now at every station, for the gauges
+  let phaseBusy = false;
+  async function phases() {
+    if (!opts.show || !opts.gauges || phaseBusy || !stations.features.length) return;
+    phaseBusy = true;
+    try {
+      const list = await invoke("tides_phase", { t: Math.floor(getTime()) });
+      const by = new Map((list || []).map((p) => [p.id, p]));
+      for (const f of stations.features) {
+        const p = by.get(f.properties.id);
+        if (p) f.properties.g = `tg:${Math.round(p.f * 8)}:${p.rising ? "u" : "d"}`;
+        else delete f.properties.g;
+      }
+      map.getSource("tides").setData(stations);
+    } catch { /* no tide data */ }
+    phaseBusy = false;
+  }
+  let phaseTimer = null;
+  onTime?.(() => { clearTimeout(phaseTimer); phaseTimer = setTimeout(phases, 200); });
+  setInterval(phases, 60_000);
 
   async function load() {
     try {
@@ -54,6 +82,7 @@ export function setupTides(map, { before, getTime, onTime }) {
       stations = fc || empty;
       map.getSource("tides").setData(stations);
       showInfo(info);
+      phases();
     } catch (e) { $("tide-status").textContent = `Tides: ${e}`; }
   }
   function showInfo(info) {
@@ -63,7 +92,12 @@ export function setupTides(map, { before, getTime, onTime }) {
   }
 
   $("tide-show").checked = opts.show;
-  $("tide-show").onchange = () => { opts.show = $("tide-show").checked; save(); apply(); };
+  $("tide-show").onchange = () => { opts.show = $("tide-show").checked; save(); apply(); phases(); };
+  $("tide-gauges").checked = opts.gauges;
+  $("tide-gauges").onchange = () => { opts.gauges = $("tide-gauges").checked; save(); apply(); phases(); };
+  $("ts-show").checked = opts.streams;
+  $("ts-show").onchange = () => { opts.streams = $("ts-show").checked; save(); streams?.refresh(); };
+  let streams = null;
   apply();
 
   // ---------- download ----------------------------------------------------------
@@ -90,7 +124,7 @@ export function setupTides(map, { before, getTime, onTime }) {
 
   // ---------- info box with the curve ----------------------------------------------------------
   let current = null; // { id, day (start of local day), tz }
-  async function show(id, lngLat, day) {
+  async function show(id, lngLat, day, note = "") {
     const t = getTime();
     const f = stations.features.find((x) => x.properties.id === id);
     const tz = f && f.geometry.coordinates[0] < -175 && f.geometry.coordinates[1] < -43 && f.geometry.coordinates[1] > -45 ? "Pacific/Chatham" : "Pacific/Auckland";
@@ -104,7 +138,7 @@ export function setupTides(map, { before, getTime, onTime }) {
     el.innerHTML = `<div class="wx-note method"></div>
       <div class="nav"><button data-d="-1" title="Day before">◀</button><span class="day"></span><button data-d="1" title="Day after">▶</button><button data-d="0" title="The planning time">Now</button></div>
       <div class="svg"></div><table class="ext"></table><div class="wx-note src">LINZ tide predictions. Not official tide tables; not for navigation.</div>`;
-    el.querySelector(".method").textContent = r.error ?? `${r.method}${r.approx ? " (LINZ: data approximate)" : ""}`;
+    el.querySelector(".method").textContent = r.error ?? `${r.method}${r.approx ? " (LINZ: data approximate)" : ""}${note ? `. ${note}` : ""}`;
     el.querySelector(".day").textContent = `${dateLabel(d0 + 3600, tz)} (${zoneLabel(d0 + 12 * 3600, tz)})`;
     for (const b of el.querySelectorAll("button")) {
       b.onclick = () => { const k = Number(b.dataset.d); show(id, lngLat, k === 0 ? undefined : dayStart(d0 + k * DAY + 3 * 3600, tz)); };
@@ -122,6 +156,12 @@ export function setupTides(map, { before, getTime, onTime }) {
       if (!ex.length) {
         el.querySelector(".svg").innerHTML = "";
         const y = new Date(d0 * 1000).getUTCFullYear();
+        // the planning time (the GRIB's, say) is outside the tables: show today instead
+        const nowY = new Date().getFullYear();
+        if (!note && !r.years?.includes(y) && r.years?.includes(nowY) && !r.method?.startsWith("Reference port")) {
+          show(id, lngLat, dayStart(Date.now() / 1000, tz), `The planning time (${dateLabel(t, tz)}) is outside the downloaded tables (${r.years.join(", ")}): showing today`);
+          return;
+        }
         tbl.insertRow().insertCell().textContent = r.method?.startsWith("Reference port")
           ? "LINZ gives no times for this place."
           : r.years?.includes(y) ? "No tides for this day." : `No LINZ tables for ${y}: download them in Weather and tides › Tides.`;
@@ -152,6 +192,7 @@ export function setupTides(map, { before, getTime, onTime }) {
   });
 
   load();
+  streams = setupTidalStreams(map, { before, getTime, onTime, isOn: () => opts.streams });
   return { reload: load };
 }
 
@@ -208,6 +249,7 @@ function curveSvg(r, d0, d1, now, tz) {
  *  little smaller; places with mean levels only (no times) dashed. */
 const TIDE_COL = "#6a1b9a";
 export function tideImage(id) {
+  if (id.startsWith("tg:")) return gaugeImage(id);
   if (!id.startsWith("tide:")) return null;
   const kind = id.slice(5);
   const S = 46, c = document.createElement("canvas");
@@ -226,4 +268,29 @@ export function tideImage(id) {
   g.textAlign = "center"; g.textBaseline = "middle";
   g.fillText("T", m, m + 1.5);
   return g.getImageData(0, 0, S, S);
+}
+
+/** The tide gauge beside a station: a bar (thick outline, clear inside, as SN.1/Circ.243
+ *  has it) filled to the tide's place between low and high water with chevrons pointing
+ *  the way it is going: up rising, down falling. "tg:<0..8>:<u|d>". */
+function gaugeImage(id) {
+  const [, n, dir] = id.split(":");
+  const k = Math.max(0, Math.min(8, Number(n) || 0)), up = dir === "u";
+  const W = 22, H = 52, c = document.createElement("canvas"); // 2× pixels
+  c.width = W; c.height = H;
+  const g = c.getContext("2d");
+  const x0 = 3, x1 = W - 3, y0 = 3, y1 = H - 3, step = (y1 - y0) / 8;
+  g.lineJoin = "round"; g.lineCap = "round";
+  // halo and clear inside
+  g.fillStyle = "rgba(255,255,255,0.75)"; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+  g.strokeStyle = "rgba(255,255,255,0.92)"; g.lineWidth = 6; g.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  // the water: chevrons, one per step, pointing the way the tide is going
+  g.strokeStyle = "#1e6fb5"; g.lineWidth = 2.6;
+  for (let i = 0; i < k; i++) {
+    const yb = y1 - i * step, ym = yb - step / 2;
+    const tip = up ? ym - step * 0.32 : ym + step * 0.32, base = up ? ym + step * 0.32 : ym - step * 0.32;
+    g.beginPath(); g.moveTo(x0 + 2, base); g.lineTo(W / 2, tip); g.lineTo(x1 - 2, base); g.stroke();
+  }
+  g.strokeStyle = TIDE_COL; g.lineWidth = 3; g.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  return g.getImageData(0, 0, W, H);
 }

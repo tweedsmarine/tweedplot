@@ -108,7 +108,9 @@
         </details>
         <details class="sub" id="tide-box">
           <summary>Tides</summary>
-        <div class="wx-row checks"><label><input id="tide-show" type="checkbox" /> Tide stations</label></div>
+        <div class="wx-row checks"><label><input id="tide-show" type="checkbox" /> Tide stations</label>
+          <label title="A bar beside each station showing where the tide is between low and high water, chevrons pointing up while it rises and down while it falls"><input id="tide-gauges" type="checkbox" /> Tide gauges</label></div>
+        <div class="wx-row checks"><label title="The tidal diamonds of the LINZ charts with the stream they predict at the planning time (from high water at their reference port), and the charted flood and ebb arrows. From about 1:500,000 in"><input id="ts-show" type="checkbox" /> Tidal streams (chart tidal diamonds)</label></div>
         <div class="wx-row"><span id="tide-status" class="grow wx-note">—</span></div>
         <div class="wx-row"><button id="tide-dl" title="Download the LINZ tide tables (about 90 daily tables a year, plus the secondary ports) for this year and next">Download LINZ tides</button><button id="tide-cancel" disabled>Cancel</button></div>
         <div id="tide-progress" class="progress" hidden><div class="bar"></div><span></span></div>

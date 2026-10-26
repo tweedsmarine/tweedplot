@@ -65,6 +65,9 @@ pub static CLASSES: &[FeatureClass] = &[
     fc!("SMCFAC", "Small craft facility", "small_craft_facility_points", Point),
     fc!("HRBFAC", "Harbour facility", "harbour_facility_points", Point),
     fc!("SEAARE", "Sea area", "sea_area_named_water_area_points", Point),
+    // tidal streams: read by tidal.rs and drawn by the app (no tile symbol)
+    fc!("TS_PAD", "Tidal stream panel", "tidal_stream_panel_data_points", Point),
+    fc!("TS_FEB", "Tidal stream, flood or ebb", "tidal_stream_flood_ebb_points", Point),
     fc!("LNDRGN", "Land region", "land_region_points", Point),
     fc!("CBLSUB", "Submarine cable", "cable_submarine_polyline", Line),
     fc!("CBLOHD", "Overhead cable", "cable_overhead_polyline", Line),

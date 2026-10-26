@@ -12,6 +12,7 @@ import { setupWeather, barbImage } from "./weather.js";
 import { setupBrand } from "./brand.js";
 import { setupChartFeatures, featureImage } from "./chartfeatures.js";
 import { setupTides, tideImage } from "./tides.js";
+import { tidalImage } from "./tidalstreams.js";
 import { setupTracks } from "./tracks.js";
 import { setupRuler } from "./ruler.js";
 import { setupGribTools } from "./gribtools.js";
@@ -222,7 +223,7 @@ map.setMissingStyleImageResolver((id) => {
   if (map.hasImage(id)) return;
   const m = /^(sh|dp):(-?[0-9.]+)$/.exec(id);
   if (m) { map.addImage(id, soundingIcon(parseFloat(m[2]), m[1] === "sh"), { pixelRatio: 2 }); return; }
-  const img = barbImage(id) || markImage(id) || labelImage(id) || featureImage(id) || tideImage(id) || poiImage(id) || stationImage(id);
+  const img = barbImage(id) || markImage(id) || labelImage(id) || featureImage(id) || tideImage(id) || poiImage(id) || stationImage(id) || tidalImage(id);
   if (img) map.addImage(id, img, { pixelRatio: 2 });
 });
 
@@ -239,7 +240,7 @@ const views = setupViews(map);
 const manual = setupManual({
   // the symbols in the manual come from the chart's own drawing code
   image: (id) => {
-    const im = barbImage(id) || markImage(id) || featureImage(id) || tideImage(id) || poiImage(id) || stationImage(id);
+    const im = barbImage(id) || markImage(id) || featureImage(id) || tideImage(id) || poiImage(id) || stationImage(id) || tidalImage(id);
     if (im) return { data: im, pixelRatio: 2 };
     const m = map.hasImage(id) ? map.getImage(id) : null;
     return m && !m.sdf ? { data: m.data, pixelRatio: m.pixelRatio } : null;

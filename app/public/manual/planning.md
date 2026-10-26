@@ -91,7 +91,7 @@ When wind and stream oppose each other, waves grow steeper and closer together, 
 
 - Tide heights and curves: tide stations (Weather and tides › Tides).
 - Ocean currents: GRIBs with currents (for example from an ocean model) can be used in routing with **Use GRIB currents**.
-- Tidal streams are not modelled yet: plan stream-critical passages from tide tables and the cruising guide, and give them extra time.
+- Tidal streams show only where the charts have tidal diamonds (Weather and tides › Tides › Tidal streams), and routing doesn't use them yet: plan stream-critical passages from the diamonds, the tide tables and the cruising guide, and give them extra time.
 
 ## Building the route
 

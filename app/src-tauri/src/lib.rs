@@ -1667,6 +1667,75 @@ fn tides_curve(id: String, t0: i64, t1: i64) -> Result<serde_json::Value, String
     }))
 }
 
+/// Where the tide is at every station at `t` (the gauges beside the tide diamonds):
+/// [{id, f: 0 low .. 1 high, rising}], for stations with predictions.
+#[tauri::command]
+fn tides_phase(t: i64) -> Vec<serde_json::Value> {
+    let db = tide_db();
+    db.stations
+        .iter()
+        .filter_map(|s| {
+            let (f, rising) = db.phase_at(&s.id, t)?;
+            Some(serde_json::json!({ "id": s.id, "f": (f * 1000.0).round() / 1000.0, "rising": rising }))
+        })
+        .collect()
+}
+
+/// The tidal streams in `bbox` [w, s, e, n] at `t`: each charted tidal diamond with its
+/// table and the stream now (from the reference port's high water, the rate scaled from
+/// springs by the tide's range), and the charted flood and ebb arrows.
+#[tauri::command]
+async fn tidal_streams(bbox: [f64; 4], t: i64) -> Result<serde_json::Value, String> {
+    let Some(store) = charts() else { return Ok(serde_json::json!({ "panels": [], "arrows": [] })) };
+    tauri::async_runtime::spawn_blocking(move || {
+        let (panels, arrows) = store.tidal_streams(bbox);
+        let db = tide_db();
+        let out: Vec<serde_json::Value> = panels
+            .iter()
+            .map(|p| {
+                let mut v = serde_json::to_value(p).unwrap_or_default();
+                let refst = db.daily_by_name(&p.ref_name);
+                let Some(st) = refst else {
+                    v["note"] = format!("No LINZ tide table for {} (download the tides in Weather and tides › Tides)", p.ref_name).into();
+                    return v;
+                };
+                v["ref_id"] = st.id.clone().into();
+                let Some((tref, factor)) = db.nearest_reference(&st.id, t, p.rel != "LW") else {
+                    v["note"] = format!("No {} prediction for {} near this time", p.rel, p.ref_name).into();
+                    return v;
+                };
+                let h = ((t - tref) as f64 / 3600.0).clamp(-6.0, 6.0);
+                let x = h + 6.0;
+                let i = (x.floor() as usize).min(11);
+                let w = x - i as f64;
+                let (d0, r0) = p.hours[i];
+                let (d1, r1) = p.hours[i + 1];
+                // direction: the short way round; rate: straight line
+                let dd = ((d1 - d0 + 540.0) % 360.0) - 180.0;
+                let mut dir = (d0 + dd * w + 360.0) % 360.0;
+                let spring = r0 + (r1 - r0) * w;
+                // a stream turning through slack: take the nearer hour's direction
+                if r0 < 0.15 || r1 < 0.15 {
+                    dir = if w < 0.5 { d0 } else { d1 };
+                }
+                let rate = spring * factor.unwrap_or(1.0);
+                v["ref_t"] = tref.into();
+                v["hour"] = ((h * 10.0).round() / 10.0).into();
+                v["dir"] = ((dir * 10.0).round() / 10.0).into();
+                v["rate"] = ((rate * 100.0).round() / 100.0).into();
+                v["spring"] = ((spring * 100.0).round() / 100.0).into();
+                if let Some(f) = factor {
+                    v["factor"] = ((f * 100.0).round() / 100.0).into();
+                }
+                v
+            })
+            .collect();
+        Ok(serde_json::json!({ "panels": out, "arrows": arrows }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Download the LINZ secondary ports file and daily tables for `years` (emits "tides-progress").
 #[tauri::command]
 async fn tides_download(
@@ -2701,6 +2770,8 @@ pub fn run() {
             tides_info,
             tides_stations,
             tides_curve,
+            tides_phase,
+            tidal_streams,
             tides_download,
             tides_cancel,
             grib_files,
