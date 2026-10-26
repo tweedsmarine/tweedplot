@@ -868,7 +868,7 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 .float-win footer { padding: 3px 8px; border-top: 1px solid var(--line); }
 .tgt-scroll { flex: 1; overflow: auto; }
 #tgt-table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
-#tgt-table th { position: sticky; top: 0; background: #fff; text-align: left; padding: 3px 5px; border-bottom: 1px solid var(--line); cursor: pointer; white-space: nowrap; font-weight: 600; }
+#tgt-table th { position: sticky; top: 0; z-index: 2; background: #fff; box-shadow: 0 1px 0 var(--line); text-align: left; padding: 3px 5px; border-bottom: 1px solid var(--line); cursor: pointer; white-space: nowrap; font-weight: 600; }
 #tgt-table th.n, #tgt-table td.n { text-align: right; }
 #tgt-table th.sorted::after { content: " ▾"; }
 #tgt-table th.sorted.up::after { content: " ▴"; }
