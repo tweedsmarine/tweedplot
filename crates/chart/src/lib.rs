@@ -1222,9 +1222,11 @@ fn open_gpkg(path: &Path) -> Result<Option<(Connection, Vec<TableInfo>)>, ChartE
         return open_gpkg_scan(path);
     }
     let note = PathBuf::from(format!("{}.tables", path.display()));
+    // the note also records which layers TweedPlot reads (the class list), so a new
+    // version that reads more of them (tidal streams, say) looks at every file again
     let stamp = std::fs::metadata(path)
         .ok()
-        .map(|m| format!("{} {:?}", m.len(), m.modified().ok()));
+        .map(|m| format!("{} {:?} c{}", m.len(), m.modified().ok(), s57::CLASSES.len()));
     if let (Some(stamp), Ok(text)) = (&stamp, std::fs::read_to_string(&note)) {
         let mut lines = text.lines();
         if lines.next() == Some(stamp.as_str()) {

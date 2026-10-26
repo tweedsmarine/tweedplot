@@ -125,3 +125,17 @@ mod tests {
         assert!(parse_tsp("6366,Port Taranaki,HW,158,0.7").is_none());
     }
 }
+
+#[cfg(test)]
+mod real {
+    /// `RACENAV_TEST_TSD=<folder with a LINZ tidal stream gpkg> cargo test -p chart real_panels -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn real_panels() {
+        let dir = std::env::var("RACENAV_TEST_TSD").unwrap();
+        let s = crate::ChartStore::open_dir(&dir).unwrap();
+        let (p, a) = s.tidal_streams([160.0, -53.0, 190.0, -28.0]);
+        println!("{} panels, {} arrows; first {:?}", p.len(), a.len(), p.first());
+        assert!(p.len() > 10);
+    }
+}
