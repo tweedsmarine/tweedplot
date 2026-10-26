@@ -1350,6 +1350,39 @@ fn gpx_import(
     Ok(r)
 }
 
+/// Import marks, routes and tracks from a file picked in the system file dialog: GPX, or
+/// TimeZero's .tzd / .TzBackup (or the WaypointRouteDatabase.xml inside one). The file is read
+/// here, not passed through the page: a TimeZero file can be gigabytes.
+#[tauri::command]
+async fn library_import_file(app: tauri::AppHandle) -> Result<Option<(String, library::ImportReport)>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Import marks, routes and tracks")
+        .add_filter("GPX and TimeZero", &["gpx", "tzd", "TzBackup", "xml"])
+        .add_filter("All files", &["*"])
+        .blocking_pick_file();
+    let Some(p) = picked else { return Ok(None) };
+    let path = p.into_path().map_err(|e| e.to_string())?;
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let stem = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    let r = tauri::async_runtime::spawn_blocking(move || -> Result<library::ImportReport, String> {
+        let l = lib()?;
+        if ext == "gpx" {
+            let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+            l.import_gpx(&text, &stem).map_err(es)
+        } else {
+            l.import_tzd(&path, &stem).map_err(es)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    library_changed(&app);
+    Ok(Some((name, r)))
+}
+
 // ---------- tracks and the track recorder ----------
 
 /// The track being recorded from Signal K, when recording is on.
@@ -2830,6 +2863,7 @@ pub fn run() {
             gpx_export,
             gpx_write,
             gpx_import,
+            library_import_file,
             rec_status,
             rec_start,
             rec_stop,

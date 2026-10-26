@@ -11,5 +11,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 quick-xml.workspace = true
 nav-core.workspace = true
+zip.workspace = true
 
 [dev-dependencies]

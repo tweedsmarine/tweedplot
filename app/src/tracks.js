@@ -237,7 +237,7 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
   }).catch(() => {});
 
   // ---------- import and options ----------------------------------------------------------
-  $("trk-import").onclick = () => $("lib-file").click();
+  $("trk-import").onclick = () => document.getElementById("lib-import").click();
   window.addEventListener("racenav-tracks-imported", async () => {
     const before = new Set(list.map((t) => t.id));
     await refresh();

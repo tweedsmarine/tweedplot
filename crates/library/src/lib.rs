@@ -23,6 +23,7 @@ use serde_json::Value;
 
 mod gpx;
 pub mod tracks;
+pub mod tzd;
 pub use gpx::{parse_gpx, GpxData, GpxRoute, GpxTrack, GpxWaypoint};
 pub use tracks::{Recorder, Track, TrackPoint, TrackStats, TrackSummary};
 
@@ -34,6 +35,8 @@ pub enum Error {
     Json(#[from] serde_json::Error),
     #[error("GPX: {0}")]
     Gpx(String),
+    #[error("TimeZero: {0}")]
+    Tz(String),
     #[error("not found: {0}")]
     NotFound(String),
     #[error("{0}")]
@@ -166,6 +169,9 @@ pub struct ImportReport {
     pub marks_matched: usize,
     pub routes_added: Vec<String>,
     pub tracks_added: Vec<String>,
+    /// What the file held that wasn't brought in (TimeZero lines, areas, circles, tracks).
+    #[serde(default)]
+    pub not_imported: Vec<String>,
 }
 
 pub struct Library {
@@ -410,7 +416,22 @@ impl Library {
     /// Bring GPX waypoints and routes into the library. A waypoint with the
     /// same name as a library mark and within about 50 m is the same mark.
     pub fn import_gpx(&self, text: &str, group: &str) -> Result<ImportReport> {
-        let data = parse_gpx(text)?;
+        self.import_data(parse_gpx(text)?, group)
+    }
+
+    /// Bring in a TimeZero `.tzd` / `.TzBackup` (or its WaypointRouteDatabase.xml): marks
+    /// in their layers as groups, with symbol, colour and date, and routes. Matching is as GPX.
+    pub fn import_tzd(&self, path: &std::path::Path, group: &str) -> Result<ImportReport> {
+        let d = tzd::read_tzd(path)?;
+        let mut rep = self.import_data(d.gpx, group)?;
+        let n = |k: usize, one: &str, many: &str| if k == 1 { format!("1 {one}") } else { format!("{k} {many}") };
+        if d.lines + d.areas + d.circles > 0 {
+            rep.not_imported.push(format!("{}, {} and {} (not yet)", n(d.lines, "line", "lines"), n(d.areas, "area", "areas"), n(d.circles, "circle", "circles")));
+        }
+        Ok(rep)
+    }
+
+    fn import_data(&self, data: GpxData, group: &str) -> Result<ImportReport> {
         let mut rep = ImportReport::default();
         let mut marks = self.marks()?;
         // Marks already here, by name and a grid of about a kilometre, so a big file (a
@@ -452,7 +473,7 @@ impl Library {
                 lon: w.lon,
                 kind: if w.sym.to_ascii_lowercase().contains("buoy") { "mark".into() } else { "waypoint".into() },
                 notes: w.desc.clone(),
-                group: group.to_string(),
+                group: if w.group.is_empty() { group.to_string() } else { w.group.clone() },
                 barrier_nm: 0.0,
                 modified: stamp,
                 created: w.time.unwrap_or(0),
@@ -800,6 +821,31 @@ mod big_gpx {
         let (a, b) = (&d.waypoints[0], &back.waypoints[0]);
         println!("round trip: {:?} {:?} {} / {:?} {:?} {}", a.time, a.tz_symbol, a.colour, b.time, b.tz_symbol, b.colour);
         assert_eq!((a.time, a.tz_symbol, &a.colour), (b.time, b.tz_symbol, &b.colour));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod big_tzd {
+    /// RACENAV_TEST_TZD=<a .tzd, .TzBackup or WaypointRouteDatabase.xml> cargo test --release -p library big_tzd -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn big_tzd_import() {
+        let f = std::env::var("RACENAV_TEST_TZD").unwrap();
+        let dir = std::env::temp_dir().join(format!("tp_bigtzd_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let lib = super::Library::open(&dir).unwrap();
+        let t = std::time::Instant::now();
+        let d = super::tzd::read_tzd(std::path::Path::new(&f)).unwrap();
+        println!("read: {} marks ({} labels), {} routes, {} lines, {} areas, {} circles in {:?}",
+            d.gpx.waypoints.len(), d.labels, d.gpx.routes.len(), d.lines, d.areas, d.circles, t.elapsed());
+        let t = std::time::Instant::now();
+        let r = lib.import_tzd(std::path::Path::new(&f), "TimeZero").unwrap();
+        println!("import: added {} matched {}, {} routes, {:?} in {:?}", r.marks_added, r.marks_matched, r.routes_added.len(), r.not_imported, t.elapsed());
+        let r = lib.import_tzd(std::path::Path::new(&f), "TimeZero").unwrap();
+        println!("again: added {} matched {}", r.marks_added, r.marks_matched);
+        let groups: std::collections::BTreeSet<String> = lib.marks().unwrap().into_iter().map(|m| m.group).collect();
+        println!("{} groups", groups.len());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

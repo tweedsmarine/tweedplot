@@ -387,18 +387,21 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   }
 
   // ---------- GPX ----------------------------------------------------------
-  $("lib-import").onclick = () => $("lib-file").click();
-  $("lib-file").onchange = async (e) => {
-    const file = e.target.files[0];
-    e.target.value = "";
-    if (!file) return;
+  // GPX, or TimeZero .tzd / .TzBackup: picked and read by the app itself (a TimeZero file can be gigabytes)
+  const many = (list, one) => (list.length > 6 ? `${list.length} ${one}s` : `${one}s: ${list.join(", ")}`);
+  $("lib-import").onclick = async () => {
+    $("lib-import").disabled = true;
     try {
-      const rep = await invoke("gpx_import", { text: await file.text(), group: file.name.replace(/\.gpx$/i, "") });
-      status(`${file.name}: ${rep.marks_added} new marks, ${rep.marks_matched} matched existing marks` +
-        `${rep.routes_added.length ? `, routes: ${rep.routes_added.join(", ")}` : ""}${rep.tracks_added?.length ? `, tracks: ${rep.tracks_added.join(", ")}` : ""}.`);
+      const got = await invoke("library_import_file");
+      if (!got) return;
+      const [name, rep] = got;
+      status(`${name}: ${rep.marks_added} new marks, ${rep.marks_matched} matched existing marks` +
+        `${rep.routes_added.length ? `, ${many(rep.routes_added, "route")}` : ""}${rep.tracks_added?.length ? `, ${many(rep.tracks_added, "track")}` : ""}.` +
+        `${rep.not_imported?.length ? ` Not imported: ${rep.not_imported.join("; ")}.` : ""}`);
       await refresh();
       if (rep.tracks_added?.length) window.dispatchEvent(new CustomEvent("racenav-tracks-imported", { detail: rep.tracks_added }));
     } catch (err) { status(`Import failed: ${err}`); }
+    finally { $("lib-import").disabled = false; }
   };
   $("lib-export").onclick = async () => {
     try { status(`Written to ${await invoke("gpx_export", { name: "racenav library", markIds: [], routeIds: [] })}`); } catch (e) { status(String(e)); }
