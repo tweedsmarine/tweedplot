@@ -42,7 +42,7 @@ import { setupAlarms } from "./alarms.js";
 import { setupMarine } from "./marine.js";
 import { setupAis } from "./ais.js";
 import { hullRing, bigEnough } from "./hull.js";
-import { setupStations } from "./stations.js";
+import { setupStations, stationImage } from "./stations.js";
 import { setupInstruments, waypointData, targetAt } from "./instruments.js";
 import { setupLibrary, labelImage } from "./library.js";
 import { setupSettings } from "./settings.js";
@@ -222,7 +222,7 @@ map.setMissingStyleImageResolver((id) => {
   if (map.hasImage(id)) return;
   const m = /^(sh|dp):(-?[0-9.]+)$/.exec(id);
   if (m) { map.addImage(id, soundingIcon(parseFloat(m[2]), m[1] === "sh"), { pixelRatio: 2 }); return; }
-  const img = barbImage(id) || markImage(id) || labelImage(id) || featureImage(id) || tideImage(id) || poiImage(id);
+  const img = barbImage(id) || markImage(id) || labelImage(id) || featureImage(id) || tideImage(id) || poiImage(id) || stationImage(id);
   if (img) map.addImage(id, img, { pixelRatio: 2 });
 });
 
@@ -239,7 +239,7 @@ const views = setupViews(map);
 const manual = setupManual({
   // the symbols in the manual come from the chart's own drawing code
   image: (id) => {
-    const im = barbImage(id) || markImage(id) || featureImage(id) || tideImage(id) || poiImage(id);
+    const im = barbImage(id) || markImage(id) || featureImage(id) || tideImage(id) || poiImage(id) || stationImage(id);
     if (im) return { data: im, pixelRatio: 2 };
     const m = map.hasImage(id) ? map.getImage(id) : null;
     return m && !m.sdf ? { data: m.data, pixelRatio: m.pixelRatio } : null;

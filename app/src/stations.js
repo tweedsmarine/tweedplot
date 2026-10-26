@@ -3,7 +3,6 @@
 // loaded GRIBs (real versus forecast).
 import { infoBox } from "./infobox.js";
 import { invoke } from "@tauri-apps/api/core";
-import { PALETTE } from "./weather.js";
 import { ddm } from "./navmath.js";
 
 const KEY = "racenav.stations";
@@ -14,11 +13,70 @@ const SRC = { metservice: "MetService (open access)", metar: "aviationweather.go
 const COMPASS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
 const point = (d) => COMPASS[Math.round(((d % 360) + 360) % 360 / 22.5) % 16];
 
-function windColour(kn) {
-  let c = PALETTE[0][1];
-  for (const [k, col] of PALETTE) if (kn >= k) c = col;
-  return c;
+
+// The station symbol, after IMO SN.1/Circ.243 (ECDIS symbols, "weather station"):
+// a circle with W in it, and the reported wind as a shaft from the direction the
+// wind comes from to the circle, with barbs (full 10 kn, half 5 kn) and pennants
+// (50 kn) on the clockwise side in the northern hemisphere, anticlockwise in the
+// southern (WMO No. 485). Calm: a second circle round it; a direction without a
+// speed: an x at the end of the shaft. Drawn in the AIS AtoN colour.
+const STN_COL = "#6a1b9a";
+const D = 18; // circle diameter, px (the circular says no more than 6 mm)
+const SHAFT = 2.6 * D; // no more than three diameters
+/** Station image ids: "stnc" (the circle with W) or "stnc:calm" (with the calm ring),
+ *  upright; and the wind shaft, turned to the wind: "stnw:<kn rounded to 5>:<n|s>" or
+ *  "stnw:x" (a direction without a speed). The shaft points up (wind from the north),
+ *  drawn about the circle's centre so both share an anchor. */
+export function stationImage(id) {
+  const circle = id === "stnc" || id === "stnc:calm";
+  if (!circle && !id.startsWith("stnw:")) return null;
+  const [, kind, hem] = id.split(":");
+  const R = 2, half = circle ? D / 2 + 7 : SHAFT + D / 2 + 6, W = 2 * half;
+  const c = document.createElement("canvas");
+  c.width = c.height = W * R;
+  const g = c.getContext("2d");
+  g.scale(R, R);
+  const cx = half, cy = half, r = D / 2;
+  const side = hem === "s" ? -1 : 1; // clockwise of the shaft (pointing up) is to the right
+  g.lineCap = "round"; g.lineJoin = "round";
+  if (circle) {
+    const ring = (w, col) => { g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.arc(cx, cy, r, 0, 7); if (kind === "calm") { g.moveTo(cx + r + 4, cy); g.arc(cx, cy, r + 4, 0, 7); } g.stroke(); };
+    ring(4.5, "rgba(255,255,255,0.92)");
+    g.fillStyle = "rgba(255,255,255,0.85)"; g.beginPath(); g.arc(cx, cy, r, 0, 7); g.fill();
+    ring(1.3, STN_COL);
+    g.fillStyle = STN_COL;
+    g.font = `bold ${Math.round(D * 0.62)}px sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText("W", cx, cy + 0.5);
+    return g.getImageData(0, 0, c.width, c.height);
+  }
+  const top = cy - r - SHAFT;
+  const shape = (stroke) => {
+    // the shaft from the circle's edge out towards where the wind comes from
+    g.beginPath(); g.moveTo(cx, cy - r); g.lineTo(cx, top); stroke();
+    if (kind === "x") { g.beginPath(); g.moveTo(cx - 5, top - 5); g.lineTo(cx + 5, top + 5); g.moveTo(cx + 5, top - 5); g.lineTo(cx - 5, top + 5); stroke(); return; }
+    let k = Math.round(Number(kind) / 5) * 5, y = top;
+    const L = D * 0.95, ang = (60 * Math.PI) / 180; // barbs at 120° to the shaft towards the station
+    const dx = side * L * Math.sin(ang), dy = -L * Math.cos(ang);
+    const pennants = [];
+    while (k >= 50) { pennants.push(y); y += 9; k -= 50; }
+    if (pennants.length) y += 2;
+    g.beginPath();
+    while (k >= 10) { g.moveTo(cx, y); g.lineTo(cx + dx, y + dy); y += 6; k -= 10; }
+    if (k >= 5) { if (y === top) y += 6; g.moveTo(cx, y); g.lineTo(cx + dx / 2, y + dy / 2); }
+    stroke();
+    for (const py of pennants) { g.beginPath(); g.moveTo(cx, py); g.lineTo(cx + side * L * 0.9, py + 1); g.lineTo(cx, py + 8); g.closePath(); g.fill(); }
+  };
+  g.strokeStyle = g.fillStyle = "rgba(255,255,255,0.92)";
+  shape(() => { g.lineWidth = 5.5; g.stroke(); });
+  g.strokeStyle = g.fillStyle = STN_COL;
+  shape(() => { g.lineWidth = 2.4; g.stroke(); });
+  return g.getImageData(0, 0, c.width, c.height);
 }
+const shaftIcon = (o) => {
+  if (o.wind_dir == null || (o.wind_kn != null && o.wind_kn < 1)) return null;
+  if (o.wind_kn == null) return "stnw:x";
+  return `stnw:${Math.round(o.wind_kn / 5) * 5}:${o.lat < 0 ? "s" : "n"}`;
+};
 
 export function setupStations(map, { weather }) {
   let s = { ...DEFAULTS, sources: { ...DEFAULTS.sources } };
@@ -28,32 +86,37 @@ export function setupStations(map, { weather }) {
   let busy = false;
 
   // arrow pointing up (rotated to the downwind direction)
-  const c = document.createElement("canvas");
-  c.width = c.height = 32;
-  const g = c.getContext("2d");
-  g.fillStyle = "#fff";
-  g.beginPath(); g.moveTo(16, 2); g.lineTo(24, 16); g.lineTo(18.5, 15); g.lineTo(18.5, 30); g.lineTo(13.5, 30); g.lineTo(13.5, 15); g.lineTo(8, 16); g.closePath(); g.fill();
-  map.addImage("stn-arrow", g.getImageData(0, 0, 32, 32), { sdf: true });
   map.addSource("stations", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  // the symbol (drawn on demand by stationImage), turned to the direction the wind comes from
+  map.addLayer({ id: "stn-sym", type: "symbol", source: "stations", filter: ["has", "shaft"],
+    layout: { "icon-image": ["get", "shaft"], "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true },
+  });
+  // the circle with W stays upright
+  map.addLayer({ id: "stn-w", type: "symbol", source: "stations",
+    layout: { "icon-image": ["get", "icon"], "icon-rotation-alignment": "viewport", "icon-allow-overlap": true, "icon-ignore-placement": true },
+  });
+  // click target round the circle
   map.addLayer({ id: "stn-dot", type: "circle", source: "stations",
-    paint: { "circle-radius": 7.2, "circle-color": ["get", "col"], "circle-stroke-color": "#1d2a33", "circle-stroke-width": 1.6 } });
-  map.addLayer({ id: "stn-arrow", type: "symbol", source: "stations", filter: ["has", "rot"],
-    layout: { "icon-image": "stn-arrow", "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true,
-      "icon-size": ["interpolate", ["linear"], ["get", "kn"], 0, 0.72, 30, 1.52] },
-    paint: { "icon-color": ["get", "col"], "icon-halo-color": "#1d2a33", "icon-halo-width": 1.6 } });
-  map.addLayer({ id: "stn-label", type: "symbol", source: "stations", minzoom: 6.5, filter: ["has", "lbl"],
-    layout: { "icon-image": ["concat", "lbl:", ["get", "lbl"]], "icon-anchor": "left", "icon-offset": [16, 0], "icon-size": 1.0, "icon-allow-overlap": true, "icon-ignore-placement": true } });
+    paint: { "circle-radius": 11, "circle-color": "#000", "circle-opacity": 0.01 } });
+  // the label: wind (and gust, waves); the station's name too when zoomed in
+  map.addLayer({ id: "stn-label", type: "symbol", source: "stations", minzoom: 6.5, maxzoom: 9, filter: ["has", "lbl"],
+    layout: { "icon-image": ["concat", "lbl:", ["get", "lbl"]], "icon-anchor": "left", "icon-offset": [14, 8], "icon-size": 1.0, "icon-allow-overlap": true, "icon-ignore-placement": true } });
+  map.addLayer({ id: "stn-label-name", type: "symbol", source: "stations", minzoom: 9, filter: ["has", "lbl2"],
+    layout: { "icon-image": ["concat", "lbl:", ["get", "lbl2"]], "icon-anchor": "left", "icon-offset": [14, 8], "icon-size": 1.0, "icon-allow-overlap": true, "icon-ignore-placement": true } });
 
   function draw() {
     const vis = s.show ? "visible" : "none";
-    for (const id of ["stn-dot", "stn-arrow", "stn-label"]) map.setLayoutProperty(id, "visibility", vis);
+    for (const id of ["stn-dot", "stn-sym", "stn-w", "stn-label", "stn-label-name"]) map.setLayoutProperty(id, "visibility", vis);
     const f = obs.map((o, i) => {
       const kn = o.wind_kn;
-      const p = { i, col: kn != null ? windColour(kn) : "#b0bac2", kn: kn ?? 0 };
-      if (o.wind_dir != null && kn != null && kn >= 1) p.rot = (o.wind_dir + 180) % 360;
+      const p = { i, icon: o.wind_kn != null && o.wind_kn < 1 ? "stnc:calm" : "stnc", rot: o.wind_dir ?? 0 };
+      const sh = shaftIcon(o);
+      if (sh) p.shaft = sh;
       const w = kn != null ? `${Math.round(kn)}${o.gust_kn != null && o.gust_kn > kn + 2 ? "G" + Math.round(o.gust_kn) : ""}` : "";
       const wave = o.wave_m != null ? ` ${o.wave_m.toFixed(1)}m` : "";
       if (w || wave) p.lbl = `${w}${wave}`;
+      const name = String(o.name ?? "").trim();
+      if (name || p.lbl) p.lbl2 = [name, p.lbl].filter(Boolean).join(" ");
       return { type: "Feature", properties: p, geometry: { type: "Point", coordinates: [o.lon, o.lat] } };
     });
     map.getSource("stations").setData({ type: "FeatureCollection", features: f });
@@ -173,8 +236,8 @@ export function setupStations(map, { weather }) {
     } catch (err) { if (el.isConnected) el.textContent = `No history: ${err}`; }
   }
   map.on("click", "stn-dot", (e) => { const f = e.features?.[0]; if (f) open(obs[f.properties.i]); });
-  map.on("click", "stn-arrow", (e) => { const f = e.features?.[0]; if (f) open(obs[f.properties.i]); });
-  for (const l of ["stn-dot", "stn-arrow"]) {
+  map.on("click", "stn-sym", (e) => { const f = e.features?.[0]; if (f) open(obs[f.properties.i]); });
+  for (const l of ["stn-dot", "stn-sym"]) {
     map.on("mouseenter", l, () => { map.getCanvas().style.cursor = "pointer"; });
     map.on("mouseleave", l, () => { map.getCanvas().style.cursor = ""; });
   }
