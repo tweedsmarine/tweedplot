@@ -223,3 +223,239 @@ mod tests {
         assert_eq!(d.areas, 1);
     }
 }
+
+// ---------- tracks (Tracks.bin) ----------
+//
+// Little-endian, written by .NET's BinaryWriter (strings: a 7-bit length, then the bytes).
+//   u16 version (1), u32 number of tracks, then each track:
+//   string "TRACK", u8 n + n bytes (GUID), u8 mobile type (0 own ship, 6 imported from
+//   MaxSea), string mobile id ("OwnShip", "PtfMobile"), u32, u32, string name ("Ownship",
+//   "AIS SARDA"), u32 bytes of points, u32 number of points, then each point:
+//   u32 n, then n bytes: f32 x, f32 y (WGS84 ellipsoidal Mercator metres, EPSG:3395),
+//   f32 depth (m, negative down; 0 or f32::MAX for none), i64 time (.NET DateTime.ToBinary:
+//   ticks of 100 ns since 0001-01-01, the top two bits the kind), u8 1, u8 colour (palette
+//   number, as marks), u16 0, u16 k, then k times u8 tag + f32 value: 2 heading (radians),
+//   3 SOG (kn), 6 COG (radians), 8 sea temperature (°C); f32::MAX for none.
+// Worked out from TimeZero 4 files: positions match the marks dropped at the boat to 0.1 m.
+
+/// One TimeZero track, as stored (every fix, usually 2 s apart).
+#[derive(Debug, Clone, Default)]
+pub struct TzTrack {
+    pub name: String,
+    pub mobile: String,
+    pub colour: String,
+    pub points: Vec<TzFix>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TzFix {
+    pub t: i64,
+    pub lat: f64,
+    pub lon: f64,
+    pub depth: Option<f32>,
+    pub sog: Option<f32>,
+    pub cog: Option<f32>,
+    pub temp: Option<f32>,
+    pub colour: u8,
+}
+
+const R_WGS84: f64 = 6_378_137.0;
+const E_WGS84: f64 = 0.081_819_190_842_622;
+
+/// Latitude and longitude (degrees) from WGS84 ellipsoidal Mercator metres.
+pub fn mercator_to_latlon(x: f64, y: f64) -> (f64, f64) {
+    let t = (-y / R_WGS84).exp();
+    let mut phi = std::f64::consts::FRAC_PI_2 - 2.0 * t.atan();
+    for _ in 0..10 {
+        let es = E_WGS84 * phi.sin();
+        let next = std::f64::consts::FRAC_PI_2 - 2.0 * (t * ((1.0 - es) / (1.0 + es)).powf(E_WGS84 / 2.0)).atan();
+        let done = (next - phi).abs() < 1e-12;
+        phi = next;
+        if done {
+            break;
+        }
+    }
+    (phi.to_degrees(), (x / R_WGS84).to_degrees())
+}
+
+/// Unix seconds from .NET DateTime.ToBinary.
+fn dotnet_time(v: i64) -> i64 {
+    let ticks = v & 0x3fff_ffff_ffff_ffff;
+    ticks / 10_000_000 - 62_135_596_800
+}
+
+struct Bin<R: Read> {
+    r: R,
+}
+
+impl<R: Read> Bin<R> {
+    fn bytes<const N: usize>(&mut self) -> Result<[u8; N]> {
+        let mut b = [0u8; N];
+        self.r.read_exact(&mut b)?;
+        Ok(b)
+    }
+    fn u8(&mut self) -> Result<u8> {
+        Ok(self.bytes::<1>()?[0])
+    }
+    fn u16(&mut self) -> Result<u16> {
+        Ok(u16::from_le_bytes(self.bytes()?))
+    }
+    fn u32(&mut self) -> Result<u32> {
+        Ok(u32::from_le_bytes(self.bytes()?))
+    }
+    fn skip(&mut self, n: u64) -> Result<()> {
+        std::io::copy(&mut (&mut self.r).take(n), &mut std::io::sink())?;
+        Ok(())
+    }
+    fn string(&mut self) -> Result<String> {
+        let (mut n, mut shift) = (0usize, 0);
+        loop {
+            let b = self.u8()?;
+            n |= ((b & 0x7f) as usize) << shift;
+            if b & 0x80 == 0 {
+                break;
+            }
+            shift += 7;
+            if shift > 28 {
+                return Err(Error::Tz("bad string in Tracks.bin".into()));
+            }
+        }
+        let mut v = vec![0u8; n];
+        self.r.read_exact(&mut v)?;
+        Ok(String::from_utf8_lossy(&v).into_owned())
+    }
+}
+
+fn some(v: f32) -> Option<f32> {
+    (v.is_finite() && v.abs() < 1e30).then_some(v)
+}
+
+/// Read TimeZero tracks one at a time (a Tracks.bin can be gigabytes).
+pub fn read_tz_tracks(r: impl Read, mut each: impl FnMut(TzTrack) -> Result<()>) -> Result<usize> {
+    let mut b = Bin { r: std::io::BufReader::with_capacity(1 << 20, r) };
+    let _version = b.u16()?;
+    let count = b.u32()? as usize;
+    for _ in 0..count {
+        if b.string()? != "TRACK" {
+            return Err(Error::Tz("Tracks.bin: a track doesn't start with TRACK".into()));
+        }
+        let g = b.u8()? as u64;
+        b.skip(g)?;
+        let _mobile_type = b.u8()?;
+        let mobile = b.string()?;
+        let (_a, _b) = (b.u32()?, b.u32()?);
+        let name = b.string()?;
+        let _bytes = b.u32()?;
+        let n = b.u32()? as usize;
+        let mut points = Vec::with_capacity(n);
+        let mut colours = [0usize; 256];
+        for _ in 0..n {
+            let len = b.u32()? as usize;
+            let mut rec = vec![0u8; len];
+            b.r.read_exact(&mut rec)?;
+            if len < 26 {
+                continue;
+            }
+            let f = |i: usize| f32::from_le_bytes(rec[i..i + 4].try_into().unwrap());
+            let (lat, lon) = mercator_to_latlon(f(0) as f64, f(4) as f64);
+            let mut p = TzFix {
+                t: dotnet_time(i64::from_le_bytes(rec[12..20].try_into().unwrap())),
+                lat,
+                lon,
+                depth: some(f(8)).filter(|d| *d != 0.0).map(f32::abs),
+                colour: rec[21],
+                ..Default::default()
+            };
+            colours[rec[21] as usize] += 1;
+            let k = u16::from_le_bytes([rec[24], rec[25]]) as usize;
+            for j in 0..k {
+                let at = 26 + j * 5;
+                if at + 5 > len {
+                    break;
+                }
+                let v = some(f(at + 1));
+                match rec[at] {
+                    3 => p.sog = v,
+                    6 => p.cog = v.map(|r| r.to_degrees().rem_euclid(360.0)),
+                    8 => p.temp = v,
+                    _ => {}
+                }
+            }
+            if lat.is_finite() && lon.is_finite() && lat.abs() <= 90.0 {
+                points.push(p);
+            }
+        }
+        let common = (0..256).max_by_key(|&i| colours[i]).unwrap_or(0) as u32;
+        each(TzTrack { name, mobile, colour: tz_colour(common).into(), points })?;
+    }
+    Ok(count)
+}
+
+/// The Tracks.bin inside a .tzd / .TzBackup, read as it unzips.
+pub fn read_tzd_tracks(path: &Path, each: impl FnMut(TzTrack) -> Result<()>) -> Result<Option<usize>> {
+    let f = std::fs::File::open(path)?;
+    let Ok(mut z) = zip::ZipArchive::new(std::io::BufReader::new(f)) else { return Ok(None) };
+    let Some(name) = (0..z.len())
+        .filter_map(|i| z.name_for_index(i).and_then(|n| n.ok()).map(|n| n.to_string()))
+        .find(|n| n.rsplit(['/', '\\']).next().is_some_and(|b| b.eq_ignore_ascii_case("Tracks.bin")))
+    else {
+        return Ok(None);
+    };
+    let e = z.by_name(&name).map_err(|e| Error::Tz(e.to_string()))?;
+    read_tz_tracks(e, each).map(Some)
+}
+
+#[cfg(test)]
+mod track_tests {
+    use super::*;
+
+    #[test]
+    fn mercator_and_time() {
+        // a fix from a TimeZero track and the mark dropped there (to 0.1 m)
+        let (lat, lon) = mercator_to_latlon(18_970_678.0, -4_637_761.5);
+        assert!((lon - 170.416_498).abs() < 2e-6, "{lon}");
+        assert!((lat - -38.599_202).abs() < 2e-6, "{lat}");
+        assert_eq!(dotnet_time(0x48d8_cdfe_1a46_6715u64 as i64), 1_612_987_051); // 2021-02-10T19:57:31Z
+    }
+
+    #[test]
+    fn reads_a_track() {
+        let mut v = Vec::new();
+        v.extend(1u16.to_le_bytes());
+        v.extend(1u32.to_le_bytes());
+        let s = |v: &mut Vec<u8>, t: &str| {
+            v.push(t.len() as u8);
+            v.extend(t.as_bytes());
+        };
+        s(&mut v, "TRACK");
+        v.push(16);
+        v.extend([0u8; 16]);
+        v.push(0);
+        s(&mut v, "OwnShip");
+        v.extend([0u8; 8]);
+        s(&mut v, "Ownship");
+        v.extend(41u32.to_le_bytes()); // bytes (not checked)
+        v.extend(1u32.to_le_bytes());
+        v.extend(41u32.to_le_bytes());
+        v.extend(18_970_678.0f32.to_le_bytes());
+        v.extend((-4_637_761.5f32).to_le_bytes());
+        v.extend((-121.5f32).to_le_bytes());
+        v.extend((0x48d8_cdfe_1a46_6715u64).to_le_bytes());
+        v.extend([1, 9, 0, 0]);
+        v.extend(3u16.to_le_bytes());
+        for (t, x) in [(3u8, 6.13f32), (6, std::f32::consts::PI), (8, 16.8)] {
+            v.push(t);
+            v.extend(x.to_le_bytes());
+        }
+        let mut got = Vec::new();
+        read_tz_tracks(&v[..], |t| {
+            got.push(t);
+            Ok(())
+        })
+        .unwrap();
+        let p = got[0].points[0];
+        assert_eq!((got[0].name.as_str(), got[0].colour.as_str()), ("Ownship", "#ffff00"));
+        assert_eq!((p.depth, p.sog, p.temp), (Some(121.5), Some(6.13), Some(16.8)));
+        assert!((p.cog.unwrap() - 180.0).abs() < 1e-3);
+    }
+}

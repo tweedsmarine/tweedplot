@@ -172,6 +172,9 @@ pub struct ImportReport {
     /// What the file held that wasn't brought in (TimeZero lines, areas, circles, tracks).
     #[serde(default)]
     pub not_imported: Vec<String>,
+    /// Anything else worth saying about the import.
+    #[serde(default)]
+    pub notes: Vec<String>,
 }
 
 pub struct Library {
@@ -452,7 +455,43 @@ impl Library {
         if d.lines + d.areas + d.circles > 0 {
             rep.not_imported.push(format!("{}, {} and {} (not yet)", n(d.lines, "line", "lines"), n(d.areas, "area", "areas"), n(d.circles, "circle", "circles")));
         }
+        self.import_tz_tracks(path, group, &mut rep)?;
         Ok(rep)
+    }
+
+    /// TimeZero's tracks (Tracks.bin), thinned as the track recorder thins live fixes
+    /// (TimeZero keeps one every 2 s). A track already here (same start and name) is skipped.
+    fn import_tz_tracks(&self, path: &std::path::Path, group: &str, rep: &mut ImportReport) -> Result<()> {
+        let have: std::collections::HashSet<(i64, String)> =
+            self.tracks()?.into_iter().filter_map(|t| t.stats.start.map(|s| (s, t.name))).collect();
+        let (mut fixes, mut kept, mut same) = (0usize, 0usize, 0usize);
+        let r = tzd::read_tzd_tracks(path, |t| {
+            fixes += t.points.len();
+            let mut rec = Recorder::new(Track { source: "timezero".into(), colour: t.colour.clone(), ..Default::default() });
+            for p in &t.points {
+                rec.push(TrackPoint { t: Some(p.t), lat: p.lat, lon: p.lon, sog: p.sog.map(f64::from), cog: p.cog.map(f64::from) });
+            }
+            let mut tr = rec.track;
+            if tr.segments.iter().map(Vec::len).sum::<usize>() < 2 {
+                return Ok(());
+            }
+            // the earliest fix, as the track's totals have it (a track can go back in time)
+            let start = tr.segments.iter().flatten().filter_map(|p| p.t).min().unwrap_or(0);
+            let when = tracks::iso_time(start).get(..16).unwrap_or("").replace('T', " ");
+            let who = if t.mobile.eq_ignore_ascii_case("OwnShip") || t.name.is_empty() { group.to_string() } else { t.name.trim().to_string() };
+            tr.name = format!("{who} {when}").trim().to_string();
+            if have.contains(&(start, tr.name.clone())) {
+                same += 1;
+                return Ok(());
+            }
+            kept += tr.segments.iter().map(Vec::len).sum::<usize>();
+            rep.tracks_added.push(self.save_track(tr)?.name);
+            Ok(())
+        })?;
+        if r.is_some() && fixes > 0 {
+            rep.notes.push(format!("tracks: kept {kept} of {fixes} fixes (a fix every 10 s, sooner in turns){}", if same > 0 { format!("; {same} already here") } else { String::new() }));
+        }
+        Ok(())
     }
 
     fn import_data(&self, data: GpxData, group: &str) -> Result<ImportReport> {
@@ -845,7 +884,7 @@ mod big_gpx {
         let (a, b) = (&d.waypoints[0], &back.waypoints[0]);
         println!("round trip: {:?} {:?} {} / {:?} {:?} {}", a.time, a.tz_symbol, a.colour, b.time, b.tz_symbol, b.colour);
         assert_eq!((a.time, a.tz_symbol, &a.colour), (b.time, b.tz_symbol, &b.colour));
-        let _ = std::fs::remove_dir_all(&dir);
+        if std::env::var("RACENAV_KEEP").is_err() { let _ = std::fs::remove_dir_all(&dir); } else { println!("kept {}", dir.display()); }
     }
 }
 
@@ -865,11 +904,16 @@ mod big_tzd {
             d.gpx.waypoints.len(), d.labels, d.gpx.routes.len(), d.lines, d.areas, d.circles, t.elapsed());
         let t = std::time::Instant::now();
         let r = lib.import_tzd(std::path::Path::new(&f), "TimeZero").unwrap();
-        println!("import: added {} matched {}, {} routes, {:?} in {:?}", r.marks_added, r.marks_matched, r.routes_added.len(), r.not_imported, t.elapsed());
+        println!("import: added {} matched {}, {} routes, {} tracks, {:?} {:?} in {:?}", r.marks_added, r.marks_matched, r.routes_added.len(), r.tracks_added.len(), r.not_imported, r.notes, t.elapsed());
         let r = lib.import_tzd(std::path::Path::new(&f), "TimeZero").unwrap();
-        println!("again: added {} matched {}", r.marks_added, r.marks_matched);
+        println!("tracks: {} added, {:?}", r.tracks_added.len(), r.notes);
+        let t = std::time::Instant::now();
+        let n = lib.tracks().unwrap().len();
+        println!("tracks list: {n} in {:?}", t.elapsed());
+        let r = lib.import_tzd(std::path::Path::new(&f), "TimeZero").unwrap();
+        println!("again: added {} matched {}, tracks {} {:?}", r.marks_added, r.marks_matched, r.tracks_added.len(), r.notes);
         let groups: std::collections::BTreeSet<String> = lib.marks().unwrap().into_iter().map(|m| m.group).collect();
         println!("{} groups", groups.len());
-        let _ = std::fs::remove_dir_all(&dir);
+        if std::env::var("RACENAV_KEEP").is_err() { let _ = std::fs::remove_dir_all(&dir); } else { println!("kept {}", dir.display()); }
     }
 }

@@ -1360,7 +1360,7 @@ fn gpx_import(
 /// TimeZero's .tzd / .TzBackup (or the WaypointRouteDatabase.xml inside one). The file is read
 /// here, not passed through the page: a TimeZero file can be gigabytes.
 #[tauri::command]
-async fn library_import_file(app: tauri::AppHandle) -> Result<Option<(String, library::ImportReport)>, String> {
+async fn library_pick_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
     let picked = app
         .dialog()
@@ -1370,8 +1370,15 @@ async fn library_import_file(app: tauri::AppHandle) -> Result<Option<(String, li
         .add_filter("All files", &["*"])
         .blocking_pick_file();
     let Some(p) = picked else { return Ok(None) };
-    let path = p.into_path().map_err(|e| e.to_string())?;
-    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    Ok(Some(p.into_path().map_err(|e| e.to_string())?.to_string_lossy().into_owned()))
+}
+
+/// Import marks, routes and tracks from a file (picked with library_pick_file): GPX, or
+/// TimeZero's .tzd / .TzBackup (or the WaypointRouteDatabase.xml inside one). The file is read
+/// here, not passed through the page: a TimeZero file can be gigabytes.
+#[tauri::command]
+async fn library_import_path(app: tauri::AppHandle, path: String) -> Result<library::ImportReport, String> {
+    let path = std::path::PathBuf::from(path);
     let stem = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
     let r = tauri::async_runtime::spawn_blocking(move || -> Result<library::ImportReport, String> {
@@ -1386,7 +1393,7 @@ async fn library_import_file(app: tauri::AppHandle) -> Result<Option<(String, li
     .await
     .map_err(|e| e.to_string())??;
     library_changed(&app);
-    Ok(Some((name, r)))
+    Ok(r)
 }
 
 // ---------- tracks and the track recorder ----------
@@ -2870,7 +2877,8 @@ pub fn run() {
             gpx_write,
             gpx_import,
             marks_delete,
-            library_import_file,
+            library_pick_file,
+            library_import_path,
             rec_status,
             rec_start,
             rec_stop,

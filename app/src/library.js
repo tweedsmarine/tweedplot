@@ -417,12 +417,15 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   $("lib-import").onclick = async () => {
     $("lib-import").disabled = true;
     try {
-      const got = await invoke("library_import_file");
-      if (!got) return;
-      const [name, rep] = got;
+      const path = await invoke("library_pick_file");
+      if (!path) return;
+      const name = path.split(/[\\/]/).pop();
+      status(`Importing ${name}… (a big TimeZero file with years of tracks can take a minute)`);
+      const rep = await invoke("library_import_path", { path });
       status(`${name}: ${rep.marks_added} new marks, ${rep.marks_matched} matched existing marks` +
         `${rep.routes_added.length ? `, ${many(rep.routes_added, "route")}` : ""}${rep.tracks_added?.length ? `, ${many(rep.tracks_added, "track")}` : ""}.` +
-        `${rep.not_imported?.length ? ` Not imported: ${rep.not_imported.join("; ")}.` : ""}`);
+        `${rep.not_imported?.length ? ` Not imported: ${rep.not_imported.join("; ")}.` : ""}` +
+        `${rep.notes?.length ? ` (${rep.notes.join("; ")})` : ""}`);
       await refresh();
       if (rep.tracks_added?.length) window.dispatchEvent(new CustomEvent("racenav-tracks-imported", { detail: rep.tracks_added }));
     } catch (err) { status(`Import failed: ${err}`); }

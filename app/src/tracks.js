@@ -134,7 +134,8 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
       li.textContent = "No tracks yet: press Record, or import a GPX file.";
       ul.append(li);
     }
-    for (const t of list) {
+    // a page at a time: an import from a fishing plotter can bring thousands of tracks
+    for (const t of list.slice(0, pageEnd)) {
       const li = document.createElement("li");
       const st = t.stats || {};
       const recording = rec.on && rec.id === t.id;
@@ -150,7 +151,7 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
       li.querySelector(".swatch").style.background = colourOf(t);
       li.querySelector("b").textContent = `${recording ? "● " : ""}${t.name}`;
       li.querySelector("small").textContent = [fmtTime(st.start), fmtDur(st.end - st.start), `${(st.distance_nm ?? 0).toFixed(1)} NM`,
-        st.max_sog ? `max ${st.max_sog.toFixed(1)} kn` : "", t.source === "gpx" ? "GPX" : recording ? "recording" : "log"].filter(Boolean).join(" · ");
+        st.max_sog ? `max ${st.max_sog.toFixed(1)} kn` : "", t.source === "gpx" ? "GPX" : t.source === "timezero" ? "TimeZero" : recording ? "recording" : "log"].filter(Boolean).join(" · ");
       li.querySelector(".main").onclick = () => zoomTo(t);
       li.querySelector('[data-act="gpx"]').onclick = async () => {
         try { status(`Written to ${await invoke("track_export", { id: t.id })}`); } catch (e) { status(String(e)); }
@@ -168,7 +169,17 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
       };
       ul.append(li);
     }
+    if (list.length > pageEnd) {
+      const li = document.createElement("li");
+      li.className = "more";
+      li.innerHTML = `<button>Show ${Math.min(PAGE, list.length - pageEnd)} more</button><small></small>`;
+      li.querySelector("small").textContent = ` ${list.length - pageEnd} more tracks, newest first.`;
+      li.querySelector("button").onclick = () => { pageEnd += PAGE; render(); };
+      ul.append(li);
+    }
   }
+  const PAGE = 100;
+  let pageEnd = PAGE;
 
   function zoomTo(t) {
     const b = t.stats?.bbox;
@@ -241,10 +252,10 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
   window.addEventListener("racenav-tracks-imported", async () => {
     const before = new Set(list.map((t) => t.id));
     await refresh();
-    // show what came in
-    for (const t of list) if (!before.has(t.id) && !prefs.shown.includes(t.id)) prefs.shown.push(t.id);
-    save(); render(); draw();
+    // show what came in, unless it's a plotter's whole history (thousands of tracks)
     const fresh = list.filter((t) => !before.has(t.id));
+    if (fresh.length <= 10) for (const t of fresh) if (!prefs.shown.includes(t.id)) prefs.shown.push(t.id);
+    save(); render(); draw();
     if (fresh.length === 1) zoomTo(fresh[0]);
   });
   $("trk-time").checked = prefs.atTime;

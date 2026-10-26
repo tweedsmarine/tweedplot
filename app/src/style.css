@@ -948,3 +948,6 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 
 .lib-bulk { background: color-mix(in srgb, #c0392b 12%, transparent); border-radius: 6px; padding: 6px; }
 .lib-bulk span { font-size: 12px; }
+/* the count gets its own line above Filter the chart too / Clear / Delete shown */
+.lib-filter:has(#lib-f-count) { flex-wrap: wrap; }
+#lib-f-count { flex-basis: 100%; }
