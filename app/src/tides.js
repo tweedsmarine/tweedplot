@@ -6,7 +6,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 const KEY = "racenav.tides";
-const BLUE = "#1e6fb5";
 const DAY = 86400;
 
 /** Wall-clock parts of Unix time `t` in a time zone. */
@@ -45,7 +44,7 @@ export function setupTides(map, { before, getTime, onTime }) {
   map.addLayer({ id: "tide-sec", type: "symbol", source: "tides", minzoom: 8, filter: ["!=", ["get", "kind"], "daily"],
     layout: { "icon-image": icon, "icon-allow-overlap": true, "icon-ignore-placement": true } }, "tide-daily");
   map.addLayer({ id: "tide-names", type: "symbol", source: "tides", minzoom: 10,
-    layout: { "icon-image": ["concat", "txt:t:", ["get", "name"]], "icon-anchor": "left", "icon-offset": [11, 0], "icon-allow-overlap": false } }, before);
+    layout: { "icon-image": ["concat", "txt:t:", ["get", "name"]], "icon-anchor": "left", "icon-offset": [13, 0], "icon-allow-overlap": false } }, before);
   const LAYERS = ["tide-daily", "tide-sec", "tide-names"];
   function apply() { for (const l of LAYERS) map.setLayoutProperty(l, "visibility", opts.show ? "visible" : "none"); }
 
@@ -203,20 +202,28 @@ function curveSvg(r, d0, d1, now, tz) {
   return `${s}</svg>`;
 }
 
-/** Station marker: a "T" in a circle (filled: LINZ daily table; open: secondary port; grey: levels only). */
+/** Station marker, after IMO SN.1/Circ.243 (ECDIS symbols, "tidal and water level
+ *  information"): a diamond with T in it, thin solid line, in the AIS AtoN colour (as the
+ *  weather stations). Standard ports (LINZ daily tables) full size; secondary ports a
+ *  little smaller; places with mean levels only (no times) dashed. */
+const TIDE_COL = "#6a1b9a";
 export function tideImage(id) {
   if (!id.startsWith("tide:")) return null;
   const kind = id.slice(5);
-  const c = document.createElement("canvas");
-  c.width = 34; c.height = 34;
+  const S = 46, c = document.createElement("canvas");
+  c.width = c.height = S;
   const g = c.getContext("2d");
-  g.beginPath(); g.arc(17, 17, 13, 0, Math.PI * 2);
-  const col = kind === "levels" ? "#8a97a0" : BLUE;
-  g.fillStyle = kind === "daily" ? col : "#fff"; g.fill();
-  g.lineWidth = 3; g.strokeStyle = kind === "daily" ? "#fff" : col; g.stroke();
-  g.fillStyle = kind === "daily" ? "#fff" : col;
-  g.font = `bold 18px "Segoe UI", system-ui, sans-serif`;
+  const h = kind === "daily" ? 20 : 17, m = S / 2; // half the diagonal, px at 2×
+  const diamond = () => { g.beginPath(); g.moveTo(m, m - h); g.lineTo(m + h, m); g.lineTo(m, m + h); g.lineTo(m - h, m); g.closePath(); };
+  g.lineJoin = "round";
+  diamond(); g.lineWidth = 8; g.strokeStyle = "rgba(255,255,255,0.92)"; g.stroke(); // halo
+  g.fillStyle = "rgba(255,255,255,0.88)"; g.fill();
+  diamond(); g.lineWidth = 2.6; g.strokeStyle = TIDE_COL;
+  if (kind === "levels") g.setLineDash([5, 4]);
+  g.stroke(); g.setLineDash([]);
+  g.fillStyle = TIDE_COL;
+  g.font = `bold ${kind === "daily" ? 22 : 19}px "Segoe UI", system-ui, sans-serif`;
   g.textAlign = "center"; g.textBaseline = "middle";
-  g.fillText("T", 17, 18);
-  return g.getImageData(0, 0, 34, 34);
+  g.fillText("T", m, m + 1.5);
+  return g.getImageData(0, 0, S, S);
 }
