@@ -29,7 +29,7 @@ export function setupPalette() {
     $("pal-dim").disabled = p.mode === "day";
     $("pal-dim-v").textContent = p.mode === "day" ? "" : `${dim} %`;
     const next = MODES[(MODES.indexOf(p.mode) + 1) % MODES.length];
-    $("palette-btn").title = `Colours for this window: ${NAMES[p.mode]} (click for ${NAMES[next]})`;
+    $("palette-btn").title = `Colours for this window: ${NAMES[p.mode]} (click for ${NAMES[next]}; right-click or hold for brightness)`;
     $("palette-btn").classList.toggle("night", p.mode !== "day");
     setWindowDark(p.mode !== "day");
     if (persist) { try { localStorage.setItem(own(KEY), JSON.stringify(p)); } catch { /* ignore */ } }
@@ -38,6 +38,39 @@ export function setupPalette() {
   $("pal-mode").onchange = (e) => { p.mode = e.target.value; apply(); };
   $("pal-dim").oninput = (e) => { if (p.mode !== "day") { p.dim[p.mode] = +e.target.value; apply(); } };
   $("pal-full").onclick = () => toggleFullscreen();
+
+  // right-click or long-press the colours button: colours and brightness at once,
+  // without opening a drawer (S-Mode keeps day/night and brilliance one action away)
+  const pop = document.createElement("div");
+  pop.id = "pal-pop";
+  pop.className = "ctx pal-pop";
+  pop.hidden = true;
+  pop.innerHTML = `<div class="pal-modes">${MODES.map((m) => `<button data-m="${m}">${NAMES[m][0].toUpperCase() + NAMES[m].slice(1)}</button>`).join("")}</div>
+    <label class="pal-b">Brightness <input type="range" min="20" max="100" step="5"><span></span></label>`;
+  document.body.append(pop);
+  const popRange = pop.querySelector("input"), popVal = pop.querySelector("span");
+  function syncPop() {
+    for (const b of pop.querySelectorAll("button")) b.classList.toggle("on", b.dataset.m === p.mode);
+    popRange.value = String(p.dim[p.mode] ?? 100);
+    popRange.disabled = p.mode === "day";
+    popVal.textContent = p.mode === "day" ? "" : `${p.dim[p.mode]} %`;
+  }
+  function openPop() {
+    const r = $("palette-btn").getBoundingClientRect();
+    pop.style.left = `${r.right + 8}px`;
+    pop.style.top = `${r.top}px`;
+    syncPop();
+    pop.hidden = false;
+  }
+  pop.addEventListener("click", (e) => { const b = e.target.closest("button[data-m]"); if (b) { p.mode = b.dataset.m; apply(); syncPop(); } });
+  popRange.oninput = () => { if (p.mode !== "day") { p.dim[p.mode] = +popRange.value; apply(); syncPop(); } };
+  $("palette-btn").addEventListener("contextmenu", (e) => { e.preventDefault(); openPop(); });
+  let press = null;
+  $("palette-btn").addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse") press = setTimeout(() => { press = "done"; openPop(); }, 550); });
+  $("palette-btn").addEventListener("pointerup", () => { if (press && press !== "done") clearTimeout(press); });
+  $("palette-btn").addEventListener("click", (e) => { if (press === "done") { e.stopImmediatePropagation(); press = null; } }, true);
+  document.addEventListener("pointerdown", (e) => { if (!pop.hidden && !pop.contains(e.target) && e.target.closest("#palette-btn") == null) pop.hidden = true; });
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !pop.hidden) { pop.hidden = true; e.preventDefault(); } });
   installFullscreenKey();
   apply();
   return { mode: () => p.mode, set: (m) => { if (MODES.includes(m)) { p.mode = m; apply(); } } };

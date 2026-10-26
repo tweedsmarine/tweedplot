@@ -32,6 +32,15 @@ export function setupRail(map) {
     if (b) open(current === b.dataset.pane ? null : b.dataset.pane);
   });
   document.getElementById("drawer-close").onclick = () => open(null);
+  // links between drawers: <a data-goto="pane"> or data-goto="pane:tab"
+  drawer.addEventListener("click", (e) => {
+    const a = e.target.closest("[data-goto]");
+    if (!a) return;
+    e.preventDefault();
+    const [pane, tab] = a.dataset.goto.split(":");
+    open(pane);
+    if (tab) drawer.querySelector(`.pane[data-pane="${pane}"] .tabs button[data-tab="${tab}"]`)?.click();
+  });
   window.addEventListener("keydown", (e) => {
     // Esc closes the drawer only when nothing else (menus, modes, selections) wants it
     if (e.key === "Escape" && !e.defaultPrevented && current && !document.querySelector(".ctx:not([hidden])") && !document.querySelector(".armed") && !document.body.classList.contains("ruler-armed")) {
@@ -42,7 +51,7 @@ export function setupRail(map) {
 
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(KEY) || "{}").pane; } catch { /* ignore */ }
-  open(saved === undefined ? "weather" : saved === "route" ? "course" : saved === "boat" ? "routing" : saved);
+  open(saved === undefined ? "weather" : saved === "route" ? "course" : saved === "boat" ? "settings" : saved);
   started = true;
 
   // Tabs inside a pane

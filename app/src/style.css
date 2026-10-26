@@ -912,3 +912,16 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 #manual .man-body .mi.v-sun .moon, #manual .man-body .mi.v-moon .sun { display: none; }
 #manual .man-body .mi-img { vertical-align: middle; margin: 0 3px; }
 #manual .man-body td .mi, #manual .man-body td .mi-img { margin-right: 2px; }
+
+/* colours and brightness from the toolbar (palette.js) */
+.pal-pop { position: fixed; z-index: 30; padding: 8px; display: flex; flex-direction: column; gap: 8px; min-width: 210px; }
+.pal-pop .pal-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.pal-pop .pal-modes button { width: auto; }
+.pal-pop .pal-b { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.pal-pop .pal-b input { flex: 1; }
+/* the Alarms drawer's active list */
+.al-active li { display: flex; gap: 8px; align-items: flex-start; }
+.al-active li .al-lv { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; color: #fff; background: #d00000; flex: none; }
+.al-active li.al-warn .al-lv { background: #e08a00; }
+.al-active li.acked { opacity: 0.85; }
+.al-active li button { width: auto; flex: none; }

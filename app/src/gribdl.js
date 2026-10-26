@@ -62,7 +62,7 @@ export function setupGribDownload(map, { weather, course }) {
   $("dl-course").onclick = () => {
     const c = course.get();
     const pts = [c.start, ...c.marks.map((m) => [m.lon, m.lat])].filter(Boolean);
-    if (!pts.length) { status("Set a course first (Course panel).", "warn"); return; }
+    if (!pts.length) { status("Set a route first (Route drawer).", "warn"); return; }
     // keep longitudes continuous so a course across the date line gives a small box
     const lons = [];
     for (const p of pts) { let x = p[0]; if (lons.length) { while (x - lons.at(-1) > 180) x -= 360; while (x - lons.at(-1) < -180) x += 360; } lons.push(x); }

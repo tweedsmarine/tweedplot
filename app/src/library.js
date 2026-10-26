@@ -151,7 +151,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   function renderRoutes() {
     const ul = $("lib-routes");
     ul.innerHTML = "";
-    if (!routes.length) ul.innerHTML = `<li class="empty">No saved routes. Make one in the Course panel and press Save, or import a GPX file.</li>`;
+    if (!routes.length) ul.innerHTML = `<li class="empty">No saved routes. Make one in the Route drawer and press Save, or import a GPX file.</li>`;
     for (const r of routes) {
       const li = document.createElement("li");
       li.classList.toggle("active", route?.current().routeId === r.id);

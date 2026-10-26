@@ -552,7 +552,7 @@ export function setupWeather(map, layers) {
   const saveFl = () => { try { localStorage.setItem(FKEY, JSON.stringify(fl)); } catch { /* ignore */ } };
   const float = document.createElement("div");
   float.id = "wx-float";
-  float.innerHTML = `<div class="grip" title="Drag to move">⋮⋮</div><div class="body"></div><button class="x" title="Hide (Instruments drawer › Time slider brings it back)">×</button>`;
+  float.innerHTML = `<div class="grip" title="Drag to move">⋮⋮</div><div class="body"></div><button class="x" title="Hide (Weather and tides › Floating time slider brings it back)">×</button>`;
   document.body.append(float);
   mountControls(float.querySelector(".body"), { compact: true });
   function placeFloat() {

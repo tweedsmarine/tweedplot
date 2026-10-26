@@ -17,13 +17,15 @@ const BASE = "manual/";
 
 /** Drawer → the reference section that explains it. */
 export const PANE_HELP = {
-  weather: ["reference", "Weather"],
-  course: ["reference", "Marks, routes and the library"],
+  weather: ["reference", "Weather and tides"],
+  course: ["reference", "Routes, marks and the library"],
   routing: ["reference", "Routing"],
-  fleet: ["reference", "AIS targets"],
-  library: ["reference", "Marks, routes and the library"],
+  fleet: ["reference", "Targets"],
+  library: ["reference", "Routes, marks and the library"],
   chart: ["reference", "Charts"],
   inst: ["reference", "Instruments"],
+  alarms: ["reference", "Alarms and man overboard"],
+  settings: ["reference", "Settings"],
 };
 
 /** `{icon:name}` in the manual's text: the app's own button icon, copied from the
@@ -31,7 +33,8 @@ export const PANE_HELP = {
 const ICONS = {
   weather: ['#rail [data-pane="weather"] svg'], course: ['#rail [data-pane="course"] svg'], routing: ['#rail [data-pane="routing"] svg'],
   fleet: ['#rail [data-pane="fleet"] svg'], library: ['#rail [data-pane="library"] svg'], chart: ['#rail [data-pane="chart"] svg'],
-  inst: ['#rail [data-pane="inst"] svg'], manual: ["#manual-btn svg"], targets: ["#targets-btn svg"], settings: ["#settings-btn svg"],
+  inst: ['#rail [data-pane="inst"] svg'], alarms: ['#rail [data-pane="alarms"] svg'], manual: ["#manual-btn svg"], targets: ["#targets-btn svg"], settings: ["#settings-btn svg"],
+  ruler: ["#ruler-btn svg"],
   north: ["#north-btn svg"], sk: ["#sk-state svg", "ok"], "sk-off": ["#sk-state svg", "off"], live: ["#sk-live svg", "play"], paused: ["#sk-live svg", "pause"],
   follow: ["#follow svg"], panels: ["#tools-btn svg"], "chart-show": ["#chart-btn svg"], day: ["#palette-btn svg", "sun"], night: ["#palette-btn svg", "moon"],
   "clear-track": ["#clear-track svg"],

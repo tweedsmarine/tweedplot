@@ -1,6 +1,9 @@
 // Alarms: a banner at the top of the chart with a sound until acknowledged.
-// Built in: shallow water, anchor watch, air draft under charted bridges and
-// overhead cables, position lost, and the own man-overboard (MOB) button.
+// Built in: shallow water, the safety contour ahead, air draft under charted bridges
+// and overhead cables, off track (cross-track error), approaching the next mark,
+// position lost, anchor watch, and the own man-overboard (MOB) button. All are set
+// in the Alarms drawer, which also lists the active ones (one place for every alert,
+// as IMO's bridge alert management asks).
 // Other modules (AIS) raise their own through the returned `raise`/`clear`.
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -14,6 +17,9 @@ const DEFAULTS = {
   anchorM: 50, anchor: null, // {lon, lat}
   air: true, airMargin: 2,
   posLost: true,
+  contour: true, contourMin: 6,
+  xte: false, xteNm: 0.25,
+  arrive: true, arriveMin: 2,
   volume: 0.6,
 };
 const $ = (id) => document.getElementById(id);
@@ -42,7 +48,7 @@ function makeSound(getVolume) {
   };
 }
 
-export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft, onMobMarkDeleted = () => {}, toast = () => {} }) {
+export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = () => 0, getAirDraft, getNav = () => null, onMobMarkDeleted = () => {}, toast = () => {} }) {
   let s = { ...DEFAULTS };
   try { Object.assign(s, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* storage unavailable */ }
   let mob = null;
@@ -118,6 +124,25 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft, onMobMa
       banner.append(row);
     }
     if (PRIMARY) publish();
+    renderDrawer();
+  }
+  // the Alarms drawer's list of everything active, silenced ones included
+  function renderDrawer() {
+    const ul = $("al-active");
+    if (!ul) return;
+    const all = entries().sort((a, b) => (a[1].level === b[1].level ? a[1].since - b[1].since : a[1].level === "alarm" ? -1 : 1));
+    $("al-count").textContent = all.length ? `${all.length}` : "";
+    ul.innerHTML = all.length ? "" : '<li class="empty">No alarms or warnings.</li>';
+    for (const [id, a] of all) {
+      const li = document.createElement("li");
+      li.className = `al-${a.level}${a.acked ? " acked" : ""}`;
+      const t = new Date(a.since).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+      li.innerHTML = `<span class="al-lv">${a.level === "alarm" ? "Alarm" : "Warning"}</span><span class="grow"><b>${esc(a.text)}</b>${a.detail ? `<br><small>${esc(a.detail)}</small>` : ""}</span><span class="wx-note">${t}${a.acked ? " · silenced" : ""}</span>` +
+        (a.acked ? "" : '<button data-act="ack">Silence</button>');
+      li.querySelector('[data-act="ack"]')?.addEventListener("click", () => ack(id));
+      li.querySelector(".grow").onclick = () => a.onClick?.();
+      ul.append(li);
+    }
   }
   // sound again every few seconds until silenced
   if (PRIMARY) setInterval(() => {
@@ -256,6 +281,8 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft, onMobMa
   // ---------- checks ----------------------------------------------------------------
   let lastPosAt = Date.now();
   let lastAirCheck = 0;
+  let lastContourCheck = 0;
+  let arrivedKey = null; // the mark the approach warning was given for
   function check() {
     const b = getBoat();
     const v = b.v || {};
@@ -294,12 +321,40 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft, onMobMa
       }).catch(() => {});
     }
     if (!(s.air && air > 0 && b.live)) clear("air");
+    // the safety contour ahead: shallower water (or land) on the course over ground, every 10 s
+    const contour = getSafetyContour() || getSafetyDepth();
+    if (s.contour && contour > 0 && b.live && b.pos && (v.sog ?? 0) > 0.5 && v.cog != null) {
+      if (Date.now() - lastContourCheck > 10000) {
+        lastContourCheck = Date.now();
+        const distM = Math.max(200, (v.sog * 1852 * s.contourMin) / 60);
+        invoke("chart_shallow_ahead", { lat: b.pos[1], lon: b.pos[0], cog: v.cog, distM, depth: contour }).then((m) => {
+          if (m != null) {
+            const mins = v.sog > 0 ? (m / 1852 / v.sog) * 60 : 0;
+            raise("contour", { level: "alarm", text: `SAFETY CONTOUR AHEAD: ${m < 1852 ? Math.round(m) + " m" : (m / 1852).toFixed(1) + " NM"} (${mins < 1 ? "under a minute" : Math.round(mins) + " min"})`,
+              detail: `Water shallower than the ${contour} m safety contour, or land, on your course over ground (charted depths; not the high-resolution depths)` });
+          } else clear("contour");
+        }).catch(() => {});
+      }
+    } else clear("contour");
+    // off track and approaching the next mark (Route › Navigate)
+    const n = b.live ? getNav() : null;
+    if (s.xte && n?.wp?.xte != null && n.nav.from && Math.abs(n.wp.xte) > s.xteNm) {
+      raise("xte", { level: "alarm", text: `OFF TRACK ${Math.abs(n.wp.xte).toFixed(2)} NM ${n.wp.xte > 0 ? "right" : "left"} of the leg`, detail: `Cross-track error over ${s.xteNm} NM on the leg to ${n.nav.next.name}` });
+    } else if (!(s.xte && n?.wp?.xte != null && Math.abs(n.wp.xte) > s.xteNm * 0.9)) clear("xte");
+    if (s.arrive && n?.wp) {
+      const key = `${n.nav.index}:${n.nav.next.name}`;
+      const soon = (n.wp.ttg != null && n.wp.ttg / 60 <= s.arriveMin) || n.wp.dtw <= (n.arrivalNm ?? 0);
+      if (soon && arrivedKey !== key) {
+        arrivedKey = key;
+        raise("arrive", { level: "warn", text: `APPROACHING ${n.nav.next.name.toUpperCase()}`, detail: `${n.wp.dtw.toFixed(2)} NM, bearing ${String(Math.round(n.wp.btw)).padStart(3, "0")}°T${n.wp.ttg != null ? `, about ${Math.max(1, Math.round(n.wp.ttg / 60))} min` : ""}` });
+      } else if (arrivedKey !== key) clear("arrive");
+    } else clear("arrive");
     if (mob) mobAlarm();
     drawGeo();
   }
   if (PRIMARY) setInterval(check, 1000);
 
-  // ---------- settings (Instruments › Alarms) -------------------------------------------
+  // ---------- settings (the Alarms drawer) -------------------------------------------
   function syncUi() {
     $("al-shallow").checked = s.shallow;
     $("al-shallow-m").value = s.shallowM ?? "";
@@ -307,6 +362,12 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft, onMobMa
     $("al-air").checked = s.air;
     $("al-air-margin").value = s.airMargin;
     $("al-poslost").checked = s.posLost;
+    $("al-contour").checked = s.contour;
+    $("al-contour-min").value = String(s.contourMin);
+    $("al-xte").checked = s.xte;
+    $("al-xte-nm").value = s.xteNm;
+    $("al-arrive").checked = s.arrive;
+    $("al-arrive-min").value = s.arriveMin;
     $("al-volume").value = Math.round(s.volume * 100);
     $("anc-radius").value = s.anchorM;
     $("anc-drop").textContent = s.anchor ? "Weigh anchor" : "Drop anchor here";
@@ -319,6 +380,12 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft, onMobMa
   $("al-air").onchange = (e) => { s.air = e.target.checked; save(); };
   $("al-air-margin").onchange = (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v) && v >= 0) s.airMargin = v; save(); };
   $("al-poslost").onchange = (e) => { s.posLost = e.target.checked; save(); };
+  $("al-contour").onchange = (e) => { s.contour = e.target.checked; lastContourCheck = 0; save(); };
+  $("al-contour-min").onchange = (e) => { s.contourMin = +e.target.value || 6; lastContourCheck = 0; save(); };
+  $("al-xte").onchange = (e) => { s.xte = e.target.checked; save(); };
+  $("al-xte-nm").onchange = (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v) && v > 0) s.xteNm = v; save(); syncUi(); };
+  $("al-arrive").onchange = (e) => { s.arrive = e.target.checked; save(); };
+  $("al-arrive-min").onchange = (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v) && v > 0) s.arriveMin = v; save(); syncUi(); };
   $("al-volume").oninput = (e) => { s.volume = +e.target.value / 100; save(); };
   $("al-test").onclick = () => sound.alarm();
   $("anc-radius").onchange = (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v) && v > 5) s.anchorM = v; save(); drawGeo(); };
@@ -333,6 +400,7 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getAirDraft, onMobMa
   }
   $("anc-drop").onclick = () => (PRIMARY ? anchorToggle() : command("anchor"));
   syncUi();
+  renderDrawer();
   window.addEventListener("racenav-boat", syncUi);
 
   if (PRIMARY) {

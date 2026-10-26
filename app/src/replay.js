@@ -1,4 +1,4 @@
-// Replay a Signal K session log in place of the live data (Chart and Signal K ›
+// Replay a Signal K session log in place of the live data (Settings › Connections ›
 // Replay a log), with a floating bar: play/pause, speed, position, stop.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";

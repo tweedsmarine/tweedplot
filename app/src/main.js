@@ -337,7 +337,13 @@ map.on("load", () => {
   alarms = setupAlarms(map, {
     getBoat: () => ({ pos: lastBoat, v: vessel, live: live && signalKActive(), connected: liveDataConnected(), fresh: Date.now() - lastFeed < 5000 }),
     getSafetyDepth: () => settings.safetyDepth,
+    getSafetyContour: () => settings.safetyContour,
     getAirDraft: () => Number(boat.get().airDraft) || 0,
+    getNav: () => {
+      const nav = route?.nav();
+      if (!nav || !lastBoat) return null;
+      return { nav, wp: waypointData(lastBoat, vessel.sog, vessel.cog, nav.from, [nav.next.lon, nav.next.lat]), arrivalNm: Number(document.getElementById("rt-radius").value) || 0.1 };
+    },
     onMobMarkDeleted: () => library?.refresh(),
     toast,
   });
@@ -583,9 +589,21 @@ for (const [id, key] of [["set-safety-depth", "safetyDepth"], ["set-safety-conto
   el.value = settings[key];
   el.onchange = () => {
     const v = parseFloat(el.value);
-    if (Number.isFinite(v) && v >= 0) { settings[key] = v; saveSettings(); applyChartSettings(); feed(); }
+    if (Number.isFinite(v) && v >= 0) { settings[key] = v; saveSettings(); applyChartSettings(); feed(); safeNote(); }
   };
 }
+// Chart › Safety: the safety depth against the vessel's draft (Settings › Vessel)
+function safeNote() {
+  const el = document.getElementById("safe-note");
+  if (!el) return;
+  const d = Number(boat?.get?.().draft) || 0;
+  el.textContent = d > 0
+    ? `Draft ${d} m (Settings): safety depth ${settings.safetyDepth} m leaves ${(settings.safetyDepth - d).toFixed(1)} m under the keel.${settings.safetyDepth <= d ? " Raise it: it is no deeper than the draft." : ""} The safety contour is drawn bold; deeper dangers show as their depth only.`
+    : "Set the draft in Settings › Vessel. Safety depth: the draft plus a margin for swell, squat and chart error. The safety contour is drawn bold.";
+  el.classList.toggle("warn", d > 0 && settings.safetyDepth <= d);
+}
+window.addEventListener("racenav-boat", safeNote);
+setTimeout(safeNote, 0);
 
 // cursor position: the box at the bottom left and the Cursor instrument tiles
 // at most ten updates a second: steadier to read, and less work while the mouse moves
@@ -729,14 +747,11 @@ listen("sk-status", ({ payload }) => setStatus(payload));
 invoke("sk_status").then(setStatus).catch(() => {});
 setInterval(showStatus, 1000); // data going quiet turns it amber
 document.getElementById("sk-state").onclick = () => {
-  if (nmeaNavigationSourceId) {
-    if (document.getElementById("settings").hidden) document.getElementById("settings-btn").click();
-    document.getElementById("nmea-settings-section")?.scrollIntoView({ block: "start", behavior: "smooth" });
-  } else {
-    ui.open("chart");
-    document.getElementById("sk-section")?.scrollIntoView({ block: "start", behavior: "smooth" });
-  }
+  ui.openTab("settings", "conn");
+  document.getElementById(nmeaNavigationSourceId ? "nmea-settings-section" : "sk-section")?.scrollIntoView({ block: "start", behavior: "smooth" });
 };
+// the toolbar's ruler: one press to measure (the chart menu has "Start ruler here" too)
+document.getElementById("ruler-btn").onclick = () => { if (!ruler) return; if (ruler.isArmed()) ruler.finish(); else ruler.start(); };
 const liveBtn = document.getElementById("sk-live");
 liveBtn.onclick = () => {
   live = !live;

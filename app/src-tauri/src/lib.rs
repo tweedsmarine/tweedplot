@@ -2439,6 +2439,37 @@ fn chart_clearances(lat: f64, lon: f64, radius_m: f64) -> Vec<chart::Clearance> 
         .unwrap_or_default()
 }
 
+/// How far ahead (metres) along `cog` (°T), within `dist_m`, the water first gets
+/// shallower than `depth` m, or the land starts, from the chart's depth areas (the
+/// routing's raster, 20 m cells). None: clear. For the safety contour alarm.
+#[tauri::command]
+async fn chart_shallow_ahead(lat: f64, lon: f64, cog: f64, dist_m: f64, depth: f64) -> Option<f64> {
+    let store = charts()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let dist = dist_m.clamp(50.0, 20_000.0);
+        let k = lat.to_radians().cos().max(0.01);
+        let (s, c) = cog.to_radians().sin_cos();
+        let at = |m: f64| [lon + m * s / (111_320.0 * k), lat + m * c / 111_320.0];
+        let end = at(dist);
+        let pad = 300.0 / 111_320.0;
+        let bbox = [lon.min(end[0]) - pad / k, lat.min(end[1]) - pad, lon.max(end[0]) + pad / k, lat.max(end[1]) + pad];
+        let r = routing::Raster::from_chart(&store, bbox, depth, 20.0, 2_000_000);
+        // start a little ahead: the boat may already be over the contour's edge
+        let mut m = 40.0;
+        while m <= dist {
+            let p = at(m);
+            if r.blocked(p[1], p[0]) {
+                return Some(m);
+            }
+            m += 10.0;
+        }
+        None
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
 /// Summary of the chart folder.
 #[tauri::command]
 fn chart_info() -> serde_json::Value {
@@ -2653,6 +2684,7 @@ pub fn run() {
             chart_info,
             chart_feature,
             chart_clearances,
+            chart_shallow_ahead,
             monitor_open,
         monitor_list,
         monitor_focus,

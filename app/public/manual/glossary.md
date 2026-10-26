@@ -12,6 +12,7 @@ Terms used in TweedPlot and in this manual.
 | AtoN | Aid to navigation: a buoy, beacon or light; an AIS AtoN broadcasts its own position (a virtual one exists only as a broadcast) |
 | Barrier | A line the routing may not cross, a zone it may not enter, or a mark it must keep a set distance from |
 | Bolt hole | A sheltered harbour or anchorage to run to if conditions turn |
+| Bridge alert management (BAM) | IMO's rules for how navigation equipment raises and handles alerts: alarm, warning and caution, managed from one place |
 | BTW, DTW | Bearing and distance to the next mark |
 | CAPE | Convective available potential energy: a measure of how unstable the air is; high values mean squalls and thunderstorms are possible |
 | Chart datum | The level charted depths are measured from, close to the lowest tide |
@@ -20,6 +21,7 @@ Terms used in TweedPlot and in this manual.
 | CPA, TCPA | Closest point of approach: how close another vessel will pass if neither alters; time to CPA: how long until then |
 | CSV | A text table with values separated by commas or semicolons (polar files) |
 | Day shape | A black ball, cone, cylinder or diamond hoisted by day to show a vessel's status (at anchor, not under command, fishing...); TweedPlot shows the matching shape beside an AIS target |
+| Display category | How much of the chart an ECDIS shows: Base (the minimum, never reduced), Standard, or All |
 | Dock | The panel along the bottom of the TweedPlot window for tables and graphs |
 | Drawer | A panel that slides out from the icon rail |
 | ECMWF | European Centre for Medium-Range Weather Forecasts; its main model is the IFS |
@@ -61,12 +63,14 @@ Terms used in TweedPlot and in this manual.
 | Rule of twelfths | A rule of thumb for how the tide rises or falls through each hour |
 | Run | One start of a weather model, named by its UTC time (e.g. 12Z) |
 | S-52, S-57, S-63 | IHO standards: how charts are drawn on screen; the official vector chart format; and its encryption and licensing scheme |
+| S-Mode | IMO's guidelines for a standard user interface on navigation equipment: common functions in the same place, one action to the standard display |
 | Safety contour | The depth contour drawn bold, separating water too shallow for the boat |
 | Safety depth | The least depth the boat will route through: draft plus margins |
 | Saildocs | A free service that emails GRIB files in reply to a request email |
 | SCAMIN | Scale minimum: the scale below which a chart feature is not drawn |
 | Signal K | An open standard and server that collects boat instrument data and shares it with apps |
 | Slack water | The short period around the turn of the tide when the stream is weakest |
+| Standard display | The Standard display category with the usual options, one press away (Chart › Chart display) |
 | Statistical area | A numbered area used for reporting where fish were caught |
 | Taiāpure | A local fishery area of special significance to iwi or hapū, managed with the community |
 | Territorial sea | The sea within 12 NM of the baseline, part of the country |

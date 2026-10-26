@@ -75,7 +75,7 @@ export function setupGates(map, rt) {
     const ms = marks();
     const keep = sel.value;
     sel.innerHTML = "";
-    if (!ms.length) sel.append(new Option("Add marks in the Course panel", ""));
+    if (!ms.length) sel.append(new Option("Add marks in the Route drawer", ""));
     ms.forEach((m, i) => sel.append(new Option(`${i + 1}: ${m.name || `${fmtDM(m.lat, "lat")} ${fmtDM(m.lon, "lon")}`}${i === ms.length - 1 ? " (finish)" : ""}`, i)));
     sel.value = keep !== "" && Number(keep) < ms.length ? keep : String(Math.max(0, ms.length - 1));
   }

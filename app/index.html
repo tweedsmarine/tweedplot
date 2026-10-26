@@ -17,22 +17,22 @@
     <!-- Icon rail: one drawer open at a time -->
     <nav id="rail" aria-label="Panels">
       <button id="brand-btn" class="brand" title="About TweedPlot"><img src="/logo-sails.svg" alt="TweedsMarine"><span>Tweed<b>Plot</b></span></button>
-      <button data-pane="weather" title="Weather (GRIB)"><svg viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6 9.5 4.25 4.25 0 0 0 7 18z"/></svg><span>Weather</span></button>
-      <button data-pane="course" title="Course: start, marks, next mark"><svg viewBox="0 0 24 24"><circle cx="5" cy="18" r="2"/><circle cx="19" cy="6" r="2"/><path d="M7 17L17 7" stroke-dasharray="3 2.5"/></svg><span>Course</span></button>
+      <button data-pane="weather" title="Weather and tides: GRIBs, tides, observations"><svg viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6 9.5 4.25 4.25 0 0 0 7 18z"/></svg><span>Weather</span></button>
+      <button data-pane="course" title="Route: plan a route, and the next mark to steer to"><svg viewBox="0 0 24 24"><circle cx="5" cy="18" r="2"/><circle cx="19" cy="6" r="2"/><path d="M7 17L17 7" stroke-dasharray="3 2.5"/></svg><span>Route</span></button>
       <button data-pane="routing" title="Routing: compute, compare"><svg viewBox="0 0 24 24"><circle cx="5" cy="18" r="2"/><circle cx="19" cy="6" r="2"/><path d="M7 17c5-1 3-8 10-10"/><path d="M6 15c2-6 6-9 11-9" opacity=".5"/></svg><span>Routing</span></button>
-      <button data-pane="fleet" title="Fleet: AIS targets and YB race tracking"><svg viewBox="0 0 24 24"><path d="M6 4l3 7H3z"/><path d="M17 9l3 7h-6z"/><path d="M9 15l3 6H6z"/></svg><span>Fleet</span></button>
+      <button data-pane="fleet" title="Targets: AIS, own fleet and YB race tracking"><svg viewBox="0 0 24 24"><path d="M6 4l3 7H3z"/><path d="M17 9l3 7h-6z"/><path d="M9 15l3 6H6z"/></svg><span>Targets</span></button>
       <button data-pane="library" title="Marks, routes and saved routings"><svg viewBox="0 0 24 24"><path d="M6 21V4"/><path d="M6 4h11l-3 4 3 4H6"/></svg><span>Library</span></button>
-      <button data-pane="chart" title="Chart and Signal K"><svg viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></svg><span>Chart</span></button>
+      <button data-pane="chart" title="Chart: safety, display, layers, chart data"><svg viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></svg><span>Chart</span></button>
       <button data-pane="inst" title="Instrument panels"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 13l4-4"/><path d="M12 5v2M5 13h2M17 13h2"/></svg><span>Instr.</span></button>
+      <button data-pane="alarms" title="Alarms: depth, clearance, navigation, anchor watch, AIS collision and distress, closed areas"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span>Alarms</span></button>
       <button id="manual-btn" class="rail-action" title="User manual (F1)"><svg viewBox="0 0 24 24"><path d="M4 5.5C6.5 4.5 9.5 4.5 12 6c2.5-1.5 5.5-1.5 8-.5v13c-2.5-1-5.5-1-8 .5-2.5-1.5-5.5-1.5-8-.5z"/><path d="M12 6v13.5"/></svg><span>Manual</span></button>
-      <button id="targets-btn" class="rail-action" title="Target list: AIS targets with range, bearing, CPA and TCPA (T)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/><circle cx="16" cy="9" r="1.2" fill="currentColor"/></svg><span>Targets</span></button>
       <button id="settings-btn" class="rail-action" data-pane="settings" title="Settings: vessel and data setup" aria-label="Settings"><svg viewBox="0 0 24 24"><path d="M19.14 12.94a7.5 7.5 0 0 0 .06-.94c0-.32-.02-.63-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.3 7.3 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.3 7.3 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.54 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.5 7.5 0 0 0-.06.94c0 .32.02.63.07.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.49.39 1.04.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54a7.3 7.3 0 0 0 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58z"/><circle cx="12" cy="12" r="3.25"/></svg><span>Settings</span></button>
     </nav>
 
     <aside id="drawer" hidden>
       <header><h2 id="drawer-title"></h2><button id="drawer-help" title="Open the manual at this drawer (F1 for the whole manual)">?</button><button id="drawer-close" title="Close (Esc)">✕</button></header>
 
-      <section class="pane" data-pane="weather" data-title="Weather">
+      <section class="pane" data-pane="weather" data-title="Weather and tides">
         <div class="wx-row">
           <select id="wx-files" title="GRIB files in the GRIB folders"></select>
           <button id="wx-load" title="Load the selected GRIB">Load</button>
@@ -48,6 +48,7 @@
           <span id="wx-time">—</span>
         </div>
         <input id="wx-slider" type="range" min="0" max="0" step="3600" value="0" />
+        <div class="wx-row checks"><label title="Show or hide the floating time slider"><input id="inst-slider" type="checkbox" /> Floating time slider</label></div>
         <div class="wx-row"><label class="grow" for="wx-layer">Show</label><select id="wx-layer" title="What the shading shows"></select></div>
         <div class="wx-row checks">
           <label id="wx-arrows-row"><input id="wx-arrows" type="checkbox" /> Wind barbs</label>
@@ -105,6 +106,14 @@
             <div class="wx-note">Send it from your own email. The GRIB comes back attached: save it in the GRIB folder and it shows in the list above.</div>
           </details>
         </details>
+        <details class="sub" id="tide-box">
+          <summary>Tides</summary>
+        <div class="wx-row checks"><label><input id="tide-show" type="checkbox" /> Tide stations</label></div>
+        <div class="wx-row"><span id="tide-status" class="grow wx-note">—</span></div>
+        <div class="wx-row"><button id="tide-dl" title="Download the LINZ tide tables (about 90 daily tables a year, plus the secondary ports) for this year and next">Download LINZ tides</button><button id="tide-cancel" disabled>Cancel</button></div>
+        <div id="tide-progress" class="progress" hidden><div class="bar"></div><span></span></div>
+        <div class="wx-note">Click a tide station for the day's curve, at the weather time when planning. Daily ports from LINZ tables; others from LINZ secondary port differences. Not official tide tables.</div>
+                </details>
         <details class="sub" id="stn-box">
           <summary>Weather stations and buoys</summary>
           <div class="wx-row"><label class="grow"><input id="stn-show" type="checkbox" /> Show observations</label><button id="stn-refresh" title="Download the latest observations now">↻</button></div>
@@ -137,7 +146,14 @@
         </details>
       </section>
 
-      <section class="pane" data-pane="course" data-title="Course">
+      <section class="pane" data-pane="course" data-title="Route">
+        <h3>Navigate</h3>
+        <div class="wx-row">
+          <button id="nav-prev" title="Previous mark">◀</button>
+          <span id="nav-to" class="grow center">—</span>
+          <button id="nav-next" title="Next mark">▶</button>
+        </div>
+        <h3>Plan</h3>
         <div class="wx-row">
           <input id="rt-name" class="grow" type="text" placeholder="Unsaved route" title="Route name" />
           <button id="rt-save" title="Save the route and its marks in the library">Save</button>
@@ -153,12 +169,6 @@
         <ol id="rt-marklist" class="list"></ol>
         <div class="wx-row"><button id="crs-wx" title="The weather along this course: the active routing if there is one, else the course at a set speed from the weather slider's time">Weather on route</button></div>
         <div id="crs-status" class="wx-note"></div>
-        <h3>Navigate</h3>
-        <div class="wx-row">
-          <button id="nav-prev" title="Previous mark">◀</button>
-          <span id="nav-to" class="grow center">—</span>
-          <button id="nav-next" title="Next mark">▶</button>
-        </div>
       </section>
 
       <section class="pane" data-pane="routing" data-title="Routing">
@@ -182,16 +192,7 @@
             <div class="wx-row"><label class="grow" for="rt-radius">Arrival radius (NM)</label><input id="rt-radius" type="number" min="0.01" max="20" step="0.05" /></div>
             <div class="wx-row"><label class="grow"><input id="rt-current" type="checkbox" /> Use GRIB currents</label></div>
             <div class="wx-row"><label class="grow" title="Off: the GRIB time only moves with the time slider"><input id="rt-hovertime" type="checkbox" /> Hovering a routing point moves the GRIB time</label></div>
-            <div class="wx-note">Safety depth is set in the Chart panel.</div>
-          </details>
-          <details class="sub">
-            <summary>Boat and polar</summary>
-            <div class="wx-row"><label class="grow" for="boat-polar">Polar</label><select id="boat-polar"></select></div>
-            <div class="wx-row"><button id="boat-polar-import" title="Copy a polar file (.pol, .csv or .txt) into your polar folder">Import polar…</button><button id="boat-polar-folder" title="Open your polar folder">Open folder</button><input id="boat-polar-file" type="file" accept=".pol,.csv,.txt" hidden /></div>
-            <div id="boat-polar-note" class="wx-note"></div>
-            <div class="wx-row"><label class="grow" for="boat-eff">Polar efficiency (%)</label><input id="boat-eff" type="number" min="10" max="150" step="1" /></div>
-            <div class="wx-row"><label class="grow" for="boat-tack">Tack costs (s)</label><input id="boat-tack" type="number" min="0" step="5" /></div>
-            <div class="wx-row"><label class="grow" for="boat-gybe">Gybe costs (s)</label><input id="boat-gybe" type="number" min="0" step="5" /></div>
+            <div class="wx-note">The safety depth is set in Chart › Safety; the boat's polar in Settings › Vessel.</div>
           </details>
           <details class="sub" id="rt-limits">
             <summary>Limits and barriers</summary>
@@ -200,6 +201,8 @@
             <div class="wx-row"><label class="grow" title="The routing won't sail on from places with less wind than the first or more than the second (0 = no limit)">Wind (kn): min / max</label><input id="rt-mintws" type="number" min="0" max="60" step="1" /><input id="rt-maxtws" type="number" min="0" max="80" step="1" /></div>
             <div class="wx-row"><label class="grow" for="rt-maxhs" title="Significant wave height above which the routing won't sail on (0 = no limit). Uses the waves in the routing GRIB, else a loaded wave GRIB.">Max wave height Hs (m)</label><input id="rt-maxhs" type="number" min="0" max="15" step="0.5" /></div>
             <div class="wx-row"><label class="grow" title="True wind angles the routing may sail: e.g. 50 to keep off the wind, or 165 to avoid a dead run">TWA allowed (°): min / max</label><input id="rt-mintwa" type="number" min="0" max="180" step="5" /><input id="rt-maxtwa" type="number" min="0" max="180" step="5" /></div>
+            <div class="wx-row checks"><label title="Routing keeps off rocks, wrecks and obstructions that dry, are awash, or have less water than the safety depth (or an unknown depth)"><input id="set-avoid-dangers" type="checkbox" /> Route round dangers</label>
+          <label title="Routing keeps out of charted marine farms"><input id="set-avoid-farms" type="checkbox" /> Route round marine farms</label></div>
             <div class="wx-row"><label class="grow" title="Library › Barriers: lines and zones; marks given a barrier radius"><input id="rt-barriers" type="checkbox" /> Keep off barriers</label><button id="rt-limits-reset" title="Back to no limits">Reset</button></div>
           </details>
           <div class="wx-row">
@@ -250,7 +253,7 @@
         </div>
       </section>
 
-      <section class="pane" data-pane="fleet" data-title="Fleet">
+      <section class="pane" data-pane="fleet" data-title="Targets">
         <div class="tabs"><button data-tab="ais" class="on">AIS</button><button data-tab="own">Own fleet</button><button data-tab="race">YB race</button></div>
         <div class="tab" data-tab="ais">
           <div class="wx-row"><label class="grow"><input id="ais-show" type="checkbox" /> Show AIS targets</label><label><input id="ais-names" type="checkbox" /> Names</label></div>
@@ -263,12 +266,7 @@
             <select id="ais-net-mode" title="Which targets to ask the internet for"><option value="view">Chart view</option><option value="centre">Range round the chart centre</option><option value="boat">Range round my boat</option></select></div>
           <div class="wx-row" id="ais-net-range-row"><label class="grow" for="ais-net-range">Range (NM)</label><input id="ais-net-range" type="number" min="1" max="180" step="1" /></div>
           <div class="wx-note">Online AIS shows what volunteer shore stations hear (for the chart view, a wider area when zoomed out, up to about 6°). Get a free key at <a href="#" id="ais-key-link">aisstream.io</a>. Not for navigation: coverage has gaps and positions can be minutes old. See Manual › AIS.</div>
-          <h3>Collision and distress alarms</h3>
-          <div class="wx-row"><label class="grow"><input id="ais-cpa-on" type="checkbox" /> CPA under (NM)</label><input id="ais-cpa" type="number" min="0.05" step="0.05" /></div>
-          <div class="wx-row"><label class="grow" for="ais-tcpa">within (min)</label><input id="ais-tcpa" type="number" min="1" step="1" /></div>
-          <div class="wx-row"><label class="grow"><input id="ais-ignore-moored" type="checkbox" /> Ignore anchored and moored ships</label></div>
-          <div class="wx-row"><label class="grow" title="Internet AIS can be minutes late or missing: an alarm from it can come late, and no alarm doesn't mean no danger"><input id="ais-net-alarms" type="checkbox" /> Alarms for internet-only targets too</label></div>
-          <div class="wx-note">An AIS-SART, MOB device or EPIRB always raises an alarm. CPA alarms work from live data (or a replay).</div>
+          <div class="wx-note">Collision and distress alarms are set in <a href="#" data-goto="alarms">Alarms</a>.</div>
           <h3>On the chart</h3>
           <div class="wx-row"><label class="grow" for="ais-vec-min">Course vectors (min)</label><input id="ais-vec-min" type="number" min="1" max="60" step="1" title="How far ahead each target's course line reaches" /></div>
           <div class="wx-row"><label class="grow" for="ais-cpa-draw">CPA lines</label>
@@ -399,12 +397,21 @@
         <div id="lib-status" class="wx-note"></div>
       </section>
 
-      <section class="pane" data-pane="chart" data-title="Chart and Signal K">
+      <section class="pane" data-pane="chart" data-title="Chart">
+        <h3>Safety</h3>
         <div class="wx-row"><label class="grow" for="set-safety-depth">Safety depth (m)</label><input id="set-safety-depth" type="number" min="0" step="0.5" /></div>
         <div class="wx-row"><label class="grow" for="set-safety-contour">Safety contour (m)</label><input id="set-safety-contour" type="number" min="0" step="1" /></div>
-        <div class="wx-row checks"><label title="Routing keeps off rocks, wrecks and obstructions that dry, are awash, or have less water than the safety depth (or an unknown depth)"><input id="set-avoid-dangers" type="checkbox" /> Route round dangers</label>
-          <label title="Routing keeps out of charted marine farms"><input id="set-avoid-farms" type="checkbox" /> Route round marine farms</label></div>
-        <h3>Boundaries and fishing rules</h3>
+                <div id="safe-note" class="wx-note"></div>
+        <h3>Chart display</h3>
+        <div class="wx-row"><label class="grow" for="set-dispcat" title="What the chart shows, as on an ECDIS. Base: land, depth areas, the safety contour and dangers (can't be reduced further). Standard: adds buoys, beacons, lights, routeing measures, restricted and caution areas. All: adds soundings, other contours, cables and pipelines, names and other detail">Display</label>
+          <select id="set-dispcat"><option value="base">Base</option><option value="standard">Standard</option><option value="all">All</option></select>
+          <button id="set-std" title="Back to the standard display: Standard, with light sectors, names and soundings">Standard display</button></div>
+        <div class="wx-row checks"><label><input id="set-sectors" type="checkbox" /> Light sectors</label><label><input id="set-featnames" type="checkbox" /> Names and labels</label><label title="Spot soundings, in Standard and All"><input id="set-soundings" type="checkbox" /> Soundings</label></div>
+        <div class="wx-row"><label class="grow" for="set-symsize" title="Size of buoys, beacons, lights, dangers and other chart symbols. Labels grow at half the rate">Chart symbol size</label><input id="set-symsize" type="range" min="0.75" max="2" step="0.05" /><span id="set-symsize-v" class="val"></span></div>
+        <div class="wx-note">From the LINZ hydrographic layers in the linz folder (any scale band). Click a light, mark or area for its details. Not for navigation.</div>
+                <h3>Layers</h3>
+        <div class="wx-row checks"><label title="Show the high-resolution depths on the chart (from about 2 NM range in)"><input id="data-hr-show" type="checkbox" /> High-resolution depths</label></div>
+        <h4>Boundaries and fishing rules</h4>
         <div id="mar-box">
           <div class="wx-row checks"><label title="Territorial sea (12 NM), contiguous zone (24 NM), EEZ (200 NM) and the boundaries agreed with Australia (LINZ)"><input id="mar-bounds" type="checkbox" /> Maritime boundaries</label>
             <label title="Areas closed to commercial fishing (red: to all, or to the methods ticked below), from MPI. Click an area for the rule"><input id="mar-rules" type="checkbox" /> Fishing rules</label>
@@ -415,10 +422,13 @@
             <label title="Also show restrictions: species, mesh sizes, seasons, gear limits (orange; they cover large areas, often the whole EEZ)"><input id="mar-restr" type="checkbox" /> Restrictions too</label></div>
           <div id="mar-gear" class="mar-gear"></div>
           <div id="mar-len" class="wx-note"></div>
-          <div class="wx-row"><label class="grow" title="A warning when the boat is inside, or heading into, an area closed to the methods ticked above (all closed areas if none are ticked)"><input id="mar-alarm" type="checkbox" /> Closed-area alarm, looking ahead</label>
-            <select id="mar-ahead"><option value="5">5 min</option><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option></select></div>
-          <div class="wx-note">Download the boundaries and rules in Chart data below. Fishing rules are MPI's maps of the regulations: a guide only, the regulations themselves are the law, and temporary closures change; update the rules before a trip.</div>
+                    <div class="wx-note">Download the boundaries and rules in Chart data below; the closed-area alarm is in Alarms. Fishing rules are MPI's maps of the regulations: a guide only, the regulations themselves are the law, and temporary closures change; update the rules before a trip.</div>
         </div>
+<h3>Own ship</h3>
+        <div class="wx-row"><label class="grow"><input id="set-hdg-line" type="checkbox" /> Heading line</label><select id="set-hdg-len" title="Length: time at boat speed, or to the edge of the chart"></select></div>
+        <div class="wx-row"><label class="grow"><input id="set-cog-line" type="checkbox" /> COG line</label><select id="set-cog-len" title="Length: time at SOG, or to the edge of the chart"></select></div>
+        <div class="wx-note">Heading line (solid) uses boat speed through the water, else SOG; COG line (dashed orange) uses SOG.</div>
+                <div class="wx-row"><label class="grow" title="Live: true (blue) and apparent (orange) wind on the boat. Planning: on the cursor, from the GRIB shown"><input id="inst-arrows" type="checkbox" /> Wind arrows (on the boat when live, at the cursor when planning)</label></div>
         <h3>Chart data</h3>
         <div id="data-box">
           <div class="data-item"><span class="dot" id="data-wd-dot"></span><span class="grow"><b>World depths</b>: Natural Earth, bundled (0, 200, 1000 … 10000 m)</span></div>
@@ -435,7 +445,7 @@
             <button id="data-etopo" title="Download depths for the area shown on the chart">Get for chart view</button></div>
           <div id="data-etopo-plan" class="wx-note"></div>
           <div class="data-item"><span class="dot" id="data-hr-dot"></span><span class="grow"><b>High-resolution depths</b> (LINZ coastal, 1 m): <span id="data-hr-state">—</span></span>
-            <label title="Show the high-resolution depths on the chart (from about 2 NM range in)"><input id="data-hr-show" type="checkbox" /> Show</label></div>
+            </div>
           <div class="wx-row"><span id="data-hr-plan" class="grow wx-note"></span>
             <button id="data-hr" title="Download LINZ's coastal elevation tiles (aerial laser surveys, to about 25 m depth) for the area shown on the chart">Get for chart view</button>
             <button id="data-hr-del" title="Delete all the downloaded high-resolution depths">✕ All</button></div>
@@ -451,7 +461,7 @@
             <p>Natural Earth bathymetry: public domain (naturalearthdata.com). GSHHG coastline: Wessel &amp; Smith, University of Hawaiʻi and NOAA, LGPL 3, downloaded from its home site. ETOPO 2022: NOAA National Centers for Environmental Information, free to use and redistribute (doi:10.25921/fd45-gt74), fetched through NOAA CoastWatch ERDDAP. LINZ hydrographic data: Toitū Te Whenua LINZ, CC BY 4.0. High-resolution depths: LINZ coastal elevation (Toitū Te Whenua LINZ, CC BY 4.0), heights above NZVD2016 (about mean sea level, not chart datum: about half the tidal range deeper than charted depths), only where a survey has been flown, surveyed in different years. Maritime boundaries: sourced from Land Information New Zealand data, Crown Copyright Reserved. Fishing rules: Source: Ministry for Primary Industries, CC BY 4.0 (a guide to the regulations, not the regulations). World depths and ETOPO are drawn under the charts for orientation only: they are coarse or interpolated near the coast, and routing does not use them. Not for navigation.</p>
           </details>
         </div>
-        <h3>Encrypted charts (S-63)</h3>
+                <h4>Encrypted charts (S-63)</h4>
         <div id="s63-box">
           <div class="wx-row"><label class="grow" for="s63-inst" title="This computer's installation code: send it to Tweedsmarine for an activation code">Installation code</label>
             <button id="s63-inst-copy" title="Copy the installation code, to send to Tweedsmarine">Copy</button></div>
@@ -476,48 +486,6 @@
             <div class="wx-row"><span class="grow"></span><button id="s63-remove-cells" title="Remove every installed ENC (the permits and key stay)">Remove all ENCs</button></div></details>
           <details id="s63-note-details"><summary id="s63-note-sum">Messages</summary><ul id="s63-notes"></ul></details>
         </div>
-        <h3>Display colours</h3>
-        <div class="wx-row"><label class="grow" for="pal-mode">Colours</label>
-          <select id="pal-mode" title="Day; dusk (dimmer); night red or night green, which keep your night vision (every colour becomes a shade of red or green on black)">
-            <option value="day">Day</option><option value="dusk">Dusk</option><option value="night-red">Night (red)</option><option value="night-green">Night (green)</option></select></div>
-        <div class="wx-row"><label class="grow" for="pal-dim">Brightness</label><input id="pal-dim" type="range" min="20" max="100" step="5" title="How bright the screen is drawn in dusk and night colours" /><span id="pal-dim-v" class="wx-note"></span></div>
-        <div class="wx-row"><button id="pal-full" title="Fill the screen, hiding the window's title bar and the taskbar (F11 to switch back)">Full screen (F11)</button></div>
-        <div class="wx-note">The colours button in the toolbar at the top left steps through them. With dusk and night colours the window's title bar turns dark too; full screen hides it altogether. Turn the screen's own brightness down at night too.</div>
-        <h3>Chart features</h3>
-        <div class="wx-row checks"><label><input id="set-feat" type="checkbox" /> Lights, marks, dangers, areas</label></div>
-        <div class="wx-row checks"><label><input id="set-sectors" type="checkbox" /> Light sectors</label><label><input id="set-featnames" type="checkbox" /> Names and labels</label></div>
-        <div class="wx-row"><label class="grow" for="set-symsize" title="Size of buoys, beacons, lights, dangers and other chart symbols. Labels grow at half the rate">Chart symbol size</label><input id="set-symsize" type="range" min="0.75" max="2" step="0.05" /><span id="set-symsize-v" class="val"></span></div>
-        <div class="wx-note">From the LINZ hydrographic layers in the linz folder (any scale band). Click a light, mark or area for its details. Not for navigation.</div>
-        <h3>Tides</h3>
-        <div class="wx-row checks"><label><input id="tide-show" type="checkbox" /> Tide stations</label></div>
-        <div class="wx-row"><span id="tide-status" class="grow wx-note">—</span></div>
-        <div class="wx-row"><button id="tide-dl" title="Download the LINZ tide tables (about 90 daily tables a year, plus the secondary ports) for this year and next">Download LINZ tides</button><button id="tide-cancel" disabled>Cancel</button></div>
-        <div id="tide-progress" class="progress" hidden><div class="bar"></div><span></span></div>
-        <div class="wx-note">Click a tide station for the day's curve, at the weather time when planning. Daily ports from LINZ tables; others from LINZ secondary port differences. Not official tide tables.</div>
-        <h3>Own boat</h3>
-        <div class="wx-row"><label class="grow"><input id="set-hdg-line" type="checkbox" /> Heading line</label><select id="set-hdg-len" title="Length: time at boat speed, or to the edge of the chart"></select></div>
-        <div class="wx-row"><label class="grow"><input id="set-cog-line" type="checkbox" /> COG line</label><select id="set-cog-len" title="Length: time at SOG, or to the edge of the chart"></select></div>
-        <div class="wx-note">Heading line (solid) uses boat speed through the water, else SOG; COG line (dashed orange) uses SOG.</div>
-        <h3>Damping</h3>
-        <div class="wx-row"><label class="grow" for="set-damp-motion">Heading, COG, SOG, BSP</label><select id="set-damp-motion"></select></div>
-        <div class="wx-row"><label class="grow" for="set-damp-wind">Wind (AWS, AWA, TWS, TWA, TWD)</label><select id="set-damp-wind"></select></div>
-        <div class="wx-row"><label class="grow" for="set-damp-depth">Depth</label><select id="set-damp-depth"></select></div>
-        <div class="wx-note">Averages the Signal K readings over the time chosen, for the boat on the chart, its lines and the instruments. Position is never damped.</div>
-        <h3 id="sk-section">Signal K</h3>
-        <div class="wx-row"><span id="sk-detail" class="grow wx-note">—</span></div>
-        <h3>Replay a log</h3>
-        <div class="wx-row"><select id="replay-log" class="grow" title="Signal K sessions are logged while TweedPlot runs; play one back in place of the live data"></select>
-          <button id="replay-play" title="Play this log in place of the live Signal K data">Replay</button></div>
-        <div id="replay-note" class="wx-note">Every Signal K session is logged. A replay drives the boat, instruments, AIS targets and alarms as if live; live data waits until it stops. Tracks are not recorded from a replay.</div>
-        <div class="wx-note">The buttons in the toolbar at the top left: the live data status (green receiving, amber connected but quiet, red not connected), Live ▶ / Paused ❚❚, Follow and Clear track. Pause to plan: right-click the chart to move the boat.</div>
-        <h3>Radar overlay test</h3>
-        <div class="wx-row"><label class="grow" for="rs-rpm">Simulated radar</label>
-          <select id="rs-rpm" title="Antenna speed"><option value="24">24 rpm</option><option value="48" selected>48 rpm</option></select>
-          <select id="rs-res" title="Spokes per turn × samples per spoke"><option value="2048x512">2048 × 512</option><option value="2048x1024" selected>2048 × 1024</option><option value="4096x1024">4096 × 1024</option></select></div>
-        <div class="wx-row"><label class="grow" for="rs-range">Range (NM)</label><input id="rs-range" type="number" min="0.25" max="48" step="0.25" value="3" />
-          <button id="rs-go" title="Start or stop the simulated radar on the boat (or the chart centre)">Start</button></div>
-        <pre id="rs-stats" class="wx-note rs-stats"></pre>
-        <div class="wx-note">Tests the path a real radar will take: echoes made in the Rust core at a real scanner's rate, sent to the chart as raw bytes and drawn by the graphics card. The numbers show whether this PC keeps up (aim: 50–60 frames a second while panning, no growing backlog).</div>
       </section>
 
       <section class="pane" data-pane="inst" data-title="Instruments">
@@ -534,20 +502,40 @@
         <div class="wx-note">A monitor window is another copy of TweedPlot for another screen. It can show any view, and keeps its own colours (day, dusk or night), view and position, so each screen can suit where it is. Alarms show in every window and can be silenced in any; MOB, Drop and the anchor watch work from any window. Monitor windows reopen where you left them when TweedPlot starts.</div>
         <div class="wx-row">
           <label class="grow" title="Hide or show every instrument panel (the floating time slider has its own box)"><input id="inst-all" type="checkbox" /> Show instrument panels</label>
-          <label title="Show or hide the floating time slider"><input id="inst-slider" type="checkbox" /> Time slider</label>
+          
         </div>
-        <div class="wx-row"><label class="grow" title="Live: true (blue) and apparent (orange) wind on the boat. Planning: on the cursor, from the GRIB shown"><input id="inst-arrows" type="checkbox" /> Wind arrows (boat when live, cursor when planning)</label></div>
         <ul id="inst-panels" class="list"></ul>
-        <h3>Alarms</h3>
-        <div class="wx-row"><label class="grow"><input id="al-shallow" type="checkbox" /> Shallow water below (m)</label><input id="al-shallow-m" type="number" min="0" step="0.5" title="Empty: the safety depth (Chart panel)" /></div>
+        <div class="wx-note">Drag a panel by its grip (⋮⋮); double-click or double-tap the grip to fold it down to a small title, and again to open it. Tap a reading to change what it shows, add one next to it, resize or remove it. The layout is kept on this PC and shared by all windows; each group has its own position and size in each view. In the list, type a name for each group and tick the views (Navigation, Planning, Instruments) it appears in; a man overboard shows in every view.</div>
+      </section>
+      <section class="pane" data-pane="alarms" data-title="Alarms">
+        <h3>Active <span id="al-count" class="wx-note"></span></h3>
+        <ul id="al-active" class="list al-active"></ul>
+        <h3>Depth and clearance</h3>
+        <div class="wx-row"><label class="grow"><input id="al-shallow" type="checkbox" /> Shallow water below (m)</label><input id="al-shallow-m" type="number" min="0" step="0.5" title="Empty: the safety depth (Chart › Safety)" /></div>
+        <div class="wx-row"><label class="grow" title="Water shallower than the safety contour (or land) on the boat's course over ground within the time chosen, from the chart's depth areas (as an ECDIS warns of crossing the safety contour)"><input id="al-contour" type="checkbox" /> Safety contour ahead within</label>
+          <select id="al-contour-min"><option value="3">3 min</option><option value="6">6 min</option><option value="10">10 min</option><option value="15">15 min</option></select></div>
         <div class="wx-row"><label class="grow" title="Bridges, overhead cables and pipelines on the chart ahead of the boat with less clearance than the air draft plus the margin"><input id="al-air" type="checkbox" /> Air draft, margin (m)</label><input id="al-air-margin" type="number" min="0" step="0.5" /></div>
         <div id="al-air-note" class="wx-note"></div>
+        <h3>Navigation</h3>
+        <div class="wx-row"><label class="grow" title="The boat is further than this off the line from the last mark to the next (Route › Navigate)"><input id="al-xte" type="checkbox" /> Off track: cross-track error over (NM)</label><input id="al-xte-nm" type="number" min="0.01" step="0.05" /></div>
+        <div class="wx-row"><label class="grow" title="A warning when the next mark is this many minutes away at the speed made good towards it, or the boat is inside its arrival radius"><input id="al-arrive" type="checkbox" /> Approaching the next mark, minutes before</label><input id="al-arrive-min" type="number" min="0.5" step="0.5" /></div>
         <div class="wx-row"><label class="grow"><input id="al-poslost" type="checkbox" /> Position lost (no GPS for 30 s)</label></div>
+        <h3>Anchor watch</h3>
         <div class="wx-row"><label class="grow" for="anc-radius">Anchor watch, radius (m)</label><input id="anc-radius" type="number" min="10" step="5" /><button id="anc-drop">Drop anchor here</button></div>
         <div id="anc-state" class="wx-note"></div>
+        <h3>Targets (AIS)</h3>
+          <div class="wx-row"><label class="grow"><input id="ais-cpa-on" type="checkbox" /> CPA under (NM)</label><input id="ais-cpa" type="number" min="0.05" step="0.05" /></div>
+          <div class="wx-row"><label class="grow" for="ais-tcpa">within (min)</label><input id="ais-tcpa" type="number" min="1" step="1" /></div>
+          <div class="wx-row"><label class="grow"><input id="ais-ignore-moored" type="checkbox" /> Ignore anchored and moored ships</label></div>
+          <div class="wx-row"><label class="grow" title="Internet AIS can be minutes late or missing: an alarm from it can come late, and no alarm doesn't mean no danger"><input id="ais-net-alarms" type="checkbox" /> Alarms for internet-only targets too</label></div>
+          <div class="wx-note">An AIS-SART, MOB device or EPIRB always raises an alarm. CPA alarms work from live data (or a replay).</div>
+        <h3>Areas</h3>
+<div class="wx-row"><label class="grow" title="A warning when the boat is inside, or heading into, an area closed to the methods ticked above (all closed areas if none are ticked)"><input id="mar-alarm" type="checkbox" /> Closed-area alarm, looking ahead</label>
+            <select id="mar-ahead"><option value="5">5 min</option><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option></select></div>
+        <div class="wx-note">The closed areas come from the fishing rules in Chart › Layers, for the methods ticked there.</div>
+        <h3>Sound</h3>
         <div class="wx-row"><label class="grow" for="al-volume">Alarm volume</label><input id="al-volume" type="range" min="0" max="100" step="5" /><button id="al-test" title="Play the alarm sound">Test</button></div>
-        <div class="wx-note">Alarms show in a banner at the top of the chart and sound until silenced. AIS collision and distress alarms are set in Fleet › AIS. Alarms work from live data (or a replay), not in planning.</div>
-        <div class="wx-note">Drag a panel by its grip (⋮⋮); double-click or double-tap the grip to fold it down to a small title, and again to open it. Tap a reading to change what it shows, add one next to it, resize or remove it. The layout is kept on this PC and shared by all windows; each group has its own position and size in each view. In the list, type a name for each group and tick the views (Navigation, Planning, Instruments) it appears in; a man overboard shows in every view.</div>
+        <div class="wx-note">Alarms (red) sound until silenced; warnings (amber) chime. Every alarm shows in the banner at the top of the chart in every window, and can be silenced from any of them. They work from live data (or a replay), not while planning.</div>
       </section>
     </aside>
 
@@ -575,6 +563,9 @@
         <svg viewBox="0 0 24 24"><path class="play fill" d="M8 5.5v13l10-6.5z"/><path class="pause" d="M9 6v12M15 6v12"/></svg></button>
       <button id="follow" class="on" aria-label="Follow the boat" title="Follow: keep the boat centred (dragging the chart turns it off)">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="1.6" class="fill"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
+      <button id="ruler-btn" aria-label="Ruler" title="Ruler: click points on the chart, double-click to finish (Esc stops)">
+        <svg viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg></button>
+      <button id="targets-btn" title="Target list: AIS targets with range, bearing, CPA and TCPA (T)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/><circle cx="16" cy="9" r="1.2" fill="currentColor"/></svg></button>
       <button id="view-btn" aria-label="View" title="View: Navigation, Planning or Instruments">
         <svg viewBox="0 0 24 24"></svg></button>
       <button id="tools-btn" aria-label="Show or hide the panels" title="Show or hide the panels and dock in this view">
@@ -639,6 +630,8 @@
 
       <section id="settings" class="pane" data-pane="settings" data-title="Settings" hidden>
         <div class="settings-content">
+          <div class="tabs"><button data-tab="vessel" class="on">Vessel</button><button data-tab="conn">Connections</button><button data-tab="display">Display</button><button data-tab="diag">Diagnostics</button></div>
+          <div class="tab" data-tab="vessel">
           <form id="vessel-settings">
             <h3>Vessel identity</h3>
             <div class="settings-grid">
@@ -664,7 +657,23 @@
             </div>
             <div class="settings-actions"><span id="settings-status" role="status" aria-live="polite"></span><button type="submit">Save vessel details</button></div>
           </form>
-          <section id="ui-settings" class="ui-settings">
+          <h3>Performance (polar)</h3>
+            <div class="wx-row"><label class="grow" for="boat-polar">Polar</label><select id="boat-polar"></select></div>
+            <div class="wx-row"><button id="boat-polar-import" title="Copy a polar file (.pol, .csv or .txt) into your polar folder">Import polar…</button><button id="boat-polar-folder" title="Open your polar folder">Open folder</button><input id="boat-polar-file" type="file" accept=".pol,.csv,.txt" hidden /></div>
+            <div id="boat-polar-note" class="wx-note"></div>
+            <div class="wx-row"><label class="grow" for="boat-eff">Polar efficiency (%)</label><input id="boat-eff" type="number" min="10" max="150" step="1" /></div>
+            <div class="wx-row"><label class="grow" for="boat-tack">Tack costs (s)</label><input id="boat-tack" type="number" min="0" step="5" /></div>
+            <div class="wx-row"><label class="grow" for="boat-gybe">Gybe costs (s)</label><input id="boat-gybe" type="number" min="0" step="5" /></div>
+          </div>
+          <div class="tab" data-tab="display" hidden>
+<h3>Colours</h3>
+        <div class="wx-row"><label class="grow" for="pal-mode">Colours</label>
+          <select id="pal-mode" title="Day; dusk (dimmer); night red or night green, which keep your night vision (every colour becomes a shade of red or green on black)">
+            <option value="day">Day</option><option value="dusk">Dusk</option><option value="night-red">Night (red)</option><option value="night-green">Night (green)</option></select></div>
+        <div class="wx-row"><label class="grow" for="pal-dim">Brightness</label><input id="pal-dim" type="range" min="20" max="100" step="5" title="How bright the screen is drawn in dusk and night colours" /><span id="pal-dim-v" class="wx-note"></span></div>
+        <div class="wx-row"><button id="pal-full" title="Fill the screen, hiding the window's title bar and the taskbar (F11 to switch back)">Full screen (F11)</button></div>
+        <div class="wx-note">The colours button in the toolbar at the top left steps through them. With dusk and night colours the window's title bar turns dark too; full screen hides it altogether. Turn the screen's own brightness down at night too.</div>
+                  <section id="ui-settings" class="ui-settings">
             <h3>Screen controls <small>this window</small></h3>
             <p class="settings-note">Auto uses touch detection: zoom buttons and larger controls appear only when a touch screen is present.</p>
             <div class="wx-row"><label class="grow" for="ui-zoom">Zoom buttons</label>
@@ -672,7 +681,11 @@
             <div class="wx-row"><label class="grow" for="ui-large">Large buttons</label>
               <select id="ui-large"><option value="auto">Auto</option><option value="on">On</option><option value="off">Off</option></select></div>
           </section>
-          <section id="nmea-settings-section" class="nmea-settings">
+          </div>
+          <div class="tab" data-tab="conn" hidden>
+<h3 id="sk-section">Signal K</h3>
+        <div class="wx-row"><span id="sk-detail" class="grow wx-note">—</span></div>
+                  <section id="nmea-settings-section" class="nmea-settings">
             <h3>NMEA data sources</h3>
             <p class="settings-note">Enabled sources are monitored concurrently. TweedPlot chooses a preferred source for each data group; when automatic failover is enabled, it uses the next available source in the configured source order and raises an alarm when the active source changes.</p>
             <div id="nmea-sources" class="nmea-sources" aria-live="polite"></div>
@@ -714,6 +727,27 @@
               </div>
             </form>
           </section>
+<h3>Replay a log</h3>
+        <div class="wx-row"><select id="replay-log" class="grow" title="Signal K sessions are logged while TweedPlot runs; play one back in place of the live data"></select>
+          <button id="replay-play" title="Play this log in place of the live Signal K data">Replay</button></div>
+        <div id="replay-note" class="wx-note">Every Signal K session is logged. A replay drives the boat, instruments, AIS targets and alarms as if live; live data waits until it stops. Tracks are not recorded from a replay.</div>
+        <div class="wx-note">The buttons in the toolbar at the top left: the live data status (green receiving, amber connected but quiet, red not connected), Live ▶ / Paused ❚❚, Follow and Clear track. Pause to plan: right-click the chart to move the boat.</div>
+        <h3>Damping</h3>
+        <div class="wx-row"><label class="grow" for="set-damp-motion">Heading, COG, SOG, BSP</label><select id="set-damp-motion"></select></div>
+        <div class="wx-row"><label class="grow" for="set-damp-wind">Wind (AWS, AWA, TWS, TWA, TWD)</label><select id="set-damp-wind"></select></div>
+        <div class="wx-row"><label class="grow" for="set-damp-depth">Depth</label><select id="set-damp-depth"></select></div>
+        <div class="wx-note">Averages the live readings (Signal K or NMEA) over the time chosen, for the boat on the chart, its lines and the instruments. Position is never damped.</div>
+                  </div>
+          <div class="tab" data-tab="diag" hidden>
+<h3>Radar overlay test</h3>
+        <div class="wx-row"><label class="grow" for="rs-rpm">Simulated radar</label>
+          <select id="rs-rpm" title="Antenna speed"><option value="24">24 rpm</option><option value="48" selected>48 rpm</option></select>
+          <select id="rs-res" title="Spokes per turn × samples per spoke"><option value="2048x512">2048 × 512</option><option value="2048x1024" selected>2048 × 1024</option><option value="4096x1024">4096 × 1024</option></select></div>
+        <div class="wx-row"><label class="grow" for="rs-range">Range (NM)</label><input id="rs-range" type="number" min="0.25" max="48" step="0.25" value="3" />
+          <button id="rs-go" title="Start or stop the simulated radar on the boat (or the chart centre)">Start</button></div>
+        <pre id="rs-stats" class="wx-note rs-stats"></pre>
+        <div class="wx-note">Tests the path a real radar will take: echoes made in the Rust core at a real scanner's rate, sent to the chart as raw bytes and drawn by the graphics card. The numbers show whether this PC keeps up (aim: 50–60 frames a second while panning, no growing backlog).</div>
+          </div>
         </div>
       </section>
 

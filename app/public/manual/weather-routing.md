@@ -99,15 +99,15 @@ A polar is a table (or the curve drawn from it) of boat speed against true wind 
 | Designer or class association | Theoretical (from a velocity prediction program, VPP) for a fully crewed boat in flat water with perfect sails. Optimistic for real sailing |
 | Rating certificates (ORC) | VPP polars from measured boat data; consistent between boats, still optimistic offshore |
 | Your own logged data | The truest, once you have enough hours across the range of angles and wind. Track recording builds the data; building polars from it is planned |
-| Another program's polar file | qtVlm CSV and .pol formats are read directly: Routing › Boat and polar › Import polar… (the file format, and where to find polars, are in the Reference manual under Your boat > Polars) |
+| Another program's polar file | qtVlm CSV and .pol formats are read directly: Settings › Vessel › Performance › Import polar… (the file format, and where to find polars, are in the Reference manual under Your boat > Polars) |
 
 **Efficiency**
 
-The efficiency setting (Routing › Boat and polar) scales the whole polar. Realistic values: 95–100 % for a race crew in flat water, 85–90 % for a race offshore or a good cruising crew, 70–80 % for short-handed or cruising trim with a heavy boat. If your logged speeds keep falling short of the routing's, lower it.
+The efficiency setting (Settings › Vessel › Performance) scales the whole polar. Realistic values: 95–100 % for a race crew in flat water, 85–90 % for a race offshore or a good cruising crew, 70–80 % for short-handed or cruising trim with a heavy boat. If your logged speeds keep falling short of the routing's, lower it.
 
 **Tacks and gybes**
 
-Each manoeuvre costs time while the boat slows and accelerates. The tack and gybe costs in Routing › Boat and polar (seconds lost, typically 30–90 s) stop the router zig-zagging for tiny gains.
+Each manoeuvre costs time while the boat slows and accelerates. The tack and gybe costs in Settings › Vessel › Performance (seconds lost, typically 30–90 s) stop the router zig-zagging for tiny gains.
 
 **What a polar doesn't know**
 
@@ -208,9 +208,9 @@ To see when the engine pays, make a copy of your polar with a minimum speed at e
 
 **Days before**
 
-- [ ] Course drawer: the route with every mark's rounding and radius; barriers for exclusion zones and reserves.
-- [ ] Chart and Signal K: safety depth and contour; dangers and farms on.
-- [ ] Routing › Boat and polar: polar, efficiency, tack and gybe costs.
+- [ ] Route drawer: the route with every mark's rounding and radius; barriers for exclusion zones and reserves.
+- [ ] Chart › Safety: safety depth and contour; Routing › Limits and barriers: route round dangers and farms on.
+- [ ] Settings › Vessel › Performance: polar, efficiency, tack and gybe costs.
 - [ ] Weather: download GFS and ECMWF (and waves) for the whole area and longer than the trip; then each new run.
 - [ ] Look at the weather before the routing: isobars, fronts, the meteogram at key points, the agreement displays.
 

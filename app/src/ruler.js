@@ -1,6 +1,6 @@
 // Ruler: measure bearing and distance on the chart, over one or more legs.
 //
-// Start from the chart context menu, then click points; double-click to finish
+// Start from the toolbar's Ruler button or the chart menu, then click points; double-click to finish
 // (the ruler stays on the chart); Esc stops. Each leg is
 // labelled with its rhumb-line bearing (°T, and °M when Signal K gives the
 // variation) and distance, with the total at the end. Points move like course
@@ -89,6 +89,7 @@ export function setupRuler(map, { before, ui, library, route, toast, getVariatio
   function arm(on) {
     armed = on;
     document.body.classList.toggle("ruler-armed", on);
+    document.getElementById("ruler-btn")?.classList.toggle("on", on);
     map.getCanvas().style.cursor = on ? "crosshair" : "";
     map.getContainer().classList.toggle("drawing", on);
     if (on) {
@@ -253,13 +254,20 @@ export function setupRuler(map, { before, ui, library, route, toast, getVariatio
       await library.refresh();
       route.loadRoute(saved, library.marks());
       ui.open("course");
-      toast(`Saved “${name}” in the Library and opened it in the Course panel.`, 6000);
+      toast(`Saved “${name}” in the Library and opened it in the Route drawer.`, 6000);
     } catch (e) { toast(`Could not save the route: ${e}`, 6000); }
   }
 
   draw();
   return {
     hitAt, deleteRuler, deletePoint, deleteAll, saveAsRoute, setGreatCircle,
+    /** Arm the ruler: the first click on the chart sets the first point (toolbar button). */
+    start() {
+      if (armed) return;
+      arm(true);
+      active = null;
+      draw();
+    },
     startAt(pos) {
       if (armed) return;
       arm(true);

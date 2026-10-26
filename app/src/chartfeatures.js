@@ -12,7 +12,9 @@ const COLOURS = { 1: "#ffffff", 2: "#111111", 3: "#d7262b", 4: "#1f9a3a", 5: "#2
 const LIGHT = { r: "#d7262b", g: "#1f9a3a", w: "#f4c20d", o: MAGENTA, m: MAGENTA };
 
 const KEY = "racenav.chartfeatures";
-const DEFAULTS = { show: true, sectors: true, names: true, avoidDangers: true, avoidFarms: true, symSize: 1.2 };
+const DEFAULTS = { cat: "all", sectors: true, names: true, soundings: true, avoidDangers: true, avoidFarms: true, symSize: 1.2 };
+/** The standard display (S-Mode): one press back to it. */
+const STANDARD = { cat: "standard", sectors: true, names: true, soundings: true };
 
 /** Point symbols; underwater dangers deeper than the safety contour show as their depth only. */
 const pointFilter = (contour) => ["all", ["!", ["in", ["get", "cls"], ["literal", ["LIGHTS", "SEAARE", "LNDRGN"]]]],
@@ -35,6 +37,8 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
   const $ = (id) => document.getElementById(id);
   const opts = { ...DEFAULTS };
   try { Object.assign(opts, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
+  // before display categories: "Lights, marks, dangers, areas" off was the base display
+  if (opts.show === false) { opts.cat = "base"; delete opts.show; } else delete opts.show;
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(opts)); } catch { /* ignore */ } };
   let enabled = false;
 
@@ -101,17 +105,37 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
 
   const SECTOR = ["f-sec-leg", "f-sec-arc"];
   const NAMES = ["f-names", "f-pnames", "f-labels"];
+  // Display categories, as an ECDIS (IHO S-52): Base is land, depth areas, the safety
+  // contour and isolated dangers, and can't be reduced; Standard adds aids to navigation,
+  // routeing measures, restricted and caution areas, constructions; All adds soundings,
+  // the other contours, submarine cables and pipelines, ferry routes and dumping grounds.
+  const ALL_ONLY = ["f-line-mag", "f-area-grey"];
+  const MAIN_ALL = ["depcnt", "wdcnt"]; // chart layers in main.js shown only in All
   function apply() {
+    const cat = opts.cat;
     for (const l of layers) {
       const haz = HAZ_LAYERS.includes(l.id);
-      let on = enabled && (opts.show || haz || l.id === "f-coast"); // the ENC coast is part of the chart base
+      let on = enabled && (cat !== "base" || haz || l.id === "f-coast"); // the ENC coast is part of the chart base
+      if (ALL_ONLY.includes(l.id)) on = on && cat === "all";
       if (SECTOR.includes(l.id)) on = on && opts.sectors;
       if (NAMES.includes(l.id)) on = on && opts.names;
       map.setLayoutProperty(l.id, "visibility", on ? "visible" : "none");
-      if (haz) map.setFilter(l.id, opts.show ? baseFilter[l.id] : ["all", baseFilter[l.id], HZ]);
+      if (haz) map.setFilter(l.id, cat !== "base" ? baseFilter[l.id] : ["all", baseFilter[l.id], HZ]);
     }
+    for (const id of MAIN_ALL) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", enabled && cat === "all" ? "visible" : "none");
+    if (map.getLayer("soundg")) map.setLayoutProperty("soundg", "visibility", enabled && cat !== "base" && (cat === "all" || opts.soundings) ? "visible" : "none");
+    const sel = $("set-dispcat");
+    if (sel) sel.value = cat;
+    for (const [id, key] of [["set-sectors", "sectors"], ["set-featnames", "names"], ["set-soundings", "soundings"]]) if ($(id)) $(id).checked = opts[key];
+    if ($("set-soundings")) $("set-soundings").disabled = cat !== "standard";
+    const std = $("set-std");
+    if (std) std.classList.toggle("on", Object.entries(STANDARD).every(([k, v]) => opts[k] === v));
   }
-  for (const [id, key] of [["set-feat", "show"], ["set-sectors", "sectors"], ["set-featnames", "names"], ["set-avoid-dangers", "avoidDangers"], ["set-avoid-farms", "avoidFarms"]]) {
+  const sel = $("set-dispcat");
+  if (sel) sel.onchange = () => { opts.cat = sel.value; save(); apply(); };
+  const std = $("set-std");
+  if (std) std.onclick = () => { Object.assign(opts, STANDARD); save(); apply(); };
+  for (const [id, key] of [["set-sectors", "sectors"], ["set-featnames", "names"], ["set-soundings", "soundings"], ["set-avoid-dangers", "avoidDangers"], ["set-avoid-farms", "avoidFarms"]]) {
     const el = $(id);
     if (!el) continue;
     el.checked = opts[key];

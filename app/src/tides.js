@@ -125,7 +125,7 @@ export function setupTides(map, { before, getTime, onTime }) {
         const y = new Date(d0 * 1000).getUTCFullYear();
         tbl.insertRow().insertCell().textContent = r.method?.startsWith("Reference port")
           ? "LINZ gives no times for this place."
-          : r.years?.includes(y) ? "No tides for this day." : `No LINZ tables for ${y}: download them in the Chart panel.`;
+          : r.years?.includes(y) ? "No tides for this day." : `No LINZ tables for ${y}: download them in Weather and tides › Tides.`;
       }
     }
     infoBox(map, "tide", { width: 370, height: 420 }).open(el, { title: r.name ?? id, at: lngLat, onClose: () => { if (current === shown) current = null; } });

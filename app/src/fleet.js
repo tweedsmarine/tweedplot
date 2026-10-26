@@ -327,7 +327,7 @@ export function setupFleet(map, { weather, course, routing, dock, ui }) {
     const c = race?.setup?.course ?? [];
     if (c.length < 2) return;
     course.fromPoints(c, race.setup.title || race.key);
-    status(`Course copied to the Course panel (${c.length} points). Save it there to keep it in the library.`, "good");
+    status(`Course copied to the Route drawer (${c.length} points). Save it there to keep it in the library.`, "good");
   };
 
   // hover and click on a boat

@@ -64,7 +64,7 @@ A river or harbour bar can break with little warning when swell meets an ebbing 
 
 | Margin | Set it as |
 | --- | --- |
-| Least depth | Safety depth and safety contour (Chart and Signal K drawer) |
+| Least depth | Safety depth and safety contour (Chart › Safety) |
 | Keep off a rock or reef by a set distance | A barrier mark with a radius, or a mark on the course left to port or starboard with a clearance |
 | An area you won't enter | A barrier zone |
 | A line you won't cross (a fairway, a reserve boundary) | A barrier line |
@@ -89,7 +89,7 @@ When wind and stream oppose each other, waves grow steeper and closer together, 
 
 **In TweedPlot**
 
-- Tide heights and curves: tide stations (Chart and Signal K > Tides).
+- Tide heights and curves: tide stations (Weather and tides › Tides).
 - Ocean currents: GRIBs with currents (for example from an ocean model) can be used in routing with **Use GRIB currents**.
 - Tidal streams are not modelled yet: plan stream-critical passages from tide tables and the cruising guide, and give them extra time.
 
@@ -109,7 +109,7 @@ For a power boat or a cruise the route you draw is usually the route you take: s
 
 **Quick sketch with the ruler**
 
-Press **Ruler**, click along the passage, double-click to finish, then right-click > **Save ruler as route**. The points become library marks and the route opens in the Course drawer, ready to name, adjust and save.
+Press **Ruler**, click along the passage, double-click to finish, then right-click > **Save ruler as route**. The points become library marks and the route opens in the Route drawer, ready to name, adjust and save.
 
 **Rounding choices**
 
@@ -177,11 +177,11 @@ On the day, look again: the latest forecast, a fresh GRIB, the actual conditions
 *A yacht leaves Nelson for a night at anchor on the Abel Tasman coast.*
 
 1. **Appraise.** Load the forecast (Weather > Download, GFS or ECMWF, Tasman Bay, 3 days). The cruising guide notes which bays shelter from which winds; the chart shows the Boulder Bank, the harbour entrance and the shoals off the river mouths.
-2. **Set margins.** Chart and Signal K drawer: safety depth = draft 1.9 m + 1 m = 3 m; safety contour 5 m. Turn on Route round dangers and marine farms (there are farms in the bay).
-3. **Sketch the route.** Ruler from the harbour entrance across the bay to the anchorage, double-click, right-click > Save ruler as route. In the Course drawer name it "Nelson to Torrent Bay" and set the anchorage mark to As close as possible.
+2. **Set margins.** Chart › Safety: safety depth = draft 1.9 m + 1 m = 3 m; safety contour 5 m. In Routing › Limits and barriers, turn on Route round dangers and Route round marine farms (there are farms in the bay).
+3. **Sketch the route.** Ruler from the harbour entrance across the bay to the anchorage, double-click, right-click > Save ruler as route. In the Route drawer name it "Nelson to Torrent Bay" and set the anchorage mark to As close as possible.
 4. **Mark the bolt holes.** Add points of interest for one or two sheltered bays you could reach if the wind turns onshore, with notes on which winds they suit.
 5. **Choose the day and time.** Close the drawers, scrub the time slider and watch the GRIB-at-cursor panel at mid-bay: you want 8–18 kn from a reaching angle, not a building sea breeze on the nose for the last hours. A meteogram at the anchorage shows whether the night will stay settled.
-6. **Route it.** Routing › Boat and polar: your polar at 85 % efficiency. Routing > Compute at the departure time. Then With each GRIB if you have two models: if both give a similar route and ETA, the plan is robust.
+6. **Route it.** Settings › Vessel › Performance: your polar at 85 % efficiency. Routing > Compute at the departure time. Then With each GRIB if you have two models: if both give a similar route and ETA, the plan is robust.
 7. **Check the anchorage.** Click the tide station nearest the anchorage for the evening's low water; the depth where you plan to anchor must still be enough at low tide.
 8. **Go, and monitor.** Record the track; in live mode watch XTE and TTG. If the breeze builds onshore, the bolt holes are on the chart.
 
@@ -213,7 +213,7 @@ On the day, look again: the latest forecast, a fresh GRIB, the actual conditions
 5. **Route it many ways.** With each GRIB at the planned start; then several runs as each new forecast arrives. Watch the compare table: is the route the same (go and sail it) or does it flip between two sides of the course (the decision that matters)?
 6. **Test the big decision.** Where the routings split, put a row of gates across the split with the gate sweep (Routing > Gates), with each GRIB. The gate that is nearly best under every model is the one to aim for.
 7. **Night and safety.** Note the bolt holes, the times you'll pass the headlands, and the forecast at each.
-8. **In the race.** Re-route from the boat at each new forecast (Course > From boat), and follow the fleet in the Fleet drawer if the race is on YB tracking: Route on a rival shows what the router would have them do.
+8. **In the race.** Re-route from the boat at each new forecast (Route › From boat), and follow the fleet in Targets › YB race if the race is on YB tracking: Route on a rival shows what the router would have them do.
 
 ![A Coastal Classic course: Little Barrier left to starboard with a 1 NM clearance ring, an example exclusion zone across the first leg, and two routings (10:30 and 13:30 starts) with each boat's position at 22:00 on Friday](img/07-race.jpg)
 

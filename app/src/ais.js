@@ -591,7 +591,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       th.classList.toggle("up", th.dataset.k === s.win.sort && s.win.dir < 0);
     }
     const tb = $("tgt-table").tBodies[0];
-    tb.innerHTML = rows.length ? "" : `<tr><td class="empty" colspan="10">No targets${s.win.filter !== "all" ? " for this filter" : ""}. A receiver on board (through Signal K), or online AIS in Fleet › AIS.</td></tr>`;
+    tb.innerHTML = rows.length ? "" : `<tr><td class="empty" colspan="10">No targets${s.win.filter !== "all" ? " for this filter" : ""}. A receiver on board (through Signal K), or online AIS in Targets › AIS.</td></tr>`;
     for (const r of rows.slice(0, 300)) {
       const tr = document.createElement("tr");
       tr.className = [r.danger ? "danger" : "", r.net ? "net" : "", r.lost ? "lost" : "", r.id === selected ? "sel" : ""].join(" ");
