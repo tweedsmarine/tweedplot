@@ -60,11 +60,24 @@ pub struct Mark {
     pub barrier_nm: f64,
     /// Unix seconds.
     pub modified: i64,
+    /// When the mark was made (Unix seconds; 0 unknown), e.g. from an imported file.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub created: i64,
+    /// "#rrggbb" to draw it in (empty: by its kind).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub colour: String,
+    /// The symbol it had where it came from, e.g. "tz:62" (TimeZero) or a GPX `<sym>`.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub symbol: String,
+}
+
+fn is_zero(v: &i64) -> bool {
+    *v == 0
 }
 
 impl Default for Mark {
     fn default() -> Self {
-        Mark { id: String::new(), name: String::new(), lat: 0.0, lon: 0.0, kind: "mark".into(), notes: String::new(), group: String::new(), barrier_nm: 0.0, modified: 0 }
+        Mark { id: String::new(), name: String::new(), lat: 0.0, lon: 0.0, kind: "mark".into(), notes: String::new(), group: String::new(), barrier_nm: 0.0, modified: 0, created: 0, colour: String::new(), symbol: String::new() }
     }
 }
 
@@ -161,6 +174,7 @@ pub struct Library {
 
 /// Two marks this close (NM) with the same name are the same mark.
 const SAME_MARK_NM: f64 = 0.03;
+const SAME_UNNAMED_NM: f64 = 0.002;
 
 impl Library {
     pub fn open(dir: impl Into<PathBuf>) -> Result<Self> {
@@ -399,17 +413,40 @@ impl Library {
         let data = parse_gpx(text)?;
         let mut rep = ImportReport::default();
         let mut marks = self.marks()?;
+        // Marks already here, by name and a grid of about a kilometre, so a big file (a
+        // fisherman's tens of thousands of marks) matches in moments, not hours.
+        const CELL: f64 = 0.01;
+        let cell = |lat: f64, lon: f64| ((lat / CELL).floor() as i64, (lon / CELL).floor() as i64);
+        let mut index: std::collections::HashMap<(String, (i64, i64)), Vec<usize>> = std::collections::HashMap::new();
+        for (i, m) in marks.iter().enumerate() {
+            index.entry((m.name.to_lowercase(), cell(m.lat, m.lon))).or_default().push(i);
+        }
+        let stamp = now();
         let mut find_or_add = |w: &GpxWaypoint, rep: &mut ImportReport| -> String {
             let here = nav_core::LatLon::new(w.lat, w.lon);
-            if let Some(m) = marks.iter().find(|m| {
-                m.name.eq_ignore_ascii_case(w.name.trim()) && nav_core::LatLon::new(m.lat, m.lon).distance_to(&here) < SAME_MARK_NM
-            }) {
-                rep.marks_matched += 1;
-                return m.id.clone();
+            let name = w.name.trim().to_string();
+            let key = name.to_lowercase();
+            let (cy, cx) = cell(w.lat, w.lon);
+            // a named mark within about 50 m is the same mark; unnamed ones (a fisher's
+            // marks are often a few boat lengths apart) only when within a few metres
+            let near = if key.is_empty() { SAME_UNNAMED_NM } else { SAME_MARK_NM };
+            for dy in -1..=1 {
+                for dx in -1..=1 {
+                    if let Some(ids) = index.get(&(key.clone(), (cy + dy, cx + dx))) {
+                        if let Some(&i) = ids.iter().find(|&&i| nav_core::LatLon::new(marks[i].lat, marks[i].lon).distance_to(&here) < near) {
+                            rep.marks_matched += 1;
+                            return marks[i].id.clone();
+                        }
+                    }
+                }
             }
-            let name = if w.name.trim().is_empty() { next_name(&marks, "WP") } else { w.name.trim().to_string() };
+            let symbol = match w.tz_symbol {
+                Some(n) => format!("tz:{n}"),
+                None => w.sym.trim().to_string(),
+            };
             let m = Mark {
                 id: new_id("m"),
+                // unnamed marks (most of a plotter's) stay unnamed
                 name,
                 lat: w.lat,
                 lon: w.lon,
@@ -417,10 +454,14 @@ impl Library {
                 notes: w.desc.clone(),
                 group: group.to_string(),
                 barrier_nm: 0.0,
-                modified: now(),
+                modified: stamp,
+                created: w.time.unwrap_or(0),
+                colour: w.colour.clone(),
+                symbol,
             };
             rep.marks_added += 1;
             let id = m.id.clone();
+            index.entry((key, (cy, cx))).or_default().push(marks.len());
             marks.push(m);
             id
         };
@@ -729,5 +770,36 @@ mod big {
         let t = std::time::Instant::now();
         let one = lib.track(&tr[0].id).unwrap();
         println!("track(): {} points in {:?}", one.stats.points, t.elapsed());
+    }
+}
+
+#[cfg(test)]
+mod big_gpx {
+    /// `RACENAV_TEST_GPX=<file.gpx> cargo test --release -p library big_gpx_import -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn big_gpx_import() {
+        let f = std::env::var("RACENAV_TEST_GPX").unwrap();
+        let text = std::fs::read_to_string(&f).unwrap();
+        let dir = std::env::temp_dir().join(format!("tp_biggpx_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let lib = super::Library::open(&dir).unwrap();
+        let t = std::time::Instant::now();
+        let d = super::parse_gpx(&text).unwrap();
+        println!("parse: {} waypoints in {:?}", d.waypoints.len(), t.elapsed());
+        let t = std::time::Instant::now();
+        let r = lib.import_gpx(&text, "TimeZero").unwrap();
+        println!("import: added {} matched {} in {:?}", r.marks_added, r.marks_matched, t.elapsed());
+        let t = std::time::Instant::now();
+        let r = lib.import_gpx(&text, "TimeZero").unwrap();
+        println!("import again: added {} matched {} in {:?}", r.marks_added, r.marks_matched, t.elapsed());
+        let t = std::time::Instant::now();
+        let out = lib.export_gpx(&[], &[]).unwrap();
+        println!("export: {} bytes in {:?}", out.len(), t.elapsed());
+        let back = super::parse_gpx(&out).unwrap();
+        let (a, b) = (&d.waypoints[0], &back.waypoints[0]);
+        println!("round trip: {:?} {:?} {} / {:?} {:?} {}", a.time, a.tz_symbol, a.colour, b.time, b.tz_symbol, b.colour);
+        assert_eq!((a.time, a.tz_symbol, &a.colour), (b.time, b.tz_symbol, &b.colour));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

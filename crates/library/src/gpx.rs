@@ -13,6 +13,27 @@ pub struct GpxWaypoint {
     pub lon: f64,
     pub desc: String,
     pub sym: String,
+    /// `<time>`: when the mark was made (Unix seconds).
+    pub time: Option<i64>,
+    /// Colour from the file's extensions ("#rrggbb"): TimeZero's `<color>` (a signed ARGB number).
+    pub colour: String,
+    /// TimeZero's symbol number (`<MxTimeZeroSymbol>`).
+    pub tz_symbol: Option<u32>,
+}
+
+/// A colour as written in GPX extensions: "#rrggbb", "rrggbb", or a signed 32-bit ARGB
+/// number (.NET's Color.ToArgb, as TimeZero writes). "" if it isn't one.
+pub fn parse_colour(v: &str) -> String {
+    let v = v.trim();
+    if let Ok(n) = v.parse::<i64>() {
+        let x = (n as i32) as u32;
+        return format!("#{:06x}", x & 0xff_ffff);
+    }
+    let h = v.trim_start_matches('#');
+    if h.len() == 6 && h.chars().all(|c| c.is_ascii_hexdigit()) {
+        return format!("#{}", h.to_ascii_lowercase());
+    }
+    String::new()
 }
 
 #[derive(Debug, Clone, Default)]
@@ -151,6 +172,19 @@ pub fn parse_gpx(text: &str) -> Result<GpxData> {
                             _ => p.cog = value.parse::<f64>().ok().filter(|v| v.is_finite()),
                         }
                     }
+                    "time" | "MxTimeZeroSymbol" | "color" | "colour" if point.is_some() && stack.iter().any(|s| s == "wpt" || s == "rtept") => {
+                        let w = point.as_mut().unwrap();
+                        match n.as_str() {
+                            "time" => w.time = parse_iso(&value),
+                            "MxTimeZeroSymbol" => w.tz_symbol = value.trim().parse().ok(),
+                            _ => {
+                                let c = parse_colour(&value);
+                                if !c.is_empty() {
+                                    w.colour = c;
+                                }
+                            }
+                        }
+                    }
                     "name" | "desc" | "cmt" | "sym" => {
                         if parent == "wpt" || parent == "rtept" {
                             if let Some(w) = point.as_mut() {
@@ -251,7 +285,27 @@ pub(crate) fn wpt(tag: &str, m: &Mark, indent: &str) -> String {
     if !m.notes.is_empty() {
         s.push_str(&format!("{indent}  <desc>{}</desc>\n", esc(&m.notes)));
     }
-    s.push_str(&format!("{indent}  <sym>{}</sym>\n{indent}</{tag}>\n", if m.kind == "mark" { "Buoy" } else { "Waypoint" }));
+    if m.created > 0 {
+        s.push_str(&format!("{indent}  <time>{}</time>\n", crate::tracks::iso_time(m.created)));
+    }
+    let sym = match m.symbol.as_str() {
+        x if x.is_empty() || x.starts_with("tz:") => if m.kind == "mark" { "Buoy" } else { "Waypoint" },
+        x => x,
+    };
+    s.push_str(&format!("{indent}  <sym>{}</sym>\n", esc(sym)));
+    // TimeZero's own symbol and colour, so its marks go back to it as they came
+    let tz = m.symbol.strip_prefix("tz:");
+    if tz.is_some() || !m.colour.is_empty() {
+        s.push_str(&format!("{indent}  <extensions>\n"));
+        if let Some(n) = tz {
+            s.push_str(&format!("{indent}    <MxTimeZeroSymbol>{n}</MxTimeZeroSymbol>\n"));
+        }
+        if let Some(rgb) = m.colour.strip_prefix('#').and_then(|h| u32::from_str_radix(h, 16).ok()) {
+            s.push_str(&format!("{indent}    <color>{}</color>\n", (0xff00_0000u32 | rgb) as i32));
+        }
+        s.push_str(&format!("{indent}  </extensions>\n"));
+    }
+    s.push_str(&format!("{indent}</{tag}>\n"));
     s
 }
 

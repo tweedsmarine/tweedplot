@@ -146,6 +146,10 @@ details.sub summary { cursor: pointer; font-size: 11px; color: var(--quiet); tex
 .list li:first-child { border-top: none; }
 .list li .main { flex: 1; min-width: 0; cursor: pointer; }
 .list li .main b { font-weight: 600; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list li .main b.unnamed { font-weight: 400; font-style: italic; color: var(--quiet); }
+.list li .main[style*=border-left] { padding-left: 6px; }
+.list li.more { flex-wrap: wrap; justify-content: center; }
+.list li.more small { color: var(--quiet); font-size: 11px; }
 .list li .main small { color: var(--quiet); font-size: 11px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list li button { flex: none; padding: 3px 7px; font-size: 12px; }
 .list li .num { flex: none; width: 22px; height: 22px; border-radius: 50%; background: #c2185b; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }

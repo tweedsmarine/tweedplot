@@ -40,17 +40,19 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   const isPoi = ["has", ["get", "kind"], ["literal", Object.fromEntries(Object.keys(POI_KINDS).map((k) => [k, 1]))]];
   const isIcon = ["any", isBuoy, isPoi];
   map.addLayer({ id: "lib-marks", type: "circle", source: "lib-marks",
-    paint: { "circle-radius": ["case", isIcon, 11, 5], "circle-color": ["match", ["get", "kind"], "danger", "#c0392b", "waypoint", "#5b6b75", "#e67e22"],
+    paint: { "circle-radius": ["case", isIcon, 11, ["interpolate", ["linear"], ["zoom"], 5, 2.5, 10, 5]],
+             // a mark's own colour (from TimeZero and other plotters), else by its type
+             "circle-color": ["coalesce", ["get", "colour"], ["match", ["get", "kind"], "danger", "#c0392b", "waypoint", "#5b6b75", "#e67e22"]],
              "circle-opacity": ["case", isIcon, 0, 1], "circle-stroke-opacity": ["case", isIcon, 0, 1],
-             "circle-stroke-color": "#fff", "circle-stroke-width": 1.5 } }, "track");
+             "circle-stroke-color": "#fff", "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 5, 0.5, 10, 1.5] } }, "track");
   map.addLayer({ id: "lib-buoys", type: "symbol", source: "lib-marks", filter: isBuoy,
     layout: { "icon-image": ["concat", "s57:", ["get", ["get", "kind"], ["literal", BUOY_ICONS]]], "icon-anchor": "bottom", "icon-offset": [0, 3],
               "icon-allow-overlap": true, "icon-ignore-placement": true } }, "lib-marks");
   map.addLayer({ id: "lib-poi", type: "symbol", source: "lib-marks", filter: isPoi,
     layout: { "icon-image": ["concat", "poi:", ["get", "kind"]], "icon-allow-overlap": true, "icon-ignore-placement": true } }, "lib-marks");
-  map.addLayer({ id: "lib-labels", type: "symbol", source: "lib-marks", minzoom: 8,
+  map.addLayer({ id: "lib-labels", type: "symbol", source: "lib-marks", minzoom: 8, filter: ["!=", ["get", "name"], ""],
     layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 6], "icon-allow-overlap": false } }, "track");
-  let hidden = [];
+  let hidden = new Set();
   function draw() {
     const vis = prefs.show ? "visible" : "none";
     map.setLayoutProperty("lib-marks", "visibility", vis);
@@ -58,8 +60,8 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     map.setLayoutProperty("lib-buoys", "visibility", vis);
     map.setLayoutProperty("lib-poi", "visibility", vis);
     const shown = prefs.filter.chart ? marks.filter((m) => passes(m, false)) : marks;
-    map.getSource("lib-marks").setData({ type: "FeatureCollection", features: shown.filter((m) => !hidden.includes(m.id)).map((m) => ({
-      type: "Feature", properties: { id: m.id, name: m.name, kind: m.kind }, geometry: { type: "Point", coordinates: [m.lon, m.lat] } })) });
+    map.getSource("lib-marks").setData({ type: "FeatureCollection", features: shown.filter((m) => !hidden.has(m.id)).map((m) => ({
+      type: "Feature", properties: m.colour ? { id: m.id, name: m.name, kind: m.kind, colour: m.colour } : { id: m.id, name: m.name, kind: m.kind }, geometry: { type: "Point", coordinates: [m.lon, m.lat] } })) });
   }
   map.on("mouseenter", "lib-marks", () => { if (!dragging) map.getCanvas().style.cursor = "pointer"; });
   map.on("mouseleave", "lib-marks", () => { if (!dragging) map.getCanvas().style.cursor = ""; });
@@ -77,6 +79,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     const m = sel && (dragPos ? { lon: dragPos[0], lat: dragPos[1] } : byId(sel));
     map.getSource("lib-sel").setData(m ? { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [m.lon, m.lat] } } : empty);
     map.setPaintProperty("lib-sel", "circle-stroke-color", movable ? "#2e8b57" : "#f0a500");
+    map.setPaintProperty("lib-sel", "circle-color", dragPos ? "rgba(46,139,87,0.45)" : "rgba(0,0,0,0)");
   }
   function selectMark(id) {
     clearTimeout(armTimer);
@@ -105,8 +108,8 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     if (!dragging) return;
     dragPos = [e.lngLat.lng, e.lngLat.lat];
     const m = byId(sel);
-    if (m) { m.lon = dragPos[0]; m.lat = dragPos[1]; draw(); }
-    drawSel();
+    if (m) { m.lon = dragPos[0]; m.lat = dragPos[1]; }
+    drawSel(); // only the ring follows the pointer: redrawing tens of thousands of marks each move is too slow
   });
   map.on("mouseup", async () => {
     if (!dragging) return;
@@ -133,6 +136,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     try {
       [marks, routes, routings] = await Promise.all([invoke("marks_list"), invoke("routes_list"), invoke("routings_list")]);
       marks ||= []; routes ||= []; routings ||= [];
+      index();
     } catch (e) { status(`Library: ${e}`); }
     draw();
     if (sel && !byId(sel)) deselectMark(); // the selected mark was deleted
@@ -191,7 +195,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     return c.toDataURL();
   }
   const markType = (m) => (COURSE.has(m.kind) || !m.kind ? "course" : m.kind === "danger" ? "danger" : BUOY_ICONS[m.kind] ? "buoy" : POI_KINDS[m.kind] ? "poi" : "course");
-  const inRoute = (m) => routes.some((r) => r.start_mark === m.id || r.marks.some((x) => x.mark === m.id));
+  const inRoute = (m) => usedBy.has(m.id);
   /** Whether a mark passes the filters (`view`: the chart-view filter too). */
   function passes(m, view) {
     const f = prefs.filter;
@@ -226,7 +230,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     $("lib-f-clear").disabled = !on;
     for (const id of ["lib-f-group", "lib-f-type", "lib-f-route"]) $(id).classList.toggle("filtering", $(id).value !== "*");
   }
-  const filterChanged = () => { savePrefs(); syncFilterControls(); renderMarks(); draw(); };
+  const filterChanged = () => { pageEnd = PAGE; savePrefs(); syncFilterControls(); renderMarks(); draw(); };
   $("lib-f-group").onchange = (e) => { prefs.filter.group = e.target.value; filterChanged(); };
   $("lib-f-type").onchange = (e) => { prefs.filter.type = e.target.value; filterChanged(); };
   $("lib-f-route").onchange = (e) => { prefs.filter.route = e.target.value; filterChanged(); };
@@ -241,6 +245,9 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     viewTimer = setTimeout(renderMarks, 150);
   });
 
+  const PAGE = 200;
+  let pageEnd = PAGE, lastQuery = "";
+  const collate = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" }).compare;
   function renderMarks() {
     const q = $("lib-search").value.trim().toLowerCase();
     const ul = $("lib-marks");
@@ -248,17 +255,22 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     ul.innerHTML = "";
     if ($("lib-f-group").options.length <= 1 && marks.length) renderGroups();
     syncFilterControls();
-    const list = marks.filter((m) => (!q || m.name.toLowerCase().includes(q) || m.group.toLowerCase().includes(q)) && passes(m, true))
-      .sort((a, b) => a.group.localeCompare(b.group) || a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const list = marks.filter((m) => (!q || m.name.toLowerCase().includes(q) || m.group.toLowerCase().includes(q) || m.notes?.toLowerCase().includes(q)) && passes(m, true))
+      .sort((a, b) => collate(a.group, b.group) || (!a.name - !b.name) || collate(a.name, b.name) || (b.created || 0) - (a.created || 0));
     $("lib-f-count").textContent = list.length === marks.length ? `${marks.length} mark${marks.length === 1 ? "" : "s"}` : `${list.length} of ${marks.length} marks`;
     if (!list.length) ul.innerHTML = `<li class="empty">${marks.length ? "No marks match the search and filters." : "No marks yet. Right-click the chart: New library mark here, or save a route."}</li>`;
-    for (const m of list) {
-      const used = routes.filter((r) => r.start_mark === m.id || r.marks.some((x) => x.mark === m.id)).length;
+    // a page at a time: thousands of rows would make the drawer slow to open and scroll
+    if (q !== lastQuery) { pageEnd = PAGE; lastQuery = q; }
+    if (editing?.id) { const at = list.findIndex((m) => m.id === editing.id); if (at >= pageEnd) pageEnd = at + 1; }
+    for (const m of list.slice(0, pageEnd)) {
+      const used = usedBy.get(m.id) || 0;
       const li = document.createElement("li");
       li.dataset.id = m.id;
       li.innerHTML = `<div class="main" title="Show on the chart"><b></b><small></small></div><button data-act="start" title="Make this the route's start">Start</button><button data-act="add" title="Add to the end of the route being edited">+ Route</button><button data-act="edit">Edit</button><button data-act="del">✕</button>`;
-      li.querySelector("b").textContent = m.name;
-      li.querySelector("small").textContent = `${m.group ? m.group + " · " : ""}${ddm(m.lat, "N", "S")} ${ddm(m.lon, "E", "W")}${used ? ` · in ${used} route${used > 1 ? "s" : ""}` : ""}`;
+      li.querySelector("b").textContent = m.name || "(no name)";
+      li.querySelector("b").classList.toggle("unnamed", !m.name);
+      if (m.colour) li.querySelector(".main").style.borderLeft = `4px solid ${m.colour}`;
+      li.querySelector("small").textContent = `${m.group ? m.group + " · " : ""}${ddm(m.lat, "N", "S")} ${ddm(m.lon, "E", "W")}${m.created ? ` · ${new Date(m.created * 1000).toLocaleDateString()}` : ""}${used ? ` · in ${used} route${used > 1 ? "s" : ""}` : ""}`;
       li.querySelector(".main").onclick = () => map.flyTo({ center: [m.lon, m.lat], zoom: Math.max(map.getZoom(), 11) });
       li.querySelector('[data-act="start"]').onclick = () => { route?.setStartLibraryMark(m); status(`The route now starts at ${m.name}.`); };
       li.querySelector('[data-act="add"]').onclick = () => { route?.addLibraryMark(m); status(`${m.name} added to the route.`); };
@@ -267,6 +279,14 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
         await invoke("mark_delete", { id: m.id, force: true }).catch((e) => status(String(e)));
         refresh();
       });
+      ul.append(li);
+    }
+    if (list.length > pageEnd) {
+      const li = document.createElement("li");
+      li.className = "more";
+      li.innerHTML = `<button>Show ${Math.min(PAGE, list.length - pageEnd)} more</button><small></small>`;
+      li.querySelector("small").textContent = ` ${list.length - pageEnd} not shown: search, filter by group or tick "In chart view" to narrow the list.`;
+      li.querySelector("button").onclick = () => { pageEnd += PAGE; renderMarks(); };
       ul.append(li);
     }
     if (editing && !form.hidden) placeForm(editing.id);
@@ -393,7 +413,17 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     li.querySelector('[data-act="no"]').onclick = () => { li.innerHTML = keep; refresh(); };
   }
 
-  const byId = (id) => marks.find((m) => m.id === id);
+  // looked up by id, and how many routes use each mark, worked out once per refresh
+  // rather than for every mark on every redraw (a fisher's library runs to tens of thousands)
+  let ids = new Map(), usedBy = new Map();
+  function index() {
+    ids = new Map(marks.map((m) => [m.id, m]));
+    usedBy = new Map();
+    for (const r of routes) {
+      for (const id of new Set([r.start_mark, ...r.marks.map((x) => x.mark)].filter(Boolean))) usedBy.set(id, (usedBy.get(id) || 0) + 1);
+    }
+  }
+  const byId = (id) => ids.get(id);
 
   refresh();
   return {
@@ -403,7 +433,11 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     attach(r, x) { route = r; routing = x; renderRoutes(); },
     onChange: (f) => listeners.push(f),
     /** Library marks drawn under the route's own (hide the ones the route shows). */
-    hide(ids) { hidden = ids; draw(); },
+    hide(list) {
+      const next = new Set(list);
+      if (next.size === hidden.size && [...next].every((id) => hidden.has(id))) return;
+      hidden = next; draw();
+    },
     /** The library mark under a map point, if any. */
     markAt(point) {
       if (!prefs.show) return null;

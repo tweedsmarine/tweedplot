@@ -633,7 +633,9 @@ Untick a barrier to keep it but not use it; rename it in the list; move its poin
 | Tracks | Logged and imported tracks (see Your boat) |
 | Barriers | Lines and zones (above) |
 
-**GPX** exchanges marks, routes and tracks with plotters, phone apps, qtVlm, OpenCPN and Navionics. Import adds new marks and matches ones you already have by name and position. Exports go to `tweedplot-data\library\export`.
+**GPX** exchanges marks, routes and tracks with plotters, phone apps, qtVlm, OpenCPN and Navionics. Import adds new marks and matches ones you already have: a named mark within about 50 m of one with the same name, an unnamed mark within a few metres of another unnamed one, so importing the same file twice adds nothing. Marks keep their date, colour and plotter symbol; TimeZero files keep their symbol number and colour, and export back the same way. Unnamed marks (most of a plotter's) stay unnamed and are listed as *(no name)*, newest first, after the named ones. Exports go to `tweedplot-data\library\export`.
+
+The Marks list shows 200 at a time: **Show 200 more**, or narrow it with the search (names, groups and notes), the group filter or **In chart view**. A library of tens of thousands of marks imports in well under a second.
 
 ## Weather and tides
 
