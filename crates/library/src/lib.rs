@@ -705,3 +705,29 @@ mod tests {
         assert_eq!(rep2.marks_added, 0);
     }
 }
+
+#[cfg(test)]
+mod big {
+    /// Timing on a big library (tools/testdata/make_library.py):
+    /// `RACENAV_TEST_BIGLIB=<dir> cargo test --release -p library big_library -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn big_library() {
+        let dir = std::env::var("RACENAV_TEST_BIGLIB").unwrap();
+        let lib = super::Library::open(&dir).unwrap();
+        let t = std::time::Instant::now();
+        let m = lib.marks().unwrap();
+        println!("marks(): {} in {:?}", m.len(), t.elapsed());
+        let t = std::time::Instant::now();
+        let mut one = m[0].clone();
+        one.name.push('!');
+        lib.save_mark(one).unwrap();
+        println!("save_mark (rewrites marks.json): {:?}", t.elapsed());
+        let t = std::time::Instant::now();
+        let tr = lib.tracks().unwrap();
+        println!("tracks() list: {} in {:?}", tr.len(), t.elapsed());
+        let t = std::time::Instant::now();
+        let one = lib.track(&tr[0].id).unwrap();
+        println!("track(): {} points in {:?}", one.stats.points, t.elapsed());
+    }
+}
