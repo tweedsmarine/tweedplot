@@ -3,7 +3,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { fmt } from "./weather.js";
 import { distNm } from "./instruments.js";
-import { POI_KINDS } from "./poi.js";
+import { POI_KINDS, poiImage } from "./poi.js";
+import { iconSelect, imageUrl } from "./iconselect.js";
+import { featureImage } from "./chartfeatures.js";
 
 const KEY = "racenav.library";
 
@@ -176,6 +178,18 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   // ---------- marks tab ----------------------------------------------------------
   // ---------- marks filters ----------------------------------------------------------
   const COURSE = new Set(["mark", "waypoint", "start", "finish"]);
+  // the mark editor's Type list shows each type's symbol as the chart draws it
+  let kindPicker = null;
+  const DOTS = { danger: "#c0392b", waypoint: "#5b6b75" };
+  function kindIcon(k) {
+    if (BUOY_ICONS[k]) return imageUrl(featureImage(`s57:${BUOY_ICONS[k]}`));
+    if (POI_KINDS[k]) return imageUrl(poiImage(`poi:${k}`));
+    const c = document.createElement("canvas"); c.width = c.height = 16;
+    const g = c.getContext("2d");
+    g.beginPath(); g.arc(8, 8, 5.5, 0, 7); g.fillStyle = DOTS[k] || "#e67e22"; g.fill();
+    g.lineWidth = 1.5; g.strokeStyle = "#fff"; g.stroke(); g.lineWidth = 0.8; g.strokeStyle = "rgba(0,0,0,0.35)"; g.beginPath(); g.arc(8, 8, 6.6, 0, 7); g.stroke();
+    return c.toDataURL();
+  }
   const markType = (m) => (COURSE.has(m.kind) || !m.kind ? "course" : m.kind === "danger" ? "danger" : BUOY_ICONS[m.kind] ? "buoy" : POI_KINDS[m.kind] ? "poi" : "course");
   const inRoute = (m) => routes.some((r) => r.start_mark === m.id || r.marks.some((x) => x.mark === m.id));
   /** Whether a mark passes the filters (`view`: the chart-view filter too). */
@@ -301,6 +315,8 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       form.kind.append(og);
     }
     form.kind.value = m.kind || "mark";
+    kindPicker ??= iconSelect(form.kind, kindIcon);
+    kindPicker.refresh();
     form.group.value = m.group || "";
     form.lat.value = ddm(m.lat, "N", "S");
     form.lon.value = ddm(m.lon, "E", "W");

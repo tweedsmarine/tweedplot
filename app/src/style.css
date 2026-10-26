@@ -925,3 +925,15 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 .al-active li.al-warn .al-lv { background: #e08a00; }
 .al-active li.acked { opacity: 0.85; }
 .al-active li button { width: auto; flex: none; }
+/* drop-downs with pictures (iconselect.js) */
+.isel-btn { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; text-align: left; padding: 3px 8px; }
+.isel-btn img, .isel-opt img { height: 20px; width: 22px; object-fit: contain; flex: none; }
+.isel-none { display: inline-block; width: 22px; flex: none; }
+.isel-btn .isel-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.isel-btn .isel-caret { opacity: 0.6; font-size: 11px; }
+.isel-list { position: fixed; z-index: 40; background: #fff; color: var(--ink); border: 1px solid #b8c4cc; border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,0.25); overflow: auto; padding: 4px 0; font-size: 13px; }
+.isel-list[hidden] { display: none; }
+.isel-group { padding: 6px 10px 2px; font-size: 11px; font-weight: 600; color: var(--quiet); text-transform: uppercase; letter-spacing: 0.04em; }
+.isel-opt { display: flex; align-items: center; gap: 8px; padding: 4px 10px; cursor: pointer; white-space: nowrap; }
+.isel-opt:hover { background: rgba(0, 105, 148, 0.1); }
+.isel-opt.on { background: rgba(0, 105, 148, 0.18); font-weight: 600; }
