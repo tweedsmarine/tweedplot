@@ -10,6 +10,7 @@
 
 import { marked } from "marked";
 import { invoke } from "@tauri-apps/api/core";
+import { VIEWS } from "./views.js";
 
 const KEY = "racenav.manual";
 const BASE = "manual/";
@@ -25,10 +26,67 @@ export const PANE_HELP = {
   inst: ["reference", "Instruments"],
 };
 
+/** `{icon:name}` in the manual's text: the app's own button icon, copied from the
+ *  button itself so the manual always shows what the screen does. [selector, variant]. */
+const ICONS = {
+  weather: ['#rail [data-pane="weather"] svg'], course: ['#rail [data-pane="course"] svg'], routing: ['#rail [data-pane="routing"] svg'],
+  fleet: ['#rail [data-pane="fleet"] svg'], library: ['#rail [data-pane="library"] svg'], chart: ['#rail [data-pane="chart"] svg'],
+  inst: ['#rail [data-pane="inst"] svg'], manual: ["#manual-btn svg"], targets: ["#targets-btn svg"], settings: ["#settings-btn svg"],
+  north: ["#north-btn svg"], sk: ["#sk-state svg", "ok"], "sk-off": ["#sk-state svg", "off"], live: ["#sk-live svg", "play"], paused: ["#sk-live svg", "pause"],
+  follow: ["#follow svg"], panels: ["#tools-btn svg"], "chart-show": ["#chart-btn svg"], day: ["#palette-btn svg", "sun"], night: ["#palette-btn svg", "moon"],
+  "clear-track": ["#clear-track svg"],
+};
+for (const v of VIEWS) ICONS[`view-${v.id}`] = [null, null, v.icon];
+
+function iconHtml(name) {
+  const [sel, variant, inner] = ICONS[name] ?? [];
+  const svg = sel ? document.querySelector(sel) : null;
+  const body = (inner ?? svg?.innerHTML)?.replace(/\s(id|style)="[^"]*"/g, "");
+  if (!body) return "";
+  return `<span class="mi ic${variant ? ` v-${variant}` : ""}" aria-hidden="true"><svg viewBox="0 0 24 24">${body}</svg></span>`;
+}
+
+const imgCache = new Map();
+/** `{img:id}`: a symbol exactly as the chart draws it (chart symbols, buoys, points of
+ *  interest, AIS status shapes...), from `image(id)` → ImageData-like {width, height,
+ *  data} and its pixel ratio. */
+function imgHtml(id, image) {
+  if (!imgCache.has(id)) {
+    let url = "", w = 0, h = 0;
+    try {
+      const r = image?.(id);
+      if (r?.data) {
+        const c = document.createElement("canvas");
+        c.width = r.data.width; c.height = r.data.height;
+        const d = r.data.data instanceof Uint8ClampedArray ? r.data.data : new Uint8ClampedArray(r.data.data.buffer ?? r.data.data);
+        c.getContext("2d").putImageData(new ImageData(d, c.width, c.height), 0, 0);
+        // trim the clear margin round the symbol (the chart leaves room for halos and anchors)
+        let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1;
+        for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+          if (d[(y * c.width + x) * 4 + 3] > 8) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+        }
+        if (x1 < 0) throw new Error("empty");
+        const t = document.createElement("canvas");
+        t.width = x1 - x0 + 3; t.height = y1 - y0 + 3;
+        t.getContext("2d").drawImage(c, x0 - 1, y0 - 1, t.width, t.height, 0, 0, t.width, t.height);
+        url = t.toDataURL();
+        w = t.width / (r.pixelRatio || 1); h = t.height / (r.pixelRatio || 1);
+      }
+    } catch { /* no image */ }
+    imgCache.set(id, { url, w, h });
+  }
+  const { url, w, h } = imgCache.get(id);
+  if (!url) return "";
+  // drawn at the chart's own size, but no taller than about two lines
+  const k = Math.min(1, 30 / h);
+  return `<img class="mi-img" src="${url}" width="${Math.round(w * k)}" height="${Math.round(h * k)}" alt="">`;
+}
+const TOKENS = /\{(icon|img):([^}\s]+)\}/g;
+
 export const slug = (s) => s.toLowerCase().replace(/<[^>]+>/g, "").replace(/&[a-z#0-9]+;/g, "").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "");
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-export function setupManual() {
+export function setupManual({ image = null } = {}) {
   let book = null; // { title, updated, tabs: [{ id, title, file, md, html, sections }] }
   let tab = null;
   let state = { tab: "reference", scroll: {}, wide: false, toc: true, width: 560 };
@@ -82,7 +140,7 @@ export function setupManual() {
         const h = /^(#{1,3})\s+(.*)$/.exec(line);
         if (h) { t.sections.push(cur); cur = { heading: h[2].trim(), level: h[1].length, text: "" }; continue; }
         if (/^\s*\|?\s*:?-{3}/.test(line)) continue; // table rule
-        cur.text += line.replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/^\s*[-*] \[[ xX]\]/, "").replace(/[*_`#>|]/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") + " ";
+        cur.text += line.replace(TOKENS, "").replace(/<[^>]+>/g, " ").replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/^\s*[-*] \[[ xX]\]/, "").replace(/[*_`#>|]/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1") + " ";
       }
       t.sections.push(cur);
     }));
@@ -108,13 +166,14 @@ export function setupManual() {
       };
       renderer.image = ({ href, text }) => `<figure><img src="${esc(href)}" alt="${esc(text)}" loading="lazy"><figcaption>${esc(text)}</figcaption></figure>`;
       renderer.link = ({ href, tokens }) => `<a href="${esc(href)}"${/^https?:/.test(href) ? ' class="ext" title="Opens in your browser"' : ""}>${marked.Parser.parseInline(tokens)}</a>`;
-      t.html = marked.parse(t.md, { renderer, gfm: true });
+      const md = t.md.replace(TOKENS, (m, kind, id) => (kind === "icon" ? iconHtml(id) : imgHtml(id, image)));
+      t.html = marked.parse(md, { renderer, gfm: true });
     }
     body.innerHTML = t.html + `<p class="man-foot">${esc(book.title)} · updated ${esc(book.updated)} · bundled with this version of TweedPlot</p>`;
     // a picture alone in a paragraph: lift the figure out of the <p>
     for (const p of body.querySelectorAll("p > figure:only-child")) p.replaceWith(p.firstChild);
     for (const img of body.querySelectorAll('img[src$=".svg"]')) inlineSvg(img);
-    for (const img of body.querySelectorAll("img")) img.src = BASE + img.getAttribute("src");
+    for (const img of body.querySelectorAll("img:not(.mi-img)")) img.src = BASE + img.getAttribute("src");
     toc.innerHTML = [...body.querySelectorAll("h2, h3")]
       .map((h) => `<a href="#${h.id}" class="lv${h.tagName[1]}">${h.textContent}</a>`).join("");
   }

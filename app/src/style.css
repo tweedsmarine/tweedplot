@@ -905,3 +905,10 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 .info-box .ais-pop table { width: 100%; }
 .ib-ring { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #ff8c00; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85); pointer-events: none; }
 .info-box .tide-pop svg { width: 100%; height: auto; }
+/* the app's button icons and chart symbols in the manual (manual.js {icon:} and {img:}) */
+#manual .man-body .mi.ic svg { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+#manual .man-body .mi.ic .fill { fill: currentColor; stroke: none; }
+#manual .man-body .mi.v-ok .slash, #manual .man-body .mi.v-play .pause, #manual .man-body .mi.v-pause .play,
+#manual .man-body .mi.v-sun .moon, #manual .man-body .mi.v-moon .sun { display: none; }
+#manual .man-body .mi-img { vertical-align: middle; margin: 0 3px; }
+#manual .man-body td .mi, #manual .man-body td .mi-img { margin-right: 2px; }

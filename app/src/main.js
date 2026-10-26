@@ -236,7 +236,15 @@ const ui = setupRail(map);
 const views = setupViews(map);
 
 // The user manual (bundled with the app): rail button, F1, ? in each drawer.
-const manual = setupManual();
+const manual = setupManual({
+  // the symbols in the manual come from the chart's own drawing code
+  image: (id) => {
+    const im = barbImage(id) || markImage(id) || featureImage(id) || tideImage(id) || poiImage(id);
+    if (im) return { data: im, pixelRatio: 2 };
+    const m = map.hasImage(id) ? map.getImage(id) : null;
+    return m && !m.sdf ? { data: m.data, pixelRatio: m.pixelRatio } : null;
+  },
+});
 document.getElementById("manual-btn").onclick = () => manual.toggle();
 manual.onToggle((on) => document.getElementById("manual-btn").classList.toggle("on", on));
 document.getElementById("drawer-help").onclick = () => manual.help(ui.current());

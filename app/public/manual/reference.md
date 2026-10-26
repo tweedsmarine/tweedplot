@@ -31,7 +31,7 @@ TweedPlot is a planning and situational-awareness tool, not a certified navigati
 
 **This manual inside TweedPlot**
 
-The manual is built into the app, so the copy you read always matches the version you run, with or without an internet connection. Press **Manual** at the bottom of the rail, or **F1**. The **?** in each drawer's title bar opens the manual at that drawer's section. In the manual, the tabs along the top switch between the reference, the two tutorials and the glossary; **Contents** lists the sections of the open tab; the search box finds a word in every tab; click a picture to see it full size; **Wide** gives the manual most of the window, and **×** or **Esc** closes it.
+The manual is built into the app, so the copy you read always matches the version you run, with or without an internet connection. Press {icon:manual} **Manual** at the bottom of the rail, or **F1**. The **?** in each drawer's title bar opens the manual at that drawer's section. In the manual, the tabs along the top switch between the reference, the two tutorials and the glossary; **Contents** lists the sections of the open tab; the search box finds a word in every tab; click a picture to see it full size; **Wide** gives the manual most of the window, and **×** or **Esc** closes it. The button icons and chart symbols in the manual are drawn by the same code as the ones on screen, so they look exactly as they do in the app.
 
 ## Getting started
 
@@ -53,16 +53,22 @@ TweedPlot runs on Windows 10 or 11 (Intel or ARM) and keeps all its data in plai
 | `library` | Marks, routes, barriers, saved routings, tracks, GPX exports | Plain JSON: safe to back up and copy |
 | `tides` | LINZ tide tables | Downloaded from the Chart drawer |
 | `tracking` | YB race tracking data | One sub-folder per race |
+| `enc` | Official ENC cells (S-57) and encrypted exchange sets (S-63) | See ENC cells under Charts |
+| `coastline` | The world coastline (GSHHG) | Downloaded from Chart data |
+| `bathy` | Detailed depths (ETOPO) for the areas you fetched | Downloaded from Chart data |
+| `hires` | High-resolution depths (LINZ coastal), one file per Topo50 sheet | Downloaded from Chart data |
+| `marine` | Maritime boundaries (LINZ) and fishing rules (MPI) | Downloaded from Chart data |
 
 Advanced: the environment variables `RACENAV_GRIB_DIR`, `RACENAV_POLAR_DIR`, `RACENAV_LIBRARY_DIR` and `RACENAV_SK_URL` point TweedPlot elsewhere.
 
 **First launch checklist**
 
-- [ ] Chart and Signal K drawer: zoom in on New Zealand to check the LINZ charts show, and set your **safety depth** and **safety contour**.
-- [ ] Boat drawer: choose a polar (sail) and set efficiency and tack/gybe times.
-- [ ] Weather drawer: download or load a GRIB.
-- [ ] Instruments drawer: arrange the panels you want; the layout is kept per PC.
-- [ ] If you have instruments: start your Signal K server (or connect your NMEA source); the Signal K button in the toolbar at the top left turns green.
+- [ ] {icon:settings} **Settings**: the vessel's name, MMSI, draft, length, breadth, air draft and where the GPS antenna is.
+- [ ] {icon:chart} **Chart**: zoom in on New Zealand to check the LINZ charts show, and set your **safety depth** and **safety contour**.
+- [ ] {icon:routing} **Routing › Boat and polar**: choose a polar (sail) and set the efficiency and tack and gybe costs.
+- [ ] {icon:weather} **Weather**: download or load a GRIB.
+- [ ] {icon:inst} **Instruments**: arrange the panels you want; the layout is kept per PC.
+- [ ] If you have instruments: start your Signal K server, or add your NMEA sources in **Settings › NMEA data sources**. The live data button in the toolbar turns green {icon:sk}.
 
 **The screen**
 
@@ -76,21 +82,60 @@ Drawers slide out from the rail; instrument panels, the time slider and the dock
 
 | Where | What | How to use it |
 | --- | --- | --- |
-| Left rail | Weather, Course, Routing, Fleet, Library, Boat, Chart, Instruments; Ruler and Centre at the bottom | Click an icon to open its drawer; click again or press Esc to close it. Only one drawer is open at a time |
-| Top left | The toolbar, a column of buttons: **North up**, Signal K status, **Live / Paused**, **Follow**, **View**, **Panels**, **Chart**, **Day / night colours**, **Clear track**. It moves along when a drawer opens | Paused = planning: the boat stays where you put it. See *Views and monitor windows* under Instruments |
+| Left rail | The drawers, then Manual, Targets and Settings at the bottom (see *The rail* below) | Click an icon to open its drawer; click again or press Esc to close it. Only one drawer is open at a time |
+| Top left | The toolbar, a column of buttons (see *The toolbar* below). It moves along when a drawer opens | Paused = planning: the boat stays where you put it |
 | Top right | **MOB** (man overboard), alone, the same size and place in every view and every window | One press, no confirmation. See *Alarms and man overboard* |
 | Bottom right | **Drop**: marks the boat's position with the time | No alarm, nothing else changes |
 | Bottom centre | **Zoom out** and **Zoom in**, two round buttons well apart | Shown on touch screens only, unless you change it under *Screen controls* in Settings |
 | Floating panels | Instrument panels and the time slider | Drag by the grip (⋮⋮); double-click the grip to fold a panel |
 | Bottom | The dock: Compare routings, Gates, Fleet, Meteogram, Verify | Opens from buttons in the drawers; drag its top edge to resize |
 | Bottom left | Cursor position | Also in the Cursor instrument |
-| Right-click | The chart menu | Start or add marks, move the boat, meteogram, ruler and barrier actions |
+| Right-click | The chart menu | Move the boat, start a route or add a mark to it, a new library mark, centre the chart, a meteogram, start a ruler; on a mark, ruler or barrier, the actions for it |
+
+**The rail**
+
+| | Button | What it opens |
+| --- | --- | --- |
+| {icon:weather} | **Weather** | GRIBs: load, download, what the chart shows, Saildocs, weather stations and buoys |
+| {icon:course} | **Course** | The route you are building or sailing: start, marks, how each is rounded, Navigate |
+| {icon:routing} | **Routing** | Compute and compare routings, the gate sweep, **Boat and polar**, limits and barriers |
+| {icon:fleet} | **Fleet** | AIS targets, Own fleet, YB race tracking |
+| {icon:library} | **Library** | Saved routes, marks, routings, tracks and barriers; GPX |
+| {icon:chart} | **Chart** | Chart and Signal K: safety depth, boundaries and fishing rules, chart data, encrypted charts, colours, chart features, tides, own boat lines, damping, Signal K, replay, radar test |
+| {icon:inst} | **Instr.** | Instrument panels, the Instruments view, monitor windows, alarms |
+| {icon:manual} | **Manual** | This manual (also **F1**) |
+| {icon:targets} | **Targets** | The AIS target list over the chart (also **T**) |
+| {icon:settings} | **Settings** | Vessel identity and dimensions, GPS antenna, screen controls, NMEA data sources |
+
+**The toolbar**
+
+| | Button | What it does |
+| --- | --- | --- |
+| {icon:north} | **North up** | The needle shows which way north is; click to turn the chart north up again |
+| {icon:sk} {icon:sk-off} | **Live data** | Green: data arriving. Amber: connected but nothing for 10 s. Red with a slash: not connected. Hover for details, click for the Signal K section |
+| {icon:live} {icon:paused} | **Live / Paused** | Live: the boat follows the instruments. Paused: planning, the boat stays where you put it (right-click › **Move boat here**) |
+| {icon:follow} | **Follow** | Keeps the boat centred; dragging the chart turns it off |
+| {icon:view-nav} {icon:view-plan} {icon:view-inst} | **View** | Steps through Navigation, Planning and Instruments; the icon shows the view you are in |
+| {icon:panels} | **Panels** | Shows or hides the rail, drawers and dock in this view |
+| {icon:chart-show} | **Chart** | Shows or hides the chart in this view |
+| {icon:day} {icon:night} | **Colours** | Steps through day, dusk, night red and night green |
+| {icon:clear-track} | **Clear track** | Clears the short trail behind the boat |
 
 **Mouse and touch**
 
 - Drag to pan, scroll or pinch to zoom, right-drag or two-finger twist to rotate (the **North up** button at the top of the toolbar turns the chart back to north at the top; its needle shows which way north is).
 - On a touch screen a tap sets the cursor (there is no hover), and a long press opens the chart menu.
 - To move a course mark, library mark, ruler point or barrier point: click it (amber ring), wait for the ring to turn green, then drag. The pause stops marks being moved by accident. A library mark's new position is saved straight away, and every route using it follows.
+
+**Info windows**
+
+Click an AIS target, a light, buoy or other chart feature, a fishing rule area, a tide station, a weather station or a track, and what TweedPlot knows about it opens in an **info window**: a small window over the chart with a title bar, instead of a box stuck to the point that hides the chart round it.
+
+- An orange ring marks the place or target the window is about.
+- **Move** it by its title bar, **resize** it from its bottom-right corner, and **scroll** it when there is more than fits. It always stays fully on the screen.
+- Each kind (AIS, chart, tides, weather station, track) has its own window and remembers where you put it and its size, so it opens there next time, out of the way of what you are watching.
+- Click something else of the same kind and the same window shows it. An AIS target's window keeps updating while it is open.
+- **✕** or **Esc** closes it.
 
 ## Charts
 
@@ -148,9 +193,31 @@ Underwater dangers deeper than the safety contour are shown with their depth onl
 
 **Port entry information shows early.** Pilot boarding places, radio calling-in (reporting) points and lines, signal stations and rescue stations show from about 1:500,000 (zoom 9), well before their charted SCAMIN, which often hides them until the harbour chart. That way they can be found while planning an approach to an unfamiliar port.
 
+**Chart symbols at a glance**
+
+The symbols follow the paper chart and ECDIS conventions (IHO S-52), simplified to read on a screen. The commonest:
+
+| Symbol | Meaning | Symbol | Meaning |
+| --- | --- | --- | --- |
+| {img:s57:b|2|3||} | Port lateral buoy (red can) | {img:s57:b|1|4||} | Starboard lateral buoy (green cone) |
+| {img:s57:b|4|2,6|1|n} | North cardinal buoy | {img:s57:b|4|6,2|1|s} | South cardinal buoy |
+| {img:s57:b|4|2,6,2|1|e} | East cardinal buoy | {img:s57:b|4|6,2,6|1|w} | West cardinal buoy |
+| {img:s57:b|4|2,3,2|1|isd} | Isolated danger buoy | {img:s57:b|3|3,1|2|saw} | Safe water buoy |
+| {img:s57:b|4|6||spp} | Special mark (yellow) | {img:s57:l|r} | Light (the flare in the light's colour: red, green, or yellow for white) |
+| {img:s57:r|3} | Rock under water (depth beside it when known) | {img:s57:r|4} | Rock that covers and uncovers |
+| {img:s57:r|5} | Rock awash | {img:s57:r|2} | Rock that always dries |
+| {img:s57:w|2} | Wreck dangerous to navigation | {img:s57:w|5} | Wreck showing its hull |
+| {img:s57:o} | Obstruction | {img:s57:mf} | Marine farm |
+| {img:s57:an} | Anchorage area | {img:s57:mo} | Mooring buoy |
+| {img:s57:pb} | Pilot boarding place | {img:s57:rc} | Radio calling-in (reporting) point |
+| {img:s57:ca} | Caution area: click it for the restriction | {img:s57:rs} | Rescue station |
+| {img:s57:lm} | Landmark | {img:s57:fg} | Fog signal |
+
+Depths are in metres below chart datum; a height that dries at low tide is labelled "dries", with its height above chart datum. Click any symbol for its full details in an info window.
+
 **Where the chart scales meet.** LINZ charts come in scale bands, and the same farm, cable or rock is often drawn differently in each (a 1:190,000 chart may show one big farm block where the 1:122,000 chart shows the separate farms). TweedPlot uses each band's coverage, as an ECDIS does: inside the area a larger-scale chart covers, its features are the ones shown, and a smaller-scale chart's features are cut back to outside it. So a feature can change shape at a chart boundary, but never at the edge of a map tile, and nothing comes and goes as you zoom except where the charts themselves differ. Click a light, mark, danger or area for its details: light characteristics, buoy shape and colours, depth over a rock, area restrictions. 
 
-![The popup for the Schnapper Point light at the Nelson harbour entrance: its characteristic Fl(4) R 20s 13m 8M first, then the structure and each sector, with the sector arcs drawn round the light](img/02-light-popup.jpg)
+![The details of the Schnapper Point light at the Nelson harbour entrance: its characteristic Fl(4) R 20s 13m 8M first, then the structure and each sector, with the sector arcs drawn round the light](img/02-light-popup.jpg)
 
 At small scales the world coastline (GSHHG) is drawn, and east of 180° (the Chathams, for example) works the same as west of it.
 
@@ -164,13 +231,13 @@ Outside New Zealand, TweedPlot shades the sea by depth from free world data. **C
 | **World coastline** (GSHHG) | **Download**, once, about 150 MB | Every island, at every scale. Until then a coarser outline is drawn. Coastline detail (Standard, More, Most) brings GSHHG's finer levels in when zoomed further out: Most draws the full-resolution coast from zoom 4 instead of zoom 8, a little slower to draw |
 | **Detailed depths** (ETOPO 2022) | **Get for chart view**, for the area on screen, typically 1–5 MB | Finer depth bands from zoom 4 and contours (5 m to 5000 m) from zoom 7 |
 | **NZ charts** (LINZ) | **LINZ…** opens the LINZ Data Service (see above) | The full hydrographic chart |
-| **High-resolution depths** (LINZ coastal, 1 m) | **Get for chart view**, zoomed in to the area, 5–40 MB a tile | Shaded depths with contours from about 5 NM range in, where LINZ has flown a survey (see below) |
+| **High-resolution depths** (LINZ coastal, 1 m) | **Get for chart view**, zoomed in to the area; one file per Topo50 sheet, its size depending on how much was surveyed | Shaded depths with contours from about 5 NM range in, where LINZ has flown a survey (see below) |
 | **Maritime boundaries** (LINZ) | **Download**, under 1 MB | Territorial sea (12 NM), contiguous zone (24 NM), EEZ (200 NM) and the boundaries agreed with Australia (see Boundaries and fishing rules) |
 | **Fishing rules** (MPI) | **Download**, several MB; **Update** before a trip | MPI's commercial fishing regulations, customary areas, voluntary closures and fisheries areas (see Boundaries and fishing rules) |
 
 For detailed depths, zoom the chart to the area you want, pick the **Detail** (15″ is about 460 m between points) and press **Get for chart view**. The line under it gives the download size; a large area is thinned automatically, so zoom in for more detail. Each area you have downloaded is listed with **Show** and **✕** (delete). Downloads can be cancelled, and the chart redraws when one finishes.
 
-**High-resolution depths.** LINZ publishes 1 m elevation models of the coast from aerial laser surveys (lidar), which reach the seabed down to about 25 m in clear water. Where they exist they show far more than the chart: channels, banks, bars, reefs and the shape of the seabed in harbours and anchorages. Zoom in to the area (the line under the row says how many tiles cover the chart view and how many are downloaded), press **Get for chart view**, and the depths are drawn from about 5 NM range in, shaded as if lit from the north-west, with contours every 10 m, 5 m, 2 m or 1 m as you zoom in. **Show** turns them on and off; **✕ All** deletes them. Each tile covers 4.8 × 7.2 km; up to 60 tiles are fetched at a time.
+**High-resolution depths.** LINZ publishes 1 m elevation models of the coast from aerial laser surveys (lidar), which reach the seabed down to about 25 m in clear water. Where they exist they show far more than the chart: channels, banks, bars, reefs and the shape of the seabed in harbours and anchorages. Zoom in to the area (the line under the row says how many sheets cover the chart view, how many LINZ has data for and how many are downloaded), press **Get for chart view**, and the depths are drawn from about 5 NM range in, shaded as if lit from the north-west, with contours every 10 m, 5 m, 2 m or 1 m as you zoom in. **Show** turns them on and off; **✕ All** deletes them. LINZ keeps one file for each Topo50 map sheet (24 × 36 km), from well under 1 MB where only a strip of coast was surveyed to tens of MB where the whole sheet was; up to 60 are fetched at a time.
 
 The heights are above NZVD2016, about mean sea level, not chart datum: the depths shown are deeper than the charted depths by roughly half the tidal range, so use them for the shape of the bottom, not for clearance. Above 0 m nothing is drawn (the chart shows the land and the drying areas). Surveys were flown in different years, and sand moves. Not for navigation.
 
@@ -180,29 +247,42 @@ Sources and licences: Natural Earth (public domain); GSHHG, Wessel and Smith, Un
 
 **Boundaries and fishing rules**
 
-Download both in **Chart and Signal K › Chart data**, then choose what to show in **Chart and Signal K › Boundaries and fishing rules**.
+Download both in {icon:chart} **Chart › Chart data**, then choose what to show in **Chart › Boundaries and fishing rules**. After a download the rules are prepared and built into the chart; the line under the buttons says when they are ready.
 
 - **Maritime boundaries**: the territorial sea limit (12 NM, dashed purple), the contiguous zone limit (24 NM, dotted), the EEZ limit (200 NM, dash-dot) and the boundaries agreed with Australia, for the mainland and the outlying islands, from LINZ.
-- **Fishing rules**: MPI's maps of the commercial fishing regulations. Prohibitions are red with a solid edge, restrictions orange with a dashed edge, customary areas (mātaitai, taiāpure) purple and voluntary closures grey (MPI says their boundaries are approximate). Seasonal rules are shaded more lightly. The areas are drawn under the land: some of MPI's areas run inland.
+- **Fishing rules**: MPI's maps of the commercial fishing regulations, customary areas and voluntary closures. By default only the areas **closed** to commercial fishing are drawn (see below), red with a solid edge. The areas are drawn under the land: some of MPI's areas run inland.
+- **Customary areas**: mātaitai (closed to commercial fishing, so drawn as closed), taiāpure and other customary areas, purple when shown as restrictions.
+- **Voluntary closures**: areas closed by industry agreement, for the methods in the agreement. MPI says their boundaries are approximate.
 - **Fisheries areas**: the fisheries management areas (FMAs) and statistical areas, with their codes, for catch reporting.
 
-Click inside a rule area for its rules: what is restricted, the methods, the species, the vessels, the season, MPI's category (for example "Trawl prohibitions for vessels over 46m"), the regulation, the legal description and a button that opens the regulation.
+**Closed or restricted.** MPI marks each rule, for each fishing method, as a *prohibition* or a *restriction*. A prohibition closes the area to that method; a restriction only limits it (a mesh size, a season, gear limits, species that may not be taken). Restrictions often cover huge areas, many of them the whole EEZ, so TweedPlot draws only the closed areas unless you tick **Restrictions too**:
 
-**Only the rules for my boat.** Tick the methods you fish with (bottom trawl, midwater trawl, Danish seine, purse seine, beach seine or drag net, set net, longline, potting, dredge, troll, handline, hand gathering or diving). The chart then shows only the rules for those methods, plus rules that close an area to all fishing, customary areas, and rules that name no method (species rules: shown to be safe). The vessel length comes from **Settings › Vessel**: the trawl rules for vessels over 46 m are left out for a vessel known to be 46 m or shorter.
+| Colour | Shown when | Means |
+| --- | --- | --- |
+| Red, solid edge | Always | Closed to all commercial fishing, or to one of your ticked methods (with no methods ticked: closed to at least one method) |
+| Orange, dashed edge | **Restrictions too** | A restriction: species, mesh, season or gear rules, or a method limited but not prohibited |
+| Purple, dashed edge | **Restrictions too** and **Customary areas** | A customary area that isn't closed to commercial fishing (taiāpure, temporary closures) |
+| Grey, dashed edge | **Restrictions too** and **Voluntary closures** | A voluntary closure that doesn't apply to your methods |
 
-**Closed-area alarm.** With **Closed-area alarm** ticked, the main window checks every 15 seconds whether the boat is inside an area closed to the ticked methods (all prohibitions if none are ticked) and whether it will be within the time you choose at its course and speed over ground (5 to 30 minutes), and raises a warning naming the areas. It works on the downloaded rules: update them before a trip, because temporary closures come and go.
+Seasonal rules are shaded more lightly.
+
+**Only closures for my boat's methods.** Tick the methods you fish with (bottom trawl, midwater trawl, Danish seine, purse seine, beach seine or drag net, set net, longline, potting, dredge, troll, handline, hand gathering or diving) and the red areas are only those closed to those methods or to all fishing. The vessel length comes from **Settings › Vessel dimensions**: the trawl rules for vessels over 46 m are left out for a vessel known to be 46 m or shorter.
+
+Click inside a rule area and its rules open in an info window: closed or restricted, the methods prohibited and restricted, the species, the vessels, the season, MPI's category (for example "Trawl prohibitions for vessels over 46m"), the regulation, who is responsible, the legal description and a button that opens the regulation.
+
+**Closed-area alarm.** With **Closed-area alarm** ticked, the main window checks every 15 seconds whether the boat is inside an area closed to the ticked methods (any closed area if none are ticked; restrictions never raise it) and whether it will be within the time you choose at its course and speed over ground (5 to 30 minutes), and raises a warning naming the areas. It works on the downloaded rules: update them before a trip, because temporary closures come and go.
 
 MPI's maps are a guide to the regulations, not the regulations: the legal descriptions and the regulations themselves are the law. Source: Ministry for Primary Industries, CC BY 4.0. Maritime boundaries: sourced from Land Information New Zealand data, Crown Copyright Reserved. Not for navigation.
 
 **Tides**
 
-Tick **Tide stations** and press **Download LINZ tides** once a year: TweedPlot fetches the LINZ tide tables for this year and next (about 90 standard ports plus the secondary ports). Tide stations then appear on the chart. Click one for the day's tide curve, with high and low times and heights, a marker at the current time (or the weather time when planning) and arrows to step through the days. Times are New Zealand time (Chatham Islands time for Chatham ports). Secondary ports are worked from their LINZ time and height differences. These are predictions, not official tide tables, and weather (wind and pressure) can raise or lower the actual tide by several decimetres.
+Tick **Tide stations** and press **Download LINZ tides** once a year: TweedPlot fetches the LINZ tide tables for this year and next (about 90 standard ports plus the secondary ports). Tide stations then appear on the chart: {img:tide:daily} a standard port (daily LINZ tables), {img:tide:sec} a secondary port (worked from a standard port), {img:tide:levels} a place with mean levels only (LINZ gives no times). Click one and its info window shows the day's tide curve, with high and low times and heights, a marker at the current time (or the weather time when planning) and arrows to step through the days. Times are New Zealand time (Chatham Islands time for Chatham ports). Secondary ports are worked from their LINZ time and height differences. These are predictions, not official tide tables, and weather (wind and pressure) can raise or lower the actual tide by several decimetres.
 
 Tidal streams are not shown yet. ECMWF 0.1° surface currents and HYCOM currents are forecast ocean currents; the available documentation does not establish these as tidal-current predictions. Enable **Use GRIB currents** in Routing to include the available fields in a route, but do not rely on them as tidal-stream guidance.
 
 **Display colours: day, dusk and night**
 
-The ☀ button in the toolbar at the top left (or **Chart and Signal K › Display colours**) steps through four sets of colours:
+The colours button {icon:day} in the toolbar at the top left (or **Chart › Display colours**) steps through four sets of colours; it shows a moon {icon:night} while dusk or night colours are on:
 
 | Colours | Use |
 | --- | --- |
@@ -225,7 +305,7 @@ TweedPlot shows your own boat from live instruments, or wherever you put it when
 
 **Signal K**
 
-TweedPlot reads live data (position, heading, speed, wind, depth) from a [Signal K](https://signalk.org) server, normally running on the same PC. Signal K takes NMEA 0183 and NMEA 2000 from your GPS and instruments through a USB adapter or gateway and serves it to any number of apps. TweedPlot connects to `ws://localhost:3000` (set `RACENAV_SK_URL` for another address). The Signal K button in the toolbar at the top left shows the connection at all times: green when data is arriving, amber when connected but nothing has arrived for 10 seconds, red with a slash when there is no connection (blinking while it first tries). Hover it for the server address, the time of the last update and what is arriving; click it for the Signal K section of the Chart and Signal K drawer.
+TweedPlot reads live data (position, heading, speed, wind, depth) from a [Signal K](https://signalk.org) server, normally running on the same PC. Signal K takes NMEA 0183 and NMEA 2000 from your GPS and instruments through a USB adapter or gateway and serves it to any number of apps. TweedPlot connects to `ws://localhost:3000` (set `RACENAV_SK_URL` for another address). The live data button in the toolbar at the top left shows the connection at all times: green {icon:sk} when data is arriving, amber when connected but nothing has arrived for 10 seconds, red with a slash {icon:sk-off} when there is no connection (blinking while it first tries). Hover it for the server address, the time of the last update and what is arriving; click it for the Signal K section of the Chart and Signal K drawer.
 
 No instruments? A GPS dongle into Signal K is enough for position, course and speed. With no Signal K at all, TweedPlot works fully in planning mode.
 
@@ -246,14 +326,24 @@ TweedPlot logs every Signal K session, AIS targets included, while it runs. **Ch
 
 | Mode | Button (toolbar, top left) | The boat | Time used by the instruments and routing |
 | --- | --- | --- | --- |
-| Live | **Live** | Follows Signal K | Now (GPS time) |
-| Planning | **Paused** | Stays where you put it: right-click > **Move boat here** | The weather slider time |
+| Live | {icon:live} **Live** | Follows Signal K (or NMEA) | Now (GPS time) |
+| Planning | {icon:paused} **Paused** | Stays where you put it: right-click > **Move boat here** | The weather slider time |
 
-**Follow** keeps the chart centred on the boat (dragging the chart turns it off); **Centre** (rail) recentres once; **Clear track** clears the short trail behind the boat.
+{icon:follow} **Follow** keeps the chart centred on the boat (dragging the chart turns it off); right-click › **Centre chart here** centres it on a place once; {icon:clear-track} **Clear track** clears the short trail behind the boat.
 
-**Size and GPS antenna**
+**Vessel details (Settings)**
 
-In the **Boat** panel, set the boat's **Length** and **Beam**, and where its **GPS antenna** is: metres aft of the bow, and metres off the centre line to starboard or port. Signal K gives the antenna's position, not the boat's centre, so on a 20 m boat with the antenna at the stern the bow is 20 m ahead of the position. When you zoom in far enough for the boat to be bigger than its symbol (harbour scales), it is drawn to scale as its outline, pointing along the heading (or the course over ground when there is no heading), with a dot at the antenna. Zoom out again and the symbol comes back.
+{icon:settings} **Settings** holds what TweedPlot needs to know about the vessel; press **Save vessel details** after changing it.
+
+| Section | Settings | Used for |
+| --- | --- | --- |
+| **Vessel identity** | Vessel name, IMO number, call sign, **MMSI** | The MMSI keeps your own boat from showing as an AIS target |
+| **Vessel dimensions** | **Draft**, **Length overall**, **Breadth**, **Air draft** (metres) | The boat drawn to scale, the fishing rules for vessels over 46 m, the air draft alarm |
+| **Position and GPS antenna** | Reference latitude and longitude; GPS antenna aft of the bow and off the centre line | Where the chart opens without a GPS fix; placing the boat's outline round the antenna |
+| **Screen controls** | Zoom buttons, large buttons (for this window) | See Instruments |
+| **NMEA data sources** | COM, TCP and UDP sources, failover | See *NMEA 0183 direct* above |
+
+*Size and GPS antenna.* Set the **Length overall** and **Breadth**, and where the **GPS antenna** is: metres aft of the bow, and metres off the centre line to starboard or port. Signal K gives the antenna's position, not the boat's centre, so on a 20 m boat with the antenna at the stern the bow is 20 m ahead of the position. When you zoom in far enough for the boat to be bigger than its symbol (harbour scales), it is drawn to scale as its outline, pointing along the heading (or the course over ground when there is no heading), with a dot at the antenna. Zoom out again and the symbol comes back.
 
 **Lines and arrows on the boat**
 
@@ -272,7 +362,7 @@ Library > Tracks > **Record** logs the boat's track from Signal K while TweedPlo
 
 A polar is the table of your boat's speed at each true wind angle (TWA) and true wind speed (TWS). Routing, the target speeds and the polar efficiency all come from it, so it is worth getting right. The weather routing tutorial explains what a polar is and why every polar is optimistic; this section is about the files.
 
-*Where TweedPlot looks.* Boat > Polar lists two kinds:
+*Where TweedPlot looks.* {icon:routing} **Routing › Boat and polar › Polar** lists two kinds:
 
 | Kind | Where | Notes |
 | --- | --- | --- |
@@ -316,7 +406,7 @@ TWA\TWS	4	6	8	10	12	16	20
 1. Start from the nearest you can find: your boat's ORC certificate, a sister ship's, or a similar boat's scaled by length.
 2. Check the shape. Upwind speeds should peak in 12–16 kn and level off; the best upwind angle is usually 38–45°, the best downwind angle 140–170° depending on the boat and wind. Speeds that keep climbing in 30+ kn are a VPP with no sea in it.
 3. Compare with the instruments: sail at a steady angle for a few minutes in steady wind, note TWS, TWA and boat speed, and compare with the table. Do this at several angles and wind speeds over a season.
-4. If you are consistently a set fraction below, lower the efficiency in the Boat drawer rather than editing the table. Edit the table (in a spreadsheet, saved as CSV, or any text editor) where it is wrong in shape: a sail you don't carry, an angle the boat can't hold.
+4. If you are consistently a set fraction below, lower the **Polar efficiency** (Routing › Boat and polar) rather than editing the table. Edit the table (in a spreadsheet, saved as CSV, or any text editor) where it is wrong in shape: a sail you don't carry, an angle the boat can't hold.
 5. Keep the original. Save your version under a new name (`First40_7_ours.pol`) with a `#` line saying what you changed.
 
 For a power boat, see *Making a power polar* in the Route planning tutorial.
@@ -331,11 +421,11 @@ A **view** is an arrangement of the same screen. The **View** button in the tool
 
 | View | Shows |
 | --- | --- |
-| **Navigation** | The chart with the rail, drawers and dock tucked away, for use under way |
-| **Planning** | The chart with the rail, drawers and dock, for routes and weather. The layout the app always had |
-| **Instruments** | A screen of single readings, with no chart |
+| {icon:view-nav} **Navigation** | The chart with the rail, drawers and dock tucked away, for use under way |
+| {icon:view-plan} **Planning** | The chart with the rail, drawers and dock, for routes and weather. The layout the app always had |
+| {icon:view-inst} **Instruments** | A screen of single readings, with no chart |
 
-Every option is still available in every view; a view only decides what is shown to begin with. **Panels** and **Chart** (also in the toolbar) show or hide the rail, drawers and dock, and the chart, in the current view.
+Every option is still available in every view; a view only decides what is shown to begin with. {icon:panels} **Panels** and {icon:chart-show} **Chart** (also in the toolbar) show or hide the rail, drawers and dock, and the chart, in the current view.
 
 Each panel (group of instruments) has a name you can edit in the Instruments drawer (the text box in its list entry), and a tick for each view, which says whether the group floats over the chart in that view.
 
@@ -407,7 +497,7 @@ Alarms appear in a banner at the top of the chart and sound until silenced. The 
 | Alarm | Raised when | Settings |
 | --- | --- | --- |
 | **Shallow water** | The depth (under the keel if Signal K has it, else below the transducer) is less than the alarm depth | Alarm depth; empty = the safety depth (Chart panel) |
-| **Air draft** | A bridge, overhead cable or pipeline on the chart within a mile (or 10 minutes) ahead has less charted clearance than your air draft plus the margin | Air draft in the **Boat** panel; margin. Charted clearances are above Highest Astronomical Tide |
+| **Air draft** | A bridge, overhead cable or pipeline on the chart within a mile (or 10 minutes) ahead has less charted clearance than your air draft plus the margin | Air draft in **Settings › Vessel dimensions**; margin. Charted clearances are above Highest Astronomical Tide |
 | **Anchor watch** | The boat is outside the swing circle | **Drop anchor here** (at the boat), radius; the circle is drawn on the chart. **Weigh anchor** ends it |
 | **Position lost** | Signal K is connected but no position has come for 30 seconds | On or off |
 | **AIS collision, AIS-SART, MOB device, EPIRB** | See AIS targets | **Fleet › AIS** |
@@ -431,7 +521,7 @@ The **Drop** button (bottom right of every window) marks the boat's position now
 - **Signal K**: whatever an AIS receiver or transponder on board passes to the Signal K server.
 - **Online (aisstream.io)**: what volunteer shore stations hear. Get a free API key by signing in at aisstream.io with a GitHub account, paste it in and press **Go online**. **Online area** is the chart view (up to about 6° across), or a **Range** in NM round the chart centre or round your boat (it follows you). Online targets are not for navigation (see the AIS tab): they show in italics, marked "Net", and raise no collision alarm unless **Alarms for internet-only targets too** is ticked.
 
-On the chart, ships are triangles pointing along their heading (class B a little smaller), coloured by type:
+On the chart, ships are triangles pointing along their heading (class B a little smaller), or a dot when a ship is stopped and sends no heading, in solid colours by type:
 
 - <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#27ae60" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Cargo
 - <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#c0392b" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Tanker
@@ -441,7 +531,7 @@ On the chart, ships are triangles pointing along their heading (class B a little
 - <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#1abc9c" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Tugs, pilots, search and rescue and other special craft
 - <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#f1c40f" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> High-speed craft
 - <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#5d6d7e" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Military
-- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#8a96a0" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Other or unknown type
+- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#56636e" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Other or unknown type
 
 Other AIS targets:
 
@@ -451,21 +541,34 @@ Other AIS targets:
 - <span class="mi"><svg viewBox="0 0 20 20"><rect x='4' y='4' width='12' height='12' fill='none' stroke='#5d6d7e' stroke-width='2'/></svg></span> AIS base station
 - <span class="mi"><svg viewBox="0 0 20 20"><path d='M10 2 L11 8 L17 11 L17 13 L11 11 L11 15 L13 17 L7 17 L9 15 L9 11 L3 13 L3 11 L9 8 Z' fill='#e67e22'/></svg></span> Search and rescue aircraft
 
-A line ahead of a moving ship shows where it will be in 6 minutes (**Course vectors** sets the time). Targets not heard for a few minutes fade, and go after 20 minutes. Click a target for its name, type, status, speed and course, size, destination, and the range, bearing, CPA and TCPA from your boat.
+**Not heard: crossed through.** A target that hasn't been heard for a while is drawn crossed through {img:ais-lostx} at its last known position, with no course vector, as radar and ECDIS displays show a lost target (IEC 62288). "A while" is 3 minutes for a moving ship, 10 minutes for one that isn't moving and 20 minutes for an AtoN or base station. Targets go after 20 minutes. In the target list its age shows in red with a ✕.
+
+**Navigational status.** Beside a ship, a small white tag shows the day shape it would show for the status it sends, so it reads as it would on the water (from zoom 8 in):
+
+| Tag | Status | Tag | Status |
+| --- | --- | --- | --- |
+| {img:ais-st-ball} | At anchor (one ball) | {img:ais-st-nuc} | Not under command (two balls) |
+| {img:ais-st-ram} | Restricted in her ability to manoeuvre (ball, diamond, ball): dredging, diving, survey, cable laying | {img:ais-st-cbd} | Constrained by her draught (cylinder) |
+| {img:ais-st-aground} | Aground (three balls) | {img:ais-st-fishing} | Engaged in fishing (two cones, points together) |
+| {img:ais-st-tow} | Towing or pushing (diamond) | {img:ais-st-moored} | Moored (a bollard: there is no day shape for it) |
+
+Under way using engine or sailing has no tag. The status is set by hand on the ship and is often wrong: trawlers at sea still "at anchor", ships at anchor "under way" (see the AIS tab).
+
+A line ahead of a moving ship shows where it will be in 6 minutes (**Course vectors** sets the time). Click a target and its info window shows its name, type, status, speed and course, size, destination, and the range, bearing, CPA and TCPA from your boat, with **Add to own fleet** and track buttons. The window keeps updating while it is open, and the target is drawn in yellow while selected.
 
 **CPA lines** draw, for dangerous targets and the one you clicked (or every target closing within the time limit), dashed lines from your boat and the target to where each will be at the closest point of approach, joined by the CPA line with its distance and time: red inside the alarm limits, amber outside.
 
-**Target list**: **Targets** on the rail (or **T**) opens a list over the chart with name, type, range, bearing, CPA, TCPA, speed, course, the age of the last position and the source. Click a heading to sort (again to reverse); distress beacons and dangerous targets always come first. The filter shows all targets, vessels only, those under way, those closing, or only dangerous ones. Click a row to centre the chart on the target and open its details. Drag the list by its title bar and resize it from the corner; it stays where you leave it. The list under the settings in the drawer sorts by range, CPA or name.
+**Target list**: {icon:targets} **Targets** on the rail (or **T**) opens a list over the chart with name, type (with the status, such as "Fishing · anchored" or "Cargo · RAM"), range, bearing, CPA, TCPA, speed, course, the age of the last position (✕ in red when not heard for a while) and the source. Click a heading to sort (again to reverse); distress beacons and dangerous targets always come first. The filter shows all targets, vessels only, those under way, those closing, or only dangerous ones. Click a row to centre the chart on the target and open its details. Drag the list by its title bar and resize it from the corner; it stays where you leave it. The list under the settings in the drawer sorts by range, CPA or name.
 
 **Alarms**: a ship whose closest point of approach (CPA) is less than the limit within the time limit (TCPA) raises a collision alarm; anchored and moored ships can be ignored. An AIS-SART, MOB device or EPIRB always raises an alarm, with its bearing and distance.
 
 **To scale**: at harbour scales, a ship that has sent its size is drawn as its outline at its real size, placed by its GPS antenna (the A, B, C and D distances in its AIS data) and pointing along its heading (or its course when it has no heading and is moving). Click the outline for its details as you would the symbol. Ships whose size or heading isn't known keep their symbol.
 
-**Your own boat**: put your MMSI in the **Boat** panel (Own MMSI) and your boat is never shown or alarmed as a target, whichever source hears it.
+**Your own boat**: put your MMSI in **Settings › Vessel identity** and your boat is never shown or alarmed as a target, whichever source hears it.
 
 **Tracks**: tick **Track of the selected target** and the boat you last clicked shows where it has been. Tracks are what TweedPlot has heard over the last 6 hours, so they start when the app does.
 
-**Own fleet** (Fleet › Own fleet): a list of boats to pick out, such as friends, your company's vessels or a race fleet. Add an MMSI with a name and a group (Friends, Company, Race fleet, Other), or click a boat on the chart › **Add to own fleet**. Own-fleet boats are ringed in their group's colour and named at every zoom; each has a **Track** tick, **Track all** draws them all, and **Only these on the chart** hides every other AIS target. The list shows each boat's speed, distance and how long since it was heard; click one to show it.
+**Own fleet** (Fleet › Own fleet): a list of boats to pick out, such as friends, your company's vessels or a race fleet. Add an MMSI with a name and a group (Friends, Company, Race fleet, Other), or click a boat on the chart and press **Add to own fleet** in its info window. Own-fleet boats are ringed in their group's colour and named at every zoom; each has a **Track** tick, **Track all** draws them all, and **Only these on the chart** hides every other AIS target. The list shows each boat's speed, distance and how long since it was heard; click one to show it.
 
 ## Marks, routes and the library
 
@@ -477,6 +580,8 @@ A **mark** is a named position kept in the library. A **route** (or course) is a
 2. **Add marks**, then click the chart for each mark in order, or click library marks to reuse them. Press Esc or **Add marks** again to stop.
 3. Under each mark choose how it is to be reached (below) and, if you like, a radius.
 4. Name the route and **Save**. New marks are saved to the library under the route's name.
+
+**Undo** takes off the last mark added. **Draw legs as great circles** draws each leg as the shortest path over the globe instead of a straight (rhumb) line, which matters on ocean legs. **Weather on route** opens the forecast along the course (see Weather).
 
 The list shows each leg's distance. **↑ ↓** reorder marks; **✕** takes a mark off the route (it stays in the library). Click a mark on the chart to select it; wait for the green ring to drag it, or right-click to move or remove it. **Navigate ◀ ▶** chooses the mark the instruments steer to; with live data it moves on by itself when you reach a mark.
 
@@ -497,7 +602,22 @@ Use the rounding sides for race marks and headlands you must keep off; use a gen
 
 **Mark types and points of interest**
 
-In the mark editor (Library > Marks > **Edit**, which opens under that mark in the list, or right-click > **New library mark here**) choose a type: racing mark, waypoint, start or finish line end, danger, an IALA A buoy (port, starboard, cardinals, isolated danger, safe water, special), or a point of interest: good anchorage, mooring, shelter, fishing spot, diving spot, foul ground, wreck, hazard, landing point, camping spot, hut, viewpoint, water filling, fuel, provisions, note. Each draws with its own symbol. Any of them can be a course mark. Groups (e.g. "RNZYS 2026", "Fishing spots") keep the library tidy.
+In the mark editor (Library > Marks > **Edit**, which opens under that mark in the list, or right-click > **New library mark here**) choose a type: racing mark, waypoint, start or finish line end, danger, an IALA A buoy (port, starboard, cardinals, isolated danger, safe water, special), or a point of interest: good anchorage, mooring, shelter, fishing spot, diving spot, foul ground, wreck, hazard, landing point, camping spot, hut, viewpoint, water filling, fuel, provisions, note. Each draws with its own symbol. Any of them can be a course mark. On the chart, the course itself shows the start {img:mk:S} and the marks numbered in order {img:mk:1} {img:mk:2}.
+
+| Symbol | Type | Symbol | Type |
+| --- | --- | --- | --- |
+| {img:s57:b|2|3||} | Port lateral (red can) | {img:s57:b|1|4||} | Starboard lateral (green cone) |
+| {img:s57:b|4|2,6|1|n} {img:s57:b|4|2,6,2|1|e} {img:s57:b|4|6,2|1|s} {img:s57:b|4|6,2,6|1|w} | North, east, south and west cardinals | {img:s57:b|4|2,3,2|1|isd} {img:s57:b|3|3,1|2|saw} {img:s57:b|4|6||spp} | Isolated danger, safe water, special |
+| {img:poi:anchorage} | Good anchorage | {img:poi:mooring} | Mooring |
+| {img:poi:shelter} | Shelter | {img:poi:fishing} | Fishing spot |
+| {img:poi:diving} | Diving spot | {img:poi:foul} | Foul ground |
+| {img:poi:wreck} | Wreck | {img:poi:hazard} | Hazard |
+| {img:poi:landing} | Landing point | {img:poi:camping} | Camping spot |
+| {img:poi:hut} | Hut or building | {img:poi:viewpoint} | Viewpoint |
+| {img:poi:water} | Water filling | {img:poi:fuel} | Fuel |
+| {img:poi:provisions} | Provisions or shop | {img:poi:info} | Note |
+
+Racing marks, waypoints, line ends and dangers show as coloured dots with their names. Groups (e.g. "RNZYS 2026", "Fishing spots") keep the library tidy.
 
 **Barriers**
 
@@ -654,7 +774,7 @@ A routing is the fastest way from the start through your marks, given a forecast
 
 **Before you compute**
 
-- **Boat drawer**: a polar (your boat's speed at each wind angle and strength), **efficiency** (90 % is realistic for most crews; less for short-handed or cruising trim), and the time lost in each **tack** and **gybe**.
+- **Routing › Boat and polar**: a polar (your boat's speed at each wind angle and strength), **Polar efficiency** (90 % is realistic for most crews; less for short-handed or cruising trim), and the seconds lost in each **tack** and **gybe** (**Tack costs**, **Gybe costs**).
 - **Course drawer**: a start and at least one mark.
 - **Weather drawer**: a GRIB covering the area and the time of the passage.
 
@@ -704,9 +824,9 @@ Routing is built around a sailing polar, and dedicated power-boat routing (fuel 
 
 **Ruler**
 
-Press **Ruler** (bottom of the rail), click to set the first point, click again for each next point, and double-click to finish; Esc stops. Each leg is labelled with its bearing (°T, plus °M when Signal K knows the magnetic variation) and distance, and the total shows at the end. Rulers stay on the chart until deleted. Move their points like marks. Right-click a ruler to delete a point, delete it, delete all rulers, or **Save ruler as route** (its points become library marks and a route opens in the Course drawer): a fast way to sketch a passage.
+Right-click the chart › **Start ruler here**, click for each next point, and double-click to finish; Esc stops. Each leg is labelled with its bearing (°T, plus °M when the instruments give the magnetic variation) and distance, and the total shows at the end. Rulers stay on the chart until deleted. Move their points like marks. Right-click a ruler to delete a point, delete it, delete all rulers, **Show ruler as great circle**, or **Save ruler as route** (its points become library marks and a route opens in the Course drawer): a fast way to sketch a passage.
 
-Ruler bearings and distances are rhumb lines: a constant compass course, which is what you steer and what a paper chart's straight line shows. Over a few hundred miles a great circle is shorter; the router allows for that itself.
+Ruler bearings and distances are rhumb lines: a constant compass course, which is what you steer and what a paper chart's straight line shows. Over a few hundred miles a great circle is shorter: **Show ruler as great circle** draws that ruler's legs as great circles, with each leg's starting bearing and its great-circle distance. The router allows for the curve itself.
 
 **Cursor readings**
 
@@ -740,3 +860,8 @@ Positions may be delayed by the race organiser.
 | ECMWF download slow or huge | ECMWF publishes whole-globe fields: choose fewer fields, a shorter forecast or a longer time step. 0.1° is much larger per field than 0.25°; requested global fields are cached (up to 5 GiB) and reused for later area requests |
 | Saildocs reply too big | Coarser grid, fewer fields, shorter forecast, smaller area |
 | A panel or the time slider has gone | Instruments drawer: **Show instrument panels**, the tick beside the panel, or **Time slider** |
+| An info window is off where I can't see it | It is kept on the screen, but may be behind a drawer: close the drawer, or drag the window by its title bar |
+| An AIS target is crossed through | It hasn't been heard for a while (see AIS targets): out of range, behind land, its set switched off, or (online AIS) no shore station in reach |
+| Fishing rules download fails | Check the internet connection; MPI's map server is sometimes down for maintenance. The message gives the cause for each set that failed; the sets that came in are kept |
+| Fishing rules show nothing | By default only areas closed to your ticked methods are drawn: tick **Restrictions too**, or untick **Only closures for my boat's methods**. Make sure the download finished and the line in Chart data says the rules are ready |
+| High-resolution depths: none here | LINZ has flown coastal surveys only in some places: the line under the row says when there is no survey for the chart view |
