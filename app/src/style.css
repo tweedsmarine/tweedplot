@@ -877,8 +877,9 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 #tgt-table tr:hover td { background: rgba(0, 105, 148, 0.08); }
 #tgt-table tr.sel td { background: rgba(255, 212, 0, 0.3); }
 #tgt-table tr.danger td { color: #d00000; font-weight: 600; }
-#tgt-table tr.net td { font-style: italic; opacity: 0.8; }
-#tgt-table tr.lost td { opacity: 0.5; }
+#tgt-table tr.net td { font-style: italic; }
+#tgt-table tr.lost td.age { color: #d00000; font-weight: 600; }
+#tgt-table tr.lost td.age::before { content: "✕ "; }
 #tgt-table .sw { margin-right: 4px; }
 #tgt-table td.empty { cursor: default; color: var(--quiet); white-space: normal; }
 

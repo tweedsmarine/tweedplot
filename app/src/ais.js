@@ -27,7 +27,7 @@ const STATUS = ["Under way using engine", "At anchor", "Not under command", "Res
   "Engaged in fishing", "Under way sailing", "", "", "Towing astern", "Pushing ahead or towing alongside", "", "AIS-SART active", ""];
 /** Ship type → [category, colour]. */
 function category(t) {
-  if (t == null) return ["Unknown", "#8a96a0"];
+  if (t == null) return ["Unknown", "#56636e"];
   if (t === 30) return ["Fishing", "#e8792e"];
   if (t === 36 || t === 37) return [t === 36 ? "Sailing" : "Pleasure craft", "#9b59b6"];
   if (t === 31 || t === 32 || t === 52) return ["Tug / towing", "#1abc9c"];
@@ -38,7 +38,7 @@ function category(t) {
   if (t >= 80 && t <= 89) return ["Tanker", "#c0392b"];
   if (t === 33) return ["Dredging", "#1abc9c"];
   if (t === 35) return ["Military", "#5d6d7e"];
-  return ["Other", "#8a96a0"];
+  return ["Other", "#56636e"];
 }
 const ATON = { 1: "Reference point", 2: "RACON", 3: "Fixed structure", 5: "Light", 9: "Beacon, cardinal N", 13: "Beacon, port", 14: "Beacon, starboard",
   20: "Cardinal buoy N", 21: "Cardinal buoy E", 22: "Cardinal buoy S", 23: "Cardinal buoy W", 24: "Port buoy", 25: "Starboard buoy", 28: "Isolated danger buoy", 29: "Safe water buoy", 30: "Special buoy", 31: "Light vessel / LANBY" };
@@ -61,7 +61,7 @@ export function cpaTcpa(o, t) {
   return { cpa: Math.hypot(c[0], c[1]), tcpa: th * 60, range, own: toLL([vo[0] * th, vo[1] * th]), tgt: toLL([p[0] + vt[0] * th, p[1] + vt[1] * th]) };
 }
 
-function addIcons(map) {
+export function addIcons(map) {
   const make = (draw, size = 32) => {
     const c = document.createElement("canvas");
     c.width = c.height = size;
@@ -86,6 +86,55 @@ function addIcons(map) {
     g.beginPath(); g.moveTo(9, 9); g.lineTo(s - 9, s - 9); g.moveTo(s - 9, 9); g.lineTo(9, s - 9); g.stroke(); }), { sdf: true });
 }
 
+/** Navigational status → the day shape a vessel shows for it (COLREGs), or a sign where
+ *  there is none (moored: a bollard). Drawn beside the target. */
+const STATUS_SHORT = { 1: "anchored", 2: "NUC", 3: "RAM", 4: "CBD", 5: "moored", 6: "aground", 7: "fishing", 11: "towing", 12: "towing" };
+const STATUS_SHAPE = { 1: "ball", 2: "nuc", 3: "ram", 4: "cbd", 5: "moored", 6: "aground", 7: "fishing", 11: "tow", 12: "tow" };
+export function addStatusIcons(map) {
+  const R = 2; // pixel ratio: drawn at twice the size for a sharp edge
+  const shapes = {
+    ball: ["ball"], nuc: ["ball", "ball"], ram: ["ball", "diamond", "ball"], cbd: ["cyl"], aground: ["ball", "ball", "ball"],
+    fishing: ["cones"], tow: ["diamond"], moored: ["bollard"],
+  };
+  const H = { ball: 9, diamond: 11, cyl: 13, cones: 15, bollard: 12 };
+  for (const [k, parts] of Object.entries(shapes)) {
+    const w = 14, h = parts.reduce((a, p) => a + H[p], 0) + (parts.length - 1) * 2 + 6;
+    const c = document.createElement("canvas");
+    c.width = w * R; c.height = h * R;
+    const g = c.getContext("2d");
+    g.scale(R, R);
+    // white backing with a dark edge, so it shows on any chart colour
+    g.fillStyle = "#fff"; g.strokeStyle = "#1d2a33"; g.lineWidth = 1;
+    g.beginPath(); g.roundRect(0.5, 0.5, w - 1, h - 1, 3); g.fill(); g.stroke();
+    g.fillStyle = g.strokeStyle = "#000";
+    let y = 3;
+    const cx = w / 2;
+    for (const p of parts) {
+      const ph = H[p];
+      g.beginPath();
+      if (p === "ball") g.arc(cx, y + ph / 2, ph / 2 - 0.5, 0, 2 * Math.PI);
+      else if (p === "diamond") { g.moveTo(cx, y); g.lineTo(cx + 4.5, y + ph / 2); g.lineTo(cx, y + ph); g.lineTo(cx - 4.5, y + ph / 2); g.closePath(); }
+      else if (p === "cyl") g.rect(cx - 3.5, y, 7, ph);
+      else if (p === "cones") { g.moveTo(cx - 4.5, y); g.lineTo(cx + 4.5, y); g.lineTo(cx, y + ph / 2); g.closePath(); g.moveTo(cx - 4.5, y + ph); g.lineTo(cx + 4.5, y + ph); g.lineTo(cx, y + ph / 2); g.closePath(); }
+      else if (p === "bollard") { g.rect(cx - 2.5, y + 3, 5, ph - 3); g.rect(cx - 4.5, y + ph - 2, 9, 2); g.ellipse(cx, y + 3, 4, 2.5, 0, 0, 2 * Math.PI); }
+      g.fill();
+      y += ph + 2;
+    }
+    map.addImage(`ais-st-${k}`, g.getImageData(0, 0, c.width, c.height), { pixelRatio: R });
+  }
+  // lost target (IEC 62288): the symbol crossed through, at the last position
+  const s = 32, c = document.createElement("canvas");
+  c.width = c.height = s * R;
+  const g = c.getContext("2d");
+  g.scale(R, R);
+  g.lineCap = "round";
+  for (const [col, wd] of [["#fff", 4], ["#000", 1.8]]) {
+    g.strokeStyle = col; g.lineWidth = wd;
+    g.beginPath(); g.moveTo(4, 4); g.lineTo(s - 4, s - 4); g.moveTo(s - 4, 4); g.lineTo(4, s - 4); g.stroke();
+  }
+  map.addImage("ais-lostx", g.getImageData(0, 0, c.width, c.height), { pixelRatio: R });
+}
+
 export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   let s = { ...DEFAULTS };
   try { Object.assign(s, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* storage unavailable */ }
@@ -102,6 +151,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   const tracks = new Map(); // mmsi → [[t, lon, lat]]
 
   addIcons(map);
+  addStatusIcons(map);
   map.addSource("ais-tracks", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addLayer({ id: "ais-track", type: "line", source: "ais-tracks", paint: { "line-color": ["get", "col"], "line-width": 1.8, "line-opacity": 0.85 } });
   // CPA graphics: where own boat and the target will be at the closest point of approach
@@ -117,21 +167,29 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   map.addSource("ais", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   // ships to scale at harbour scales (from their AIS dimensions and antenna position)
   map.addLayer({ id: "ais-hull", type: "fill", source: "ais", filter: ["==", ["get", "k"], "hull"],
-    paint: { "fill-color": ["get", "col"], "fill-opacity": ["case", ["get", "lost"], 0.15, 0.4] } });
+    paint: { "fill-color": ["get", "col"], "fill-opacity": 0.45 } });
   map.addLayer({ id: "ais-hull-line", type: "line", source: "ais", filter: ["==", ["get", "k"], "hull"],
     paint: { "line-color": ["get", "col"], "line-width": 1.5 } });
   map.addLayer({ id: "ais-ring", type: "circle", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "ring"]],
-    paint: { "circle-radius": 13, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": ["get", "ring"], "circle-stroke-width": 2.5 } });
+    paint: { "circle-radius": 15, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": ["get", "ring"], "circle-stroke-width": 2.5 } });
   map.addLayer({ id: "ais-vec", type: "line", source: "ais", filter: ["==", ["get", "k"], "vec"],
     paint: { "line-color": ["get", "col"], "line-width": 1.5 } });
   map.addLayer({ id: "ais-sym", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["!=", ["get", "big"], true]],
     layout: { "icon-image": ["get", "icon"], "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true,
-      "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.5, 12, 0.8] },
-    paint: { "icon-color": ["get", "col"], "icon-halo-color": "#1d2a33", "icon-halo-width": 1.2, "icon-opacity": ["case", ["get", "lost"], 0.45, 1] } });
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.6, 12, 0.96] },
+    paint: { "icon-color": ["get", "col"], "icon-halo-color": "#1d2a33", "icon-halo-width": 1.4 } });
+  // not heard for a while: crossed through (IEC 62288 lost target), no course vector
+  map.addLayer({ id: "ais-lost", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["get", "lost"]],
+    layout: { "icon-image": "ais-lostx", "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-rotation-alignment": "viewport",
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.6, 12, 0.96] } });
+  // navigational status: the day shape (anchored, not under command, restricted, fishing...) beside it
+  map.addLayer({ id: "ais-status", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "st"]], minzoom: 8,
+    layout: { "icon-image": ["concat", "ais-st-", ["get", "st"]], "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-rotation-alignment": "viewport",
+      "icon-anchor": "bottom-left", "icon-offset": [9, -6] } });
   map.addLayer({ id: "ais-fleet-names", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "ring"], ["has", "name"]],
-    layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 14], "icon-allow-overlap": true } });
+    layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 17], "icon-allow-overlap": true } });
   map.addLayer({ id: "ais-names", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "name"], ["!", ["has", "ring"]]], minzoom: 10,
-    layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 12], "icon-allow-overlap": false } });
+    layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 14], "icon-allow-overlap": false } });
 
   const isLost = (t) => {
     if (t.last_pos == null) return true;
@@ -171,7 +229,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   }
   function draw() {
     const vis = s.show ? "visible" : "none";
-    for (const id of ["ais-hull", "ais-hull-line", "ais-vec", "ais-sym", "ais-ring", "ais-fleet-names", "ais-track", "ais-cpa-path", "ais-cpa-line", "ais-cpa-pt", "ais-cpa-lbl"]) map.setLayoutProperty(id, "visibility", vis);
+    for (const id of ["ais-hull", "ais-hull-line", "ais-vec", "ais-sym", "ais-lost", "ais-status", "ais-ring", "ais-fleet-names", "ais-track", "ais-cpa-path", "ais-cpa-line", "ais-cpa-pt", "ais-cpa-lbl"]) map.setLayoutProperty(id, "visibility", vis);
     map.setLayoutProperty("ais-names", "visibility", s.show && s.names ? "visible" : "none");
     const f = [];
     const cpaF = [];
@@ -182,6 +240,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       const [icon, col, rot] = style(t);
       const lost = isLost(t);
       const props = { k: "t", mmsi: t.mmsi, icon, col: t.mmsi === selected ? "#ffd400" : col, rot, lost };
+      if (t.kind === "vessel" && STATUS_SHAPE[t.status]) props.st = STATUS_SHAPE[t.status];
       // to scale when zoomed in far enough, if it has sent its size and we know which way it points
       const dir = t.heading ?? ((t.sog ?? 0) > 1 ? t.cog : null);
       if (t.kind === "vessel" && t.length > 0 && dir != null && bigEnough(t.length, t.lat, map.getZoom())) {
@@ -538,10 +597,11 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       tr.className = [r.danger ? "danger" : "", r.net ? "net" : "", r.lost ? "lost" : "", r.id === selected ? "sel" : ""].join(" ");
       if (r.net) tr.title = "Heard over the internet only: may be minutes late or missing. Not for navigation";
       tr.innerHTML = `<td><span class="sw"></span></td><td></td><td class="n">${fmt(r.range, r.range != null && r.range < 10 ? 2 : 1)}</td><td class="n">${deg(r.brg)}</td>
-        <td class="n">${fmt(r.cpa, 2)}</td><td class="n">${r.tcpa == null ? "—" : Math.round(r.tcpa)}</td><td class="n">${fmt(r.sog)}</td><td class="n">${deg(r.cog)}</td><td class="n">${age(r.age)}</td><td>${r.src}</td>`;
+        <td class="n">${fmt(r.cpa, 2)}</td><td class="n">${r.tcpa == null ? "—" : Math.round(r.tcpa)}</td><td class="n">${fmt(r.sog)}</td><td class="n">${deg(r.cog)}</td><td class="n age">${age(r.age)}</td><td>${r.src}</td>`;
       tr.cells[0].append(document.createTextNode(r.name));
       tr.cells[0].querySelector(".sw").style.background = r.col;
-      tr.cells[1].textContent = r.type;
+      tr.cells[1].textContent = r.type + (r.t.kind === "vessel" && STATUS_SHORT[r.t.status] ? ` · ${STATUS_SHORT[r.t.status]}` : "");
+      if (r.lost) tr.cells[8].title = "Not heard for a while: shown crossed through on the chart at its last position";
       tr.onclick = () => { map.easeTo({ center: [r.t.lon, r.t.lat] }); openPopup(r.id); renderWin(); };
       tb.append(tr);
     }
