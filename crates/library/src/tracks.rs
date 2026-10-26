@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 /// One fix.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 #[serde(from = "PointRow", into = "PointRow")]
 pub struct TrackPoint {
     pub t: Option<i64>,
@@ -16,20 +16,50 @@ pub struct TrackPoint {
     pub lon: f64,
     pub sog: Option<f64>,
     pub cog: Option<f64>,
+    /// Depth of water (m, below the surface or transducer), when logged.
+    pub depth: Option<f64>,
+    /// Sea temperature (°C), when logged.
+    pub temp: Option<f64>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct PointRow(Option<i64>, f64, f64, #[serde(default)] Option<f64>, #[serde(default)] Option<f64>);
+/// A fix as stored: [t, lat, lon, sog, cog, depth, temp], the trailing nulls left off
+/// (so tracks without depth or temperature are no bigger than before).
+#[derive(Deserialize)]
+struct PointRow(
+    Option<i64>,
+    f64,
+    f64,
+    #[serde(default)] Option<f64>,
+    #[serde(default)] Option<f64>,
+    #[serde(default)] Option<f64>,
+    #[serde(default)] Option<f64>,
+);
+
+impl Serialize for PointRow {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let rest = [self.3, self.4, self.5, self.6];
+        let n = 3 + rest.iter().rposition(Option::is_some).map_or(0, |i| i + 1);
+        let mut q = s.serialize_seq(Some(n))?;
+        q.serialize_element(&self.0)?;
+        q.serialize_element(&self.1)?;
+        q.serialize_element(&self.2)?;
+        for v in &rest[..n - 3] {
+            q.serialize_element(v)?;
+        }
+        q.end()
+    }
+}
 
 impl From<PointRow> for TrackPoint {
     fn from(r: PointRow) -> Self {
-        TrackPoint { t: r.0, lat: r.1, lon: r.2, sog: r.3, cog: r.4 }
+        TrackPoint { t: r.0, lat: r.1, lon: r.2, sog: r.3, cog: r.4, depth: r.5, temp: r.6 }
     }
 }
 impl From<TrackPoint> for PointRow {
     fn from(p: TrackPoint) -> Self {
         let r = |v: Option<f64>, k: f64| v.map(|x| (x * k).round() / k);
-        PointRow(p.t, (p.lat * 1e6).round() / 1e6, (p.lon * 1e6).round() / 1e6, r(p.sog, 100.0), r(p.cog, 10.0))
+        PointRow(p.t, (p.lat * 1e6).round() / 1e6, (p.lon * 1e6).round() / 1e6, r(p.sog, 100.0), r(p.cog, 10.0), r(p.depth, 10.0), r(p.temp, 100.0))
     }
 }
 
@@ -341,7 +371,7 @@ mod tests {
     use super::*;
 
     fn pt(t: i64, lat: f64, lon: f64) -> TrackPoint {
-        TrackPoint { t: Some(t), lat, lon, sog: Some(6.0), cog: Some(90.0) }
+        TrackPoint { t: Some(t), lat, lon, sog: Some(6.0), cog: Some(90.0), ..Default::default() }
     }
 
     #[test]
@@ -358,9 +388,14 @@ mod tests {
 
     #[test]
     fn compact_points_round_trip() {
-        let p = TrackPoint { t: Some(1_790_000_000), lat: -41.2612345678, lon: 173.28, sog: Some(6.234), cog: None };
+        let p = TrackPoint { t: Some(1_790_000_000), lat: -41.2612345678, lon: 173.28, sog: Some(6.234), cog: None, ..Default::default() };
         let j = serde_json::to_string(&p).unwrap();
-        assert_eq!(j, "[1790000000,-41.261235,173.28,6.23,null]");
+        assert_eq!(j, "[1790000000,-41.261235,173.28,6.23]"); // trailing nulls left off
+        let d = TrackPoint { depth: Some(121.53), temp: Some(16.8), ..p };
+        let j2 = serde_json::to_string(&d).unwrap();
+        assert_eq!(j2, "[1790000000,-41.261235,173.28,6.23,null,121.5,16.8]");
+        let d2: TrackPoint = serde_json::from_str(&j2).unwrap();
+        assert_eq!((d2.depth, d2.temp, d2.cog), (Some(121.5), Some(16.8), None));
         let q: TrackPoint = serde_json::from_str(&j).unwrap();
         assert_eq!(q.t, p.t);
         assert!((q.lat - p.lat).abs() < 1e-6);
@@ -399,8 +434,8 @@ mod tests {
         assert_eq!(running.points, r.track.stats.points);
         assert!((running.distance_nm - r.track.stats.distance_nm).abs() < 0.02);
         // bad fixes are ignored
-        assert!(!r.push(TrackPoint { t: Some(t0 + 9999), lat: 0.0, lon: 0.0, sog: None, cog: None }));
-        assert!(!r.push(TrackPoint { t: None, lat: -41.0, lon: 173.0, sog: None, cog: None }));
+        assert!(!r.push(TrackPoint { t: Some(t0 + 9999), lat: 0.0, lon: 0.0, ..Default::default() }));
+        assert!(!r.push(TrackPoint { t: None, lat: -41.0, lon: 173.0, ..Default::default() }));
     }
 
     #[test]

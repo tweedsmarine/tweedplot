@@ -21,7 +21,7 @@ function fmtDur(s) {
 
 export function setupTracks(map, { before, getTime, onTime, status }) {
   const $ = (id) => document.getElementById(id);
-  const prefs = { shown: [], atTime: true };
+  const prefs = { shown: [], atTime: true, colourBy: "track", range: {} };
   try { Object.assign(prefs, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ } };
 
@@ -46,16 +46,86 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
 
   async function draw() {
     const feats = [];
+    const shown = [];
     for (const t of list.filter((x) => prefs.shown.includes(x.id))) {
-      let d;
-      try { d = await load(t.id); } catch { continue; }
+      try { shown.push([t, await load(t.id)]); } catch { /* gone */ }
+    }
+    const by = BY[prefs.colourBy];
+    const range = by && rangeOf(by, shown);
+    for (const [t, d] of shown) {
       const colour = colourOf(t);
       for (const seg of d.segments) {
-        if (seg.length > 1) feats.push({ type: "Feature", properties: { id: t.id, colour }, geometry: { type: "LineString", coordinates: seg.map((p) => [p[0], p[1]]) } });
+        if (seg.length < 2) continue;
+        if (!range) { feats.push({ type: "Feature", properties: { id: t.id, colour }, geometry: { type: "LineString", coordinates: seg.map((p) => [p[0], p[1]]) } }); continue; }
+        // runs of fixes in the same colour step: one line each (not one per fix)
+        const [lo, hi] = range, step = (hi - lo) / STEPS || 1;
+        const bin = (p) => (p[by.i] == null ? null : Math.max(0, Math.min(STEPS, Math.round((p[by.i] - lo) / step))));
+        let start = 0, b = bin(seg[0]);
+        for (let k = 1; k <= seg.length; k++) {
+          const nb = k < seg.length ? bin(seg[k]) : undefined;
+          if (nb !== b || k === seg.length) {
+            const run = seg.slice(start, Math.min(k + 1, seg.length)).map((p) => [p[0], p[1]]);
+            if (run.length > 1) feats.push({ type: "Feature", properties: b == null ? { id: t.id } : { id: t.id, v: lo + b * step }, geometry: { type: "LineString", coordinates: run } });
+            start = k; b = nb;
+          }
+        }
       }
     }
+    map.setPaintProperty("trk-lines", "line-color", range
+      ? ["case", ["has", "v"], ["interpolate", ["linear"], ["get", "v"], ...by.ramp.flatMap((c, i) => [range[0] + ((range[1] - range[0]) * i) / (by.ramp.length - 1), c])], NO_VALUE]
+      : ["get", "colour"]);
     map.getSource("trk-lines").setData({ type: "FeatureCollection", features: feats });
+    legend(by, range, shown.length);
     drawNow();
+  }
+
+  // ---------- colour by sea temperature, depth or speed ----------------------------------
+  const STEPS = 40;
+  const NO_VALUE = "#9aa3a8";
+  // fix layout from track_get: [lon, lat, t, sog, cog, depth, temp]
+  const BY = {
+    temp: { i: 6, name: "Sea temperature", unit: "°C", dp: 1, ramp: ["#313695", "#4575b4", "#74add1", "#abd9e9", "#fee090", "#fdae61", "#f46d43", "#d73027", "#a50026"] },
+    depth: { i: 5, name: "Depth", unit: "m", dp: 0, ramp: ["#ffffb2", "#a1dab4", "#41b6c4", "#2c7fb8", "#253494", "#081d58"] },
+    sog: { i: 3, name: "Speed (SOG)", unit: "kn", dp: 1, ramp: ["#2c7bb6", "#abd9e9", "#ffffbf", "#fdae61", "#d7191c"] },
+  };
+  /** The range to colour over: the one set in the drawer, else most of the shown tracks' values. */
+  function rangeOf(by, shown) {
+    const set = prefs.range[prefs.colourBy] || [];
+    const vals = [];
+    let n = 0;
+    for (const [, d] of shown) for (const seg of d.segments) n += seg.length;
+    const every = Math.max(1, Math.floor(n / 100000));
+    let k = 0;
+    for (const [, d] of shown) for (const seg of d.segments) for (const p of seg) if (k++ % every === 0 && p[by.i] != null) vals.push(p[by.i]);
+    if (!vals.length) return set[0] != null && set[1] != null ? [set[0], set[1]] : null;
+    vals.sort((a, b) => a - b);
+    const lo = set[0] ?? vals[Math.floor(vals.length * 0.02)], hi = set[1] ?? vals[Math.floor(vals.length * 0.98)];
+    return hi > lo ? [lo, hi] : [lo, lo + 1];
+  }
+  // the scale on the chart
+  const leg = document.createElement("div");
+  leg.className = "trk-legend";
+  leg.hidden = true;
+  map.getContainer().append(leg);
+  function legend(by, range, count) {
+    const note = $("trk-colour-note");
+    leg.hidden = !by || !count;
+    if (note) note.textContent = by && count && !range ? `The shown tracks have no ${by.name.toLowerCase()} logged.` : "";
+    if (leg.hidden || !range) { leg.hidden = true; return; }
+    const f = (v) => v.toFixed(by.dp);
+    leg.innerHTML = `<b></b><div class="bar"></div><div class="ticks"><span></span><span></span><span></span></div>`;
+    leg.querySelector("b").textContent = `${by.name}, ${by.unit}`;
+    leg.querySelector(".bar").style.background = `linear-gradient(to right, ${by.ramp.join(", ")})`;
+    const s = leg.querySelectorAll(".ticks span");
+    s[0].textContent = f(range[0]); s[1].textContent = f((range[0] + range[1]) / 2); s[2].textContent = f(range[1]);
+  }
+  function syncColourControls() {
+    $("trk-colour-by").value = prefs.colourBy;
+    const by = BY[prefs.colourBy];
+    $("trk-range").hidden = !by;
+    const r = prefs.range[prefs.colourBy] || [];
+    $("trk-min").value = r[0] ?? ""; $("trk-max").value = r[1] ?? "";
+    if (by) { $("trk-unit").textContent = by.unit; }
   }
 
   /** Position of a track at time t (between fixes, straight line), or null outside its times. */
@@ -103,6 +173,8 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
     el.className = "feat-pop";
     const rows = [["Time", best[2] == null ? "–" : `${fmtTime(best[2])}:${String(new Date(best[2] * 1000).getSeconds()).padStart(2, "0")}`],
       ["SOG", best[3] == null ? "–" : `${best[3].toFixed(1)} kn`], ["COG", best[4] == null ? "–" : `${Math.round(best[4])}°T`]];
+    if (best[5] != null) rows.push(["Depth", `${best[5].toFixed(1)} m`]);
+    if (best[6] != null) rows.push(["Sea temperature", `${best[6].toFixed(1)} °C`]);
     el.innerHTML = `<table>${rows.map(() => "<tr><td></td><td></td></tr>").join("")}</table>`;
     el.querySelectorAll("tr").forEach((tr, i) => { tr.cells[0].textContent = rows[i][0]; tr.cells[1].textContent = rows[i][1]; });
     infoBox(map, "track", { width: 260, height: 170 }).open(el, { title: s.name, at: [best[0], best[1]] });
@@ -258,6 +330,14 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
     save(); render(); draw();
     if (fresh.length === 1) zoomTo(fresh[0]);
   });
+  syncColourControls();
+  $("trk-colour-by").onchange = (e) => { prefs.colourBy = e.target.value; syncColourControls(); save(); draw(); };
+  const setRange = () => {
+    const num = (v) => (v.trim() === "" || isNaN(+v) ? null : +v);
+    prefs.range[prefs.colourBy] = [num($("trk-min").value), num($("trk-max").value)];
+    save(); draw();
+  };
+  $("trk-min").onchange = setRange; $("trk-max").onchange = setRange;
   $("trk-time").checked = prefs.atTime;
   $("trk-time").onchange = () => { prefs.atTime = $("trk-time").checked; save(); drawNow(); };
 

@@ -97,7 +97,7 @@ pub fn parse_gpx(text: &str) -> Result<GpxData> {
             }
             Event::Start(ref e) | Event::Empty(ref e) if local(e.name().into_inner()) == "trkpt" => {
                 let self_closing = matches!(ev, Event::Empty(_));
-                let mut p = TrackPoint { t: None, lat: f64::NAN, lon: f64::NAN, sog: None, cog: None };
+                let mut p = TrackPoint { t: None, lat: f64::NAN, lon: f64::NAN, ..Default::default() };
                 for a in e.attributes().flatten() {
                     let v: &str = &a.value;
                     match local(a.key.into_inner()).as_str() {

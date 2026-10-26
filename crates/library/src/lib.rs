@@ -469,7 +469,15 @@ impl Library {
             fixes += t.points.len();
             let mut rec = Recorder::new(Track { source: "timezero".into(), colour: t.colour.clone(), ..Default::default() });
             for p in &t.points {
-                rec.push(TrackPoint { t: Some(p.t), lat: p.lat, lon: p.lon, sog: p.sog.map(f64::from), cog: p.cog.map(f64::from) });
+                rec.push(TrackPoint {
+                    t: Some(p.t),
+                    lat: p.lat,
+                    lon: p.lon,
+                    sog: p.sog.map(f64::from),
+                    cog: p.cog.map(f64::from),
+                    depth: p.depth.map(f64::from),
+                    temp: p.temp.map(f64::from),
+                });
             }
             let mut tr = rec.track;
             if tr.segments.iter().map(Vec::len).sum::<usize>() < 2 {
@@ -488,6 +496,10 @@ impl Library {
             rep.tracks_added.push(self.save_track(tr)?.name);
             Ok(())
         })?;
+        if let Some(p) = r.as_ref().and_then(|r| r.problem.clone()) {
+            let r = r.as_ref().unwrap();
+            rep.not_imported.push(format!("tracks after {} of {} (TimeZero's Tracks.bin: {p})", r.read, r.count));
+        }
         if r.is_some() && fixes > 0 {
             rep.notes.push(format!("tracks: kept {kept} of {fixes} fixes (a fix every 10 s, sooner in turns){}", if same > 0 { format!("; {same} already here") } else { String::new() }));
         }

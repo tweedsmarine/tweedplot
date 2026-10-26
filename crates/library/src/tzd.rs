@@ -331,68 +331,119 @@ fn some(v: f32) -> Option<f32> {
 }
 
 /// Read TimeZero tracks one at a time (a Tracks.bin can be gigabytes).
-pub fn read_tz_tracks(r: impl Read, mut each: impl FnMut(TzTrack) -> Result<()>) -> Result<usize> {
-    let mut b = Bin { r: std::io::BufReader::with_capacity(1 << 20, r) };
+pub fn read_tz_tracks(r: impl Read, mut each: impl FnMut(TzTrack) -> Result<()>) -> Result<TzTracksRead> {
+    let mut b = Bin { r: std::io::BufReader::with_capacity(1 << 20, Counted { r, at: 0 }) };
     let _version = b.u16()?;
     let count = b.u32()? as usize;
-    for _ in 0..count {
-        if b.string()? != "TRACK" {
-            return Err(Error::Tz("Tracks.bin: a track doesn't start with TRACK".into()));
-        }
-        let g = b.u8()? as u64;
-        b.skip(g)?;
-        let _mobile_type = b.u8()?;
-        let mobile = b.string()?;
-        let (_a, _b) = (b.u32()?, b.u32()?);
-        let name = b.string()?;
-        let _bytes = b.u32()?;
-        let n = b.u32()? as usize;
-        let mut points = Vec::with_capacity(n);
-        let mut colours = [0usize; 256];
-        for _ in 0..n {
-            let len = b.u32()? as usize;
-            let mut rec = vec![0u8; len];
-            b.r.read_exact(&mut rec)?;
-            if len < 26 {
-                continue;
+    let mut out = TzTracksRead { count, read: 0, problem: None };
+    for k in 0..count {
+        let at = b.r.get_ref().at - b.r.buffer().len() as u64;
+        match read_one(&mut b) {
+            Ok(Some(t)) => {
+                out.read += 1;
+                each(t)?;
             }
-            let f = |i: usize| f32::from_le_bytes(rec[i..i + 4].try_into().unwrap());
-            let (lat, lon) = mercator_to_latlon(f(0) as f64, f(4) as f64);
-            let mut p = TzFix {
-                t: dotnet_time(i64::from_le_bytes(rec[12..20].try_into().unwrap())),
-                lat,
-                lon,
-                depth: some(f(8)).filter(|d| *d != 0.0).map(f32::abs),
-                colour: rec[21],
-                ..Default::default()
-            };
-            colours[rec[21] as usize] += 1;
-            let k = u16::from_le_bytes([rec[24], rec[25]]) as usize;
-            for j in 0..k {
-                let at = 26 + j * 5;
-                if at + 5 > len {
-                    break;
-                }
-                let v = some(f(at + 1));
-                match rec[at] {
-                    3 => p.sog = v,
-                    6 => p.cog = v.map(|r| r.to_degrees().rem_euclid(360.0)),
-                    8 => p.temp = v,
-                    _ => {}
-                }
-            }
-            if lat.is_finite() && lon.is_finite() && lat.abs() <= 90.0 {
-                points.push(p);
+            Ok(None) => {}
+            Err(e) => {
+                // keep what came before; say where it stopped, with the bytes there, so the
+                // format can be worked out
+                let mut peek = [0u8; 48];
+                let n = b.r.read(&mut peek).unwrap_or(0);
+                let hex: Vec<String> = peek[..n].iter().map(|x| format!("{x:02x}")).collect();
+                out.problem = Some(format!("stopped at track {} of {count} (byte {at}): {e}; next bytes {}", k + 1, hex.join(" ")));
+                break;
             }
         }
-        let common = (0..256).max_by_key(|&i| colours[i]).unwrap_or(0) as u32;
-        each(TzTrack { name, mobile, colour: tz_colour(common).into(), points })?;
     }
-    Ok(count)
+    Ok(out)
+}
+
+/// How a Tracks.bin read went.
+#[derive(Debug, Default)]
+pub struct TzTracksRead {
+    pub count: usize,
+    pub read: usize,
+    pub problem: Option<String>,
+}
+
+struct Counted<R: Read> {
+    r: R,
+    at: u64,
+}
+impl<R: Read> Read for Counted<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.r.read(buf)?;
+        self.at += n as u64;
+        Ok(n)
+    }
+}
+
+fn read_one<R: Read>(b: &mut Bin<std::io::BufReader<Counted<R>>>) -> Result<Option<TzTrack>> {
+    let tag = b.string()?;
+    if tag != "TRACK" {
+        return Err(Error::Tz(format!("a track starts with {tag:?}, not TRACK")));
+    }
+    let g = b.u8()? as u64;
+    b.skip(g)?;
+    let _mobile_type = b.u8()?;
+    let mobile = b.string()?;
+    let (_a, _b) = (b.u32()?, b.u32()?);
+    let name = b.string()?;
+    let bytes = b.u32()? as usize;
+    let n = b.u32()? as usize;
+    // the points are read by their byte count (not their number), so a track whose count
+    // doesn't match its points can't put the rest of the file out of step
+    let mut buf = vec![0u8; bytes];
+    b.r.read_exact(&mut buf)?;
+    let mut points = Vec::with_capacity(n.min(bytes / 30 + 1));
+    let mut colours = [0usize; 256];
+    let mut pos = 0;
+    while pos + 4 <= buf.len() {
+        let len = u32::from_le_bytes(buf[pos..pos + 4].try_into().unwrap()) as usize;
+        pos += 4;
+        if pos + len > buf.len() {
+            break;
+        }
+        let rec = &buf[pos..pos + len];
+        pos += len;
+        if len < 26 {
+            continue;
+        }
+        let f = |i: usize| f32::from_le_bytes(rec[i..i + 4].try_into().unwrap());
+        let (lat, lon) = mercator_to_latlon(f(0) as f64, f(4) as f64);
+        let mut p = TzFix {
+            t: dotnet_time(i64::from_le_bytes(rec[12..20].try_into().unwrap())),
+            lat,
+            lon,
+            depth: some(f(8)).filter(|d| *d != 0.0).map(f32::abs),
+            colour: rec[21],
+            ..Default::default()
+        };
+        colours[rec[21] as usize] += 1;
+        let k = u16::from_le_bytes([rec[24], rec[25]]) as usize;
+        for j in 0..k {
+            let at = 26 + j * 5;
+            if at + 5 > len {
+                break;
+            }
+            let v = some(f(at + 1));
+            match rec[at] {
+                3 => p.sog = v,
+                6 => p.cog = v.map(|r| r.to_degrees().rem_euclid(360.0)),
+                8 => p.temp = v,
+                _ => {}
+            }
+        }
+        if lat.is_finite() && lon.is_finite() && lat.abs() <= 90.0 {
+            points.push(p);
+        }
+    }
+    let common = (0..256).max_by_key(|&i| colours[i]).unwrap_or(0) as u32;
+    Ok(Some(TzTrack { name, mobile, colour: tz_colour(common).into(), points }))
 }
 
 /// The Tracks.bin inside a .tzd / .TzBackup, read as it unzips.
-pub fn read_tzd_tracks(path: &Path, each: impl FnMut(TzTrack) -> Result<()>) -> Result<Option<usize>> {
+pub fn read_tzd_tracks(path: &Path, each: impl FnMut(TzTrack) -> Result<()>) -> Result<Option<TzTracksRead>> {
     let f = std::fs::File::open(path)?;
     let Ok(mut z) = zip::ZipArchive::new(std::io::BufReader::new(f)) else { return Ok(None) };
     let Some(name) = (0..z.len())
@@ -434,7 +485,7 @@ mod track_tests {
         s(&mut v, "OwnShip");
         v.extend([0u8; 8]);
         s(&mut v, "Ownship");
-        v.extend(41u32.to_le_bytes()); // bytes (not checked)
+        v.extend(45u32.to_le_bytes()); // bytes of points
         v.extend(1u32.to_le_bytes());
         v.extend(41u32.to_le_bytes());
         v.extend(18_970_678.0f32.to_le_bytes());

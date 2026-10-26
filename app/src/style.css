@@ -951,3 +951,10 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 /* the count gets its own line above Filter the chart too / Clear / Delete shown */
 .lib-filter:has(#lib-f-count) { flex-wrap: wrap; }
 #lib-f-count { flex-basis: 100%; }
+
+/* colour-by scale for tracks, bottom left of the chart */
+.trk-legend { position: absolute; right: 10px; bottom: 180px; z-index: 3; width: 200px; padding: 6px 8px; border-radius: 6px;
+  background: var(--panel-bg); color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.3); font-size: 11px; }
+.trk-legend[hidden] { display: none; }
+.trk-legend .bar { height: 10px; border-radius: 3px; margin: 4px 0 2px; }
+.trk-legend .ticks { display: flex; justify-content: space-between; }

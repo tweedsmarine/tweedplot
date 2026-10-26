@@ -1479,6 +1479,8 @@ pub(crate) fn rec_vessel(app: &tauri::AppHandle, v: &signalk::VesselState) {
             lon,
             sog: v.sog,
             cog: v.cog,
+            depth: v.depth_surface.or(v.depth),
+            temp: v.water_temp,
         });
         (kept, r.due_save(now, 30), r.track.stats.clone())
     };
@@ -1557,7 +1559,7 @@ fn track_get(id: String) -> Result<serde_json::Value, String> {
         .iter()
         .map(|s| {
             s.iter()
-                .map(|p| serde_json::json!([p.lon, p.lat, p.t, p.sog, p.cog]))
+                .map(|p| serde_json::json!([p.lon, p.lat, p.t, p.sog, p.cog, p.depth, p.temp]))
                 .collect()
         })
         .collect();
