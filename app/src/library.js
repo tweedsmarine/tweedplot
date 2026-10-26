@@ -245,6 +245,28 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     viewTimer = setTimeout(renderMarks, 150);
   });
 
+  // delete every mark the list shows (after a check, with the numbers)
+  let shownMarks = [];
+  $("lib-f-delete").onclick = () => {
+    const ids = shownMarks.map((m) => m.id);
+    if (!ids.length) return;
+    const inRoutes = shownMarks.filter((m) => usedBy.has(m.id)).length;
+    const all = ids.length === marks.length;
+    $("lib-bulk").querySelector("span").textContent = `Delete ${all ? "all " : ""}${ids.length} mark${ids.length === 1 ? "" : "s"}${all ? " in the library" : " shown"}?` +
+      `${inRoutes ? ` ${inRoutes} ${inRoutes === 1 ? "is" : "are"} in saved routes and will be taken out of them.` : ""} This can't be undone.`;
+    $("lib-bulk").hidden = false;
+    $("lib-bulk-yes").onclick = async () => {
+      $("lib-bulk-yes").disabled = true;
+      try {
+        const n = await invoke("marks_delete", { ids, force: true });
+        status(`Deleted ${n} mark${n === 1 ? "" : "s"}.`);
+      } catch (e) { status(`Could not delete: ${e}`); }
+      $("lib-bulk-yes").disabled = false;
+      $("lib-bulk").hidden = true;
+      await refresh();
+    };
+  };
+  $("lib-bulk-no").onclick = () => { $("lib-bulk").hidden = true; };
   const PAGE = 200;
   let pageEnd = PAGE, lastQuery = "";
   const collate = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" }).compare;
@@ -257,6 +279,9 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     syncFilterControls();
     const list = marks.filter((m) => (!q || m.name.toLowerCase().includes(q) || m.group.toLowerCase().includes(q) || m.notes?.toLowerCase().includes(q)) && passes(m, true))
       .sort((a, b) => collate(a.group, b.group) || (!a.name - !b.name) || collate(a.name, b.name) || (b.created || 0) - (a.created || 0));
+    shownMarks = list;
+    $("lib-f-delete").disabled = !list.length;
+    $("lib-bulk").hidden = true;
     $("lib-f-count").textContent = list.length === marks.length ? `${marks.length} mark${marks.length === 1 ? "" : "s"}` : `${list.length} of ${marks.length} marks`;
     if (!list.length) ul.innerHTML = `<li class="empty">${marks.length ? "No marks match the search and filters." : "No marks yet. Right-click the chart: New library mark here, or save a route."}</li>`;
     // a page at a time: thousands of rows would make the drawer slow to open and scroll

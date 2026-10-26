@@ -945,3 +945,6 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 .ts-table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
 .ts-table th, .ts-table td { text-align: left; padding: 1px 8px 1px 0; }
 .ts-table tr.on td { background: rgba(181, 53, 154, 0.15); font-weight: 600; }
+
+.lib-bulk { background: color-mix(in srgb, #c0392b 12%, transparent); border-radius: 6px; padding: 6px; }
+.lib-bulk span { font-size: 12px; }

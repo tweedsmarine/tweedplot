@@ -637,6 +637,8 @@ Untick a barrier to keep it but not use it; rename it in the list; move its poin
 
 **TimeZero.** Library > **Import…** also reads TimeZero's own files: a `.tzd` (File > Export user data) or `.TzBackup`, or the `WaypointRouteDatabase.xml` inside one. Each TimeZero layer becomes a group, marks keep their symbol number, colour and date, text labels come in as marks, and routes come in as routes. Lines, areas, circles and tracks (`Tracks.bin`) aren't brought in yet; the import says how many were left out. Only the marks database is read, so even a file of several gigabytes imports in a second or two. Unnamed marks (most of a plotter's) stay unnamed and are listed as *(no name)*, newest first, after the named ones. Exports go to `tweedplot-data\library\export`.
 
+**Delete shown…** deletes every mark the search and filters show, after asking. To take out one import, pick its group (an import's group is the file's name) and press Delete shown; with no filter it deletes the whole library. Marks used by saved routes are taken out of those routes.
+
 The Marks list shows 200 at a time: **Show 200 more**, or narrow it with the search (names, groups and notes), the group filter or **In chart view**. A library of tens of thousands of marks imports in well under a second.
 
 ## Weather and tides

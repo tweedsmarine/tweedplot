@@ -1278,6 +1278,12 @@ fn mark_delete(app: tauri::AppHandle, id: String, force: bool) -> Result<(), Str
     Ok(())
 }
 #[tauri::command]
+fn marks_delete(app: tauri::AppHandle, ids: Vec<String>, force: bool) -> Result<usize, String> {
+    let n = lib()?.delete_marks(&ids, force).map_err(es)?;
+    library_changed(&app);
+    Ok(n)
+}
+#[tauri::command]
 fn routes_list() -> Result<Vec<library::Route>, String> {
     lib()?.routes().map_err(es)
 }
@@ -2863,6 +2869,7 @@ pub fn run() {
             gpx_export,
             gpx_write,
             gpx_import,
+            marks_delete,
             library_import_file,
             rec_status,
             rec_start,

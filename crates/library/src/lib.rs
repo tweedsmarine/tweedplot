@@ -254,6 +254,30 @@ impl Library {
         self.write_marks(&all)
     }
 
+    /// Delete many marks at once (in one write, not one per mark). With `force`, marks used by
+    /// routes are taken out of them; without it, nothing is deleted if any is in use.
+    pub fn delete_marks(&self, ids: &[String], force: bool) -> Result<usize> {
+        let gone: std::collections::HashSet<&str> = ids.iter().map(String::as_str).collect();
+        let uses = |r: &Route| r.marks.iter().any(|x| gone.contains(x.mark.as_str())) || r.start_mark.as_deref().is_some_and(|m| gone.contains(m));
+        let users: Vec<Route> = self.routes()?.into_iter().filter(|r| uses(r)).collect();
+        if !users.is_empty() && !force {
+            let names: Vec<&str> = users.iter().map(|r| r.name.as_str()).collect();
+            return Err(Error::InUse(format!("Some of the marks are used by: {}", names.join(", "))));
+        }
+        for mut r in users {
+            r.marks.retain(|x| !gone.contains(x.mark.as_str()));
+            if r.start_mark.as_deref().is_some_and(|m| gone.contains(m)) {
+                r.start_mark = None;
+            }
+            self.save_route(r)?;
+        }
+        let mut all = self.marks()?;
+        let n = all.len();
+        all.retain(|m| !gone.contains(m.id.as_str()));
+        self.write_marks(&all)?;
+        Ok(n - all.len())
+    }
+
     // ---------- barriers ----------
 
     pub fn barriers(&self) -> Result<Vec<Barrier>> {
