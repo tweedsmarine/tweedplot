@@ -373,6 +373,10 @@
             <label class="grow" title="Colour the shown tracks by what was logged along them">Colour by
               <select id="trk-colour-by"><option value="track">Track colour</option><option value="temp">Sea temperature</option><option value="depth">Depth</option><option value="sog">Speed (SOG)</option></select></label>
           </div>
+          <div class="wx-row">
+            <label class="grow" title="How thick the tracks are drawn on the chart (all tracks)">Line width</label>
+            <input id="trk-width" type="range" min="1" max="6" step="0.5" /><span id="trk-width-v" class="wx-note" style="min-width: 2em"></span>
+          </div>
           <div id="trk-sea" class="seafilter" hidden>
             <div class="track"><div class="grad"></div><span class="h lo"></span><span class="h tg"></span><span class="h hi"></span></div>
             <div class="vals"><span class="v min"></span><span class="v lo"></span><span class="v tg"></span><span class="v hi"></span><span class="v max"></span><button class="fit" title="Back to the shown tracks' whole range">Fit</button></div>

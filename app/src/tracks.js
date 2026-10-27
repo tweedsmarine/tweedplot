@@ -10,6 +10,7 @@ import * as activity from "./activity.js";
 import { exportLibraryFile } from "./library.js";
 import { libList, monthTest, dateTest } from "./liblist.js";
 import { trackInTrip, onTrips } from "./tripstore.js";
+import { floatDrag } from "./floatdrag.js";
 import { sharedTest, sharedActive, onShared } from "./libfilter.js";
 import { listen } from "@tauri-apps/api/event";
 
@@ -30,7 +31,7 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
   const MAX_AUTO = 200;
   const SHARED_TRK = { time: (t) => (t.stats?.start ? [t.stats.start, t.stats.end ?? t.stats.start] : null), inTrip: trackInTrip };
   const $ = (id) => document.getElementById(id);
-  const prefs = { shown: [], atTime: true, colourBy: "track", filter: {} };
+  const prefs = { shown: [], atTime: true, colourBy: "track", filter: {}, width: 2 };
   try { Object.assign(prefs, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
   prefs.filter ||= {};
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ } };
@@ -101,11 +102,12 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
     if (f) {
       const sc = seaScale(f);
       map.setPaintProperty("trk-lines", "line-color", ["case", ["has", "v"], ["interpolate", ["linear"], ["get", "v"], ...sc.flat()], NO_VALUE]);
-      map.setPaintProperty("trk-lines", "line-width", ["case", ["has", "tg"], 5, ["has", "v"], 2.6, 1.2]);
+      const w = prefs.width;
+      map.setPaintProperty("trk-lines", "line-width", ["case", ["has", "tg"], w * 2.3, ["has", "v"], w * 1.2, Math.max(0.8, w * 0.55)]);
       map.setPaintProperty("trk-lines", "line-opacity", ["case", ["has", "v"], 0.95, 0.6]);
     } else {
       map.setPaintProperty("trk-lines", "line-color", ["get", "colour"]);
-      map.setPaintProperty("trk-lines", "line-width", 2.2);
+      map.setPaintProperty("trk-lines", "line-width", prefs.width);
       map.setPaintProperty("trk-lines", "line-opacity", 0.9);
     }
     map.getSource("trk-lines").setData({ type: "FeatureCollection", features: feats });
@@ -155,6 +157,7 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
   leg.className = "trk-legend";
   leg.hidden = true;
   map.getContainer().append(leg);
+  floatDrag(leg, "track-key");
   function drawFilter(by, count) {
     const box = $("trk-sea"), note = $("trk-colour-note");
     note.textContent = by && count && !range ? `The shown tracks have no ${by.name.toLowerCase()} logged.` : by && !count ? "Tick tracks to show them." : "";
@@ -216,7 +219,10 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
   })();
   function syncColourControls() {
     $("trk-colour-by").value = prefs.colourBy;
+    $("trk-width").value = String(prefs.width);
+    $("trk-width-v").textContent = `${prefs.width}`;
   }
+  $("trk-width").oninput = (e) => { prefs.width = Number(e.target.value); $("trk-width-v").textContent = `${prefs.width}`; save(); draw(); };
 
   /** Position of a track at time t (between fixes, straight line), or null outside its times. */
   function at(d, t) {
