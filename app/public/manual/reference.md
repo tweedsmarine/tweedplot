@@ -611,7 +611,7 @@ In the mark editor (Library > Marks > **Edit**, which opens above the list, or r
 | {img:poi:water} | Water filling | {img:poi:fuel} | Fuel |
 | {img:poi:provisions} | Provisions or shop | {img:poi:info} | Note |
 
-**Symbols for your own marks**, drawn in the mark's own colour (a TimeZero mark keeps its red, blue and so on), or in the colour shown here when it has none:
+**Symbols for your own marks**, drawn in the mark's own colour (a TimeZero mark keeps its red, blue and so on), or when it has none in red (shapes), black (seabed and dangers), teal (fish) or orange (fishing gear):
 
 | Symbol | Type | Symbol | Type |
 | --- | --- | --- | --- |
@@ -620,10 +620,14 @@ In the mark editor (Library > Marks > **Edit**, which opens above the list, or r
 | {img:sym:sym-tri-down:} {img:sym:sym-tri-down-f:} | Triangle down, filled | {img:sym:sym-cross:} {img:sym:sym-x:} | Cross, X |
 | {img:sym:sym-star:} {img:sym:sym-flag:} {img:sym:sym-dot:} | Star, flag, dot | {img:sym:sym-rock:} | Rock |
 | {img:sym:sym-wreck:} | Wreck | {img:sym:sym-snag:} | Obstruction or snag |
-| {img:sym:sym-pot:} | Pot or trap | {img:sym:sym-fish:} {img:sym:sym-school:} | Fish, school of fish |
+| {img:sym:sym-pot:} | Pot or trap (fishing gear) | {img:sym:sym-fish:} {img:sym:sym-school:} | Fish, school of fish |
 | {img:sym:sym-tuna:} | Tuna | {img:sym:sym-swordfish:} | Swordfish |
 | {img:sym:sym-shark:} | Shark | {img:sym:sym-skate:} | Skate or ray |
-| {img:sym:sym-crayfish:} | Crayfish | | |
+| {img:sym:sym-crayfish:} | Crayfish | {img:sym:sym-albacore:} | Albacore |
+| {img:sym:sym-ling:} | Ling | {img:sym:sym-hoki:} | Hoki |
+| {img:sym:sym-squid:} | Squid | {img:sym:sym-trawl:} | Trawl |
+| {img:sym:sym-longline:} | Longline | {img:sym:sym-hook:} | Hook |
+| {img:sym:sym-float:} | Float | {img:sym:sym-float-flag:} | Float with a flag |
 
 Every type list (the mark editor, Type… for selected marks, and TimeZero symbols) shows each type with its picture. A mark whose name says rock or wreck comes in with the rock or wreck symbol.
 

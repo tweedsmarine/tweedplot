@@ -13,13 +13,16 @@ export const MARK_SYMBOLS = [
   ["sym-cross", "Cross", "Shapes"], ["sym-x", "X", "Shapes"], ["sym-star", "Star", "Shapes"],
   ["sym-flag", "Flag", "Shapes"], ["sym-dot", "Dot", "Shapes"],
   ["sym-rock", "Rock", "Seabed and dangers"], ["sym-wreck", "Wreck", "Seabed and dangers"],
-  ["sym-snag", "Obstruction / snag", "Seabed and dangers"], ["sym-pot", "Pot / trap", "Seabed and dangers"],
+  ["sym-snag", "Obstruction / snag", "Seabed and dangers"],
   ["sym-fish", "Fish", "Fish"], ["sym-school", "School of fish", "Fish"], ["sym-tuna", "Tuna", "Fish"],
   ["sym-swordfish", "Swordfish", "Fish"], ["sym-shark", "Shark", "Fish"], ["sym-skate", "Skate / ray", "Fish"],
-  ["sym-crayfish", "Crayfish", "Fish"],
+  ["sym-crayfish", "Crayfish", "Fish"], ["sym-albacore", "Albacore", "Fish"], ["sym-ling", "Ling", "Fish"],
+  ["sym-hoki", "Hoki", "Fish"], ["sym-squid", "Squid", "Fish"],
+  ["sym-trawl", "Trawl", "Fishing gear"], ["sym-longline", "Longline", "Fishing gear"], ["sym-hook", "Hook", "Fishing gear"],
+  ["sym-float", "Float", "Fishing gear"], ["sym-float-flag", "Float with a flag", "Fishing gear"], ["sym-pot", "Pot / trap", "Fishing gear"],
 ];
 export const SYMBOL_KINDS = Object.fromEntries(MARK_SYMBOLS.map(([k, l]) => [k, l]));
-const DEFAULT = { Shapes: "#c0392b", "Seabed and dangers": "#1d2a33", Fish: "#00838f" };
+const DEFAULT = { Shapes: "#c0392b", "Seabed and dangers": "#1d2a33", Fish: "#00838f", "Fishing gear": "#d35400" };
 const groupOf = Object.fromEntries(MARK_SYMBOLS.map(([k, , g]) => [k, g]));
 
 /** The default colour a symbol is drawn in when its mark has none. */
@@ -117,6 +120,56 @@ function drawSymbol(kind, colour) {
       P(poly([[0, 13], [-5, 16], [5, 16]]), true);
       P(line([[-2, -10], [-9, -16]]), false, 1.4); P(line([[2, -10], [9, -16]]), false, 1.4);
       P(line([[-4, -5], [-10, -4]]), false, 1.6); P(line([[4, -5], [10, -4]]), false, 1.6);
+      break;
+    case "sym-albacore": // a tuna with long pectoral fins
+      P((h) => { h.beginPath(); h.moveTo(-15, 0); h.bezierCurveTo(-10, -7, 4, -7, 9, -1); h.lineTo(9, 1); h.bezierCurveTo(4, 7, -10, 7, -15, 0); h.closePath(); }, true);
+      P((h) => { h.beginPath(); h.moveTo(8, 0); h.lineTo(16, -9); h.quadraticCurveTo(13, 0, 16, 9); h.closePath(); }, true);
+      P(poly([[-7, 1], [6, 8], [-3, 3]]), true);
+      P(poly([[-3, -5], [1, -10], [3, -5]]), true);
+      break;
+    case "sym-ling": // long eel-like body, one long fin along the back
+      P((h) => { h.beginPath(); h.moveTo(-15, 1); h.bezierCurveTo(-13, -4, -6, -4, 0, -3); h.bezierCurveTo(8, -2, 13, -1, 16, 1); h.bezierCurveTo(12, 3, 6, 4, 0, 4); h.bezierCurveTo(-6, 5, -13, 5, -15, 1); h.closePath(); }, true);
+      P((h) => { h.beginPath(); h.moveTo(-6, -3.5); h.bezierCurveTo(0, -7, 10, -5, 16, 1); h.lineTo(14, 0); h.bezierCurveTo(8, -3, 0, -3.5, -6, -3.5); h.closePath(); }, true);
+      P(line([[-13, 3], [-15, 7]]), false, 1.2);
+      break;
+    case "sym-hoki": // big head and eye, body tapering to a fine tail
+      P((h) => { h.beginPath(); h.moveTo(-14, 0); h.bezierCurveTo(-13, -6, -6, -6, -2, -4); h.lineTo(16, 0); h.lineTo(-2, 4); h.bezierCurveTo(-6, 6, -13, 6, -14, 0); h.closePath(); }, true);
+      P(poly([[-3, -4], [0, -9], [2, -3.5]]), true);
+      break;
+    case "sym-squid": // mantle with fins, arms trailing
+      P(poly([[0, -15], [6, -6], [3, 3], [-3, 3], [-6, -6]]), true);
+      P(poly([[0, -15], [-6, -8], [6, -8]]), true);
+      for (const x of [-3, -1, 1, 3]) P(line([[x, 3], [x * 1.6, 13]]), false, 1.5);
+      P(line([[-2, 3], [-6, 15]]), false, 1.2); P(line([[2, 3], [6, 15]]), false, 1.2);
+      break;
+    case "sym-trawl": // a trawl net: warps from the boat to the doors, the net closing to the cod end
+      P(line([[-15, -10], [-4, -6]]), false, 1.4); P(line([[-15, -10], [-4, 6]]), false, 1.4);
+      P(poly([[-4, -8], [-2, -8], [-2, -4], [-4, -4]]), true); P(poly([[-4, 4], [-2, 4], [-2, 8], [-4, 8]]), true);
+      P(poly([[-2, -6], [12, -2], [12, 2], [-2, 6]]), false, 2);
+      P(line([[3, -4.5], [3, 4.5]]), false, 1.2); P(line([[8, -3], [8, 3]]), false, 1.2);
+      P(circ(14, 0, 2.5), true);
+      break;
+    case "sym-longline": // the main line with floats, snoods hanging down to hooks
+      P(line([[-15, -4], [15, -4]]), false, 2);
+      P(circ(-15, -7, 2.5), true); P(circ(15, -7, 2.5), true);
+      for (const x of [-8, 0, 8]) {
+        P(line([[x, -4], [x, 6]]), false, 1.4);
+        P((h) => { h.beginPath(); h.moveTo(x, 6); h.arc(x - 2, 8, 2, 0, Math.PI * 0.9); }, false, 1.4);
+      }
+      break;
+    case "sym-hook": // a J hook with an eye and a barb
+      P(circ(3, -12, 2.2), false, 2);
+      P((h) => { h.beginPath(); h.moveTo(3, -9.5); h.lineTo(3, 5); h.arc(-3, 5, 6, 0, Math.PI, false); h.lineTo(-9, -1); }, false, 2.6);
+      P(line([[-9, -1], [-6, 2]]), false, 2.2);
+      break;
+    case "sym-float": // a round fishing float with a rope loop
+      P(circ(0, 2, 10), true);
+      P(line([[0, -8], [0, -13]]), false, 2); P(circ(0, -14, 2), false, 1.6);
+      break;
+    case "sym-float-flag": // a float with a flag pole (a dan buoy)
+      P(circ(-2, 8, 7), true);
+      P(line([[-2, 1], [-2, -15]]), false, 2);
+      P(poly([[-2, -15], [12, -11], [-2, -7]]), true);
       break;
     default: return null;
   }
