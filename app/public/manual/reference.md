@@ -641,6 +641,16 @@ Untick a barrier to keep it but not use it; rename it in the list; move its poin
 
 **TimeZero.** Library > **Import…** also reads TimeZero's own files: a `.tzd` (File > Export user data) or `.TzBackup`, or the `WaypointRouteDatabase.xml` inside one. Each TimeZero layer becomes a group, marks keep their symbol number, colour and date, text labels come in as marks, and routes come in as routes. Tracks (`Tracks.bin`) come in too, thinned as TweedPlot's own recorder keeps fixes (one every 10 s, sooner in turns; TimeZero keeps one every 2 s), each in its TimeZero colour and named by the file and its start time; tracks already in the library are skipped, so a file can be imported again safely. A plotter's years of tracks are not all shown at once: tick the ones you want in Library > Tracks (100 to a page, newest first). Lines, areas and circles (and the lines some files keep among the tracks, brought in from MaxSea) aren't brought in yet; the import says how many were left out. A TimeZero file with millions of fixes takes several seconds, a 2 GB one about a minute. Unnamed marks (most of a plotter's) stay unnamed and are listed as *(no name)*, newest first, after the named ones. Exports go to `tweedplot-data\library\export`.
 
+**What TweedPlot reads from TimeZero marks.** Besides the symbol, colour, date and layer:
+- *Marks made at the boat.* A mark made within 2 seconds of a track fix and within 30 m of the boat takes that fix's depth, sea temperature and speed, and the tag *at-boat*. Importing a file again fills these in for marks already in the library.
+- *Names.* A depth in the name ("180 m", "200MTS", "10 fm") becomes the mark's depth (a plain number like "6" is taken as the mark's number). Words become tags: foul ground (foul, fast, snag, hang), rock, wreck, the bottom (hard, rough, rolly, soft, mud, sand, shell, gravel, weed), tow; "?" is *unsure* and "!" *caution*. Foul ground, wrecks and rocks get their own symbols on the chart.
+- *Event marks.* Marks dropped with TimeZero's quick-mark or event button ("Event 12") are tagged *event*.
+- *Dates.* Marks moved into TimeZero from another plotter in one go (20 or more made in the same second, such as a fleet's SeaPlot marks) carry only the day they were moved: they show *date unknown*.
+
+The Marks list shows each mark's date, depth, sea temperature and tags.
+
+**TimeZero symbols.** Library > Marks > **TimeZero symbols** lists the symbol numbers your marks use, with how many marks and their colours. **Show** draws only the marks with that symbol (list and chart) so you can see what you used it for; then pick its type from the list. Every mark with that symbol takes the type (marks you've changed yourself, and foul ground or wrecks found from their names, keep theirs), and so do marks imported later.
+
 **Delete shown…** deletes every mark the search and filters show, after asking. To take out one import, pick its group (an import's group is the file's name) and press Delete shown; with no filter it deletes the whole library. Marks used by saved routes are taken out of those routes.
 
 The Marks list shows 200 at a time: **Show 200 more**, or narrow it with the search (names, groups and notes), the group filter or **In chart view**. A library of tens of thousands of marks imports in well under a second.

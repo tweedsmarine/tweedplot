@@ -1278,6 +1278,24 @@ fn mark_delete(app: tauri::AppHandle, id: String, force: bool) -> Result<(), Str
     library_changed(&app);
     Ok(())
 }
+/// The TimeZero symbols the marks use, with what each has been given to mean.
+#[tauri::command]
+fn symbols_list() -> Result<Vec<library::SymbolUse>, String> {
+    lib()?.symbols().map_err(es)
+}
+/// Give a TimeZero symbol a meaning (a mark type and label); returns how many marks changed.
+#[tauri::command]
+fn symbol_set(app: tauri::AppHandle, symbol: String, kind: String, label: String) -> Result<usize, String> {
+    let n = lib()?.set_symbol(&symbol, &kind, &label).map_err(es)?;
+    library_changed(&app);
+    Ok(n)
+}
+/// The marks in an area (west, south, east, north), from the spatial index.
+#[tauri::command]
+fn marks_in(west: f64, south: f64, east: f64, north: f64) -> Result<Vec<library::Mark>, String> {
+    lib()?.marks_in(west, south, east, north).map_err(es)
+}
+
 #[tauri::command]
 fn marks_delete(app: tauri::AppHandle, ids: Vec<String>, force: bool) -> Result<usize, String> {
     let n = lib()?.delete_marks(&ids, force).map_err(es)?;
@@ -2975,6 +2993,9 @@ pub fn run() {
             gpx_write,
             gpx_import,
             marks_delete,
+            symbols_list,
+            symbol_set,
+            marks_in,
             library_pick_file,
             library_import_path,
             rec_status,

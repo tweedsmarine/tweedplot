@@ -74,6 +74,18 @@ pub struct Mark {
     /// The symbol it had where it came from, e.g. "tz:62" (TimeZero) or a GPX `<sym>`.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub symbol: String,
+    /// The conditions when it was made: depth (m), sea temperature (°C), SOG (kn), from the
+    /// boat's track at that moment or from its name ("180 m").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub depth: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temp: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sog: Option<f64>,
+    /// Comma-separated tags: from words in its name ("foul", "rock", "hard", "caution" …),
+    /// "event" for marks dropped with a plotter's event or quick-mark button.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub tags: String,
 }
 
 fn is_zero(v: &i64) -> bool {
@@ -82,7 +94,7 @@ fn is_zero(v: &i64) -> bool {
 
 impl Default for Mark {
     fn default() -> Self {
-        Mark { id: String::new(), name: String::new(), lat: 0.0, lon: 0.0, kind: "mark".into(), notes: String::new(), group: String::new(), barrier_nm: 0.0, modified: 0, created: 0, date_unknown: false, colour: String::new(), symbol: String::new() }
+        Mark { id: String::new(), name: String::new(), lat: 0.0, lon: 0.0, kind: "mark".into(), notes: String::new(), group: String::new(), barrier_nm: 0.0, modified: 0, created: 0, date_unknown: false, colour: String::new(), symbol: String::new(), depth: None, temp: None, sog: None, tags: String::new() }
     }
 }
 
@@ -164,6 +176,19 @@ pub struct RoutingSummary {
     pub polar: Option<String>,
 }
 
+/// A plotter symbol used by marks (TimeZero's "tz:63"), how many, their colours, and what
+/// it's been given to mean here.
+#[derive(Debug, Clone, Serialize)]
+pub struct SymbolUse {
+    pub symbol: String,
+    pub count: usize,
+    /// The mark type given to it ("" none yet).
+    pub kind: String,
+    pub label: String,
+    /// The colours its marks have, commonest first, with how many.
+    pub colours: Vec<(String, usize)>,
+}
+
 /// What an import did.
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct ImportReport {
@@ -195,7 +220,7 @@ const SAME_UNNAMED_NM: f64 = 0.002;
 /// their date is the day of that import, not when they were made.
 const BULK_SAME_SECOND: usize = 20;
 
-const MARK_COLS: &str = "id, name, lat, lon, kind, notes, grp, barrier_nm, modified, created, date_unknown, colour, symbol";
+const MARK_COLS: &str = "id, name, lat, lon, kind, notes, grp, barrier_nm, modified, created, date_unknown, colour, symbol, depth, temp, sog, tags";
 const TRACK_COLS: &str = "id, name, notes, colour, source, modified, points, start, \"end\", distance_nm, max_sog, west, south, east, north";
 
 fn mark_row(r: &rusqlite::Row) -> rusqlite::Result<Mark> {
@@ -213,6 +238,10 @@ fn mark_row(r: &rusqlite::Row) -> rusqlite::Result<Mark> {
         date_unknown: r.get::<_, i64>(10)? != 0,
         colour: r.get(11)?,
         symbol: r.get(12)?,
+        depth: r.get(13)?,
+        temp: r.get(14)?,
+        sog: r.get(15)?,
+        tags: r.get(16)?,
     })
 }
 
@@ -234,12 +263,13 @@ fn track_summary_row(r: &rusqlite::Row) -> rusqlite::Result<TrackSummary> {
 
 fn insert_mark(c: &Connection, m: &Mark, import_id: Option<i64>) -> Result<()> {
     c.prepare_cached(
-        "INSERT INTO marks (geom, id, name, lat, lon, kind, notes, grp, barrier_nm, modified, created, date_unknown, colour, symbol, import_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+        "INSERT INTO marks (geom, id, name, lat, lon, kind, notes, grp, barrier_nm, modified, created, date_unknown, colour, symbol, import_id, depth, temp, sog, tags)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
          ON CONFLICT(id) DO UPDATE SET geom = excluded.geom, name = excluded.name, lat = excluded.lat, lon = excluded.lon,
            kind = excluded.kind, notes = excluded.notes, grp = excluded.grp, barrier_nm = excluded.barrier_nm,
            modified = excluded.modified, created = excluded.created, date_unknown = excluded.date_unknown,
-           colour = excluded.colour, symbol = excluded.symbol, deleted_at = NULL",
+           colour = excluded.colour, symbol = excluded.symbol, depth = excluded.depth, temp = excluded.temp,
+           sog = excluded.sog, tags = excluded.tags, deleted_at = NULL",
     )?
     .execute(params![
         store::gpkg_point(m.lon, m.lat),
@@ -256,7 +286,11 @@ fn insert_mark(c: &Connection, m: &Mark, import_id: Option<i64>) -> Result<()> {
         m.date_unknown as i64,
         m.colour,
         m.symbol,
-        import_id
+        import_id,
+        m.depth,
+        m.temp,
+        m.sog,
+        m.tags
     ])?;
     Ok(())
 }
@@ -327,6 +361,9 @@ impl Library {
         for t in ["marks", "routes", "routings", "barriers", "tracks", "trips"] {
             c.execute(&format!("DELETE FROM {t} WHERE deleted_at IS NOT NULL AND deleted_at < ?1"), [old])?;
         }
+        if store::meta(&c, "marks_reviewed")?.is_none() {
+            review_marks(&c)?;
+        }
         Ok(Library { dir, db: Mutex::new(c), converting: AtomicBool::new(false) })
     }
 
@@ -354,6 +391,22 @@ impl Library {
         let c = self.db();
         let mut q = c.prepare_cached(&format!("SELECT {MARK_COLS} FROM marks WHERE deleted_at IS NULL ORDER BY fid"))?;
         let v = q.query_map([], mark_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(v)
+    }
+
+    /// The marks inside [west, south, east, north] (degrees; east < west crosses 180°), from
+    /// the spatial index: what's in the chart view, however many marks the library has.
+    pub fn marks_in(&self, west: f64, south: f64, east: f64, north: f64) -> Result<Vec<Mark>> {
+        let c = self.db();
+        let mut q = c.prepare_cached(&format!(
+            "SELECT {MARK_COLS} FROM marks WHERE deleted_at IS NULL AND fid IN
+             (SELECT fid FROM marks_rtree WHERE minx >= ?1 AND maxx <= ?3 AND miny >= ?2 AND maxy <= ?4) ORDER BY fid"
+        ))?;
+        let spans: Vec<(f64, f64)> = if east >= west { vec![(west, east)] } else { vec![(west, 180.0), (-180.0, east)] };
+        let mut v = Vec::new();
+        for (w, e) in spans {
+            v.extend(q.query_map(params![w, south, e, north], mark_row)?.collect::<rusqlite::Result<Vec<_>>>()?);
+        }
         Ok(v)
     }
 
@@ -426,6 +479,48 @@ impl Library {
         let n = tx.execute("UPDATE marks SET deleted_at = ?1 WHERE deleted_at IS NULL AND id IN (SELECT id FROM gone)", [t])?;
         tx.execute("DELETE FROM gone", [])?;
         tx.commit()?;
+        Ok(n)
+    }
+
+    // ---------- plotter symbols ----------
+
+    /// The TimeZero symbols the marks use, commonest first, with what each has been given to mean.
+    pub fn symbols(&self) -> Result<Vec<SymbolUse>> {
+        let c = self.db();
+        let mut q = c.prepare(
+            "SELECT m.symbol, count(*), coalesce(s.kind, ''), coalesce(s.label, '') FROM marks m LEFT JOIN tz_symbols s ON s.symbol = m.symbol
+             WHERE m.deleted_at IS NULL AND m.symbol LIKE 'tz:%' GROUP BY m.symbol ORDER BY count(*) DESC",
+        )?;
+        let mut v = q
+            .query_map([], |r| Ok(SymbolUse { symbol: r.get(0)?, count: r.get::<_, i64>(1)? as usize, kind: r.get(2)?, label: r.get(3)?, colours: Vec::new() }))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut q = c.prepare("SELECT symbol, colour, count(*) FROM marks WHERE deleted_at IS NULL AND symbol LIKE 'tz:%' GROUP BY symbol, colour ORDER BY count(*) DESC")?;
+        let mut rows = q.query([])?;
+        let at: std::collections::HashMap<String, usize> = v.iter().enumerate().map(|(i, s)| (s.symbol.clone(), i)).collect();
+        while let Some(r) = rows.next()? {
+            let sym: String = r.get(0)?;
+            if let Some(&i) = at.get(&sym) {
+                v[i].colours.push((r.get(1)?, r.get::<_, i64>(2)? as usize));
+            }
+        }
+        Ok(v)
+    }
+
+    /// Give a plotter symbol a meaning: `kind` (a mark type: "fishing", "foul", "waypoint" …)
+    /// and a label. Marks with it still as they were imported (or given the symbol's earlier
+    /// type) take the new type; later imports do too. Returns how many marks changed.
+    pub fn set_symbol(&self, symbol: &str, kind: &str, label: &str) -> Result<usize> {
+        let c = self.db();
+        let before: String = c.query_row("SELECT kind FROM tz_symbols WHERE symbol = ?1", [symbol], |r| r.get(0)).optional()?.unwrap_or_default();
+        c.execute(
+            "INSERT INTO tz_symbols (symbol, kind, label) VALUES (?1, ?2, ?3) ON CONFLICT(symbol) DO UPDATE SET kind = excluded.kind, label = excluded.label",
+            params![symbol, kind, label.trim()],
+        )?;
+        let to = if kind.is_empty() { "waypoint" } else { kind };
+        let n = c.execute(
+            "UPDATE marks SET kind = ?2, modified = ?4 WHERE symbol = ?1 AND deleted_at IS NULL AND (kind = 'waypoint' OR (?3 <> '' AND kind = ?3))",
+            params![symbol, to, before, now()],
+        )?;
         Ok(n)
     }
 
@@ -664,10 +759,20 @@ impl Library {
     /// (TimeZero keeps one every 2 s). A track already here (same start and name) is skipped.
     /// Written a few hundred at a time, so the rest of the app isn't held up for long.
     fn import_tz_tracks(&self, path: &std::path::Path, group: &str, import_id: i64, rep: &mut ImportReport) -> Result<()> {
-        let have: std::collections::HashSet<(i64, String)> =
-            self.tracks()?.into_iter().filter_map(|t| t.stats.start.map(|s| (s, t.name))).collect();
+        // a track already here: the same first and last fix (whatever it's called: the file
+        // may have been renamed since)
+        let have: std::collections::HashSet<(i64, i64)> = self.tracks()?.into_iter().filter_map(|t| t.stats.start.zip(t.stats.end)).collect();
         let (mut fixes, mut kept, mut same) = (0usize, 0usize, 0usize);
         let mut batch: Vec<Track> = Vec::new();
+        // marks made at the boat (within 2 s and 30 m of a fix) take its depth, sea
+        // temperature and SOG: years of fishing marks with the conditions they were made in
+        let mut by_second: std::collections::HashMap<i64, Vec<(usize, f64, f64)>> = std::collections::HashMap::new();
+        let marks: Vec<Mark> = self.marks()?.into_iter().filter(|m| m.created > 0 && !m.date_unknown && (m.depth.is_none() || m.temp.is_none() || m.sog.is_none())).collect();
+        for (i, m) in marks.iter().enumerate() {
+            by_second.entry(m.created).or_default().push((i, m.lat, m.lon));
+        }
+        // best fix for each mark: (seconds off, depth, temp, sog)
+        let mut found: std::collections::HashMap<usize, (i64, Option<f32>, Option<f32>, Option<f32>)> = std::collections::HashMap::new();
         let stamp = now();
         let flush = |batch: &mut Vec<Track>, rep: &mut ImportReport| -> Result<()> {
             if batch.is_empty() {
@@ -684,6 +789,19 @@ impl Library {
         };
         let r = tzd::read_tzd_tracks(path, |t| {
             fixes += t.points.len();
+            if !by_second.is_empty() && t.mobile.eq_ignore_ascii_case("OwnShip") {
+                for p in &t.points {
+                    for dt in -2i64..=2 {
+                        let Some(v) = by_second.get(&(p.t + dt)) else { continue };
+                        for &(i, lat, lon) in v {
+                            let d = nav_core::LatLon::new(lat, lon).distance_to(&nav_core::LatLon::new(p.lat, p.lon)) * 1852.0;
+                            if d <= 30.0 && found.get(&i).is_none_or(|f| dt.abs() < f.0) {
+                                found.insert(i, (dt.abs(), p.depth, p.temp, p.sog));
+                            }
+                        }
+                    }
+                }
+            }
             let mut rec = Recorder::new(Track { source: "timezero".into(), colour: t.colour.clone(), ..Default::default() });
             for p in &t.points {
                 rec.push(TrackPoint {
@@ -700,12 +818,13 @@ impl Library {
             if tr.segments.iter().map(Vec::len).sum::<usize>() < 2 {
                 return Ok(());
             }
-            // the earliest fix, as the track's totals have it (a track can go back in time)
+            // the earliest and latest fix, as the track's totals have them (a track can go back in time)
             let start = tr.segments.iter().flatten().filter_map(|p| p.t).min().unwrap_or(0);
+            let end = tr.segments.iter().flatten().filter_map(|p| p.t).max().unwrap_or(0);
             let when = tracks::iso_time(start).get(..16).unwrap_or("").replace('T', " ");
             let who = if t.mobile.eq_ignore_ascii_case("OwnShip") || t.name.is_empty() { group.to_string() } else { t.name.trim().to_string() };
             tr.name = format!("{who} {when}").trim().to_string();
-            if have.contains(&(start, tr.name.clone())) {
+            if have.contains(&(start, end)) {
                 same += 1;
                 return Ok(());
             }
@@ -720,6 +839,23 @@ impl Library {
             Ok(())
         })?;
         flush(&mut batch, rep)?;
+        if !found.is_empty() {
+            let mut c = self.db();
+            let tx = c.transaction()?;
+            {
+                let mut up = tx.prepare(
+                    "UPDATE marks SET depth = coalesce(depth, ?2), temp = coalesce(temp, ?3), sog = coalesce(sog, ?4),
+                     tags = CASE WHEN ',' || tags || ',' LIKE '%,at-boat,%' THEN tags WHEN tags = '' THEN 'at-boat' ELSE tags || ',at-boat' END
+                     WHERE id = ?1",
+                )?;
+                let r1 = |v: Option<f32>, k: f64| v.map(|x| (x as f64 * k).round() / k);
+                for (i, (_, d, t, s)) in &found {
+                    up.execute(params![marks[*i].id, r1(*d, 10.0), r1(*t, 100.0), r1(*s, 100.0)])?;
+                }
+            }
+            tx.commit()?;
+            rep.notes.push(format!("{} marks were made at the boat: their depth, sea temperature and speed came from the track", found.len()));
+        }
         if let Some(p) = r.as_ref().and_then(|r| r.problem.clone()) {
             let r = r.as_ref().unwrap();
             rep.not_imported.push(format!("tracks after {} of {} (TimeZero's Tracks.bin: {p})", r.read, r.count));
@@ -755,6 +891,13 @@ impl Library {
             index.entry((m.name.to_lowercase(), cell(m.lat, m.lon))).or_default().push(i);
         }
         let stamp = now();
+        // what the user has said each TimeZero symbol means
+        let symbol_kinds: std::collections::HashMap<String, String> = {
+            let c = self.db();
+            let mut q = c.prepare("SELECT symbol, kind FROM tz_symbols WHERE kind <> ''")?;
+            let v = q.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
+            v
+        };
         let mut find_or_add = |w: &GpxWaypoint, rep: &mut ImportReport| -> String {
             let here = nav_core::LatLon::new(w.lat, w.lon);
             let name = w.name.trim().to_string();
@@ -777,7 +920,8 @@ impl Library {
                 Some(n) => format!("tz:{n}"),
                 None => w.sym.trim().to_string(),
             };
-            let m = Mark {
+            let name_info = read_name(&name);
+            let mut m = Mark {
                 id: new_id("m"),
                 // unnamed marks (most of a plotter's) stay unnamed
                 name,
@@ -792,7 +936,24 @@ impl Library {
                 date_unknown: w.time.is_some_and(|t| per_second.get(&t).copied().unwrap_or(0) >= BULK_SAME_SECOND),
                 colour: w.colour.clone(),
                 symbol,
+                depth: name_info.depth,
+                temp: None,
+                sog: None,
+                tags: {
+                    let mut t = name_info.tags.clone();
+                    if w.quick && !t.contains(&"event") {
+                        t.push("event");
+                    }
+                    t.join(",")
+                },
             };
+            if let Some(k) = symbol_kinds.get(&m.symbol) {
+                m.kind = k.clone();
+            }
+            // what the name says (foul ground, a wreck) wins over the symbol
+            if let Some(k) = name_info.kind {
+                m.kind = k.into();
+            }
             rep.marks_added += 1;
             let id = m.id.clone();
             index.entry((key, (cy, cx))).or_default().push(marks.len());
@@ -1076,6 +1237,120 @@ impl Library {
 
 // ---------- helpers ----------
 
+/// Once, for marks brought in before TweedPlot read these things at import: what their
+/// names say (depth, tags, foul ground, wrecks, hazards), and which dates are only the day
+/// they were moved in from another plotter (20 or more made in the same second).
+fn review_marks(c: &Connection) -> Result<()> {
+    let tx = c.unchecked_transaction()?;
+    tx.execute(
+        "UPDATE marks SET date_unknown = 1 WHERE created > 0 AND created IN
+         (SELECT created FROM marks WHERE created > 0 GROUP BY created HAVING count(*) >= ?1)",
+        [BULK_SAME_SECOND as i64],
+    )?;
+    let rows: Vec<(String, String, String, Option<f64>, String, String)> = {
+        let mut q = tx.prepare("SELECT id, name, kind, depth, tags, symbol FROM marks WHERE name <> '' AND deleted_at IS NULL")?;
+        let v = q.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        v
+    };
+    {
+        let mut up = tx.prepare("UPDATE marks SET depth = ?2, tags = ?3, kind = ?4 WHERE id = ?1")?;
+        for (id, name, kind, depth, tags, symbol) in rows {
+            let info = read_name(&name);
+            if info.depth.is_none() && info.tags.is_empty() {
+                continue;
+            }
+            let mut t: Vec<&str> = tags.split(',').filter(|x| !x.is_empty()).collect();
+            for x in &info.tags {
+                if !t.contains(x) {
+                    t.push(x);
+                }
+            }
+            // the kind only for marks still as imported (a waypoint with a plotter's symbol)
+            let k = match info.kind {
+                Some(k) if kind == "waypoint" && !symbol.is_empty() => k.to_string(),
+                _ => kind,
+            };
+            up.execute(params![id, depth.or(info.depth), t.join(","), k])?;
+        }
+    }
+    store::set_meta(&tx, "marks_reviewed", "1")?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// What a fisher's mark name says about the place.
+#[derive(Debug, Default, PartialEq)]
+struct NameInfo {
+    depth: Option<f64>,
+    tags: Vec<&'static str>,
+    kind: Option<&'static str>,
+}
+
+/// Depth from names like "180 m", "200MTS", "45.5 m" or "60 fm" (fathoms); words a skipper
+/// writes on a mark: foul ground (foul, fast, snag, hang, ripped), rock, wreck, the bottom
+/// (hard, rough, rolly, soft, mud, sand, shell, gravel, weed), tow; "?" unsure, "!" caution;
+/// "Event 12" a mark dropped with the event button. A plain number ("6") is the mark's
+/// number, not a depth.
+fn read_name(name: &str) -> NameInfo {
+    let mut out = NameInfo::default();
+    let n = name.trim();
+    if n.is_empty() {
+        return out;
+    }
+    let low = n.to_ascii_lowercase();
+    // depth: a number with a unit
+    let num_end = low.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(low.len());
+    if num_end > 0 {
+        if let Ok(v) = low[..num_end].parse::<f64>() {
+            let unit = low[num_end..].trim();
+            let d = match unit {
+                "m" | "mt" | "mts" | "mtrs" | "metres" | "meters" | "metre" | "meter" => Some(v),
+                "fm" | "fms" | "fath" | "fathoms" => Some(v * 1.8288),
+                _ => None,
+            };
+            if let Some(d) = d.filter(|d| *d > 0.0 && *d < 11_000.0) {
+                out.depth = Some((d * 10.0).round() / 10.0);
+                out.tags.push("depth");
+            }
+        }
+    }
+    let words: Vec<&str> = low.split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    let has = |list: &[&str]| words.iter().any(|w| list.contains(w));
+    let tag = |t: &'static str, out: &mut NameInfo| {
+        if !out.tags.contains(&t) {
+            out.tags.push(t);
+        }
+    };
+    if has(&["foul", "fast", "snag", "snagged", "hang", "hangs", "ripped", "torn", "caught"]) {
+        tag("foul", &mut out);
+        out.kind = Some("foul");
+    }
+    if has(&["rock", "rocks", "reef", "pinnacle"]) {
+        tag("rock", &mut out);
+        out.kind.get_or_insert("hazard");
+    }
+    if has(&["wreck", "wrk"]) {
+        tag("wreck", &mut out);
+        out.kind = Some("wreck");
+    }
+    for (w, t) in [("hard", "hard"), ("rough", "rough"), ("rolly", "rough"), ("soft", "soft"), ("mud", "mud"), ("sand", "sand"), ("shell", "shell"), ("gravel", "gravel"), ("weed", "weed"), ("tow", "tow")] {
+        if words.contains(&w) {
+            tag(t, &mut out);
+        }
+    }
+    if n.contains('?') {
+        tag("unsure", &mut out);
+    }
+    if n.contains('!') {
+        tag("caution", &mut out);
+        out.kind.get_or_insert("hazard");
+    }
+    if words.first() == Some(&"event") {
+        tag("event", &mut out);
+    }
+    out
+}
+
 fn routes_where(c: &Connection, cond: &str) -> Result<Vec<Route>> {
     let mut q = c.prepare(&format!(
         "SELECT r.id, r.name, r.notes, r.start_lon, r.start_lat, r.start_mark, r.modified FROM routes r WHERE r.deleted_at IS NULL AND {cond} ORDER BY r.modified DESC"
@@ -1182,6 +1457,47 @@ mod tests {
         let restored = Connection::open(&p).unwrap();
         let n: i64 = restored.query_row("SELECT count(*) FROM marks", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn plotter_symbols_given_a_meaning() {
+        let lib = temp_lib("sym");
+        let mut g = String::from(r#"<?xml version="1.0"?><gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">"#);
+        for k in 0..5 {
+            g.push_str(&format!(r#"<wpt lat="-41.{k}" lon="173.2"><extensions><MxTimeZeroSymbol>63</MxTimeZeroSymbol><color>-65536</color></extensions></wpt>"#));
+        }
+        g.push_str(r#"<wpt lat="-41.9" lon="173.9"><name>FOUL</name><extensions><MxTimeZeroSymbol>63</MxTimeZeroSymbol></extensions></wpt>"#);
+        g.push_str(r#"<wpt lat="-42" lon="174"><extensions><MxTimeZeroSymbol>2</MxTimeZeroSymbol></extensions></wpt></gpx>"#);
+        lib.import_gpx(&g, "TZ").unwrap();
+        let s = lib.symbols().unwrap();
+        assert_eq!((s[0].symbol.as_str(), s[0].count), ("tz:63", 6));
+        assert_eq!(s[0].colours[0], ("#ff0000".to_string(), 5));
+        assert_eq!(lib.set_symbol("tz:63", "fishing", "Longline station").unwrap(), 5, "not the foul one");
+        assert_eq!(lib.marks().unwrap().iter().filter(|m| m.kind == "fishing").count(), 5);
+        assert_eq!(lib.marks().unwrap().iter().find(|m| m.name == "FOUL").unwrap().kind, "foul");
+        // changed again: the ones it set follow
+        assert_eq!(lib.set_symbol("tz:63", "anchorage", "").unwrap(), 5);
+        // later imports take it too
+        lib.import_gpx(r#"<?xml version="1.0"?><gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1"><wpt lat="-45" lon="170"><extensions><MxTimeZeroSymbol>63</MxTimeZeroSymbol></extensions></wpt></gpx>"#, "TZ").unwrap();
+        assert_eq!(lib.marks().unwrap().iter().filter(|m| m.kind == "anchorage").count(), 6);
+        assert_eq!(lib.symbols().unwrap()[0].kind, "anchorage");
+    }
+
+    #[test]
+    fn names_say_depth_and_ground() {
+        let d = |n: &str| read_name(n);
+        assert_eq!(d("180 m").depth, Some(180.0));
+        assert_eq!(d("200MTS").depth, Some(200.0));
+        assert_eq!(d("45.5 m").depth, Some(45.5));
+        assert_eq!(d("10 fm").depth, Some(18.3));
+        assert_eq!(d("6").depth, None, "a mark's number");
+        assert_eq!(d("13:43").depth, None);
+        assert_eq!((d("FOUL").kind, d("FOUL").tags), (Some("foul"), vec!["foul"]));
+        assert_eq!(d("hard bottom, rolly").tags, vec!["hard", "rough"]);
+        assert_eq!(d("ROCK").kind, Some("hazard"));
+        assert_eq!(d("?").tags, vec!["unsure"]);
+        assert_eq!(d("Event 0035").tags, vec!["event"]);
+        assert_eq!(d("fast 3 times!").kind, Some("foul"));
     }
 
     #[test]
@@ -1565,5 +1881,35 @@ mod startup_cost {
         let t = std::time::Instant::now();
         let b = lib.backup_if_due().unwrap();
         println!("backup {:?} {:?}", b.is_some(), t.elapsed());
+    }
+}
+
+#[cfg(test)]
+mod reimport {
+    /// RACENAV_TEST_DIR=<library> RACENAV_TEST_TZDS="a;b" cargo test --release -p library reimport -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn reimport_fills_in() {
+        let dir = std::path::PathBuf::from(std::env::var("RACENAV_TEST_DIR").unwrap());
+        let t = std::time::Instant::now();
+        let lib = super::Library::open(&dir).unwrap();
+        println!("open (with migration) {:?}", t.elapsed());
+        for f in std::env::var("RACENAV_TEST_TZDS").unwrap().split(';') {
+            let t = std::time::Instant::now();
+            let r = lib.import_tzd(std::path::Path::new(f), "x").unwrap();
+            println!("{f}: added {} matched {} tracks {} {:?} in {:?}", r.marks_added, r.marks_matched, r.tracks_added.len(), r.notes, t.elapsed());
+        }
+        let m = lib.marks().unwrap();
+        let n = |f: &dyn Fn(&super::Mark) -> bool| m.iter().filter(|x| f(x)).count();
+        println!("marks {}: depth {} temp {} sog {} at-boat {} date-unknown {}", m.len(), n(&|x| x.depth.is_some()), n(&|x| x.temp.is_some()), n(&|x| x.sog.is_some()), n(&|x| x.tags.contains("at-boat")), n(&|x| x.date_unknown));
+        let mut tags = std::collections::BTreeMap::new();
+        for x in &m { for t in x.tags.split(',').filter(|t| !t.is_empty()) { *tags.entry(t.to_string()).or_insert(0) += 1; } }
+        println!("tags {tags:?}");
+        let t = std::time::Instant::now();
+        let v = lib.marks_in(172.5, -42.0, 174.5, -40.0).unwrap();
+        println!("marks in a 2° box: {} in {:?}", v.len(), t.elapsed());
+        let v = lib.marks_in(179.0, -45.0, -179.0, -43.0).unwrap();
+        println!("marks across 180°: {}", v.len());
+        if let Some(x) = m.iter().find(|x| x.tags.contains("at-boat") && x.temp.is_some()) { println!("e.g. {:?}", x); }
     }
 }

@@ -22,7 +22,7 @@ use crate::tracks::TrackPoint;
 use crate::Result;
 
 pub const FILE: &str = "library.gpkg";
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 /// Days a deleted object stays in the Trash.
 pub const TRASH_DAYS: i64 = 30;
 
@@ -33,7 +33,38 @@ pub fn open(path: &std::path::Path) -> Result<Connection> {
     c.pragma_update(None, "synchronous", "NORMAL")?;
     c.pragma_update(None, "foreign_keys", "ON")?;
     create(&c)?;
+    migrate(&c)?;
     Ok(c)
+}
+
+/// Bring an older database up to [`SCHEMA_VERSION`].
+fn migrate(c: &Connection) -> Result<()> {
+    let v: i64 = meta(c, "schema")?.and_then(|s| s.parse().ok()).unwrap_or(1);
+    if v < 2 {
+        // marks: the conditions when they were made (from the track, or the name) and tags;
+        // a spatial index (what's in the chart view); TimeZero's symbols and what they mean
+        c.execute_batch(
+            r#"
+            BEGIN;
+            ALTER TABLE marks ADD COLUMN depth REAL;
+            ALTER TABLE marks ADD COLUMN temp REAL;
+            ALTER TABLE marks ADD COLUMN sog REAL;
+            ALTER TABLE marks ADD COLUMN tags TEXT NOT NULL DEFAULT '';
+            CREATE VIRTUAL TABLE marks_rtree USING rtree(fid, minx, maxx, miny, maxy);
+            INSERT INTO marks_rtree SELECT fid, lon, lon, lat, lat FROM marks;
+            CREATE TRIGGER marks_rtree_ins AFTER INSERT ON marks BEGIN
+                INSERT INTO marks_rtree VALUES (new.fid, new.lon, new.lon, new.lat, new.lat); END;
+            CREATE TRIGGER marks_rtree_upd AFTER UPDATE OF lat, lon ON marks BEGIN
+                UPDATE marks_rtree SET minx = new.lon, maxx = new.lon, miny = new.lat, maxy = new.lat WHERE fid = new.fid; END;
+            CREATE TRIGGER marks_rtree_del AFTER DELETE ON marks BEGIN
+                DELETE FROM marks_rtree WHERE fid = old.fid; END;
+            CREATE TABLE tz_symbols (symbol TEXT PRIMARY KEY, kind TEXT NOT NULL DEFAULT '', label TEXT NOT NULL DEFAULT '');
+            UPDATE meta SET value = '2' WHERE key = 'schema';
+            COMMIT;
+            "#,
+        )?;
+    }
+    Ok(())
 }
 
 fn create(c: &Connection) -> Result<()> {
@@ -121,7 +152,7 @@ fn create(c: &Connection) -> Result<()> {
         COMMIT;
         "#,
     )?;
-    set_meta(c, "schema", &SCHEMA_VERSION.to_string())?;
+    set_meta(c, "schema", "1")?; // then migrate() brings it up to date
     Ok(())
 }
 

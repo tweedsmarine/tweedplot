@@ -21,6 +21,8 @@ pub struct GpxWaypoint {
     pub tz_symbol: Option<u32>,
     /// The group (TimeZero layer) it came from; "" means the import's own group.
     pub group: String,
+    /// Dropped with the plotter's quick-mark or event button (TimeZero's IsQuick).
+    pub quick: bool,
 }
 
 /// A colour as written in GPX extensions: "#rrggbb", "rrggbb", or a signed 32-bit ARGB

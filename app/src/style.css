@@ -962,3 +962,9 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 .trk-legend .bar { height: 10px; border-radius: 3px; margin: 4px 0 2px; }
 .trk-legend .ticks { display: flex; justify-content: space-between; }
 .trk-legend .ticks .tg { color: #c0392b; font-weight: 600; }
+
+/* Library > Marks > TimeZero symbols */
+.sym-list li .chips { display: flex; gap: 2px; }
+.sym-list li .chips i { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(0,0,0,.25); }
+.sym-list li select { max-width: 150px; }
+.sym-list li.active { background: color-mix(in srgb, var(--accent, #2a7ab0) 12%, transparent); }

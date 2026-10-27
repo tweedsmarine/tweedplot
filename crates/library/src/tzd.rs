@@ -126,6 +126,7 @@ pub fn parse_tzd_xml(text: &str) -> Result<TzdData> {
                             colour: get("Color").parse().map(tz_colour).unwrap_or("").into(),
                             tz_symbol: Some(get("Icon").parse().unwrap_or(0)),
                             group: String::new(),
+                            quick: get("IsQuick") == "true",
                         };
                         points.push((get("Id").into(), Pt { w, layer: get("LayerId").into(), label: get("PointType") == "2" }));
                     }
