@@ -721,6 +721,28 @@ impl Library {
         Ok(n)
     }
 
+    /// Every symbol meaning this library holds: (symbol, kind, label).
+    pub fn symbol_table(&self) -> Result<Vec<(String, String, String)>> {
+        let c = self.db();
+        let mut q = c.prepare("SELECT symbol, kind, label FROM tz_symbols ORDER BY symbol")?;
+        let v = q.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(v)
+    }
+
+    /// Bring this library's symbol meanings into line with `table` (the app's one table):
+    /// each symbol that differs is set as `set_symbol` would. Returns how many marks changed.
+    pub fn apply_symbol_table(&self, table: &[(String, String, String)]) -> Result<usize> {
+        let have: std::collections::HashMap<String, (String, String)> = self.symbol_table()?.into_iter().map(|(s, k, l)| (s, (k, l))).collect();
+        let mut n = 0;
+        for (sym, kind, label) in table {
+            if have.get(sym).is_some_and(|(k, l)| k == kind && l == label) {
+                continue;
+            }
+            n += self.set_symbol(sym, kind, label)?;
+        }
+        Ok(n)
+    }
+
     // ---------- barriers ----------
 
     pub fn barriers(&self) -> Result<Vec<Barrier>> {

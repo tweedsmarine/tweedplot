@@ -1269,6 +1269,44 @@ fn library_remember(app: &tauri::AppHandle, path: &std::path::Path) {
     }
 }
 
+// ---------- one TimeZero symbol table for every library ----------
+// What each TimeZero symbol number means is how the skipper (or the fleet) works, not part
+// of one library, so the app keeps one table (tz-symbols.json in the app's data folder) and
+// every library opened is brought into line with it. The first time, the table is the library
+// in use's own; meanings a library has that the table lacks are added to it.
+
+fn symbol_table_file(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_data_dir().ok().map(|d| d.join("tz-symbols.json"))
+}
+
+fn symbol_table_read(app: &tauri::AppHandle) -> Option<Vec<(String, String, String)>> {
+    symbol_table_file(app).and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| serde_json::from_str(&t).ok())
+}
+
+fn symbol_table_write(app: &tauri::AppHandle, t: &[(String, String, String)]) {
+    if let (Some(f), Ok(j)) = (symbol_table_file(app), serde_json::to_string_pretty(t)) {
+        let _ = std::fs::write(f, j);
+    }
+}
+
+/// Bring the library in use into line with the app's symbol table; returns marks changed.
+fn symbols_sync(app: &tauri::AppHandle) -> Result<usize, String> {
+    let l = lib()?;
+    let own = l.symbol_table().map_err(es)?;
+    let mut table = symbol_table_read(app).unwrap_or_default();
+    let before = table.len();
+    for e in own {
+        if !table.iter().any(|t| t.0 == e.0) {
+            table.push(e);
+        }
+    }
+    if table.len() != before || symbol_table_file(app).is_some_and(|f| !f.is_file()) {
+        table.sort();
+        symbol_table_write(app, &table);
+    }
+    l.apply_symbol_table(&table).map_err(es)
+}
+
 /// Make `path` the library in use (opening, or making, it).
 fn library_switch(app: &tauri::AppHandle, path: &std::path::Path) -> Result<(), String> {
     if REC.lock().unwrap().is_some() {
@@ -1277,6 +1315,9 @@ fn library_switch(app: &tauri::AppHandle, path: &std::path::Path) -> Result<(), 
     let l = library::Library::open_file(path).map_err(es)?;
     *LIBRARY.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(l));
     library_remember(app, path);
+    if let Err(e) = symbols_sync(app) {
+        eprintln!("symbol table: {e}");
+    }
     library_changed(app);
     Ok(())
 }
@@ -1356,6 +1397,7 @@ async fn library_merge(app: tauri::AppHandle, path: String, job: Option<String>)
     .map_err(|e| e.to_string());
     job_end(&job);
     let r = r??;
+    let _ = symbols_sync(&app);
     library_changed(&app);
     Ok(r)
 }
@@ -1472,6 +1514,12 @@ fn symbols_list() -> Result<Vec<library::SymbolUse>, String> {
 #[tauri::command]
 fn symbol_set(app: tauri::AppHandle, symbol: String, kind: String, label: String) -> Result<usize, String> {
     let n = lib()?.set_symbol(&symbol, &kind, &label).map_err(es)?;
+    // the one table every library uses
+    let mut table = symbol_table_read(&app).unwrap_or_default();
+    table.retain(|t| t.0 != symbol);
+    table.push((symbol, kind, label.trim().to_string()));
+    table.sort();
+    symbol_table_write(&app, &table);
     library_changed(&app);
     Ok(n)
 }
@@ -3372,6 +3420,12 @@ pub fn run() {
                             library_changed(&h);
                         }
                         rec_resume();
+                        // the library follows the app's one TimeZero symbol table
+                        match symbols_sync(&h) {
+                            Ok(n) if n > 0 => library_changed(&h),
+                            Ok(_) => {}
+                            Err(e) => eprintln!("symbol table: {e}"),
+                        }
                         // the day's backup of the library (a copy; nothing waits for it)
                         if let Ok(l) = lib() {
                             if let Err(e) = l.backup_if_due() {
