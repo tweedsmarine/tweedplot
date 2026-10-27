@@ -1161,3 +1161,4 @@ button.on.warn { background: #b03a2e; color: #fff; border-color: #b03a2e; }
 
 .sel-box { position: absolute; z-index: 5; border: 2px dashed #f0a500; background: rgba(240, 165, 0, 0.12); pointer-events: none; }
 #lib-box { flex: none; }
+.lib-backup-dir { word-break: break-all; font-family: ui-monospace, Consolas, monospace; font-size: 11px; }

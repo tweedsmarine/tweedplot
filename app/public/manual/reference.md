@@ -659,7 +659,7 @@ Untick a barrier to keep it but not use it; rename it in the list; move its poin
 | Merge from another library… | Brings another library's marks, routes, tracks, routings and barriers into this one, matched as an import is, so merging twice adds nothing. The other library isn't changed |
 | Import… | Marks, routes and tracks from GPX, TimeZero (`.tzd`, `.TzBackup`), Google Earth (KML, KMZ) or a spreadsheet (CSV) (below) |
 | Export everything as GPX | Every mark and route in one GPX file in the export folder |
-| Backups… | TweedPlot's own daily copies of this library. Using one copies it beside the library and opens the copy: the backup and the library stay as they were |
+| Backups… | TweedPlot's own daily copies of this library, in the `backups` folder beside it (the menu shows where, and **Open the backups folder** shows them in Explorer). One is made the first time TweedPlot starts each day (by the computer's date); the last 7 days are kept, and one a week for 4 weeks before that. Using one copies it beside the library and opens the copy: the backup and the library stay as they were |
 | Libraries alongside… | Shows other libraries on the chart with this one, read-only (below) |
 | Trash… | What was deleted in the last 30 days (below) |
 | Undo an import… | Takes out again what a file brought in (below) |

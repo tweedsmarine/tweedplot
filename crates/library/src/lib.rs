@@ -1485,8 +1485,14 @@ impl Library {
     /// The day's backup in `<dir>/backups` (library-YYYY-MM-DD.gpkg) if it hasn't been made,
     /// keeping one a day for the last 7 days and one a week for 4 weeks before that.
     pub fn backup_if_due(&self) -> Result<Option<PathBuf>> {
+        self.backup_if_due_on(tracks::iso_time(now()).get(..10).unwrap_or(""))
+    }
+
+    /// As [`backup_if_due`], with today's date as the boat's clock has it ("2026-10-28"):
+    /// in New Zealand the UTC date is yesterday's until midday.
+    pub fn backup_if_due_on(&self, today: &str) -> Result<Option<PathBuf>> {
         let dir = self.dir.join("backups");
-        let today = tracks::iso_time(now()).get(..10).unwrap_or("").to_string();
+        let today = today.to_string();
         let stem = self.name();
         let to = dir.join(format!("{stem}-{today}.gpkg"));
         let made = if to.exists() {
@@ -1500,7 +1506,7 @@ impl Library {
         let day = |name: &str| name.strip_prefix(prefix.as_str()).and_then(|n| n.strip_suffix(".gpkg")).filter(|d| d.len() == 10).and_then(|d| tracks::parse_iso(&format!("{d}T00:00:00Z"))).map(|t| t / 86_400);
         let mut all: Vec<(i64, PathBuf)> = std::fs::read_dir(&dir)?.flatten().filter_map(|e| day(&e.file_name().to_string_lossy()).map(|d| (d, e.path()))).collect();
         all.sort();
-        let now_day = now() / 86_400;
+        let now_day = tracks::parse_iso(&format!("{today}T00:00:00Z")).map(|t| t / 86_400).unwrap_or(now() / 86_400);
         let mut weeks = std::collections::HashSet::new();
         for (d, p) in all.iter().rev() {
             let age = now_day - d;

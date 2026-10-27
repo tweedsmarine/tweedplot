@@ -884,8 +884,20 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     menu.innerHTML = "";
     const h = document.createElement("div");
     h.className = "lib-menu-head";
-    h.textContent = list.length ? "Backups of this library (a copy is made each day TweedPlot starts). Using one copies it beside the library and opens the copy: the backup and the library stay as they are." : "No backups yet: one is made each day TweedPlot starts.";
+    h.textContent = list.length ? "Backups of this library (a copy is made each day TweedPlot starts; the last 7 days are kept, and one a week for 4 weeks before that). Using one copies it beside the library and opens the copy: the backup and the library stay as they are." : "No backups yet: one is made each day TweedPlot starts.";
     menu.append(h);
+    const dir = await invoke("library_backup_dir", { open: false }).catch(() => "");
+    if (dir) {
+      const where = document.createElement("div");
+      where.className = "lib-menu-head lib-backup-dir";
+      where.textContent = `In ${dir}`;
+      where.title = dir;
+      const open = document.createElement("button");
+      open.textContent = "Open the backups folder";
+      open.title = "Show the backups in Explorer (to copy one to a USB stick, say)";
+      open.onclick = () => { closeMenu(); invoke("library_backup_dir", { open: true }).catch((e) => activity.start("Opening the backups folder").fail(String(e))); };
+      menu.append(where, open);
+    }
     for (const b of list) {
       const btn = document.createElement("button");
       btn.textContent = `${b.day}  (${(b.bytes / 1e6).toFixed(0)} MB)`;

@@ -1648,6 +1648,22 @@ fn library_backups() -> Result<Vec<serde_json::Value>, String> {
     Ok(v.into_iter().map(|(d, p, n)| serde_json::json!({ "day": d, "path": p, "bytes": n })).collect())
 }
 
+/// Where the library's own backups are written (made if missing), and open it in Explorer if `open`.
+#[tauri::command]
+fn library_backup_dir(open: bool) -> Result<String, String> {
+    let d = lib()?.dir().join("backups");
+    let _ = std::fs::create_dir_all(&d);
+    if open {
+        #[cfg(windows)]
+        std::process::Command::new("explorer").arg(&d).spawn().map_err(|e| e.to_string())?;
+        #[cfg(target_os = "macos")]
+        std::process::Command::new("open").arg(&d).spawn().map_err(|e| e.to_string())?;
+        #[cfg(all(unix, not(target_os = "macos")))]
+        std::process::Command::new("xdg-open").arg(&d).spawn().map_err(|e| e.to_string())?;
+    }
+    Ok(d.to_string_lossy().into_owned())
+}
+
 /// Use a backup: copied (the backup stays as it is) beside the library as
 /// "<name> restored <day>.gpkg", which becomes the library in use.
 #[tauri::command]
@@ -3568,6 +3584,7 @@ pub fn run() {
             symbols_list,
             setter_open,
             library_trash,
+            library_backup_dir,
             library_unlock,
             library_is_protected,
             overlay_add,
@@ -3705,7 +3722,7 @@ pub fn run() {
                         }
                         // the day's backup of the library (a copy; nothing waits for it)
                         if let Ok(l) = lib() {
-                            if let Err(e) = l.backup_if_due() {
+                            if let Err(e) = l.backup_if_due_on(&chrono::Local::now().format("%Y-%m-%d").to_string()) {
                                 eprintln!("library backup: {e}");
                             }
                         }
