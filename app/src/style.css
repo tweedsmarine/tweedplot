@@ -241,6 +241,15 @@ body.drawer-open .cursor, body.drawer-open .attribution { left: calc(var(--rail-
 .tile.drop-after { box-shadow: inset -4px 0 0 #ffb000; }
 .ipanel.collapsed { align-items: stretch; }
 .ipanel.collapsed .grip { width: 22px; height: 26px; }
+/* The handle shows only while the pointer is over the panel (cleaner). It sits over the panel's edge
+   rather than taking space. Touch screens without hover keep the handle in place, always shown. */
+@media (hover: hover) {
+  .ipanel:not(.collapsed) .grip { position: absolute; z-index: 2; opacity: 0; transition: opacity 0.15s; background: rgba(16, 28, 36, 0.85); }
+  .ipanel.row:not(.collapsed) .grip { left: 3px; top: 3px; bottom: 3px; }
+  .ipanel.column:not(.collapsed) .grip, .ipanel.free:not(.collapsed) .grip { left: 3px; right: 3px; top: 3px; }
+  .ipanel:not(.collapsed):hover .grip, .ipanel .grip:active { opacity: 1; }
+  .locked .ipanel:not(.collapsed):hover .grip { opacity: 0.55; }
+}
 .ipanel .ptitle { color: var(--tile-ink); background: var(--tile-bg); border-radius: 6px; padding: 4px 9px; font-size: 12px; line-height: 18px; white-space: nowrap; cursor: pointer; }
 .tile {
   background: var(--tile-bg); color: var(--tile-ink); border-radius: 6px; padding: 4px 8px 5px;

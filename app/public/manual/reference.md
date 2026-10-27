@@ -435,7 +435,7 @@ The Instruments view is one screen of tiles, each a single reading, on a grid of
 
 **Working with panels**
 
-- **Move**: drag the grip (⋮⋮). Panels snap to the screen edges and keep clear of the dock.
+- **Move**: point at a panel and its grip (⋮⋮) appears along the edge; drag it. Panels snap to the screen edges and keep clear of the dock. (On a touch screen without a mouse the grip is always shown.)
 - **Fold**: double-click (or double-tap) the grip to shrink a panel to a small title; again to open it.
 - **Change a reading**: click (tap) it to choose what it shows, add another beside it, remove it, change the panel's size (small, medium, large) or lay it out across or down.
 - **Instruments drawer**: **Add panel**, **Fold all**, **Lock layout** (stops accidental moves), **Reset**, **Show instrument panels** (hide or show them all at once), and a tick beside each panel to hide just that one. The alarms have their own drawer, {icon:alarms} **Alarms**, and the wind arrows are in **Chart › Own ship**.
