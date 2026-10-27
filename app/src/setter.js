@@ -227,7 +227,8 @@ function render() {
   else if (run.ending && !sounded) { $("st-count").textContent = "✓"; $("st-what").textContent = "Last float: finishing"; }
   else if (sounded) {
     const s = Math.max(0, sounded.at - ac.currentTime);
-    $("st-count").textContent = s >= 10 ? Math.round(s) : s.toFixed(1);
+    // whole seconds, counting down to the tone (8 … 1, then the beep)
+    $("st-count").textContent = String(Math.max(1, Math.ceil(s - 0.05)));
     // which snood of the basket this is: 1 to N
     const inBasket = sounded.off - pat().blanks + 1;
     $("st-what").textContent = sounded.type === "float" ? (run.floats === 0 ? "FIRST FLOAT" : "FLOAT NEXT") : `Snood ${inBasket} of ${pat().snoods}`;
