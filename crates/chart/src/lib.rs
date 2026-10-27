@@ -205,6 +205,14 @@ impl ChartStore {
         let t0 = std::time::Instant::now();
         let mut gpkgs: Vec<PathBuf> = Vec::new();
         for dir in dirs.iter().filter(|d| d.is_dir()) {
+            let step = |what: &str, t: &mut std::time::Instant| {
+                let s = t.elapsed().as_secs_f64();
+                if s >= 0.3 {
+                    log(&format!("charts: {} in {}: {s:.1} s", what, dir.display()));
+                }
+                *t = std::time::Instant::now();
+            };
+            let mut tt = std::time::Instant::now();
             let unz = dir.join(".unzipped");
             for e in std::fs::read_dir(dir)? {
                 let p = e?.path();
@@ -225,17 +233,21 @@ impl ChartStore {
                     _ => {}
                 }
             }
+            step("listing and unzipping", &mut tt);
             // S-57 ENC cells anywhere below, converted once into dir/.enc
             gpkgs.extend(enc::ensure_gpkgs(dir));
+            step("looking for ENC cells", &mut tt);
             if let Some(g) = coast::ensure_gpkg(dir, &unz)? {
                 gpkgs.push(g);
             }
+            step("world coastline", &mut tt);
             // maritime boundaries and fishing rules from their downloads; a broken
             // download mustn't stop the charts opening
             match marine::ensure_gpkgs(dir, &unz) {
                 Ok(v) => gpkgs.extend(v),
-                Err(e) => eprintln!("charts: maritime boundaries / fishing rules: {e}"),
+                Err(e) => log(&format!("charts: maritime boundaries / fishing rules: {e}")),
             }
+            step("maritime boundaries and fishing rules", &mut tt);
             if unz.is_dir() {
                 for e in std::fs::read_dir(&unz)? {
                     let p = e?.path();
@@ -252,10 +264,7 @@ impl ChartStore {
         let mut dbs = Vec::new();
         let mut tables = Vec::new();
         let n_files = gpkgs.len();
-        eprintln!(
-            "charts: opening {n_files} files ({:.1} s finding them)",
-            t0.elapsed().as_secs_f64()
-        );
+        log(&format!("charts: opening {n_files} files ({:.1} s finding them)", t0.elapsed().as_secs_f64()));
         // open the files in parallel (thousands of ENC cells), keep their order
         use rayon::prelude::*;
         let done = std::sync::atomic::AtomicUsize::new(0);
@@ -267,13 +276,19 @@ impl ChartStore {
                 if k % 50 == 0 {
                     (progress.lock().unwrap_or_else(|e| e.into_inner()))(k, n_files);
                 }
-                match open_gpkg(path) {
+                let t = std::time::Instant::now();
+                let r = match open_gpkg(path) {
                     Ok(v) => v,
                     Err(e) => {
-                        eprintln!("charts: {}: {e}", path.display());
+                        log(&format!("charts: {}: {e}", path.display()));
                         None
                     }
+                };
+                let secs = t.elapsed().as_secs_f64();
+                if secs >= 0.5 {
+                    log(&format!("charts: slow to open ({secs:.1} s): {}", path.display()));
                 }
+                r
             })
             .collect();
         let progress = progress.into_inner().unwrap();
@@ -285,11 +300,7 @@ impl ChartStore {
             }));
             dbs.push(Mutex::new(conn));
         }
-        eprintln!(
-            "charts: {} tables from {n_files} files open in {:.1} s",
-            tables.len(),
-            t0.elapsed().as_secs_f64()
-        );
+        log(&format!("charts: {} tables from {n_files} files open in {:.1} s", tables.len(), t0.elapsed().as_secs_f64()));
         progress(n_files, n_files);
         Ok(Self {
             dbs,
@@ -1213,15 +1224,35 @@ pub fn cut_water(land: Vec<Vec<[i32; 2]>>, water: Vec<Vec<[i32; 2]>>) -> Vec<Vec
 /// For the files TweedPlot makes itself (in `.unzipped` and `.enc` folders) the table
 /// details are kept in a `<file>.tables` note beside it, so the next start needn't query
 /// every table of thousands of ENC cells again.
-fn open_gpkg(path: &Path) -> Result<Option<(Connection, Vec<TableInfo>)>, ChartError> {
+/// Where TweedPlot also writes what it logs about the charts (set by the app: its chart log).
+pub static LOGGER: std::sync::OnceLock<fn(&str)> = std::sync::OnceLock::new();
+
+/// A line for the chart log (and the terminal).
+pub fn log(msg: &str) {
+    match LOGGER.get() {
+        Some(f) => f(msg),
+        None => eprintln!("{msg}"),
+    }
+}
+
+/// The note of a chart file's tables: beside files TweedPlot made (in its own dot folders),
+/// else in a `.notes` folder beside the file. Scanning a big GeoPackage (counting its rows,
+/// reading its whole spatial index) takes seconds, so it's done once, not at every start.
+fn tables_note(path: &Path) -> PathBuf {
     let ours = path
         .parent()
         .and_then(|p| p.file_name())
         .is_some_and(|n| n.to_string_lossy().starts_with('.'));
-    if !ours {
-        return open_gpkg_scan(path);
+    if ours {
+        return PathBuf::from(format!("{}.tables", path.display()));
     }
-    let note = PathBuf::from(format!("{}.tables", path.display()));
+    let dir = path.parent().unwrap_or(Path::new(".")).join(".notes");
+    let _ = std::fs::create_dir_all(&dir);
+    dir.join(format!("{}.tables", path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()))
+}
+
+fn open_gpkg(path: &Path) -> Result<Option<(Connection, Vec<TableInfo>)>, ChartError> {
+    let note = tables_note(path);
     // the note also records which layers TweedPlot reads (the class list), so a new
     // version that reads more of them (tidal streams, say) looks at every file again
     let stamp = std::fs::metadata(path)

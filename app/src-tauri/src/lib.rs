@@ -2088,9 +2088,11 @@ fn open_charts_started(handle: tauri::AppHandle) {
         "chart-status",
         serde_json::json!({ "detail": "preparing charts: finding chart files" }),
     );
+    log_chart_tile("charts: opening started");
     std::thread::spawn(move || {
         // convert new or changed ENC cells first, saying how far it has got (a big
         // exchange set, such as all of NOAA's, takes a while the first time)
+        let t_enc = std::time::Instant::now();
         chart::enc::clear_notes();
         let mut prepared_enc_gpkgs = Vec::new();
         for d in enc_dirs
@@ -2111,6 +2113,7 @@ fn open_charts_started(handle: tauri::AppHandle) {
                 }
             }));
         }
+        log_chart_tile(&format!("charts: ENC cells checked in {:.1} s", t_enc.elapsed().as_secs_f64()));
         open_store(handle, dirs, dir, prepared_enc_gpkgs)
     });
 }
@@ -2705,6 +2708,10 @@ static TILE_QUEUE: OnceLock<Arc<(Mutex<TileJobs>, std::sync::Condvar)>> = OnceLo
 static TILE_LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
 static TILE_LOG_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
+fn log_chart_tile_line(message: &str) {
+    log_chart_tile(message);
+}
+
 fn log_chart_tile(message: &str) {
     eprintln!("{message}");
     let Some(path) = TILE_LOG_PATH.get() else {
@@ -2964,6 +2971,7 @@ pub fn run() {
                         } else {
                             eprintln!("chart tile diagnostics: {}", path.display());
                             log_chart_tile("chart tile diagnostics started");
+                            let _ = chart::LOGGER.set(log_chart_tile_line);
                         }
                     }
                     Err(e) => eprintln!("chart tile log directory {}: {e}", dir.display()),

@@ -51,6 +51,16 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.rayon]
 opt-level = 3
+# the library (tens of thousands of marks, years of tracks) and turning results into JSON
+# for the page are much faster optimised, even in development builds
+[profile.dev.package.library]
+opt-level = 3
+[profile.dev.package.serde_json]
+opt-level = 3
+[profile.dev.package.flate2]
+opt-level = 3
+[profile.dev.package.quick-xml]
+opt-level = 3
 [profile.dev.package.rusqlite]
 opt-level = 3
 [profile.dev.package.libsqlite3-sys]

@@ -1535,3 +1535,35 @@ mod convert_big {
         println!("tracks list: {} in {:?}", lib.tracks().unwrap().len(), t.elapsed());
     }
 }
+
+#[cfg(test)]
+mod startup_cost {
+    /// RACENAV_TEST_DIR=<a library folder> cargo test --release -p library startup_cost -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn startup_cost() {
+        let dir = std::path::PathBuf::from(std::env::var("RACENAV_TEST_DIR").unwrap());
+        let t = std::time::Instant::now();
+        let lib = super::Library::open(&dir).unwrap();
+        println!("open {:?}", t.elapsed());
+        let t = std::time::Instant::now();
+        let m = lib.marks().unwrap();
+        println!("marks {} {:?}", m.len(), t.elapsed());
+        let t = std::time::Instant::now();
+        let j = serde_json::to_string(&m).unwrap();
+        println!("marks as JSON {:.1} MB {:?}", j.len() as f64 / 1e6, t.elapsed());
+        let t = std::time::Instant::now();
+        let tr = lib.tracks().unwrap();
+        let j = serde_json::to_string(&tr).unwrap();
+        println!("tracks {} + JSON {:.1} MB {:?}", tr.len(), j.len() as f64 / 1e6, t.elapsed());
+        let t = std::time::Instant::now();
+        let r = lib.routes().unwrap();
+        println!("routes {} {:?}", r.len(), t.elapsed());
+        let t = std::time::Instant::now();
+        let x = lib.routings().unwrap();
+        println!("routings {} {:?}", x.len(), t.elapsed());
+        let t = std::time::Instant::now();
+        let b = lib.backup_if_due().unwrap();
+        println!("backup {:?} {:?}", b.is_some(), t.elapsed());
+    }
+}
