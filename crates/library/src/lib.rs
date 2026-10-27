@@ -1197,6 +1197,26 @@ impl Library {
             other => other?,
         };
         flush(&mut batch, rep)?;
+        // lines kept among the tracks (brought in from MaxSea) come in as barriers, switched off
+        if let Some(lines) = r.as_ref().map(|r| &r.lines).filter(|l| !l.is_empty()) {
+            let shapes: Vec<tzd::TzShape> = lines
+                .iter()
+                .map(|l| {
+                    let p0 = l.points[0];
+                    tzd::TzShape {
+                        id: format!("line-{:016x}", formats::fnv(&format!("{}|{:.5}|{:.5}|{}", l.name, p0.lat, p0.lon, l.points.len()))),
+                        name: l.name.clone(),
+                        kind: "line".into(),
+                        points: l.points.iter().map(|p| [p.lon, p.lat]).collect(),
+                        radius_m: None,
+                        layer: "MaxSea".into(),
+                        colour: l.colour.clone(),
+                    }
+                })
+                .collect();
+            let (added, matched) = self.import_tz_shapes(&shapes, import_id)?;
+            rep.notes.push(format!("{} line{} from the track file (brought in from MaxSea) came in as barriers ({added} new{}), switched off", shapes.len(), if shapes.len() == 1 { "" } else { "s" }, if matched > 0 { format!(", {matched} already here") } else { String::new() }));
+        }
         if let Some((n, of)) = stopped_at {
             rep.not_imported.push(format!("tracks from {n} of {of} on (stopped part way: import the file again to bring in the rest)"));
         }

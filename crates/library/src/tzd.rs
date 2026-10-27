@@ -396,6 +396,7 @@ pub fn read_tz_tracks(r: impl Read, mut each: impl FnMut(TzTrack) -> Result<()>)
                 out.read += 1;
                 each(t)?;
             }
+            Ok(Some(t)) if t.kind == "LINE" && t.points.len() >= 2 => out.lines.push(t),
             Ok(Some(t)) => *out.other.entry(t.kind).or_default() += 1,
             Ok(None) => {}
             Err(e) => {
@@ -421,6 +422,8 @@ pub struct TzTracksRead {
     pub other: std::collections::BTreeMap<String, usize>,
     pub read: usize,
     pub problem: Option<String>,
+    /// LINE objects (lines brought in from MaxSea), to come in as barriers.
+    pub lines: Vec<TzTrack>,
 }
 
 struct Counted<R: Read> {
@@ -619,7 +622,7 @@ mod track_tests {
         })
         .unwrap();
         assert_eq!(r.problem, None);
-        assert_eq!((r.read, r.other.get("LINE").copied()), (1, Some(1)));
+        assert_eq!((r.read, r.other.get("LINE").copied().unwrap_or(0) + r.lines.len()), (1, 1));
         assert_eq!(got[0].points.len(), 1);
     }
 

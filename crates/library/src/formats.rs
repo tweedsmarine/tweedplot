@@ -240,7 +240,7 @@ pub fn parse_kml(text: &str) -> Result<(GpxData, Vec<TzShape>)> {
     Ok((out, shapes))
 }
 
-fn fnv(s: &str) -> u64 {
+pub(crate) fn fnv(s: &str) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
     for b in s.bytes() {
         h ^= b as u64;
