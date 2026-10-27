@@ -3177,6 +3177,26 @@ async fn monitor_open(
     .map_err(|e| e.to_string())
 }
 
+/// The line-setting window (setter.html): the snood and float beeper, always on top, movable
+/// to another screen. Opened again, it's brought forward. Async, as monitor_open.
+#[tauri::command]
+async fn setter_open(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("line-set") {
+        let _ = w.unminimize();
+        return w.set_focus().map_err(|e| e.to_string());
+    }
+    tauri::WebviewWindowBuilder::new(&app, "line-set", tauri::WebviewUrl::App("setter.html".into()))
+        .title("TweedPlot line setting")
+        .inner_size(560.0, 760.0)
+        .min_inner_size(360.0, 420.0)
+        .always_on_top(true)
+        // the beeper must keep time minimised or behind another window
+        .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
+        .build()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
 /// The monitor windows that are open, by label, in number order.
 #[tauri::command]
 fn monitor_list(app: tauri::AppHandle) -> Vec<String> {
@@ -3546,6 +3566,7 @@ pub fn run() {
             gpx_import,
             marks_delete,
             symbols_list,
+            setter_open,
             library_trash,
             library_unlock,
             library_is_protected,

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TweedPlot line setting</title>
+    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/setter.css" />
+  </head>
+  <body class="setter">
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+      <filter id="pal-red" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/></filter>
+      <filter id="pal-green" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.06 0.12 0.02 0 0  0.299 0.587 0.114 0 0  0.03 0.06 0.01 0 0  0 0 0 1 0"/></filter>
+    </defs></svg>
+    <main>
+      <div class="st-state"><b id="st-state">Ready</b><span class="grow"></span><span id="st-clock" class="st-small"></span></div>
+      <div class="st-next">
+        <div id="st-count" class="st-count">–</div>
+        <div id="st-what" class="st-what">Press Start to begin the set</div>
+      </div>
+      <div class="st-counters">
+        <div><span>Hooks</span><b id="st-hooks">0</b><small id="st-target"></small></div>
+        <div><span>Floats</span><b id="st-floats">0</b></div>
+        <div><span>Baskets</span><b id="st-baskets">0</b></div>
+        <div><span>Time</span><b id="st-time">0:00</b></div>
+      </div>
+      <div id="st-live" class="st-live"></div>
+      <div class="st-buttons">
+        <button id="st-start" class="on st-big">Start</button>
+        <button id="st-pause" class="st-big" disabled>Pause</button>
+      </div>
+      <div class="st-buttons">
+        <button id="st-back" disabled title="The crew is ahead: repeat the beep just gone (the pattern steps back one interval)">−1 beep</button>
+        <button id="st-fwd" disabled title="The crew is behind: skip one interval of the pattern">+1 beep</button>
+        <button id="st-last" disabled title="Finish after this basket: the float after it is the last, then the finishing tone">Last basket</button>
+        <button id="st-buoy" disabled title="Log a radio buoy put on now (its name or number)">Radio buoy</button>
+        <button id="st-finish" class="warn" disabled title="End the set now and log it">Finish</button>
+      </div>
+
+      <details id="st-details" class="sub" open>
+        <summary>This set</summary>
+        <div class="wx-row"><label class="grow" for="st-b1">Radio buoy at the start</label><input id="st-b1" type="text" placeholder="name or number" /></div>
+        <div class="wx-row"><label class="grow" for="st-b2">Radio buoy at the end</label><input id="st-b2" type="text" placeholder="name or number" /></div>
+        <div class="wx-row"><label class="grow" for="st-target-in">Hooks to set</label><input id="st-target-in" type="number" min="0" step="1" placeholder="no limit" title="The set finishes at the end of the basket that reaches this many hooks (empty: no limit)" /></div>
+        <div class="wx-row"><label class="grow">Notes</label></div>
+        <textarea id="st-notes" rows="2" placeholder="e.g. bait, target species"></textarea>
+      </details>
+
+      <details id="st-settings" class="sub">
+        <summary>Settings</summary>
+        <div class="wx-row"><label class="grow">Beeps</label>
+          <select id="st-mode"><option value="time">Every so many seconds</option><option value="distance">Every so many metres of line</option></select></div>
+        <div class="wx-row st-time-row"><label class="grow" for="st-interval">Interval between beeps (s)</label><input id="st-interval" type="number" min="4" max="20" step="0.5" /></div>
+        <div class="st-dist-rows">
+          <div class="wx-row"><label class="grow" for="st-spacing">Snood spacing on the line (m)</label><input id="st-spacing" type="number" min="5" max="200" step="1" /></div>
+          <div class="wx-row"><label class="grow" for="st-shooter" title="The speed the line shooter pays out line (empty: SOG is used, for a boat setting without a shooter)">Line shooter speed (kn)</label><input id="st-shooter" type="number" min="0" max="20" step="0.1" placeholder="SOG" /></div>
+          <div class="wx-row"><label class="grow" title="Shooter speed from its drive wheel: circumference × RPM">From the wheel: circumference (m)</label><input id="st-wheel" type="number" min="0" step="0.001" style="width:5em" /><span>× RPM</span><input id="st-rpm" type="number" min="0" step="1" style="width:5em" /></div>
+          <div class="wx-note">The interval is the spacing over the line speed: the shooter's, or SOG if no shooter speed is given (setting without a shooter). It is kept between 4 and 20 s.</div>
+        </div>
+        <div class="wx-row"><label class="grow" for="st-snoods">Snoods per basket (between floats)</label><input id="st-snoods" type="number" min="1" max="60" step="1" /></div>
+        <div class="wx-row"><label class="grow" for="st-blanks" title="Empty intervals between a float and the snoods on each side of it">Intervals each side of a float</label><input id="st-blanks" type="number" min="1" max="4" step="1" /></div>
+        <div id="st-pattern" class="st-pattern"></div>
+        <div class="wx-row"><label class="grow" for="st-hz1">Snood tone (Hz, 0.5 s)</label><input id="st-hz1" type="number" min="300" max="4000" step="50" /><button id="st-test1">Test</button></div>
+        <div class="wx-row"><label class="grow" for="st-hz2">Float tone (Hz, 1 s)</label><input id="st-hz2" type="number" min="300" max="4000" step="50" /><button id="st-test2">Test</button></div>
+        <div class="wx-row"><label class="grow">Sound</label><select id="st-wave"><option value="square">Sharp (carries over noise)</option><option value="sine">Clear</option></select></div>
+        <div class="wx-row"><label class="grow" for="st-vol">Volume</label><input id="st-vol" type="range" min="0.05" max="1" step="0.05" /></div>
+        <div class="wx-row"><label class="grow">Speaker</label><select id="st-out"><option value="">The computer's own</option></select></div>
+        <div class="wx-row"><label class="grow"><input id="st-logfloats" type="checkbox" /> Log each float's position</label></div>
+        <div class="wx-row"><label class="grow">Saved settings</label><select id="st-preset"><option value="">—</option></select><button id="st-save">Save as…</button><button id="st-del" title="Forget the chosen saved settings">✕</button></div>
+      </details>
+      <div class="wx-note st-small">Tones are timed by the sound card, so they keep time even when the computer is busy. Keep this window open (it stays on top; drag it to another screen if you like). The main window's Log shows the set.</div>
+    </main>
+    <script type="module" src="/src/setter.js"></script>
+  </body>
+</html>

@@ -27,9 +27,14 @@ pub struct Event {
     pub notes: String,
     /// A haul: the shot or set it ends.
     pub pair: String,
+    /// The event's own details, e.g. a line set's radio buoys ({"buoy_start": "A12",
+    /// "buoy_end": "B7"}), baskets, snood spacing; a radio buoy's name.
+    pub data: serde_json::Value,
 }
 
 /// The kind a haul ends.
+/// Kinds: net-shot, net-haul, line-set, line-end (the set finished), line-haul, pot-set,
+/// pot-haul, float (a float snapped on during a set), radio-buoy, catch, note.
 pub fn starts(kind: &str) -> Option<&'static str> {
     match kind {
         "net-haul" => Some("net-shot"),
@@ -39,7 +44,7 @@ pub fn starts(kind: &str) -> Option<&'static str> {
     }
 }
 
-const COLS: &str = "id, kind, name, at, lat, lon, depth, temp, sog, cog, notes, pair";
+const COLS: &str = "id, kind, name, at, lat, lon, depth, temp, sog, cog, notes, pair, data";
 
 fn row(r: &rusqlite::Row) -> rusqlite::Result<Event> {
     Ok(Event {
@@ -55,6 +60,7 @@ fn row(r: &rusqlite::Row) -> rusqlite::Result<Event> {
         cog: r.get(9)?,
         notes: r.get(10)?,
         pair: r.get(11)?,
+        data: serde_json::from_str(&r.get::<_, String>(12)?).unwrap_or(serde_json::Value::Null),
     })
 }
 
@@ -92,10 +98,11 @@ impl Library {
             }
         }
         c.execute(
-            "INSERT INTO events (id, kind, name, at, lat, lon, depth, temp, sog, cog, notes, pair) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            "INSERT INTO events (id, kind, name, at, lat, lon, depth, temp, sog, cog, notes, pair, data) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT(id) DO UPDATE SET kind = excluded.kind, name = excluded.name, at = excluded.at, lat = excluded.lat, lon = excluded.lon,
-               depth = excluded.depth, temp = excluded.temp, sog = excluded.sog, cog = excluded.cog, notes = excluded.notes, pair = excluded.pair, deleted_at = NULL",
-            params![e.id, e.kind, e.name, e.at, e.lat, e.lon, e.depth, e.temp, e.sog, e.cog, e.notes, e.pair],
+               depth = excluded.depth, temp = excluded.temp, sog = excluded.sog, cog = excluded.cog, notes = excluded.notes, pair = excluded.pair,
+               data = excluded.data, deleted_at = NULL",
+            params![e.id, e.kind, e.name, e.at, e.lat, e.lon, e.depth, e.temp, e.sog, e.cog, e.notes, e.pair, if e.data.is_null() { "{}".to_string() } else { e.data.to_string() }],
         )?;
         Ok(e)
     }

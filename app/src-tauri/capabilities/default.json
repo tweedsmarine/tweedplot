@@ -4,7 +4,8 @@
   "description": "Main window: events and the app's own commands",
   "windows": [
     "main",
-    "monitor-*"
+    "monitor-*",
+    "line-set"
   ],
   "permissions": [
     "core:default",
@@ -26,6 +27,7 @@
     "core:window:allow-outer-position",
     "core:window:allow-inner-size",
     "core:window:allow-scale-factor",
-    "core:window:allow-is-maximized"
+    "core:window:allow-is-maximized",
+    "core:window:allow-set-always-on-top"
   ]
 }

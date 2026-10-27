@@ -21,11 +21,15 @@ const KEY = "racenav.events";
 const KINDS = {
   "net-shot": { label: "Net shot", gear: "net", icon: "sym-tri-down", colour: "#1f6fb2" },
   "net-haul": { label: "Net hauled", gear: "net", icon: "sym-tri-up", colour: "#d35400", start: "net-shot" },
-  "line-set": { label: "Line set", gear: "line", icon: "sym-tri-down", colour: "#1f6fb2" },
+  "line-set": { label: "Line set", gear: "line", icon: "sym-tri-down", colour: "#1f6fb2", window: true },
   "line-haul": { label: "Line hauled", gear: "line", icon: "sym-tri-up", colour: "#d35400", start: "line-set" },
   "pot-set": { label: "Pots set", gear: "pot", icon: "sym-tri-down", colour: "#1f6fb2" },
   "pot-haul": { label: "Pots hauled", gear: "pot", icon: "sym-tri-up", colour: "#d35400", start: "pot-set" },
   catch: { label: "Catch", gear: "", icon: "sym-fish", colour: "#16a085", ask: "What was caught (and how much)?" },
+  // written by the line-setting window (setter.js), not by a button here
+  "line-end": { label: "Line set finished", gear: "", icon: "sym-square", colour: "#1f6fb2", auto: true },
+  float: { label: "Float", gear: "", icon: "sym-dot", colour: "#d35400", auto: true },
+  "radio-buoy": { label: "Radio buoy", gear: "", icon: "sym-flag", colour: "#c2185b", auto: true },
   note: { label: "Note", gear: "", icon: "sym-excl", colour: "#5b6b75", ask: "The note" },
 };
 const GEAR = { net: "Net", line: "Longline", pot: "Pots" };
@@ -35,7 +39,7 @@ const toLocal = (t) => { const d = new Date(t * 1000); d.setMinutes(d.getMinutes
 const dur = (s) => { const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); return h ? `${h} h ${m} min` : `${m} min`; };
 
 export function setupEvents(map, { ui, getBoat }) {
-  let prefs = { gear: ["net", "line", "pot"], every: 60, auto: false, show: true };
+  let prefs = { gear: ["net", "line", "pot"], every: 60, auto: false, show: true, floats: false };
   try { Object.assign(prefs, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* storage unavailable */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ } };
   let events = [];
@@ -46,12 +50,12 @@ export function setupEvents(map, { ui, getBoat }) {
     const box = $("evt-buttons");
     box.innerHTML = "";
     for (const [kind, k] of Object.entries(KINDS)) {
-      if (k.gear && !prefs.gear.includes(k.gear)) continue;
+      if (k.auto || (k.gear && !prefs.gear.includes(k.gear))) continue;
       const b = document.createElement("button");
       b.className = `evt-btn ${k.start ? "haul" : k.gear ? "shot" : "other"}`;
       b.textContent = k.label;
-      b.title = `Save “${k.label}” now, with the boat's position, depth and sea temperature`;
-      b.onclick = () => log(kind);
+      b.title = k.window ? "Open the line-setting window: the snood and float beeper (it logs the set when started)" : `Save “${k.label}” now, with the boat's position, depth and sea temperature`;
+      b.onclick = () => (k.window ? invoke("setter_open").catch((e) => activity.start("Line setting").fail(String(e))) : log(kind));
       box.append(b);
     }
     const g = $("evt-gear");
@@ -234,14 +238,16 @@ export function setupEvents(map, { ui, getBoat }) {
     const vis = prefs.show ? "visible" : "none";
     for (const id of ["evt-tows", "evt-icons", "evt-labels"]) map.setLayoutProperty(id, "visibility", vis);
     // what the list shows (search, its filters and the Whole library ones)
-    const shown = list.filtered().filter((e) => e.lat != null);
+    const shown = [...list.filtered(), ...(prefs.floats ? [] : events.filter((e) => e.kind === "float" && sharedTest(e, SHARED)))].filter((e) => e.lat != null);
     map.getSource("evt").setData({ type: "FeatureCollection", features: shown.map((e) => ({ type: "Feature",
-      properties: { id: e.id, icon: KINDS[e.kind]?.icon ?? "sym-dot", colour: KINDS[e.kind]?.colour ?? "#5b6b75", label: `${e.name} ${clock(e.at)}` },
+      properties: { id: e.id, icon: KINDS[e.kind]?.icon ?? "sym-dot", colour: KINDS[e.kind]?.colour ?? "#5b6b75", label: e.kind === "float" ? e.name : `${e.name} ${clock(e.at)}` },
       geometry: { type: "Point", coordinates: [e.lon, e.lat] } })) });
     const ids = new Set(shown.map((e) => e.id));
     const tows = shown.filter((e) => e.pair && ids.has(e.pair)).map((h) => { const s = byId(h.pair); return s?.lat != null ? { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: [[s.lon, s.lat], [h.lon, h.lat]] } } : null; }).filter(Boolean);
     map.getSource("evt-tows").setData({ type: "FeatureCollection", features: tows });
   }
+  $("evt-floats").checked = prefs.floats;
+  $("evt-floats").onchange = (e) => { prefs.floats = e.target.checked; save(); refresh(); };
   $("evt-show").checked = prefs.show;
   $("evt-show").onchange = (e) => { prefs.show = e.target.checked; save(); draw(); };
   map.on("click", "evt-icons", (e) => {
@@ -257,7 +263,8 @@ export function setupEvents(map, { ui, getBoat }) {
 
   async function refresh() {
     try { events = await invoke("events_list"); } catch { events = []; }
-    list.setItems(events);
+    // a set's floats (dozens a set) are listed only when asked for; they're always on the chart
+    list.setItems(prefs.floats ? events : events.filter((e) => e.kind !== "float"));
     renderOpen();
   }
   listen("events-changed", () => refresh());

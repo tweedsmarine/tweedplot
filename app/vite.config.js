@@ -10,6 +10,6 @@ export default defineConfig({
   clearScreen: false,
   define: { __BUILD__: JSON.stringify(build) },
   server: { port: 1420, strictPort: true },
-  build: { target: "es2022", outDir: "dist", chunkSizeWarningLimit: 2000, rollupOptions: { input: { main: "index.html" } } },
+  build: { target: "es2022", outDir: "dist", chunkSizeWarningLimit: 2000, rollupOptions: { input: { main: "index.html", setter: "setter.html" } } },
   worker: { format: "es" },
 });

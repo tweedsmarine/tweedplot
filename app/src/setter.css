@@ -1,0 +1,25 @@
+/* the line-setting window (setter.html, setter.js): big and plain, to read at arm's length on deck */
+body.setter { margin: 0; background: var(--panel-solid, #fff); color: var(--ink, #1d2a33); font-size: 15px; overflow: auto; }
+body.setter main { padding: 12px 14px 20px; display: flex; flex-direction: column; gap: 10px; max-width: 760px; margin: 0 auto; }
+.setter .st-state { display: flex; align-items: center; font-size: 18px; }
+.setter .st-small { font-size: 12px; color: var(--quiet, #5b6b75); }
+.setter .st-next { text-align: center; padding: 10px 6px; border-radius: 12px; background: #eef3f6; }
+.setter .st-next.float { background: #fbeee4; }
+.setter .st-next.paused { background: #fff3cc; }
+.setter .st-count { font-size: clamp(64px, 18vw, 140px); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.setter .st-what { font-size: clamp(18px, 4.5vw, 30px); font-weight: 600; margin-top: 4px; }
+.setter .st-next.float .st-what { color: #8a3a05; }
+.setter .st-counters { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.setter .st-counters div { background: #eef3f6; border-radius: 8px; padding: 6px; text-align: center; }
+.setter .st-counters span { display: block; font-size: 12px; color: var(--quiet, #5b6b75); text-transform: uppercase; letter-spacing: 0.04em; }
+.setter .st-counters b { font-size: 30px; font-variant-numeric: tabular-nums; }
+.setter .st-counters small { display: block; font-size: 11px; color: var(--quiet, #5b6b75); }
+.setter .st-live { font-size: 13px; text-align: center; color: var(--quiet, #5b6b75); min-height: 1.2em; }
+.setter .st-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.setter .st-buttons button { flex: 1 1 auto; padding: 10px 8px; font-size: 15px; }
+.setter .st-buttons .st-big { font-size: 22px; font-weight: 700; padding: 16px 8px; border-radius: 10px; }
+.setter .st-pattern { font-family: ui-monospace, Consolas, monospace; font-size: 13px; letter-spacing: 1px; color: var(--quiet, #5b6b75); overflow-wrap: anywhere; }
+.setter textarea { width: 100%; box-sizing: border-box; }
+.setter .wx-row input[type="number"] { width: 6em; }
+.setter .st-dist-rows[hidden], .setter .st-time-row[hidden] { display: none; }
+.setter .st-state .grow { flex: 1; }

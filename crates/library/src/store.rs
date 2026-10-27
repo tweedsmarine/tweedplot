@@ -22,7 +22,7 @@ use crate::tracks::TrackPoint;
 use crate::Result;
 
 pub const FILE: &str = "library.gpkg";
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 /// Days a deleted object stays in the Trash.
 pub const TRASH_DAYS: i64 = 30;
 
@@ -83,6 +83,10 @@ fn migrate(c: &Connection) -> Result<()> {
     if v < 5 {
         // barriers can come from an import (TimeZero's lines, areas and circles)
         c.execute_batch("BEGIN; ALTER TABLE barriers ADD COLUMN import_id INTEGER; UPDATE meta SET value = '5' WHERE key = 'schema'; COMMIT;")?;
+    }
+    if v < 6 {
+        // an event's own details (a line set's radio buoys, baskets and spacing), as JSON
+        c.execute_batch("BEGIN; ALTER TABLE events ADD COLUMN data TEXT NOT NULL DEFAULT '{}'; UPDATE meta SET value = '6' WHERE key = 'schema'; COMMIT;")?;
     }
     Ok(())
 }
