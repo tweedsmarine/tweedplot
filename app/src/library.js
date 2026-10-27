@@ -67,7 +67,8 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   delete prefs.filter; // the filters belong to the list now
   const savePrefs = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ } };
   const listeners = [];
-  const status = (s) => { $("lib-status").textContent = s; };
+  // one-line messages go on an activity card, seen with the drawer closed
+  const status = (s) => { if (s) activity.note(s); };
 
   // ---------- chart layers ----------------------------------------------------------
   const empty = { type: "FeatureCollection", features: [] };
@@ -466,7 +467,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   form.querySelector('[data-act="delete"]').onclick = async (e) => {
     const b = e.currentTarget;
     if (!editing) return;
-    if (isLocked(editing)) { status(`“${editing.group}” is locked: unlock it in Marks > Groups to delete its marks.`); activity.note(`${editing.name || "The mark"} is in a locked group`, { details: [`Unlock “${editing.group}” in Library > Marks > Groups to delete it.`] }); return; }
+    if (isLocked(editing)) { activity.note(`${editing.name || "The mark"} is in a locked group`, { details: [`Unlock “${editing.group}” in Library > Marks > Groups to delete it.`] }); return; }
     if (!b.dataset.armed) { b.dataset.armed = "1"; b.textContent = usedBy.has(editing.id) ? "Delete (in routes)?" : "Delete it?"; setTimeout(() => { delete b.dataset.armed; b.textContent = "Delete"; }, 4000); return; }
     delete b.dataset.armed; b.textContent = "Delete";
     try { await invoke("mark_delete", { id: editing.id, force: true }); activity.note(`Deleted ${editing.name || "the mark"}`); } catch (err) { status(String(err)); }

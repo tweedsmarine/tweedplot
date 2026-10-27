@@ -20,6 +20,8 @@ import { setupTrips } from "./trips.js";
 import { setupOverlays } from "./overlays.js";
 import { setupEvents } from "./events.js";
 let tripsTimer = 0;
+// the Library's one-line messages go on activity cards (seen with the drawer closed)
+const libNote = (s) => import("./activity.js").then((a) => a.note(s));
 import { setupRuler } from "./ruler.js";
 import { setupGribTools } from "./gribtools.js";
 import { setupRouteWeather } from "./routewx.js";
@@ -406,7 +408,7 @@ map.on("load", () => {
   setupTides(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn) });
   ruler = setupRuler(map, { before: "track", ui, library, route, toast, getVariation: () => vessel.variation });
   tracks = setupTracks(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn),
-    status: (s) => { document.getElementById("lib-status").textContent = s; } });
+    status: (s) => { if (s) libNote(s); } });
   listen("library-changed", () => { clearTimeout(tracksTimer); tracksTimer = setTimeout(() => { tracks.refresh(); barriers?.refresh(); }, 150); });
   barriers = setupBarriers(map, { before: "track", library, toast });
   const trips = setupTrips(map, { ui, library, tracks });
