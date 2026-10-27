@@ -6,6 +6,7 @@
 import { infoBox } from "./infobox.js";
 import { seaScale } from "./weather.js";
 import { invoke } from "@tauri-apps/api/core";
+import * as activity from "./activity.js";
 import { listen } from "@tauri-apps/api/event";
 
 const KEY = "racenav.tracks";
@@ -353,8 +354,8 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
       try {
         const n = await invoke("tracks_delete", { ids });
         for (const id of ids) cache.delete(id);
-        status(`Deleted ${n} track${n === 1 ? "" : "s"}.`);
-      } catch (e) { status(String(e)); }
+        activity.note(`Deleted ${n.toLocaleString()} track${n === 1 ? "" : "s"}`);
+      } catch (e) { activity.start("Deleting tracks").fail(String(e)); }
       $("trk-bulk-yes").disabled = false;
       await refresh();
     };

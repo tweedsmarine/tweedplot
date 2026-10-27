@@ -1396,23 +1396,109 @@ async fn library_pick_file(app: tauri::AppHandle) -> Result<Option<String>, Stri
 /// TimeZero's .tzd / .TzBackup (or the WaypointRouteDatabase.xml inside one). The file is read
 /// here, not passed through the page: a TimeZero file can be gigabytes.
 #[tauri::command]
-async fn library_import_path(app: tauri::AppHandle, path: String) -> Result<library::ImportReport, String> {
+async fn library_import_path(app: tauri::AppHandle, path: String, job: Option<String>) -> Result<library::ImportReport, String> {
     let path = std::path::PathBuf::from(path);
     let stem = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    let job = job.unwrap_or_default();
+    let cancel = job_begin(&job);
+    let h = app.clone();
+    let j = job.clone();
     let r = tauri::async_runtime::spawn_blocking(move || -> Result<library::ImportReport, String> {
         let l = lib()?;
+        let mut progress = job_progress(&h, &j);
         if ext == "gpx" {
             let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-            l.import_gpx(&text, &stem).map_err(es)
+            l.import_gpx_with(&text, &stem, &mut progress).map_err(es)
         } else {
-            l.import_tzd(&path, &stem).map_err(es)
+            l.import_tzd_with(&path, &stem, &mut progress, &cancel).map_err(es)
         }
     })
     .await
-    .map_err(|e| e.to_string())??;
+    .map_err(|e| e.to_string());
+    job_end(&job);
+    let r = r??;
     library_changed(&app);
     Ok(r)
+}
+
+// ---------- jobs: long tasks the page shows on an activity card ----------
+// A job has an id from the page; it reports progress as "job-progress" events
+// ({ job, step, done, total }) and can be stopped with job_cancel.
+
+static JOBS: OnceLock<Mutex<std::collections::HashMap<String, Arc<std::sync::atomic::AtomicBool>>>> = OnceLock::new();
+
+fn job_begin(job: &str) -> Arc<std::sync::atomic::AtomicBool> {
+    let flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    if !job.is_empty() {
+        JOBS.get_or_init(Default::default).lock().unwrap().insert(job.to_string(), flag.clone());
+    }
+    flag
+}
+
+fn job_end(job: &str) {
+    if let Some(m) = JOBS.get() {
+        m.lock().unwrap().remove(job);
+    }
+}
+
+/// A progress callback for a job: sends "job-progress" at most five times a second, and
+/// always when the step changes or it finishes.
+fn job_progress(app: &tauri::AppHandle, job: &str) -> impl FnMut(&str, usize, usize) {
+    let app = app.clone();
+    let job = job.to_string();
+    let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
+    let mut last_step = String::new();
+    move |step: &str, done: usize, total: usize| {
+        if job.is_empty() {
+            return;
+        }
+        if step != last_step || done == total || last.elapsed().as_millis() >= 200 {
+            last = std::time::Instant::now();
+            last_step = step.to_string();
+            let _ = app.emit("job-progress", serde_json::json!({ "job": job, "step": step, "done": done, "total": total }));
+        }
+    }
+}
+
+/// Stop a job (it finishes what it's doing and keeps what's done).
+#[tauri::command]
+fn job_cancel(job: String) {
+    if let Some(f) = JOBS.get().and_then(|m| m.lock().unwrap().get(&job).cloned()) {
+        f.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+// ---------- the activity log: every job and result, for support ----------
+
+fn activity_log_path(app: &tauri::AppHandle) -> PathBuf {
+    let base = library_dir(app);
+    base.parent().map(|p| p.to_path_buf()).unwrap_or(base).join("logs").join("activity.log")
+}
+
+/// Add a line to the activity log (`<data folder>\logs\activity.log`; kept under 1 MB).
+#[tauri::command]
+fn activity_log(app: tauri::AppHandle, line: String) -> Result<(), String> {
+    use std::io::Write;
+    let p = activity_log_path(&app);
+    if let Some(d) = p.parent() {
+        std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+    }
+    if std::fs::metadata(&p).is_ok_and(|m| m.len() > 1_000_000) {
+        let _ = std::fs::rename(&p, p.with_extension("old.log"));
+    }
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&p).map_err(|e| e.to_string())?;
+    writeln!(f, "{} {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S"), line.replace('\n', " ")).map_err(|e| e.to_string())
+}
+
+/// The last `n` lines of the activity log, and where it is.
+#[tauri::command]
+fn activity_log_read(app: tauri::AppHandle, n: usize) -> serde_json::Value {
+    let p = activity_log_path(&app);
+    let text = std::fs::read_to_string(&p).unwrap_or_default();
+    let lines: Vec<&str> = text.lines().collect();
+    let tail = lines[lines.len().saturating_sub(n)..].to_vec();
+    serde_json::json!({ "path": p, "lines": tail })
 }
 
 // ---------- tracks and the track recorder ----------
@@ -2998,6 +3084,9 @@ pub fn run() {
             marks_in,
             library_pick_file,
             library_import_path,
+            job_cancel,
+            activity_log,
+            activity_log_read,
             rec_status,
             rec_start,
             rec_stop,

@@ -35,6 +35,8 @@ pub enum Error {
     Db(#[from] rusqlite::Error),
     #[error("library database: {0}")]
     Store(String),
+    #[error("stopped")]
+    Cancelled,
     #[error("not found: {0}")]
     NotFound(String),
     #[error("{0}")]
@@ -723,8 +725,16 @@ impl Library {
     /// Bring GPX waypoints and routes into the library. A waypoint with the
     /// same name as a library mark and within about 50 m is the same mark.
     pub fn import_gpx(&self, text: &str, group: &str) -> Result<ImportReport> {
+        self.import_gpx_with(text, group, &mut |_, _, _| {})
+    }
+
+    /// [`import_gpx`](Self::import_gpx), telling `progress(step, done, total)` as it goes.
+    pub fn import_gpx_with(&self, text: &str, group: &str, progress: &mut dyn FnMut(&str, usize, usize)) -> Result<ImportReport> {
+        progress("Reading the file", 0, 0);
+        let data = parse_gpx(text)?;
+        progress("Matching marks with the library", 0, 0);
         let id = self.begin_import(group, "gpx")?;
-        let rep = self.import_data(parse_gpx(text)?, group, id)?;
+        let rep = self.import_data(data, group, id)?;
         self.finish_import(id, &rep)?;
         Ok(rep)
     }
@@ -732,14 +742,22 @@ impl Library {
     /// Bring in a TimeZero `.tzd` / `.TzBackup` (or its WaypointRouteDatabase.xml): marks
     /// in their layers as groups, with symbol, colour and date, and routes. Matching is as GPX.
     pub fn import_tzd(&self, path: &std::path::Path, group: &str) -> Result<ImportReport> {
+        self.import_tzd_with(path, group, &mut |_, _, _| {}, &AtomicBool::new(false))
+    }
+
+    /// [`import_tzd`](Self::import_tzd), telling `progress(step, done, total)` as it goes; when
+    /// `cancel` is set it stops after the tracks read so far (what's in stays in).
+    pub fn import_tzd_with(&self, path: &std::path::Path, group: &str, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<ImportReport> {
+        progress("Reading marks and routes", 0, 0);
         let d = tzd::read_tzd(path)?;
+        progress("Matching marks with the library", 0, 0);
         let id = self.begin_import(&path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), "timezero")?;
         let mut rep = self.import_data(d.gpx, group, id)?;
         let n = |k: usize, one: &str, many: &str| if k == 1 { format!("1 {one}") } else { format!("{k} {many}") };
         if d.lines + d.areas + d.circles > 0 {
             rep.not_imported.push(format!("{}, {} and {} (not yet)", n(d.lines, "line", "lines"), n(d.areas, "area", "areas"), n(d.circles, "circle", "circles")));
         }
-        self.import_tz_tracks(path, group, id, &mut rep)?;
+        self.import_tz_tracks(path, group, id, &mut rep, progress, cancel)?;
         self.finish_import(id, &rep)?;
         Ok(rep)
     }
@@ -758,7 +776,15 @@ impl Library {
     /// TimeZero's tracks (Tracks.bin), thinned as the track recorder thins live fixes
     /// (TimeZero keeps one every 2 s). A track already here (same start and name) is skipped.
     /// Written a few hundred at a time, so the rest of the app isn't held up for long.
-    fn import_tz_tracks(&self, path: &std::path::Path, group: &str, import_id: i64, rep: &mut ImportReport) -> Result<()> {
+    fn import_tz_tracks(
+        &self,
+        path: &std::path::Path,
+        group: &str,
+        import_id: i64,
+        rep: &mut ImportReport,
+        progress: &mut dyn FnMut(&str, usize, usize),
+        cancel: &AtomicBool,
+    ) -> Result<()> {
         // a track already here: the same first and last fix (whatever it's called: the file
         // may have been renamed since)
         let have: std::collections::HashSet<(i64, i64)> = self.tracks()?.into_iter().filter_map(|t| t.stats.start.zip(t.stats.end)).collect();
@@ -787,7 +813,13 @@ impl Library {
             rep.tracks_added.extend(batch.drain(..).map(|t| t.name));
             Ok(())
         };
+        let mut stopped_at = None;
         let r = tzd::read_tzd_tracks(path, |t| {
+            if cancel.load(Ordering::Relaxed) {
+                stopped_at = Some((t.n, t.of));
+                return Err(Error::Cancelled);
+            }
+            progress("Tracks", t.n, t.of);
             fixes += t.points.len();
             if !by_second.is_empty() && t.mobile.eq_ignore_ascii_case("OwnShip") {
                 for p in &t.points {
@@ -837,8 +869,16 @@ impl Library {
                 flush(&mut batch, rep)?;
             }
             Ok(())
-        })?;
+        });
+        let r = match r {
+            Err(Error::Cancelled) => None,
+            other => other?,
+        };
         flush(&mut batch, rep)?;
+        if let Some((n, of)) = stopped_at {
+            rep.not_imported.push(format!("tracks from {n} of {of} on (stopped part way: import the file again to bring in the rest)"));
+        }
+        progress("Filling in the conditions of marks made at the boat", 0, 0);
         if !found.is_empty() {
             let mut c = self.db();
             let tx = c.transaction()?;
@@ -1911,5 +1951,29 @@ mod reimport {
         let v = lib.marks_in(179.0, -45.0, -179.0, -43.0).unwrap();
         println!("marks across 180°: {}", v.len());
         if let Some(x) = m.iter().find(|x| x.tags.contains("at-boat") && x.temp.is_some()) { println!("e.g. {:?}", x); }
+    }
+}
+
+#[cfg(test)]
+mod cancel_check {
+    #[test]
+    #[ignore]
+    fn cancel_part_way() {
+        let f = std::env::var("RACENAV_TEST_TZD").unwrap();
+        let dir = std::env::temp_dir().join(format!("tp_cancel_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let lib = super::Library::open(&dir).unwrap();
+        let stop = std::sync::atomic::AtomicBool::new(false);
+        let mut steps = std::collections::BTreeSet::new();
+        let r = lib
+            .import_tzd_with(std::path::Path::new(&f), "t", &mut |s, d, _| {
+                steps.insert(s.to_string());
+                if s == "Tracks" && d >= 100 {
+                    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            }, &stop)
+            .unwrap();
+        println!("steps {steps:?}\ntracks {} not imported {:?}", r.tracks_added.len(), r.not_imported);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

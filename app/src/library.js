@@ -1,6 +1,7 @@
 // Library panel: the mark library, saved routes and saved routings, GPX in and out.
 // The data lives in JSON files written by the Rust side (the library folder).
 import { invoke } from "@tauri-apps/api/core";
+import * as activity from "./activity.js";
 import { fmt } from "./weather.js";
 import { distNm } from "./instruments.js";
 import { POI_KINDS, poiImage } from "./poi.js";
@@ -168,9 +169,15 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     const extra = duplicateRoutes();
     $("lib-dupes-go").disabled = true;
     let n = 0;
-    for (const r of extra) { try { await invoke("route_delete", { id: r.id }); n++; } catch (e) { status(String(e)); } }
+    const job = activity.start("Removing duplicate routes");
+    const fails = [];
+    for (const r of extra) {
+      try { await invoke("route_delete", { id: r.id }); n++; } catch (e) { fails.push(`${r.name}: ${e}`); }
+      job.progress("Routes", n + fails.length, extra.length);
+    }
     $("lib-dupes-go").disabled = false;
-    status(`Removed ${n} duplicate route${n === 1 ? "" : "s"}.`);
+    if (fails.length) job.fail(`Removed ${n} of ${extra.length} duplicate routes`, { details: fails });
+    else job.done(`Removed ${n} duplicate route${n === 1 ? "" : "s"}.`);
     refresh();
   };
   function renderRoutes() {
@@ -308,8 +315,8 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       sel.onchange = async () => {
         try {
           const n = await invoke("symbol_set", { symbol: sy.symbol, kind: sel.value, label: sy.label });
-          status(`Symbol ${sy.symbol.slice(3)}: ${n.toLocaleString()} mark${n === 1 ? "" : "s"} now ${sel.selectedOptions[0].textContent.toLowerCase()}.`);
-        } catch (e) { status(String(e)); }
+          activity.note(`TimeZero symbol ${sy.symbol.slice(3)}: ${n.toLocaleString()} mark${n === 1 ? "" : "s"} now ${sel.selectedOptions[0].textContent.toLowerCase()}`);
+        } catch (e) { activity.start(`TimeZero symbol ${sy.symbol.slice(3)}`).fail(String(e)); }
         loadSymbols();
       };
       const show = li.querySelector('[data-act="show"]');
@@ -340,8 +347,8 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       $("lib-bulk-yes").disabled = true;
       try {
         const n = await invoke("marks_delete", { ids, force: true });
-        status(`Deleted ${n} mark${n === 1 ? "" : "s"}.`);
-      } catch (e) { status(`Could not delete: ${e}`); }
+        activity.note(`Deleted ${n.toLocaleString()} mark${n === 1 ? "" : "s"}`, { details: inRoutes ? [`${inRoutes.toLocaleString()} were taken out of saved routes`] : [] });
+      } catch (e) { activity.start("Deleting marks").fail(`Could not delete: ${e}`); }
       $("lib-bulk-yes").disabled = false;
       $("lib-bulk").hidden = true;
       await refresh();
@@ -501,19 +508,35 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       const path = await invoke("library_pick_file");
       if (!path) return;
       const name = path.split(/[\\/]/).pop();
-      status(`Importing ${name}… (a big TimeZero file with years of tracks can take a minute)`);
-      const rep = await invoke("library_import_path", { path });
-      status(`${name}: ${rep.marks_added} new marks, ${rep.marks_matched} matched existing marks` +
-        `${rep.routes_added.length ? `, ${many(rep.routes_added, "route")}` : ""}${rep.routes_matched ? `, ${rep.routes_matched} route${rep.routes_matched === 1 ? "" : "s"} already here` : ""}${rep.tracks_added?.length ? `, ${many(rep.tracks_added, "track")}` : ""}.` +
-        `${rep.not_imported?.length ? ` Not imported: ${rep.not_imported.join("; ")}.` : ""}` +
-        `${rep.notes?.length ? ` (${rep.notes.join("; ")})` : ""}`);
-      await refresh();
-      if (rep.tracks_added?.length) window.dispatchEvent(new CustomEvent("racenav-tracks-imported", { detail: rep.tracks_added }));
+      const job = activity.start(`Importing ${name}`, { params: path, cancel: (id) => invoke("job_cancel", { job: id }) });
+      try {
+        const rep = await invoke("library_import_path", { path, job: job.id });
+        const n = (k, one, many = `${one}s`) => `${k.toLocaleString()} ${k === 1 ? one : many}`;
+        const parts = [
+          rep.marks_added && `${n(rep.marks_added, "new mark")}`,
+          rep.marks_matched && `${n(rep.marks_matched, "mark")} already here`,
+          rep.routes_added.length && n(rep.routes_added.length, "new route"),
+          rep.tracks_added?.length && n(rep.tracks_added.length, "new track"),
+        ].filter(Boolean);
+        const details = [
+          ...(rep.routes_matched ? [`${n(rep.routes_matched, "route")} already here`] : []),
+          ...(rep.routes_added.length && rep.routes_added.length <= 12 ? [`Routes: ${rep.routes_added.join(", ")}`] : []),
+          ...(rep.notes || []).map((t) => t.charAt(0).toUpperCase() + t.slice(1)),
+          ...(rep.not_imported || []).map((t) => `Not imported: ${t}`),
+        ];
+        job.done(parts.length ? parts.join(", ") + "." : "Nothing new: everything in the file is already in the library.", { details, keep: !!rep.not_imported?.length });
+        status("");
+        await refresh();
+        if (rep.tracks_added?.length) window.dispatchEvent(new CustomEvent("racenav-tracks-imported", { detail: rep.tracks_added }));
+      } catch (err) { job.fail(`Import failed: ${err}`); }
     } catch (err) { status(`Import failed: ${err}`); }
     finally { $("lib-import").disabled = false; }
   };
   $("lib-export").onclick = async () => {
-    try { status(`Written to ${await invoke("gpx_export", { name: "racenav library", markIds: [], routeIds: [] })}`); } catch (e) { status(String(e)); }
+    try {
+      const p = await invoke("gpx_export", { name: "racenav library", markIds: [], routeIds: [] });
+      activity.note("Library exported as GPX", { details: [`Written to ${p}`] });
+    } catch (e) { activity.start("Exporting the library").fail(String(e)); }
   };
 
   /** Inline "are you sure" in place of a list row's buttons. */

@@ -8,6 +8,7 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 maplibregl.setWorkerUrl(workerUrl);
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import * as activity from "./activity.js";
 import { setupWeather, barbImage } from "./weather.js";
 import { setupBrand } from "./brand.js";
 import { setupChartFeatures, featureImage } from "./chartfeatures.js";
@@ -358,18 +359,24 @@ map.on("load", () => {
   // marks, routes and routings changed in any window (the backend announces every save and delete)
   let libraryTimer = null, tracksTimer = null;
   // the one-off move of a library kept as JSON files into its database (first start after the change)
+  let convertJob = null;
   listen("library-converting", (e) => {
     const { step, done, total } = e.payload;
-    toast(step === "tracks" ? `Moving your library into its new database: tracks ${done.toLocaleString()} of ${total.toLocaleString()}…` : "Moving your library into its new database…");
+    convertJob ??= activity.start("Moving your library into its new database");
+    convertJob.progress(step === "tracks" ? "Tracks" : "Marks, routes and barriers", done, step === "tracks" ? total : 0);
   });
   listen("library-converted", (e) => {
-    toast(e.payload.ok ? `Library moved into its new database: ${e.payload.text}.` : `Moving the library into its database failed: ${e.payload.text}`, e.payload.ok ? 12000 : 0);
+    const job = convertJob ?? activity.start("Moving your library into its new database");
+    convertJob = null;
+    if (e.payload.ok) job.done("Done.", { details: [e.payload.text], keep: true });
+    else job.fail(`It failed: ${e.payload.text}`);
   });
   listen("library-changed", () => {
     clearTimeout(libraryTimer);
     libraryTimer = setTimeout(() => library?.refresh(), 150);
   });
   setupMonitors(toast);
+  activity.setupActivityLog();
   setupWindowState();
   setupAis(map, { alarms, ui, getOwnMmsi: () => boat.get().mmsi, getOwn: () => ({ pos: lastBoat, cog: live ? vessel?.cog : null, sog: live ? vessel?.sog : 0, live: live && signalKActive() }) });
   setupReplay({ onState: (on) => {

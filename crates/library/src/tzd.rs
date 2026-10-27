@@ -248,6 +248,9 @@ pub struct TzTrack {
     pub mobile: String,
     pub colour: String,
     pub points: Vec<TzFix>,
+    /// Which object this is in the file (from 1), and how many objects it has.
+    pub n: usize,
+    pub of: usize,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -342,7 +345,9 @@ pub fn read_tz_tracks(r: impl Read, mut each: impl FnMut(TzTrack) -> Result<()>)
     for k in 0..count {
         let at = b.r.get_ref().at - b.r.buffer().len() as u64;
         match read_one(&mut b) {
-            Ok(Some(t)) if t.kind == "TRACK" => {
+            Ok(Some(mut t)) if t.kind == "TRACK" => {
+                t.n = k + 1;
+                t.of = count;
                 out.read += 1;
                 each(t)?;
             }
@@ -448,7 +453,7 @@ fn read_one<R: Read>(b: &mut Bin<std::io::BufReader<Counted<R>>>) -> Result<Opti
         }
     }
     let common = (0..256).max_by_key(|&i| colours[i]).unwrap_or(0) as u32;
-    Ok(Some(TzTrack { kind: tag, name, mobile, colour: tz_colour(common).into(), points }))
+    Ok(Some(TzTrack { kind: tag, name, mobile, colour: tz_colour(common).into(), points, n: 0, of: 0 }))
 }
 
 /// The Tracks.bin inside a .tzd / .TzBackup, read as it unzips.

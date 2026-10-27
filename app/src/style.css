@@ -968,3 +968,25 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 .sym-list li .chips i { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(0,0,0,.25); }
 .sym-list li select { max-width: 150px; }
 .sym-list li.active { background: color-mix(in srgb, var(--accent, #2a7ab0) 12%, transparent); }
+
+/* activity cards (activity.js): above the dock, over the chart, clear of the drawer */
+#activity { position: absolute; left: var(--rail-w); right: 0; bottom: calc(var(--dock-h) + 180px); z-index: 45;
+  display: flex; flex-direction: column-reverse; align-items: center; gap: 6px; pointer-events: none; }
+body.drawer-open #activity { left: calc(var(--rail-w) + var(--drawer-w)); }
+.act-card { pointer-events: auto; width: min(420px, 92%); background: var(--panel-bg); color: var(--ink); border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.3); padding: 8px 10px; font-size: 13px; border-left: 5px solid #2a7ab0; }
+.act-card.ok { border-left-color: #2e8b57; }
+.act-card.failed { border-left-color: #8a6d3b; }
+.act-head { display: flex; align-items: center; gap: 6px; }
+.act-head .act-close { border: 0; background: none; padding: 0 4px; font-size: 14px; }
+.act-step { color: var(--quiet); margin-top: 3px; }
+.act-bar { height: 6px; border-radius: 3px; background: rgba(0,0,0,.12); margin-top: 5px; overflow: hidden; }
+.act-bar > div { height: 100%; width: 0; background: #2a7ab0; transition: width .2s; }
+.act-bar[hidden], .act-step[hidden], .act-result[hidden], .act-details[hidden], .act-buttons button[hidden] { display: none; }
+.act-result { margin-top: 3px; }
+.act-details { margin-top: 4px; }
+.act-details ul { margin: 4px 0 0 0; padding-left: 18px; max-height: 160px; overflow: auto; font-size: 12px; }
+.act-buttons { display: flex; gap: 6px; justify-content: flex-end; margin-top: 4px; }
+.act-buttons button { flex: none; width: auto; padding: 3px 10px; font-size: 12px; }
+.act-buttons:not(:has(button:not([hidden]))) { display: none; }
+.act-log { max-height: 260px; overflow: auto; font-size: 11px; white-space: pre-wrap; background: rgba(0,0,0,.04); border-radius: 4px; padding: 6px; }

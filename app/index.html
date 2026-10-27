@@ -767,6 +767,10 @@
         <div class="wx-note">Averages the live readings (Signal K or NMEA) over the time chosen, for the boat on the chart, its lines and the instruments. Position is never damped.</div>
                   </div>
           <div class="tab" data-tab="diag" hidden>
+<h3>Activity log</h3>
+        <div class="wx-note">What TweedPlot has done (imports, deletes, exports, chart changes) and how each went, newest first. Copy for support puts it on the clipboard with the version, to send to Tweedsmarine.</div>
+        <div class="wx-row"><span id="act-log-path" class="grow wx-note mono"></span><button id="act-log-refresh">Refresh</button><button id="act-log-copy" class="on">Copy for support</button></div>
+        <pre id="act-log" class="act-log"></pre>
 <h3>Radar overlay test</h3>
         <div class="wx-row"><label class="grow" for="rs-rpm">Simulated radar</label>
           <select id="rs-rpm" title="Antenna speed"><option value="24">24 rpm</option><option value="48" selected>48 rpm</option></select>

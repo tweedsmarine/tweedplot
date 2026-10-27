@@ -3,6 +3,7 @@
 // (Natural Earth) come with the app.
 
 import { invoke } from "@tauri-apps/api/core";
+import * as activity from "./activity.js";
 import { listen } from "@tauri-apps/api/event";
 
 const $ = (id) => document.getElementById(id);
@@ -263,7 +264,7 @@ export function setupData(map, { toast, reloadTiles } = {}) {
         cb.disabled = true;
         try {
           await invoke("chart_set_use", { path: x.path, on: cb.checked });
-          toast?.(`${x.name} ${cb.checked ? "in use" : "left out"}: opening the charts again…`, 4000);
+          activity.note(`Chart set ${x.name} ${cb.checked ? "in use" : "left out"}: opening the charts again`);
         } catch (e) { cb.checked = !cb.checked; say(String(e), "bad"); }
         cb.disabled = false;
         refreshSets();
