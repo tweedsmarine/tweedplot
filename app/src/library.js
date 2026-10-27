@@ -57,6 +57,7 @@ export function addMarkLayers(map, p, before) {
 export function setupLibrary(map, { ui, toast = () => {} }) {
   const $ = (id) => document.getElementById(id);
   let marks = [];
+  let boxIds = null; // the marks in the box last drawn on the chart (Select on chart)
   let routes = [];
   let routings = [];
   let route = null; // the course editor (set by main once both exist)
@@ -345,6 +346,8 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       { key: "tag", label: "Tag", type: "choice", options: (ms) => countBy(ms, tagsOf, (t) => TAG_LABEL[t] || t), test: (m, v) => tagsOf(m).includes(v) },
       { key: "symbol", label: "TimeZero symbol", type: "choice", options: (ms) => countBy(ms.filter((m) => m.symbol?.startsWith("tz:")), (m) => m.symbol, (s) => `Symbol ${s.slice(3)}`), test: (m, v) => m.symbol === v },
       { key: "route", label: "Routes", type: "choice", options: () => [["used", "In a saved route"], ["unused", "In no route"]], test: (m, v) => inRoute(m) === (v === "used") },
+      // the marks in the last box drawn on the chart (Select on chart); not kept between sessions
+      { key: "box", label: "In the drawn box", type: "toggle", title: "Only the marks in the box drawn on the chart (Select on chart)", hidden: () => !boxIds, test: (m) => !!boxIds?.has(m.id) },
       { key: "dupes", label: "Duplicates", type: "toggle", title: "Marks that repeat another: the same name within 30 m, or unnamed within 5 m (the oldest of each is left out of this list, so Select all then Delete keeps one of each)", test: (m) => dupes().has(m.id) },
       { key: "unknown", label: "Date unknown", type: "toggle", title: "Only marks whose date is only the day they were moved in from another plotter", test: (m) => !!m.date_unknown },
     ],
@@ -395,6 +398,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     empty: () => "No marks yet. Right-click the chart: New library mark here, or import a GPX or TimeZero file (Library menu).",
     changed: () => draw(),
   });
+  if (markList.filters.box) markList.setFilter("box", null); // a box isn't kept from one session to the next
   async function bulk(ms, change, what) {
     try {
       const n = await invoke("marks_update", { ids: ms.map((m) => m.id), ...change });
@@ -547,8 +551,13 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       const inBox = markList.filtered().filter((m) => m.lon >= w && m.lon <= east && m.lat >= s && m.lat <= n).map((m) => m.id);
       stop();
       ui.openTab("library", "marks");
-      const total = markList.select(inBox);
-      toast(inBox.length ? `${inBox.length.toLocaleString()} mark${inBox.length === 1 ? "" : "s"} in the box selected (${total.toLocaleString()} in all): the bar above the list says what can be done with them.` : "No listed marks in that box.");
+      if (!inBox.length) { toast("No listed marks in that box."); return; }
+      // the list shows just the marks in the box, all ticked; the filter's ✕ shows the rest again
+      boxIds = new Set(inBox);
+      markList.clearSelection();
+      markList.setFilter("box", true);
+      markList.select(inBox);
+      toast(`${inBox.length.toLocaleString()} mark${inBox.length === 1 ? "" : "s"} in the box, listed and selected: the bar above the list says what can be done with them. “In the drawn box” (a filter) shows them; untick it for the rest.`);
     });
     window.addEventListener("keydown", (e) => { if (armed && e.key === "Escape") { stop(); toast(""); } });
   })();

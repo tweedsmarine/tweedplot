@@ -197,6 +197,7 @@ export function libList(root, cfg) {
       chips.append(b);
     }
     for (const f of cfg.filters ?? []) {
+      if (f.hidden?.() && !active(f)) continue; // a filter that has nothing to offer yet (a drawn box)
       const b = document.createElement("button");
       b.className = "ll-chip";
       b.classList.toggle("on", active(f));

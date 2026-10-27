@@ -650,6 +650,8 @@ html.no-map body { background: #0f1a21; }
   touch-action: none; user-select: none;
 }
 html[data-view="inst"] #itiles { display: grid; }
+/* the panels shown in the Instruments view: the readings sit beside the open drawer, not over it */
+body.drawer-open #itiles { left: calc(var(--rail-w) + var(--drawer-w) + 49px); }
 .itile { min-width: 0; min-height: 0; overflow: hidden; }
 .itile:not(.graphic) .v { line-height: 1; }
 .itile.highway-card { padding: 2px; }
