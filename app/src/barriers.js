@@ -103,6 +103,7 @@ export function setupBarriers(map, { before, library, toast }) {
     filters: [
       { key: "kind", label: "Kind", type: "choice", options: () => [["line", "Lines"], ["zone", "Zones"]], test: (b, v) => b.kind === v },
       { key: "off", label: "Not used", type: "toggle", title: "Only the barriers routings don't use", test: (b) => !b.active },
+      { key: "tz", label: "From TimeZero", type: "toggle", title: "Only the lines, areas and circles brought in from TimeZero", test: (b) => b.id.startsWith("tz-") },
     ],
     row: {
       render(b, el) {

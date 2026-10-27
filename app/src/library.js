@@ -650,7 +650,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     const KIND = { gpx: "GPX", timezero: "TimeZero", library: "Merged library" };
     for (const im of list) {
       const li = document.createElement("li");
-      const what = [im.marks && howMany(im.marks, "mark"), im.routes && howMany(im.routes, "route"), im.tracks && howMany(im.tracks, "track")].filter(Boolean).join(", ");
+      const what = [im.marks && howMany(im.marks, "mark"), im.routes && howMany(im.routes, "route"), im.tracks && howMany(im.tracks, "track"), im.barriers && howMany(im.barriers, "barrier")].filter(Boolean).join(", ");
       li.innerHTML = `<div class="main"><b></b><small></small></div><button class="warn">Undo</button>`;
       li.querySelector("b").textContent = im.file || "(no name)";
       li.querySelector("small").textContent = `${KIND[im.kind] ?? im.kind} · ${when(im.at)} · ${what}`;
@@ -664,7 +664,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
           ok.disabled = true;
           try {
             const n = await invoke("library_undo_import", { id: im.id });
-            const done = [n.marks && howMany(n.marks, "mark"), n.routes && howMany(n.routes, "route"), n.tracks && howMany(n.tracks, "track")].filter(Boolean).join(", ");
+            const done = [n.marks && howMany(n.marks, "mark"), n.routes && howMany(n.routes, "route"), n.tracks && howMany(n.tracks, "track"), n.barriers && howMany(n.barriers, "barrier")].filter(Boolean).join(", ");
             activity.note(`Import of ${im.file} undone`, { details: [`${done || "Nothing"} moved to the Trash.`, "Library > Trash brings them back."] });
           } catch (e) { activity.start(`Undoing the import of ${im.file}`).fail(String(e)); }
           await refresh();

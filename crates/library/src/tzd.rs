@@ -52,10 +52,27 @@ pub struct TzdData {
     pub gpx: GpxData,
     /// Text labels (PointType 2) brought in as marks.
     pub labels: usize,
-    /// Lines, areas and circles: not imported yet.
+    /// Lines, areas and circles (they come in as barriers, not used until ticked).
     pub lines: usize,
     pub areas: usize,
     pub circles: usize,
+    pub shapes: Vec<TzShape>,
+}
+
+/// A line, area or circle drawn in TimeZero.
+#[derive(Debug, Clone, Default)]
+pub struct TzShape {
+    /// TimeZero's id (so importing again matches it).
+    pub id: String,
+    pub name: String,
+    /// "line", "area" or "circle".
+    pub kind: String,
+    /// [lon, lat]: a line's or area's vertices; a circle's centre.
+    pub points: Vec<[f64; 2]>,
+    /// A circle's radius in metres (TimeZero's Radius; none given: 1 NM).
+    pub radius_m: Option<f64>,
+    pub layer: String,
+    pub colour: String,
 }
 
 /// Read a `.tzd`/`.TzBackup` zip, or a `WaypointRouteDatabase.xml` taken out of one.
@@ -89,6 +106,9 @@ struct Multi {
     kind: u32,
     name: String,
     closed: bool,
+    radius: Option<f64>,
+    layer: String,
+    colour: String,
 }
 
 pub fn parse_tzd_xml(text: &str) -> Result<TzdData> {
@@ -135,6 +155,9 @@ pub fn parse_tzd_xml(text: &str) -> Result<TzdData> {
                         kind: get("MultiPointType").parse().unwrap_or(0),
                         name: get("Name").trim().into(),
                         closed: get("Closed") == "true",
+                        radius: get("Radius").parse().ok(),
+                        layer: get("LayerId").into(),
+                        colour: get("Color").parse().map(tz_colour).unwrap_or("").into(),
                     }),
                     "Relation" => {
                         rel.entry(get("IdMultiPoint").into()).or_default().push((get("Rank").parse().unwrap_or(0.0), get("IdPoint").into()));
@@ -165,9 +188,31 @@ pub fn parse_tzd_xml(text: &str) -> Result<TzdData> {
                 points: pts.iter().filter_map(|(_, i)| by_id.get(i.as_str()).map(|p| with_group(p))).collect(),
             }),
             0 => {} // an empty or one-point route
-            2 if m.closed => out.areas += 1,
-            2 => out.lines += 1,
-            3 => out.circles += 1,
+            2 | 3 => {
+                let points: Vec<[f64; 2]> = pts.iter().filter_map(|(_, i)| by_id.get(i.as_str()).map(|p| [p.w.lon, p.w.lat])).collect();
+                let kind = match (m.kind, m.closed) {
+                    (3, _) => "circle",
+                    (_, true) => "area",
+                    _ => "line",
+                };
+                let enough = if kind == "circle" { !points.is_empty() } else if kind == "area" { points.len() >= 3 } else { points.len() >= 2 };
+                match kind {
+                    "circle" => out.circles += 1,
+                    "area" => out.areas += 1,
+                    _ => out.lines += 1,
+                }
+                if enough {
+                    out.shapes.push(TzShape {
+                        id: m.id.clone(),
+                        name: m.name.clone(),
+                        kind: kind.into(),
+                        points,
+                        radius_m: if kind == "circle" { Some(m.radius.filter(|r| *r > 0.0).unwrap_or(1852.0)) } else { None },
+                        layer: layers.get(&m.layer).cloned().unwrap_or_default(),
+                        colour: m.colour.clone(),
+                    });
+                }
+            }
             _ => {}
         }
     }
@@ -576,5 +621,17 @@ mod track_tests {
         assert_eq!(r.problem, None);
         assert_eq!((r.read, r.other.get("LINE").copied()), (1, Some(1)));
         assert_eq!(got[0].points.len(), 1);
+    }
+
+    /// RN_TZXML=<a WaypointRouteDatabase.xml> cargo test --lib real_shapes -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn real_shapes() {
+        let Ok(p) = std::env::var("RN_TZXML") else { return };
+        let d = parse_tzd_xml(&std::fs::read_to_string(p).unwrap()).unwrap();
+        println!("lines {} areas {} circles {} shapes {}", d.lines, d.areas, d.circles, d.shapes.len());
+        for s in d.shapes.iter().filter(|s| s.kind != "line").take(5) {
+            println!("{} {:?} {} pts r={:?} layer={} colour={}", s.kind, s.name, s.points.len(), s.radius_m, s.layer, s.colour);
+        }
     }
 }

@@ -45,6 +45,7 @@ pub struct ImportInfo {
     pub marks: usize,
     pub routes: usize,
     pub tracks: usize,
+    pub barriers: usize,
 }
 
 /// How many of each an action took.
@@ -133,7 +134,8 @@ impl Library {
             "SELECT i.id, i.file, i.kind, i.at,
                (SELECT count(*) FROM marks WHERE import_id = i.id AND deleted_at IS NULL),
                (SELECT count(*) FROM routes WHERE import_id = i.id AND deleted_at IS NULL),
-               (SELECT count(*) FROM tracks WHERE import_id = i.id AND deleted_at IS NULL)
+               (SELECT count(*) FROM tracks WHERE import_id = i.id AND deleted_at IS NULL),
+               (SELECT count(*) FROM barriers WHERE import_id = i.id AND deleted_at IS NULL)
              FROM imports i ORDER BY i.at DESC, i.id DESC",
         )?;
         let v = q
@@ -146,10 +148,11 @@ impl Library {
                     marks: r.get::<_, i64>(4)? as usize,
                     routes: r.get::<_, i64>(5)? as usize,
                     tracks: r.get::<_, i64>(6)? as usize,
+                    barriers: r.get::<_, i64>(7)? as usize,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(v.into_iter().filter(|i| i.marks + i.routes + i.tracks > 0).collect())
+        Ok(v.into_iter().filter(|i| i.marks + i.routes + i.tracks + i.barriers > 0).collect())
     }
 
     /// Take out (to the Trash) the marks, routes and tracks an import brought in. Marks that
@@ -168,6 +171,7 @@ impl Library {
         n.marks = tx.execute("UPDATE marks SET deleted_at = ?2 WHERE import_id = ?1 AND deleted_at IS NULL", params![id, t])?;
         n.routes = tx.execute("UPDATE routes SET deleted_at = ?2 WHERE import_id = ?1 AND deleted_at IS NULL", params![id, t])?;
         n.tracks = tx.execute("UPDATE tracks SET deleted_at = ?2 WHERE import_id = ?1 AND deleted_at IS NULL", params![id, t])?;
+        n.barriers = tx.execute("UPDATE barriers SET deleted_at = ?2 WHERE import_id = ?1 AND deleted_at IS NULL", params![id, t])?;
         tx.commit()?;
         Ok(n)
     }

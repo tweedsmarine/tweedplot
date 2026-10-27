@@ -22,7 +22,7 @@ use crate::tracks::TrackPoint;
 use crate::Result;
 
 pub const FILE: &str = "library.gpkg";
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 /// Days a deleted object stays in the Trash.
 pub const TRASH_DAYS: i64 = 30;
 
@@ -79,6 +79,10 @@ fn migrate(c: &Connection) -> Result<()> {
              UPDATE meta SET value = '4' WHERE key = 'schema';
              COMMIT;",
         )?;
+    }
+    if v < 5 {
+        // barriers can come from an import (TimeZero's lines, areas and circles)
+        c.execute_batch("BEGIN; ALTER TABLE barriers ADD COLUMN import_id INTEGER; UPDATE meta SET value = '5' WHERE key = 'schema'; COMMIT;")?;
     }
     Ok(())
 }

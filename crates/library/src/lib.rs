@@ -981,12 +981,72 @@ impl Library {
         let id = self.begin_import(&path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), "timezero")?;
         let mut rep = self.import_data(d.gpx, group, id)?;
         let n = |k: usize, one: &str, many: &str| if k == 1 { format!("1 {one}") } else { format!("{k} {many}") };
-        if d.lines + d.areas + d.circles > 0 {
-            rep.not_imported.push(format!("{}, {} and {} (not yet)", n(d.lines, "line", "lines"), n(d.areas, "area", "areas"), n(d.circles, "circle", "circles")));
+        if !d.shapes.is_empty() {
+            let (added, matched) = self.import_tz_shapes(&d.shapes, id)?;
+            let what = format!("{}, {} and {}", n(d.lines, "line", "lines"), n(d.areas, "area", "areas"), n(d.circles, "circle", "circles"));
+            if added > 0 {
+                let again = if matched > 0 { format!(", {matched} already here") } else { String::new() };
+                rep.notes.push(format!("{what} came in as barriers ({added} new{again}), switched off: shown on the chart, not used for routing until ticked (Library > Barriers)"));
+            } else if matched > 0 {
+                rep.notes.push(format!("{what}: already here as barriers"));
+            }
+        }
+        let skipped = d.lines + d.areas + d.circles - d.shapes.len();
+        if skipped > 0 {
+            rep.not_imported.push(format!("{} with too few points", n(skipped, "line, area or circle", "lines, areas or circles")));
         }
         self.import_tz_tracks(path, group, id, &mut rep, progress, cancel)?;
         self.finish_import(id, &rep)?;
         Ok(rep)
+    }
+
+    /// TimeZero's lines, areas and circles as barriers, switched off (kept, shown, not used by
+    /// routing until ticked). A circle becomes a zone of 48 sides. Its TimeZero id is kept, so
+    /// importing again matches it. Returns (added, already here).
+    fn import_tz_shapes(&self, shapes: &[tzd::TzShape], import_id: i64) -> Result<(usize, usize)> {
+        let mut c = self.db();
+        let tx = c.transaction()?;
+        let mut names: std::collections::HashSet<String> = {
+            let mut q = tx.prepare("SELECT name FROM barriers")?;
+            let v = q.query_map([], |r| r.get::<_, String>(0))?.collect::<rusqlite::Result<_>>()?;
+            v
+        };
+        let (mut added, mut matched) = (0, 0);
+        let t = now();
+        for sh in shapes {
+            let id = format!("tz-{}", sh.id);
+            let there: bool = tx.query_row("SELECT count(*) FROM barriers WHERE id = ?1", [&id], |r| r.get::<_, i64>(0))? > 0;
+            if there {
+                matched += 1;
+                continue;
+            }
+            let (kind, points) = match sh.kind.as_str() {
+                "circle" => {
+                    let [lon, lat] = sh.points[0];
+                    let r = sh.radius_m.unwrap_or(1852.0) / 1852.0 / 60.0; // degrees of latitude
+                    let k = lat.to_radians().cos().max(0.01);
+                    ("zone", (0..48).map(|i| { let a = i as f64 * std::f64::consts::TAU / 48.0; [lon + r * a.sin() / k, lat + r * a.cos()] }).collect::<Vec<_>>())
+                }
+                "area" => ("zone", sh.points.clone()),
+                _ => ("line", sh.points.clone()),
+            };
+            let label = match sh.kind.as_str() { "circle" => "circle", "area" => "area", _ => "line" };
+            let base = if sh.name.trim().is_empty() { format!("{} {label}", if sh.layer.is_empty() { "TimeZero" } else { sh.layer.as_str() }) } else { sh.name.trim().to_string() };
+            let name = if names.contains(&base) { (2..).map(|k| format!("{base} {k}")).find(|n| !names.contains(n)).unwrap() } else { base };
+            names.insert(name.clone());
+            let mut notes = format!("From TimeZero ({label}{}{})", if sh.layer.is_empty() { String::new() } else { format!(", layer {}", sh.layer) }, if sh.colour.is_empty() { String::new() } else { format!(", colour {}", sh.colour) });
+            if let Some(r) = sh.radius_m.filter(|_| sh.kind == "circle") {
+                notes.push_str(&format!(", radius {:.0} m", r));
+            }
+            notes.push(')');
+            tx.execute(
+                "INSERT INTO barriers (id, name, kind, points, active, notes, modified, import_id) VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6, ?7)",
+                params![id, name, kind, serde_json::to_string(&points)?, notes, t, import_id],
+            )?;
+            added += 1;
+        }
+        tx.commit()?;
+        Ok((added, matched))
     }
 
     fn begin_import(&self, file: &str, kind: &str) -> Result<i64> {
