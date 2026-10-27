@@ -5,6 +5,7 @@
 // kept by the Rust side.
 import { invoke } from "@tauri-apps/api/core";
 import * as activity from "./activity.js";
+import { ask, askPassphrase } from "./ask.js";
 import { fmt } from "./weather.js";
 import { distNm } from "./instruments.js";
 import { POI_KINDS, poiImage } from "./poi.js";
@@ -24,6 +25,35 @@ export const BUOY_ICONS = {
   isolated: "b|4|2,3,2|1|isd", safewater: "b|3|3,1|2|saw", special: "b|4|6||spp",
 };
 
+/** The chart layers that draw marks (circles, buoy, POI and plotter symbols, names) from the
+ *  source "<p>-marks": the library's ("lib") and libraries shown alongside ("ovl"). */
+export function addMarkLayers(map, p, before) {
+  map.addSource(`${p}-marks`, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  // marks given a buoy kind are drawn with the chart symbol (chartfeatures.js); the circle stays as an
+  // invisible click target so selecting and routing to them works the same
+  const isBuoy = ["has", ["get", "kind"], ["literal", BUOY_ICONS]];
+  const isPoi = ["has", ["get", "kind"], ["literal", Object.fromEntries(Object.keys(POI_KINDS).map((k) => [k, 1]))]];
+  // shapes, seabed and fish symbols ("sym-…"), drawn in the mark's own colour
+  const isSym = ["==", ["slice", ["get", "kind"], 0, 4], "sym-"];
+  const isIcon = ["any", isBuoy, isPoi, isSym];
+  map.addLayer({ id: `${p}-marks`, type: "circle", source: `${p}-marks`,
+    paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, ["case", isIcon, 11, 2.5], 10, ["case", isIcon, 11, 5]],
+             // a mark's own colour (from TimeZero and other plotters), else by its type
+             "circle-color": ["coalesce", ["get", "colour"], ["match", ["get", "kind"], "danger", "#c0392b", "waypoint", "#5b6b75", "#e67e22"]],
+             "circle-opacity": ["case", isIcon, 0, 1], "circle-stroke-opacity": ["case", isIcon, 0, 1],
+             "circle-stroke-color": "#fff", "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 5, 0.5, 10, 1.5] } }, before);
+  map.addLayer({ id: `${p}-buoys`, type: "symbol", source: `${p}-marks`, filter: isBuoy,
+    layout: { "icon-image": ["concat", "s57:", ["get", ["get", "kind"], ["literal", BUOY_ICONS]]], "icon-anchor": "bottom", "icon-offset": [0, 3],
+              "icon-allow-overlap": true, "icon-ignore-placement": true } }, `${p}-marks`);
+  map.addLayer({ id: `${p}-poi`, type: "symbol", source: `${p}-marks`, filter: isPoi,
+    layout: { "icon-image": ["concat", "poi:", ["get", "kind"]], "icon-allow-overlap": true, "icon-ignore-placement": true } }, `${p}-marks`);
+  map.addLayer({ id: `${p}-sym`, type: "symbol", source: `${p}-marks`, filter: isSym,
+    layout: { "icon-image": ["concat", "sym:", ["get", "kind"], ":", ["coalesce", ["get", "colour"], ""]], "icon-size": 0.8, "icon-allow-overlap": true, "icon-ignore-placement": true } }, `${p}-marks`);
+  map.addLayer({ id: `${p}-labels`, type: "symbol", source: `${p}-marks`, minzoom: 8, filter: ["!=", ["get", "name"], ""],
+    layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 6], "icon-allow-overlap": false } }, before);
+  return { isIcon };
+}
+
 export function setupLibrary(map, { ui, toast = () => {} }) {
   const $ = (id) => document.getElementById(id);
   let marks = [];
@@ -41,29 +71,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
 
   // ---------- chart layers ----------------------------------------------------------
   const empty = { type: "FeatureCollection", features: [] };
-  map.addSource("lib-marks", { type: "geojson", data: empty });
-  // marks given a buoy kind are drawn with the chart symbol (chartfeatures.js); the circle stays as an
-  // invisible click target so selecting and routing to them works the same
-  const isBuoy = ["has", ["get", "kind"], ["literal", BUOY_ICONS]];
-  const isPoi = ["has", ["get", "kind"], ["literal", Object.fromEntries(Object.keys(POI_KINDS).map((k) => [k, 1]))]];
-  // shapes, seabed and fish symbols ("sym-…"), drawn in the mark's own colour
-  const isSym = ["==", ["slice", ["get", "kind"], 0, 4], "sym-"];
-  const isIcon = ["any", isBuoy, isPoi, isSym];
-  map.addLayer({ id: "lib-marks", type: "circle", source: "lib-marks",
-    paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, ["case", isIcon, 11, 2.5], 10, ["case", isIcon, 11, 5]],
-             // a mark's own colour (from TimeZero and other plotters), else by its type
-             "circle-color": ["coalesce", ["get", "colour"], ["match", ["get", "kind"], "danger", "#c0392b", "waypoint", "#5b6b75", "#e67e22"]],
-             "circle-opacity": ["case", isIcon, 0, 1], "circle-stroke-opacity": ["case", isIcon, 0, 1],
-             "circle-stroke-color": "#fff", "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 5, 0.5, 10, 1.5] } }, "track");
-  map.addLayer({ id: "lib-buoys", type: "symbol", source: "lib-marks", filter: isBuoy,
-    layout: { "icon-image": ["concat", "s57:", ["get", ["get", "kind"], ["literal", BUOY_ICONS]]], "icon-anchor": "bottom", "icon-offset": [0, 3],
-              "icon-allow-overlap": true, "icon-ignore-placement": true } }, "lib-marks");
-  map.addLayer({ id: "lib-poi", type: "symbol", source: "lib-marks", filter: isPoi,
-    layout: { "icon-image": ["concat", "poi:", ["get", "kind"]], "icon-allow-overlap": true, "icon-ignore-placement": true } }, "lib-marks");
-  map.addLayer({ id: "lib-sym", type: "symbol", source: "lib-marks", filter: isSym,
-    layout: { "icon-image": ["concat", "sym:", ["get", "kind"], ":", ["coalesce", ["get", "colour"], ""]], "icon-size": 0.8, "icon-allow-overlap": true, "icon-ignore-placement": true } }, "lib-marks");
-  map.addLayer({ id: "lib-labels", type: "symbol", source: "lib-marks", minzoom: 8, filter: ["!=", ["get", "name"], ""],
-    layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 6], "icon-allow-overlap": false } }, "track");
+  addMarkLayers(map, "lib", "track");
   let hidden = new Set();
   let markList = null; // made below (draw() can run before)
   function draw() {
@@ -700,6 +708,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     item("Import GPX or TimeZero…", "Marks, routes and tracks from a GPX file, or a TimeZero .tzd or .TzBackup", importFile);
     item("Export everything as GPX", "Every mark and route in one GPX file in the export folder", () => exportGpx("racenav library", [], [], "The library"));
     line();
+    item("Libraries alongside…", "Show another library on the chart with this one, read-only (a mate's marks, another season's)", () => { showSub("overlays"); window.dispatchEvent(new Event("racenav-overlays-open")); });
     item("Backups…", "TweedPlot's own daily copies of this library: use one", showBackups);
     item("Trash…", "Deleted marks, routes, tracks, routings and barriers are kept 30 days: bring them back, or delete them for good", openTrash);
     item("Undo an import…", "Take out again everything a GPX or TimeZero file (or a merge) brought in", openImports);
@@ -721,7 +730,8 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     if (p) useLibrary(p, true);
   }
   async function openLibrary() {
-    const p = await invoke("library_pick_db", { save: false, title: "Open a library", suggest: null }).catch(() => null);
+    let p = await invoke("library_pick_db", { save: false, title: "Open a library", suggest: null }).catch(() => null);
+    if (p) p = await plainLibrary(p, true);
     if (p) useLibrary(p, false);
   }
   async function saveCopy() {
@@ -731,7 +741,8 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     try { await invoke("library_save_copy", { path: p }); job.done("Done.", { details: [`Written to ${p}`] }); } catch (e) { job.fail(String(e)); }
   }
   async function mergeLibrary() {
-    const p = await invoke("library_pick_db", { save: false, title: "Merge from another library", suggest: null }).catch(() => null);
+    let p = await invoke("library_pick_db", { save: false, title: "Merge from another library", suggest: null }).catch(() => null);
+    if (p) p = await plainLibrary(p, false);
     if (!p) return;
     const name = p.split(/[\\/]/).pop();
     const job = activity.start(`Merging ${name} into this library`, { params: p, cancel: (id) => invoke("job_cancel", { job: id }) });
@@ -813,6 +824,8 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   refresh();
   return {
     refresh,
+    /** Show one of the Library's own views in place of the lists: "trash", "imports", "overlays". */
+    showSub: (name) => showSub(name),
     /** The marks made during a trip. */
     inTrip: (trip) => marks.filter((m) => markInTrip(m, trip)),
     marks: () => marks,
@@ -858,17 +871,48 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   };
 }
 
+/** A library file ready to open: a protected one (.tplib) is unlocked with its passphrase
+ *  first (asked for; `keep` puts the unlocked copy beside it, to use as a library). Null if
+ *  the passphrase isn't given. */
+export async function plainLibrary(path, keep) {
+  const protectedFile = /\.tplib$/i.test(path) || (await invoke("library_is_protected", { path }).catch(() => false));
+  if (!protectedFile) return path;
+  const name = path.split(/[\\/]/).pop();
+  for (let i = 0; i < 6; i++) {
+    const pass = await askPassphrase(name, i > 0);
+    if (pass == null) return null;
+    try { return await invoke("library_unlock", { path, passphrase: pass, keep }); } catch (e) {
+      if (!/passphrase/i.test(String(e))) { activity.start(`Unlocking ${name}`).fail(String(e)); return null; }
+    }
+  }
+  return null;
+}
+
 /** Write chosen marks, routes (with their marks) and tracks as a library file of their own
- *  (to give another boat, or keep a fishery apart). The library in use is unchanged. */
+ *  (to give another boat, or keep a fishery apart), with or without notes, and protected
+ *  with a passphrase if wanted. The library in use is unchanged. */
 export async function exportLibraryFile({ marks = [], routes = [], tracks = [] }, what, suggest = "Part of the library") {
-  const p = await invoke("library_pick_db", { save: true, title: `Write ${what} as a library file`, suggest: `${suggest.replace(/[\\/:*?"<>|]/g, " ").trim()}.gpkg` }).catch(() => null);
+  const o = await ask({
+    title: `Write ${what} as a library file`,
+    note: "To give another boat, or keep apart. They open it with Library > Open library, merge it, or show it alongside theirs.",
+    fields: [
+      { key: "notes", label: "Include notes", type: "checkbox", value: true, title: "Untick to leave out the notes (catch details and so on)" },
+      { key: "protect", label: "Protect it with a passphrase", type: "checkbox", value: false, title: "Without the passphrase the file can't be opened or read" },
+      { key: "pass", label: "Passphrase (at least 6 characters)", type: "password", showIf: "protect" },
+      { key: "pass2", label: "The passphrase again", type: "password", showIf: "protect" },
+    ],
+    ok: "Choose where…",
+    check: (v) => (!v.protect ? "" : v.pass.length < 6 ? "The passphrase must be at least 6 characters." : v.pass !== v.pass2 ? "The two passphrases aren't the same." : ""),
+  });
+  if (!o) return;
+  const p = await invoke("library_pick_db", { save: true, protected: o.protect, title: `Write ${what} as a ${o.protect ? "protected " : ""}library file`, suggest: `${suggest.replace(/[\\/:*?"<>|]/g, " ").trim()}.${o.protect ? "tplib" : "gpkg"}` }).catch(() => null);
   if (!p) return;
   const job = activity.start(`Writing ${what} as a library file`, { params: p });
   try {
-    const n = await invoke("library_export", { path: p, marks, routes, tracks });
+    const n = await invoke("library_export", { path: p, marks, routes, tracks, notes: o.notes, passphrase: o.protect ? o.pass : null });
     const N = (k, one) => k && `${k.toLocaleString()} ${one}${k === 1 ? "" : "s"}`;
     job.done(`${[N(n.marks, "mark"), N(n.routes, "route"), N(n.tracks, "track")].filter(Boolean).join(", ") || "Nothing"} written.`,
-      { details: [`Written to ${p}`, "Open it with Library > Open library, or bring it into another library with Merge from another library."] });
+      { details: [`Written to ${p}`, ...(o.notes ? [] : ["Notes left out."]), ...(o.protect ? ["Protected: it needs the passphrase to open. Give the passphrase separately (not in the same email)."] : []), "Open it with Library > Open library, merge it into another library, or show it alongside."] });
   } catch (e) { job.fail(String(e)); }
 }
 

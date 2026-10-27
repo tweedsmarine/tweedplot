@@ -1342,9 +1342,16 @@ fn library_current(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
 
 /// Pick a library file: to open (`save` false) or to make or save a copy to (`save` true).
 #[tauri::command]
-async fn library_pick_db(app: tauri::AppHandle, save: bool, title: String, suggest: Option<String>) -> Result<Option<String>, String> {
+async fn library_pick_db(app: tauri::AppHandle, save: bool, title: String, suggest: Option<String>, protected: Option<bool>) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let mut d = app.dialog().file().set_title(&title).add_filter("TweedPlot library", &["gpkg"]);
+    let protected = protected.unwrap_or(false);
+    let ext = if protected { library::protect::EXT } else { "gpkg" };
+    let mut d = app.dialog().file().set_title(&title);
+    d = if save {
+        d.add_filter(if protected { "Protected TweedPlot library" } else { "TweedPlot library" }, &[ext])
+    } else {
+        d.add_filter("TweedPlot library", &["gpkg", library::protect::EXT])
+    };
     if let Ok(l) = lib() {
         d = d.set_directory(l.dir());
     }
@@ -1354,8 +1361,8 @@ async fn library_pick_db(app: tauri::AppHandle, save: bool, title: String, sugge
     let picked = if save { d.blocking_save_file() } else { d.blocking_pick_file() };
     let Some(p) = picked else { return Ok(None) };
     let mut p = p.into_path().map_err(|e| e.to_string())?;
-    if save && p.extension().is_none_or(|x| !x.eq_ignore_ascii_case("gpkg")) {
-        p.set_extension("gpkg");
+    if save && p.extension().is_none_or(|x| !x.eq_ignore_ascii_case(ext)) {
+        p.set_extension(ext);
     }
     Ok(Some(p.to_string_lossy().into_owned()))
 }
@@ -1475,11 +1482,104 @@ fn library_undo_import(app: tauri::AppHandle, id: i64) -> Result<library::Counts
 }
 /// The chosen marks, routes and tracks as a library file of their own.
 #[tauri::command]
-async fn library_export(path: String, marks: Vec<String>, routes: Vec<String>, tracks: Vec<String>) -> Result<library::Counts, String> {
+async fn library_export(path: String, marks: Vec<String>, routes: Vec<String>, tracks: Vec<String>, notes: Option<bool>, passphrase: Option<String>) -> Result<library::Counts, String> {
     let l = lib()?;
-    tauri::async_runtime::spawn_blocking(move || l.export_library(std::path::Path::new(&path), &marks, &routes, &tracks).map_err(es))
+    tauri::async_runtime::spawn_blocking(move || {
+        let to = PathBuf::from(&path);
+        let keep_notes = notes.unwrap_or(true);
+        match passphrase.filter(|p| !p.is_empty()) {
+            None => l.export_library(&to, &marks, &routes, &tracks, keep_notes).map_err(es),
+            Some(pass) => {
+                // written plain beside it first, then locked; the plain copy goes
+                let plain = to.with_extension("gpkg.plain");
+                let n = l.export_library(&plain, &marks, &routes, &tracks, keep_notes).map_err(es);
+                let r = n.and_then(|n| library::protect::protect_file(&plain, &to, &pass).map(|_| n).map_err(es));
+                let _ = std::fs::remove_file(&plain);
+                r
+            }
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Unlock a protected library (.tplib) with its passphrase, as a plain library file:
+/// `keep` puts it beside the protected one (to open as a library), else in the app's own
+/// folder (to merge, or show alongside). Returns the plain file.
+#[tauri::command]
+async fn library_unlock(app: tauri::AppHandle, path: String, passphrase: String, keep: bool) -> Result<String, String> {
+    let src = PathBuf::from(&path);
+    let stem = src.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "library".into());
+    let dir = if keep {
+        src.parent().map(PathBuf::from).unwrap_or_else(|| library_dir(&app))
+    } else {
+        app.path().app_data_dir().map_err(|e| e.to_string())?.join("unlocked")
+    };
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mut to = dir.join(format!("{stem}.gpkg"));
+    let mut k = 2;
+    while keep && to.exists() {
+        to = dir.join(format!("{stem} ({k}).gpkg"));
+        k += 1;
+    }
+    let t = to.clone();
+    tauri::async_runtime::spawn_blocking(move || library::protect::unprotect_file(&src, &t, &passphrase).map_err(es))
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())??;
+    Ok(to.to_string_lossy().into_owned())
+}
+
+/// Is this a protected library (needing a passphrase)?
+#[tauri::command]
+fn library_is_protected(path: String) -> bool {
+    library::protect::is_protected(std::path::Path::new(&path))
+}
+
+// ---------- other libraries shown alongside, read-only ----------
+static OVERLAYS: std::sync::LazyLock<Mutex<Vec<Arc<library::Overlay>>>> = std::sync::LazyLock::new(|| Mutex::new(Vec::new()));
+
+fn overlay(path: &str) -> Result<Arc<library::Overlay>, String> {
+    OVERLAYS.lock().unwrap().iter().find(|o| o.path() == std::path::Path::new(path)).cloned().ok_or_else(|| format!("{path} isn't shown alongside"))
+}
+
+/// Show a library alongside (read-only); returns its name and what's in it.
+#[tauri::command]
+async fn overlay_add(path: String) -> Result<serde_json::Value, String> {
+    let p = PathBuf::from(&path);
+    if lib().is_ok_and(|l| l.path().canonicalize().ok() == p.canonicalize().ok()) {
+        return Err("that's the library in use".into());
+    }
+    let o = match overlay(&path) {
+        Ok(o) => o,
+        Err(_) => {
+            let o = Arc::new(tauri::async_runtime::spawn_blocking(move || library::Overlay::open(&p).map_err(es)).await.map_err(|e| e.to_string())??);
+            OVERLAYS.lock().unwrap().push(o.clone());
+            o
+        }
+    };
+    Ok(serde_json::json!({ "path": path, "name": o.name() }))
+}
+#[tauri::command]
+fn overlay_remove(path: String) {
+    OVERLAYS.lock().unwrap().retain(|o| o.path() != std::path::Path::new(&path));
+}
+#[tauri::command]
+async fn overlay_marks(path: String) -> Result<Vec<library::Mark>, String> {
+    let o = overlay(&path)?;
+    tauri::async_runtime::spawn_blocking(move || o.marks().map_err(es)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn overlay_tracks(path: String) -> Result<Vec<library::TrackSummary>, String> {
+    let o = overlay(&path)?;
+    tauri::async_runtime::spawn_blocking(move || o.tracks().map_err(es)).await.map_err(|e| e.to_string())?
+}
+/// One of an overlay's tracks, as `track_get` gives one of the library's.
+#[tauri::command]
+async fn overlay_track(path: String, id: String) -> Result<serde_json::Value, String> {
+    let o = overlay(&path)?;
+    let t = tauri::async_runtime::spawn_blocking(move || o.track(&id).map_err(es)).await.map_err(|e| e.to_string())??;
+    let segs: Vec<Vec<serde_json::Value>> = t.segments.iter().map(|s| s.iter().map(|p| serde_json::json!([p.lon, p.lat, p.t, p.sog, p.cog, p.depth, p.temp])).collect()).collect();
+    Ok(serde_json::json!({ "id": t.id, "name": t.name, "colour": t.colour, "stats": t.stats, "segments": segs }))
 }
 
 /// The library's own backups (newest first): file, date, size.
@@ -3394,6 +3494,13 @@ pub fn run() {
             marks_delete,
             symbols_list,
             library_trash,
+            library_unlock,
+            library_is_protected,
+            overlay_add,
+            overlay_remove,
+            overlay_marks,
+            overlay_tracks,
+            overlay_track,
             trips_list,
             trip_save,
             trip_end,

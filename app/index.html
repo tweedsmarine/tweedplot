@@ -318,6 +318,7 @@
         <div class="lib-head">
           <button id="lib-menu-btn" class="lib-name" title="Library: new, open, merge, import, export, backups" aria-haspopup="menu"><span class="lib-icon">▤</span> <span id="lib-name">Library</span> <span class="caret">▾</span></button>
           <span class="grow"></span>
+          <button id="lib-ovl-chip" class="ll-chip" hidden title="Libraries shown alongside this one"></button>
           <label title="Show library marks on the chart"><input id="lib-show" type="checkbox" /> Marks on chart</label>
         </div>
         <div id="lib-menu" class="lib-menu" role="menu" hidden></div>
@@ -420,6 +421,12 @@
             <datalist id="trip-fisheries"></datalist>
           </form>
           <div id="lib-trips-list"></div>
+        </div>
+        <div class="tab lib-sub" data-tab="overlays" hidden>
+          <div class="lib-sub-head"><button class="lib-back" title="Back to the library lists">← Back</button><b class="grow">Libraries alongside</b></div>
+          <div class="wx-note">Another library (a mate's marks, another season's) shown on the chart with yours, read-only, without mixing them in. Its marks have a ring in its colour; click one to see it. Whole library filters (dates, months, trip) apply to them too. Its tracks are drawn when those filters pick 200 or fewer.</div>
+          <ul id="ovl-list" class="list"></ul>
+          <div class="wx-row"><button id="ovl-add" class="on">Show another library alongside…</button></div>
         </div>
         <div class="tab lib-sub" data-tab="trash" hidden>
           <div class="lib-sub-head"><button class="lib-back" title="Back to the library lists">← Back</button><b class="grow">Trash</b><button id="trash-empty" class="warn" title="Delete everything in the Trash for good">Empty the Trash</button></div>

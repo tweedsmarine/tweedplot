@@ -1114,3 +1114,21 @@ button.on.warn { background: #b03a2e; color: #fff; border-color: #b03a2e; }
 
 .float-drag { cursor: grab; touch-action: none; user-select: none; }
 .float-drag.dragging { cursor: grabbing; }
+
+/* a question box (ask.js) */
+.ask-back { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, 0.35); display: flex; align-items: center; justify-content: center; }
+.ask { width: min(380px, calc(100vw - 32px)); background: var(--panel-solid, #fff); color: var(--ink); border-radius: 10px; padding: 14px 16px; box-shadow: 0 6px 30px rgba(0, 0, 0, 0.35); display: flex; flex-direction: column; gap: 8px; }
+.ask .ask-title { font-size: 15px; }
+.ask .ask-field { display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.ask .ask-field input { font-size: 15px; padding: 6px 8px; }
+.ask .ask-check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.ask .ask-field[hidden], .ask .ask-check[hidden] { display: none; }
+.ask .ask-err { color: #a4262c; font-size: 13px; }
+.ask button { flex: none; }
+/* Libraries alongside (overlays.js) */
+.ovl-row { display: flex; align-items: center; gap: 6px; }
+.ovl-row .main { flex: 1; min-width: 0; }
+.ovl-row small { display: block; color: var(--quiet); white-space: normal; word-break: break-all; }
+.ovl-row .ovl-colour { width: 28px; height: 24px; padding: 0; border: none; flex: none; }
+.ovl-row label, .ovl-row button { flex: none; font-size: 12px; }
+#lib-ovl-chip { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }

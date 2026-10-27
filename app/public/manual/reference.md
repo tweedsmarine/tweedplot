@@ -652,12 +652,13 @@ Untick a barrier to keep it but not use it; rename it in the list; move its poin
 | Menu | Does |
 | --- | --- |
 | New library… | Starts an empty library (another boat, another fishery). The one in use stays as it is, and is in the menu to go back to |
-| Open library… | Uses another TweedPlot library (a `.gpkg` file): one shared from another boat, or kept for a different seasonal fishery. The libraries used lately are listed under it |
+| Open library… | Uses another TweedPlot library (a `.gpkg` file, or a protected `.tplib`): one shared from another boat, or kept for a different seasonal fishery. The libraries used lately are listed under it. A protected one asks for its passphrase and is unlocked into a `.gpkg` beside it |
 | Save a copy as… | A copy of the whole library, to share or keep. The one in use stays in use |
 | Merge from another library… | Brings another library's marks, routes, tracks, routings and barriers into this one, matched as an import is, so merging twice adds nothing. The other library isn't changed |
 | Import GPX or TimeZero… | Marks, routes and tracks from GPX, or a TimeZero `.tzd` or `.TzBackup` (below) |
 | Export everything as GPX | Every mark and route in one GPX file in the export folder |
 | Backups… | TweedPlot's own daily copies of this library. Using one copies it beside the library and opens the copy: the backup and the library stay as they were |
+| Libraries alongside… | Shows other libraries on the chart with this one, read-only (below) |
 | Trash… | What was deleted in the last 30 days (below) |
 | Undo an import… | Takes out again what a file brought in (below) |
 
@@ -693,6 +694,10 @@ Marks: click a row to go to the mark; **+ Route** adds it to the route being bui
 - Each trip in the list shows its dates, time out, distance, and the marks and tracks made. **Show** sets the Whole library **Trip** filter to it (every tab and the chart show just that trip, and its tracks are drawn) and moves the chart to it; the filter's ✕ shows everything again. **Edit** changes the name, number, fishery, crew, times and notes.
 - Select trips for **Library file…** (their marks and tracks as a library of their own) or **Delete** (the trips only: their marks and tracks stay; the Trash brings a trip back).
 - Only one trip can be on at a time.
+
+**Libraries alongside.** Library menu > **Libraries alongside…** shows another library on the chart with the one in use: a mate's marks, or another season's, without mixing them in. Nothing in it can be changed. **Show another library alongside…** picks one (a protected one asks for its passphrase). Each has its own colour, as a ring round its marks (its own symbols and colours are kept); click one of its marks to see what it is, from which library, when it was made, the depth and temperature and its notes. The Whole library filters (Dates, Months, Trip) apply to it too, so "Nov, Dec, Jan" shows the tuna-season marks of every library shown. Its tracks are drawn, dashed in its colour, when those filters pick 200 or fewer (untick **Tracks** to leave them out). Untick a library to hide it for now, or **Remove** it (the library itself isn't touched). The libraries shown are opened again next time; the chip by the library's name in the drawer header lists them and opens this view. They don't appear in the tabs' lists: to work with their marks, open the library, or merge it in.
+
+**Sharing a library file.** **Library file…** (select marks, routes, tracks or trips) asks first: **Include notes** (untick to leave out the notes, catch details and so on) and **Protect it with a passphrase**. A protected file (`.tplib`) can't be opened or read without the passphrase: it's locked with XChaCha20-Poly1305 under a key made from the passphrase (Argon2id), so a wrong passphrase, or a damaged file, is refused. Give the passphrase separately (by phone, not in the same email). A lost passphrase can't be recovered.
 
 **Trash.** Library menu > **Trash…** lists everything deleted in the last 30 days: marks, routes, tracks, trips, routings and barriers, newest deletion first. **Kind** and **Deleted** filter it (Deleted picks one deletion: the 1,240 marks deleted at 14:05 on Tuesday). **Restore** on a row, or select and press Restore, brings things back; a route brings its marks back with it, but a restored mark isn't put back into routes it was taken out of. **Delete for good** and **Empty the Trash** (press it twice) can't be undone. After 30 days things are deleted for good when the library is opened. **← Back** returns to the lists.
 

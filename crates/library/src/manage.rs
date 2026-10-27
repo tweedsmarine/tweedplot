@@ -173,7 +173,7 @@ impl Library {
 
     /// Write the chosen marks, routes (with their marks) and tracks as a library file of
     /// their own at `to`, e.g. to give another boat. The library in use is unchanged.
-    pub fn export_library(&self, to: &Path, marks: &[String], routes: &[String], tracks: &[String]) -> Result<Counts> {
+    pub fn export_library(&self, to: &Path, marks: &[String], routes: &[String], tracks: &[String], keep_notes: bool) -> Result<Counts> {
         if to.canonicalize().ok().is_some_and(|p| Some(p) == self.path().canonicalize().ok()) {
             return Err(crate::Error::Store("that's the library in use: choose another file".into()));
         }
@@ -203,6 +203,9 @@ impl Library {
             }
             for t in ["marks", "routes", "tracks"] {
                 tx.execute(&format!("UPDATE {t} SET import_id = NULL, trip_id = NULL"), [])?;
+                if !keep_notes {
+                    tx.execute(&format!("UPDATE {t} SET notes = ''"), [])?;
+                }
             }
             let count = |t: &str| tx.query_row(&format!("SELECT count(*) FROM {t}"), [], |r| r.get::<_, i64>(0)).map(|n| n as usize);
             let n = Counts { marks: count("marks")?, routes: count("routes")?, tracks: count("tracks")?, ..Default::default() };
@@ -261,7 +264,7 @@ mod tests {
         // part of it as a library of its own
         let keep: Vec<String> = lib.marks().unwrap().into_iter().filter(|m| m.name != "A").map(|m| m.id).collect();
         let out = dir.join("part.gpkg");
-        let n = lib.export_library(&out, &keep, &[], &[]).unwrap();
+        let n = lib.export_library(&out, &keep, &[], &[], true).unwrap();
         assert_eq!(n.marks, 2);
         let other = Library::open_file(&out).unwrap();
         assert_eq!(other.marks().unwrap().len(), 2);
