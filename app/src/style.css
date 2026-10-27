@@ -991,7 +991,11 @@ body.drawer-open #activity { left: calc(var(--rail-w) + var(--drawer-w)); }
   box-shadow: 0 2px 10px rgba(0,0,0,.3); padding: 8px 10px; font-size: 13px; border-left: 5px solid #2a7ab0; }
 .act-card.ok { border-left-color: #2e8b57; }
 .act-card.failed { border-left-color: #8a6d3b; }
-.act-head { display: flex; align-items: center; gap: 6px; }
+.act-head { display: flex; align-items: center; gap: 6px; cursor: grab; touch-action: none; user-select: none; }
+.act-head .act-title { min-width: 0; }
+/* dragged somewhere: a column of cards where it was put */
+#activity.moved { width: min(420px, 92vw); align-items: stretch; flex-direction: column; }
+#activity.moved .act-card { width: auto; }
 .act-head .act-close { border: 0; background: none; padding: 0 4px; font-size: 14px; }
 .act-step { color: var(--quiet); margin-top: 3px; }
 .act-bar { height: 6px; border-radius: 3px; background: rgba(0,0,0,.12); margin-top: 5px; overflow: hidden; }

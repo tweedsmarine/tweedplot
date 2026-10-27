@@ -30,8 +30,45 @@ function container() {
   host.setAttribute("role", "status");
   host.setAttribute("aria-live", "polite");
   document.body.append(host);
+  movable(host);
   invoke("app_info").then((i) => { version = i?.version || ""; }).catch(() => {});
   return host;
+}
+
+// the cards can be dragged (by their title line) out of the way; they stay there, and
+// double-clicking a title puts them back above the dock
+const POS = "racenav.float.activity";
+function movable(el) {
+  let pos = null;
+  try { pos = JSON.parse(localStorage.getItem(POS) || "null"); } catch { /* storage unavailable */ }
+  const place = () => {
+    el.classList.toggle("moved", !!pos);
+    if (!pos) { Object.assign(el.style, { left: "", top: "", right: "", bottom: "" }); return; }
+    const w = window.innerWidth, h = window.innerHeight, r = el.getBoundingClientRect();
+    const x = Math.min(Math.max(0, pos.x * w), Math.max(0, w - r.width)), y = Math.min(Math.max(0, pos.y * h), Math.max(0, h - Math.max(60, r.height)));
+    Object.assign(el.style, { left: `${x}px`, top: `${y}px`, right: "auto", bottom: "auto" });
+  };
+  el.addEventListener("pointerdown", (e) => {
+    const head = e.target.closest(".act-head");
+    if (!head || e.target.closest("button") || e.button !== 0) return;
+    e.preventDefault();
+    const r = el.getBoundingClientRect();
+    const dx = e.clientX - r.left, dy = e.clientY - r.top;
+    head.setPointerCapture(e.pointerId);
+    const move = (ev) => { pos = { x: (ev.clientX - dx) / window.innerWidth, y: (ev.clientY - dy) / window.innerHeight }; place(); };
+    const up = () => {
+      head.removeEventListener("pointermove", move); head.removeEventListener("pointerup", up);
+      try { localStorage.setItem(POS, JSON.stringify(pos)); } catch { /* ignore */ }
+    };
+    head.addEventListener("pointermove", move);
+    head.addEventListener("pointerup", up);
+  });
+  el.addEventListener("dblclick", (e) => {
+    if (!e.target.closest(".act-head") || e.target.closest("button")) return;
+    pos = null; try { localStorage.removeItem(POS); } catch { /* ignore */ } place();
+  });
+  window.addEventListener("resize", place);
+  place();
 }
 
 const fmt = (v) => (typeof v === "number" ? v.toLocaleString() : v);
@@ -68,7 +105,7 @@ async function copy(text, btn) {
 function card(title) {
   const el = document.createElement("div");
   el.className = "act-card";
-  el.innerHTML = `<div class="act-head"><b class="act-title"></b><span class="grow"></span><button class="act-close" title="Close">✕</button></div>
+  el.innerHTML = `<div class="act-head" title="Drag to move the cards; double-click to put them back"><b class="act-title"></b><span class="grow"></span><button class="act-close" title="Close">✕</button></div>
     <div class="act-step"></div><div class="act-bar" hidden><div></div></div>
     <div class="act-result" hidden></div>
     <details class="act-details" hidden><summary>Details</summary><ul></ul></details>
