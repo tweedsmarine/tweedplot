@@ -228,17 +228,22 @@ export function setupGribDownload(map, { weather, course }) {
     $("dl-cancel").disabled = false;
     status("Downloading…");
     const t0 = performance.now();
+    job = activity.start(`Downloading a GRIB (${$("dl-model").selectedOptions[0]?.textContent ?? prefs.model})`, { cancel: () => invoke("gribdl_cancel").catch(() => {}) });
     try {
       const r = await invoke("gribdl_start", { req });
       status(`Downloaded ${r.name} in ${((performance.now() - t0) / 1000).toFixed(0)} s. Loading…`, "good");
+      job.progress("Loading it");
       await weather.refreshFiles();
       await weather.load(r.path);
       const file = r.path.split(/[\\/]/).pop();
       if (r.note) status(`${r.name}: downloaded and loaded (${file}). ${r.note}`, "warn");
       else status(`${r.name}: downloaded and loaded (${file}).`, "good");
+      job.done(`${r.name}: downloaded in ${((performance.now() - t0) / 1000).toFixed(0)} s and loaded.`, { details: [r.path, ...(r.note ? [r.note] : [])], keep: !!r.note });
     } catch (e) {
       status(String(e) === "cancelled" ? "Download cancelled." : `Download failed: ${e}`, String(e) === "cancelled" ? "warn" : "bad");
+      if (String(e) === "cancelled") job.done("Cancelled."); else job.fail(`Download failed: ${e}`);
     } finally {
+      job = null;
       $("dl-go").disabled = false;
       $("dl-cancel").disabled = true;
       prog.hidden = true;

@@ -16,6 +16,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./clock24.js";
+import { setWindowDark } from "./winchrome.js";
 
 const $ = (id) => document.getElementById(id);
 const KEY = "racenav.setter";
@@ -31,6 +32,7 @@ function palette() {
     const p = JSON.parse(localStorage.getItem("racenav.palette") || "{}");
     document.documentElement.dataset.palette = p.mode || "day";
     document.documentElement.style.setProperty("--pal-dim", String((p.dim?.[p.mode] ?? 100) / 100));
+    setWindowDark((p.mode || "day") !== "day"); // the title bar too
   } catch { /* day */ }
 }
 palette();
