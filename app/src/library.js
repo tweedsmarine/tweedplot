@@ -811,8 +811,9 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   }
   function closeMenu() { menu.hidden = true; $("lib-menu-btn").classList.remove("on"); }
   document.addEventListener("pointerdown", (e) => { if (!menu.hidden && !menu.contains(e.target) && !e.target.closest("#lib-menu-btn")) closeMenu(); });
-  $("lib-menu-btn").onclick = () => {
+  $("lib-menu-btn").onclick = async () => {
     if (!menu.hidden) { closeMenu(); return; }
+    const out = await invoke("library_backup_to_info").catch(() => ({}));
     const item = (label, title, run, disabled = false) => {
       const b = document.createElement("button");
       b.textContent = label;
@@ -835,6 +836,10 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     item("Export everything as GPX", "Every mark and route in one GPX file in the export folder", () => exportGpx("racenav library", [], [], "The library"));
     line();
     item("Libraries alongside…", "Show another library on the chart with this one, read-only (a mate's marks, another season's)", () => { showSub("overlays"); window.dispatchEvent(new Event("racenav-overlays-open")); });
+    // a copy somewhere else: TweedPlot's own backups are on the same disk as the library
+    const ago = out.last ? agoText(out.last) : "never";
+    if (out.dir) item(`Back up to ${shortDir(out.dir)}`, `Copy the library to ${out.dir} now${out.reachable ? "" : " (it isn't there now: plug the USB stick in)"}. Last copied out: ${ago}`, () => backupTo(out.dir), !out.reachable);
+    item(out.dir ? "Back up to another folder…" : "Back up to…", `Copy the whole library to a USB stick or another disk, dated, so it survives if this computer fails. Last copied out: ${ago}`, () => backupTo(null));
     item("Backups…", "TweedPlot's own daily copies of this library: use one", showBackups);
     item("Trash…", "Deleted marks, routes, tracks, routings and barriers are kept 30 days: bring them back, or delete them for good", openTrash);
     item("Undo an import…", "Take out again everything a GPX or TimeZero file (or a merge) brought in", openImports);
@@ -860,6 +865,29 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     if (p) p = await plainLibrary(p, true);
     if (p) useLibrary(p, false);
   }
+  const agoText = (t) => { const d = Math.floor((Date.now() / 1000 - t) / 86400); return d <= 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`; };
+  const shortDir = (d) => { const parts = d.split(/[\\/]/).filter(Boolean); return parts.length > 2 ? `…\\${parts.slice(-2).join("\\")}` : d; };
+  async function backupTo(dir) {
+    const job = activity.start("Backing up the library", { params: dir ?? "" });
+    try {
+      const p = await invoke("library_backup_to", { dir });
+      if (!p) { job.done("Not backed up: no folder chosen."); return; }
+      job.done("Done.", { details: [`Written to ${p}`, "Keep the stick somewhere other than the boat's computer. To use a copy: Library menu > Open library."] });
+    } catch (e) { job.fail(String(e)); }
+  }
+  // a reminder, once a day, when the library hasn't been copied out for a week
+  async function remindBackup() {
+    let seen = "";
+    try { seen = localStorage.getItem("racenav.backupReminder") || ""; } catch { /* ignore */ }
+    const today = new Date().toDateString();
+    if (seen === today || marks.length === 0) return;
+    const out = await invoke("library_backup_to_info").catch(() => null);
+    if (!out || (out.last && Date.now() / 1000 - out.last < 7 * 86400)) return;
+    try { localStorage.setItem("racenav.backupReminder", today); } catch { /* ignore */ }
+    activity.note(out.last ? `The library was last copied out ${agoText(out.last)}` : "The library hasn't been copied off this computer yet", { details: ["TweedPlot's own daily backups are on the same disk. Library menu > Back up to… puts a copy on a USB stick or another disk."] });
+  }
+  setTimeout(remindBackup, 20000);
+
   async function saveCopy() {
     const p = await invoke("library_pick_db", { save: true, title: "Save a copy of the library", suggest: `${current?.name ?? "library"} copy.gpkg` }).catch(() => null);
     if (!p) return;

@@ -1664,6 +1664,65 @@ fn library_backup_dir(open: bool) -> Result<String, String> {
     Ok(d.to_string_lossy().into_owned())
 }
 
+// ---------- Back up to…: a copy somewhere else (a USB stick, another disk) ----------
+// The folder chosen is remembered (backup-to.json in app data), with when each library was
+// last copied there, so the menu can offer "Back up to <folder>" and say how long ago.
+
+fn backup_to_file(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_data_dir().ok().map(|d| d.join("backup-to.json"))
+}
+fn backup_to_read(app: &tauri::AppHandle) -> serde_json::Value {
+    backup_to_file(app).and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_else(|| serde_json::json!({}))
+}
+
+/// The folder last backed up to (if any) and when the library in use was last copied out.
+#[tauri::command]
+fn library_backup_to_info(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let l = lib()?;
+    let v = backup_to_read(&app);
+    let key = l.path().to_string_lossy().into_owned();
+    let dir = v["dir"].as_str().map(str::to_string);
+    let reachable = dir.as_deref().is_some_and(|d| std::path::Path::new(d).is_dir());
+    Ok(serde_json::json!({ "dir": dir, "reachable": reachable, "last": v["last"][&key].as_i64() }))
+}
+
+/// Copy the library in use to `dir` (or a folder picked now) as "<name> YYYY-MM-DD HHMM.gpkg".
+/// Returns the file written, or null if no folder was picked.
+#[tauri::command]
+async fn library_backup_to(app: tauri::AppHandle, dir: Option<String>) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let l = lib()?;
+    let dir = match dir {
+        Some(d) => PathBuf::from(d),
+        None => {
+            let mut d = app.dialog().file().set_title("Back up the library to (a USB stick, another disk)");
+            if let Some(prev) = backup_to_read(&app)["dir"].as_str() {
+                d = d.set_directory(prev);
+            }
+            let Some(p) = d.blocking_pick_folder() else { return Ok(None) };
+            p.into_path().map_err(|e| e.to_string())?
+        }
+    };
+    if !dir.is_dir() {
+        return Err(format!("{} isn't there (is the USB stick plugged in?)", dir.display()));
+    }
+    if dir.canonicalize().ok() == l.dir().canonicalize().ok() {
+        return Err("that's the library's own folder: choose another disk, or a USB stick".into());
+    }
+    let stamp = chrono::Local::now().format("%Y-%m-%d %H%M").to_string();
+    let to = dir.join(format!("{} {stamp}.gpkg", l.name()));
+    let t = to.clone();
+    let ll = l.clone();
+    tauri::async_runtime::spawn_blocking(move || ll.backup_to(&t).map_err(es)).await.map_err(|e| e.to_string())??;
+    let mut v = backup_to_read(&app);
+    v["dir"] = serde_json::json!(dir.to_string_lossy());
+    v["last"][l.path().to_string_lossy().as_ref()] = serde_json::json!(chrono::Utc::now().timestamp());
+    if let Some(f) = backup_to_file(&app) {
+        let _ = std::fs::write(f, v.to_string());
+    }
+    Ok(Some(to.to_string_lossy().into_owned()))
+}
+
 /// Use a backup: copied (the backup stays as it is) beside the library as
 /// "<name> restored <day>.gpkg", which becomes the library in use.
 #[tauri::command]
@@ -3585,6 +3644,8 @@ pub fn run() {
             setter_open,
             library_trash,
             library_backup_dir,
+            library_backup_to_info,
+            library_backup_to,
             library_unlock,
             library_is_protected,
             overlay_add,
