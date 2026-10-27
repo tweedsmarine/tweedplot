@@ -1843,7 +1843,11 @@ async fn library_pick_file(app: tauri::AppHandle) -> Result<Option<String>, Stri
         .dialog()
         .file()
         .set_title("Import marks, routes and tracks")
-        .add_filter("GPX and TimeZero", &["gpx", "tzd", "TzBackup", "xml"])
+        .add_filter("Marks, routes and tracks", &["gpx", "tzd", "TzBackup", "xml", "kml", "kmz", "csv"])
+        .add_filter("GPX", &["gpx"])
+        .add_filter("TimeZero", &["tzd", "TzBackup", "xml"])
+        .add_filter("Google Earth (KML, KMZ)", &["kml", "kmz"])
+        .add_filter("Spreadsheet (CSV)", &["csv", "txt"])
         .add_filter("All files", &["*"])
         .blocking_pick_file();
     let Some(p) = picked else { return Ok(None) };
@@ -1868,6 +1872,10 @@ async fn library_import_path(app: tauri::AppHandle, path: String, job: Option<St
         if ext == "gpx" {
             let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
             l.import_gpx_with(&text, &stem, &mut progress).map_err(es)
+        } else if ext == "kml" || ext == "kmz" {
+            l.import_kml_with(&path, &stem, &mut progress).map_err(es)
+        } else if ext == "csv" || ext == "txt" {
+            l.import_csv_with(&path, &stem, &mut progress).map_err(es)
         } else {
             l.import_tzd_with(&path, &stem, &mut progress, &cancel).map_err(es)
         }

@@ -19,6 +19,7 @@ mod manage;
 mod trips;
 mod events;
 mod density;
+pub mod formats;
 pub use events::Event;
 pub mod protect;
 mod overlay;
@@ -1014,7 +1015,8 @@ impl Library {
         let (mut added, mut matched) = (0, 0);
         let t = now();
         for sh in shapes {
-            let id = format!("tz-{}", sh.id);
+            let kml = sh.id.starts_with("kml-");
+            let id = if kml { sh.id.clone() } else { format!("tz-{}", sh.id) };
             let there: bool = tx.query_row("SELECT count(*) FROM barriers WHERE id = ?1", [&id], |r| r.get::<_, i64>(0))? > 0;
             if there {
                 matched += 1;
@@ -1031,10 +1033,11 @@ impl Library {
                 _ => ("line", sh.points.clone()),
             };
             let label = match sh.kind.as_str() { "circle" => "circle", "area" => "area", _ => "line" };
-            let base = if sh.name.trim().is_empty() { format!("{} {label}", if sh.layer.is_empty() { "TimeZero" } else { sh.layer.as_str() }) } else { sh.name.trim().to_string() };
+            let from = if kml { "KML" } else { "TimeZero" };
+            let base = if sh.name.trim().is_empty() { format!("{} {label}", if sh.layer.is_empty() { from } else { sh.layer.as_str() }) } else { sh.name.trim().to_string() };
             let name = if names.contains(&base) { (2..).map(|k| format!("{base} {k}")).find(|n| !names.contains(n)).unwrap() } else { base };
             names.insert(name.clone());
-            let mut notes = format!("From TimeZero ({label}{}{})", if sh.layer.is_empty() { String::new() } else { format!(", layer {}", sh.layer) }, if sh.colour.is_empty() { String::new() } else { format!(", colour {}", sh.colour) });
+            let mut notes = format!("From {from} ({label}{}{})", if sh.layer.is_empty() { String::new() } else { format!(", layer {}", sh.layer) }, if sh.colour.is_empty() { String::new() } else { format!(", colour {}", sh.colour) });
             if let Some(r) = sh.radius_m.filter(|_| sh.kind == "circle") {
                 notes.push_str(&format!(", radius {:.0} m", r));
             }
@@ -1047,6 +1050,38 @@ impl Library {
         }
         tx.commit()?;
         Ok((added, matched))
+    }
+
+    /// Bring in a KML or KMZ (Google Earth, other plotters): marks, routes, tracks, and areas
+    /// as barriers (switched off). Folders become groups.
+    pub fn import_kml_with(&self, path: &std::path::Path, group: &str, progress: &mut dyn FnMut(&str, usize, usize)) -> Result<ImportReport> {
+        progress("Reading the file", 0, 0);
+        let (data, shapes) = formats::read_kml_file(path)?;
+        progress("Matching marks with the library", 0, 0);
+        let id = self.begin_import(&path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), "kml")?;
+        let mut rep = self.import_data(data, group, id)?;
+        if !shapes.is_empty() {
+            let (added, matched) = self.import_tz_shapes(&shapes, id)?;
+            let n = shapes.len();
+            rep.notes.push(format!("{n} area{} came in as barriers ({added} new{}), switched off: shown on the chart, not used for routing until ticked (Library > Barriers)", if n == 1 { "" } else { "s" }, if matched > 0 { format!(", {matched} already here") } else { String::new() }));
+        }
+        self.finish_import(id, &rep)?;
+        Ok(rep)
+    }
+
+    /// Bring in marks from a CSV file (a spreadsheet): see formats.rs for the columns.
+    pub fn import_csv_with(&self, path: &std::path::Path, group: &str, progress: &mut dyn FnMut(&str, usize, usize)) -> Result<ImportReport> {
+        progress("Reading the file", 0, 0);
+        let bytes = std::fs::read(path)?;
+        // a spreadsheet's CSV is often Windows-1252, not UTF-8: read it as Latin-1 then
+        let text = String::from_utf8(bytes.clone()).unwrap_or_else(|_| bytes.iter().map(|&b| b as char).collect());
+        let (data, notes) = formats::parse_csv(&text)?;
+        progress("Matching marks with the library", 0, 0);
+        let id = self.begin_import(&path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), "csv")?;
+        let mut rep = self.import_data(data, group, id)?;
+        rep.notes.extend(notes);
+        self.finish_import(id, &rep)?;
+        Ok(rep)
     }
 
     fn begin_import(&self, file: &str, kind: &str) -> Result<i64> {

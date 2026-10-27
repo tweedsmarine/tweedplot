@@ -647,7 +647,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     let list = [];
     try { list = await invoke("library_imports"); } catch (e) { activity.start("Imports").fail(String(e)); }
     if (!list.length) { ul.innerHTML = `<li class="wx-note">Nothing imported is in the library now (imports made before the library moved to its database in October 2026 can't be undone this way).</li>`; return; }
-    const KIND = { gpx: "GPX", timezero: "TimeZero", library: "Merged library" };
+    const KIND = { gpx: "GPX", timezero: "TimeZero", library: "Merged library", kml: "KML", csv: "CSV" };
     for (const im of list) {
       const li = document.createElement("li");
       const what = [im.marks && howMany(im.marks, "mark"), im.routes && howMany(im.routes, "route"), im.tracks && howMany(im.tracks, "track"), im.barriers && howMany(im.barriers, "barrier")].filter(Boolean).join(", ");
@@ -705,7 +705,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     item("Save a copy as…", "A copy of the whole library (to share, or keep): the one in use stays in use", saveCopy);
     item("Merge from another library…", "Bring another library's marks, routes, tracks, routings and barriers into this one (matched as imports are)", mergeLibrary);
     line();
-    item("Import GPX or TimeZero…", "Marks, routes and tracks from a GPX file, or a TimeZero .tzd or .TzBackup", importFile);
+    item("Import…", "Marks, routes and tracks from GPX, TimeZero (.tzd, .TzBackup), Google Earth (KML, KMZ) or a spreadsheet (CSV)", importFile);
     item("Export everything as GPX", "Every mark and route in one GPX file in the export folder", () => exportGpx("racenav library", [], [], "The library"));
     line();
     item("Libraries alongside…", "Show another library on the chart with this one, read-only (a mate's marks, another season's)", () => { showSub("overlays"); window.dispatchEvent(new Event("racenav-overlays-open")); });
