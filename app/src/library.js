@@ -154,7 +154,28 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     for (let i = 1; i < pts.length; i++) d += distNm(pts[i - 1], pts[i]);
     return d;
   }
+  // routes brought in more than once (same name, same marks in the same order): keep the oldest copy
+  function duplicateRoutes() {
+    const seen = new Map(), extra = [];
+    for (const r of [...routes].sort((a, b) => (a.modified || 0) - (b.modified || 0))) {
+      const k = `${r.name.toLowerCase()}|${r.start_mark || ""}|${r.marks.map((x) => x.mark).join(",")}`;
+      if (seen.has(k)) extra.push(r); else seen.set(k, r);
+    }
+    return extra;
+  }
+  $("lib-dupes-go").onclick = async () => {
+    const extra = duplicateRoutes();
+    $("lib-dupes-go").disabled = true;
+    let n = 0;
+    for (const r of extra) { try { await invoke("route_delete", { id: r.id }); n++; } catch (e) { status(String(e)); } }
+    $("lib-dupes-go").disabled = false;
+    status(`Removed ${n} duplicate route${n === 1 ? "" : "s"}.`);
+    refresh();
+  };
   function renderRoutes() {
+    const extra = duplicateRoutes();
+    $("lib-dupes").hidden = !extra.length;
+    $("lib-dupes").querySelector("span").textContent = `${extra.length} route${extra.length === 1 ? " is a copy" : "s are copies"} of another (same name and marks), from importing a file more than once.`;
     const ul = $("lib-routes");
     ul.innerHTML = "";
     if (!routes.length) ul.innerHTML = `<li class="empty">No saved routes. Make one in the Route drawer and press Save, or import a GPX file.</li>`;
@@ -423,7 +444,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       status(`Importing ${name}… (a big TimeZero file with years of tracks can take a minute)`);
       const rep = await invoke("library_import_path", { path });
       status(`${name}: ${rep.marks_added} new marks, ${rep.marks_matched} matched existing marks` +
-        `${rep.routes_added.length ? `, ${many(rep.routes_added, "route")}` : ""}${rep.tracks_added?.length ? `, ${many(rep.tracks_added, "track")}` : ""}.` +
+        `${rep.routes_added.length ? `, ${many(rep.routes_added, "route")}` : ""}${rep.routes_matched ? `, ${rep.routes_matched} route${rep.routes_matched === 1 ? "" : "s"} already here` : ""}${rep.tracks_added?.length ? `, ${many(rep.tracks_added, "track")}` : ""}.` +
         `${rep.not_imported?.length ? ` Not imported: ${rep.not_imported.join("; ")}.` : ""}` +
         `${rep.notes?.length ? ` (${rep.notes.join("; ")})` : ""}`);
       await refresh();

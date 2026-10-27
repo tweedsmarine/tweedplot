@@ -168,6 +168,8 @@ pub struct ImportReport {
     pub marks_added: usize,
     pub marks_matched: usize,
     pub routes_added: Vec<String>,
+    /// Routes in the file that were already here.
+    pub routes_matched: usize,
     pub tracks_added: Vec<String>,
     /// What the file held that wasn't brought in (TimeZero lines, areas, circles, tracks).
     #[serde(default)]
@@ -501,7 +503,7 @@ impl Library {
             rep.not_imported.push(format!("tracks after {} of {} (TimeZero's Tracks.bin: {p})", r.read, r.count));
         }
         if let Some(r) = r.as_ref().filter(|r| !r.other.is_empty()) {
-            let o: Vec<String> = r.other.iter().map(|(k, n)| format!("{n} {}", k.to_lowercase())).collect();
+            let o: Vec<String> = r.other.iter().map(|(k, n)| format!("{n} {}{}", k.to_lowercase(), if *n == 1 { "" } else { "s" })).collect();
             rep.not_imported.push(format!("from the track file: {} (not yet)", o.join(", ")));
         }
         if r.is_some() && fixes > 0 {
@@ -568,10 +570,17 @@ impl Library {
         for w in &data.waypoints {
             find_or_add(w, &mut rep);
         }
+        // a route with the same name and the same marks in the same order is already here
+        let route_key = |name: &str, marks: &[RouteMark]| (name.to_lowercase(), marks.iter().map(|m| m.mark.clone()).collect::<Vec<_>>());
+        let mut known: std::collections::HashSet<(String, Vec<String>)> = self.routes()?.iter().map(|r| route_key(&r.name, &r.marks)).collect();
         let mut new_routes = Vec::new();
         for (k, r) in data.routes.iter().enumerate() {
             let ids: Vec<RouteMark> = r.points.iter().map(|w| RouteMark { mark: find_or_add(w, &mut rep), ..Default::default() }).collect();
             let name = if r.name.trim().is_empty() { format!("Imported route {}", k + 1) } else { r.name.trim().to_string() };
+            if !known.insert(route_key(&name, &ids)) {
+                rep.routes_matched += 1;
+                continue;
+            }
             new_routes.push(Route { id: String::new(), name, notes: String::new(), start: None, start_mark: None, marks: ids, modified: 0 });
         }
         self.write_marks(&marks)?;
@@ -927,7 +936,7 @@ mod big_tzd {
         let n = lib.tracks().unwrap().len();
         println!("tracks list: {n} in {:?}", t.elapsed());
         let r = lib.import_tzd(std::path::Path::new(&f), "TimeZero").unwrap();
-        println!("again: added {} matched {}, tracks {} {:?}", r.marks_added, r.marks_matched, r.tracks_added.len(), r.notes);
+        println!("again: added {} matched {}, routes {} matched {}, tracks {} {:?}", r.marks_added, r.marks_matched, r.routes_added.len(), r.routes_matched, r.tracks_added.len(), r.notes);
         let groups: std::collections::BTreeSet<String> = lib.marks().unwrap().into_iter().map(|m| m.group).collect();
         println!("{} groups", groups.len());
         if std::env::var("RACENAV_KEEP").is_err() { let _ = std::fs::remove_dir_all(&dir); } else { println!("kept {}", dir.display()); }
