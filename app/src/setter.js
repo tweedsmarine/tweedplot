@@ -40,10 +40,15 @@ window.addEventListener("storage", (e) => { if (e.key === "racenav.palette") pal
 
 // ---------- the boat (for SOG and the float positions) ----------
 let boat = null; // { lat, lon, sog, cog, depth, water_temp }
+let boatAt = 0; // when the last fix came
 listen("vessel", ({ payload }) => {
-  if (Number.isFinite(payload?.lat) && Number.isFinite(payload?.lon)) boat = payload;
-  else if (payload) boat = { ...boat, sog: payload.sog ?? boat?.sog };
+  // the app sends { replay, v } (v: the vessel state); older builds sent the state itself
+  const v = payload?.v ?? payload;
+  if (!v) return;
+  if (Number.isFinite(v.lat) && Number.isFinite(v.lon)) { boat = v; boatAt = Date.now(); }
+  else boat = boat ? { ...boat, sog: v.sog ?? boat.sog } : null;
 }).catch(() => {});
+const fixed = () => boat && Number.isFinite(boat.lat) && Date.now() - boatAt < 30000;
 
 // ---------- sound ----------
 let ac = null;
@@ -134,7 +139,7 @@ async function start() {
   const b1 = $("st-b1").value.trim();
   cfg.target = Number($("st-target-in").value) || null; save();
   // the set in the log first: if the log can't be written, say so but still beep
-  const pos = boat && Number.isFinite(boat.lat) ? boat : null;
+  const pos = fixed() ? boat : null;
   const iv = interval();
   try {
     const ev = await invoke("event_save", { event: {
@@ -261,6 +266,7 @@ function live() {
   if (shooter && sog > 0.3) parts.push(`sag ratio ${(sog / shooter).toFixed(2)}`);
   if (cfg.mode === "distance") parts.push(`${(iv.s * (shooter ?? sog ?? 0) * KN).toFixed(0)} m apart`);
   if (iv.why) parts.push(iv.why);
+  if ((cfg.logFloats || cfg.markFloats) && !fixed()) parts.push("no position from the boat: floats can't be logged or marked");
   $("st-live").textContent = parts.join(" · ");
 }
 function setNote(t) { $("st-live").textContent = t; }
@@ -303,7 +309,7 @@ async function finish() {
   clearInterval(timerLoop);
   run.state = "finished";
   const b2 = $("st-b2").value.trim();
-  const pos = boat && Number.isFinite(boat.lat) ? boat : null;
+  const pos = fixed() ? boat : null;
   try {
     await invoke("event_save", { event: {
       kind: "line-end", name: "Line set finished", at: Math.floor(Date.now() / 1000),
@@ -318,14 +324,14 @@ async function finish() {
 }
 
 function logFloat(n) {
-  const pos = boat && Number.isFinite(boat.lat) ? boat : null;
+  const pos = fixed() ? boat : null;
   if (!pos) return;
   invoke("event_save", { event: { kind: "float", name: `Float ${n}`, at: Math.floor(Date.now() / 1000), lat: pos.lat, lon: pos.lon, depth: pos.depth ?? null, temp: pos.water_temp ?? null, sog: pos.sog ?? null, cog: pos.cog ?? null, notes: "", data: { n, set: run?.eventId ?? null } } }).catch(() => {});
 }
 // a library mark at a float or radio buoy: grouped by set ("Set 28 Oct 05:30"), so the whole
 // line can be shown, hidden or deleted together in Library > Marks > Groups
 function markAt(name, kind, colour, what) {
-  const pos = boat && Number.isFinite(boat.lat) ? boat : null;
+  const pos = fixed() ? boat : null;
   if (!pos || !run) return;
   const b1 = $("st-b1").value.trim(), b2 = $("st-b2").value.trim();
   invoke("mark_save", { mark: {
@@ -336,7 +342,7 @@ function markAt(name, kind, colour, what) {
 }
 function logBuoy(name, where) {
   if (cfg.markFloats) markAt(`Radio buoy ${name}`, "sym-float-flag", "#c2185b", `radio buoy ${name} (${where === "middle" ? "part way" : `at the ${where}`})`);
-  const pos = boat && Number.isFinite(boat.lat) ? boat : null;
+  const pos = fixed() ? boat : null;
   invoke("event_save", { event: { kind: "radio-buoy", name: `Radio buoy ${name}`, at: Math.floor(Date.now() / 1000), lat: pos?.lat ?? null, lon: pos?.lon ?? null, depth: null, temp: null, sog: pos?.sog ?? null, cog: pos?.cog ?? null,
     notes: where === "start" ? "at the start of the line" : where === "end" ? "at the end of the line" : "", data: { buoy: name, where, set: run?.eventId ?? null } } }).catch(() => {});
 }
@@ -447,4 +453,4 @@ render();
 // closing the window while setting: ask first (the main window's log keeps what's done)
 window.addEventListener("beforeunload", (e) => { if (run?.state === "running" || run?.state === "paused") { e.preventDefault(); e.returnValue = ""; } });
 window.__setterRun = () => run; // for debugging in devtools
-window.__setterBoat = (b) => { boat = b; }; // for testing without Signal K
+window.__setterBoat = (b) => { boat = b; boatAt = Date.now(); }; // for testing without Signal K
