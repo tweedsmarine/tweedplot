@@ -356,7 +356,15 @@ map.on("load", () => {
   });
   setupStations(map, { weather });
   // marks, routes and routings changed in any window (the backend announces every save and delete)
-  let libraryTimer = null;
+  let libraryTimer = null, tracksTimer = null;
+  // the one-off move of a library kept as JSON files into its database (first start after the change)
+  listen("library-converting", (e) => {
+    const { step, done, total } = e.payload;
+    toast(step === "tracks" ? `Moving your library into its new database: tracks ${done.toLocaleString()} of ${total.toLocaleString()}…` : "Moving your library into its new database…");
+  });
+  listen("library-converted", (e) => {
+    toast(e.payload.ok ? `Library moved into its new database: ${e.payload.text}.` : `Moving the library into its database failed: ${e.payload.text}`, e.payload.ok ? 12000 : 0);
+  });
   listen("library-changed", () => {
     clearTimeout(libraryTimer);
     libraryTimer = setTimeout(() => library?.refresh(), 150);
@@ -383,8 +391,9 @@ map.on("load", () => {
   document.getElementById("wx-verify").onclick = () => gribTools.openVerify();
   setupTides(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn) });
   ruler = setupRuler(map, { before: "track", ui, library, route, toast, getVariation: () => vessel.variation });
-  setupTracks(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn),
+  const tracks = setupTracks(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn),
     status: (s) => { document.getElementById("lib-status").textContent = s; } });
+  listen("library-changed", () => { clearTimeout(tracksTimer); tracksTimer = setTimeout(() => tracks.refresh(), 150); });
   barriers = setupBarriers(map, { before: "track", library, toast });
   arrows = setupWindArrows(map, { before: "boat" });
   const wa = document.getElementById("inst-arrows");

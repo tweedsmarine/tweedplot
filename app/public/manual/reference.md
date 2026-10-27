@@ -50,7 +50,7 @@ TweedPlot runs on Windows 10 or 11 (Intel or ARM) and keeps all its data in plai
 | `linz` | LINZ chart data (the zip files as downloaded) | See Charts for which datasets to download |
 | `grib` | Weather files, downloaded or copied in | qtVlm's GRIB folder is read too |
 | `polars` | Your boat speed tables (polars) | See Polars, under Your boat. Without `tweedplot-data` they live in TweedPlot's own data folder |
-| `library` | Marks, routes, barriers, saved routings, tracks, GPX exports | Plain JSON: safe to back up and copy |
+| `library` | `library.gpkg`: marks, routes, barriers, saved routings and tracks in one database; `export`: GPX written by the app | Close TweedPlot before copying `library.gpkg` (and keep it out of Dropbox or OneDrive folders while TweedPlot is open). It's a GeoPackage, so QGIS and other GIS software open it |
 | `tides` | LINZ tide tables | Downloaded from Weather and tides › Tides |
 | `tracking` | YB race tracking data | One sub-folder per race |
 | `enc` | Official ENC cells (S-57) and encrypted exchange sets (S-63) | See ENC cells under Charts |
@@ -632,6 +632,8 @@ Untick a barrier to keep it but not use it; rename it in the list; move its poin
 | Routings | Saved routings: show, delete |
 | Tracks | Logged and imported tracks (see Your boat) |
 | Barriers | Lines and zones (above) |
+
+**Where the library is kept.** Everything in the Library drawer is in one database file, `tweedplot-data\library\library.gpkg` (SQLite, as a GeoPackage, so QGIS and other GIS software can open it and show the marks). Lists and the chart come up quickly however big it grows: tens of thousands of marks and years of tracks. Deleted marks, routes, routings, barriers and tracks are kept for 30 days before they are cleared out (a Trash to bring them back is coming). Each import is remembered, so it can be undone later. Libraries from earlier versions, kept as JSON files, are moved into the database once, the first time the new version starts (a message shows the progress); the old files are kept, untouched, in `library\json-backup-<date>`. TweedPlot keeps its own backups in `library\backups`: a copy each day it's started, kept for 7 days, and one a week for 4 weeks before that. Each is a complete library, so restoring one is a matter of copying it over `library.gpkg` with TweedPlot closed. To copy the library to another PC or a USB stick, close TweedPlot and copy `library.gpkg`; don't keep it in a Dropbox or OneDrive folder while TweedPlot is open.
 
 **GPX** exchanges marks, routes and tracks with plotters, phone apps, qtVlm, OpenCPN and Navionics. Import adds new marks and matches ones you already have: a named mark within about 50 m of one with the same name, an unnamed mark within a few metres of another unnamed one, so importing the same file twice adds nothing. Marks keep their date, colour and plotter symbol; TimeZero files keep their symbol number and colour, and export back the same way.
 

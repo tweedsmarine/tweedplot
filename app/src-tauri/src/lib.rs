@@ -1239,7 +1239,8 @@ fn es(e: library::Error) -> String {
 
 #[tauri::command]
 fn lib_info() -> Result<serde_json::Value, String> {
-    Ok(serde_json::json!({ "dir": lib()?.dir() }))
+    let l = lib()?;
+    Ok(serde_json::json!({ "dir": l.dir(), "file": l.path(), "converting": l.converting() }))
 }
 #[tauri::command]
 fn barriers_list() -> Result<Vec<library::Barrier>, String> {
@@ -1456,6 +1457,25 @@ fn rec_flush() {
         if let Err(e) = l.store_track(&t) {
             eprintln!("track save: {e}");
         }
+    }
+}
+
+/// Carry on recording if it was on when the app closed: the same track if its last fix
+/// is under 2 h old, else a new one.
+fn rec_resume() {
+    let st = lib().ok().and_then(|l| std::fs::read_to_string(l.dir().join(REC_FILE)).ok());
+    let Some(v) = st.and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()) else { return };
+    if v["on"].as_bool() != Some(true) {
+        return;
+    }
+    let id = v["track"].as_str().unwrap_or("").to_string();
+    let recent = lib()
+        .ok()
+        .and_then(|l| l.track(&id).ok())
+        .and_then(|t| t.stats.end)
+        .is_some_and(|e| chrono_now() - e < 2 * 3600);
+    if let Err(e) = rec_begin(recent.then_some(id.as_str())) {
+        eprintln!("recorder: {e}");
     }
 }
 
@@ -2962,25 +2982,33 @@ pub fn run() {
             match library::Library::open(library_dir(app.handle())) {
                 Ok(l) => {
                     let _ = LIBRARY.set(l);
-                    // carry on recording if it was on: the same track if its last fix is under 2 h old
-                    let st = lib()
-                        .ok()
-                        .and_then(|l| std::fs::read_to_string(l.dir().join(REC_FILE)).ok());
-                    if let Some(v) =
-                        st.and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-                    {
-                        if v["on"].as_bool() == Some(true) {
-                            let id = v["track"].as_str().unwrap_or("").to_string();
-                            let recent = lib()
-                                .ok()
-                                .and_then(|l| l.track(&id).ok())
-                                .and_then(|t| t.stats.end)
-                                .is_some_and(|e| chrono_now() - e < 2 * 3600);
-                            if let Err(e) = rec_begin(recent.then_some(id.as_str())) {
-                                eprintln!("recorder: {e}");
+                    // a library kept as JSON files (before Oct 2026) moves into the database
+                    // once, in the background, with progress; the recorder carries on after
+                    let h = app.handle().clone();
+                    let convert = lib().is_ok_and(|l| l.needs_conversion());
+                    std::thread::spawn(move || {
+                        if convert {
+                            let mut last = std::time::Instant::now();
+                            let r = lib().and_then(|l| {
+                                l.convert_json(|step, done, total| {
+                                    if last.elapsed().as_millis() > 300 || done == total {
+                                        last = std::time::Instant::now();
+                                        let _ = h.emit("library-converting", serde_json::json!({ "step": step, "done": done, "total": total }));
+                                    }
+                                })
+                                .map_err(es)
+                            });
+                            let _ = h.emit("library-converted", serde_json::json!({ "ok": r.is_ok(), "text": r.unwrap_or_else(|e| e) }));
+                            library_changed(&h);
+                        }
+                        rec_resume();
+                        // the day's backup of the library (a copy; nothing waits for it)
+                        if let Ok(l) = lib() {
+                            if let Err(e) = l.backup_if_due() {
+                                eprintln!("library backup: {e}");
                             }
                         }
-                    }
+                    });
                 }
                 Err(e) => eprintln!("library: {e}"),
             }

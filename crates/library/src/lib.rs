@@ -1,27 +1,21 @@
-//! The mark and route library.
+//! The library: marks, routes, routings, barriers and tracks.
 //!
-//! Everything is plain JSON in one folder, so it can be backed up, copied to
-//! another PC or fixed by hand:
-//!
-//! ```text
-//! <dir>/marks.json             every mark, shared by all routes
-//! <dir>/barriers.json          barrier lines and zones the router avoids
-//! <dir>/routes/<id>.json       one route: an ordered list of mark ids
-//! <dir>/routings/<id>.json     one saved routing: its inputs and the result
-//! <dir>/tracks/<id>.json       one track (logged or imported), see [`tracks`]
-//! <dir>/export/*.gpx           GPX written by the app
-//! ```
-//!
-//! Files are written to a temporary name and renamed, so a crash never leaves
-//! half a file behind.
+//! Kept in one SQLite database, `<dir>/library.gpkg` (a GeoPackage: GIS software opens
+//! it too), see [`store`]. GPX and other files written by the app go to `<dir>/export`.
+//! Libraries kept as JSON files by earlier versions are moved in once
+//! ([`Library::convert_json`]); the files are kept in `<dir>/json-backup-<date>`.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::Mutex;
+
+use rusqlite::{params, Connection, OptionalExtension};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 mod gpx;
+pub mod store;
 pub mod tracks;
 pub mod tzd;
 pub use gpx::{parse_gpx, GpxData, GpxRoute, GpxTrack, GpxWaypoint};
@@ -37,6 +31,10 @@ pub enum Error {
     Gpx(String),
     #[error("TimeZero: {0}")]
     Tz(String),
+    #[error("library database: {0}")]
+    Db(#[from] rusqlite::Error),
+    #[error("library database: {0}")]
+    Store(String),
     #[error("not found: {0}")]
     NotFound(String),
     #[error("{0}")]
@@ -66,6 +64,10 @@ pub struct Mark {
     /// When the mark was made (Unix seconds; 0 unknown), e.g. from an imported file.
     #[serde(skip_serializing_if = "is_zero")]
     pub created: i64,
+    /// `created` is only the day it was brought in from another plotter, in a batch
+    /// (e.g. a fleet's SeaPlot marks moved into TimeZero): when it was made isn't known.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub date_unknown: bool,
     /// "#rrggbb" to draw it in (empty: by its kind).
     #[serde(skip_serializing_if = "String::is_empty")]
     pub colour: String,
@@ -80,7 +82,7 @@ fn is_zero(v: &i64) -> bool {
 
 impl Default for Mark {
     fn default() -> Self {
-        Mark { id: String::new(), name: String::new(), lat: 0.0, lon: 0.0, kind: "mark".into(), notes: String::new(), group: String::new(), barrier_nm: 0.0, modified: 0, created: 0, colour: String::new(), symbol: String::new() }
+        Mark { id: String::new(), name: String::new(), lat: 0.0, lon: 0.0, kind: "mark".into(), notes: String::new(), group: String::new(), barrier_nm: 0.0, modified: 0, created: 0, date_unknown: false, colour: String::new(), symbol: String::new() }
     }
 }
 
@@ -181,158 +183,318 @@ pub struct ImportReport {
 
 pub struct Library {
     dir: PathBuf,
+    db: Mutex<Connection>,
+    /// The one-off move from the JSON files is running (lists may be incomplete).
+    converting: AtomicBool,
 }
 
 /// Two marks this close (NM) with the same name are the same mark.
 const SAME_MARK_NM: f64 = 0.03;
 const SAME_UNNAMED_NM: f64 = 0.002;
+/// This many marks made in the same second were brought in from another plotter in one go:
+/// their date is the day of that import, not when they were made.
+const BULK_SAME_SECOND: usize = 20;
+
+const MARK_COLS: &str = "id, name, lat, lon, kind, notes, grp, barrier_nm, modified, created, date_unknown, colour, symbol";
+const TRACK_COLS: &str = "id, name, notes, colour, source, modified, points, start, \"end\", distance_nm, max_sog, west, south, east, north";
+
+fn mark_row(r: &rusqlite::Row) -> rusqlite::Result<Mark> {
+    Ok(Mark {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        lat: r.get(2)?,
+        lon: r.get(3)?,
+        kind: r.get(4)?,
+        notes: r.get(5)?,
+        group: r.get(6)?,
+        barrier_nm: r.get(7)?,
+        modified: r.get(8)?,
+        created: r.get(9)?,
+        date_unknown: r.get::<_, i64>(10)? != 0,
+        colour: r.get(11)?,
+        symbol: r.get(12)?,
+    })
+}
+
+fn track_summary_row(r: &rusqlite::Row) -> rusqlite::Result<TrackSummary> {
+    let bbox = match (r.get::<_, Option<f64>>(11)?, r.get::<_, Option<f64>>(12)?, r.get::<_, Option<f64>>(13)?, r.get::<_, Option<f64>>(14)?) {
+        (Some(w), Some(s), Some(e), Some(n)) => Some([w, s, e, n]),
+        _ => None,
+    };
+    Ok(TrackSummary {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        notes: r.get(2)?,
+        colour: r.get(3)?,
+        source: r.get(4)?,
+        modified: r.get(5)?,
+        stats: TrackStats { points: r.get::<_, i64>(6)? as usize, start: r.get(7)?, end: r.get(8)?, distance_nm: r.get(9)?, max_sog: r.get(10)?, bbox },
+    })
+}
+
+fn insert_mark(c: &Connection, m: &Mark, import_id: Option<i64>) -> Result<()> {
+    c.prepare_cached(
+        "INSERT INTO marks (geom, id, name, lat, lon, kind, notes, grp, barrier_nm, modified, created, date_unknown, colour, symbol, import_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+         ON CONFLICT(id) DO UPDATE SET geom = excluded.geom, name = excluded.name, lat = excluded.lat, lon = excluded.lon,
+           kind = excluded.kind, notes = excluded.notes, grp = excluded.grp, barrier_nm = excluded.barrier_nm,
+           modified = excluded.modified, created = excluded.created, date_unknown = excluded.date_unknown,
+           colour = excluded.colour, symbol = excluded.symbol, deleted_at = NULL",
+    )?
+    .execute(params![
+        store::gpkg_point(m.lon, m.lat),
+        m.id,
+        m.name,
+        m.lat,
+        m.lon,
+        m.kind,
+        m.notes,
+        m.group,
+        m.barrier_nm,
+        m.modified,
+        m.created,
+        m.date_unknown as i64,
+        m.colour,
+        m.symbol,
+        import_id
+    ])?;
+    Ok(())
+}
+
+fn write_route(c: &Connection, r: &Route, import_id: Option<i64>) -> Result<()> {
+    c.execute(
+        "INSERT INTO routes (id, name, notes, start_lon, start_lat, start_mark, modified, import_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, notes = excluded.notes, start_lon = excluded.start_lon,
+           start_lat = excluded.start_lat, start_mark = excluded.start_mark, modified = excluded.modified, deleted_at = NULL",
+        params![r.id, r.name, r.notes, r.start.map(|s| s[0]), r.start.map(|s| s[1]), r.start_mark, r.modified, import_id],
+    )?;
+    c.execute("DELETE FROM route_marks WHERE route_id = ?1", [&r.id])?;
+    let mut ins = c.prepare_cached("INSERT INTO route_marks (route_id, seq, mark_id, rounding, radius_nm) VALUES (?1, ?2, ?3, ?4, ?5)")?;
+    for (k, m) in r.marks.iter().enumerate() {
+        ins.execute(params![r.id, k as i64, m.mark, m.rounding, m.radius_nm])?;
+    }
+    Ok(())
+}
+
+fn write_track(c: &Connection, t: &Track, import_id: Option<i64>) -> Result<()> {
+    let s = &t.stats;
+    let (w, so, e, n) = match s.bbox {
+        Some(b) => (Some(b[0]), Some(b[1]), Some(b[2]), Some(b[3])),
+        None => (None, None, None, None),
+    };
+    let has = |f: fn(&TrackPoint) -> bool| t.segments.iter().flatten().any(f) as i64;
+    c.prepare_cached(
+        "INSERT INTO tracks (id, name, notes, colour, source, modified, points, start, \"end\", distance_nm, max_sog, west, south, east, north, has_depth, has_temp, import_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, notes = excluded.notes, colour = excluded.colour, source = excluded.source,
+           modified = excluded.modified, points = excluded.points, start = excluded.start, \"end\" = excluded.\"end\",
+           distance_nm = excluded.distance_nm, max_sog = excluded.max_sog, west = excluded.west, south = excluded.south,
+           east = excluded.east, north = excluded.north, has_depth = excluded.has_depth, has_temp = excluded.has_temp, deleted_at = NULL",
+    )?
+    .execute(params![
+        t.id,
+        t.name,
+        t.notes,
+        t.colour,
+        t.source,
+        t.modified,
+        s.points as i64,
+        s.start,
+        s.end,
+        s.distance_nm,
+        s.max_sog,
+        w,
+        so,
+        e,
+        n,
+        has(|p| p.depth.is_some()),
+        has(|p| p.temp.is_some()),
+        import_id
+    ])?;
+    c.prepare_cached("INSERT INTO track_data (track_id, data) VALUES (?1, ?2) ON CONFLICT(track_id) DO UPDATE SET data = excluded.data")?
+        .execute(params![t.id, store::encode_segments(&t.segments)])?;
+    Ok(())
+}
 
 impl Library {
+    /// Open the library in `dir` (made if missing): `<dir>/library.gpkg`, and `<dir>/export` for files written.
     pub fn open(dir: impl Into<PathBuf>) -> Result<Self> {
         let dir = dir.into();
-        for sub in ["routes", "routings", "tracks", "export"] {
-            std::fs::create_dir_all(dir.join(sub))?;
+        std::fs::create_dir_all(dir.join("export"))?;
+        let c = store::open(&dir.join(store::FILE))?;
+        // the Trash keeps deleted things for a while
+        let old = now() - store::TRASH_DAYS * 86_400;
+        for t in ["marks", "routes", "routings", "barriers", "tracks", "trips"] {
+            c.execute(&format!("DELETE FROM {t} WHERE deleted_at IS NOT NULL AND deleted_at < ?1"), [old])?;
         }
-        Ok(Library { dir })
+        Ok(Library { dir, db: Mutex::new(c), converting: AtomicBool::new(false) })
     }
 
     pub fn dir(&self) -> &Path {
         &self.dir
     }
 
+    /// The database file.
+    pub fn path(&self) -> PathBuf {
+        self.dir.join(store::FILE)
+    }
+
+    fn db(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.db.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Whether the one-off move from the JSON files is running.
+    pub fn converting(&self) -> bool {
+        self.converting.load(Ordering::Relaxed)
+    }
+
     // ---------- marks ----------
 
     pub fn marks(&self) -> Result<Vec<Mark>> {
-        let p = self.dir.join("marks.json");
-        if !p.exists() {
-            return Ok(Vec::new());
-        }
-        Ok(serde_json::from_slice(&std::fs::read(p)?)?)
-    }
-
-    fn write_marks(&self, marks: &[Mark]) -> Result<()> {
-        write_json(&self.dir.join("marks.json"), &marks)
+        let c = self.db();
+        let mut q = c.prepare_cached(&format!("SELECT {MARK_COLS} FROM marks WHERE deleted_at IS NULL ORDER BY fid"))?;
+        let v = q.query_map([], mark_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(v)
     }
 
     /// Add or update a mark (matched by id; an empty id makes a new one).
     pub fn save_mark(&self, mut m: Mark) -> Result<Mark> {
-        let mut all = self.marks()?;
+        let c = self.db();
         m.modified = now();
         if m.name.trim().is_empty() {
-            m.name = next_name(&all, "WP");
+            m.name = next_name(&c, "WP")?;
         }
-        match all.iter_mut().find(|x| !m.id.is_empty() && x.id == m.id) {
-            Some(x) => *x = m.clone(),
-            None => {
-                if m.id.is_empty() {
-                    m.id = new_id("m");
-                }
-                all.push(m.clone());
-            }
+        if m.id.is_empty() {
+            m.id = new_id("m");
         }
-        self.write_marks(&all)?;
+        insert_mark(&c, &m, None)?;
         Ok(m)
     }
 
-    /// Delete a mark. If routes use it, refuse unless `force`, which also
+    /// Delete a mark (to the Trash). If routes use it, refuse unless `force`, which also
     /// takes it out of those routes.
     pub fn delete_mark(&self, id: &str, force: bool) -> Result<()> {
-        let uses = |r: &Route| r.marks.iter().any(|x| x.mark == id) || r.start_mark.as_deref() == Some(id);
-        let users: Vec<Route> = self.routes()?.into_iter().filter(|r| uses(r)).collect();
-        if !users.is_empty() && !force {
-            let names: Vec<&str> = users.iter().map(|r| r.name.as_str()).collect();
-            return Err(Error::InUse(format!("The mark is used by: {}", names.join(", "))));
-        }
-        for mut r in users {
-            r.marks.retain(|x| x.mark != id);
-            if r.start_mark.as_deref() == Some(id) {
-                r.start_mark = None; // the start keeps its position
-            }
-            self.save_route(r)?;
-        }
-        let mut all = self.marks()?;
-        let n = all.len();
-        all.retain(|m| m.id != id);
-        if all.len() == n {
+        if self.delete_marks(&[id.to_string()], force)? == 0 {
             return Err(Error::NotFound(id.into()));
         }
-        self.write_marks(&all)
+        Ok(())
     }
 
-    /// Delete many marks at once (in one write, not one per mark). With `force`, marks used by
-    /// routes are taken out of them; without it, nothing is deleted if any is in use.
+    /// Delete many marks at once (to the Trash). With `force`, marks used by routes are
+    /// taken out of them; without it, nothing is deleted if any is in use.
     pub fn delete_marks(&self, ids: &[String], force: bool) -> Result<usize> {
-        let gone: std::collections::HashSet<&str> = ids.iter().map(String::as_str).collect();
-        let uses = |r: &Route| r.marks.iter().any(|x| gone.contains(x.mark.as_str())) || r.start_mark.as_deref().is_some_and(|m| gone.contains(m));
-        let users: Vec<Route> = self.routes()?.into_iter().filter(|r| uses(r)).collect();
-        if !users.is_empty() && !force {
-            let names: Vec<&str> = users.iter().map(|r| r.name.as_str()).collect();
-            return Err(Error::InUse(format!("Some of the marks are used by: {}", names.join(", "))));
-        }
-        for mut r in users {
-            r.marks.retain(|x| !gone.contains(x.mark.as_str()));
-            if r.start_mark.as_deref().is_some_and(|m| gone.contains(m)) {
-                r.start_mark = None;
+        let mut c = self.db();
+        let tx = c.transaction()?;
+        tx.execute("CREATE TEMP TABLE IF NOT EXISTS gone (id TEXT PRIMARY KEY)", [])?;
+        tx.execute("DELETE FROM gone", [])?;
+        {
+            let mut ins = tx.prepare_cached("INSERT OR IGNORE INTO gone (id) VALUES (?1)")?;
+            for id in ids {
+                ins.execute([id])?;
             }
-            self.save_route(r)?;
         }
-        let mut all = self.marks()?;
-        let n = all.len();
-        all.retain(|m| !gone.contains(m.id.as_str()));
-        self.write_marks(&all)?;
-        Ok(n - all.len())
+        let users: Vec<String> = {
+            let mut q = tx.prepare(
+                "SELECT DISTINCT r.name FROM routes r WHERE r.deleted_at IS NULL AND (r.start_mark IN (SELECT id FROM gone)
+                 OR r.id IN (SELECT route_id FROM route_marks WHERE mark_id IN (SELECT id FROM gone)))",
+            )?;
+            let v = q.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>()?;
+            v
+        };
+        if !users.is_empty() && !force {
+            let what = if ids.len() == 1 { "The mark is" } else { "Some of the marks are" };
+            return Err(Error::InUse(format!("{what} used by: {}", users.join(", "))));
+        }
+        let t = now();
+        // out of the routes they were in (a route's start keeps its position)
+        tx.execute("UPDATE routes SET start_mark = NULL, modified = ?1 WHERE start_mark IN (SELECT id FROM gone)", [t])?;
+        let touched: Vec<String> = {
+            let mut q = tx.prepare("SELECT DISTINCT route_id FROM route_marks WHERE mark_id IN (SELECT id FROM gone)")?;
+            let v = q.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>()?;
+            v
+        };
+        tx.execute("DELETE FROM route_marks WHERE mark_id IN (SELECT id FROM gone)", [])?;
+        for r in &touched {
+            // close the gaps in the order
+            tx.execute(
+                "UPDATE route_marks SET seq = (SELECT count(*) FROM route_marks x WHERE x.route_id = route_marks.route_id AND x.seq < route_marks.seq) + 100000 WHERE route_id = ?1",
+                [r],
+            )?;
+            tx.execute("UPDATE route_marks SET seq = seq - 100000 WHERE route_id = ?1", [r])?;
+            tx.execute("UPDATE routes SET modified = ?2 WHERE id = ?1", params![r, t])?;
+        }
+        let n = tx.execute("UPDATE marks SET deleted_at = ?1 WHERE deleted_at IS NULL AND id IN (SELECT id FROM gone)", [t])?;
+        tx.execute("DELETE FROM gone", [])?;
+        tx.commit()?;
+        Ok(n)
     }
 
     // ---------- barriers ----------
 
     pub fn barriers(&self) -> Result<Vec<Barrier>> {
-        let p = self.dir.join("barriers.json");
-        if !p.exists() {
-            return Ok(Vec::new());
-        }
-        Ok(serde_json::from_slice(&std::fs::read(p)?)?)
+        let c = self.db();
+        let mut q = c.prepare_cached("SELECT id, name, kind, points, active, notes, modified FROM barriers WHERE deleted_at IS NULL ORDER BY rowid")?;
+        let v = q
+            .query_map([], |r| {
+                Ok(Barrier {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    kind: r.get(2)?,
+                    points: serde_json::from_str(&r.get::<_, String>(3)?).unwrap_or_default(),
+                    active: r.get::<_, i64>(4)? != 0,
+                    notes: r.get(5)?,
+                    modified: r.get(6)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(v)
     }
 
     /// Add or update a barrier (an empty id makes a new one, named "Barrier n" when unnamed).
     pub fn save_barrier(&self, mut b: Barrier) -> Result<Barrier> {
-        let mut all = self.barriers()?;
+        let names: Vec<String> = self.barriers()?.into_iter().map(|x| x.name).collect();
         b.modified = now();
         if b.name.trim().is_empty() {
-            b.name = (1..).map(|k| format!("Barrier {k}")).find(|n| !all.iter().any(|x| &x.name == n)).unwrap();
+            b.name = (1..).map(|k| format!("Barrier {k}")).find(|n| !names.contains(n)).unwrap();
         }
-        match all.iter_mut().find(|x| !b.id.is_empty() && x.id == b.id) {
-            Some(x) => *x = b.clone(),
-            None => {
-                if b.id.is_empty() {
-                    b.id = new_id("b");
-                }
-                all.push(b.clone());
-            }
+        if b.id.is_empty() {
+            b.id = new_id("b");
         }
-        write_json(&self.dir.join("barriers.json"), &all)?;
+        self.db().execute(
+            "INSERT INTO barriers (id, name, kind, points, active, notes, modified) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(id) DO UPDATE SET name = excluded.name, kind = excluded.kind, points = excluded.points,
+               active = excluded.active, notes = excluded.notes, modified = excluded.modified, deleted_at = NULL",
+            params![b.id, b.name, b.kind, serde_json::to_string(&b.points)?, b.active as i64, b.notes, b.modified],
+        )?;
         Ok(b)
     }
 
     pub fn delete_barrier(&self, id: &str) -> Result<()> {
-        let mut all = self.barriers()?;
-        let n = all.len();
-        all.retain(|b| b.id != id);
-        if all.len() == n {
+        self.soft_delete("barriers", id)
+    }
+
+    fn soft_delete(&self, table: &str, id: &str) -> Result<()> {
+        let n = self.db().execute(&format!("UPDATE {table} SET deleted_at = ?2 WHERE id = ?1 AND deleted_at IS NULL"), params![id, now()])?;
+        if n == 0 {
             return Err(Error::NotFound(id.into()));
         }
-        write_json(&self.dir.join("barriers.json"), &all)
+        Ok(())
     }
 
     // ---------- routes ----------
 
     pub fn routes(&self) -> Result<Vec<Route>> {
-        let mut v: Vec<Route> = read_dir_json(&self.dir.join("routes"))?;
-        v.sort_by(|a, b| b.modified.cmp(&a.modified));
-        Ok(v)
+        let c = self.db();
+        routes_where(&c, "1")
     }
 
     pub fn route(&self, id: &str) -> Result<Route> {
-        read_one(&self.dir.join("routes"), id)
+        let c = self.db();
+        let mut q = c.prepare("SELECT 1 FROM routes WHERE id = ?1 AND deleted_at IS NULL")?;
+        if !q.exists([id])? {
+            return Err(Error::NotFound(id.into()));
+        }
+        routes_where(&c, &format!("r.id = '{}'", id.replace('\'', "''")))?.into_iter().next().ok_or_else(|| Error::NotFound(id.into()))
     }
 
     pub fn save_route(&self, mut r: Route) -> Result<Route> {
@@ -343,41 +505,63 @@ impl Library {
             r.name = "Route".into();
         }
         r.modified = now();
-        write_json(&self.dir.join("routes").join(format!("{}.json", safe(&r.id))), &r)?;
+        let mut c = self.db();
+        let tx = c.transaction()?;
+        write_route(&tx, &r, None)?;
+        tx.commit()?;
         Ok(r)
     }
 
     pub fn delete_route(&self, id: &str) -> Result<()> {
-        remove(&self.dir.join("routes"), id)
+        self.soft_delete("routes", id)
     }
 
     // ---------- routings ----------
 
     pub fn routings(&self) -> Result<Vec<RoutingSummary>> {
-        let all: Vec<Routing> = read_dir_json(&self.dir.join("routings"))?;
-        let mut v: Vec<RoutingSummary> = all
-            .into_iter()
-            .map(|r| RoutingSummary {
-                t0: r.request["t0"].as_i64(),
-                status: r.result["status"].as_str().map(str::to_string),
-                arrival: r.result["arrival"].as_i64(),
-                distance_nm: r.result["distance_nm"].as_f64(),
-                grib_name: r.request["grib_name"].as_str().map(str::to_string),
-                polar: r.request["polar_path"].as_str().map(|p| {
-                    Path::new(&p.replace('\\', "/")).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
-                }),
-                id: r.id,
-                name: r.name,
-                created: r.created,
-                route_name: r.route_name,
-            })
-            .collect();
-        v.sort_by(|a, b| b.created.cmp(&a.created));
+        let c = self.db();
+        let mut q = c.prepare_cached(
+            "SELECT id, name, created, route_name, t0, status, arrival, distance_nm, grib_name, polar FROM routings
+             WHERE deleted_at IS NULL ORDER BY created DESC",
+        )?;
+        let v = q
+            .query_map([], |r| {
+                Ok(RoutingSummary {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    created: r.get(2)?,
+                    route_name: r.get(3)?,
+                    t0: r.get(4)?,
+                    status: r.get(5)?,
+                    arrival: r.get(6)?,
+                    distance_nm: r.get(7)?,
+                    grib_name: r.get(8)?,
+                    polar: r.get(9)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(v)
     }
 
     pub fn routing(&self, id: &str) -> Result<Routing> {
-        read_one(&self.dir.join("routings"), id)
+        let c = self.db();
+        c.query_row(
+            "SELECT id, name, created, route_id, route_name, request, result FROM routings WHERE id = ?1 AND deleted_at IS NULL",
+            [id],
+            |r| {
+                Ok(Routing {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    created: r.get(2)?,
+                    route_id: r.get(3)?,
+                    route_name: r.get(4)?,
+                    request: serde_json::from_str(&r.get::<_, String>(5)?).unwrap_or(Value::Null),
+                    result: serde_json::from_str(&r.get::<_, String>(6)?).unwrap_or(Value::Null),
+                })
+            },
+        )
+        .optional()?
+        .ok_or_else(|| Error::NotFound(id.into()))
     }
 
     pub fn save_routing(&self, mut r: Routing) -> Result<RoutingSummary> {
@@ -390,13 +574,13 @@ impl Library {
         if r.name.trim().is_empty() {
             r.name = if r.route_name.is_empty() { "Routing".into() } else { r.route_name.clone() };
         }
-        write_json(&self.dir.join("routings").join(format!("{}.json", safe(&r.id))), &r)?;
+        write_routing(&self.db(), &r)?;
         let id = r.id.clone();
         self.routings()?.into_iter().find(|s| s.id == id).ok_or(Error::NotFound(id))
     }
 
     pub fn delete_routing(&self, id: &str) -> Result<()> {
-        remove(&self.dir.join("routings"), id)
+        self.soft_delete("routings", id)
     }
 
     // ---------- GPX ----------
@@ -405,19 +589,18 @@ impl Library {
     pub fn export_gpx(&self, mark_ids: &[String], route_ids: &[String]) -> Result<String> {
         let marks = self.marks()?;
         let routes: Vec<Route> = self.routes()?.into_iter().filter(|r| route_ids.is_empty() || route_ids.contains(&r.id)).collect();
+        let by_id: std::collections::HashMap<&str, &Mark> = marks.iter().map(|m| (m.id.as_str(), m)).collect();
         let wpts: Vec<&Mark> = if mark_ids.is_empty() && route_ids.is_empty() {
             marks.iter().collect()
         } else {
             // the chosen marks plus every mark the chosen routes use
-            marks
-                .iter()
-                .filter(|m| {
-                    mark_ids.contains(&m.id)
-                        || routes.iter().any(|r| r.marks.iter().any(|x| x.mark == m.id) || r.start_mark.as_deref() == Some(m.id.as_str()))
-                })
-                .collect()
+            let mut want: std::collections::HashSet<&str> = mark_ids.iter().map(String::as_str).collect();
+            for r in &routes {
+                want.extend(r.marks.iter().map(|x| x.mark.as_str()));
+                want.extend(r.start_mark.as_deref());
+            }
+            marks.iter().filter(|m| want.contains(m.id.as_str())).collect()
         };
-        let by_id = |id: &str| marks.iter().find(|m| m.id == id);
         let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\" creator=\"racenav\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n");
         for m in &wpts {
             out.push_str(&gpx::wpt("wpt", m, "  "));
@@ -425,14 +608,14 @@ impl Library {
         for r in &routes {
             out.push_str(&format!("  <rte>\n    <name>{}</name>\n", gpx::esc(&r.name)));
             // the start leads the route: its library mark, else a plain point
-            if let Some(m) = r.start_mark.as_deref().and_then(by_id) {
+            if let Some(m) = r.start_mark.as_deref().and_then(|id| by_id.get(id)) {
                 out.push_str(&gpx::wpt("rtept", m, "    "));
             } else if let Some([lon, lat]) = r.start {
                 let m = Mark { name: "Start".into(), lat, lon, kind: "start".into(), ..Default::default() };
                 out.push_str(&gpx::wpt("rtept", &m, "    "));
             }
             for rm in &r.marks {
-                if let Some(m) = by_id(&rm.mark) {
+                if let Some(m) = by_id.get(rm.mark.as_str()) {
                     out.push_str(&gpx::wpt("rtept", m, "    "));
                 }
             }
@@ -445,28 +628,60 @@ impl Library {
     /// Bring GPX waypoints and routes into the library. A waypoint with the
     /// same name as a library mark and within about 50 m is the same mark.
     pub fn import_gpx(&self, text: &str, group: &str) -> Result<ImportReport> {
-        self.import_data(parse_gpx(text)?, group)
+        let id = self.begin_import(group, "gpx")?;
+        let rep = self.import_data(parse_gpx(text)?, group, id)?;
+        self.finish_import(id, &rep)?;
+        Ok(rep)
     }
 
     /// Bring in a TimeZero `.tzd` / `.TzBackup` (or its WaypointRouteDatabase.xml): marks
     /// in their layers as groups, with symbol, colour and date, and routes. Matching is as GPX.
     pub fn import_tzd(&self, path: &std::path::Path, group: &str) -> Result<ImportReport> {
         let d = tzd::read_tzd(path)?;
-        let mut rep = self.import_data(d.gpx, group)?;
+        let id = self.begin_import(&path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), "timezero")?;
+        let mut rep = self.import_data(d.gpx, group, id)?;
         let n = |k: usize, one: &str, many: &str| if k == 1 { format!("1 {one}") } else { format!("{k} {many}") };
         if d.lines + d.areas + d.circles > 0 {
             rep.not_imported.push(format!("{}, {} and {} (not yet)", n(d.lines, "line", "lines"), n(d.areas, "area", "areas"), n(d.circles, "circle", "circles")));
         }
-        self.import_tz_tracks(path, group, &mut rep)?;
+        self.import_tz_tracks(path, group, id, &mut rep)?;
+        self.finish_import(id, &rep)?;
         Ok(rep)
+    }
+
+    fn begin_import(&self, file: &str, kind: &str) -> Result<i64> {
+        let c = self.db();
+        c.execute("INSERT INTO imports (file, kind, at) VALUES (?1, ?2, ?3)", params![file, kind, now()])?;
+        Ok(c.last_insert_rowid())
+    }
+
+    fn finish_import(&self, id: i64, rep: &ImportReport) -> Result<()> {
+        self.db().execute("UPDATE imports SET report = ?2 WHERE id = ?1", params![id, serde_json::to_string(rep)?])?;
+        Ok(())
     }
 
     /// TimeZero's tracks (Tracks.bin), thinned as the track recorder thins live fixes
     /// (TimeZero keeps one every 2 s). A track already here (same start and name) is skipped.
-    fn import_tz_tracks(&self, path: &std::path::Path, group: &str, rep: &mut ImportReport) -> Result<()> {
+    /// Written a few hundred at a time, so the rest of the app isn't held up for long.
+    fn import_tz_tracks(&self, path: &std::path::Path, group: &str, import_id: i64, rep: &mut ImportReport) -> Result<()> {
         let have: std::collections::HashSet<(i64, String)> =
             self.tracks()?.into_iter().filter_map(|t| t.stats.start.map(|s| (s, t.name))).collect();
         let (mut fixes, mut kept, mut same) = (0usize, 0usize, 0usize);
+        let mut batch: Vec<Track> = Vec::new();
+        let stamp = now();
+        let flush = |batch: &mut Vec<Track>, rep: &mut ImportReport| -> Result<()> {
+            if batch.is_empty() {
+                return Ok(());
+            }
+            let mut c = self.db();
+            let tx = c.transaction()?;
+            for t in batch.iter() {
+                write_track(&tx, t, Some(import_id))?;
+            }
+            tx.commit()?;
+            rep.tracks_added.extend(batch.drain(..).map(|t| t.name));
+            Ok(())
+        };
         let r = tzd::read_tzd_tracks(path, |t| {
             fixes += t.points.len();
             let mut rec = Recorder::new(Track { source: "timezero".into(), colour: t.colour.clone(), ..Default::default() });
@@ -495,9 +710,16 @@ impl Library {
                 return Ok(());
             }
             kept += tr.segments.iter().map(Vec::len).sum::<usize>();
-            rep.tracks_added.push(self.save_track(tr)?.name);
+            tr.id = new_id("t");
+            tr.modified = stamp;
+            tr.update_stats();
+            batch.push(tr);
+            if batch.len() >= 200 {
+                flush(&mut batch, rep)?;
+            }
             Ok(())
         })?;
+        flush(&mut batch, rep)?;
         if let Some(p) = r.as_ref().and_then(|r| r.problem.clone()) {
             let r = r.as_ref().unwrap();
             rep.not_imported.push(format!("tracks after {} of {} (TimeZero's Tracks.bin: {p})", r.read, r.count));
@@ -512,9 +734,18 @@ impl Library {
         Ok(())
     }
 
-    fn import_data(&self, data: GpxData, group: &str) -> Result<ImportReport> {
+    fn import_data(&self, data: GpxData, group: &str, import_id: i64) -> Result<ImportReport> {
         let mut rep = ImportReport::default();
         let mut marks = self.marks()?;
+        let first_new = marks.len();
+        // marks made in the same second by the hundred came in from another plotter in one
+        // go (a fleet's SeaPlot marks into TimeZero): their date is that day, not when made
+        let mut per_second: std::collections::HashMap<i64, usize> = std::collections::HashMap::new();
+        for w in data.waypoints.iter().chain(data.routes.iter().flat_map(|r| r.points.iter())) {
+            if let Some(t) = w.time {
+                *per_second.entry(t).or_default() += 1;
+            }
+        }
         // Marks already here, by name and a grid of about a kilometre, so a big file (a
         // fisherman's tens of thousands of marks) matches in moments, not hours.
         const CELL: f64 = 0.01;
@@ -558,6 +789,7 @@ impl Library {
                 barrier_nm: 0.0,
                 modified: stamp,
                 created: w.time.unwrap_or(0),
+                date_unknown: w.time.is_some_and(|t| per_second.get(&t).copied().unwrap_or(0) >= BULK_SAME_SECOND),
                 colour: w.colour.clone(),
                 symbol,
             };
@@ -581,21 +813,34 @@ impl Library {
                 rep.routes_matched += 1;
                 continue;
             }
-            new_routes.push(Route { id: String::new(), name, notes: String::new(), start: None, start_mark: None, marks: ids, modified: 0 });
+            new_routes.push(Route { id: new_id("r"), name, notes: String::new(), start: None, start_mark: None, marks: ids, modified: stamp });
         }
-        self.write_marks(&marks)?;
-        for r in new_routes {
-            rep.routes_added.push(self.save_route(r)?.name);
-        }
+        let mut new_tracks = Vec::new();
         for (k, t) in data.tracks.into_iter().enumerate() {
             let name = if t.name.trim().is_empty() {
                 if group.is_empty() { format!("Imported track {}", k + 1) } else { format!("{group} {}", k + 1) }
             } else {
                 t.name.trim().to_string()
             };
-            let tr = Track { name, notes: t.desc, source: "gpx".into(), segments: t.segments, ..Default::default() };
-            rep.tracks_added.push(self.save_track(tr)?.name);
+            let mut tr = Track { id: new_id("t"), name, notes: t.desc, source: "gpx".into(), segments: t.segments, modified: stamp, ..Default::default() };
+            tr.update_stats();
+            new_tracks.push(tr);
         }
+        // everything new in one go: a crash part way leaves nothing half done
+        let mut c = self.db();
+        let tx = c.transaction()?;
+        for m in &marks[first_new..] {
+            insert_mark(&tx, m, Some(import_id))?;
+        }
+        for r in &new_routes {
+            write_route(&tx, r, Some(import_id))?;
+            rep.routes_added.push(r.name.clone());
+        }
+        for t in &new_tracks {
+            write_track(&tx, t, Some(import_id))?;
+            rep.tracks_added.push(t.name.clone());
+        }
+        tx.commit()?;
         Ok(rep)
     }
 
@@ -603,13 +848,21 @@ impl Library {
 
     /// Every track, without points, newest first.
     pub fn tracks(&self) -> Result<Vec<TrackSummary>> {
-        let mut v: Vec<TrackSummary> = read_dir_json::<Track>(&self.dir.join("tracks"))?.iter().map(Track::summary).collect();
-        v.sort_by_key(|t| std::cmp::Reverse(t.stats.start.unwrap_or(t.modified)));
+        let c = self.db();
+        let mut q = c.prepare_cached(&format!("SELECT {TRACK_COLS} FROM tracks WHERE deleted_at IS NULL ORDER BY coalesce(start, modified) DESC"))?;
+        let v = q.query_map([], track_summary_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(v)
     }
 
     pub fn track(&self, id: &str) -> Result<Track> {
-        read_one(&self.dir.join("tracks"), id)
+        let c = self.db();
+        let s = c
+            .query_row(&format!("SELECT {TRACK_COLS} FROM tracks WHERE id = ?1 AND deleted_at IS NULL"), [id], track_summary_row)
+            .optional()?
+            .ok_or_else(|| Error::NotFound(id.into()))?;
+        let data: Vec<u8> = c.query_row("SELECT data FROM track_data WHERE track_id = ?1", [id], |r| r.get(0)).optional()?.unwrap_or_default();
+        let segments = if data.is_empty() { Vec::new() } else { store::decode_segments(&data)? };
+        Ok(Track { id: s.id, name: s.name, notes: s.notes, colour: s.colour, source: s.source, modified: s.modified, stats: s.stats, segments })
     }
 
     /// Save a track (new id if it has none); its totals are worked out again.
@@ -619,7 +872,7 @@ impl Library {
         }
         t.modified = now();
         t.update_stats();
-        write_json(&self.dir.join("tracks").join(format!("{}.json", safe(&t.id))), &t)?;
+        self.store_track(&t)?;
         Ok(t.summary())
     }
 
@@ -630,27 +883,28 @@ impl Library {
 
     /// Save a track as it is (totals kept), e.g. a track being recorded.
     pub fn store_track(&self, t: &Track) -> Result<()> {
-        write_json(&self.dir.join("tracks").join(format!("{}.json", safe(&t.id))), t)
+        let mut c = self.db();
+        let tx = c.transaction()?;
+        write_track(&tx, t, None)?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// Change a track's name, notes and colour.
     pub fn update_track_info(&self, id: &str, name: &str, notes: &str, colour: &str) -> Result<TrackSummary> {
-        let mut t = self.track(id)?;
-        t.name = name.trim().to_string();
-        t.notes = notes.to_string();
-        t.colour = colour.to_string();
-        t.modified = now();
-        self.store_track(&t)?;
-        Ok(t.summary())
+        let n = self.db().execute(
+            "UPDATE tracks SET name = ?2, notes = ?3, colour = ?4, modified = ?5 WHERE id = ?1 AND deleted_at IS NULL",
+            params![id, name.trim(), notes, colour, now()],
+        )?;
+        if n == 0 {
+            return Err(Error::NotFound(id.into()));
+        }
+        let c = self.db();
+        Ok(c.query_row(&format!("SELECT {TRACK_COLS} FROM tracks WHERE id = ?1"), [id], track_summary_row)?)
     }
 
     pub fn delete_track(&self, id: &str) -> Result<()> {
-        let p = self.dir.join("tracks").join(format!("{}.json", safe(id)));
-        if !p.exists() {
-            return Err(Error::NotFound(id.to_string()));
-        }
-        std::fs::remove_file(p)?;
-        Ok(())
+        self.soft_delete("tracks", id)
     }
 
     /// Write text into the export folder; returns the full path.
@@ -666,9 +920,219 @@ impl Library {
         std::fs::write(&p, text)?;
         Ok(p)
     }
+
+    // ---------- backups ----------
+
+    /// A copy of the whole library at `to` (compacted; safe while TweedPlot runs: it reads
+    /// through its own connection, so nothing waits for it).
+    pub fn backup_to(&self, to: &Path) -> Result<()> {
+        if let Some(p) = to.parent() {
+            std::fs::create_dir_all(p)?;
+        }
+        let tmp = to.with_extension("gpkg.part");
+        let _ = std::fs::remove_file(&tmp);
+        let c = Connection::open_with_flags(self.path(), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        c.busy_timeout(std::time::Duration::from_secs(30))?;
+        c.execute("VACUUM INTO ?1", [tmp.to_string_lossy()])?;
+        drop(c);
+        std::fs::rename(&tmp, to)?;
+        Ok(())
+    }
+
+    /// The day's backup in `<dir>/backups` (library-YYYY-MM-DD.gpkg) if it hasn't been made,
+    /// keeping one a day for the last 7 days and one a week for 4 weeks before that.
+    pub fn backup_if_due(&self) -> Result<Option<PathBuf>> {
+        let dir = self.dir.join("backups");
+        let today = tracks::iso_time(now()).get(..10).unwrap_or("").to_string();
+        let to = dir.join(format!("library-{today}.gpkg"));
+        let made = if to.exists() {
+            None
+        } else {
+            self.backup_to(&to)?;
+            Some(to)
+        };
+        // thin the old ones
+        let day = |name: &str| name.strip_prefix("library-").and_then(|n| n.strip_suffix(".gpkg")).and_then(|d| tracks::parse_iso(&format!("{d}T00:00:00Z"))).map(|t| t / 86_400);
+        let mut all: Vec<(i64, PathBuf)> = std::fs::read_dir(&dir)?.flatten().filter_map(|e| day(&e.file_name().to_string_lossy()).map(|d| (d, e.path()))).collect();
+        all.sort();
+        let now_day = now() / 86_400;
+        let mut weeks = std::collections::HashSet::new();
+        for (d, p) in all.iter().rev() {
+            let age = now_day - d;
+            let keep = age < 7 || (age < 35 && weeks.insert(d / 7));
+            if !keep {
+                let _ = std::fs::remove_file(p);
+            }
+        }
+        Ok(made)
+    }
+
+    // ---------- the one-off move from the JSON files ----------
+
+    /// Whether the folder still has a library kept as JSON files (TweedPlot before Oct 2026).
+    pub fn needs_conversion(&self) -> bool {
+        let d = &self.dir;
+        let any_json = |sub: &str| std::fs::read_dir(d.join(sub)).map(|r| r.flatten().any(|e| e.path().extension().is_some_and(|x| x == "json"))).unwrap_or(false);
+        d.join("marks.json").exists() || d.join("barriers.json").exists() || any_json("routes") || any_json("routings") || any_json("tracks")
+    }
+
+    /// Move a JSON library into the database. The JSON files are then moved, untouched, to
+    /// `<dir>/json-backup-<date>`. `progress(step, done, total)` is called as it goes.
+    /// The database lock is let go between pieces, so the app keeps working meanwhile.
+    pub fn convert_json(&self, mut progress: impl FnMut(&str, usize, usize)) -> Result<String> {
+        if !self.needs_conversion() {
+            return Ok(String::new());
+        }
+        self.converting.store(true, Ordering::Relaxed);
+        let r = self.convert_json_inner(&mut progress);
+        self.converting.store(false, Ordering::Relaxed);
+        r
+    }
+
+    fn convert_json_inner(&self, progress: &mut impl FnMut(&str, usize, usize)) -> Result<String> {
+        let d = self.dir.clone();
+        let read = |p: &Path| -> Option<Vec<u8>> { std::fs::read(p).ok() };
+        let files = |sub: &str| -> Vec<PathBuf> {
+            let mut v: Vec<PathBuf> = std::fs::read_dir(d.join(sub)).map(|r| r.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "json")).collect()).unwrap_or_default();
+            v.sort();
+            v
+        };
+        let (mut nm, mut nr, mut nx, mut nb, mut nt, mut bad) = (0, 0, 0, 0, 0, 0);
+        progress("marks", 0, 1);
+        {
+            let marks: Vec<Mark> = read(&d.join("marks.json")).and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+            let barriers: Vec<Barrier> = read(&d.join("barriers.json")).and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+            let mut c = self.db();
+            let tx = c.transaction()?;
+            for m in &marks {
+                insert_mark(&tx, m, None)?;
+                nm += 1;
+            }
+            for b in &barriers {
+                tx.execute(
+                    "INSERT OR REPLACE INTO barriers (id, name, kind, points, active, notes, modified) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![b.id, b.name, b.kind, serde_json::to_string(&b.points)?, b.active as i64, b.notes, b.modified],
+                )?;
+                nb += 1;
+            }
+            for p in files("routes") {
+                match read(&p).and_then(|b| serde_json::from_slice::<Route>(&b).ok()) {
+                    Some(r) => {
+                        write_route(&tx, &r, None)?;
+                        nr += 1;
+                    }
+                    None => bad += 1,
+                }
+            }
+            for p in files("routings") {
+                match read(&p).and_then(|b| serde_json::from_slice::<Routing>(&b).ok()) {
+                    Some(r) => {
+                        write_routing(&tx, &r)?;
+                        nx += 1;
+                    }
+                    None => bad += 1,
+                }
+            }
+            tx.commit()?;
+        }
+        let tracks = files("tracks");
+        let total = tracks.len();
+        for chunk in tracks.chunks(100) {
+            // read and decode outside the lock; write in one go
+            let parsed: Vec<Option<Track>> = chunk.iter().map(|p| read(p).and_then(|b| serde_json::from_slice::<Track>(&b).ok())).collect();
+            let mut c = self.db();
+            let tx = c.transaction()?;
+            for t in parsed {
+                match t {
+                    Some(t) => {
+                        write_track(&tx, &t, None)?;
+                        nt += 1;
+                    }
+                    None => bad += 1,
+                }
+            }
+            tx.commit()?;
+            drop(c);
+            progress("tracks", nt + bad, total);
+        }
+        // keep the JSON files, out of the way
+        let backup = d.join(format!("json-backup-{}", tracks::iso_time(now()).get(..10).unwrap_or("old")));
+        std::fs::create_dir_all(&backup)?;
+        for name in ["marks.json", "barriers.json", "routes", "routings", "tracks"] {
+            let p = d.join(name);
+            if p.exists() {
+                std::fs::rename(&p, backup.join(name))?;
+            }
+        }
+        let summary = format!(
+            "{nm} marks, {nr} routes, {nx} routings, {nb} barriers and {nt} tracks moved into the library database{}; the old files are in {}",
+            if bad > 0 { format!(" ({bad} damaged files skipped)") } else { String::new() },
+            backup.display()
+        );
+        store::set_meta(&self.db(), "converted_json", &summary)?;
+        Ok(summary)
+    }
 }
 
 // ---------- helpers ----------
+
+fn routes_where(c: &Connection, cond: &str) -> Result<Vec<Route>> {
+    let mut q = c.prepare(&format!(
+        "SELECT r.id, r.name, r.notes, r.start_lon, r.start_lat, r.start_mark, r.modified FROM routes r WHERE r.deleted_at IS NULL AND {cond} ORDER BY r.modified DESC"
+    ))?;
+    let mut routes = q
+        .query_map([], |r| {
+            let (lon, lat): (Option<f64>, Option<f64>) = (r.get(3)?, r.get(4)?);
+            Ok(Route {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                notes: r.get(2)?,
+                start: lon.zip(lat).map(|(a, b)| [a, b]),
+                start_mark: r.get(5)?,
+                marks: Vec::new(),
+                modified: r.get(6)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let at: std::collections::HashMap<String, usize> = routes.iter().enumerate().map(|(i, r)| (r.id.clone(), i)).collect();
+    let mut q = c.prepare_cached("SELECT route_id, mark_id, rounding, radius_nm FROM route_marks ORDER BY route_id, seq")?;
+    let mut rows = q.query([])?;
+    while let Some(r) = rows.next()? {
+        let rid: String = r.get(0)?;
+        if let Some(&i) = at.get(&rid) {
+            routes[i].marks.push(RouteMark { mark: r.get(1)?, rounding: r.get(2)?, radius_nm: r.get(3)? });
+        }
+    }
+    Ok(routes)
+}
+
+fn write_routing(c: &Connection, r: &Routing) -> Result<()> {
+    let polar = r.request["polar_path"].as_str().map(|p| Path::new(&p.replace('\\', "/")).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
+    c.execute(
+        "INSERT INTO routings (id, name, created, route_id, route_name, t0, status, arrival, distance_nm, grib_name, polar, request, result)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, created = excluded.created, route_id = excluded.route_id,
+           route_name = excluded.route_name, t0 = excluded.t0, status = excluded.status, arrival = excluded.arrival,
+           distance_nm = excluded.distance_nm, grib_name = excluded.grib_name, polar = excluded.polar,
+           request = excluded.request, result = excluded.result, deleted_at = NULL",
+        params![
+            r.id,
+            r.name,
+            r.created,
+            r.route_id,
+            r.route_name,
+            r.request["t0"].as_i64(),
+            r.result["status"].as_str(),
+            r.result["arrival"].as_i64(),
+            r.result["distance_nm"].as_f64(),
+            r.request["grib_name"].as_str(),
+            polar,
+            serde_json::to_string(&r.request)?,
+            serde_json::to_string(&r.result)?
+        ],
+    )?;
+    Ok(())
+}
 
 fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
@@ -682,51 +1146,15 @@ fn new_id(prefix: &str) -> String {
 }
 
 /// "WP 1", "WP 2" … the first free one.
-fn next_name(marks: &[Mark], stem: &str) -> String {
-    (1..).map(|k| format!("{stem} {k}")).find(|n| !marks.iter().any(|m| &m.name == n)).unwrap()
+fn next_name(c: &Connection, stem: &str) -> Result<String> {
+    let mut q = c.prepare("SELECT name FROM marks WHERE deleted_at IS NULL AND name LIKE ?1")?;
+    let used: std::collections::HashSet<String> = q.query_map([format!("{stem} %")], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+    Ok((1..).map(|k| format!("{stem} {k}")).find(|n| !used.contains(n)).unwrap())
 }
 
 /// File-name safe version of an id or name.
 fn safe(s: &str) -> String {
     s.chars().map(|c| if c.is_ascii_alphanumeric() || "-_. ".contains(c) { c } else { '_' }).collect::<String>().trim().to_string()
-}
-
-fn write_json<T: Serialize + ?Sized>(p: &Path, v: &T) -> Result<()> {
-    let tmp = p.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_vec_pretty(v)?)?;
-    std::fs::rename(&tmp, p)?;
-    Ok(())
-}
-
-fn read_dir_json<T: for<'de> Deserialize<'de>>(dir: &Path) -> Result<Vec<T>> {
-    let mut v = Vec::new();
-    for e in std::fs::read_dir(dir)?.flatten() {
-        let p = e.path();
-        if p.extension().and_then(|x| x.to_str()) != Some("json") {
-            continue;
-        }
-        // a damaged file is skipped rather than hiding the rest
-        if let Ok(x) = std::fs::read(&p).map_err(Error::from).and_then(|b| Ok(serde_json::from_slice(&b)?)) {
-            v.push(x);
-        }
-    }
-    Ok(v)
-}
-
-fn read_one<T: for<'de> Deserialize<'de>>(dir: &Path, id: &str) -> Result<T> {
-    let p = dir.join(format!("{}.json", safe(id)));
-    if !p.exists() {
-        return Err(Error::NotFound(id.into()));
-    }
-    Ok(serde_json::from_slice(&std::fs::read(p)?)?)
-}
-
-fn remove(dir: &Path, id: &str) -> Result<()> {
-    let p = dir.join(format!("{}.json", safe(id)));
-    if !p.exists() {
-        return Err(Error::NotFound(id.into()));
-    }
-    Ok(std::fs::remove_file(p)?)
 }
 
 #[cfg(test)]
@@ -736,6 +1164,110 @@ mod tests {
     fn temp_lib(tag: &str) -> Library {
         let d = std::env::temp_dir().join(format!("racenav-lib-{tag}-{}", new_id("")));
         Library::open(d).unwrap()
+    }
+
+    #[test]
+    fn daily_backup_is_a_whole_library() {
+        let lib = temp_lib("backup");
+        lib.save_mark(Mark { name: "A".into(), lat: -36.0, lon: 174.0, ..Default::default() }).unwrap();
+        let p = lib.backup_if_due().unwrap().expect("first backup today");
+        assert!(lib.backup_if_due().unwrap().is_none(), "one a day");
+        // an old one beyond the weeks kept is cleared out
+        let old = lib.dir().join("backups").join("library-2001-01-01.gpkg");
+        std::fs::write(&old, b"x").unwrap();
+        lib.backup_if_due().unwrap();
+        assert!(!old.exists());
+        let copy = Library::open(p.parent().unwrap().join("restore")).unwrap();
+        drop(copy);
+        let restored = Connection::open(&p).unwrap();
+        let n: i64 = restored.query_row("SELECT count(*) FROM marks", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn converts_a_json_library() {
+        let d = std::env::temp_dir().join(format!("racenav-conv-{}", new_id("")));
+        std::fs::create_dir_all(d.join("routes")).unwrap();
+        std::fs::create_dir_all(d.join("tracks")).unwrap();
+        std::fs::create_dir_all(d.join("routings")).unwrap();
+        std::fs::write(d.join("marks.json"), r##"[{"id":"m1","name":"Bean Rock","lat":-36.83,"lon":174.83,"kind":"mark","notes":"","group":"RNZYS","barrier_nm":0,"modified":5},
+            {"id":"m2","name":"","lat":-36.9,"lon":174.9,"kind":"waypoint","notes":"","group":"","barrier_nm":0,"modified":6,"colour":"#ff0000","symbol":"tz:14"}]"##).unwrap();
+        std::fs::write(d.join("barriers.json"), r#"[{"id":"b1","name":"Reef","kind":"zone","points":[[174,-36],[174.1,-36],[174.1,-35.9]],"active":true,"notes":"","modified":1}]"#).unwrap();
+        std::fs::write(d.join("routes").join("r1.json"), r#"{"id":"r1","name":"Round","notes":"","start":[174.8,-36.8],"start_mark":null,"marks":[{"mark":"m1","rounding":"port","radius_nm":0.1},{"mark":"m2","rounding":"","radius_nm":0}],"modified":7}"#).unwrap();
+        std::fs::write(d.join("routings").join("x1.json"), r#"{"id":"x1","name":"Run","created":9,"route_id":"r1","route_name":"Round","request":{"t0":100,"polar_path":"C:\\p\\boat.pol"},"result":{"status":"ok","distance_nm":12.5}}"#).unwrap();
+        std::fs::write(d.join("tracks").join("t1.json"), r#"{"id":"t1","name":"Trip","notes":"","colour":"","source":"log","modified":3,
+            "stats":{"points":2,"start":1000,"end":1010,"distance_nm":0.1,"max_sog":6.0,"bbox":[174,-36.1,174.1,-36]},"segments":[[[1000,-36.1,174.0,6.0,90.0],[1010,-36.0,174.1,6.0,90.0,12.5,16.25]]]}"#).unwrap();
+        std::fs::write(d.join("tracks").join("broken.json"), "{not json").unwrap();
+        let lib = Library::open(&d).unwrap();
+        assert!(lib.needs_conversion());
+        let mut steps = Vec::new();
+        let s = lib.convert_json(|st, a, b| steps.push((st.to_string(), a, b))).unwrap();
+        assert!(s.contains("2 marks") && s.contains("1 tracks") && s.contains("1 damaged"), "{s}");
+        assert!(!lib.needs_conversion());
+        assert!(steps.iter().any(|x| x.0 == "tracks"));
+        let m = lib.marks().unwrap();
+        assert_eq!(m.len(), 2);
+        assert_eq!((m[1].colour.as_str(), m[1].symbol.as_str()), ("#ff0000", "tz:14"));
+        let r = lib.routes().unwrap();
+        assert_eq!(r[0].marks.iter().map(|x| x.mark.as_str()).collect::<Vec<_>>(), vec!["m1", "m2"]);
+        assert_eq!(r[0].marks[0].rounding, "port");
+        assert_eq!(r[0].start, Some([174.8, -36.8]));
+        let x = lib.routings().unwrap();
+        assert_eq!((x[0].t0, x[0].distance_nm, x[0].polar.as_deref()), (Some(100), Some(12.5), Some("boat")));
+        assert_eq!(lib.routing("x1").unwrap().request["t0"], 100);
+        assert_eq!(lib.barriers().unwrap()[0].points.len(), 3);
+        let t = lib.track("t1").unwrap();
+        assert_eq!(t.segments[0][1].depth, Some(12.5));
+        assert_eq!(t.segments[0][1].temp, Some(16.25));
+        assert_eq!(lib.tracks().unwrap()[0].stats.points, 2);
+        // the JSON files are kept, out of the way
+        let backup = std::fs::read_dir(&d).unwrap().flatten().find(|e| e.file_name().to_string_lossy().starts_with("json-backup-")).unwrap().path();
+        assert!(backup.join("marks.json").exists() && backup.join("tracks").join("t1.json").exists());
+        assert!(!d.join("marks.json").exists());
+        // opening again finds nothing to move
+        drop(lib);
+        assert!(!Library::open(&d).unwrap().needs_conversion());
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn deleted_things_go_to_the_trash_and_stay_out_of_lists() {
+        let lib = temp_lib("trash");
+        let a = lib.save_mark(Mark { name: "A".into(), lat: -36.0, lon: 174.0, ..Default::default() }).unwrap();
+        let b = lib.save_mark(Mark { name: "B".into(), lat: -36.1, lon: 174.1, ..Default::default() }).unwrap();
+        let c = lib.save_mark(Mark { name: "C".into(), lat: -36.2, lon: 174.2, ..Default::default() }).unwrap();
+        let r = lib.save_route(Route { name: "R".into(), start_mark: Some(a.id.clone()), marks: [&a, &b, &c].iter().map(|m| RouteMark { mark: m.id.clone(), ..Default::default() }).collect(), ..Default::default() }).unwrap();
+        assert_eq!(lib.delete_marks(&[a.id.clone(), b.id.clone()], true).unwrap(), 2);
+        assert_eq!(lib.marks().unwrap().len(), 1);
+        let r2 = lib.route(&r.id).unwrap();
+        assert_eq!(r2.marks.iter().map(|x| x.mark.clone()).collect::<Vec<_>>(), vec![c.id.clone()]);
+        assert_eq!(r2.start_mark, None);
+        // still in the database, marked deleted
+        let n: i64 = lib.db().query_row("SELECT count(*) FROM marks WHERE deleted_at IS NOT NULL", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 2);
+        // a new mark can reuse a deleted one's name
+        assert_eq!(lib.save_mark(Mark { lat: -36.3, lon: 174.3, ..Default::default() }).unwrap().name, "WP 1");
+        lib.delete_route(&r.id).unwrap();
+        assert!(lib.routes().unwrap().is_empty());
+        assert!(matches!(lib.route(&r.id), Err(Error::NotFound(_))));
+        assert!(matches!(lib.delete_route(&r.id), Err(Error::NotFound(_))));
+    }
+
+    #[test]
+    fn marks_brought_in_by_the_hundred_have_an_unknown_date() {
+        let lib = temp_lib("bulk");
+        let mut g = String::from(r#"<?xml version="1.0"?><gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">"#);
+        for k in 0..30 {
+            g.push_str(&format!(r#"<wpt lat="-41.{k:03}" lon="173.2"><time>2016-12-02T02:18:07Z</time></wpt>"#));
+        }
+        g.push_str(r#"<wpt lat="-41.5" lon="173.5"><name>Own</name><time>2017-03-01T05:00:00Z</time></wpt></gpx>"#);
+        let r = lib.import_gpx(&g, "SeaPlot").unwrap();
+        assert_eq!(r.marks_added, 31);
+        let m = lib.marks().unwrap();
+        assert_eq!(m.iter().filter(|m| m.date_unknown).count(), 30);
+        assert!(!m.iter().find(|m| m.name == "Own").unwrap().date_unknown);
+        let imports: i64 = lib.db().query_row("SELECT count(*) FROM marks WHERE import_id IS NOT NULL", [], |r| r.get(0)).unwrap();
+        assert_eq!(imports, 31);
     }
 
     #[test]
@@ -940,5 +1472,66 @@ mod big_tzd {
         let groups: std::collections::BTreeSet<String> = lib.marks().unwrap().into_iter().map(|m| m.group).collect();
         println!("{} groups", groups.len());
         if std::env::var("RACENAV_KEEP").is_err() { let _ = std::fs::remove_dir_all(&dir); } else { println!("kept {}", dir.display()); }
+    }
+}
+
+#[cfg(test)]
+mod scale {
+    /// RACENAV_TEST_TZDS="a.tzd;b.tzd" RACENAV_TEST_DIR=<folder> cargo test --release -p library scale -- --ignored --nocapture
+    /// Imports the files into one library (kept), then times what start-up and the drawers do.
+    #[test]
+    #[ignore]
+    fn scale_library() {
+        let dir = std::path::PathBuf::from(std::env::var("RACENAV_TEST_DIR").unwrap());
+        let lib = super::Library::open(&dir).unwrap();
+        for f in std::env::var("RACENAV_TEST_TZDS").unwrap_or_default().split(';').filter(|s| !s.is_empty()) {
+            let t = std::time::Instant::now();
+            let r = lib.import_tzd(std::path::Path::new(f), std::path::Path::new(f).file_stem().unwrap().to_str().unwrap()).unwrap();
+            println!("import {f}: {} marks, {} tracks in {:?}", r.marks_added, r.tracks_added.len(), t.elapsed());
+        }
+        drop(lib);
+        let t = std::time::Instant::now();
+        let lib = super::Library::open(&dir).unwrap();
+        println!("open: {:?}", t.elapsed());
+        let t = std::time::Instant::now();
+        let n = lib.tracks().unwrap();
+        println!("tracks list: {} in {:?}", n.len(), t.elapsed());
+        let t = std::time::Instant::now();
+        let m = lib.marks().unwrap();
+        println!("marks: {} in {:?}", m.len(), t.elapsed());
+        let t = std::time::Instant::now();
+        let big = n.iter().max_by_key(|s| s.stats.points).unwrap();
+        let tr = lib.track(&big.id).unwrap();
+        println!("biggest track: {} fixes in {:?}", tr.segments.iter().map(Vec::len).sum::<usize>(), t.elapsed());
+        let t = std::time::Instant::now();
+        for s in n.iter().take(50) {
+            lib.track(&s.id).unwrap();
+        }
+        println!("50 tracks opened in {:?}", t.elapsed());
+        println!("database: {:.0} MB", std::fs::metadata(lib.path()).unwrap().len() as f64 / 1e6);
+    }
+}
+
+#[cfg(test)]
+mod convert_big {
+    /// RACENAV_TEST_DIR=<a JSON library> cargo test --release -p library convert_big -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn convert_big_json() {
+        let dir = std::path::PathBuf::from(std::env::var("RACENAV_TEST_DIR").unwrap());
+        let t = std::time::Instant::now();
+        let lib = super::Library::open(&dir).unwrap();
+        let mut last = 0;
+        let s = lib
+            .convert_json(|st, a, b| {
+                if a >= last + 500 || a == b {
+                    last = a;
+                    println!("  {st} {a}/{b} at {:?}", t.elapsed());
+                }
+            })
+            .unwrap();
+        println!("{s}\nin {:?}", t.elapsed());
+        let t = std::time::Instant::now();
+        println!("tracks list: {} in {:?}", lib.tracks().unwrap().len(), t.elapsed());
     }
 }
