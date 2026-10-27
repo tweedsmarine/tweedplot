@@ -351,6 +351,8 @@ fn gp_polys(ps: &[Vec<Vec<[f64; 2]>>], env: [f64; 4]) -> Vec<u8> {
 pub struct CellFiles {
     pub base: PathBuf,
     pub updates: Vec<PathBuf>,
+    /// The newest time any of its files was changed (from the folder listing).
+    pub newest: Option<std::time::SystemTime>,
 }
 
 /// Every ENC base cell under `dir` (not in hidden folders), with its updates.
@@ -360,14 +362,22 @@ pub fn find_cells(dir: &Path) -> Vec<CellFiles> {
     while let Some(d) = stack.pop() {
         let Ok(rd) = std::fs::read_dir(&d) else { continue };
         let mut files: Vec<PathBuf> = Vec::new();
+        // file times from the listing (Windows gives them with it: no extra disk query)
+        let mut times: std::collections::HashMap<PathBuf, std::time::SystemTime> = std::collections::HashMap::new();
         for e in rd.flatten() {
             let p = e.path();
             let hidden = p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.'));
-            if p.is_dir() {
+            // the type from the directory listing itself: asking the disk about every file
+            // again (is_dir) is slow on Windows with tens of thousands of cells
+            let is_dir = e.file_type().map(|t| t.is_dir() || (t.is_symlink() && p.is_dir())).unwrap_or(false);
+            if is_dir {
                 if !hidden {
                     stack.push(p);
                 }
             } else {
+                if let Ok(t) = e.metadata().and_then(|m| m.modified()) {
+                    times.insert(p.clone(), t);
+                }
                 files.push(p);
             }
         }
@@ -401,6 +411,9 @@ pub fn find_cells(dir: &Path) -> Vec<CellFiles> {
                         let p = f.path();
                         let e = ext(&p);
                         if e.len() == 3 && e != "000" && e.bytes().all(|c| c.is_ascii_digit()) && p.file_stem().is_some_and(|s| s.to_string_lossy().to_ascii_uppercase() == stem) {
+                            if let Ok(t) = f.metadata().and_then(|m| m.modified()) {
+                                times.insert(p.clone(), t);
+                            }
                             updates.push(p);
                         }
                     }
@@ -408,7 +421,8 @@ pub fn find_cells(dir: &Path) -> Vec<CellFiles> {
             }
             updates.sort_by_key(|p| ext(p));
             updates.dedup_by_key(|p| ext(p));
-            out.push(CellFiles { base: b.clone(), updates });
+            let newest = std::iter::once(b).chain(&updates).map(|p| times.get(p).copied().or_else(|| std::fs::metadata(p).and_then(|m| m.modified()).ok())).max().flatten();
+            out.push(CellFiles { base: b.clone(), updates, newest });
         }
     }
     out.sort_by(|a, b| a.base.cmp(&b.base));
@@ -446,8 +460,29 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
     }
     let out_dir = dir.join(".enc");
     let _ = std::fs::create_dir_all(&out_dir);
-    // what is there already, read once (a big exchange set has thousands of cells)
-    let existing: Vec<String> = std::fs::read_dir(&out_dir).into_iter().flatten().flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
+    // what is there already, read once (a big exchange set has thousands of cells), and
+    // indexed by each conversion's "<CELL>-<folder hash>" so finding a cell's is one look-up
+    // (searching the whole list for each of NOAA's 7,000 cells took tens of seconds)
+    let mut existing_time: std::collections::HashMap<String, std::time::SystemTime> = std::collections::HashMap::new();
+    let existing: Vec<String> = std::fs::read_dir(&out_dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| {
+            let n = e.file_name().to_string_lossy().to_string();
+            if let Ok(t) = e.metadata().and_then(|m| m.modified()) {
+                existing_time.insert(n.clone(), t);
+            }
+            n
+        })
+        .collect();
+    let mut by_key: std::collections::HashMap<&str, Vec<&String>> = std::collections::HashMap::new();
+    for e in &existing {
+        let mut dash = e.match_indices('-').map(|(i, _)| i);
+        if let (Some(_), Some(second)) = (dash.next(), dash.next()) {
+            by_key.entry(&e[..second]).or_default().push(e);
+        }
+    }
     let mtime = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
     let suffix = format!("-v{VERSION}.gpkg");
     // cells that were encrypted are kept sealed, with the key's tag in the name
@@ -463,12 +498,17 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
             let stem = c.base.file_stem().map(|s| s.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
             let rel = c.base.parent().and_then(|p| p.strip_prefix(dir).ok()).map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
             let key = format!("{stem}-{:08x}", hash(&rel));
-            let have = existing
-                .iter()
-                .find(|e| e.starts_with(&format!("{key}-b")) && (e.ends_with(&sealed_suffix) || (e.ends_with(&suffix) && !encrypted(&c.base))))
-                .map(|e| out_dir.join(e));
-            let newest = std::iter::once(&c.base).chain(&c.updates).filter_map(|p| mtime(p)).max();
-            let fresh = have.filter(|g| matches!((newest, mtime(g)), (Some(n), Some(m)) if m >= n));
+            // its conversion, if one is newer than the cell's files: sealed (it was encrypted)
+            // or plain (it wasn't, and hasn't changed since, so no need to look inside it again)
+            let kb = format!("{key}-b");
+            let newest = c.newest;
+            let fresh = by_key
+                .get(key.as_str())
+                .into_iter()
+                .flatten()
+                .filter(|e| e.starts_with(&kb) && (e.ends_with(&sealed_suffix) || e.ends_with(&suffix)))
+                .find(|e| matches!((newest, existing_time.get(e.as_str())), (Some(n), Some(m)) if *m >= n))
+                .map(|e| out_dir.join(e.as_str()));
             (c, key, fresh)
         })
         .collect();
@@ -488,7 +528,8 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
                 }
                 done += 1;
                 // older conversions of this cell (other versions, notes)
-                for e in existing.iter().filter(|e| e.starts_with(&format!("{key}-"))) {
+                let kd = format!("{key}-");
+                for e in existing.iter().filter(|e| e.starts_with(&kd)) {
                     let _ = std::fs::remove_file(out_dir.join(e));
                 }
                 let cell = match open_cell(&c, &permits) {
@@ -973,5 +1014,41 @@ mod tests {
         assert_eq!(table_for("DEPARE", 3, 4).as_deref(), Some("depth_area_polygon_hydro_enc_b4"));
         assert_eq!(table_for("LIGHTS", 3, 4), None);
         assert_eq!(band_for(5), 6);
+    }
+}
+
+#[cfg(test)]
+mod scale_check {
+    /// cargo test --release -p chart enc_check_at_noaa_scale -- --ignored --nocapture
+    /// 7,000 cells in an exchange set's layout, all converted already: how long the start-up check takes.
+    #[test]
+    #[ignore]
+    fn enc_check_at_noaa_scale() {
+        let dir = std::env::temp_dir().join(format!("tp_encscale_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let out = dir.join(".enc");
+        std::fs::create_dir_all(&out).unwrap();
+        let mut names = Vec::new();
+        for k in 0..7000 {
+            let cell = format!("US{}X{:04}", 1 + k % 6, k);
+            let leaf = dir.join("ENC_ROOT").join(&cell).join("1").join("0");
+            std::fs::create_dir_all(&leaf).unwrap();
+            std::fs::write(leaf.join(format!("{cell}.000")), b"000003LE").unwrap();
+            let rel = leaf.strip_prefix(&dir).unwrap().to_string_lossy().to_string();
+            names.push(format!("{cell}-{:08x}-b{}-v{}.gpkg", super::hash(&rel), 1 + k % 6, super::VERSION));
+        }
+        for n in &names {
+            std::fs::write(out.join(n), b"x").unwrap();
+            // plus an old version's file, as a real .enc folder has
+            std::fs::write(out.join(n.replace(&format!("-v{}", super::VERSION), "-v1")), b"x").unwrap();
+        }
+        let t = std::time::Instant::now();
+        let cells = super::find_cells(&dir);
+        println!("find_cells: {} in {:?}", cells.len(), t.elapsed());
+        let t = std::time::Instant::now();
+        let mut todo = 0;
+        let _ = super::ensure_gpkgs_with(&dir, &mut |_, n, _| todo = n);
+        println!("whole check: {:?} (cells to convert {todo})", t.elapsed());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
