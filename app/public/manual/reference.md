@@ -665,16 +665,17 @@ TweedPlot opens the library last used. Changing library isn't possible while the
 
 **From the chart.** Double-click a library mark, a barrier (its line, edge or a point), a track or the route on the chart to open it in the Library: its tab, its row (flashed; the search and filters are cleared if they hid it) and, for marks and tracks, its editor. Right-click it for **Edit in the library**, which does the same. A route not saved yet opens in the Route drawer.
 
-**The tabs**: Marks, Routes, Tracks, Trips, Routings and Barriers. Each has the same list:
+**The tabs**: Marks, Routes, Tracks, Trips, Routings and Barriers. All times are shown on the 24-hour clock. Each has the same list:
 
 - **Find**: by name (marks also by group, notes and tags; tracks also by date).
 - **Order**: by name, newest or oldest first, and others to suit (marks: deepest first, nearest the chart centre; routes and tracks: longest first).
-- **Filters**, as buttons under the search: each opens its choices, with how many each has; a filter in use is highlighted and has ✕ to clear it; **Clear filters** clears them all.
-  - Marks: Group, Type, **Months**, **Dates**, **Trip**, Tag, TimeZero symbol, Routes (in a saved route or not), Date unknown, In chart view.
-  - Tracks: Months, Dates, Trip, From (logged here, GPX, TimeZero), Sea temperature, Depth (logged along it), On the chart, In chart view.
+- **Whole library** filters, in the band above the tabs, apply to every tab and to the chart at once: **Dates**, **Months**, **Trip** and **In chart view**. Set Dates to a week and every tab lists only what was made (or ran) that week, the chart shows only those marks, and the tracks that match are drawn (up to 200; past that, only those you show yourself). What counts as when: a mark, when it was made (marks whose date is unknown, moved in from another plotter in one go, are left out); a track or trip, any time it ran; a routing, when computed. Routes and barriers aren't filtered by date (In chart view still applies to routes).
+- **Each tab's own filters**, as buttons under its search: each opens its choices, with how many each has; a filter in use is highlighted and has ✕ to clear it; **Clear filters** clears the tab's own.
+  - Marks: Group, Type, Tag, TimeZero symbol, Routes (in a saved route or not), Date unknown.
+  - Tracks: From (logged here, GPX, TimeZero), Sea temperature, Depth (logged along it), On the chart.
   - Routes: From a file. Barriers: Kind, Not used.
-- **★ Saved**, the first button, keeps the filters set now under a name (Tuna season, Last trip) and brings them back in one press. The button shows the name while those filters are in use; ✕ beside one in its list forgets it. Saved filters are the same in every library.
-- **Months** picks months of the year, any year: Nov, Dec and Jan shows only what was made in the tuna season, whatever the year. Marks whose date is unknown (moved in from another plotter in one go) are left out by Months and Dates.
+- **★ Saved**, the first button of Whole library, keeps every filter set now (the Whole library ones and each tab's own) under a name, such as Tuna season or Last trip, and brings them all back in one press. The button shows the name while those filters are in use; ✕ beside one in its list forgets it. Saved filters are the same in every library.
+- **Months** picks months of the year, any year: Nov, Dec and Jan shows only what was made in the tuna season, whatever the year.
 - **Select**: tick rows one by one, or **Select all** (or **Select these**, all the filters list). A bar then shows how many and what can be done with them:
   - Marks: **GPX** (one file), **Library file…** (a library of their own, to give another boat or keep apart; the library in use is unchanged), **Group…** (move them to a group: type a new one or pick), **Type…**, **Colour…**, **Route** (a route of them, in the order listed, opened in the Route drawer), **Delete** (marks in saved routes are taken out of them).
   - Tracks: **Show**, **Hide**, **GPX**, **Library file…**, **Colour…**, **Delete**.
@@ -689,9 +690,9 @@ Marks: click a row to go to the mark; **+ Route** adds it to the route being bui
 - **Start a trip** (the large button) when you leave: the number goes up by one from the last trip, the fishery and crew are the last trip's (change them if need be), and **Record the track** starts the track recorder with a new track. **Start the trip** saves it.
 - While a trip is on, the tab shows it at the top: its name, how long it has been out, the distance and marks so far, and the large **End the trip** button (**Stop recording the track** stops the recorder too). Ended by mistake? **Edit** and clear **Ended**.
 - **Add a past trip…** gives a trip already made its dates; the marks and tracks made then (imported from TimeZero, say) fall into it. Marks whose date is unknown are never in a trip.
-- Each trip in the list shows its dates, time out, distance, and the marks and tracks made. **Show** filters the Marks and Tracks lists to it, draws its tracks (up to 200), shows only its marks on the chart and moves the chart to them; **Clear filters** in Marks shows everything again. **Edit** changes the name, number, fishery, crew, times and notes.
+- Each trip in the list shows its dates, time out, distance, and the marks and tracks made. **Show** sets the Whole library **Trip** filter to it (every tab and the chart show just that trip, and its tracks are drawn) and moves the chart to it; the filter's ✕ shows everything again. **Edit** changes the name, number, fishery, crew, times and notes.
 - Select trips for **Library file…** (their marks and tracks as a library of their own) or **Delete** (the trips only: their marks and tracks stay; the Trash brings a trip back).
-- Only one trip can be on at a time. The **Trip** filter in Marks and Tracks does the same as Show without moving the chart, and can be saved (★ Saved).
+- Only one trip can be on at a time.
 
 **Trash.** Library menu > **Trash…** lists everything deleted in the last 30 days: marks, routes, tracks, trips, routings and barriers, newest deletion first. **Kind** and **Deleted** filter it (Deleted picks one deletion: the 1,240 marks deleted at 14:05 on Tuesday). **Restore** on a row, or select and press Restore, brings things back; a route brings its marks back with it, but a restored mark isn't put back into routes it was taken out of. **Delete for good** and **Empty the Trash** (press it twice) can't be undone. After 30 days things are deleted for good when the library is opened. **← Back** returns to the lists.
 

@@ -9,7 +9,8 @@ import { invoke } from "@tauri-apps/api/core";
 import * as activity from "./activity.js";
 import { exportLibraryFile } from "./library.js";
 import { libList, monthTest, dateTest } from "./liblist.js";
-import { tripFilter, trackInTrip, onTrips } from "./tripstore.js";
+import { trackInTrip, onTrips } from "./tripstore.js";
+import { sharedTest, sharedActive, onShared } from "./libfilter.js";
 import { listen } from "@tauri-apps/api/event";
 
 const KEY = "racenav.tracks";
@@ -25,6 +26,9 @@ function fmtDur(s) {
 }
 
 export function setupTracks(map, { before, getTime, onTime, status }) {
+  let drawnSet = new Set(), suppressed = new Set(); // the tracks drawn; those hidden by hand from a filter's
+  const MAX_AUTO = 200;
+  const SHARED_TRK = { time: (t) => (t.stats?.start ? [t.stats.start, t.stats.end ?? t.stats.start] : null), inTrip: trackInTrip };
   const $ = (id) => document.getElementById(id);
   const prefs = { shown: [], atTime: true, colourBy: "track", filter: {} };
   try { Object.assign(prefs, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
@@ -53,7 +57,10 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
   async function draw() {
     const feats = [];
     const shown = [];
-    for (const t of list.filter((x) => prefs.shown.includes(x.id))) {
+    const drawn = drawnTracks();
+    drawnSet = new Set(drawn.map((t) => t.id));
+    try { trackList.redraw(); } catch { /* the list isn't made yet */ }
+    for (const t of drawn) {
       try { shown.push([t, await load(t.id)]); } catch { /* gone */ }
     }
     const by = BY[prefs.colourBy];
@@ -227,7 +234,7 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
     const feats = [];
     if (prefs.atTime) {
       const t = getTime();
-      for (const s of list.filter((x) => prefs.shown.includes(x.id))) {
+      for (const s of drawnTracks()) {
         const d = cache.get(s.id);
         const p = d && at(d, t);
         if (p) feats.push({ type: "Feature", properties: { id: s.id, colour: colourOf(s) }, geometry: { type: "Point", coordinates: p } });
@@ -282,13 +289,22 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
 
   // the list: the same as every library tab (liblist.js); the swatch at the left of a row
   // shows the track on the chart, or hides it
-  const isShown = (t) => prefs.shown.includes(t.id);
+  // with a shared filter set (Whole library: dates, months, trip), the tracks it lists are
+  // drawn, up to 200; past that, only those shown by hand. Hiding one drawn by the filter
+  // hides it until the filters change.
+  function drawnTracks() {
+    if (!sharedActive()) return list.filter((x) => prefs.shown.includes(x.id));
+    const m = list.filter((t) => sharedTest(t, SHARED_TRK));
+    return (m.length <= MAX_AUTO ? m : m.filter((x) => prefs.shown.includes(x.id))).filter((x) => !suppressed.has(x.id));
+  }
+  const isShown = (t) => drawnSet.has(t.id);
   function setShown(ids, on) {
     const set = new Set(prefs.shown);
-    for (const id of ids) { if (on) set.add(id); else set.delete(id); }
+    for (const id of ids) { if (on) { set.add(id); suppressed.delete(id); } else { set.delete(id); suppressed.add(id); } }
     prefs.shown = [...set];
-    save(); trackList.redraw(); draw();
+    save(); draw();
   }
+  onShared(() => { suppressed = new Set(); draw(); });
   const overlapsView = (t) => {
     const b = t.stats?.bbox;
     if (!b) return false;
@@ -299,6 +315,7 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
   const collate = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" }).compare;
   const trackList = libList($("lib-tracks-list"), {
     key: "tracks",
+    shared: { time: (t) => (t.stats?.start ? [t.stats.start, t.stats.end ?? t.stats.start] : null), inView: (t) => overlapsView(t), inTrip: trackInTrip },
     noun: ["track", "tracks"],
     search: (t, q) => `${t.name} ${t.notes} ${fmtTime(t.stats?.start)}`.toLowerCase().includes(q),
     sorts: [
@@ -308,14 +325,10 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
       { key: "long", label: "Longest first", cmp: (a, b) => (b.stats?.distance_nm ?? 0) - (a.stats?.distance_nm ?? 0) },
     ],
     filters: [
-      { key: "months", label: "Months", type: "multi", months: true, title: "Only tracks from these months, any year", note: "Any year, by when the track started.", test: (t, v) => monthTest(t.stats?.start, v) },
-      { key: "dates", label: "Dates", type: "dates", title: "Only tracks between two dates", test: (t, v) => dateTest(t.stats?.start, v) },
-      tripFilter(trackInTrip),
       { key: "source", label: "From", type: "choice", options: (ts) => { const c = new Map(); for (const t of ts) c.set(t.source || "log", (c.get(t.source || "log") || 0) + 1); return [...c].map(([k, n]) => [k, SOURCE[k] || k, n]); }, test: (t, v) => (t.source || "log") === v },
       { key: "temp", label: "Sea temperature", type: "toggle", title: "Only tracks with sea temperature logged", test: (t) => !!t.has_temp },
       { key: "depth", label: "Depth", type: "toggle", title: "Only tracks with depth logged", test: (t) => !!t.has_depth },
       { key: "shown", label: "On the chart", type: "toggle", title: "Only the tracks shown on the chart", test: (t) => isShown(t) },
-      { key: "view", label: "In chart view", type: "toggle", title: "Only tracks that pass through the area shown on the chart", test: (t) => overlapsView(t) },
     ],
     row: {
       render(t, el) {
@@ -366,7 +379,6 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
     empty: () => "No tracks yet: press Record, or import a GPX or TimeZero file (Library menu).",
   });
   function render() { trackList.setItems(list); }
-  map.on("moveend", () => { if (trackList.filters.view) trackList.refresh(); });
 
   function zoomTo(t) {
     const b = t.stats?.bbox;
@@ -453,13 +465,8 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
   refresh();
   return {
     refresh,
-    /** Show a trip's tracks: the list filtered to it, and (up to 200) drawn on the chart. Returns them. */
-    showTrip(trip) {
-      trackList.setFilter("trip", trip.id);
-      const ts = list.filter((t) => trackInTrip(t, trip));
-      if (ts.length <= 200) setShown(ts.map((t) => t.id), true);
-      return ts;
-    },
+    /** The tracks that ran during a trip. */
+    inTrip: (trip) => list.filter((t) => trackInTrip(t, trip)),
     /** The track under a map point, if any (its summary). */
     hitAt(point) {
       const f = map.queryRenderedFeatures([[point.x - 5, point.y - 5], [point.x + 5, point.y + 5]], { layers: ["trk-lines"] })[0];

@@ -16,6 +16,15 @@
 //   list.setItems(items); list.filtered(); list.selected();
 
 import { iconSelect } from "./iconselect.js";
+import { sharedTest, onShared, sharedState, setShared, sharedActive, clearShared, registerList, tabChanged } from "./libfilter.js";
+
+// the filters that moved to the shared bar above the tabs (libfilter.js)
+const SHARED_KEYS = ["months", "dates", "trip", "view"];
+function splitShared(f) {
+  const tab = { ...f }, g = {};
+  for (const k of SHARED_KEYS) if (k in tab) { g[k] = tab[k]; delete tab[k]; }
+  return [tab, g];
+}
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 export { MONTHS };
@@ -54,6 +63,12 @@ export function libList(root, cfg) {
   let state = { q: "", sort: cfg.sorts?.[0]?.key ?? "", f: {} };
   try { Object.assign(state, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* storage unavailable */ }
   state.q = ""; // a search isn't kept from one session to the next
+  if (cfg.shared) {
+    // filters set in this tab before they were shared move to the shared bar
+    const [tab, g] = splitShared(state.f);
+    state.f = tab;
+    if (Object.keys(g).length && !sharedActive()) setShared(g);
+  }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ sort: state.sort, f: state.f })); } catch { /* ignore */ } };
 
   let items = [], shown = [];
@@ -82,7 +97,8 @@ export function libList(root, cfg) {
   function apply() {
     const q = state.q.trim().toLowerCase();
     const fs = (cfg.filters ?? []).filter(active);
-    shown = items.filter((x) => (!q || cfg.search(x, q)) && fs.every((f) => f.test(x, state.f[f.key])));
+    const g = cfg.shared;
+    shown = items.filter((x) => (!q || cfg.search(x, q)) && fs.every((f) => f.test(x, state.f[f.key])) && (!g || sharedTest(x, g)));
     const s = cfg.sorts?.find((x) => x.key === state.sort);
     if (s) shown.sort(s.cmp);
     // the selection follows the list: what's no longer listed is let go
@@ -92,6 +108,7 @@ export function libList(root, cfg) {
     renderCount();
     renderRows(true);
     cfg.changed?.(shown);
+    tabChanged();
   }
 
   // ---------- chips ----------
@@ -112,7 +129,10 @@ export function libList(root, cfg) {
   const loadSaved = () => { try { return JSON.parse(localStorage.getItem(SAVED) || "[]"); } catch { return []; } };
   const storeSaved = (v) => { try { localStorage.setItem(SAVED, JSON.stringify(v)); } catch { /* ignore */ } };
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-  const currentSaved = () => loadSaved().find((x) => same(x.f, state.f));
+  const savedParts = (x) => { const [tab, moved] = splitShared(x.f ?? {}); return [tab, { ...moved, ...(x.g ?? {}) }]; };
+  const matches = (x) => { const [tab, g] = savedParts(x); return same(tab, state.f) && (!cfg.shared || same(g, sharedState())); };
+  const anyActive = () => (cfg.filters ?? []).some(active) || (cfg.shared && sharedActive());
+  const currentSaved = () => (anyActive() ? loadSaved().find(matches) : null);
   function openSaved(chip) {
     closePop();
     pop = document.createElement("div");
@@ -122,20 +142,22 @@ export function libList(root, cfg) {
     for (const x of list) {
       const o = document.createElement("button");
       o.className = "ll-opt";
-      o.classList.toggle("on", same(x.f, state.f));
+      o.classList.toggle("on", matches(x));
       o.title = "Use these filters";
       o.innerHTML = `<span class="grow"></span><span class="ll-x" title="Forget this saved filter">✕</span>`;
       o.firstChild.textContent = x.name;
       o.onclick = (e) => {
         if (e.target.closest(".ll-x")) { storeSaved(loadSaved().filter((y) => y.name !== x.name)); openSaved(chip); renderChips(); return; }
-        state.f = JSON.parse(JSON.stringify(x.f));
+        const [tab, g] = savedParts(x);
+        state.f = JSON.parse(JSON.stringify(tab));
+        if (cfg.shared) setShared(g);
         if (x.sort && (cfg.sorts ?? []).some((s) => s.key === x.sort)) { state.sort = x.sort; sortSel.value = x.sort; }
         save(); closePop(); apply();
       };
       pop.append(o);
     }
     if (!list.length) pop.insertAdjacentHTML("beforeend", `<div class="wx-note">No saved filters yet. Set the filters you want, then save them here with a name, e.g. Tuna season.</div>`);
-    if ((cfg.filters ?? []).some(active)) {
+    if (anyActive()) {
       const row = document.createElement("div");
       row.className = "wx-row";
       row.innerHTML = `<input type="text" class="grow" placeholder="Name, e.g. Tuna season" /><button class="on">Save</button>`;
@@ -144,7 +166,7 @@ export function libList(root, cfg) {
       ok.onclick = () => {
         const name = inp.value.trim();
         if (!name) { inp.focus(); return; }
-        storeSaved([...loadSaved().filter((y) => y.name !== name), { name, f: JSON.parse(JSON.stringify(state.f)), sort: state.sort }].sort((a, b) => a.name.localeCompare(b.name)));
+        storeSaved([...loadSaved().filter((y) => y.name !== name), { name, f: JSON.parse(JSON.stringify(state.f)), g: cfg.shared ? JSON.parse(JSON.stringify(sharedState())) : undefined, sort: state.sort }].sort((a, b) => a.name.localeCompare(b.name)));
         closePop(); renderChips();
       };
       inp.onkeydown = (e) => { if (e.key === "Enter") ok.click(); };
@@ -162,7 +184,8 @@ export function libList(root, cfg) {
 
   function renderChips() {
     chips.innerHTML = "";
-    if (cfg.filters?.length && cfg.saved !== false) {
+    // (saved filters are now one list for the whole library, on the shared bar: libfilter.js)
+    if (cfg.filters?.length && cfg.saved === true) {
       const b = document.createElement("button");
       const cur = currentSaved();
       b.className = "ll-chip ll-saved-chip";
@@ -377,6 +400,8 @@ export function libList(root, cfg) {
   new ResizeObserver(() => renderRows()).observe(scroll);
 
   search.oninput = () => { state.q = search.value; apply(); };
+  if (cfg.shared) onShared(() => apply());
+  registerList(cfg.key, { get: () => state.f, set: (f) => { state.f = JSON.parse(JSON.stringify(f ?? {})); save(); apply(); }, active: () => (cfg.filters ?? []).some(active) });
   sortSel.onchange = () => { state.sort = sortSel.value; save(); apply(); };
 
   return {
@@ -404,7 +429,7 @@ export function libList(root, cfg) {
     },
     get filters() { return state.f; },
     /** Clear the search and every filter. */
-    clearFilters() { state.f = {}; state.q = ""; search.value = ""; save(); apply(); },
+    clearFilters() { state.f = {}; state.q = ""; search.value = ""; save(); if (cfg.shared && sharedActive()) clearShared(); else apply(); },
     get sort() { return state.sort; },
     setFilter(key, value) { if (value == null) delete state.f[key]; else state.f[key] = value; save(); apply(); },
     root,

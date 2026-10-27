@@ -1,4 +1,5 @@
 // racenav front end: offline chart, own boat, track and instrument panel.
+import "./clock24.js";
 import * as maplibregl from "maplibre-gl";
 import "@fontsource/atkinson-hyperlegible-next/400.css";
 import "@fontsource/atkinson-hyperlegible-next/600.css";

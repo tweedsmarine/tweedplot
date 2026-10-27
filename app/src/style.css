@@ -1106,3 +1106,8 @@ button.on.warn { background: #b03a2e; color: #fff; border-color: #b03a2e; }
 #trip-edit textarea { width: 100%; box-sizing: border-box; }
 .trip-now .trip-big.end { background: #34495e; border-color: #34495e; color: #fff; }
 .trip-now[hidden] { display: none; }
+
+/* the Library's shared filters, above the tabs (libfilter.js) */
+.lf-bar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 2px 0 6px; padding: 5px 6px; border-radius: 8px; background: rgba(31, 111, 178, 0.07); }
+.lf-bar .lf-head { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--quiet); margin-right: 2px; }
+.lf-bar button { flex: none; }

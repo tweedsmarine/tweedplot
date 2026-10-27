@@ -11,7 +11,8 @@ import { POI_KINDS, poiImage } from "./poi.js";
 import { iconSelect, imageUrl } from "./iconselect.js";
 import { featureImage } from "./chartfeatures.js";
 import { libList, monthTest, dateTest } from "./liblist.js";
-import { tripFilter, markInTrip, onTrips } from "./tripstore.js";
+import { markInTrip, onTrips } from "./tripstore.js";
+import { sharedTest, sharedActive, sharedState, viewMoved, mountShared } from "./libfilter.js";
 import { addKindOptions, symImage, SYMBOL_KINDS } from "./marksymbols.js";
 
 const KEY = "racenav.library";
@@ -73,7 +74,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     map.setLayoutProperty("lib-poi", "visibility", vis);
     map.setLayoutProperty("lib-sym", "visibility", vis);
     // every mark, or only those the list shows ("Chart shows only the marks listed")
-    const shown = prefs.chartFiltered && markList ? markList.filtered() : marks;
+    const shown = prefs.chartFiltered && markList ? markList.filtered() : sharedActive() ? marks.filter((m) => sharedTest(m, SHARED_MARK_CHART)) : marks;
     map.getSource("lib-marks").setData({ type: "FeatureCollection", features: shown.filter((m) => !hidden.has(m.id)).map((m) => ({
       type: "Feature", properties: m.colour ? { id: m.id, name: m.name, kind: m.kind, colour: m.colour } : { id: m.id, name: m.name, kind: m.kind }, geometry: { type: "Point", coordinates: [m.lon, m.lat] } })) });
   }
@@ -224,6 +225,8 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   };
   const routeList = libList($("lib-routes-list"), {
     key: "routes",
+    // routes have no date that means anything: only In chart view applies to them
+    shared: { inView: (r) => [r.start_mark, ...r.marks.map((x) => x.mark)].some((id) => { const m = id && byId(id); return m && inView(m); }) || (!!r.start && inView({ lon: r.start[0], lat: r.start[1] })) },
     noun: ["route", "routes"],
     search: (r, q) => r.name.toLowerCase().includes(q) || (r.notes || "").toLowerCase().includes(q),
     sorts: [
@@ -282,6 +285,9 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     const lon = b.getEast() - b.getWest() >= 360 ? null : ((m.lon - b.getWest()) % 360 + 360) % 360;
     return !(m.lat < b.getSouth() || m.lat > b.getNorth() || (lon != null && lon > b.getEast() - b.getWest()));
   };
+  // the shared filters (libfilter.js): a mark's time is when it was made
+  const SHARED_MARK = { time: (m) => (m.date_unknown ? null : m.created || null), inView, inTrip: markInTrip };
+  const SHARED_MARK_CHART = { ...SHARED_MARK, inView: undefined }; // the chart shows the marks round the view too
   const KIND_LABEL = () => Object.fromEntries([...form.kind.querySelectorAll("option")].map((o) => [o.value, o.textContent]));
   const countBy = (list, key, label = (k) => k) => {
     const c = new Map();
@@ -310,6 +316,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   };
   markList = libList($("lib-marks-list"), {
     key: "marks",
+    shared: SHARED_MARK,
     noun: ["mark", "marks"],
     search: (m, q) => m.name.toLowerCase().includes(q) || (m.group || "").toLowerCase().includes(q) || (m.notes || "").toLowerCase().includes(q) || (m.tags || "").includes(q),
     sorts: [
@@ -322,15 +329,10 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     filters: [
       { key: "group", label: "Group", type: "choice", options: (ms) => countBy(ms, (m) => m.group || "", (g) => g || "(no group)"), test: (m, v) => (m.group || "") === v },
       { key: "type", label: "Type", type: "choice", options: (ms) => { const L = KIND_LABEL(); return countBy(ms, (m) => m.kind || "mark", (k) => L[k] || k); }, test: (m, v) => (m.kind || "mark") === v },
-      { key: "months", label: "Months", type: "multi", months: true, title: "Only marks made in these months, any year (e.g. Nov, Dec, Jan for the tuna season)",
-        note: "Any year. Marks with an unknown date are left out.", test: (m, v) => !m.date_unknown && monthTest(m.created, v) },
-      { key: "dates", label: "Dates", type: "dates", title: "Only marks made between two dates", note: "Marks with an unknown date are left out.", test: (m, v) => !m.date_unknown && dateTest(m.created, v) },
-      tripFilter(markInTrip),
       { key: "tag", label: "Tag", type: "choice", options: (ms) => countBy(ms, tagsOf, (t) => TAG_LABEL[t] || t), test: (m, v) => tagsOf(m).includes(v) },
       { key: "symbol", label: "TimeZero symbol", type: "choice", options: (ms) => countBy(ms.filter((m) => m.symbol?.startsWith("tz:")), (m) => m.symbol, (s) => `Symbol ${s.slice(3)}`), test: (m, v) => m.symbol === v },
       { key: "route", label: "Routes", type: "choice", options: () => [["used", "In a saved route"], ["unused", "In no route"]], test: (m, v) => inRoute(m) === (v === "used") },
       { key: "unknown", label: "Date unknown", type: "toggle", title: "Only marks whose date is only the day they were moved in from another plotter", test: (m) => !!m.date_unknown },
-      { key: "view", label: "In chart view", type: "toggle", title: "Only the marks in the area shown on the chart", test: (m) => inView(m) },
     ],
     row: {
       render(m, el) {
@@ -384,9 +386,11 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   // the chart-view filter follows the chart
   let viewTimer = null;
   map.on("moveend", () => {
-    if (!markList.filters.view && markList.sort !== "near") return;
+    const view = !!sharedState().view;
+    if (!view && markList.sort !== "near") return;
     clearTimeout(viewTimer);
-    viewTimer = setTimeout(() => markList.refresh(), 200);
+    // In chart view (shared) re-filters every tab; Nearest re-sorts the marks
+    viewTimer = setTimeout(() => (view ? viewMoved() : markList.refresh()), 200);
   });
   $("lib-show").checked = prefs.show;
   $("lib-show").onchange = (e) => { prefs.show = e.target.checked; savePrefs(); draw(); };
@@ -507,6 +511,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   // ---------- routings tab ----------------------------------------------------------
   const routingList = libList($("lib-routings-list"), {
     key: "routings",
+    shared: { time: (r) => r.created || null, inTrip: (r, t) => !!r.created && r.created >= t.started && r.created <= (t.ended ?? Date.now() / 1000) },
     noun: ["routing", "routings"],
     search: (r, q) => r.name.toLowerCase().includes(q) || (r.route_name || "").toLowerCase().includes(q),
     sorts: [
@@ -538,10 +543,12 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   const pane = $("lib-trash-list").closest(".pane");
   const tabBar = pane.querySelector(".tabs");
   let lastTab = "marks";
-  tabBar.addEventListener("click", () => { tabBar.style.display = ""; }); // any tab (or opening from the chart) leaves them
+  tabBar.addEventListener("click", () => { tabBar.style.display = ""; $("lib-shared").style.display = ""; });
+  mountShared($("lib-shared")); // any tab (or opening from the chart) leaves them
   function showSub(name) {
     lastTab = tabBar.querySelector("button.on")?.dataset.tab ?? lastTab;
     tabBar.style.display = "none";
+    $("lib-shared").style.display = "none"; // the Trash and imports aren't filtered
     for (const t of pane.querySelectorAll(".tab")) t.hidden = t.dataset.tab !== name;
     ui.open("library");
   }
@@ -806,13 +813,8 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   refresh();
   return {
     refresh,
-    /** Show a trip's marks: the Marks list filtered to it and the chart showing only those. Returns them. */
-    showTrip(trip) {
-      markList.setFilter("trip", trip.id);
-      if (!prefs.chartFiltered) { prefs.chartFiltered = true; $("lib-f-chart").checked = true; savePrefs(); }
-      draw();
-      return marks.filter((m) => markInTrip(m, trip));
-    },
+    /** The marks made during a trip. */
+    inTrip: (trip) => marks.filter((m) => markInTrip(m, trip)),
     marks: () => marks,
     byId,
     attach(r, x) { route = r; routing = x; routeList.redraw(); },

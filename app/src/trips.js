@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import * as activity from "./activity.js";
 import { libList } from "./liblist.js";
 import { setTrips, getTrips, duration } from "./tripstore.js";
+import { setShared } from "./libfilter.js";
 import { exportLibraryFile } from "./library.js";
 
 const $ = (id) => document.getElementById(id);
@@ -35,6 +36,7 @@ export function setupTrips(map, { ui, library, tracks }) {
 
   const list = libList($("lib-trips-list"), {
     key: "trips",
+    shared: { time: (t) => [t.started, t.ended ?? now()], inTrip: (x, t) => x.id === t.id },
     noun: ["trip", "trips"],
     search: (t, q) => `${t.name} ${t.number} ${t.fishery} ${t.crew} ${t.notes}`.toLowerCase().includes(q),
     sorts: [
@@ -151,8 +153,10 @@ export function setupTrips(map, { ui, library, tracks }) {
 
   // ---------- Show: the trip's marks and tracks, and the chart moved to them ----------
   function show(t) {
-    const ms = library.showTrip(t);
-    const ts = tracks.showTrip(t);
+    // the shared Trip filter: every tab, and the chart, show just this trip
+    setShared({ trip: t.id });
+    const ms = library.inTrip(t);
+    const ts = tracks.inTrip(t);
     let w = 180, s = 90, e = -180, n = -90;
     const add = (lon, lat) => { w = Math.min(w, lon); e = Math.max(e, lon); s = Math.min(s, lat); n = Math.max(n, lat); };
     for (const m of ms) add(m.lon, m.lat);
@@ -161,7 +165,7 @@ export function setupTrips(map, { ui, library, tracks }) {
     activity.note(`Showing ${t.name}`, { details: [
       `${ms.length.toLocaleString()} marks and ${ts.length.toLocaleString()} tracks made during it.`,
       ...(ts.length > 200 ? ["Too many tracks to draw at once: pick some in the Tracks tab."] : []),
-      "The Marks and Tracks lists are filtered to the trip, and the chart shows only its marks: Clear filters in Marks to see all again.",
+      "Every tab, and the chart, is filtered to the trip (Whole library: Trip). Its ✕ shows everything again.",
     ] });
   }
 
