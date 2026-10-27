@@ -107,8 +107,72 @@ export function libList(root, cfg) {
     const o = f.options(items).find((x) => String(x[0]) === String(v));
     return `${f.label}: ${o ? o[1] : v}`;
   }
+  // ---------- saved filters ("Tuna season"): the same in every library, kept per list ----------
+  const SAVED = `racenav.saved.${cfg.key}`;
+  const loadSaved = () => { try { return JSON.parse(localStorage.getItem(SAVED) || "[]"); } catch { return []; } };
+  const storeSaved = (v) => { try { localStorage.setItem(SAVED, JSON.stringify(v)); } catch { /* ignore */ } };
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const currentSaved = () => loadSaved().find((x) => same(x.f, state.f));
+  function openSaved(chip) {
+    closePop();
+    pop = document.createElement("div");
+    pop.className = "ll-pop ll-saved";
+    pop.dataset.key = "__saved";
+    const list = loadSaved();
+    for (const x of list) {
+      const o = document.createElement("button");
+      o.className = "ll-opt";
+      o.classList.toggle("on", same(x.f, state.f));
+      o.title = "Use these filters";
+      o.innerHTML = `<span class="grow"></span><span class="ll-x" title="Forget this saved filter">✕</span>`;
+      o.firstChild.textContent = x.name;
+      o.onclick = (e) => {
+        if (e.target.closest(".ll-x")) { storeSaved(loadSaved().filter((y) => y.name !== x.name)); openSaved(chip); renderChips(); return; }
+        state.f = JSON.parse(JSON.stringify(x.f));
+        if (x.sort && (cfg.sorts ?? []).some((s) => s.key === x.sort)) { state.sort = x.sort; sortSel.value = x.sort; }
+        save(); closePop(); apply();
+      };
+      pop.append(o);
+    }
+    if (!list.length) pop.insertAdjacentHTML("beforeend", `<div class="wx-note">No saved filters yet. Set the filters you want, then save them here with a name, e.g. Tuna season.</div>`);
+    if ((cfg.filters ?? []).some(active)) {
+      const row = document.createElement("div");
+      row.className = "wx-row";
+      row.innerHTML = `<input type="text" class="grow" placeholder="Name, e.g. Tuna season" /><button class="on">Save</button>`;
+      const inp = row.querySelector("input"), ok = row.querySelector("button");
+      inp.value = currentSaved()?.name ?? "";
+      ok.onclick = () => {
+        const name = inp.value.trim();
+        if (!name) { inp.focus(); return; }
+        storeSaved([...loadSaved().filter((y) => y.name !== name), { name, f: JSON.parse(JSON.stringify(state.f)), sort: state.sort }].sort((a, b) => a.name.localeCompare(b.name)));
+        closePop(); renderChips();
+      };
+      inp.onkeydown = (e) => { if (e.key === "Enter") ok.click(); };
+      const lab = document.createElement("div");
+      lab.className = "wx-note";
+      lab.textContent = "Save the filters set now:";
+      pop.append(lab, row);
+      setTimeout(() => inp.focus(), 0);
+    }
+    root.append(pop);
+    const r = chip.getBoundingClientRect(), rr = root.getBoundingClientRect();
+    pop.style.left = `${Math.max(0, Math.min(r.left - rr.left, rr.width - 240))}px`;
+    pop.style.top = `${r.bottom - rr.top + 4}px`;
+  }
+
   function renderChips() {
     chips.innerHTML = "";
+    if (cfg.filters?.length && cfg.saved !== false) {
+      const b = document.createElement("button");
+      const cur = currentSaved();
+      b.className = "ll-chip ll-saved-chip";
+      b.classList.toggle("on", !!cur);
+      b.title = "Saved filters: use one, or save the filters set now with a name";
+      b.innerHTML = `<span></span> ▾`;
+      b.firstChild.textContent = cur ? `★ ${cur.name}` : "★ Saved";
+      b.onclick = () => { if (pop?.dataset.key === "__saved") closePop(); else openSaved(b); };
+      chips.append(b);
+    }
     for (const f of cfg.filters ?? []) {
       const b = document.createElement("button");
       b.className = "ll-chip";

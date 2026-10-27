@@ -245,6 +245,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     },
     actions: [
       { label: "GPX", title: "Write the selected routes (and their marks) as one GPX file", run: (rs) => exportGpx(rs.length === 1 ? rs[0].name : "routes", [], rs.map((r) => r.id), rs.length === 1 ? rs[0].name : `${rs.length} routes`) },
+      { label: "Library file…", title: "Write the selected routes, with their marks, as a library file of their own", run: (rs) => exportLibraryFile({ routes: rs.map((r) => r.id) }, rs.length === 1 ? `“${rs[0].name}”` : `${rs.length} routes`, rs.length === 1 ? rs[0].name : "routes") },
       { label: "Delete", danger: true, title: "Delete the selected routes (their marks stay)", confirm: (rs) => `Delete ${rs.length === 1 ? `“${rs[0].name}”` : `${rs.length} routes`}? Their marks stay in the library.`,
         run: async (rs) => {
           let n = 0;
@@ -344,6 +345,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     },
     actions: [
       { label: "GPX", title: "Write the selected marks as one GPX file", run: (ms) => exportGpx(ms.length === 1 ? (ms[0].name || "mark") : "marks", ms.map((m) => m.id), [], `${ms.length.toLocaleString()} mark${ms.length === 1 ? "" : "s"}`) },
+      { label: "Library file…", title: "Write the selected marks as a library file of their own (to give another boat, or keep apart)", run: (ms) => exportLibraryFile({ marks: ms.map((m) => m.id) }, `${ms.length.toLocaleString()} mark${ms.length === 1 ? "" : "s"}`, ms.length === 1 ? ms[0].name || "mark" : "marks") },
       { label: "Group…", title: "Move the selected marks to a group", input: { type: "text", label: "Group", list: () => [...new Set(marks.map((m) => m.group).filter(Boolean))].sort(collate), value: (ms) => (new Set(ms.map((m) => m.group)).size === 1 ? ms[0].group : "") },
         run: (ms, v) => bulk(ms, { group: (v ?? "").trim() }, `moved to ${v?.trim() ? `“${v.trim()}”` : "no group"}`) },
       { label: "Type…", title: "Give the selected marks a type (a symbol)", input: { type: "select", label: "Type", select: () => kindSelect(), icons: (v) => kindIcon(v) },
@@ -530,6 +532,132 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     empty: () => "No saved routings. Compute one in the Routing drawer and press Save.",
   });
 
+  // ---------- the Trash and Undo an import: opened from the Library menu, in place of the lists ----------
+  const pane = $("lib-trash-list").closest(".pane");
+  const tabBar = pane.querySelector(".tabs");
+  let lastTab = "marks";
+  tabBar.addEventListener("click", () => { tabBar.style.display = ""; }); // any tab (or opening from the chart) leaves them
+  function showSub(name) {
+    lastTab = tabBar.querySelector("button.on")?.dataset.tab ?? lastTab;
+    tabBar.style.display = "none";
+    for (const t of pane.querySelectorAll(".tab")) t.hidden = t.dataset.tab !== name;
+    ui.open("library");
+  }
+  for (const b of pane.querySelectorAll(".lib-back")) b.onclick = () => tabBar.querySelector(`button[data-tab="${lastTab}"]`)?.click();
+  const when = (t) => new Date(t * 1000).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const KINDS = { mark: ["mark", "marks"], route: ["route", "routes"], track: ["track", "tracks"], routing: ["routing", "routings"], barrier: ["barrier", "barriers"] };
+  const howMany = (n, k) => `${n.toLocaleString()} ${KINDS[k][n === 1 ? 0 : 1]}`;
+  const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+  const byKind = (xs) => { const g = {}; for (const x of xs) (g[x.kind] ??= []).push(x.rid); return g; };
+  const trashList = libList($("lib-trash-list"), {
+    key: "trash",
+    noun: ["thing", "things"],
+    saved: false,
+    searchPlaceholder: "Find in the Trash",
+    search: (x, q) => x.name.toLowerCase().includes(q) || x.detail.toLowerCase().includes(q),
+    sorts: [
+      { key: "new", label: "Deleted last first", cmp: (a, b) => b.deleted_at - a.deleted_at },
+      { key: "name", label: "By name", cmp: (a, b) => collate(a.name, b.name) },
+    ],
+    filters: [
+      { key: "kind", label: "Kind", type: "choice", options: (xs) => countBy(xs, (x) => x.kind, (k) => cap(KINDS[k][1])), test: (x, v) => x.kind === v },
+      // one deletion (a minute) is one choice: "the 1,240 marks I deleted on Tuesday"
+      { key: "when", label: "Deleted", type: "choice", title: "Only what was deleted at one time",
+        options: (xs) => countBy(xs, (x) => Math.floor(x.deleted_at / 60) * 60, (t) => when(t)).sort((a, b) => b[0] - a[0]),
+        test: (x, v) => Math.floor(x.deleted_at / 60) * 60 === Number(v) },
+    ],
+    row: {
+      render(x, el) {
+        el.innerHTML = `<div class="main"><b></b><small></small></div><button data-act="restore" title="Bring it back">Restore</button>`;
+        el.querySelector("b").textContent = x.name || `(unnamed ${KINDS[x.kind][0]})`;
+        const detail = x.kind === "track" && Number(x.detail) ? fmt(Number(x.detail), true) : x.detail;
+        el.querySelector("small").textContent = [cap(KINDS[x.kind][0]), detail, `deleted ${when(x.deleted_at)}`].filter(Boolean).join(" · ");
+        el.querySelector('[data-act="restore"]').onclick = () => restore([x]);
+      },
+    },
+    actions: [
+      { label: "Restore", title: "Bring the selected things back", run: (xs) => restore(xs) },
+      { label: "Delete for good", danger: true, title: "Delete the selected things for good: they can't be brought back",
+        confirm: (xs) => `Delete ${xs.length.toLocaleString()} thing${xs.length === 1 ? "" : "s"} for good? They can't be brought back.`,
+        run: async (xs) => {
+          let n = 0;
+          for (const [kind, ids] of Object.entries(byKind(xs))) n += await invoke("library_purge", { kind, ids }).catch(() => 0);
+          activity.note(`Deleted ${n.toLocaleString()} thing${n === 1 ? "" : "s"} for good`);
+          loadTrash();
+        } },
+    ],
+    empty: () => "The Trash is empty.",
+  });
+  async function loadTrash() {
+    let v = [];
+    try { v = await invoke("library_trash"); } catch (e) { activity.start("Opening the Trash").fail(String(e)); }
+    trashList.clearSelection();
+    trashList.setItems(v.map((x) => ({ ...x, rid: x.id, id: `${x.kind}:${x.id}` })));
+    const btn = $("trash-empty");
+    btn.disabled = !v.length;
+    btn.textContent = "Empty the Trash";
+    btn.dataset.armed = "";
+  }
+  async function restore(xs) {
+    const parts = [];
+    for (const [kind, ids] of Object.entries(byKind(xs))) {
+      try { parts.push(howMany(await invoke("library_restore", { kind, ids }), kind)); } catch (e) { activity.start("Restoring").fail(String(e)); }
+    }
+    activity.note(`Restored ${parts.join(", ")}`, { details: xs.some((x) => x.kind === "mark") ? ["Restored marks are not put back into routes they were taken out of."] : [] });
+    loadTrash();
+    refresh();
+  }
+  // emptying the Trash asks by changing the button: press it again within a few seconds
+  $("trash-empty").onclick = async () => {
+    const btn = $("trash-empty");
+    if (!btn.dataset.armed) {
+      btn.dataset.armed = "1";
+      btn.textContent = "Delete everything for good? Press again";
+      setTimeout(() => { if (btn.dataset.armed) { btn.dataset.armed = ""; btn.textContent = "Empty the Trash"; } }, 4000);
+      return;
+    }
+    let n = 0;
+    for (const kind of Object.keys(KINDS)) n += await invoke("library_purge", { kind, ids: [] }).catch(() => 0);
+    activity.note(`The Trash is empty: ${n.toLocaleString()} thing${n === 1 ? "" : "s"} deleted for good`);
+    loadTrash();
+  };
+  function openTrash() { showSub("trash"); loadTrash(); }
+
+  async function openImports() {
+    showSub("imports");
+    const ul = $("lib-imports");
+    ul.innerHTML = "";
+    let list = [];
+    try { list = await invoke("library_imports"); } catch (e) { activity.start("Imports").fail(String(e)); }
+    if (!list.length) { ul.innerHTML = `<li class="wx-note">Nothing imported is in the library now (imports made before the library moved to its database in October 2026 can't be undone this way).</li>`; return; }
+    const KIND = { gpx: "GPX", timezero: "TimeZero", library: "Merged library" };
+    for (const im of list) {
+      const li = document.createElement("li");
+      const what = [im.marks && howMany(im.marks, "mark"), im.routes && howMany(im.routes, "route"), im.tracks && howMany(im.tracks, "track")].filter(Boolean).join(", ");
+      li.innerHTML = `<div class="main"><b></b><small></small></div><button class="warn">Undo</button>`;
+      li.querySelector("b").textContent = im.file || "(no name)";
+      li.querySelector("small").textContent = `${KIND[im.kind] ?? im.kind} · ${when(im.at)} · ${what}`;
+      li.querySelector("button").onclick = () => {
+        li.innerHTML = `<div class="main"><b></b><small></small></div><button class="on warn">Undo it</button><button>Keep</button>`;
+        li.querySelector("b").textContent = `Take out ${what}?`;
+        li.querySelector("small").textContent = `From ${im.file}. They go to the Trash for 30 days.`;
+        const [ok, no] = li.querySelectorAll("button");
+        no.onclick = openImports;
+        ok.onclick = async () => {
+          ok.disabled = true;
+          try {
+            const n = await invoke("library_undo_import", { id: im.id });
+            const done = [n.marks && howMany(n.marks, "mark"), n.routes && howMany(n.routes, "route"), n.tracks && howMany(n.tracks, "track")].filter(Boolean).join(", ");
+            activity.note(`Import of ${im.file} undone`, { details: [`${done || "Nothing"} moved to the Trash.`, "Library > Trash brings them back."] });
+          } catch (e) { activity.start(`Undoing the import of ${im.file}`).fail(String(e)); }
+          await refresh();
+          openImports();
+        };
+      };
+      ul.append(li);
+    }
+  }
+
   // ---------- the Library menu: which library, import, export, backups ----------
   const menu = $("lib-menu");
   let current = null;
@@ -564,8 +692,8 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     item("Export everything as GPX", "Every mark and route in one GPX file in the export folder", () => exportGpx("racenav library", [], [], "The library"));
     line();
     item("Backups…", "TweedPlot's own daily copies of this library: use one", showBackups);
-    item("Trash", "Deleted marks, routes and tracks are kept 30 days: bringing them back comes next", () => {}, true);
-    item("Undo an import", "Taking a whole import out again comes next", () => {}, true);
+    item("Trash…", "Deleted marks, routes, tracks, routings and barriers are kept 30 days: bring them back, or delete them for good", openTrash);
+    item("Undo an import…", "Take out again everything a GPX or TimeZero file (or a merge) brought in", openImports);
     menu.hidden = false;
     $("lib-menu-btn").classList.add("on");
   };
@@ -716,6 +844,20 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       } catch (e) { status(String(e)); }
     },
   };
+}
+
+/** Write chosen marks, routes (with their marks) and tracks as a library file of their own
+ *  (to give another boat, or keep a fishery apart). The library in use is unchanged. */
+export async function exportLibraryFile({ marks = [], routes = [], tracks = [] }, what, suggest = "Part of the library") {
+  const p = await invoke("library_pick_db", { save: true, title: `Write ${what} as a library file`, suggest: `${suggest.replace(/[\\/:*?"<>|]/g, " ").trim()}.gpkg` }).catch(() => null);
+  if (!p) return;
+  const job = activity.start(`Writing ${what} as a library file`, { params: p });
+  try {
+    const n = await invoke("library_export", { path: p, marks, routes, tracks });
+    const N = (k, one) => k && `${k.toLocaleString()} ${one}${k === 1 ? "" : "s"}`;
+    job.done(`${[N(n.marks, "mark"), N(n.routes, "route"), N(n.tracks, "track")].filter(Boolean).join(", ") || "Nothing"} written.`,
+      { details: [`Written to ${p}`, "Open it with Library > Open library, or bring it into another library with Merge from another library."] });
+  } catch (e) { job.fail(String(e)); }
 }
 
 /** Mark name labels drawn on demand: "lbl:<name>". */

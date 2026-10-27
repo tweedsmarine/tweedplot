@@ -7,6 +7,7 @@ import { infoBox } from "./infobox.js";
 import { seaScale } from "./weather.js";
 import { invoke } from "@tauri-apps/api/core";
 import * as activity from "./activity.js";
+import { exportLibraryFile } from "./library.js";
 import { libList, monthTest, dateTest } from "./liblist.js";
 import { listen } from "@tauri-apps/api/event";
 
@@ -343,6 +344,7 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
         const job = activity.start(`Writing ${ts.length.toLocaleString()} track${ts.length === 1 ? "" : "s"} as GPX`);
         try { const p = await invoke("tracks_export", { name: ts.length === 1 ? ts[0].name : "tracks", ids: ts.map((t) => t.id) }); job.done("Done.", { details: [`Written to ${p}`] }); } catch (e) { job.fail(String(e)); }
       } },
+      { label: "Library file…", title: "Write the selected tracks as a library file of their own", run: (ts) => exportLibraryFile({ tracks: ts.map((t) => t.id) }, `${ts.length.toLocaleString()} track${ts.length === 1 ? "" : "s"}`, ts.length === 1 ? ts[0].name : "tracks") },
       { label: "Colour…", title: "Give the selected tracks a colour", input: { type: "colour", label: "Colour", value: (ts) => colourOf(ts[0]) }, run: async (ts, v) => {
         for (const t of ts) { try { await invoke("track_update", { id: t.id, name: t.name, notes: t.notes || "", colour: v }); cache.delete(t.id); } catch { /* reported by the count */ } }
         activity.note(`${ts.length.toLocaleString()} track${ts.length === 1 ? "" : "s"} coloured ${v}`);

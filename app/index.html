@@ -397,6 +397,16 @@
           <div id="lib-barriers-list"></div>
           <div class="wx-note">Lines are fences the routing won't cross; zones are areas it won't enter (exclusion zones, reserves, farms not in the charts). Untick a barrier to keep it but not use it. Marks with a barrier radius (edit the mark) are kept clear too. Points move like marks: click one, wait for the green ring, drag. Right-click a barrier to delete a point or the barrier. Routing › Limits and barriers › Keep off barriers turns them all on or off for routings.</div>
         </div>
+        <div class="tab lib-sub" data-tab="trash" hidden>
+          <div class="lib-sub-head"><button class="lib-back" title="Back to the library lists">← Back</button><b class="grow">Trash</b><button id="trash-empty" class="warn" title="Delete everything in the Trash for good">Empty the Trash</button></div>
+          <div class="wx-note">Deleted marks, routes, tracks, routings and barriers are kept here for 30 days, then deleted for good. Select and press Restore to bring them back. A route brings its marks back with it.</div>
+          <div id="lib-trash-list"></div>
+        </div>
+        <div class="tab lib-sub" data-tab="imports" hidden>
+          <div class="lib-sub-head"><button class="lib-back" title="Back to the library lists">← Back</button><b class="grow">Undo an import</b></div>
+          <div class="wx-note">Each file brought in, with what it added that is still here. Undo takes those marks, routes and tracks out again, into the Trash (so it can be put back). Marks that were already in the library and only matched stay.</div>
+          <ul id="lib-imports" class="list"></ul>
+        </div>
         <div id="lib-status" class="wx-note"></div>
       </section>
 

@@ -1402,6 +1402,43 @@ async fn library_merge(app: tauri::AppHandle, path: String, job: Option<String>)
     Ok(r)
 }
 
+// ---------- Trash, undoing an import, a part of the library as a file ----------
+
+#[tauri::command]
+fn library_trash() -> Result<Vec<library::TrashItem>, String> {
+    lib()?.trash().map_err(es)
+}
+/// Bring things back from the Trash; `kind` is mark, route, track, routing or barrier.
+#[tauri::command]
+fn library_restore(app: tauri::AppHandle, kind: String, ids: Vec<String>) -> Result<usize, String> {
+    let n = lib()?.restore(&kind, &ids).map_err(es)?;
+    library_changed(&app);
+    Ok(n)
+}
+/// Delete things in the Trash for good (no ids: all of that kind).
+#[tauri::command]
+fn library_purge(kind: String, ids: Vec<String>) -> Result<usize, String> {
+    lib()?.purge(&kind, &ids).map_err(es)
+}
+#[tauri::command]
+fn library_imports() -> Result<Vec<library::ImportInfo>, String> {
+    lib()?.imports().map_err(es)
+}
+#[tauri::command]
+fn library_undo_import(app: tauri::AppHandle, id: i64) -> Result<library::Counts, String> {
+    let n = lib()?.undo_import(id).map_err(es)?;
+    library_changed(&app);
+    Ok(n)
+}
+/// The chosen marks, routes and tracks as a library file of their own.
+#[tauri::command]
+async fn library_export(path: String, marks: Vec<String>, routes: Vec<String>, tracks: Vec<String>) -> Result<library::Counts, String> {
+    let l = lib()?;
+    tauri::async_runtime::spawn_blocking(move || l.export_library(std::path::Path::new(&path), &marks, &routes, &tracks).map_err(es))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// The library's own backups (newest first): file, date, size.
 #[tauri::command]
 fn library_backups() -> Result<Vec<serde_json::Value>, String> {
@@ -3313,6 +3350,12 @@ pub fn run() {
             gpx_import,
             marks_delete,
             symbols_list,
+            library_trash,
+            library_restore,
+            library_purge,
+            library_imports,
+            library_undo_import,
+            library_export,
             symbol_set,
             marks_in,
             library_pick_file,

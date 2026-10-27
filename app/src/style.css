@@ -1086,3 +1086,13 @@ button.on.warn { background: #b03a2e; color: #fff; border-color: #b03a2e; }
 .lib-menu, .ll-pop { background: var(--panel-solid, #fff); }
 .ll-row.flash { animation: ll-flash 2.4s ease-out; }
 @keyframes ll-flash { 0%, 30% { background: color-mix(in srgb, #f0a500 45%, transparent); } 100% { background: transparent; } }
+
+/* saved filters, Trash and Undo an import (library.js, liblist.js) */
+.ll-saved .ll-opt .ll-x { opacity: 0.5; padding: 0 4px; }
+.ll-saved .ll-opt .ll-x:hover { opacity: 1; }
+.ll-saved .wx-row input { min-width: 0; }
+.lib-sub-head { display: flex; align-items: center; gap: 8px; margin: 4px 0 6px; }
+.lib-sub-head button { flex: none; }
+#lib-imports li { display: flex; align-items: center; gap: 8px; }
+#lib-imports li .main { flex: 1; min-width: 0; }
+#lib-imports li small { display: block; color: var(--quiet); white-space: normal; }

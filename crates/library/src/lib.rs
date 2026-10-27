@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 mod gpx;
+mod manage;
+pub use manage::{Counts, ImportInfo, TrashItem};
 pub mod store;
 pub mod tracks;
 pub mod tzd;
