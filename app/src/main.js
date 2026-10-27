@@ -18,6 +18,7 @@ import { tidalImage } from "./tidalstreams.js";
 import { setupTracks } from "./tracks.js";
 import { setupTrips } from "./trips.js";
 import { setupOverlays } from "./overlays.js";
+import { setupEvents } from "./events.js";
 let tripsTimer = 0;
 import { setupRuler } from "./ruler.js";
 import { setupGribTools } from "./gribtools.js";
@@ -410,6 +411,7 @@ map.on("load", () => {
   barriers = setupBarriers(map, { before: "track", library, toast });
   const trips = setupTrips(map, { ui, library, tracks });
   setupOverlays(map, { library });
+  setupEvents(map, { ui, getBoat: () => ({ pos: live ? lastBoat : null, v: vessel }) });
   listen("library-changed", () => { clearTimeout(tripsTimer); tripsTimer = setTimeout(() => trips.refresh(), 200); });
   arrows = setupWindArrows(map, { before: "boat" });
   const wa = document.getElementById("inst-arrows");

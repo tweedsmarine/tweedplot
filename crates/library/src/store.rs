@@ -22,7 +22,7 @@ use crate::tracks::TrackPoint;
 use crate::Result;
 
 pub const FILE: &str = "library.gpkg";
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 /// Days a deleted object stays in the Trash.
 pub const TRASH_DAYS: i64 = 30;
 
@@ -67,6 +67,18 @@ fn migrate(c: &Connection) -> Result<()> {
     if v < 3 {
         // trips: who was aboard
         c.execute_batch("BEGIN; ALTER TABLE trips ADD COLUMN crew TEXT NOT NULL DEFAULT ''; UPDATE meta SET value = '3' WHERE key = 'schema'; COMMIT;")?;
+    }
+    if v < 4 {
+        // the fishing log (events.rs)
+        c.execute_batch(
+            "BEGIN;
+             CREATE TABLE events (id TEXT PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'note', name TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL,
+               lat REAL, lon REAL, depth REAL, temp REAL, sog REAL, cog REAL, notes TEXT NOT NULL DEFAULT '', pair TEXT NOT NULL DEFAULT '',
+               import_id INTEGER, deleted_at INTEGER);
+             CREATE INDEX events_at ON events(at);
+             UPDATE meta SET value = '4' WHERE key = 'schema';
+             COMMIT;",
+        )?;
     }
     Ok(())
 }

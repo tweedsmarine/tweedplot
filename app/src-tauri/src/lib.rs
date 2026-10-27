@@ -1409,6 +1409,30 @@ async fn library_merge(app: tauri::AppHandle, path: String, job: Option<String>)
     Ok(r)
 }
 
+// ---------- the fishing log ----------
+
+#[tauri::command]
+fn events_list() -> Result<Vec<library::Event>, String> {
+    lib()?.events().map_err(es)
+}
+#[tauri::command]
+fn event_save(app: tauri::AppHandle, event: library::Event) -> Result<library::Event, String> {
+    let e = lib()?.save_event(event).map_err(es)?;
+    let _ = app.emit("events-changed", ());
+    Ok(e)
+}
+#[tauri::command]
+fn events_delete(app: tauri::AppHandle, ids: Vec<String>) -> Result<usize, String> {
+    let n = lib()?.delete_events(&ids).map_err(es)?;
+    let _ = app.emit("events-changed", ());
+    Ok(n)
+}
+/// Events as CSV in the export folder; returns the file.
+#[tauri::command]
+fn events_csv(name: String, ids: Vec<String>) -> Result<String, String> {
+    lib()?.export_events_csv(&name, &ids).map(|p| p.to_string_lossy().into_owned()).map_err(es)
+}
+
 // ---------- trips ----------
 
 #[tauri::command]
@@ -1448,8 +1472,10 @@ fn trips_delete(app: tauri::AppHandle, ids: Vec<i64>) -> Result<usize, String> {
 /// The marks and tracks made in a trip: { marks: [ids], tracks: [ids] }.
 #[tauri::command]
 fn trip_contents(id: i64) -> Result<serde_json::Value, String> {
-    let (marks, tracks) = lib()?.trip_contents(id).map_err(es)?;
-    Ok(serde_json::json!({ "marks": marks, "tracks": tracks }))
+    let l = lib()?;
+    let (marks, tracks) = l.trip_contents(id).map_err(es)?;
+    let events = l.trip_events(id).map_err(es)?;
+    Ok(serde_json::json!({ "marks": marks, "tracks": tracks, "events": events }))
 }
 
 // ---------- Trash, undoing an import, a part of the library as a file ----------
@@ -1482,17 +1508,18 @@ fn library_undo_import(app: tauri::AppHandle, id: i64) -> Result<library::Counts
 }
 /// The chosen marks, routes and tracks as a library file of their own.
 #[tauri::command]
-async fn library_export(path: String, marks: Vec<String>, routes: Vec<String>, tracks: Vec<String>, notes: Option<bool>, passphrase: Option<String>) -> Result<library::Counts, String> {
+async fn library_export(path: String, marks: Vec<String>, routes: Vec<String>, tracks: Vec<String>, events: Option<Vec<String>>, notes: Option<bool>, passphrase: Option<String>) -> Result<library::Counts, String> {
+    let events = events.unwrap_or_default();
     let l = lib()?;
     tauri::async_runtime::spawn_blocking(move || {
         let to = PathBuf::from(&path);
         let keep_notes = notes.unwrap_or(true);
         match passphrase.filter(|p| !p.is_empty()) {
-            None => l.export_library(&to, &marks, &routes, &tracks, keep_notes).map_err(es),
+            None => l.export_library(&to, &marks, &routes, &tracks, &events, keep_notes).map_err(es),
             Some(pass) => {
                 // written plain beside it first, then locked; the plain copy goes
                 let plain = to.with_extension("gpkg.plain");
-                let n = l.export_library(&plain, &marks, &routes, &tracks, keep_notes).map_err(es);
+                let n = l.export_library(&plain, &marks, &routes, &tracks, &events, keep_notes).map_err(es);
                 let r = n.and_then(|n| library::protect::protect_file(&plain, &to, &pass).map(|_| n).map_err(es));
                 let _ = std::fs::remove_file(&plain);
                 r
@@ -3502,6 +3529,10 @@ pub fn run() {
             overlay_tracks,
             overlay_track,
             trips_list,
+            events_list,
+            event_save,
+            events_delete,
+            events_csv,
             trip_save,
             trip_end,
             trips_delete,

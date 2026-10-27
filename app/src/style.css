@@ -1025,7 +1025,7 @@ body.drawer-open #activity { left: calc(var(--rail-w) + var(--drawer-w)); }
 .ll-sort { max-width: 150px; }
 .ll-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 2px; }
 .ll-chip { font-size: 12px; padding: 3px 8px; border-radius: 12px; display: inline-flex; align-items: center; gap: 4px; }
-.ll-chip.on { background: color-mix(in srgb, #2a7ab0 18%, transparent); border-color: #2a7ab0; font-weight: 600; }
+.ll-chip.on { background: color-mix(in srgb, #2a7ab0 18%, transparent); border-color: #2a7ab0; font-weight: 600; color: var(--ink); }
 .ll-chip .ll-x { opacity: .6; padding-left: 2px; }
 .ll-chip .ll-x:hover { opacity: 1; }
 .ll-chip.ll-clear { border-style: dashed; }
@@ -1132,3 +1132,16 @@ button.on.warn { background: #b03a2e; color: #fff; border-color: #b03a2e; }
 .ovl-row .ovl-colour { width: 28px; height: 24px; padding: 0; border: none; flex: none; }
 .ovl-row label, .ovl-row button { flex: none; font-size: 12px; }
 #lib-ovl-chip { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+/* the fishing log (events.js): large buttons, one press each */
+.evt-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 4px 0 6px; }
+.evt-buttons .evt-btn { font-size: 16px; font-weight: 600; padding: 12px 6px; border-radius: 8px; }
+.evt-buttons .evt-btn.shot { background: #e3effa; border-color: #1f6fb2; color: #174f80; }
+.evt-buttons .evt-btn.haul { background: #fbeee4; border-color: #d35400; color: #8a3a05; }
+.evt-open { padding: 6px 10px; border-radius: 8px; background: #e3effa; border-left: 4px solid #1f6fb2; font-size: 13px; margin: 4px 0; }
+.evt-open[hidden] { display: none; }
+.evt-gear .ll-chip, .evt-timer button { flex: none; }
+.evt-timer input { width: 4.5em; }
+#lib-ovl-chip[hidden] { display: none; }
+/* seven Library tabs: they wrap rather than run off the drawer */
+.pane[data-pane="library"] .tabs { flex-wrap: wrap; }
+.pane[data-pane="library"] .tabs button { flex: 1 1 auto; padding: 5px 6px; }

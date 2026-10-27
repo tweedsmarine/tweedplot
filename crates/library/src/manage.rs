@@ -9,13 +9,14 @@ use serde::Serialize;
 use crate::{now, Library, Result};
 
 /// The tables that have a Trash, with how a row is named and described in it.
-const KINDS: [(&str, &str, &str); 6] = [
+const KINDS: [(&str, &str, &str); 7] = [
     ("mark", "marks", "grp"),
     ("route", "routes", "''"),
     ("track", "tracks", "coalesce(start, modified)"),
     ("routing", "routings", "route_name"),
     ("barrier", "barriers", "kind"),
     ("trip", "trips", "fishery"),
+    ("event", "events", "notes"),
 ];
 
 fn table(kind: &str) -> Option<&'static str> {
@@ -173,7 +174,7 @@ impl Library {
 
     /// Write the chosen marks, routes (with their marks) and tracks as a library file of
     /// their own at `to`, e.g. to give another boat. The library in use is unchanged.
-    pub fn export_library(&self, to: &Path, marks: &[String], routes: &[String], tracks: &[String], keep_notes: bool) -> Result<Counts> {
+    pub fn export_library(&self, to: &Path, marks: &[String], routes: &[String], tracks: &[String], events: &[String], keep_notes: bool) -> Result<Counts> {
         if to.canonicalize().ok().is_some_and(|p| Some(p) == self.path().canonicalize().ok()) {
             return Err(crate::Error::Store("that's the library in use: choose another file".into()));
         }
@@ -183,7 +184,7 @@ impl Library {
         let r = (|| -> Result<Counts> {
             let mut c = Connection::open(&tmp)?;
             let tx = c.transaction()?;
-            for (name, ids) in [("keep_marks", marks), ("keep_routes", routes), ("keep_tracks", tracks)] {
+            for (name, ids) in [("keep_marks", marks), ("keep_routes", routes), ("keep_tracks", tracks), ("keep_events", events)] {
                 tx.execute(&format!("CREATE TEMP TABLE {name} (id TEXT PRIMARY KEY)"), [])?;
                 let mut ins = tx.prepare(&format!("INSERT OR IGNORE INTO {name} (id) VALUES (?1)"))?;
                 for id in ids {
@@ -198,8 +199,13 @@ impl Library {
                 [],
             )?;
             tx.execute("DELETE FROM tracks WHERE deleted_at IS NOT NULL OR id NOT IN (SELECT id FROM keep_tracks)", [])?;
+            tx.execute("DELETE FROM events WHERE deleted_at IS NOT NULL OR id NOT IN (SELECT id FROM keep_events)", [])?;
             for t in ["routings", "barriers", "trips", "imports"] {
                 tx.execute(&format!("DELETE FROM {t}"), [])?;
+            }
+            tx.execute("UPDATE events SET import_id = NULL", [])?;
+            if !keep_notes {
+                tx.execute("UPDATE events SET notes = ''", [])?;
             }
             for t in ["marks", "routes", "tracks"] {
                 tx.execute(&format!("UPDATE {t} SET import_id = NULL, trip_id = NULL"), [])?;
@@ -264,7 +270,7 @@ mod tests {
         // part of it as a library of its own
         let keep: Vec<String> = lib.marks().unwrap().into_iter().filter(|m| m.name != "A").map(|m| m.id).collect();
         let out = dir.join("part.gpkg");
-        let n = lib.export_library(&out, &keep, &[], &[], true).unwrap();
+        let n = lib.export_library(&out, &keep, &[], &[], &[], true).unwrap();
         assert_eq!(n.marks, 2);
         let other = Library::open_file(&out).unwrap();
         assert_eq!(other.marks().unwrap().len(), 2);

@@ -17,6 +17,8 @@ use serde_json::Value;
 mod gpx;
 mod manage;
 mod trips;
+mod events;
+pub use events::Event;
 pub mod protect;
 mod overlay;
 pub use overlay::Overlay;
@@ -379,7 +381,7 @@ impl Library {
         let c = store::open(&path)?;
         // the Trash keeps deleted things for a while
         let old = now() - store::TRASH_DAYS * 86_400;
-        for t in ["marks", "routes", "routings", "barriers", "tracks", "trips"] {
+        for t in ["marks", "routes", "routings", "barriers", "tracks", "trips", "events"] {
             c.execute(&format!("DELETE FROM {t} WHERE deleted_at IS NOT NULL AND deleted_at < ?1"), [old])?;
         }
         if store::meta(&c, "marks_reviewed")?.is_none() {

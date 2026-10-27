@@ -31,6 +31,7 @@ export function setupTrips(map, { ui, library, tracks }) {
       t.distance_nm ? `${t.distance_nm.toFixed(0)} NM` : "",
       t.marks ? `${t.marks.toLocaleString()} mark${t.marks === 1 ? "" : "s"}` : "",
       t.tracks ? `${t.tracks.toLocaleString()} track${t.tracks === 1 ? "" : "s"}` : "",
+      t.sets ? `${t.sets} set${t.sets === 1 ? "" : "s"}` : "",
     ].filter(Boolean).join(" · ");
   }
 
@@ -61,8 +62,9 @@ export function setupTrips(map, { ui, library, tracks }) {
     actions: [
       { label: "Library file…", title: "Write the selected trips' marks and tracks as a library file of their own", run: async (ts) => {
         const marks = [], trks = [];
-        for (const t of ts) { const c = await invoke("trip_contents", { id: t.id }); marks.push(...c.marks); trks.push(...c.tracks); }
-        exportLibraryFile({ marks, tracks: trks }, ts.length === 1 ? ts[0].name : `${ts.length} trips`, ts.length === 1 ? ts[0].name : "trips");
+        const evts = [];
+        for (const t of ts) { const c = await invoke("trip_contents", { id: t.id }); marks.push(...c.marks); trks.push(...c.tracks); evts.push(...(c.events ?? [])); }
+        exportLibraryFile({ marks, tracks: trks, events: evts }, ts.length === 1 ? ts[0].name : `${ts.length} trips`, ts.length === 1 ? ts[0].name : "trips");
       } },
       { label: "Delete", danger: true, title: "Delete the selected trips (their marks and tracks stay)",
         confirm: (ts) => `Delete ${ts.length === 1 ? `“${ts[0].name}”` : `${ts.length} trips`}? Their marks and tracks stay in the library.`,

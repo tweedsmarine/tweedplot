@@ -562,7 +562,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   }
   for (const b of pane.querySelectorAll(".lib-back")) b.onclick = () => tabBar.querySelector(`button[data-tab="${lastTab}"]`)?.click();
   const when = (t) => new Date(t * 1000).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
-  const KINDS = { mark: ["mark", "marks"], route: ["route", "routes"], track: ["track", "tracks"], routing: ["routing", "routings"], barrier: ["barrier", "barriers"], trip: ["trip", "trips"] };
+  const KINDS = { mark: ["mark", "marks"], route: ["route", "routes"], track: ["track", "tracks"], routing: ["routing", "routings"], barrier: ["barrier", "barriers"], trip: ["trip", "trips"], event: ["log event", "log events"] };
   const howMany = (n, k) => `${n.toLocaleString()} ${KINDS[k][n === 1 ? 0 : 1]}`;
   const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
   const byKind = (xs) => { const g = {}; for (const x of xs) (g[x.kind] ??= []).push(x.rid); return g; };
@@ -891,7 +891,7 @@ export async function plainLibrary(path, keep) {
 /** Write chosen marks, routes (with their marks) and tracks as a library file of their own
  *  (to give another boat, or keep a fishery apart), with or without notes, and protected
  *  with a passphrase if wanted. The library in use is unchanged. */
-export async function exportLibraryFile({ marks = [], routes = [], tracks = [] }, what, suggest = "Part of the library") {
+export async function exportLibraryFile({ marks = [], routes = [], tracks = [], events = [] }, what, suggest = "Part of the library") {
   const o = await ask({
     title: `Write ${what} as a library file`,
     note: "To give another boat, or keep apart. They open it with Library > Open library, merge it, or show it alongside theirs.",
@@ -909,7 +909,7 @@ export async function exportLibraryFile({ marks = [], routes = [], tracks = [] }
   if (!p) return;
   const job = activity.start(`Writing ${what} as a library file`, { params: p });
   try {
-    const n = await invoke("library_export", { path: p, marks, routes, tracks, notes: o.notes, passphrase: o.protect ? o.pass : null });
+    const n = await invoke("library_export", { path: p, marks, routes, tracks, events, notes: o.notes, passphrase: o.protect ? o.pass : null });
     const N = (k, one) => k && `${k.toLocaleString()} ${one}${k === 1 ? "" : "s"}`;
     job.done(`${[N(n.marks, "mark"), N(n.routes, "route"), N(n.tracks, "track")].filter(Boolean).join(", ") || "Nothing"} written.`,
       { details: [`Written to ${p}`, ...(o.notes ? [] : ["Notes left out."]), ...(o.protect ? ["Protected: it needs the passphrase to open. Give the passphrase separately (not in the same email)."] : []), "Open it with Library > Open library, merge it into another library, or show it alongside."] });

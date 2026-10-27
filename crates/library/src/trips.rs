@@ -28,6 +28,9 @@ pub struct Trip {
     pub tracks: usize,
     pub distance_nm: f64,
     pub max_sog: Option<f64>,
+    /// Fishing log events in it, and how many of them were shots or sets.
+    pub events: usize,
+    pub sets: usize,
 }
 
 /// The trip's time as SQL bounds: an open trip runs to now.
@@ -35,7 +38,9 @@ const TRIP_SELECT: &str = "SELECT t.id, t.name, t.number, t.fishery, t.crew, t.n
     (SELECT count(*) FROM marks m WHERE m.deleted_at IS NULL AND m.date_unknown = 0 AND m.created BETWEEN t.started AND coalesce(t.ended, ?1)),
     (SELECT count(*) FROM tracks k WHERE k.deleted_at IS NULL AND k.start <= coalesce(t.ended, ?1) AND coalesce(k.\"end\", k.start) >= t.started),
     (SELECT coalesce(sum(distance_nm), 0) FROM tracks k WHERE k.deleted_at IS NULL AND k.start <= coalesce(t.ended, ?1) AND coalesce(k.\"end\", k.start) >= t.started),
-    (SELECT max(max_sog) FROM tracks k WHERE k.deleted_at IS NULL AND k.start <= coalesce(t.ended, ?1) AND coalesce(k.\"end\", k.start) >= t.started)
+    (SELECT max(max_sog) FROM tracks k WHERE k.deleted_at IS NULL AND k.start <= coalesce(t.ended, ?1) AND coalesce(k.\"end\", k.start) >= t.started),
+    (SELECT count(*) FROM events e WHERE e.deleted_at IS NULL AND e.at BETWEEN t.started AND coalesce(t.ended, ?1)),
+    (SELECT count(*) FROM events e WHERE e.deleted_at IS NULL AND e.kind IN ('net-shot', 'line-set', 'pot-set') AND e.at BETWEEN t.started AND coalesce(t.ended, ?1))
   FROM trips t WHERE t.deleted_at IS NULL";
 
 fn trip_row(r: &rusqlite::Row) -> rusqlite::Result<Trip> {
@@ -52,6 +57,8 @@ fn trip_row(r: &rusqlite::Row) -> rusqlite::Result<Trip> {
         tracks: r.get::<_, i64>(9)? as usize,
         distance_nm: r.get(10)?,
         max_sog: r.get(11)?,
+        events: r.get::<_, i64>(12)? as usize,
+        sets: r.get::<_, i64>(13)? as usize,
     })
 }
 
@@ -132,6 +139,14 @@ impl Library {
     }
 
     /// The ids of the marks and tracks made in a trip (for showing, exporting).
+    pub fn trip_events(&self, id: i64) -> Result<Vec<String>> {
+        let t = self.trip(id)?;
+        let c = self.db();
+        let mut q = c.prepare("SELECT id FROM events WHERE deleted_at IS NULL AND at BETWEEN ?1 AND ?2")?;
+        let v = q.query_map([t.started.unwrap_or(0), t.ended.unwrap_or_else(now)], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>()?;
+        Ok(v)
+    }
+
     pub fn trip_contents(&self, id: i64) -> Result<(Vec<String>, Vec<String>)> {
         let t = self.trip(id)?;
         let (a, b) = (t.started.unwrap_or(0), t.ended.unwrap_or_else(now));

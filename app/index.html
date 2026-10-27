@@ -328,6 +328,7 @@
           <button data-tab="routes">Routes</button>
           <button data-tab="tracks">Tracks</button>
           <button data-tab="trips">Trips</button>
+          <button data-tab="log" title="The fishing log: net shot and hauled, lines and pots set and hauled, catch, notes">Log</button>
           <button data-tab="routings">Routings</button>
           <button data-tab="barriers">Barriers</button>
         </div>
@@ -422,6 +423,24 @@
           </form>
           <div id="lib-trips-list"></div>
         </div>
+        <div class="tab" data-tab="log" hidden>
+          <div id="evt-open" class="evt-open" hidden></div>
+          <div id="evt-buttons" class="evt-buttons"></div>
+          <div class="wx-row evt-gear"><span class="wx-note">Gear:</span><span id="evt-gear"></span><span class="grow"></span><label title="Show the log's events on the chart"><input id="evt-show" type="checkbox" /> On chart</label></div>
+          <div class="wx-row evt-timer">
+            <label title="A reminder every so many minutes (a soft chime and a card), e.g. to check the gear">Timer every <input id="evt-every" type="number" min="1" max="720" step="1" /> min</label>
+            <button id="evt-timer">Start</button><span id="evt-timer-left" class="wx-note grow"></span>
+          </div>
+          <div class="wx-row"><label class="grow" title="Start the timer each time gear is shot or set, stop it when hauled"><input id="evt-auto" type="checkbox" /> Start the timer when gear goes in</label></div>
+          <form id="evt-edit" class="edit" hidden>
+            <div class="wx-row"><b id="evt-edit-title" class="grow"></b></div>
+            <div class="wx-row"><label class="grow">Time</label><input name="at" type="datetime-local" step="60" /></div>
+            <div class="wx-row"><label class="grow">Notes</label></div>
+            <textarea name="notes" rows="2" placeholder="e.g. 2 t hoki, 300 kg ling"></textarea>
+            <div class="wx-row"><button type="submit" class="on">Save</button><button type="button" data-act="cancel">Cancel</button><span class="grow"></span><button type="button" data-act="delete" class="warn">Delete</button></div>
+          </form>
+          <div id="lib-log-list"></div>
+        </div>
         <div class="tab lib-sub" data-tab="overlays" hidden>
           <div class="lib-sub-head"><button class="lib-back" title="Back to the library lists">← Back</button><b class="grow">Libraries alongside</b></div>
           <div class="wx-note">Another library (a mate's marks, another season's) shown on the chart with yours, read-only, without mixing them in. Its marks have a ring in its colour; click one to see it. Whole library filters (dates, months, trip) apply to them too. Its tracks are drawn when those filters pick 200 or fewer.</div>
@@ -430,7 +449,7 @@
         </div>
         <div class="tab lib-sub" data-tab="trash" hidden>
           <div class="lib-sub-head"><button class="lib-back" title="Back to the library lists">← Back</button><b class="grow">Trash</b><button id="trash-empty" class="warn" title="Delete everything in the Trash for good">Empty the Trash</button></div>
-          <div class="wx-note">Deleted marks, routes, tracks, trips, routings and barriers are kept here for 30 days, then deleted for good. Select and press Restore to bring them back. A route brings its marks back with it.</div>
+          <div class="wx-note">Deleted marks, routes, tracks, trips, log events, routings and barriers are kept here for 30 days, then deleted for good. Select and press Restore to bring them back. A route brings its marks back with it.</div>
           <div id="lib-trash-list"></div>
         </div>
         <div class="tab lib-sub" data-tab="imports" hidden>
