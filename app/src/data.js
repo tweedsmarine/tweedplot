@@ -232,6 +232,56 @@ export function setupData(map, { toast, reloadTiles } = {}) {
     try { await invoke("chart_land_detail", { level: detail }); reloadTiles?.(); } catch (e) { say(`Could not change the detail: ${e}`, "bad"); }
   };
 
+  // ---------- ENC chart sets: each exchange set (NOAA's, the IHO's test data …) in or out of use
+  const PRODUCERS = { US: "NOAA (USA)", NZ: "LINZ (New Zealand)", AU: "Australia", GB: "UKHO", FR: "SHOM (France)", CA: "Canada", JP: "Japan", NO: "Norway", AA: "IHO test data", "1B": "IHO test data" };
+  const fmtProducers = (codes) => {
+    const by = new Map();
+    for (const [c, n] of codes) by.set(PRODUCERS[c] ?? c, (by.get(PRODUCERS[c] ?? c) ?? 0) + n);
+    const p = [...by].sort((a, b) => b[1] - a[1]);
+    return p.slice(0, 3).map(([name, n]) => `${name}${p.length > 1 ? ` ${n.toLocaleString()}` : ""}`).join(", ") + (p.length > 3 ? ", …" : "");
+  };
+  async function refreshSets() {
+    const ul = $("data-sets");
+    $("data-sets-state").textContent = "looking…";
+    let sets = [];
+    try { sets = await invoke("chart_sets_list"); } catch (e) { $("data-sets-state").textContent = String(e); return; }
+    const on = sets.filter((x) => x.in_use);
+    dot("data-sets-dot", on.length ? "ok" : "");
+    $("data-sets-state").textContent = sets.length
+      ? `${on.length} of ${sets.length} in use, ${on.reduce((a, x) => a + x.cells, 0).toLocaleString()} cells`
+      : "none (put S-57 cells or exchange sets in the enc folder)";
+    ul.innerHTML = "";
+    for (const x of sets) {
+      const li = document.createElement("li");
+      li.innerHTML = `<label><input type="checkbox"> <b></b></label><small></small>`;
+      const cb = li.querySelector("input");
+      cb.checked = x.in_use;
+      li.querySelector("b").textContent = x.name;
+      li.querySelector("small").textContent = `${x.cells.toLocaleString()} cell${x.cells === 1 ? "" : "s"} · ${fmtProducers(x.producers)} · ${x.folder}`;
+      li.title = x.path;
+      cb.onchange = async () => {
+        cb.disabled = true;
+        try {
+          await invoke("chart_set_use", { path: x.path, on: cb.checked });
+          toast?.(`${x.name} ${cb.checked ? "in use" : "left out"}: opening the charts again…`, 4000);
+        } catch (e) { cb.checked = !cb.checked; say(String(e), "bad"); }
+        cb.disabled = false;
+        refreshSets();
+      };
+      ul.append(li);
+    }
+  }
+  $("data-sets-refresh").onclick = refreshSets;
+  // only when the Chart data box is first opened: listing the sets walks every cell
+  let setsLooked = false;
+  const watch = new MutationObserver(() => {
+    if (setsLooked || $("data-box").closest(".pane")?.hidden) return;
+    setsLooked = true;
+    watch.disconnect();
+    refreshSets();
+  });
+  watch.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["hidden", "open"] });
+
   $("data-cancel").onclick = () => invoke("data_cancel").catch(() => {});
   $("data-linz").onclick = () => invoke("open_url", { url: LDS }).catch(() => {});
   $("data-etopo-res").onchange = plan;

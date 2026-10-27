@@ -357,6 +357,11 @@ pub struct CellFiles {
 
 /// Every ENC base cell under `dir` (not in hidden folders), with its updates.
 pub fn find_cells(dir: &Path) -> Vec<CellFiles> {
+    find_cells_except(dir, &[])
+}
+
+/// [`find_cells`], not looking in the folders `off` at all (chart sets not in use).
+pub fn find_cells_except(dir: &Path, off: &[PathBuf]) -> Vec<CellFiles> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
@@ -371,7 +376,7 @@ pub fn find_cells(dir: &Path) -> Vec<CellFiles> {
             // again (is_dir) is slow on Windows with tens of thousands of cells
             let is_dir = e.file_type().map(|t| t.is_dir() || (t.is_symlink() && p.is_dir())).unwrap_or(false);
             if is_dir {
-                if !hidden {
+                if !hidden && !off.iter().any(|o| o == &p) {
                     stack.push(p);
                 }
             } else {
@@ -446,9 +451,75 @@ pub fn ensure_gpkgs(dir: &Path) -> Vec<PathBuf> {
 
 /// [`ensure_gpkgs`], telling `progress(converted so far, cells to convert, cell)` as it goes.
 pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str)) -> Vec<PathBuf> {
+    ensure_gpkgs_sets(dir, &[], progress)
+}
+
+/// A chart set: one top-level folder of an ENC folder (an exchange set such as NOAA's
+/// ENC_ROOT, or the IHO's test data), the cells straight in the ENC folder, or the cells
+/// installed from S-63 exchange sets (`.senc`). Sets can be left out of use.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ChartSet {
+    /// What turns it on and off: the set's folder (the ENC folder itself for its loose cells).
+    pub path: PathBuf,
+    pub name: String,
+    pub cells: usize,
+    /// Producer codes (the first two letters of the cell names: US, NZ, GB …) and how many cells each.
+    pub producers: Vec<(String, usize)>,
+}
+
+/// The set a cell belongs to: the first folder under `dir` ("" for cells straight in `dir`).
+fn set_of(dir: &Path, base: &Path) -> String {
+    base.strip_prefix(dir)
+        .ok()
+        .and_then(|r| {
+            let mut c = r.components();
+            let first = c.next()?;
+            c.next().map(|_| first.as_os_str().to_string_lossy().to_string())
+        })
+        .unwrap_or_default()
+}
+
+fn set_path(dir: &Path, set: &str) -> PathBuf {
+    if set.is_empty() { dir.to_path_buf() } else { dir.join(set) }
+}
+
+/// The chart sets in an ENC folder (walks every cell: for a settings list, not at start-up).
+pub fn chart_sets(dir: &Path) -> Vec<ChartSet> {
     let mut cells = find_cells(dir);
-    // and the cells installed from exchange sets, with their warnings (SSE 25, SSE 27)
     if senc::Senc::exists(dir) {
+        cells.extend(senc::Senc::open_bare(dir).cell_files());
+    }
+    let mut by: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
+    for c in &cells {
+        let code: String = c.base.file_stem().map(|s| s.to_string_lossy().to_ascii_uppercase().chars().take(2).collect()).unwrap_or_default();
+        *by.entry(set_of(dir, &c.base)).or_default().entry(code).or_default() += 1;
+    }
+    by.into_iter()
+        .map(|(set, prod)| {
+            let mut producers: Vec<(String, usize)> = prod.into_iter().collect();
+            producers.sort_by(|a, b| b.1.cmp(&a.1));
+            ChartSet {
+                path: set_path(dir, &set),
+                name: match set.as_str() {
+                    "" => "Cells in the ENC folder itself".into(),
+                    ".senc" => "Installed from S-63 exchange sets".into(),
+                    s => s.to_string(),
+                },
+                cells: producers.iter().map(|p| p.1).sum(),
+                producers,
+            }
+        })
+        .collect()
+}
+
+/// [`ensure_gpkgs_with`], leaving out the chart sets `off` (their folders; `<dir>/.senc` for
+/// the installed S-63 cells; `<dir>` itself for the cells straight in it). Each set has its
+/// own merged files, so a set turned off and on again is ready at once.
+pub fn ensure_gpkgs_sets(dir: &Path, off: &[PathBuf], progress: &mut dyn FnMut(usize, usize, &str)) -> Vec<PathBuf> {
+    let loose_off = off.iter().any(|o| o == dir);
+    let mut cells: Vec<CellFiles> = find_cells_except(dir, off).into_iter().filter(|c| !(loose_off && set_of(dir, &c.base).is_empty())).collect();
+    // and the cells installed from exchange sets, with their warnings (SSE 25, SSE 27)
+    if senc::Senc::exists(dir) && !off.iter().any(|o| o == &dir.join(".senc")) {
         let s = senc::Senc::open_bare(dir);
         for (cell, text) in s.display_notes() {
             note(&dir.join(".senc").join("cells").join(&cell), text);
@@ -516,8 +587,9 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
     // S-63 cell permits from any PERMIT.TXT in the folder (only read when a cell needs converting)
     let permits = if todo > 0 { s63_permits(dir) } else { Default::default() };
     let mut done = 0;
-    let mut by_band: BTreeMap<(u8, bool), Vec<PathBuf>> = BTreeMap::new();
+    let mut by_band: BTreeMap<(String, u8, bool), Vec<PathBuf>> = BTreeMap::new();
     for (c, key, fresh) in plan {
+        let set = set_of(dir, &c.base);
         let gpkg = match fresh {
             Some(g) => g,
             None => {
@@ -555,7 +627,7 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
         });
         if let Some(b) = band {
             let sealed = is_sealed(&gpkg);
-            by_band.entry((b, sealed)).or_default().push(gpkg);
+            by_band.entry((set, b, sealed)).or_default().push(gpkg);
         }
     }
     if todo > 0 {
@@ -563,9 +635,13 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
     }
     // then the cells of each band merged into one file, which is what the chart store
     // opens: one table per layer and band instead of one per cell (thousands of cells)
-    let tag = format!("{:08x}", hash(&dir.to_string_lossy()));
+    // one merged file per set and band: "all-<set tag>-b<band>-m<version>"
+    let set_tag = |set: &str| format!("{:08x}", hash(&format!("{}|{set}", dir.to_string_lossy())));
     let mut out = Vec::new();
-    for ((band, sealed), files) in by_band {
+    let mut tags_in_use = std::collections::HashSet::new();
+    for ((set, band, sealed), files) in by_band {
+        let tag = set_tag(&set);
+        tags_in_use.insert(tag.clone());
         let merged = out_dir.join(format!("all-{tag}-b{band}-m{MERGE_VERSION}{}", if sealed { &sealed_suffix } else { &suffix }));
         let stamp: Vec<(String, i64)> = files
             .iter()
@@ -584,8 +660,14 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
         }
         out.push(merged);
     }
-    // merged files of bands no longer present
-    for e in existing.iter().filter(|e| e.starts_with(&format!("all-{tag}-"))) {
+    // merged files of bands no longer present in the sets in use (a set that's off keeps
+    // its merged files, ready for when it's turned on), and the older one-per-folder files
+    let old_tag = format!("all-{:08x}-", hash(&dir.to_string_lossy()));
+    for e in existing.iter().filter(|e| e.starts_with("all-")) {
+        let tag = e.get(4..12).unwrap_or("");
+        if !(tags_in_use.contains(tag) || e.starts_with(&old_tag)) {
+            continue;
+        }
         let p = out_dir.join(e);
         if !out.iter().any(|o| p.starts_with(o) || e.starts_with(&o.file_name().unwrap().to_string_lossy().to_string())) {
             let _ = std::fs::remove_file(p);
@@ -981,6 +1063,32 @@ mod tests {
         assert!(v.is_some_and(|d| d > 0.0));
         let bad: i64 = db.query_row("SELECT count(*) FROM depth_area_polygon_hydro_enc_b6 WHERE typeof(drval1) = 'text'", [], |r| r.get(0)).unwrap();
         assert_eq!(bad, 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Two chart sets: one left out isn't opened, and back in use its merged file is reused.
+    #[test]
+    fn chart_sets_on_and_off() {
+        let dir = std::env::temp_dir().join(format!("enc_sets_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for set in ["NOAA/ENC_ROOT/US/1B5X02NE/1/0", "IHO test"] {
+            std::fs::create_dir_all(dir.join(set)).unwrap();
+            std::fs::write(dir.join(set).join("1B5X02NE.000"), include_bytes!("../../tests/data/1B5X02NE.000")).unwrap();
+        }
+        let sets = chart_sets(&dir);
+        assert_eq!(sets.iter().map(|s| (s.name.as_str(), s.cells)).collect::<Vec<_>>(), vec![("IHO test", 1), ("NOAA", 1)]);
+        assert_eq!(sets[0].producers, vec![("1B".to_string(), 1)]);
+        let both = ensure_gpkgs_sets(&dir, &[], &mut |_, _, _| {});
+        assert_eq!(both.len(), 2, "a merged file per set");
+        let noaa_off = ensure_gpkgs_sets(&dir, &[dir.join("NOAA")], &mut |_, _, _| {});
+        assert_eq!(noaa_off.len(), 1);
+        let kept: Vec<_> = both.iter().filter(|p| p.exists()).collect();
+        assert_eq!(kept.len(), 2, "a set that's off keeps its merged file");
+        let made = std::fs::metadata(both.iter().find(|p| !noaa_off.contains(p)).unwrap()).unwrap().modified().unwrap();
+        let again = ensure_gpkgs_sets(&dir, &[], &mut |_, _, _| {});
+        assert_eq!(again.len(), 2);
+        let noaa = again.iter().find(|p| !noaa_off.contains(p)).unwrap();
+        assert_eq!(std::fs::metadata(noaa).unwrap().modified().unwrap(), made, "back in use without merging again");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

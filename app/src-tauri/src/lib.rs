@@ -2089,6 +2089,10 @@ fn open_charts_started(handle: tauri::AppHandle) {
         serde_json::json!({ "detail": "preparing charts: finding chart files" }),
     );
     log_chart_tile("charts: opening started");
+    let sets_off = chart_sets_off(&handle);
+    if !sets_off.is_empty() {
+        log_chart_tile(&format!("charts: {} chart set(s) not in use", sets_off.len()));
+    }
     std::thread::spawn(move || {
         // convert new or changed ENC cells first, saying how far it has got (a big
         // exchange set, such as all of NOAA's, takes a while the first time)
@@ -2101,7 +2105,7 @@ fn open_charts_started(handle: tauri::AppHandle) {
         {
             let h = handle.clone();
             let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
-            prepared_enc_gpkgs.extend(chart::enc::ensure_gpkgs_with(d, &mut |done, todo, name| {
+            prepared_enc_gpkgs.extend(chart::enc::ensure_gpkgs_sets(d, &sets_off, &mut |done, todo, name| {
                 if last.elapsed().as_millis() >= 500 || done == todo || todo == 0 {
                     last = std::time::Instant::now();
                     let detail = if todo == 0 {
@@ -2177,6 +2181,57 @@ fn open_store(
             );
         }
     }
+}
+
+// ---------- chart sets ----------
+// Each top-level folder of an ENC folder (NOAA's ENC_ROOT, the IHO test data …) is a chart
+// set that can be left out of use: not checked or opened at start-up, kept converted on
+// disk, ready at once when back in use. Kept in chart-sets.json in the app's data folder.
+
+fn chart_sets_file(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_data_dir().ok().map(|d| d.join("chart-sets.json"))
+}
+
+fn chart_sets_off(app: &tauri::AppHandle) -> Vec<PathBuf> {
+    chart_sets_file(app)
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v["off"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(PathBuf::from)).collect()))
+        .unwrap_or_default()
+}
+
+/// The chart sets in the ENC folders, with their cells, producers and whether each is in use.
+#[tauri::command]
+async fn chart_sets_list(app: tauri::AppHandle) -> Result<Vec<serde_json::Value>, String> {
+    let off = chart_sets_off(&app);
+    let dirs = s63_cmd::enc_dirs(&app);
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut v = Vec::new();
+        for d in dirs.iter().filter(|d| d.is_dir()) {
+            for s in chart::enc::chart_sets(d) {
+                let on = !off.contains(&s.path);
+                v.push(serde_json::json!({ "path": s.path, "name": s.name, "cells": s.cells, "producers": s.producers, "folder": d, "in_use": on }));
+            }
+        }
+        v
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Put a chart set in or out of use, and open the charts again.
+#[tauri::command]
+fn chart_set_use(app: tauri::AppHandle, path: String, on: bool) -> Result<(), String> {
+    let mut off = chart_sets_off(&app);
+    let p = PathBuf::from(&path);
+    off.retain(|x| x != &p);
+    if !on {
+        off.push(p);
+    }
+    let file = chart_sets_file(&app).ok_or("no app data folder")?;
+    std::fs::write(&file, serde_json::json!({ "off": off }).to_string()).map_err(|e| e.to_string())?;
+    open_charts(app);
+    Ok(())
 }
 
 /// What chart data is installed, for Chart › Chart data.
@@ -2942,6 +2997,8 @@ pub fn run() {
             open_url,
             grib_combine,
             data_status,
+            chart_sets_list,
+            chart_set_use,
             data_etopo_plan,
             data_gshhg,
             data_etopo,
