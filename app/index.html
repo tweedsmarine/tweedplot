@@ -325,6 +325,7 @@
           <button data-tab="marks" class="on">Marks</button>
           <button data-tab="routes">Routes</button>
           <button data-tab="tracks">Tracks</button>
+          <button data-tab="trips">Trips</button>
           <button data-tab="routings">Routings</button>
           <button data-tab="barriers">Barriers</button>
         </div>
@@ -397,9 +398,27 @@
           <div id="lib-barriers-list"></div>
           <div class="wx-note">Lines are fences the routing won't cross; zones are areas it won't enter (exclusion zones, reserves, farms not in the charts). Untick a barrier to keep it but not use it. Marks with a barrier radius (edit the mark) are kept clear too. Points move like marks: click one, wait for the green ring, drag. Right-click a barrier to delete a point or the barrier. Routing › Limits and barriers › Keep off barriers turns them all on or off for routings.</div>
         </div>
+        <div class="tab" data-tab="trips" hidden>
+          <div id="trip-now" class="trip-now"></div>
+          <form id="trip-edit" class="edit" hidden>
+            <div class="wx-row"><b id="trip-edit-title" class="grow">Trip</b></div>
+            <div class="wx-row"><label class="grow">Name</label><input name="name" type="text" placeholder="e.g. Trip 12 (left empty: numbered)" /></div>
+            <div class="wx-row"><label class="grow">Trip number</label><input name="number" type="text" placeholder="e.g. 12 or a logbook number" /></div>
+            <div class="wx-row"><label class="grow">Fishery</label><input name="fishery" type="text" list="trip-fisheries" placeholder="e.g. Tuna, Hoki" /></div>
+            <div class="wx-row"><label class="grow">Crew</label><input name="crew" type="text" placeholder="Who was aboard" /></div>
+            <div class="wx-row"><label class="grow">Started</label><input name="started" type="datetime-local" /></div>
+            <div class="wx-row"><label class="grow">Ended</label><input name="ended" type="datetime-local" title="Leave empty while the trip is on" /></div>
+            <div class="wx-row trip-rec"><label class="grow" title="Start the track recorder (a new track) with the trip"><input name="record" type="checkbox" checked /> Record the track</label></div>
+            <div class="wx-row"><label class="grow">Notes</label></div>
+            <textarea name="notes" rows="2"></textarea>
+            <div class="wx-row"><button type="submit" class="on">Save</button><button type="button" data-act="cancel">Cancel</button><span class="grow"></span><button type="button" data-act="delete" class="warn">Delete</button></div>
+            <datalist id="trip-fisheries"></datalist>
+          </form>
+          <div id="lib-trips-list"></div>
+        </div>
         <div class="tab lib-sub" data-tab="trash" hidden>
           <div class="lib-sub-head"><button class="lib-back" title="Back to the library lists">← Back</button><b class="grow">Trash</b><button id="trash-empty" class="warn" title="Delete everything in the Trash for good">Empty the Trash</button></div>
-          <div class="wx-note">Deleted marks, routes, tracks, routings and barriers are kept here for 30 days, then deleted for good. Select and press Restore to bring them back. A route brings its marks back with it.</div>
+          <div class="wx-note">Deleted marks, routes, tracks, trips, routings and barriers are kept here for 30 days, then deleted for good. Select and press Restore to bring them back. A route brings its marks back with it.</div>
           <div id="lib-trash-list"></div>
         </div>
         <div class="tab lib-sub" data-tab="imports" hidden>

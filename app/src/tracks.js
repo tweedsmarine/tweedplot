@@ -9,6 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import * as activity from "./activity.js";
 import { exportLibraryFile } from "./library.js";
 import { libList, monthTest, dateTest } from "./liblist.js";
+import { tripFilter, trackInTrip, onTrips } from "./tripstore.js";
 import { listen } from "@tauri-apps/api/event";
 
 const KEY = "racenav.tracks";
@@ -309,6 +310,7 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
     filters: [
       { key: "months", label: "Months", type: "multi", months: true, title: "Only tracks from these months, any year", note: "Any year, by when the track started.", test: (t, v) => monthTest(t.stats?.start, v) },
       { key: "dates", label: "Dates", type: "dates", title: "Only tracks between two dates", test: (t, v) => dateTest(t.stats?.start, v) },
+      tripFilter(trackInTrip),
       { key: "source", label: "From", type: "choice", options: (ts) => { const c = new Map(); for (const t of ts) c.set(t.source || "log", (c.get(t.source || "log") || 0) + 1); return [...c].map(([k, n]) => [k, SOURCE[k] || k, n]); }, test: (t, v) => (t.source || "log") === v },
       { key: "temp", label: "Sea temperature", type: "toggle", title: "Only tracks with sea temperature logged", test: (t) => !!t.has_temp },
       { key: "depth", label: "Depth", type: "toggle", title: "Only tracks with depth logged", test: (t) => !!t.has_depth },
@@ -447,9 +449,17 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
   $("trk-time").checked = prefs.atTime;
   $("trk-time").onchange = () => { prefs.atTime = $("trk-time").checked; save(); drawNow(); };
 
+  onTrips(() => trackList.refresh());
   refresh();
   return {
     refresh,
+    /** Show a trip's tracks: the list filtered to it, and (up to 200) drawn on the chart. Returns them. */
+    showTrip(trip) {
+      trackList.setFilter("trip", trip.id);
+      const ts = list.filter((t) => trackInTrip(t, trip));
+      if (ts.length <= 200) setShown(ts.map((t) => t.id), true);
+      return ts;
+    },
     /** The track under a map point, if any (its summary). */
     hitAt(point) {
       const f = map.queryRenderedFeatures([[point.x - 5, point.y - 5], [point.x + 5, point.y + 5]], { layers: ["trk-lines"] })[0];

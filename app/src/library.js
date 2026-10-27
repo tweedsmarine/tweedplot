@@ -11,6 +11,7 @@ import { POI_KINDS, poiImage } from "./poi.js";
 import { iconSelect, imageUrl } from "./iconselect.js";
 import { featureImage } from "./chartfeatures.js";
 import { libList, monthTest, dateTest } from "./liblist.js";
+import { tripFilter, markInTrip, onTrips } from "./tripstore.js";
 import { addKindOptions, symImage, SYMBOL_KINDS } from "./marksymbols.js";
 
 const KEY = "racenav.library";
@@ -324,6 +325,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       { key: "months", label: "Months", type: "multi", months: true, title: "Only marks made in these months, any year (e.g. Nov, Dec, Jan for the tuna season)",
         note: "Any year. Marks with an unknown date are left out.", test: (m, v) => !m.date_unknown && monthTest(m.created, v) },
       { key: "dates", label: "Dates", type: "dates", title: "Only marks made between two dates", note: "Marks with an unknown date are left out.", test: (m, v) => !m.date_unknown && dateTest(m.created, v) },
+      tripFilter(markInTrip),
       { key: "tag", label: "Tag", type: "choice", options: (ms) => countBy(ms, tagsOf, (t) => TAG_LABEL[t] || t), test: (m, v) => tagsOf(m).includes(v) },
       { key: "symbol", label: "TimeZero symbol", type: "choice", options: (ms) => countBy(ms.filter((m) => m.symbol?.startsWith("tz:")), (m) => m.symbol, (s) => `Symbol ${s.slice(3)}`), test: (m, v) => m.symbol === v },
       { key: "route", label: "Routes", type: "choice", options: () => [["used", "In a saved route"], ["unused", "In no route"]], test: (m, v) => inRoute(m) === (v === "used") },
@@ -545,7 +547,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   }
   for (const b of pane.querySelectorAll(".lib-back")) b.onclick = () => tabBar.querySelector(`button[data-tab="${lastTab}"]`)?.click();
   const when = (t) => new Date(t * 1000).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
-  const KINDS = { mark: ["mark", "marks"], route: ["route", "routes"], track: ["track", "tracks"], routing: ["routing", "routings"], barrier: ["barrier", "barriers"] };
+  const KINDS = { mark: ["mark", "marks"], route: ["route", "routes"], track: ["track", "tracks"], routing: ["routing", "routings"], barrier: ["barrier", "barriers"], trip: ["trip", "trips"] };
   const howMany = (n, k) => `${n.toLocaleString()} ${KINDS[k][n === 1 ? 0 : 1]}`;
   const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
   const byKind = (xs) => { const g = {}; for (const x of xs) (g[x.kind] ??= []).push(x.rid); return g; };
@@ -800,9 +802,17 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   }
   const byId = (id) => ids.get(id);
 
+  onTrips(() => markList.refresh());
   refresh();
   return {
     refresh,
+    /** Show a trip's marks: the Marks list filtered to it and the chart showing only those. Returns them. */
+    showTrip(trip) {
+      markList.setFilter("trip", trip.id);
+      if (!prefs.chartFiltered) { prefs.chartFiltered = true; $("lib-f-chart").checked = true; savePrefs(); }
+      draw();
+      return marks.filter((m) => markInTrip(m, trip));
+    },
     marks: () => marks,
     byId,
     attach(r, x) { route = r; routing = x; routeList.redraw(); },

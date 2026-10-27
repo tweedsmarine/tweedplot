@@ -1402,6 +1402,49 @@ async fn library_merge(app: tauri::AppHandle, path: String, job: Option<String>)
     Ok(r)
 }
 
+// ---------- trips ----------
+
+#[tauri::command]
+fn trips_list() -> Result<Vec<library::Trip>, String> {
+    rec_flush();
+    lib()?.trips().map_err(es)
+}
+/// Save a trip; `record` starts the track recorder (a new track) if it isn't on.
+#[tauri::command]
+fn trip_save(app: tauri::AppHandle, trip: library::Trip, record: bool) -> Result<library::Trip, String> {
+    let t = lib()?.save_trip(trip).map_err(es)?;
+    if record && t.ended.is_none() && REC.lock().unwrap().is_none() {
+        rec_flush();
+        rec_begin(None)?;
+    }
+    library_changed(&app);
+    Ok(t)
+}
+/// End a trip now; `stop_recording` stops the track recorder too.
+#[tauri::command]
+fn trip_end(app: tauri::AppHandle, id: i64, stop_recording: bool) -> Result<library::Trip, String> {
+    if stop_recording {
+        rec_stop();
+    } else {
+        rec_flush();
+    }
+    let t = lib()?.end_trip(id, None).map_err(es)?;
+    library_changed(&app);
+    Ok(t)
+}
+#[tauri::command]
+fn trips_delete(app: tauri::AppHandle, ids: Vec<i64>) -> Result<usize, String> {
+    let n = lib()?.delete_trips(&ids).map_err(es)?;
+    library_changed(&app);
+    Ok(n)
+}
+/// The marks and tracks made in a trip: { marks: [ids], tracks: [ids] }.
+#[tauri::command]
+fn trip_contents(id: i64) -> Result<serde_json::Value, String> {
+    let (marks, tracks) = lib()?.trip_contents(id).map_err(es)?;
+    Ok(serde_json::json!({ "marks": marks, "tracks": tracks }))
+}
+
 // ---------- Trash, undoing an import, a part of the library as a file ----------
 
 #[tauri::command]
@@ -3351,6 +3394,11 @@ pub fn run() {
             marks_delete,
             symbols_list,
             library_trash,
+            trips_list,
+            trip_save,
+            trip_end,
+            trips_delete,
+            trip_contents,
             library_restore,
             library_purge,
             library_imports,

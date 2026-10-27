@@ -1096,3 +1096,13 @@ button.on.warn { background: #b03a2e; color: #fff; border-color: #b03a2e; }
 #lib-imports li { display: flex; align-items: center; gap: 8px; }
 #lib-imports li .main { flex: 1; min-width: 0; }
 #lib-imports li small { display: block; color: var(--quiet); white-space: normal; }
+
+/* Trips: the trip on now, and its one large button */
+.trip-now { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; }
+.trip-now .trip-big { flex: none; font-size: 17px; font-weight: 600; padding: 12px; border-radius: 8px; }
+.trip-now .trip-past { flex: none; align-self: flex-start; }
+.trip-now .trip-on { padding: 8px 10px; border-radius: 8px; background: #e8f4ec; border-left: 4px solid var(--good, #2e8b57); }
+.trip-now .trip-on small { display: block; color: var(--quiet); margin-top: 2px; }
+#trip-edit textarea { width: 100%; box-sizing: border-box; }
+.trip-now .trip-big.end { background: #34495e; border-color: #34495e; color: #fff; }
+.trip-now[hidden] { display: none; }

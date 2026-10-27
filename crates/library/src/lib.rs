@@ -16,6 +16,8 @@ use serde_json::Value;
 
 mod gpx;
 mod manage;
+mod trips;
+pub use trips::Trip;
 pub use manage::{Counts, ImportInfo, TrashItem};
 pub mod store;
 pub mod tracks;

@@ -15,6 +15,8 @@ import { setupChartFeatures, featureImage } from "./chartfeatures.js";
 import { setupTides, tideImage } from "./tides.js";
 import { tidalImage } from "./tidalstreams.js";
 import { setupTracks } from "./tracks.js";
+import { setupTrips } from "./trips.js";
+let tripsTimer = 0;
 import { setupRuler } from "./ruler.js";
 import { setupGribTools } from "./gribtools.js";
 import { setupRouteWeather } from "./routewx.js";
@@ -404,6 +406,8 @@ map.on("load", () => {
     status: (s) => { document.getElementById("lib-status").textContent = s; } });
   listen("library-changed", () => { clearTimeout(tracksTimer); tracksTimer = setTimeout(() => { tracks.refresh(); barriers?.refresh(); }, 150); });
   barriers = setupBarriers(map, { before: "track", library, toast });
+  const trips = setupTrips(map, { ui, library, tracks });
+  listen("library-changed", () => { clearTimeout(tripsTimer); tripsTimer = setTimeout(() => trips.refresh(), 200); });
   arrows = setupWindArrows(map, { before: "boat" });
   const wa = document.getElementById("inst-arrows");
   wa.checked = arrows.enabled();

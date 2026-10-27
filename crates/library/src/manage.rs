@@ -9,12 +9,13 @@ use serde::Serialize;
 use crate::{now, Library, Result};
 
 /// The tables that have a Trash, with how a row is named and described in it.
-const KINDS: [(&str, &str, &str); 5] = [
+const KINDS: [(&str, &str, &str); 6] = [
     ("mark", "marks", "grp"),
     ("route", "routes", "''"),
     ("track", "tracks", "coalesce(start, modified)"),
     ("routing", "routings", "route_name"),
     ("barrier", "barriers", "kind"),
+    ("trip", "trips", "fishery"),
 ];
 
 fn table(kind: &str) -> Option<&'static str> {
@@ -71,7 +72,7 @@ impl Library {
         let c = self.db();
         let mut v = Vec::new();
         for (kind, t, detail) in KINDS {
-            let mut q = c.prepare(&format!("SELECT id, name, CAST({detail} AS TEXT), deleted_at FROM {t} WHERE deleted_at IS NOT NULL"))?;
+            let mut q = c.prepare(&format!("SELECT CAST(id AS TEXT), name, CAST({detail} AS TEXT), deleted_at FROM {t} WHERE deleted_at IS NOT NULL"))?;
             let rows = q.query_map([], |r| {
                 Ok(TrashItem { kind: kind.into(), id: r.get(0)?, name: r.get(1)?, detail: r.get::<_, Option<String>>(2)?.unwrap_or_default(), deleted_at: r.get(3)? })
             })?;
