@@ -200,21 +200,37 @@ function tick() {
   render();
 }
 
+/** The next beat that sounds (a snood or a float), past any empty ones, even if it isn't
+ *  scheduled yet: the countdown is to the next tone, not to the next interval. */
+function nextSounded() {
+  const q = run.queue.find((x) => x.type !== "blank");
+  if (q) return q;
+  if (run.ending) return null;
+  const iv = interval().s;
+  let n = run.queue.length ? run.queue.at(-1).n + 1 : run.nextOff;
+  let at = run.queue.length ? run.queue.at(-1).at + iv : run.nextAt;
+  if (run.queue.length && n !== run.nextOff) { n = run.nextOff; at = run.nextAt; }
+  for (let i = 0; i <= period(); i++, n++, at += iv) {
+    const off = n % period(), type = beatType(off);
+    if (type !== "blank") return { type, at, off, n };
+  }
+  return null;
+}
+
 function render() {
-  const next = run?.queue[0] ?? (run && run.state === "running" ? { type: beatType(run.nextOff % period()), at: run.nextAt } : null);
   const box = document.querySelector(".st-next");
   if (!run) { $("st-count").textContent = "–"; $("st-what").textContent = "Press Start to begin the set"; box.className = "st-next"; return; }
   const paused = run.state === "paused";
-  box.className = `st-next${paused ? " paused" : next?.type === "float" ? " float" : ""}`;
+  const sounded = run.state === "running" ? nextSounded() : null;
+  box.className = `st-next${paused ? " paused" : sounded?.type === "float" ? " float" : ""}`;
   if (paused) { $("st-count").textContent = "II"; $("st-what").textContent = "Paused: Resume carries on with the pattern"; }
-  else if (run.ending && !run.queue.some((q) => q.type !== "blank")) { $("st-count").textContent = "✓"; $("st-what").textContent = "Last float: finishing"; }
-  else if (next) {
-    // the next beep that makes a sound (skip the empty beats)
-    const sounded = run.queue.find((q) => q.type !== "blank") ?? next;
+  else if (run.ending && !sounded) { $("st-count").textContent = "✓"; $("st-what").textContent = "Last float: finishing"; }
+  else if (sounded) {
     const s = Math.max(0, sounded.at - ac.currentTime);
     $("st-count").textContent = s >= 10 ? Math.round(s) : s.toFixed(1);
-    const inBasket = sounded.off != null ? sounded.off - cfg.blanks + 1 : null;
-    $("st-what").textContent = sounded.type === "float" ? (run.floats === 0 ? "FIRST FLOAT" : "FLOAT NEXT") : `Snood ${inBasket ?? ""} of ${pat().snoods}`;
+    // which snood of the basket this is: 1 to N
+    const inBasket = sounded.off - pat().blanks + 1;
+    $("st-what").textContent = sounded.type === "float" ? (run.floats === 0 ? "FIRST FLOAT" : "FLOAT NEXT") : `Snood ${inBasket} of ${pat().snoods}`;
   }
   $("st-hooks").textContent = run.hooks.toLocaleString();
   $("st-floats").textContent = run.floats.toLocaleString();
