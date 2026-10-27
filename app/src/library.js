@@ -309,7 +309,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     return [...c].sort((a, b) => b[1] - a[1]).map(([k, n]) => [k, label(k), n]);
   };
   const tagsOf = (m) => (m.tags ? m.tags.split(",").filter(Boolean) : []);
-  const TAG_LABEL = { "at-boat": "made at the boat", depth: "depth in its name", event: "event marks", unsure: "unsure (?)", caution: "caution (!)" };
+  const TAG_LABEL = { "at-boat": "made at the boat", "line-set": "floats and buoys of a line set", depth: "depth in its name", event: "event marks", unsure: "unsure (?)", caution: "caution (!)" };
   const markSub = (m) => {
     const used = usedBy.get(m.id) || 0;
     const t = tagsOf(m).filter((x) => x !== "at-boat" && x !== "depth");

@@ -21,7 +21,7 @@ import { setWindowDark } from "./winchrome.js";
 const $ = (id) => document.getElementById(id);
 const KEY = "racenav.setter";
 const KN = 1852 / 3600; // m/s in a knot
-const DEF = { mode: "time", interval: 8, spacing: 50, shooter: null, wheel: null, rpm: null, snoods: 20, blanks: 2, hz1: 1000, hz2: 1500, wave: "square", vol: 0.8, out: "", logFloats: true, target: null, presets: {} };
+const DEF = { mode: "time", interval: 8, spacing: 50, shooter: null, wheel: null, rpm: null, snoods: 20, blanks: 2, hz1: 1000, hz2: 1500, wave: "square", vol: 0.8, out: "", logFloats: true, markFloats: false, target: null, presets: {} };
 let cfg = { ...DEF };
 try { cfg = { ...DEF, ...JSON.parse(localStorage.getItem(KEY) || "{}") }; } catch { /* storage unavailable */ }
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(cfg)); } catch { /* ignore */ } };
@@ -120,6 +120,10 @@ function renderPattern() {
 let run = null; // { state, t0wall, beats, next: { off, at }, hooks, floats, baskets, last, ending, pausedFor, eventId }
 let timerLoop = 0;
 
+function nameRun(r) {
+  r.startText = new Date().toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  r.group = `Set ${r.startText}`;
+}
 function newRun() {
   return { state: "running", pat: { snoods: Math.max(1, cfg.snoods | 0), blanks: Math.min(4, Math.max(1, cfg.blanks | 0)) }, startedWall: Date.now(), activeMs: 0, resumedWall: Date.now(), queue: [], nextOff: 0, nextAt: 0,
     hooks: 0, floats: 0, baskets: 0, last: false, ending: false, endAt: null };
@@ -142,9 +146,11 @@ async function start() {
     } });
     run = newRun();
     run.eventId = ev.id;
+    nameRun(run);
     if (b1) logBuoy(b1, "start");
   } catch (e) {
     run = newRun();
+    nameRun(run);
     setNote(`Couldn't write the log: ${e}`);
   }
   // a short lead-in, then the first float
@@ -194,6 +200,7 @@ function tick() {
       run.floats += 1;
       if (run.floats > 1) run.baskets += 1;
       if (cfg.logFloats) logFloat(run.floats);
+      if (cfg.markFloats) markAt(`Float ${run.floats}`, "sym-float", "#d35400", `float ${run.floats}`);
     }
   }
   if (run.ending && run.endAt && now >= run.endAt + 1) { finish(); return; }
@@ -315,7 +322,20 @@ function logFloat(n) {
   if (!pos) return;
   invoke("event_save", { event: { kind: "float", name: `Float ${n}`, at: Math.floor(Date.now() / 1000), lat: pos.lat, lon: pos.lon, depth: pos.depth ?? null, temp: pos.water_temp ?? null, sog: pos.sog ?? null, cog: pos.cog ?? null, notes: "", data: { n, set: run?.eventId ?? null } } }).catch(() => {});
 }
+// a library mark at a float or radio buoy: grouped by set ("Set 28 Oct 05:30"), so the whole
+// line can be shown, hidden or deleted together in Library > Marks > Groups
+function markAt(name, kind, colour, what) {
+  const pos = boat && Number.isFinite(boat.lat) ? boat : null;
+  if (!pos || !run) return;
+  const b1 = $("st-b1").value.trim(), b2 = $("st-b2").value.trim();
+  invoke("mark_save", { mark: {
+    name, lat: pos.lat, lon: pos.lon, kind, colour, group: run.group, created: Math.floor(Date.now() / 1000),
+    depth: pos.depth ?? null, temp: pos.water_temp ?? null, sog: pos.sog ?? null, tags: "line-set",
+    notes: [`${what} of the set started ${run.startText}`, (b1 || b2) && `radio buoys ${[b1, b2].filter(Boolean).join(" / ")}`].filter(Boolean).join(" · "),
+  } }).catch(() => {});
+}
 function logBuoy(name, where) {
+  if (cfg.markFloats) markAt(`Radio buoy ${name}`, "sym-float-flag", "#c2185b", `radio buoy ${name} (${where === "middle" ? "part way" : `at the ${where}`})`);
   const pos = boat && Number.isFinite(boat.lat) ? boat : null;
   invoke("event_save", { event: { kind: "radio-buoy", name: `Radio buoy ${name}`, at: Math.floor(Date.now() / 1000), lat: pos?.lat ?? null, lon: pos?.lon ?? null, depth: null, temp: null, sog: pos?.sog ?? null, cog: pos?.cog ?? null,
     notes: where === "start" ? "at the start of the line" : where === "end" ? "at the end of the line" : "", data: { buoy: name, where, set: run?.eventId ?? null } } }).catch(() => {});
@@ -383,12 +403,14 @@ $("st-vol").value = cfg.vol;
 $("st-vol").oninput = (e) => { cfg.vol = Number(e.target.value); save(); };
 $("st-logfloats").checked = cfg.logFloats;
 $("st-logfloats").onchange = (e) => { cfg.logFloats = e.target.checked; save(); };
+$("st-markfloats").checked = cfg.markFloats;
+$("st-markfloats").onchange = (e) => { cfg.markFloats = e.target.checked; save(); };
 $("st-target-in").value = cfg.target ?? "";
 $("st-test1").onclick = async () => { await audio(); SOUND.snood(ac.currentTime + 0.05); };
 $("st-test2").onclick = async () => { await audio(); SOUND.float(ac.currentTime + 0.05); };
 
 // saved settings (a preset per gear: "Bigeye deep", "Swordfish")
-const PRESET_KEYS = ["mode", "interval", "spacing", "shooter", "wheel", "rpm", "snoods", "blanks", "hz1", "hz2", "wave", "vol", "logFloats", "target"];
+const PRESET_KEYS = ["mode", "interval", "spacing", "shooter", "wheel", "rpm", "snoods", "blanks", "hz1", "hz2", "wave", "vol", "logFloats", "markFloats", "target"];
 function renderPresets() {
   const sel = $("st-preset");
   sel.innerHTML = `<option value="">—</option>`;
@@ -425,3 +447,4 @@ render();
 // closing the window while setting: ask first (the main window's log keeps what's done)
 window.addEventListener("beforeunload", (e) => { if (run?.state === "running" || run?.state === "paused") { e.preventDefault(); e.returnValue = ""; } });
 window.__setterRun = () => run; // for debugging in devtools
+window.__setterBoat = (b) => { boat = b; }; // for testing without Signal K
