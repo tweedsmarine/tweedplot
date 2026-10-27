@@ -400,7 +400,7 @@ map.on("load", () => {
   ruler = setupRuler(map, { before: "track", ui, library, route, toast, getVariation: () => vessel.variation });
   const tracks = setupTracks(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn),
     status: (s) => { document.getElementById("lib-status").textContent = s; } });
-  listen("library-changed", () => { clearTimeout(tracksTimer); tracksTimer = setTimeout(() => tracks.refresh(), 150); });
+  listen("library-changed", () => { clearTimeout(tracksTimer); tracksTimer = setTimeout(() => { tracks.refresh(); barriers?.refresh(); }, 150); });
   barriers = setupBarriers(map, { before: "track", library, toast });
   arrows = setupWindArrows(map, { before: "boat" });
   const wa = document.getElementById("inst-arrows");

@@ -1,5 +1,8 @@
-// Library panel: the mark library, saved routes and saved routings, GPX in and out.
-// The data lives in JSON files written by the Rust side (the library folder).
+// Library drawer: the library in use (its name and the Library menu: new, open, merge,
+// import, export, backups), and its marks, routes and routings, each in the same list
+// (liblist.js: search, filters, sort, selection and actions). Tracks and barriers are in
+// tracks.js and barriers.js, in the same list. The data is in the library's database,
+// kept by the Rust side.
 import { invoke } from "@tauri-apps/api/core";
 import * as activity from "./activity.js";
 import { fmt } from "./weather.js";
@@ -7,6 +10,7 @@ import { distNm } from "./instruments.js";
 import { POI_KINDS, poiImage } from "./poi.js";
 import { iconSelect, imageUrl } from "./iconselect.js";
 import { featureImage } from "./chartfeatures.js";
+import { libList, monthTest, dateTest } from "./liblist.js";
 
 const KEY = "racenav.library";
 
@@ -25,9 +29,9 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   let route = null; // the course editor (set by main once both exist)
   let routing = null;
   let editing = null; // mark being edited
-  let prefs = { show: true, filter: { group: "*", type: "*", route: "*", view: false, chart: false } };
+  let prefs = { show: true, chartFiltered: false };
   try { Object.assign(prefs, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
-  prefs.filter = { group: "*", type: "*", route: "*", view: false, chart: false, ...(prefs.filter || {}) };
+  delete prefs.filter; // the filters belong to the list now
   const savePrefs = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ } };
   const listeners = [];
   const status = (s) => { $("lib-status").textContent = s; };
@@ -54,13 +58,15 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   map.addLayer({ id: "lib-labels", type: "symbol", source: "lib-marks", minzoom: 8, filter: ["!=", ["get", "name"], ""],
     layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 6], "icon-allow-overlap": false } }, "track");
   let hidden = new Set();
+  let markList = null; // made below (draw() can run before)
   function draw() {
     const vis = prefs.show ? "visible" : "none";
     map.setLayoutProperty("lib-marks", "visibility", vis);
     map.setLayoutProperty("lib-labels", "visibility", vis);
     map.setLayoutProperty("lib-buoys", "visibility", vis);
     map.setLayoutProperty("lib-poi", "visibility", vis);
-    const shown = prefs.filter.chart ? marks.filter((m) => passes(m, false)) : marks;
+    // every mark, or only those the list shows ("Chart shows only the marks listed")
+    const shown = prefs.chartFiltered && markList ? markList.filtered() : marks;
     map.getSource("lib-marks").setData({ type: "FeatureCollection", features: shown.filter((m) => !hidden.has(m.id)).map((m) => ({
       type: "Feature", properties: m.colour ? { id: m.id, name: m.name, kind: m.kind, colour: m.colour } : { id: m.id, name: m.name, kind: m.kind }, geometry: { type: "Point", coordinates: [m.lon, m.lat] } })) });
   }
@@ -139,12 +145,14 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       marks ||= []; routes ||= []; routings ||= [];
       index();
     } catch (e) { status(`Library: ${e}`); }
-    draw();
     if (sel && !byId(sel)) deselectMark(); // the selected mark was deleted
     if (editing?.id && !byId(editing.id)) closeForm();
-    renderGroups();
-    renderRoutes(); renderMarks(); renderRoutings();
+    routeList.setItems(routes);
+    routingList.setItems(routings);
+    markList.setItems(marks); // draws the chart too (changed)
+    renderDupes();
     loadSymbols();
+    showName();
     for (const f of listeners) f();
   }
 
@@ -180,36 +188,70 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     else job.done(`Removed ${n} duplicate route${n === 1 ? "" : "s"}.`);
     refresh();
   };
-  function renderRoutes() {
+  $("lib-dupes-go").onclick = async () => {
+    const extra = duplicateRoutes();
+    $("lib-dupes-go").disabled = true;
+    let n = 0;
+    const job = activity.start("Removing duplicate routes");
+    const fails = [];
+    for (const r of extra) {
+      try { await invoke("route_delete", { id: r.id }); n++; } catch (e) { fails.push(`${r.name}: ${e}`); }
+      job.progress("Routes", n + fails.length, extra.length);
+    }
+    $("lib-dupes-go").disabled = false;
+    if (fails.length) job.fail(`Removed ${n} of ${extra.length} duplicate routes`, { details: fails });
+    else job.done(`Removed ${n} duplicate route${n === 1 ? "" : "s"}.`);
+    refresh();
+  };
+  function renderDupes() {
     const extra = duplicateRoutes();
     $("lib-dupes").hidden = !extra.length;
     $("lib-dupes").querySelector("span").textContent = `${extra.length} route${extra.length === 1 ? " is a copy" : "s are copies"} of another (same name and marks), from importing a file more than once.`;
-    const ul = $("lib-routes");
-    ul.innerHTML = "";
-    if (!routes.length) ul.innerHTML = `<li class="empty">No saved routes. Make one in the Route drawer and press Save, or import a GPX file.</li>`;
-    for (const r of routes) {
-      const li = document.createElement("li");
-      li.classList.toggle("active", route?.current().routeId === r.id);
-      li.innerHTML = `<div class="main" title="Open this route"><b></b><small></small></div><button data-act="open">Open</button><button data-act="gpx" title="Write this route as GPX">GPX</button><button data-act="del" title="Delete this route (its marks stay in the library)">✕</button>`;
-      li.querySelector("b").textContent = r.name;
-      li.querySelector("small").textContent = `${r.start ? "start + " : ""}${r.marks.length} marks · ${routeLength(r).toFixed(1)} NM · ${[r.start_mark ? byId(r.start_mark)?.name : null, ...r.marks.map((x) => byId(x.mark)?.name ?? "?")].filter(Boolean).join(" → ")}`;
-      const open = () => { route?.loadRoute(r, marks); ui.open("course"); };
-      li.querySelector(".main").onclick = open;
-      li.querySelector('[data-act="open"]').onclick = open;
-      li.querySelector('[data-act="gpx"]').onclick = async () => {
-        try { status(`Written to ${await invoke("gpx_export", { name: r.name, markIds: [], routeIds: [r.id] })}`); } catch (e) { status(String(e)); }
-      };
-      li.querySelector('[data-act="del"]').onclick = () => confirmThen(li, `Delete route “${r.name}”?`, async () => {
-        await invoke("route_delete", { id: r.id }).catch((e) => status(String(e)));
-        if (route?.current().routeId === r.id) route.detach();
-        refresh();
-      });
-      ul.append(li);
-    }
   }
+  const routeSummary = (r) => `${r.start ? "start + " : ""}${r.marks.length} marks · ${routeLength(r).toFixed(1)} NM · ${[r.start_mark ? byId(r.start_mark)?.name : null, ...r.marks.map((x) => byId(x.mark)?.name || "?")].filter(Boolean).join(" → ")}`;
+  const exportGpx = async (name, markIds, routeIds, what) => {
+    try {
+      const p = await invoke("gpx_export", { name, markIds, routeIds });
+      activity.note(`${what} written as GPX`, { details: [`Written to ${p}`] });
+    } catch (e) { activity.start(`Writing ${what} as GPX`).fail(String(e)); }
+  };
+  const routeList = libList($("lib-routes-list"), {
+    key: "routes",
+    noun: ["route", "routes"],
+    search: (r, q) => r.name.toLowerCase().includes(q) || (r.notes || "").toLowerCase().includes(q),
+    sorts: [
+      { key: "new", label: "Newest first", cmp: (a, b) => (b.modified || 0) - (a.modified || 0) },
+      { key: "name", label: "By name", cmp: (a, b) => collate(a.name, b.name) },
+      { key: "len", label: "Longest first", cmp: (a, b) => routeLength(b) - routeLength(a) },
+    ],
+    filters: [
+      { key: "imported", label: "From a file", type: "toggle", title: "Only routes brought in from GPX or TimeZero", test: (r) => !!r.import_id || /^Rte |^Imported route/.test(r.name) },
+    ],
+    row: {
+      render(r, el) {
+        el.innerHTML = `<div class="main" title="Open this route in the Route drawer"><b></b><small></small></div><button data-act="open">Open</button>`;
+        el.querySelector("b").textContent = r.name;
+        el.querySelector("small").textContent = routeSummary(r);
+        el.querySelector('[data-act="open"]').onclick = () => openRoute(r);
+      },
+      update(r, row) { row.classList.toggle("active", route?.current().routeId === r.id); },
+      click: (r) => openRoute(r),
+    },
+    actions: [
+      { label: "GPX", title: "Write the selected routes (and their marks) as one GPX file", run: (rs) => exportGpx(rs.length === 1 ? rs[0].name : "routes", [], rs.map((r) => r.id), rs.length === 1 ? rs[0].name : `${rs.length} routes`) },
+      { label: "Delete", danger: true, title: "Delete the selected routes (their marks stay)", confirm: (rs) => `Delete ${rs.length === 1 ? `“${rs[0].name}”` : `${rs.length} routes`}? Their marks stay in the library.`,
+        run: async (rs) => {
+          let n = 0;
+          for (const r of rs) { try { await invoke("route_delete", { id: r.id }); n++; if (route?.current().routeId === r.id) route.detach(); } catch { /* reported below */ } }
+          activity.note(`Deleted ${n} route${n === 1 ? "" : "s"}`);
+          refresh();
+        } },
+    ],
+    empty: () => "No saved routes. Make one in the Route drawer and press Save, or import a GPX or TimeZero file (Library menu).",
+  });
+  function openRoute(r) { route?.loadRoute(r, marks); ui.open("course"); }
 
   // ---------- marks tab ----------------------------------------------------------
-  // ---------- marks filters ----------------------------------------------------------
   const COURSE = new Set(["mark", "waypoint", "start", "finish"]);
   // the mark editor's Type list shows each type's symbol as the chart draws it
   let kindPicker = null;
@@ -225,55 +267,179 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   }
   const markType = (m) => (COURSE.has(m.kind) || !m.kind ? "course" : m.kind === "danger" ? "danger" : BUOY_ICONS[m.kind] ? "buoy" : POI_KINDS[m.kind] ? "poi" : "course");
   const inRoute = (m) => usedBy.has(m.id);
-  /** Whether a mark passes the filters (`view`: the chart-view filter too). */
-  function passes(m, view) {
-    const f = prefs.filter;
-    if (f.group !== "*" && (m.group || "") !== f.group) return false;
-    if (f.type !== "*" && markType(m) !== f.type) return false;
-    if (f.route !== "*" && inRoute(m) !== (f.route === "used")) return false;
-    if (f.symbol && m.symbol !== f.symbol) return false;
-    if (view && f.view) {
-      const b = map.getBounds();
-      const lon = b.getEast() - b.getWest() >= 360 ? null : ((m.lon - b.getWest()) % 360 + 360) % 360;
-      if (m.lat < b.getSouth() || m.lat > b.getNorth() || (lon != null && lon > b.getEast() - b.getWest())) return false;
-    }
-    return true;
+  const collate = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" }).compare;
+  const inView = (m) => {
+    const b = map.getBounds();
+    const lon = b.getEast() - b.getWest() >= 360 ? null : ((m.lon - b.getWest()) % 360 + 360) % 360;
+    return !(m.lat < b.getSouth() || m.lat > b.getNorth() || (lon != null && lon > b.getEast() - b.getWest()));
+  };
+  const KIND_LABEL = () => Object.fromEntries([...form.kind.querySelectorAll("option")].map((o) => [o.value, o.textContent]));
+  const countBy = (list, key, label = (k) => k) => {
+    const c = new Map();
+    for (const x of list) for (const k of [].concat(key(x))) if (k != null) c.set(k, (c.get(k) || 0) + 1);
+    return [...c].sort((a, b) => b[1] - a[1]).map(([k, n]) => [k, label(k), n]);
+  };
+  const tagsOf = (m) => (m.tags ? m.tags.split(",").filter(Boolean) : []);
+  const TAG_LABEL = { "at-boat": "made at the boat", depth: "depth in its name", event: "event marks", unsure: "unsure (?)", caution: "caution (!)" };
+  const markSub = (m) => {
+    const used = usedBy.get(m.id) || 0;
+    const t = tagsOf(m).filter((x) => x !== "at-boat" && x !== "depth");
+    return [m.group, `${ddm(m.lat, "N", "S")} ${ddm(m.lon, "E", "W")}`,
+      m.created ? (m.date_unknown ? "date unknown" : new Date(m.created * 1000).toLocaleDateString()) : "",
+      m.depth != null ? `${Math.round(m.depth)} m` : "", m.temp != null ? `${m.temp.toFixed(1)} °C` : "",
+      t.join(", "), used ? `in ${used} route${used > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ");
+  };
+  const dot = (m) => {
+    const i = document.createElement("span");
+    i.className = "ll-dot";
+    if (m.colour && !BUOY_ICONS[m.kind] && !POI_KINDS[m.kind]) i.style.background = m.colour;
+    else { i.style.backgroundImage = `url(${kindIcon(m.kind)})`; i.classList.add("icon"); }
+    return i;
+  };
+  markList = libList($("lib-marks-list"), {
+    key: "marks",
+    noun: ["mark", "marks"],
+    search: (m, q) => m.name.toLowerCase().includes(q) || (m.group || "").toLowerCase().includes(q) || (m.notes || "").toLowerCase().includes(q) || (m.tags || "").includes(q),
+    sorts: [
+      { key: "name", label: "By name", cmp: (a, b) => collate(a.group, b.group) || (!a.name - !b.name) || collate(a.name, b.name) || (b.created || 0) - (a.created || 0) },
+      { key: "new", label: "Newest first", cmp: (a, b) => (b.date_unknown ? 0 : b.created || 0) - (a.date_unknown ? 0 : a.created || 0) },
+      { key: "old", label: "Oldest first", cmp: (a, b) => (a.date_unknown || !a.created ? Infinity : a.created) - (b.date_unknown || !b.created ? Infinity : b.created) },
+      { key: "deep", label: "Deepest first", cmp: (a, b) => (b.depth ?? -1) - (a.depth ?? -1) },
+      { key: "near", label: "Nearest the chart centre", cmp: (a, b) => { const c = map.getCenter(); return distNm([c.lng, c.lat], [a.lon, a.lat]) - distNm([c.lng, c.lat], [b.lon, b.lat]); } },
+    ],
+    filters: [
+      { key: "group", label: "Group", type: "choice", options: (ms) => countBy(ms, (m) => m.group || "", (g) => g || "(no group)"), test: (m, v) => (m.group || "") === v },
+      { key: "type", label: "Type", type: "choice", options: (ms) => { const L = KIND_LABEL(); return countBy(ms, (m) => m.kind || "mark", (k) => L[k] || k); }, test: (m, v) => (m.kind || "mark") === v },
+      { key: "months", label: "Months", type: "multi", months: true, title: "Only marks made in these months, any year (e.g. Nov, Dec, Jan for the tuna season)",
+        note: "Any year. Marks with an unknown date are left out.", test: (m, v) => !m.date_unknown && monthTest(m.created, v) },
+      { key: "dates", label: "Dates", type: "dates", title: "Only marks made between two dates", note: "Marks with an unknown date are left out.", test: (m, v) => !m.date_unknown && dateTest(m.created, v) },
+      { key: "tag", label: "Tag", type: "choice", options: (ms) => countBy(ms, tagsOf, (t) => TAG_LABEL[t] || t), test: (m, v) => tagsOf(m).includes(v) },
+      { key: "symbol", label: "TimeZero symbol", type: "choice", options: (ms) => countBy(ms.filter((m) => m.symbol?.startsWith("tz:")), (m) => m.symbol, (s) => `Symbol ${s.slice(3)}`), test: (m, v) => m.symbol === v },
+      { key: "route", label: "Routes", type: "choice", options: () => [["used", "In a saved route"], ["unused", "In no route"]], test: (m, v) => inRoute(m) === (v === "used") },
+      { key: "unknown", label: "Date unknown", type: "toggle", title: "Only marks whose date is only the day they were moved in from another plotter", test: (m) => !!m.date_unknown },
+      { key: "view", label: "In chart view", type: "toggle", title: "Only the marks in the area shown on the chart", test: (m) => inView(m) },
+    ],
+    row: {
+      render(m, el) {
+        el.innerHTML = `<div class="main" title="Show it on the chart"><b></b><small></small></div><button data-act="add" title="Add to the end of the route being edited">+ Route</button><button data-act="edit">Edit</button>`;
+        el.prepend(dot(m));
+        el.querySelector("b").textContent = m.name || "(no name)";
+        el.querySelector("b").classList.toggle("unnamed", !m.name);
+        el.querySelector("small").textContent = markSub(m);
+        el.querySelector('[data-act="add"]').onclick = () => { route?.addLibraryMark(m); status(`${m.name || "The mark"} added to the route.`); };
+        el.querySelector('[data-act="edit"]').onclick = () => editMark(m);
+      },
+      update(m, row) { row.classList.toggle("editing", editing?.id === m.id); },
+      click: (m) => map.flyTo({ center: [m.lon, m.lat], zoom: Math.max(map.getZoom(), 11) }),
+    },
+    actions: [
+      { label: "GPX", title: "Write the selected marks as one GPX file", run: (ms) => exportGpx(ms.length === 1 ? (ms[0].name || "mark") : "marks", ms.map((m) => m.id), [], `${ms.length.toLocaleString()} mark${ms.length === 1 ? "" : "s"}`) },
+      { label: "Group…", title: "Move the selected marks to a group", input: { type: "text", label: "Group", list: () => [...new Set(marks.map((m) => m.group).filter(Boolean))].sort(collate), value: (ms) => (new Set(ms.map((m) => m.group)).size === 1 ? ms[0].group : "") },
+        run: (ms, v) => bulk(ms, { group: (v ?? "").trim() }, `moved to ${v?.trim() ? `“${v.trim()}”` : "no group"}`) },
+      { label: "Type…", title: "Give the selected marks a type", input: { type: "select", label: "Type", options: () => Object.entries(KIND_LABEL()) },
+        run: (ms, v) => bulk(ms, { kind: v }, `now ${(KIND_LABEL()[v] || v).toLowerCase()}`) },
+      { label: "Colour…", title: "Give the selected marks a colour", input: { type: "colour", label: "Colour", value: (ms) => ms[0].colour || "#e67e22" },
+        run: (ms, v) => bulk(ms, { colour: v }, `coloured ${v}`) },
+      { label: "Route", title: "Make a route of the selected marks, in the order listed (opens in the Route drawer)", run: (ms) => {
+        route?.loadRoute({ id: "", name: "", notes: "", start: null, start_mark: null, marks: ms.map((m) => ({ mark: m.id, rounding: "", radius_nm: 0 })) }, marks);
+        ui.open("course");
+      } },
+      { label: "Delete", danger: true, title: "Delete the selected marks", confirm: (ms) => {
+          const inR = ms.filter((m) => usedBy.has(m.id)).length;
+          return `Delete ${ms.length === marks.length ? "all " : ""}${ms.length.toLocaleString()} mark${ms.length === 1 ? "" : "s"}?${inR ? ` ${inR.toLocaleString()} ${inR === 1 ? "is" : "are"} in saved routes and will be taken out of them.` : ""}`;
+        },
+        run: async (ms) => {
+          const inR = ms.filter((m) => usedBy.has(m.id)).length;
+          try {
+            const n = await invoke("marks_delete", { ids: ms.map((m) => m.id), force: true });
+            activity.note(`Deleted ${n.toLocaleString()} mark${n === 1 ? "" : "s"}`, { details: inR ? [`${inR.toLocaleString()} were taken out of saved routes`] : [] });
+          } catch (e) { activity.start("Deleting marks").fail(`Could not delete: ${e}`); }
+          refresh();
+        } },
+    ],
+    empty: () => "No marks yet. Right-click the chart: New library mark here, or import a GPX or TimeZero file (Library menu).",
+    changed: () => draw(),
+  });
+  async function bulk(ms, change, what) {
+    try {
+      const n = await invoke("marks_update", { ids: ms.map((m) => m.id), ...change });
+      activity.note(`${n.toLocaleString()} mark${n === 1 ? "" : "s"} ${what}`);
+    } catch (e) { activity.start("Changing marks").fail(String(e)); }
+    refresh();
   }
-  function renderGroups() {
-    const sel = $("lib-f-group");
-    const groups = [...new Set(marks.map((m) => m.group || ""))].sort((a, b) => a.localeCompare(b));
-    if (prefs.filter.group !== "*" && !groups.includes(prefs.filter.group)) prefs.filter.group = "*";
-    sel.innerHTML = `<option value="*">All groups</option>`;
-    for (const g of groups) {
-      const o = document.createElement("option");
-      o.value = g;
-      o.textContent = g || "(no group)";
-      sel.append(o);
-    }
-    sel.value = prefs.filter.group;
-  }
-  function syncFilterControls() {
-    const f = prefs.filter;
-    $("lib-f-type").value = f.type; $("lib-f-route").value = f.route;
-    $("lib-f-view").checked = f.view; $("lib-f-chart").checked = f.chart;
-    const on = f.group !== "*" || f.type !== "*" || f.route !== "*" || f.view || !!f.symbol;
-    $("lib-f-clear").disabled = !on;
-    for (const id of ["lib-f-group", "lib-f-type", "lib-f-route"]) $(id).classList.toggle("filtering", $(id).value !== "*");
-  }
-  const filterChanged = () => { pageEnd = PAGE; savePrefs(); syncFilterControls(); renderMarks(); draw(); };
-  $("lib-f-group").onchange = (e) => { prefs.filter.group = e.target.value; filterChanged(); };
-  $("lib-f-type").onchange = (e) => { prefs.filter.type = e.target.value; filterChanged(); };
-  $("lib-f-route").onchange = (e) => { prefs.filter.route = e.target.value; filterChanged(); };
-  $("lib-f-view").onchange = (e) => { prefs.filter.view = e.target.checked; filterChanged(); };
-  $("lib-f-chart").onchange = (e) => { prefs.filter.chart = e.target.checked; filterChanged(); };
-  $("lib-f-clear").onclick = () => { Object.assign(prefs.filter, { group: "*", type: "*", route: "*", view: false, symbol: "" }); renderGroups(); filterChanged(); renderSymbols(); };
-  // the chart-view filter follows the chart while the Marks tab is open
+  // the chart-view filter follows the chart
   let viewTimer = null;
   map.on("moveend", () => {
-    if (!prefs.filter.view || $("lib-marks").closest(".tab")?.hidden || $("lib-marks").closest(".pane")?.hidden) return;
+    if (!markList.filters.view && markList.sort !== "near") return;
     clearTimeout(viewTimer);
-    viewTimer = setTimeout(renderMarks, 150);
+    viewTimer = setTimeout(() => markList.refresh(), 200);
   });
+  $("lib-show").checked = prefs.show;
+  $("lib-show").onchange = (e) => { prefs.show = e.target.checked; savePrefs(); draw(); };
+  $("lib-f-chart").checked = !!prefs.chartFiltered;
+  $("lib-f-chart").onchange = (e) => { prefs.chartFiltered = e.target.checked; savePrefs(); draw(); };
+
+  // ---------- the mark editor (above the list) ----------
+  const form = $("mark-edit");
+  function closeForm() {
+    form.hidden = true;
+    editing = null;
+    markList.redraw();
+  }
+  function editMark(m) {
+    editing = { ...m };
+    form.hidden = false;
+    form.name.value = m.name;
+    if (!form.kind.querySelector("optgroup.poi")) {
+      const og = document.createElement("optgroup");
+      og.className = "poi";
+      og.label = "Point of interest";
+      for (const [k, [label]] of Object.entries(POI_KINDS)) og.append(new Option(label, k));
+      form.kind.append(og);
+    }
+    form.kind.value = m.kind || "mark";
+    kindPicker ??= iconSelect(form.kind, kindIcon);
+    kindPicker.refresh();
+    form.group.value = m.group || "";
+    form.lat.value = ddm(m.lat, "N", "S");
+    form.lon.value = ddm(m.lon, "E", "W");
+    form.notes.value = m.notes || "";
+    form.barrier.value = m.barrier_nm > 0 ? m.barrier_nm : "";
+    $("mark-made").textContent = [m.created ? `Made ${m.date_unknown ? "on an unknown date" : new Date(m.created * 1000).toLocaleString()}` : "",
+      m.depth != null ? `depth ${m.depth} m` : "", m.temp != null ? `sea ${m.temp.toFixed(1)} °C` : "", m.sog != null ? `${m.sog.toFixed(1)} kn` : "",
+      m.symbol ? (m.symbol.startsWith("tz:") ? `TimeZero symbol ${m.symbol.slice(3)}` : `symbol ${m.symbol}`) : "",
+      tagsOf(m).length ? `tags: ${tagsOf(m).map((t) => TAG_LABEL[t] || t).join(", ")}` : ""].filter(Boolean).join(" · ");
+    markList.redraw();
+    form.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    form.name.focus();
+  }
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const lat = parseCoord(form.lat.value, "NS"), lon = parseCoord(form.lon.value, "EW");
+    if (lat === null || Math.abs(lat) > 90) { status("Latitude not understood: try 36 50.12 S or -36.8353"); return; }
+    if (lon === null || Math.abs(lon) > 180) { status("Longitude not understood: try 174 49.8 E or 174.83"); return; }
+    const bn = Number(form.barrier.value);
+    const m = { ...editing, name: form.name.value.trim(), kind: form.kind.value, group: form.group.value.trim(), notes: form.notes.value.trim(), lat, lon,
+      barrier_nm: Number.isFinite(bn) && bn > 0 ? bn : 0 };
+    try {
+      const saved = await invoke("mark_save", { mark: m });
+      closeForm();
+      status(`Saved ${saved.name}.`);
+      route?.libraryMarkChanged(saved);
+      await refresh();
+    } catch (err) { status(String(err)); }
+  };
+  form.querySelector('[data-act="cancel"]').onclick = () => closeForm();
+  form.querySelector('[data-act="start"]').onclick = () => { if (editing) { route?.setStartLibraryMark(editing); status(`The route now starts at ${editing.name || "the mark"}.`); } };
+  form.querySelector('[data-act="delete"]').onclick = async (e) => {
+    const b = e.currentTarget;
+    if (!editing) return;
+    if (!b.dataset.armed) { b.dataset.armed = "1"; b.textContent = usedBy.has(editing.id) ? "Delete (in routes)?" : "Delete it?"; setTimeout(() => { delete b.dataset.armed; b.textContent = "Delete"; }, 4000); return; }
+    delete b.dataset.armed; b.textContent = "Delete";
+    try { await invoke("mark_delete", { id: editing.id, force: true }); activity.note(`Deleted ${editing.name || "the mark"}`); } catch (err) { status(String(err)); }
+    closeForm();
+    refresh();
+  };
 
   // ---------- TimeZero symbols: what each one means --------------------------------------
   let symbols = [];
@@ -297,7 +463,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     }
     for (const sy of symbols) {
       const li = document.createElement("li");
-      const showing = prefs.filter.symbol === sy.symbol;
+      const showing = markList.filters.symbol === sy.symbol;
       li.classList.toggle("active", showing);
       li.innerHTML = `<div class="main"><b></b><small></small></div><span class="chips"></span><select title="What this symbol means: every mark with it becomes this type"></select><button data-act="show"></button>`;
       li.querySelector("b").textContent = `Symbol ${sy.symbol.slice(3)}${sy.label ? ` · ${sy.label}` : ""}`;
@@ -323,9 +489,8 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       show.textContent = showing ? "Show all" : "Show";
       show.title = showing ? "Show every mark again" : "Show only the marks with this symbol (list and chart)";
       show.onclick = () => {
-        prefs.filter.symbol = showing ? "" : sy.symbol;
-        if (!showing) prefs.filter.chart = true;
-        filterChanged();
+        markList.setFilter("symbol", showing ? null : sy.symbol);
+        if (!showing) { prefs.chartFiltered = true; $("lib-f-chart").checked = true; savePrefs(); draw(); }
         renderSymbols();
       };
       ul.append(li);
@@ -333,220 +498,166 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   }
   $("lib-symbols").addEventListener("toggle", renderSymbols);
 
-  // delete every mark the list shows (after a check, with the numbers)
-  let shownMarks = [];
-  $("lib-f-delete").onclick = () => {
-    const ids = shownMarks.map((m) => m.id);
-    if (!ids.length) return;
-    const inRoutes = shownMarks.filter((m) => usedBy.has(m.id)).length;
-    const all = ids.length === marks.length;
-    $("lib-bulk").querySelector("span").textContent = `Delete ${all ? "all " : ""}${ids.length} mark${ids.length === 1 ? "" : "s"}${all ? " in the library" : " shown"}?` +
-      `${inRoutes ? ` ${inRoutes} ${inRoutes === 1 ? "is" : "are"} in saved routes and will be taken out of them.` : ""} This can't be undone.`;
-    $("lib-bulk").hidden = false;
-    $("lib-bulk-yes").onclick = async () => {
-      $("lib-bulk-yes").disabled = true;
-      try {
-        const n = await invoke("marks_delete", { ids, force: true });
-        activity.note(`Deleted ${n.toLocaleString()} mark${n === 1 ? "" : "s"}`, { details: inRoutes ? [`${inRoutes.toLocaleString()} were taken out of saved routes`] : [] });
-      } catch (e) { activity.start("Deleting marks").fail(`Could not delete: ${e}`); }
-      $("lib-bulk-yes").disabled = false;
-      $("lib-bulk").hidden = true;
-      await refresh();
-    };
-  };
-  $("lib-bulk-no").onclick = () => { $("lib-bulk").hidden = true; };
-  const PAGE = 200;
-  let pageEnd = PAGE, lastQuery = "";
-  const collate = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" }).compare;
-  function renderMarks() {
-    const q = $("lib-search").value.trim().toLowerCase();
-    const ul = $("lib-marks");
-    parkForm(); // the edit form lives in the list while open: keep it out of the wipe
-    ul.innerHTML = "";
-    if ($("lib-f-group").options.length <= 1 && marks.length) renderGroups();
-    syncFilterControls();
-    const list = marks.filter((m) => (!q || m.name.toLowerCase().includes(q) || m.group.toLowerCase().includes(q) || m.notes?.toLowerCase().includes(q)) && passes(m, true))
-      .sort((a, b) => collate(a.group, b.group) || (!a.name - !b.name) || collate(a.name, b.name) || (b.created || 0) - (a.created || 0));
-    shownMarks = list;
-    $("lib-f-delete").disabled = !list.length;
-    $("lib-bulk").hidden = true;
-    $("lib-f-count").textContent = list.length === marks.length ? `${marks.length} mark${marks.length === 1 ? "" : "s"}` : `${list.length} of ${marks.length} marks`;
-    if (!list.length) ul.innerHTML = `<li class="empty">${marks.length ? "No marks match the search and filters." : "No marks yet. Right-click the chart: New library mark here, or save a route."}</li>`;
-    // a page at a time: thousands of rows would make the drawer slow to open and scroll
-    if (q !== lastQuery) { pageEnd = PAGE; lastQuery = q; }
-    if (editing?.id) { const at = list.findIndex((m) => m.id === editing.id); if (at >= pageEnd) pageEnd = at + 1; }
-    for (const m of list.slice(0, pageEnd)) {
-      const used = usedBy.get(m.id) || 0;
-      const li = document.createElement("li");
-      li.dataset.id = m.id;
-      li.innerHTML = `<div class="main" title="Show on the chart"><b></b><small></small></div><button data-act="start" title="Make this the route's start">Start</button><button data-act="add" title="Add to the end of the route being edited">+ Route</button><button data-act="edit">Edit</button><button data-act="del">✕</button>`;
-      li.querySelector("b").textContent = m.name || "(no name)";
-      li.querySelector("b").classList.toggle("unnamed", !m.name);
-      if (m.colour) li.querySelector(".main").style.borderLeft = `4px solid ${m.colour}`;
-      li.querySelector("small").textContent = `${m.group ? m.group + " · " : ""}${ddm(m.lat, "N", "S")} ${ddm(m.lon, "E", "W")}${m.created ? ` · ${m.date_unknown ? "date unknown" : new Date(m.created * 1000).toLocaleDateString()}` : ""}${m.depth != null ? ` · ${Math.round(m.depth)} m` : ""}${m.temp != null ? ` · ${m.temp.toFixed(1)} °C` : ""}${(() => { const t = (m.tags || "").split(",").filter((x) => x && x !== "at-boat" && x !== "depth"); return t.length ? ` · ${t.join(", ")}` : ""; })()}${used ? ` · in ${used} route${used > 1 ? "s" : ""}` : ""}`;
-      li.querySelector(".main").onclick = () => map.flyTo({ center: [m.lon, m.lat], zoom: Math.max(map.getZoom(), 11) });
-      li.querySelector('[data-act="start"]').onclick = () => { route?.setStartLibraryMark(m); status(`The route now starts at ${m.name}.`); };
-      li.querySelector('[data-act="add"]').onclick = () => { route?.addLibraryMark(m); status(`${m.name} added to the route.`); };
-      li.querySelector('[data-act="edit"]').onclick = () => editMark(m);
-      li.querySelector('[data-act="del"]').onclick = () => confirmThen(li, used ? `${m.name} is in ${used} route${used > 1 ? "s" : ""}: delete it and take it out of them?` : `Delete ${m.name}?`, async () => {
-        await invoke("mark_delete", { id: m.id, force: true }).catch((e) => status(String(e)));
-        refresh();
-      });
-      ul.append(li);
-    }
-    if (list.length > pageEnd) {
-      const li = document.createElement("li");
-      li.className = "more";
-      li.innerHTML = `<button>Show ${Math.min(PAGE, list.length - pageEnd)} more</button><small></small>`;
-      li.querySelector("small").textContent = ` ${list.length - pageEnd} not shown: search, filter by group or tick "In chart view" to narrow the list.`;
-      li.querySelector("button").onclick = () => { pageEnd += PAGE; renderMarks(); };
-      ul.append(li);
-    }
-    if (editing && !form.hidden) placeForm(editing.id);
-  }
-  $("lib-search").oninput = renderMarks;
-  $("lib-show").checked = prefs.show;
-  $("lib-show").onchange = (e) => { prefs.show = e.target.checked; savePrefs(); draw(); };
-
-  const form = $("mark-edit");
-  // the form's home when no mark is being edited (just after the list)
-  const formHome = document.createComment("mark-edit");
-  form.before(formHome);
-  function parkForm() { if (form.parentElement?.id === "lib-marks-edit-row" || form.closest("#lib-marks")) formHome.after(form); }
-  /** Open the form in the list, under the mark's row (or where it was, if that row is filtered out). */
-  function placeForm(id) {
-    const ul = $("lib-marks");
-    const li = [...ul.children].find((x) => x.dataset.id === id);
-    if (!li) { formHome.after(form); return; }
-    const row = document.createElement("li");
-    row.className = "edit-row";
-    row.id = "lib-marks-edit-row";
-    row.append(form);
-    li.after(row);
-    li.classList.add("editing");
-  }
-  function closeForm() {
-    form.hidden = true;
-    editing = null;
-    const row = document.getElementById("lib-marks-edit-row");
-    parkForm();
-    row?.remove();
-    $("lib-marks").querySelector("li.editing")?.classList.remove("editing");
-  }
-  function editMark(m) {
-    if (!document.getElementById("lib-marks-edit-row") || editing?.id !== m.id) { closeForm(); }
-    editing = { ...m };
-    placeForm(m.id);
-    form.hidden = false;
-    form.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    form.name.value = m.name;
-    if (!form.kind.querySelector("optgroup.poi")) {
-      const og = document.createElement("optgroup");
-      og.className = "poi";
-      og.label = "Point of interest";
-      for (const [k, [label]] of Object.entries(POI_KINDS)) og.append(new Option(label, k));
-      form.kind.append(og);
-    }
-    form.kind.value = m.kind || "mark";
-    kindPicker ??= iconSelect(form.kind, kindIcon);
-    kindPicker.refresh();
-    form.group.value = m.group || "";
-    form.lat.value = ddm(m.lat, "N", "S");
-    form.lon.value = ddm(m.lon, "E", "W");
-    form.notes.value = m.notes || "";
-    form.barrier.value = m.barrier_nm > 0 ? m.barrier_nm : "";
-    form.name.focus();
-  }
-  form.onsubmit = async (e) => {
-    e.preventDefault();
-    const lat = parseCoord(form.lat.value, "NS"), lon = parseCoord(form.lon.value, "EW");
-    if (lat === null || Math.abs(lat) > 90) { status("Latitude not understood: try 36 50.12 S or -36.8353"); return; }
-    if (lon === null || Math.abs(lon) > 180) { status("Longitude not understood: try 174 49.8 E or 174.83"); return; }
-    const bn = Number(form.barrier.value);
-    const m = { ...editing, name: form.name.value.trim(), kind: form.kind.value, group: form.group.value.trim(), notes: form.notes.value.trim(), lat, lon,
-      barrier_nm: Number.isFinite(bn) && bn > 0 ? bn : 0 };
-    try {
-      const saved = await invoke("mark_save", { mark: m });
-      closeForm();
-      status(`Saved ${saved.name}.`);
-      route?.libraryMarkChanged(saved);
-      await refresh();
-    } catch (err) { status(String(err)); }
-  };
-  form.querySelector('[data-act="cancel"]').onclick = () => closeForm();
 
   // ---------- routings tab ----------------------------------------------------------
-  function renderRoutings() {
-    const ul = $("lib-routings");
-    ul.innerHTML = "";
-    if (!routings.length) ul.innerHTML = `<li class="empty">No saved routings. Compute one in the Routing panel and press Save.</li>`;
-    for (const r of routings) {
-      const li = document.createElement("li");
-      const result = r.status === "arrived" ? `ETA ${fmt(r.arrival, true)}` : r.status === "grib end" ? "to GRIB end" : r.status ?? "";
-      li.innerHTML = `<div class="main" title="Show this routing"><b></b><small></small></div><button data-act="open">Show</button><button data-act="del">✕</button>`;
-      li.querySelector("b").textContent = r.name;
-      li.querySelector("small").textContent = [r.t0 ? `start ${fmt(r.t0, true)}` : "", result, r.distance_nm != null ? `${r.distance_nm.toFixed(1)} NM` : "", r.grib_name, r.polar].filter(Boolean).join(" · ");
-      const open = async () => {
-        await routing?.showSaved(r.id);
+  const routingList = libList($("lib-routings-list"), {
+    key: "routings",
+    noun: ["routing", "routings"],
+    search: (r, q) => r.name.toLowerCase().includes(q) || (r.route_name || "").toLowerCase().includes(q),
+    sorts: [
+      { key: "new", label: "Newest first", cmp: (a, b) => (b.created || 0) - (a.created || 0) },
+      { key: "name", label: "By name", cmp: (a, b) => collate(a.name, b.name) },
+    ],
+    row: {
+      render(r, el) {
+        const result = r.status === "arrived" ? `ETA ${fmt(r.arrival, true)}` : r.status === "grib end" ? "to GRIB end" : r.status ?? "";
+        el.innerHTML = `<div class="main" title="Show this routing"><b></b><small></small></div><button data-act="open">Show</button>`;
+        el.querySelector("b").textContent = r.name;
+        el.querySelector("small").textContent = [r.t0 ? `start ${fmt(r.t0, true)}` : "", result, r.distance_nm != null ? `${r.distance_nm.toFixed(1)} NM` : "", r.grib_name, r.polar].filter(Boolean).join(" · ");
+        el.querySelector('[data-act="open"]').onclick = () => routing?.showSaved(r.id);
+      },
+      click: (r) => routing?.showSaved(r.id),
+    },
+    actions: [
+      { label: "Delete", danger: true, confirm: (rs) => `Delete ${rs.length === 1 ? `“${rs[0].name}”` : `${rs.length} routings`}?`,
+        run: async (rs) => {
+          for (const r of rs) await invoke("routing_delete", { id: r.id }).catch(() => {});
+          activity.note(`Deleted ${rs.length} routing${rs.length === 1 ? "" : "s"}`);
+          refresh();
+        } },
+    ],
+    empty: () => "No saved routings. Compute one in the Routing drawer and press Save.",
+  });
+
+  // ---------- the Library menu: which library, import, export, backups ----------
+  const menu = $("lib-menu");
+  let current = null;
+  async function showName() {
+    try { current = await invoke("library_current"); } catch { return; }
+    $("lib-name").textContent = current.name === "library" ? "My library" : current.name;
+    $("lib-menu-btn").title = `${current.path}\n(Library menu: new, open, merge, import, export, backups)`;
+  }
+  function closeMenu() { menu.hidden = true; $("lib-menu-btn").classList.remove("on"); }
+  document.addEventListener("pointerdown", (e) => { if (!menu.hidden && !menu.contains(e.target) && !e.target.closest("#lib-menu-btn")) closeMenu(); });
+  $("lib-menu-btn").onclick = () => {
+    if (!menu.hidden) { closeMenu(); return; }
+    const item = (label, title, run, disabled = false) => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      b.title = title;
+      b.disabled = disabled;
+      b.onclick = () => { closeMenu(); run(); };
+      menu.append(b);
+    };
+    const line = () => menu.append(document.createElement("hr"));
+    const head = (t) => { const h = document.createElement("div"); h.className = "lib-menu-head"; h.textContent = t; menu.append(h); };
+    menu.innerHTML = "";
+    head(current ? `${current.name === "library" ? "My library" : current.name} · ${current.path}` : "Library");
+    item("New library…", "Start an empty library (another boat, another fishery): the one in use stays as it is", newLibrary);
+    item("Open library…", "Use another TweedPlot library (.gpkg): one shared from another boat, or for another fishery", openLibrary);
+    for (const r of current?.recent ?? []) item(`   ${r.name}`, r.path, () => useLibrary(r.path, false));
+    item("Save a copy as…", "A copy of the whole library (to share, or keep): the one in use stays in use", saveCopy);
+    item("Merge from another library…", "Bring another library's marks, routes, tracks, routings and barriers into this one (matched as imports are)", mergeLibrary);
+    line();
+    item("Import GPX or TimeZero…", "Marks, routes and tracks from a GPX file, or a TimeZero .tzd or .TzBackup", importFile);
+    item("Export everything as GPX", "Every mark and route in one GPX file in the export folder", () => exportGpx("racenav library", [], [], "The library"));
+    line();
+    item("Backups…", "TweedPlot's own daily copies of this library: use one", showBackups);
+    item("Trash", "Deleted marks, routes and tracks are kept 30 days: bringing them back comes next", () => {}, true);
+    item("Undo an import", "Taking a whole import out again comes next", () => {}, true);
+    menu.hidden = false;
+    $("lib-menu-btn").classList.add("on");
+  };
+  async function useLibrary(path, isNew) {
+    const name = path.split(/[\\/]/).pop().replace(/\.gpkg$/i, "");
+    try {
+      await invoke("library_use", { path, new: isNew });
+      closeForm();
+      markList.clearSelection();
+      activity.note(`${isNew ? "New library" : "Library"} ${name} in use`, { details: [path] });
+      await refresh();
+    } catch (e) { activity.start(`${isNew ? "Making" : "Opening"} library ${name}`).fail(String(e)); }
+  }
+  async function newLibrary() {
+    const p = await invoke("library_pick_db", { save: true, title: "New library", suggest: "Tuna.gpkg" }).catch(() => null);
+    if (p) useLibrary(p, true);
+  }
+  async function openLibrary() {
+    const p = await invoke("library_pick_db", { save: false, title: "Open a library", suggest: null }).catch(() => null);
+    if (p) useLibrary(p, false);
+  }
+  async function saveCopy() {
+    const p = await invoke("library_pick_db", { save: true, title: "Save a copy of the library", suggest: `${current?.name ?? "library"} copy.gpkg` }).catch(() => null);
+    if (!p) return;
+    const job = activity.start("Saving a copy of the library", { params: p });
+    try { await invoke("library_save_copy", { path: p }); job.done("Done.", { details: [`Written to ${p}`] }); } catch (e) { job.fail(String(e)); }
+  }
+  async function mergeLibrary() {
+    const p = await invoke("library_pick_db", { save: false, title: "Merge from another library", suggest: null }).catch(() => null);
+    if (!p) return;
+    const name = p.split(/[\\/]/).pop();
+    const job = activity.start(`Merging ${name} into this library`, { params: p, cancel: (id) => invoke("job_cancel", { job: id }) });
+    try {
+      const rep = await invoke("library_merge", { path: p, job: job.id });
+      reportImport(job, rep);
+      await refresh();
+    } catch (e) { job.fail(`Merging failed: ${e}`); }
+  }
+  async function showBackups() {
+    let list = [];
+    try { list = await invoke("library_backups"); } catch { /* none */ }
+    menu.innerHTML = "";
+    const h = document.createElement("div");
+    h.className = "lib-menu-head";
+    h.textContent = list.length ? "Backups of this library (a copy is made each day TweedPlot starts). Using one copies it beside the library and opens the copy: the backup and the library stay as they are." : "No backups yet: one is made each day TweedPlot starts.";
+    menu.append(h);
+    for (const b of list) {
+      const btn = document.createElement("button");
+      btn.textContent = `${b.day}  (${(b.bytes / 1e6).toFixed(0)} MB)`;
+      btn.title = `Use this backup: ${b.path}`;
+      btn.onclick = async () => {
+        closeMenu();
+        try {
+          const p = await invoke("library_use_backup", { path: b.path });
+          activity.note(`Backup of ${b.day} in use`, { details: [`Copied to ${p}`, "The library before is unchanged: open it again from the Library menu."] });
+          await refresh();
+        } catch (e) { activity.start("Using a backup").fail(String(e)); }
       };
-      li.querySelector(".main").onclick = open;
-      li.querySelector('[data-act="open"]').onclick = open;
-      li.querySelector('[data-act="del"]').onclick = () => confirmThen(li, `Delete routing “${r.name}”?`, async () => {
-        await invoke("routing_delete", { id: r.id }).catch((e) => status(String(e)));
-        refresh();
-      });
-      ul.append(li);
+      menu.append(btn);
     }
+    menu.hidden = false;
   }
 
-  // ---------- GPX ----------------------------------------------------------
-  // GPX, or TimeZero .tzd / .TzBackup: picked and read by the app itself (a TimeZero file can be gigabytes)
-  const many = (list, one) => (list.length > 6 ? `${list.length} ${one}s` : `${one}s: ${list.join(", ")}`);
-  $("lib-import").onclick = async () => {
-    $("lib-import").disabled = true;
-    try {
-      const path = await invoke("library_pick_file");
-      if (!path) return;
-      const name = path.split(/[\\/]/).pop();
-      const job = activity.start(`Importing ${name}`, { params: path, cancel: (id) => invoke("job_cancel", { job: id }) });
-      try {
-        const rep = await invoke("library_import_path", { path, job: job.id });
-        const n = (k, one, many = `${one}s`) => `${k.toLocaleString()} ${k === 1 ? one : many}`;
-        const parts = [
-          rep.marks_added && `${n(rep.marks_added, "new mark")}`,
-          rep.marks_matched && `${n(rep.marks_matched, "mark")} already here`,
-          rep.routes_added.length && n(rep.routes_added.length, "new route"),
-          rep.tracks_added?.length && n(rep.tracks_added.length, "new track"),
-        ].filter(Boolean);
-        const details = [
-          ...(rep.routes_matched ? [`${n(rep.routes_matched, "route")} already here`] : []),
-          ...(rep.routes_added.length && rep.routes_added.length <= 12 ? [`Routes: ${rep.routes_added.join(", ")}`] : []),
-          ...(rep.notes || []).map((t) => t.charAt(0).toUpperCase() + t.slice(1)),
-          ...(rep.not_imported || []).map((t) => `Not imported: ${t}`),
-        ];
-        job.done(parts.length ? parts.join(", ") + "." : "Nothing new: everything in the file is already in the library.", { details, keep: !!rep.not_imported?.length });
-        status("");
-        await refresh();
-        if (rep.tracks_added?.length) window.dispatchEvent(new CustomEvent("racenav-tracks-imported", { detail: rep.tracks_added }));
-      } catch (err) { job.fail(`Import failed: ${err}`); }
-    } catch (err) { status(`Import failed: ${err}`); }
-    finally { $("lib-import").disabled = false; }
-  };
-  $("lib-export").onclick = async () => {
-    try {
-      const p = await invoke("gpx_export", { name: "racenav library", markIds: [], routeIds: [] });
-      activity.note("Library exported as GPX", { details: [`Written to ${p}`] });
-    } catch (e) { activity.start("Exporting the library").fail(String(e)); }
-  };
-
-  /** Inline "are you sure" in place of a list row's buttons. */
-  function confirmThen(li, question, action) {
-    const keep = li.innerHTML;
-    li.innerHTML = `<div class="main"><small></small></div><button data-act="yes" class="on">Delete</button><button data-act="no">Keep</button>`;
-    li.querySelector("small").textContent = question;
-    li.querySelector('[data-act="yes"]').onclick = action;
-    li.querySelector('[data-act="no"]').onclick = () => { li.innerHTML = keep; refresh(); };
+  // ---------- importing GPX and TimeZero (picked and read by the app itself: a TimeZero file can be gigabytes)
+  function reportImport(job, rep) {
+    const n = (k, one, many = `${one}s`) => `${k.toLocaleString()} ${k === 1 ? one : many}`;
+    const parts = [
+      rep.marks_added && `${n(rep.marks_added, "new mark")}`,
+      rep.marks_matched && `${n(rep.marks_matched, "mark")} already here`,
+      rep.routes_added.length && n(rep.routes_added.length, "new route"),
+      rep.tracks_added?.length && n(rep.tracks_added.length, "new track"),
+    ].filter(Boolean);
+    const details = [
+      ...(rep.routes_matched ? [`${n(rep.routes_matched, "route")} already here`] : []),
+      ...(rep.routes_added.length && rep.routes_added.length <= 12 ? [`Routes: ${rep.routes_added.join(", ")}`] : []),
+      ...(rep.notes || []).map((t) => t.charAt(0).toUpperCase() + t.slice(1)),
+      ...(rep.not_imported || []).map((t) => `Not imported: ${t}`),
+    ];
+    job.done(parts.length ? parts.join(", ") + "." : "Nothing new: everything in it is already in the library.", { details, keep: !!rep.not_imported?.length });
+    if (rep.tracks_added?.length) window.dispatchEvent(new CustomEvent("racenav-tracks-imported", { detail: rep.tracks_added }));
   }
+  async function importFile() {
+    const path = await invoke("library_pick_file").catch(() => null);
+    if (!path) return;
+    const name = path.split(/[\\/]/).pop();
+    const job = activity.start(`Importing ${name}`, { params: path, cancel: (id) => invoke("job_cancel", { job: id }) });
+    try {
+      const rep = await invoke("library_import_path", { path, job: job.id });
+      reportImport(job, rep);
+      await refresh();
+    } catch (err) { job.fail(`Import failed: ${err}`); }
+  }
+  window.addEventListener("racenav-import", importFile);
 
   // looked up by id, and how many routes use each mark, worked out once per refresh
   // rather than for every mark on every redraw (a fisher's library runs to tens of thousands)
@@ -565,7 +676,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     refresh,
     marks: () => marks,
     byId,
-    attach(r, x) { route = r; routing = x; renderRoutes(); },
+    attach(r, x) { route = r; routing = x; routeList.redraw(); },
     onChange: (f) => listeners.push(f),
     /** Library marks drawn under the route's own (hide the ones the route shows). */
     hide(list) {

@@ -315,50 +315,26 @@
       </section>
 
       <section class="pane" data-pane="library" data-title="Library">
+        <div class="lib-head">
+          <button id="lib-menu-btn" class="lib-name" title="Library: new, open, merge, import, export, backups" aria-haspopup="menu"><span class="lib-icon">▤</span> <span id="lib-name">Library</span> <span class="caret">▾</span></button>
+          <span class="grow"></span>
+          <label title="Show library marks on the chart"><input id="lib-show" type="checkbox" /> Marks on chart</label>
+        </div>
+        <div id="lib-menu" class="lib-menu" role="menu" hidden></div>
         <div class="tabs">
-          <button data-tab="routes" class="on">Routes</button>
-          <button data-tab="marks">Marks</button>
-          <button data-tab="routings">Routings</button>
+          <button data-tab="marks" class="on">Marks</button>
+          <button data-tab="routes">Routes</button>
           <button data-tab="tracks">Tracks</button>
+          <button data-tab="routings">Routings</button>
           <button data-tab="barriers">Barriers</button>
         </div>
-        <div class="tab" data-tab="routes">
-          <div class="wx-row">
-            <button id="lib-import" title="Read marks, routes and tracks from a GPX file (qtVlm, OpenCPN, Expedition …) or a TimeZero .tzd or .TzBackup">Import…</button>
-            <button id="lib-export" title="Write every mark and route to one GPX file">Export all</button>
-          </div>
-          <div id="lib-dupes" class="wx-row lib-bulk" hidden><span class="grow"></span><button id="lib-dupes-go" class="on">Remove duplicates</button></div>
-          <ul id="lib-routes" class="list"></ul>
-        </div>
-        <div class="tab" data-tab="marks" hidden>
-          <div class="wx-row">
-            <input id="lib-search" class="grow" type="search" placeholder="Find a mark" />
-            <label title="Show library marks on the chart"><input id="lib-show" type="checkbox" /> On chart</label>
-          </div>
-          <div class="wx-row lib-filter">
-            <select id="lib-f-group" title="Only the marks in one group"><option value="*">All groups</option></select>
-            <select id="lib-f-type" title="Only one type of mark">
-              <option value="*">All types</option><option value="course">Course marks and waypoints</option><option value="buoy">Buoys</option>
-              <option value="danger">Dangers</option><option value="poi">Points of interest</option></select>
-          </div>
-          <div class="wx-row lib-filter">
-            <select id="lib-f-route" title="Marks used by a saved route, or not">
-              <option value="*">In a route or not</option><option value="used">In a saved route</option><option value="unused">In no route</option></select>
-            <label title="Only the marks inside the area shown on the chart"><input id="lib-f-view" type="checkbox" /> In chart view</label>
-          </div>
-          <div class="wx-row lib-filter">
-            <span id="lib-f-count" class="grow wx-note"></span>
-            <label title="Apply the group, type and route filters to the marks drawn on the chart too"><input id="lib-f-chart" type="checkbox" /> Filter the chart too</label>
-            <button id="lib-f-clear" title="Show every mark again">Clear</button>
-            <button id="lib-f-delete" title="Delete every mark the search and filters show (pick a group to delete one import)">Delete shown…</button>
-          </div>
+        <div class="tab" data-tab="marks">
+          <div class="wx-row"><label class="grow" title="Draw only the marks the search and filters list (else every mark)"><input id="lib-f-chart" type="checkbox" /> Chart shows only the marks listed</label></div>
           <details id="lib-symbols" class="sub" title="The symbols your marks had in TimeZero: give each a meaning once, and every mark with it (and later imports) takes it">
             <summary>TimeZero symbols</summary>
             <div class="wx-note">Show draws only the marks with that symbol, to see what it was used for; then pick its type.</div>
             <ul id="lib-sym-list" class="list sym-list"></ul>
           </details>
-          <div id="lib-bulk" class="wx-row lib-bulk" hidden><span class="grow"></span><button id="lib-bulk-yes" class="on">Delete</button><button id="lib-bulk-no">Keep</button></div>
-          <ul id="lib-marks" class="list"></ul>
           <form id="mark-edit" class="edit" hidden>
             <div class="wx-row"><label class="grow">Name</label><input name="name" type="text" /></div>
             <div class="wx-row"><label class="grow">Type</label>
@@ -371,20 +347,16 @@
             <div class="wx-row"><label class="grow">Longitude</label><input name="lon" type="text" placeholder="174 49.800 E" /></div>
             <div class="wx-row"><label class="grow">Notes</label><input name="notes" type="text" /></div>
             <div class="wx-row"><label class="grow" title="Routings keep at least this far off the mark (NM), unless it is on their course. Empty or 0: not a barrier.">Barrier radius (NM)</label><input name="barrier" type="number" min="0" max="50" step="0.05" placeholder="none" /></div>
-            <div class="wx-row"><button type="submit" class="on">Save mark</button><button type="button" data-act="cancel">Cancel</button></div>
+            <div id="mark-made" class="wx-note"></div>
+            <div class="wx-row"><button type="submit" class="on">Save mark</button><button type="button" data-act="cancel">Cancel</button><span class="grow"></span>
+              <button type="button" data-act="start" title="Make this mark the start of the route being edited">Route start</button>
+              <button type="button" data-act="delete" class="warn" title="Delete this mark (taken out of any routes)">Delete</button></div>
           </form>
+          <div id="lib-marks-list"></div>
         </div>
-        <div class="tab" data-tab="routings" hidden>
-          <ul id="lib-routings" class="list"></ul>
-        </div>
-        <div class="tab" data-tab="barriers" hidden>
-          <div class="wx-row">
-            <button id="bar-line" title="Draw a line routings may not cross: click points, double-click to finish">Draw line</button>
-            <button id="bar-zone" title="Draw a zone routings may not enter: click corners, double-click to finish">Draw zone</button>
-            <label class="grow" title="Show barriers on the chart"><input id="bar-show" type="checkbox" /> Show</label>
-          </div>
-          <ul id="lib-barriers" class="list"></ul>
-          <div class="wx-note">Lines are fences the routing won't cross; zones are areas it won't enter (exclusion zones, reserves, farms not in the charts). Untick a barrier to keep it but not use it. Marks with a barrier radius (edit the mark) are kept clear too. Points move like marks: click one, wait for the green ring, drag. Right-click a barrier to delete a point or the barrier. Routing › Limits and barriers › Keep off barriers turns them all on or off for routings.</div>
+        <div class="tab" data-tab="routes" hidden>
+          <div id="lib-dupes" class="wx-row lib-bulk" hidden><span class="grow"></span><button id="lib-dupes-go" class="on">Remove duplicates</button></div>
+          <div id="lib-routes-list"></div>
         </div>
         <div class="tab" data-tab="tracks" hidden>
           <div class="wx-row">
@@ -393,7 +365,6 @@
             <span id="trk-rec-info" class="grow wx-note"></span>
           </div>
           <div class="wx-row">
-            <button id="trk-import" title="Read tracks (and any marks and routes) from a GPX file or a TimeZero .tzd">Import…</button>
             <label class="grow" title="Show where each track's boat was at the weather time"><input id="trk-time" type="checkbox" /> Boat at weather time</label>
           </div>
           <div class="wx-row">
@@ -405,19 +376,26 @@
             <div class="vals"><span class="v min"></span><span class="v lo"></span><span class="v tg"></span><span class="v hi"></span><span class="v max"></span><button class="fit" title="Back to the shown tracks' whole range">Fit</button></div>
           </div>
           <div id="trk-colour-note" class="wx-note"></div>
-          <div class="wx-row">
-            <input id="trk-search" class="grow" type="search" placeholder="Find a track (name, date, notes)" />
-            <button id="trk-delete" title="Delete every track the search lists">Delete listed…</button>
-          </div>
-          <div id="trk-bulk" class="wx-row lib-bulk" hidden><span class="grow"></span><button id="trk-bulk-yes" class="on">Delete</button><button id="trk-bulk-no">Keep</button></div>
-          <ul id="lib-tracks" class="list"></ul>
           <form id="trk-edit" class="edit" hidden>
             <div class="wx-row"><label class="grow">Name</label><input name="name" type="text" /></div>
             <div class="wx-row"><label class="grow">Colour</label><input name="colour" type="color" /></div>
             <div class="wx-row"><label class="grow">Notes</label><input name="notes" type="text" /></div>
             <div class="wx-row"><button type="submit" class="on">Save</button><button type="button" data-act="cancel">Cancel</button></div>
           </form>
-          <div class="wx-note">Logged tracks keep a fix every 10 s while moving (sooner in a tack or gybe) and are saved in the library (tweedplot-data\library\library.gpkg). GPX writes to the library's export folder.</div>
+          <div id="lib-tracks-list"></div>
+          <div class="wx-note">Logged tracks keep a fix every 10 s while moving (sooner in a tack or gybe) and are saved in the library. GPX goes to the library's export folder.</div>
+        </div>
+        <div class="tab" data-tab="routings" hidden>
+          <div id="lib-routings-list"></div>
+        </div>
+        <div class="tab" data-tab="barriers" hidden>
+          <div class="wx-row">
+            <button id="bar-line" title="Draw a line routings may not cross: click points, double-click to finish">Draw line</button>
+            <button id="bar-zone" title="Draw a zone routings may not enter: click corners, double-click to finish">Draw zone</button>
+            <label class="grow" title="Show barriers on the chart"><input id="bar-show" type="checkbox" /> Show</label>
+          </div>
+          <div id="lib-barriers-list"></div>
+          <div class="wx-note">Lines are fences the routing won't cross; zones are areas it won't enter (exclusion zones, reserves, farms not in the charts). Untick a barrier to keep it but not use it. Marks with a barrier radius (edit the mark) are kept clear too. Points move like marks: click one, wait for the green ring, drag. Right-click a barrier to delete a point or the barrier. Routing › Limits and barriers › Keep off barriers turns them all on or off for routings.</div>
         </div>
         <div id="lib-status" class="wx-note"></div>
       </section>

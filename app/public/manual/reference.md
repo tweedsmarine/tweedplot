@@ -343,7 +343,7 @@ Wave motion makes heading, speed and wind jump about. Settings › Connections �
 
 **Tracks and recording**
 
-Library > Tracks > **Record** logs the boat's track from Signal K while TweedPlot runs, even while plotting is paused. It keeps a fix every 10 s while moving, sooner in a tack or gybe, and is saved every 30 s and when the app closes. **New log** finishes one track and starts another. Tracks can be shown, renamed, coloured, exported as GPX, and imported from GPX (from a plotter, Navionics, qtVlm and so on). The search finds tracks by name, date or notes; **Delete listed…** deletes every track it lists, after asking (an imported file's tracks are named after the file, so searching for its name finds them all). **Colour by** colours the shown tracks by **Sea temperature**, **Depth** or **Speed (SOG)** instead of their own colours, with a scale on the chart. The filter under it works as the GRIB sea layers' (Weather drawer): drag the outer pointers to set the lowest and highest coloured, and the middle one to a target, drawn bold on the track (for example the temperature the fish were on); **Fit** goes back to the shown tracks' whole range. Parts of a track outside the band are drawn thin and grey, and so are parts with nothing logged. Depth and sea temperature come with TimeZero tracks and are logged by TweedPlot's own recorder from Signal K (`environment.depth.belowSurface`, else `belowTransducer`, and `environment.water.temperature`). Click a track for the time, speed, course, depth and sea temperature at that point; tick **Boat at weather time** to see where the boat was at the slider time, which is useful for comparing a race track with the forecast.
+Library > Tracks > **Record** logs the boat's track from Signal K while TweedPlot runs, even while plotting is paused. It keeps a fix every 10 s while moving, sooner in a tack or gybe, and is saved every 30 s and when the app closes. **New log** finishes one track and starts another. Tracks can be shown, renamed, coloured, exported as GPX, and imported from GPX (from a plotter, Navionics, qtVlm and so on). The Tracks tab finds, filters (months, dates, where from, what was logged) and selects tracks like every Library tab (see The library); an imported file's tracks are named after the file, so searching for its name finds them all. **Colour by** colours the shown tracks by **Sea temperature**, **Depth** or **Speed (SOG)** instead of their own colours, with a scale on the chart. The filter under it works as the GRIB sea layers' (Weather drawer): drag the outer pointers to set the lowest and highest coloured, and the middle one to a target, drawn bold on the track (for example the temperature the fish were on); **Fit** goes back to the shown tracks' whole range. Parts of a track outside the band are drawn thin and grey, and so are parts with nothing logged. Depth and sea temperature come with TimeZero tracks and are logged by TweedPlot's own recorder from Signal K (`environment.depth.belowSurface`, else `belowTransducer`, and `environment.water.temperature`). Click a track for the time, speed, course, depth and sea temperature at that point; tick **Boat at weather time** to see where the boat was at the slider time, which is useful for comparing a race track with the forecast.
 
 **Polars**
 
@@ -596,7 +596,7 @@ Use the rounding sides for race marks and headlands you must keep off; use a gen
 
 **Mark types and points of interest**
 
-In the mark editor (Library > Marks > **Edit**, which opens under that mark in the list, or right-click > **New library mark here**) choose a type: racing mark, waypoint, start or finish line end, danger, an IALA A buoy (port, starboard, cardinals, isolated danger, safe water, special), or a point of interest: good anchorage, mooring, shelter, fishing spot, diving spot, foul ground, wreck, hazard, landing point, camping spot, hut, viewpoint, water filling, fuel, provisions, note. Each draws with its own symbol, and the **Type** list shows each symbol in front of its name. Any of them can be a course mark. On the chart, the course itself shows the start {img:mk:S} and the marks numbered in order {img:mk:1} {img:mk:2}.
+In the mark editor (Library > Marks > **Edit**, which opens above the list, or right-click > **New library mark here**) choose a type: racing mark, waypoint, start or finish line end, danger, an IALA A buoy (port, starboard, cardinals, isolated danger, safe water, special), or a point of interest: good anchorage, mooring, shelter, fishing spot, diving spot, foul ground, wreck, hazard, landing point, camping spot, hut, viewpoint, water filling, fuel, provisions, note. Each draws with its own symbol, and the **Type** list shows each symbol in front of its name. Any of them can be a course mark. On the chart, the course itself shows the start {img:mk:S} and the marks numbered in order {img:mk:1} {img:mk:2}.
 
 | Symbol | Type | Symbol | Type |
 | --- | --- | --- | --- |
@@ -627,13 +627,37 @@ Untick a barrier to keep it but not use it; rename it in the list; move its poin
 
 **The library (Library drawer)**
 
-| Tab | Holds |
+{icon:library} The drawer's header shows the library in use (*My library* is the one TweedPlot started with) and opens the **Library menu**:
+
+| Menu | Does |
 | --- | --- |
-| Routes | Saved routes: open one in the Route drawer, export as GPX, delete |
-| Marks | Every mark, by group: edit, show on the chart, delete (a mark used by a route asks first). Filters narrow the list: one group, one type (course marks and waypoints, buoys, dangers, points of interest), in a saved route or not, and only the marks in the chart view (the list follows the chart as you pan). The count shows how many pass; Filter the chart too applies the group, type and route filters to the marks drawn on the chart; Clear shows every mark again |
-| Routings | Saved routings: show, delete |
-| Tracks | Logged and imported tracks (see Your boat) |
-| Barriers | Lines and zones (above) |
+| New library… | Starts an empty library (another boat, another fishery). The one in use stays as it is, and is in the menu to go back to |
+| Open library… | Uses another TweedPlot library (a `.gpkg` file): one shared from another boat, or kept for a different seasonal fishery. The libraries used lately are listed under it |
+| Save a copy as… | A copy of the whole library, to share or keep. The one in use stays in use |
+| Merge from another library… | Brings another library's marks, routes, tracks, routings and barriers into this one, matched as an import is, so merging twice adds nothing. The other library isn't changed |
+| Import GPX or TimeZero… | Marks, routes and tracks from GPX, or a TimeZero `.tzd` or `.TzBackup` (below) |
+| Export everything as GPX | Every mark and route in one GPX file in the export folder |
+| Backups… | TweedPlot's own daily copies of this library. Using one copies it beside the library and opens the copy: the backup and the library stay as they were |
+
+TweedPlot opens the library last used. Changing library isn't possible while the track recorder is on (stop recording first).
+
+**The tabs**: Marks, Routes, Tracks, Routings and Barriers. Each has the same list:
+
+- **Find**: by name (marks also by group, notes and tags; tracks also by date).
+- **Order**: by name, newest or oldest first, and others to suit (marks: deepest first, nearest the chart centre; routes and tracks: longest first).
+- **Filters**, as buttons under the search: each opens its choices, with how many each has; a filter in use is highlighted and has ✕ to clear it; **Clear filters** clears them all.
+  - Marks: Group, Type, **Months**, **Dates**, Tag, TimeZero symbol, Routes (in a saved route or not), Date unknown, In chart view.
+  - Tracks: Months, Dates, From (logged here, GPX, TimeZero), Sea temperature, Depth (logged along it), On the chart, In chart view.
+  - Routes: From a file. Barriers: Kind, Not used.
+- **Months** picks months of the year, any year: Nov, Dec and Jan shows only what was made in the tuna season, whatever the year. Marks whose date is unknown (moved in from another plotter in one go) are left out by Months and Dates.
+- **Select**: tick rows one by one, or **Select all** (or **Select these**, all the filters list). A bar then shows how many and what can be done with them:
+  - Marks: **GPX** (one file), **Group…** (move them to a group: type a new one or pick), **Type…**, **Colour…**, **Route** (a route of them, in the order listed, opened in the Route drawer), **Delete** (marks in saved routes are taken out of them).
+  - Tracks: **Show**, **Hide**, **GPX**, **Colour…**, **Delete**.
+  - Routes: **GPX**, **Delete** (their marks stay). Routings: Delete. Barriers: Use, Don't use, Delete.
+  Delete asks first, with the number.
+- The list is drawn as it scrolls, so tens of thousands of marks or tracks scroll smoothly.
+
+Marks: click a row to go to the mark; **+ Route** adds it to the route being built; **Edit** opens the mark editor above the list, which also shows when it was made and the depth, sea temperature and speed then, and has **Route start** and **Delete**. **Chart shows only the marks listed** draws just the marks the search and filters list (else every mark), handy with Months or a group. Tracks: the round swatch at the left of a row shows or hides the track on the chart; click the row to zoom to it.
 
 **What's happening: activity cards.** Long jobs (importing, deleting, removing duplicates, moving the library into its database, changing chart sets) show a card above the instruments, over the chart, so it's seen with the drawer closed. While it runs: what it's doing, a bar, and **Cancel** where the job can stop (an import stops after the tracks read so far and keeps what came in; import the file again for the rest). When it's done: one line saying how it went, **Details** for the rest, and **Copy for support**, which puts what happened, with TweedPlot's version, on the clipboard to send to Tweedsmarine. A card that went well goes after a few seconds; one with something to read (things not imported, a failure) stays until closed. Cards never use alarm colours or sounds: alarms stay in the Alarms drawer and banner. Everything is also kept in the **activity log**, Settings > Diagnostics, and in `logs\activity.log` in the data folder.
 
@@ -641,7 +665,7 @@ Untick a barrier to keep it but not use it; rename it in the list; move its poin
 
 **GPX** exchanges marks, routes and tracks with plotters, phone apps, qtVlm, OpenCPN and Navionics. Import adds new marks and matches ones you already have: a named mark within about 50 m of one with the same name, an unnamed mark within a few metres of another unnamed one, so importing the same file twice adds nothing. Marks keep their date, colour and plotter symbol; TimeZero files keep their symbol number and colour, and export back the same way.
 
-**TimeZero.** Library > **Import…** also reads TimeZero's own files: a `.tzd` (File > Export user data) or `.TzBackup`, or the `WaypointRouteDatabase.xml` inside one. Each TimeZero layer becomes a group, marks keep their symbol number, colour and date, text labels come in as marks, and routes come in as routes. Tracks (`Tracks.bin`) come in too, thinned as TweedPlot's own recorder keeps fixes (one every 10 s, sooner in turns; TimeZero keeps one every 2 s), each in its TimeZero colour and named by the file and its start time; tracks already in the library are skipped, so a file can be imported again safely. A plotter's years of tracks are not all shown at once: tick the ones you want in Library > Tracks (100 to a page, newest first). Lines, areas and circles (and the lines some files keep among the tracks, brought in from MaxSea) aren't brought in yet; the import says how many were left out. A TimeZero file with millions of fixes takes several seconds, a 2 GB one about a minute. Unnamed marks (most of a plotter's) stay unnamed and are listed as *(no name)*, newest first, after the named ones. Exports go to `tweedplot-data\library\export`.
+**TimeZero.** Library menu > **Import GPX or TimeZero…** also reads TimeZero's own files: a `.tzd` (File > Export user data) or `.TzBackup`, or the `WaypointRouteDatabase.xml` inside one. Each TimeZero layer becomes a group, marks keep their symbol number, colour and date, text labels come in as marks, and routes come in as routes. Tracks (`Tracks.bin`) come in too, thinned as TweedPlot's own recorder keeps fixes (one every 10 s, sooner in turns; TimeZero keeps one every 2 s), each in its TimeZero colour and named by the file and its start time; tracks already in the library are skipped, so a file can be imported again safely. A plotter's years of tracks are not all shown at once: show the ones you want in Library > Tracks (Months, Dates and In chart view find them quickly). Lines, areas and circles (and the lines some files keep among the tracks, brought in from MaxSea) aren't brought in yet; the import says how many were left out. A TimeZero file with millions of fixes takes several seconds, a 2 GB one about a minute. Unnamed marks (most of a plotter's) stay unnamed and are listed as *(no name)*, newest first, after the named ones. Exports go to `tweedplot-data\library\export`.
 
 **What TweedPlot reads from TimeZero marks.** Besides the symbol, colour, date and layer:
 - *Marks made at the boat.* A mark made within 2 seconds of a track fix and within 30 m of the boat takes that fix's depth, sea temperature and speed, and the tag *at-boat*. Importing a file again fills these in for marks already in the library.
@@ -653,9 +677,7 @@ The Marks list shows each mark's date, depth, sea temperature and tags.
 
 **TimeZero symbols.** Library > Marks > **TimeZero symbols** lists the symbol numbers your marks use, with how many marks and their colours. **Show** draws only the marks with that symbol (list and chart) so you can see what you used it for; then pick its type from the list. Every mark with that symbol takes the type (marks you've changed yourself, and foul ground or wrecks found from their names, keep theirs), and so do marks imported later.
 
-**Delete shown…** deletes every mark the search and filters show, after asking. To take out one import, pick its group (an import's group is the file's name) and press Delete shown; with no filter it deletes the whole library. Marks used by saved routes are taken out of those routes.
 
-The Marks list shows 200 at a time: **Show 200 more**, or narrow it with the search (names, groups and notes), the group filter or **In chart view**. A library of tens of thousands of marks imports in well under a second.
 
 ## Weather and tides
 

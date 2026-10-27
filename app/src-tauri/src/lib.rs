@@ -126,7 +126,8 @@ fn clear_png() -> &'static [u8] {
 static DATA_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static DATA_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static GRIBS: Mutex<BTreeMap<String, Arc<grib::GribFile>>> = Mutex::new(BTreeMap::new());
-static LIBRARY: OnceLock<library::Library> = OnceLock::new();
+/// The library open now (one at a time; File-like New/Open in the Library drawer switch it).
+static LIBRARY: std::sync::RwLock<Option<Arc<library::Library>>> = std::sync::RwLock::new(None);
 /// Latest Signal K connection state, for a page that loads after the event was sent.
 pub(crate) static SK_STATUS: Mutex<Option<(bool, String)>> = Mutex::new(None);
 
@@ -1227,10 +1228,194 @@ fn library_dir(app: &tauri::AppHandle) -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("library"))
 }
 
-fn lib() -> Result<&'static library::Library, String> {
+fn lib() -> Result<Arc<library::Library>, String> {
     LIBRARY
-        .get()
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
         .ok_or_else(|| "The mark library could not be opened.".to_string())
+}
+
+// ---------- which library: New, Open, Recent, Save a copy, Merge ----------
+// The library in use is remembered in library.json in the app's data folder, with the
+// ones used recently. The default is <library folder>\library.gpkg.
+
+fn library_settings_file(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_data_dir().ok().map(|d| d.join("library.json"))
+}
+
+fn library_settings(app: &tauri::AppHandle) -> serde_json::Value {
+    library_settings_file(app)
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+/// The library file to open at start: the one last used, if it's still there.
+fn library_start_file(app: &tauri::AppHandle) -> PathBuf {
+    let v = library_settings(app);
+    v["current"].as_str().map(PathBuf::from).filter(|p| p.is_file()).unwrap_or_else(|| library_dir(app).join("library.gpkg"))
+}
+
+fn library_remember(app: &tauri::AppHandle, path: &std::path::Path) {
+    let v = library_settings(app);
+    let mut recent: Vec<String> = v["recent"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
+    let p = path.to_string_lossy().to_string();
+    recent.retain(|x| x != &p);
+    recent.insert(0, p.clone());
+    recent.truncate(8);
+    if let Some(f) = library_settings_file(app) {
+        let _ = std::fs::write(f, serde_json::json!({ "current": p, "recent": recent }).to_string());
+    }
+}
+
+/// Make `path` the library in use (opening, or making, it).
+fn library_switch(app: &tauri::AppHandle, path: &std::path::Path) -> Result<(), String> {
+    if REC.lock().unwrap().is_some() {
+        return Err("The track recorder is on: stop recording before changing library.".into());
+    }
+    let l = library::Library::open_file(path).map_err(es)?;
+    *LIBRARY.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(l));
+    library_remember(app, path);
+    library_changed(app);
+    Ok(())
+}
+
+/// The library in use: its name, file, and the ones used recently.
+#[tauri::command]
+fn library_current(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let l = lib()?;
+    let v = library_settings(&app);
+    let recent: Vec<serde_json::Value> = v["recent"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str())
+                .filter(|p| std::path::Path::new(p).is_file() && std::path::Path::new(p) != l.path())
+                .map(|p| serde_json::json!({ "path": p, "name": std::path::Path::new(p).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default() }))
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(serde_json::json!({ "name": l.name(), "path": l.path(), "dir": l.dir(), "recent": recent }))
+}
+
+/// Pick a library file: to open (`save` false) or to make or save a copy to (`save` true).
+#[tauri::command]
+async fn library_pick_db(app: tauri::AppHandle, save: bool, title: String, suggest: Option<String>) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let mut d = app.dialog().file().set_title(&title).add_filter("TweedPlot library", &["gpkg"]);
+    if let Ok(l) = lib() {
+        d = d.set_directory(l.dir());
+    }
+    if let Some(s) = suggest {
+        d = d.set_file_name(&s);
+    }
+    let picked = if save { d.blocking_save_file() } else { d.blocking_pick_file() };
+    let Some(p) = picked else { return Ok(None) };
+    let mut p = p.into_path().map_err(|e| e.to_string())?;
+    if save && p.extension().is_none_or(|x| !x.eq_ignore_ascii_case("gpkg")) {
+        p.set_extension("gpkg");
+    }
+    Ok(Some(p.to_string_lossy().into_owned()))
+}
+
+/// Open a library (or make a new one at `path`) and use it.
+#[tauri::command]
+async fn library_use(app: tauri::AppHandle, path: String, new: bool) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if new && p.exists() {
+        return Err(format!("{path} is already there: open it instead, or choose another name"));
+    }
+    if !new && !p.is_file() {
+        return Err(format!("{path} isn't there"));
+    }
+    let h = app.clone();
+    tauri::async_runtime::spawn_blocking(move || library_switch(&h, &p)).await.map_err(|e| e.to_string())?
+}
+
+/// A copy of the whole library in use, at `path` (it stays the one in use).
+#[tauri::command]
+async fn library_save_copy(path: String) -> Result<(), String> {
+    let l = lib()?;
+    tauri::async_runtime::spawn_blocking(move || l.backup_to(std::path::Path::new(&path)).map_err(es)).await.map_err(|e| e.to_string())?
+}
+
+/// Bring another library's marks, routes, tracks, routings and barriers into the one in use.
+#[tauri::command]
+async fn library_merge(app: tauri::AppHandle, path: String, job: Option<String>) -> Result<library::ImportReport, String> {
+    let job = job.unwrap_or_default();
+    let cancel = job_begin(&job);
+    let l = lib()?;
+    let h = app.clone();
+    let j = job.clone();
+    let r = tauri::async_runtime::spawn_blocking(move || {
+        let mut progress = job_progress(&h, &j);
+        l.merge_from(std::path::Path::new(&path), &mut progress, &cancel).map_err(es)
+    })
+    .await
+    .map_err(|e| e.to_string());
+    job_end(&job);
+    let r = r??;
+    library_changed(&app);
+    Ok(r)
+}
+
+/// The library's own backups (newest first): file, date, size.
+#[tauri::command]
+fn library_backups() -> Result<Vec<serde_json::Value>, String> {
+    let l = lib()?;
+    let dir = l.dir().join("backups");
+    let prefix = format!("{}-", l.name());
+    let mut v: Vec<(String, PathBuf, u64)> = std::fs::read_dir(&dir)
+        .map(|r| {
+            r.flatten()
+                .filter_map(|e| {
+                    let n = e.file_name().to_string_lossy().to_string();
+                    let day = n.strip_prefix(prefix.as_str())?.strip_suffix(".gpkg")?.to_string();
+                    (day.len() == 10).then(|| (day, e.path(), e.metadata().map(|m| m.len()).unwrap_or(0)))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    v.sort_by(|a, b| b.0.cmp(&a.0));
+    Ok(v.into_iter().map(|(d, p, n)| serde_json::json!({ "day": d, "path": p, "bytes": n })).collect())
+}
+
+/// Use a backup: copied (the backup stays as it is) beside the library as
+/// "<name> restored <day>.gpkg", which becomes the library in use.
+#[tauri::command]
+async fn library_use_backup(app: tauri::AppHandle, path: String) -> Result<String, String> {
+    let l = lib()?;
+    let src = PathBuf::from(&path);
+    let day = src.file_stem().map(|s| s.to_string_lossy().chars().rev().take(10).collect::<String>().chars().rev().collect::<String>()).unwrap_or_default();
+    let mut to = l.dir().join(format!("{} restored {day}.gpkg", l.name()));
+    let mut k = 2;
+    while to.exists() {
+        to = l.dir().join(format!("{} restored {day} ({k}).gpkg", l.name()));
+        k += 1;
+    }
+    std::fs::copy(&src, &to).map_err(|e| e.to_string())?;
+    let h = app.clone();
+    let t = to.clone();
+    tauri::async_runtime::spawn_blocking(move || library_switch(&h, &t)).await.map_err(|e| e.to_string())??;
+    Ok(to.to_string_lossy().into_owned())
+}
+
+/// Change many marks at once (group, type, colour; empty or missing: unchanged).
+#[tauri::command]
+fn marks_update(app: tauri::AppHandle, ids: Vec<String>, group: Option<String>, kind: Option<String>, colour: Option<String>) -> Result<usize, String> {
+    let n = lib()?.update_marks(&ids, group.as_deref(), kind.as_deref().filter(|k| !k.is_empty()), colour.as_deref()).map_err(es)?;
+    library_changed(&app);
+    Ok(n)
+}
+
+/// Several tracks in one GPX file in the export folder; returns its path.
+#[tauri::command]
+fn tracks_export(name: String, ids: Vec<String>) -> Result<String, String> {
+    rec_flush();
+    let l = lib()?;
+    let text = l.export_tracks_gpx(&ids).map_err(es)?;
+    Ok(l.write_export(&name, &text).map_err(es)?.to_string_lossy().into_owned())
 }
 
 fn es(e: library::Error) -> String {
@@ -3084,6 +3269,15 @@ pub fn run() {
             marks_in,
             library_pick_file,
             library_import_path,
+            library_current,
+            library_pick_db,
+            library_use,
+            library_save_copy,
+            library_merge,
+            library_backups,
+            library_use_backup,
+            marks_update,
+            tracks_export,
             job_cancel,
             activity_log,
             activity_log_read,
@@ -3154,9 +3348,10 @@ pub fn run() {
             let tdir = tide_dir(app.handle());
             let _ = std::fs::create_dir_all(&tdir);
             let _ = TIDE_DIR.set(tdir);
-            match library::Library::open(library_dir(app.handle())) {
+            let start_file = library_start_file(app.handle());
+            match library::Library::open_file(&start_file) {
                 Ok(l) => {
-                    let _ = LIBRARY.set(l);
+                    *LIBRARY.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(l));
                     // a library kept as JSON files (before Oct 2026) moves into the database
                     // once, in the background, with progress; the recorder carries on after
                     let h = app.handle().clone();

@@ -7,6 +7,7 @@ import { infoBox } from "./infobox.js";
 import { seaScale } from "./weather.js";
 import { invoke } from "@tauri-apps/api/core";
 import * as activity from "./activity.js";
+import { libList, monthTest, dateTest } from "./liblist.js";
 import { listen } from "@tauri-apps/api/event";
 
 const KEY = "racenav.tracks";
@@ -277,95 +278,96 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
     draw();
   }
 
-  function render() {
-    const ul = $("lib-tracks");
-    ul.innerHTML = "";
-    if (!list.length) {
-      const li = document.createElement("li");
-      li.className = "wx-note";
-      li.textContent = "No tracks yet: press Record, or import a GPX file.";
-      ul.append(li);
-    }
-    const q = $("trk-search").value.trim().toLowerCase();
-    listed = q ? list.filter((t) => `${t.name} ${t.notes} ${fmtTime(t.stats?.start)}`.toLowerCase().includes(q)) : list;
-    $("trk-delete").disabled = !listed.length;
-    $("trk-bulk").hidden = true;
-    if (q && !listed.length) {
-      const li = document.createElement("li");
-      li.className = "wx-note";
-      li.textContent = "No tracks match.";
-      ul.append(li);
-    }
-    // a page at a time: an import from a fishing plotter can bring thousands of tracks
-    for (const t of listed.slice(0, pageEnd)) {
-      const li = document.createElement("li");
-      const st = t.stats || {};
-      const recording = rec.on && rec.id === t.id;
-      li.innerHTML = `<input type="checkbox" title="Show on the chart"><span class="swatch"></span>
-        <div class="main" title="Zoom to this track"><b></b><small></small></div>
-        <button data-act="gpx" title="Write this track as GPX">GPX</button><button data-act="edit" title="Name, colour, notes">✎</button><button data-act="del" title="Delete this track">✕</button>`;
-      const cb = li.querySelector("input");
-      cb.checked = prefs.shown.includes(t.id);
-      cb.onchange = () => {
-        prefs.shown = cb.checked ? [...prefs.shown, t.id] : prefs.shown.filter((x) => x !== t.id);
-        save(); draw();
-      };
-      li.querySelector(".swatch").style.background = colourOf(t);
-      li.querySelector("b").textContent = `${recording ? "● " : ""}${t.name}`;
-      li.querySelector("small").textContent = [fmtTime(st.start), fmtDur(st.end - st.start), `${(st.distance_nm ?? 0).toFixed(1)} NM`,
-        st.max_sog ? `max ${st.max_sog.toFixed(1)} kn` : "", t.source === "gpx" ? "GPX" : t.source === "timezero" ? "TimeZero" : recording ? "recording" : "log"].filter(Boolean).join(" · ");
-      li.querySelector(".main").onclick = () => zoomTo(t);
-      li.querySelector('[data-act="gpx"]').onclick = async () => {
-        try { status(`Written to ${await invoke("track_export", { id: t.id })}`); } catch (e) { status(String(e)); }
-      };
-      li.querySelector('[data-act="edit"]').onclick = () => edit(t);
-      li.querySelector('[data-act="del"]').onclick = () => {
-        if (recording) { status("This track is being recorded: stop recording first."); return; }
-        const keep = li.innerHTML;
-        li.innerHTML = `<div class="main"><b>Delete ${t.name.replace(/[<&]/g, "")}?</b></div><button data-act="yes" class="bad">Delete</button><button data-act="no">Keep</button>`;
-        li.querySelector('[data-act="no"]').onclick = () => { li.innerHTML = keep; render(); };
-        li.querySelector('[data-act="yes"]').onclick = async () => {
-          try { await invoke("track_delete", { id: t.id }); cache.delete(t.id); } catch (e) { status(String(e)); }
-          refresh();
-        };
-      };
-      ul.append(li);
-    }
-    if (listed.length > pageEnd) {
-      const li = document.createElement("li");
-      li.className = "more";
-      li.innerHTML = `<button>Show ${Math.min(PAGE, listed.length - pageEnd)} more</button><small></small>`;
-      li.querySelector("small").textContent = ` ${listed.length - pageEnd} more tracks, newest first.`;
-      li.querySelector("button").onclick = () => { pageEnd += PAGE; render(); };
-      ul.append(li);
-    }
+  // the list: the same as every library tab (liblist.js); the swatch at the left of a row
+  // shows the track on the chart, or hides it
+  const isShown = (t) => prefs.shown.includes(t.id);
+  function setShown(ids, on) {
+    const set = new Set(prefs.shown);
+    for (const id of ids) { if (on) set.add(id); else set.delete(id); }
+    prefs.shown = [...set];
+    save(); trackList.redraw(); draw();
   }
-  const PAGE = 100;
-  let pageEnd = PAGE, listed = [];
-  $("trk-search").oninput = () => { pageEnd = PAGE; render(); };
-  $("trk-delete").onclick = () => {
-    const ids = listed.filter((t) => !(rec.on && rec.id === t.id)).map((t) => t.id);
-    if (!ids.length) return;
-    const all = ids.length === list.length;
-    $("trk-bulk").querySelector("span").textContent = `Delete ${all ? "all " : ""}${ids.length} track${ids.length === 1 ? "" : "s"}${all ? "" : " listed"}? This can't be undone.`;
-    $("trk-bulk").hidden = false;
-    $("trk-bulk-yes").onclick = async () => {
-      $("trk-bulk-yes").disabled = true;
-      try {
-        const n = await invoke("tracks_delete", { ids });
-        for (const id of ids) cache.delete(id);
-        activity.note(`Deleted ${n.toLocaleString()} track${n === 1 ? "" : "s"}`);
-      } catch (e) { activity.start("Deleting tracks").fail(String(e)); }
-      $("trk-bulk-yes").disabled = false;
-      await refresh();
-    };
+  const overlapsView = (t) => {
+    const b = t.stats?.bbox;
+    if (!b) return false;
+    const v = map.getBounds();
+    return !(b[2] < v.getWest() || b[0] > v.getEast() || b[3] < v.getSouth() || b[1] > v.getNorth());
   };
-  $("trk-bulk-no").onclick = () => { $("trk-bulk").hidden = true; };
+  const SOURCE = { log: "Logged here", gpx: "GPX", timezero: "TimeZero" };
+  const collate = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" }).compare;
+  const trackList = libList($("lib-tracks-list"), {
+    key: "tracks",
+    noun: ["track", "tracks"],
+    search: (t, q) => `${t.name} ${t.notes} ${fmtTime(t.stats?.start)}`.toLowerCase().includes(q),
+    sorts: [
+      { key: "new", label: "Newest first", cmp: (a, b) => (b.stats?.start ?? b.modified ?? 0) - (a.stats?.start ?? a.modified ?? 0) },
+      { key: "old", label: "Oldest first", cmp: (a, b) => (a.stats?.start ?? Infinity) - (b.stats?.start ?? Infinity) },
+      { key: "name", label: "By name", cmp: (a, b) => collate(a.name, b.name) },
+      { key: "long", label: "Longest first", cmp: (a, b) => (b.stats?.distance_nm ?? 0) - (a.stats?.distance_nm ?? 0) },
+    ],
+    filters: [
+      { key: "months", label: "Months", type: "multi", months: true, title: "Only tracks from these months, any year", note: "Any year, by when the track started.", test: (t, v) => monthTest(t.stats?.start, v) },
+      { key: "dates", label: "Dates", type: "dates", title: "Only tracks between two dates", test: (t, v) => dateTest(t.stats?.start, v) },
+      { key: "source", label: "From", type: "choice", options: (ts) => { const c = new Map(); for (const t of ts) c.set(t.source || "log", (c.get(t.source || "log") || 0) + 1); return [...c].map(([k, n]) => [k, SOURCE[k] || k, n]); }, test: (t, v) => (t.source || "log") === v },
+      { key: "temp", label: "Sea temperature", type: "toggle", title: "Only tracks with sea temperature logged", test: (t) => !!t.has_temp },
+      { key: "depth", label: "Depth", type: "toggle", title: "Only tracks with depth logged", test: (t) => !!t.has_depth },
+      { key: "shown", label: "On the chart", type: "toggle", title: "Only the tracks shown on the chart", test: (t) => isShown(t) },
+      { key: "view", label: "In chart view", type: "toggle", title: "Only tracks that pass through the area shown on the chart", test: (t) => overlapsView(t) },
+    ],
+    row: {
+      render(t, el) {
+        const st = t.stats || {};
+        const recording = rec.on && rec.id === t.id;
+        el.innerHTML = `<button class="ll-show" title="Show on the chart, or hide"></button><div class="main" title="Zoom to this track"><b></b><small></small></div><button data-act="edit" title="Name, colour, notes">Edit</button>`;
+        el.querySelector("b").textContent = `${recording ? "● " : ""}${t.name}`;
+        el.querySelector("small").textContent = [fmtTime(st.start), fmtDur(st.end - st.start), `${(st.distance_nm ?? 0).toFixed(1)} NM`,
+          st.max_sog ? `max ${st.max_sog.toFixed(1)} kn` : "", t.has_temp ? "°C" : "", t.has_depth ? "depth" : "",
+          t.source === "gpx" ? "GPX" : t.source === "timezero" ? "TimeZero" : recording ? "recording" : "log"].filter(Boolean).join(" · ");
+        el.querySelector(".ll-show").onclick = (e) => { e.stopPropagation(); setShown([t.id], !isShown(t)); };
+        el.querySelector('[data-act="edit"]').onclick = () => edit(t);
+      },
+      update(t, row) {
+        const b = row.querySelector(".ll-show");
+        b.style.setProperty("--c", colourOf(t));
+        b.classList.toggle("on", isShown(t));
+      },
+      click: (t) => zoomTo(t),
+    },
+    actions: [
+      { label: "Show", title: "Show the selected tracks on the chart", run: (ts) => {
+        if (ts.length > 200) { activity.start("Showing tracks").fail(`${ts.length.toLocaleString()} tracks is too many to draw at once: choose 200 or fewer (filter by months, dates or the chart view).`); return; }
+        setShown(ts.map((t) => t.id), true);
+      } },
+      { label: "Hide", title: "Hide the selected tracks", run: (ts) => setShown(ts.map((t) => t.id), false) },
+      { label: "GPX", title: "Write the selected tracks as one GPX file", run: async (ts) => {
+        const job = activity.start(`Writing ${ts.length.toLocaleString()} track${ts.length === 1 ? "" : "s"} as GPX`);
+        try { const p = await invoke("tracks_export", { name: ts.length === 1 ? ts[0].name : "tracks", ids: ts.map((t) => t.id) }); job.done("Done.", { details: [`Written to ${p}`] }); } catch (e) { job.fail(String(e)); }
+      } },
+      { label: "Colour…", title: "Give the selected tracks a colour", input: { type: "colour", label: "Colour", value: (ts) => colourOf(ts[0]) }, run: async (ts, v) => {
+        for (const t of ts) { try { await invoke("track_update", { id: t.id, name: t.name, notes: t.notes || "", colour: v }); cache.delete(t.id); } catch { /* reported by the count */ } }
+        activity.note(`${ts.length.toLocaleString()} track${ts.length === 1 ? "" : "s"} coloured ${v}`);
+        refresh();
+      } },
+      { label: "Delete", danger: true, title: "Delete the selected tracks", confirm: (ts) => `Delete ${ts.length === list.length ? "all " : ""}${ts.length.toLocaleString()} track${ts.length === 1 ? "" : "s"}?${ts.some((t) => rec.on && rec.id === t.id) ? " (Not the one being recorded.)" : ""}`,
+        run: async (ts) => {
+          const ids = ts.filter((t) => !(rec.on && rec.id === t.id)).map((t) => t.id);
+          try {
+            const n = await invoke("tracks_delete", { ids });
+            for (const id of ids) cache.delete(id);
+            activity.note(`Deleted ${n.toLocaleString()} track${n === 1 ? "" : "s"}`);
+          } catch (e) { activity.start("Deleting tracks").fail(String(e)); }
+          await refresh();
+        } },
+    ],
+    empty: () => "No tracks yet: press Record, or import a GPX or TimeZero file (Library menu).",
+  });
+  function render() { trackList.setItems(list); }
+  map.on("moveend", () => { if (trackList.filters.view) trackList.refresh(); });
 
   function zoomTo(t) {
     const b = t.stats?.bbox;
     if (!b) return;
-    if (!prefs.shown.includes(t.id)) { prefs.shown.push(t.id); save(); render(); draw(); }
+    if (!prefs.shown.includes(t.id)) setShown([t.id], true);
     map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: { top: 60, bottom: 80, left: 440, right: 80 }, duration: 600, maxZoom: 15 });
   }
 
@@ -429,7 +431,6 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
   }).catch(() => {});
 
   // ---------- import and options ----------------------------------------------------------
-  $("trk-import").onclick = () => document.getElementById("lib-import").click();
   window.addEventListener("racenav-tracks-imported", async () => {
     const before = new Set(list.map((t) => t.id));
     await refresh();

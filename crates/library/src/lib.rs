@@ -210,6 +210,8 @@ pub struct ImportReport {
 
 pub struct Library {
     dir: PathBuf,
+    /// The database's file name in `dir` (library.gpkg, or another library opened by name).
+    file: String,
     db: Mutex<Connection>,
     /// The one-off move from the JSON files is running (lists may be incomplete).
     converting: AtomicBool,
@@ -223,7 +225,7 @@ const SAME_UNNAMED_NM: f64 = 0.002;
 const BULK_SAME_SECOND: usize = 20;
 
 const MARK_COLS: &str = "id, name, lat, lon, kind, notes, grp, barrier_nm, modified, created, date_unknown, colour, symbol, depth, temp, sog, tags";
-const TRACK_COLS: &str = "id, name, notes, colour, source, modified, points, start, \"end\", distance_nm, max_sog, west, south, east, north";
+const TRACK_COLS: &str = "id, name, notes, colour, source, modified, points, start, \"end\", distance_nm, max_sog, west, south, east, north, has_depth, has_temp";
 
 fn mark_row(r: &rusqlite::Row) -> rusqlite::Result<Mark> {
     Ok(Mark {
@@ -260,6 +262,8 @@ fn track_summary_row(r: &rusqlite::Row) -> rusqlite::Result<TrackSummary> {
         source: r.get(4)?,
         modified: r.get(5)?,
         stats: TrackStats { points: r.get::<_, i64>(6)? as usize, start: r.get(7)?, end: r.get(8)?, distance_nm: r.get(9)?, max_sog: r.get(10)?, bbox },
+        has_depth: r.get::<_, i64>(15)? != 0,
+        has_temp: r.get::<_, i64>(16)? != 0,
     })
 }
 
@@ -355,9 +359,17 @@ fn write_track(c: &Connection, t: &Track, import_id: Option<i64>) -> Result<()> 
 impl Library {
     /// Open the library in `dir` (made if missing): `<dir>/library.gpkg`, and `<dir>/export` for files written.
     pub fn open(dir: impl Into<PathBuf>) -> Result<Self> {
-        let dir = dir.into();
+        Self::open_file(dir.into().join(store::FILE))
+    }
+
+    /// Open (or make) the library in the database file `path`: another boat's library, one
+    /// for another fishery, a copy. Its folder holds its `export` and `backups` too.
+    pub fn open_file(path: impl Into<PathBuf>) -> Result<Self> {
+        let path = path.into();
+        let dir = path.parent().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
+        let file = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| store::FILE.into());
         std::fs::create_dir_all(dir.join("export"))?;
-        let c = store::open(&dir.join(store::FILE))?;
+        let c = store::open(&path)?;
         // the Trash keeps deleted things for a while
         let old = now() - store::TRASH_DAYS * 86_400;
         for t in ["marks", "routes", "routings", "barriers", "tracks", "trips"] {
@@ -366,7 +378,7 @@ impl Library {
         if store::meta(&c, "marks_reviewed")?.is_none() {
             review_marks(&c)?;
         }
-        Ok(Library { dir, db: Mutex::new(c), converting: AtomicBool::new(false) })
+        Ok(Library { dir, file, db: Mutex::new(c), converting: AtomicBool::new(false) })
     }
 
     pub fn dir(&self) -> &Path {
@@ -375,7 +387,12 @@ impl Library {
 
     /// The database file.
     pub fn path(&self) -> PathBuf {
-        self.dir.join(store::FILE)
+        self.dir.join(&self.file)
+    }
+
+    /// The library's name: its file's name without .gpkg.
+    pub fn name(&self) -> String {
+        Path::new(&self.file).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
     }
 
     fn db(&self) -> std::sync::MutexGuard<'_, Connection> {
@@ -482,6 +499,184 @@ impl Library {
         tx.execute("DELETE FROM gone", [])?;
         tx.commit()?;
         Ok(n)
+    }
+
+    /// Change many marks at once: any of group, type and colour (None leaves it as it is).
+    /// Returns how many changed.
+    pub fn update_marks(&self, ids: &[String], group: Option<&str>, kind: Option<&str>, colour: Option<&str>) -> Result<usize> {
+        let mut c = self.db();
+        let tx = c.transaction()?;
+        let mut n = 0;
+        {
+            let mut q = tx.prepare(
+                "UPDATE marks SET grp = coalesce(?2, grp), kind = coalesce(?3, kind), colour = coalesce(?4, colour), modified = ?5
+                 WHERE id = ?1 AND deleted_at IS NULL",
+            )?;
+            let t = now();
+            for id in ids {
+                n += q.execute(params![id, group.map(str::trim), kind, colour, t])?;
+            }
+        }
+        tx.commit()?;
+        Ok(n)
+    }
+
+    /// Several tracks in one GPX file.
+    pub fn export_tracks_gpx(&self, ids: &[String]) -> Result<String> {
+        let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\" creator=\"racenav\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n");
+        for id in ids {
+            out.push_str(&self.track(id)?.trk_xml());
+        }
+        out.push_str("</gpx>\n");
+        Ok(out)
+    }
+
+    /// Bring everything from another library into this one: marks (matched by id, or by
+    /// name and place as imports are), routes (with their marks; matched by name and marks),
+    /// tracks (matched by their first and last fix), routings and barriers (by id). The
+    /// other library isn't changed. `progress(step, done, total)`; `cancel` stops part way.
+    pub fn merge_from(&self, other: &Path, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<ImportReport> {
+        if other.canonicalize().ok() == self.path().canonicalize().ok() {
+            return Err(Error::Store("that's the library already open".into()));
+        }
+        progress("Reading the other library", 0, 0);
+        let o = Library::open_file(other)?;
+        let id = self.begin_import(&other.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), "library")?;
+        let mut rep = ImportReport::default();
+        // marks: the same id is the same mark; else matched as an import matches
+        let theirs = o.marks()?;
+        let mut ours = self.marks()?;
+        let by_id: std::collections::HashSet<String> = ours.iter().map(|m| m.id.clone()).collect();
+        const CELL: f64 = 0.01;
+        let cell = |lat: f64, lon: f64| ((lat / CELL).floor() as i64, (lon / CELL).floor() as i64);
+        let mut index: std::collections::HashMap<(String, (i64, i64)), Vec<usize>> = std::collections::HashMap::new();
+        for (i, m) in ours.iter().enumerate() {
+            index.entry((m.name.to_lowercase(), cell(m.lat, m.lon))).or_default().push(i);
+        }
+        let mut map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let first_new = ours.len();
+        progress("Marks", 0, theirs.len());
+        for (k, m) in theirs.iter().enumerate() {
+            if k % 2000 == 0 {
+                progress("Marks", k, theirs.len());
+            }
+            if by_id.contains(&m.id) {
+                rep.marks_matched += 1;
+                map.insert(m.id.clone(), m.id.clone());
+                continue;
+            }
+            let key = m.name.trim().to_lowercase();
+            let near = if key.is_empty() { SAME_UNNAMED_NM } else { SAME_MARK_NM };
+            let here = nav_core::LatLon::new(m.lat, m.lon);
+            let (cy, cx) = cell(m.lat, m.lon);
+            let mut found = None;
+            'look: for dy in -1..=1 {
+                for dx in -1..=1 {
+                    if let Some(v) = index.get(&(key.clone(), (cy + dy, cx + dx))) {
+                        if let Some(&i) = v.iter().find(|&&i| nav_core::LatLon::new(ours[i].lat, ours[i].lon).distance_to(&here) < near) {
+                            found = Some(ours[i].id.clone());
+                            break 'look;
+                        }
+                    }
+                }
+            }
+            match found {
+                Some(x) => {
+                    rep.marks_matched += 1;
+                    map.insert(m.id.clone(), x);
+                }
+                None => {
+                    rep.marks_added += 1;
+                    map.insert(m.id.clone(), m.id.clone());
+                    index.entry((key, (cy, cx))).or_default().push(ours.len());
+                    ours.push(m.clone());
+                }
+            }
+        }
+        // routes, their marks given as ours
+        let route_key = |name: &str, marks: &[RouteMark]| (name.to_lowercase(), marks.iter().map(|m| m.mark.clone()).collect::<Vec<_>>());
+        let mut known: std::collections::HashSet<(String, Vec<String>)> = self.routes()?.iter().map(|r| route_key(&r.name, &r.marks)).collect();
+        let route_ids: std::collections::HashSet<String> = self.routes()?.into_iter().map(|r| r.id).collect();
+        let mut new_routes = Vec::new();
+        for mut r in o.routes()? {
+            for x in &mut r.marks {
+                if let Some(to) = map.get(&x.mark) {
+                    x.mark = to.clone();
+                }
+            }
+            r.start_mark = r.start_mark.and_then(|s| map.get(&s).cloned());
+            if route_ids.contains(&r.id) || !known.insert(route_key(&r.name, &r.marks)) {
+                rep.routes_matched += 1;
+                continue;
+            }
+            rep.routes_added.push(r.name.clone());
+            new_routes.push(r);
+        }
+        {
+            let mut c = self.db();
+            let tx = c.transaction()?;
+            for m in &ours[first_new..] {
+                insert_mark(&tx, m, Some(id))?;
+            }
+            for r in &new_routes {
+                write_route(&tx, r, Some(id))?;
+            }
+            tx.commit()?;
+        }
+        // routings and barriers: by id
+        let have_x: std::collections::HashSet<String> = self.routings()?.into_iter().map(|r| r.id).collect();
+        for s in o.routings()? {
+            if !have_x.contains(&s.id) {
+                write_routing(&self.db(), &o.routing(&s.id)?)?;
+            }
+        }
+        let have_b: std::collections::HashSet<String> = self.barriers()?.into_iter().map(|b| b.id).collect();
+        for b in o.barriers()? {
+            if !have_b.contains(&b.id) {
+                self.save_barrier(b)?;
+            }
+        }
+        // tracks: by first and last fix, a few hundred at a time
+        let have: std::collections::HashSet<(i64, i64)> = self.tracks()?.into_iter().filter_map(|t| t.stats.start.zip(t.stats.end)).collect();
+        let theirs = o.tracks()?;
+        let total = theirs.len();
+        let mut batch = Vec::new();
+        let mut same = 0;
+        for (k, t) in theirs.iter().enumerate() {
+            if cancel.load(Ordering::Relaxed) {
+                rep.not_imported.push(format!("tracks from {} of {total} on (stopped part way: merge again to bring in the rest)", k + 1));
+                break;
+            }
+            progress("Tracks", k + 1, total);
+            if t.stats.start.zip(t.stats.end).is_some_and(|x| have.contains(&x)) {
+                same += 1;
+                continue;
+            }
+            batch.push(o.track(&t.id)?);
+            if batch.len() >= 200 || k + 1 == total {
+                let mut c = self.db();
+                let tx = c.transaction()?;
+                for t in batch.drain(..) {
+                    write_track(&tx, &t, Some(id))?;
+                    rep.tracks_added.push(t.name);
+                }
+                tx.commit()?;
+            }
+        }
+        if !batch.is_empty() {
+            let mut c = self.db();
+            let tx = c.transaction()?;
+            for t in batch.drain(..) {
+                write_track(&tx, &t, Some(id))?;
+                rep.tracks_added.push(t.name);
+            }
+            tx.commit()?;
+        }
+        if same > 0 {
+            rep.notes.push(format!("{same} tracks were already here"));
+        }
+        self.finish_import(id, &rep)?;
+        Ok(rep)
     }
 
     // ---------- plotter symbols ----------
@@ -1145,7 +1340,8 @@ impl Library {
     pub fn backup_if_due(&self) -> Result<Option<PathBuf>> {
         let dir = self.dir.join("backups");
         let today = tracks::iso_time(now()).get(..10).unwrap_or("").to_string();
-        let to = dir.join(format!("library-{today}.gpkg"));
+        let stem = self.name();
+        let to = dir.join(format!("{stem}-{today}.gpkg"));
         let made = if to.exists() {
             None
         } else {
@@ -1153,7 +1349,8 @@ impl Library {
             Some(to)
         };
         // thin the old ones
-        let day = |name: &str| name.strip_prefix("library-").and_then(|n| n.strip_suffix(".gpkg")).and_then(|d| tracks::parse_iso(&format!("{d}T00:00:00Z"))).map(|t| t / 86_400);
+        let prefix = format!("{stem}-");
+        let day = |name: &str| name.strip_prefix(prefix.as_str()).and_then(|n| n.strip_suffix(".gpkg")).filter(|d| d.len() == 10).and_then(|d| tracks::parse_iso(&format!("{d}T00:00:00Z"))).map(|t| t / 86_400);
         let mut all: Vec<(i64, PathBuf)> = std::fs::read_dir(&dir)?.flatten().filter_map(|e| day(&e.file_name().to_string_lossy()).map(|d| (d, e.path()))).collect();
         all.sort();
         let now_day = now() / 86_400;
@@ -1172,6 +1369,9 @@ impl Library {
 
     /// Whether the folder still has a library kept as JSON files (TweedPlot before Oct 2026).
     pub fn needs_conversion(&self) -> bool {
+        if self.file != store::FILE {
+            return false; // only the library in the app's own folder came from JSON files
+        }
         let d = &self.dir;
         let any_json = |sub: &str| std::fs::read_dir(d.join(sub)).map(|r| r.flatten().any(|e| e.path().extension().is_some_and(|x| x == "json"))).unwrap_or(false);
         d.join("marks.json").exists() || d.join("barriers.json").exists() || any_json("routes") || any_json("routings") || any_json("tracks")
@@ -1538,6 +1738,51 @@ mod tests {
         assert_eq!(d("?").tags, vec!["unsure"]);
         assert_eq!(d("Event 0035").tags, vec!["event"]);
         assert_eq!(d("fast 3 times!").kind, Some("foul"));
+    }
+
+    #[test]
+    fn merging_another_boats_library() {
+        let base = std::env::temp_dir().join(format!("racenav-merge-{}", new_id("")));
+        let a = Library::open_file(base.join("ours.gpkg")).unwrap();
+        let b = Library::open_file(base.join("other boat").join("theirs.gpkg")).unwrap();
+        assert_eq!(b.name(), "theirs");
+        // both have Bean Rock (same name, a few metres apart); theirs has a new mark, a route and a track
+        a.save_mark(Mark { name: "Bean Rock".into(), lat: -36.8317, lon: 174.8303, ..Default::default() }).unwrap();
+        let br = b.save_mark(Mark { name: "Bean Rock".into(), lat: -36.83171, lon: 174.83031, ..Default::default() }).unwrap();
+        let hole = b.save_mark(Mark { name: "The Hole".into(), lat: -36.9, lon: 174.9, colour: "#ff0000".into(), ..Default::default() }).unwrap();
+        b.save_route(Route { name: "Out and back".into(), marks: vec![RouteMark { mark: br.id.clone(), ..Default::default() }, RouteMark { mark: hole.id.clone(), ..Default::default() }], ..Default::default() }).unwrap();
+        let p = |t: i64| TrackPoint { t: Some(t), lat: -36.8, lon: 174.8 + t as f64 * 1e-6, sog: Some(6.0), ..Default::default() };
+        b.save_track(Track { name: "Trip".into(), segments: vec![vec![p(1000), p(1010), p(1020)]], ..Default::default() }).unwrap();
+        let stop = AtomicBool::new(false);
+        let r = a.merge_from(&b.path(), &mut |_, _, _| {}, &stop).unwrap();
+        assert_eq!((r.marks_added, r.marks_matched, r.routes_added.len(), r.tracks_added.len()), (1, 1, 1, 1));
+        let m = a.marks().unwrap();
+        assert_eq!(m.len(), 2);
+        let ours_br = m.iter().find(|x| x.name == "Bean Rock").unwrap();
+        let route = &a.routes().unwrap()[0];
+        assert_eq!(route.marks[0].mark, ours_br.id, "the route uses our Bean Rock");
+        assert_eq!(m.iter().find(|x| x.name == "The Hole").unwrap().colour, "#ff0000");
+        assert_eq!(a.track(&a.tracks().unwrap()[0].id).unwrap().segments[0].len(), 3);
+        // merging again adds nothing
+        let r2 = a.merge_from(&b.path(), &mut |_, _, _| {}, &stop).unwrap();
+        assert_eq!((r2.marks_added, r2.routes_added.len(), r2.tracks_added.len()), (0, 0, 0));
+        assert!(a.merge_from(&a.path(), &mut |_, _, _| {}, &stop).is_err(), "not into itself");
+        // a library opened by file keeps its backups by its own name
+        let made = b.backup_if_due().unwrap().unwrap();
+        assert!(made.file_name().unwrap().to_string_lossy().starts_with("theirs-"));
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn changing_many_marks_at_once() {
+        let lib = temp_lib("bulk-edit");
+        let ids: Vec<String> = (0..3).map(|k| lib.save_mark(Mark { name: format!("M{k}"), lat: -36.0 - k as f64 * 0.1, lon: 174.0, group: "old".into(), ..Default::default() }).unwrap().id).collect();
+        assert_eq!(lib.update_marks(&ids[..2], Some("Tuna 2024"), Some("fishing"), None).unwrap(), 2);
+        let m = lib.marks().unwrap();
+        assert_eq!(m.iter().filter(|x| x.group == "Tuna 2024" && x.kind == "fishing").count(), 2);
+        assert_eq!(m.iter().find(|x| x.name == "M2").unwrap().group, "old");
+        lib.update_marks(&ids, None, None, Some("#00ff00")).unwrap();
+        assert!(lib.marks().unwrap().iter().all(|x| x.colour == "#00ff00"));
     }
 
     #[test]

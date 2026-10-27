@@ -103,6 +103,11 @@ pub struct TrackSummary {
     pub source: String,
     pub modified: i64,
     pub stats: TrackStats,
+    /// Depth and sea temperature were logged along it (it can be coloured by them).
+    #[serde(default)]
+    pub has_depth: bool,
+    #[serde(default)]
+    pub has_temp: bool,
 }
 
 impl Track {
@@ -115,6 +120,8 @@ impl Track {
             source: self.source.clone(),
             modified: self.modified,
             stats: self.stats.clone(),
+            has_depth: self.segments.iter().flatten().any(|p| p.depth.is_some()),
+            has_temp: self.segments.iter().flatten().any(|p| p.temp.is_some()),
         }
     }
 
@@ -159,6 +166,14 @@ impl Track {
         let mut out = String::from(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\" creator=\"racenav\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n",
         );
+        out.push_str(&self.trk_xml());
+        out.push_str("</gpx>\n");
+        out
+    }
+
+    /// The track as a GPX `<trk>` element.
+    pub fn trk_xml(&self) -> String {
+        let mut out = String::new();
         out.push_str(&format!("  <trk>\n    <name>{}</name>\n", crate::gpx::esc(&self.name)));
         if !self.notes.is_empty() {
             out.push_str(&format!("    <desc>{}</desc>\n", crate::gpx::esc(&self.notes)));
@@ -185,7 +200,7 @@ impl Track {
             }
             out.push_str("    </trkseg>\n");
         }
-        out.push_str("  </trk>\n</gpx>\n");
+        out.push_str("  </trk>\n");
         out
     }
 }

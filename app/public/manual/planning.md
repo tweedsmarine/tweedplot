@@ -123,7 +123,7 @@ Press **Ruler**, click along the passage, double-click to finish, then right-cli
 
 **Getting it on the plotter**
 
-Library > Routes > GPX exports the route; import it on most plotters and phone apps. With Signal K, the next-mark data (BTW, DTW, XTE, TTG) shows on TweedPlot's own instruments.
+Library > Routes: tick the route and press **GPX** to export it; import it on most plotters and phone apps. With Signal K, the next-mark data (BTW, DTW, XTE, TTG) shows on TweedPlot's own instruments.
 
 ## Timing, fuel and weather windows
 

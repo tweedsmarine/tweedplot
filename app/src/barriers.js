@@ -6,6 +6,7 @@
 // Points move like course marks: click one (amber ring), wait for green, drag.
 // Right-click a barrier: delete a point, delete it, or switch it off/on.
 import { invoke } from "@tauri-apps/api/core";
+import { libList } from "./liblist.js";
 
 const KEY = "racenav.barriers";
 const RED = "#c62828";
@@ -89,25 +90,44 @@ export function setupBarriers(map, { before, library, toast }) {
     } catch (e) { toast(`Could not save the barrier: ${e}`, 6000); return null; }
   }
 
+  // the list: the same as every library tab (liblist.js); the tick at the left of a row
+  // (the swatch) says whether routings use it
+  const barrierList = libList($("lib-barriers-list"), {
+    key: "barriers",
+    noun: ["barrier", "barriers"],
+    search: (b, q) => b.name.toLowerCase().includes(q) || (b.notes || "").toLowerCase().includes(q),
+    sorts: [
+      { key: "name", label: "By name", cmp: (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }) },
+      { key: "new", label: "Newest first", cmp: (a, b) => (b.modified || 0) - (a.modified || 0) },
+    ],
+    filters: [
+      { key: "kind", label: "Kind", type: "choice", options: () => [["line", "Lines"], ["zone", "Zones"]], test: (b, v) => b.kind === v },
+      { key: "off", label: "Not used", type: "toggle", title: "Only the barriers routings don't use", test: (b) => !b.active },
+    ],
+    row: {
+      render(b, el) {
+        el.innerHTML = `<input type="checkbox" class="ll-use" title="Used by routings"><div class="main" title="Zoom to it"><input class="nm" type="text" spellcheck="false"><small></small></div>`;
+        const cb = el.querySelector(".ll-use");
+        cb.checked = b.active;
+        cb.onclick = (e) => e.stopPropagation();
+        cb.onchange = () => save({ ...b, active: cb.checked });
+        const nm = el.querySelector(".nm");
+        nm.value = b.name;
+        nm.onclick = (e) => e.stopPropagation();
+        nm.onchange = () => save({ ...b, name: nm.value.trim() });
+        el.querySelector("small").textContent = `${b.kind === "zone" ? "Zone" : "Line"} · ${b.points.length} points${b.active ? "" : " · not used"}`;
+      },
+      click: (b) => fit(b.points),
+    },
+    actions: [
+      { label: "Use", title: "Routings keep to the selected barriers", run: async (bs) => { for (const b of bs) await save({ ...b, active: true }); } },
+      { label: "Don't use", title: "Keep the selected barriers but routings ignore them", run: async (bs) => { for (const b of bs) await save({ ...b, active: false }); } },
+      { label: "Delete", danger: true, confirm: (bs) => `Delete ${bs.length === 1 ? `“${bs[0].name}”` : `${bs.length} barriers`}?`, run: async (bs) => { for (const b of bs) await remove(b.id); } },
+    ],
+    empty: () => "No barriers. Draw a line or a zone.",
+  });
   function renderList() {
-    const ul = $("lib-barriers");
-    ul.innerHTML = "";
-    if (!list.length) ul.innerHTML = `<li class="empty">No barriers. Draw a line or a zone.</li>`;
-    for (const b of list) {
-      const li = document.createElement("li");
-      li.innerHTML = `<input type="checkbox" title="Used by routings"><div class="main"><input class="nm" type="text" spellcheck="false"><small></small></div>` +
-        `<button data-act="zoom" title="Zoom to it">⌖</button><button data-act="x" title="Delete">✕</button>`;
-      const [cb] = li.children;
-      cb.checked = b.active;
-      cb.onchange = () => save({ ...b, active: cb.checked });
-      const nm = li.querySelector(".nm");
-      nm.value = b.name;
-      nm.onchange = () => save({ ...b, name: nm.value.trim() });
-      li.querySelector("small").textContent = `${b.kind === "zone" ? "Zone" : "Line"} · ${b.points.length} points${b.active ? "" : " · off"}`;
-      li.querySelector('[data-act="zoom"]').onclick = () => fit(b.points);
-      li.querySelector('[data-act="x"]').onclick = () => remove(b.id);
-      ul.append(li);
-    }
+    barrierList.setItems(list);
     $("bar-show").checked = prefs.show;
   }
   function fit(pts) {

@@ -990,3 +990,85 @@ body.drawer-open #activity { left: calc(var(--rail-w) + var(--drawer-w)); }
 .act-buttons button { flex: none; width: auto; padding: 3px 10px; font-size: 12px; }
 .act-buttons:not(:has(button:not([hidden]))) { display: none; }
 .act-log { max-height: 260px; overflow: auto; font-size: 11px; white-space: pre-wrap; background: rgba(0,0,0,.04); border-radius: 4px; padding: 6px; }
+
+/* ---------- Library drawer: the library's name and menu ---------- */
+.lib-head { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; }
+.lib-name { font-weight: 700; font-size: 14px; padding: 5px 10px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-name .lib-icon { opacity: .6; }
+.lib-name .caret { opacity: .6; font-size: 11px; }
+.lib-name.on { background: color-mix(in srgb, #2a7ab0 15%, transparent); }
+.lib-menu { position: relative; z-index: 6; display: flex; flex-direction: column; gap: 2px; padding: 6px; margin: 0 0 8px;
+  border: 1px solid var(--line, #c9d3da); border-radius: 8px; background: var(--panel-bg); box-shadow: 0 3px 12px rgba(0,0,0,.18); }
+.lib-menu[hidden] { display: none; }
+.lib-menu button { text-align: left; border: 0; background: none; padding: 7px 8px; border-radius: 5px; font-size: 13px; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.lib-menu button:hover:not(:disabled) { background: color-mix(in srgb, #2a7ab0 12%, transparent); }
+.lib-menu button:disabled { opacity: .45; }
+.lib-menu hr { border: 0; border-top: 1px solid var(--line, #c9d3da); margin: 3px 0; width: 100%; }
+.lib-menu-head { font-size: 11px; color: var(--quiet); padding: 2px 8px 5px; overflow-wrap: anywhere; }
+
+/* ---------- the list every library tab uses (liblist.js) ---------- */
+.ll { position: relative; }
+.ll-top { display: flex; gap: 6px; align-items: center; }
+.ll-top .ll-search { min-width: 0; }
+.ll-sort { max-width: 150px; }
+.ll-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 2px; }
+.ll-chip { font-size: 12px; padding: 3px 8px; border-radius: 12px; display: inline-flex; align-items: center; gap: 4px; }
+.ll-chip.on { background: color-mix(in srgb, #2a7ab0 18%, transparent); border-color: #2a7ab0; font-weight: 600; }
+.ll-chip .ll-x { opacity: .6; padding-left: 2px; }
+.ll-chip .ll-x:hover { opacity: 1; }
+.ll-chip.ll-clear { border-style: dashed; }
+.ll-pop { position: absolute; z-index: 8; width: 240px; max-height: 300px; overflow: auto; padding: 6px; background: var(--panel-bg);
+  border: 1px solid var(--line, #c9d3da); border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.22); }
+.ll-opt { display: flex; width: 100%; gap: 8px; border: 0; background: none; padding: 5px 6px; border-radius: 4px; text-align: left; font-size: 13px; }
+.ll-opt small { color: var(--quiet); }
+.ll-opt:hover { background: color-mix(in srgb, #2a7ab0 10%, transparent); }
+.ll-opt.on { font-weight: 700; background: color-mix(in srgb, #2a7ab0 16%, transparent); }
+.ll-months { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 4px; }
+.ll-months button { padding: 6px 0; font-size: 13px; }
+.ll-months button.on { background: #2a7ab0; color: #fff; border-color: #2a7ab0; }
+.ll-count, .ll-bar, .ll-ask { display: flex; align-items: center; gap: 6px; min-height: 30px; font-size: 12px; }
+.ll-count[hidden], .ll-bar[hidden], .ll-ask[hidden] { display: none; }
+.ll-count .ll-n { color: var(--quiet); }
+.ll-count button, .ll-bar button, .ll-ask button { padding: 3px 8px; font-size: 12px; }
+.ll-bar { flex-wrap: wrap; background: color-mix(in srgb, #2a7ab0 10%, transparent); border-radius: 6px; padding: 3px 6px; }
+.ll-bar .ll-sel { font-weight: 700; margin-right: 2px; }
+.ll-bar .ll-acts { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+.ll-ask { flex-wrap: wrap; background: color-mix(in srgb, #8a6d3b 12%, transparent); border-radius: 6px; padding: 4px 6px; margin-top: 3px; }
+.ll-ask input[type="text"], .ll-ask select { flex: 1; min-width: 120px; }
+button.warn { color: #9b2c1c; }
+button.on.warn { background: #b03a2e; color: #fff; border-color: #b03a2e; }
+.ll-scroll { position: relative; height: calc(100vh - 380px); min-height: 220px; overflow-y: auto; overflow-x: hidden; margin-top: 2px;
+  border-top: 1px solid var(--line, #dde3e7); }
+.ll-space { position: relative; }
+.ll-empty { padding: 10px 4px; }
+.ll-row { position: absolute; left: 0; right: 0; height: 50px; display: flex; align-items: center; gap: 6px; padding: 0 2px;
+  border-bottom: 1px solid var(--line, #e3e8ec); box-sizing: border-box; }
+.ll-row.picked { background: color-mix(in srgb, #2a7ab0 9%, transparent); }
+.ll-row.active, .ll-row.editing { background: color-mix(in srgb, #2e8b57 10%, transparent); }
+.ll-row .ll-tick { flex: none; margin: 0; }
+.ll-body { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
+.ll-body .main { flex: 1; min-width: 0; cursor: pointer; }
+.ll-body .main b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ll-body .main b.unnamed { font-weight: 400; font-style: italic; color: var(--quiet); }
+.ll-body .main small { display: block; color: var(--quiet); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ll-body .main input.nm { width: 100%; font-weight: 600; border: 1px solid transparent; background: transparent; padding: 1px 2px; }
+.ll-body .main input.nm:hover, .ll-body .main input.nm:focus { border-color: var(--line, #c9d3da); background: #fff; }
+.ll-body > button { flex: none; padding: 3px 8px; font-size: 12px; }
+.ll-dot { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.3); background: #e67e22; }
+.ll-dot.icon { border: 0; box-shadow: none; background: center / contain no-repeat transparent; width: 18px; height: 18px; border-radius: 0; }
+.ll-show { flex: none; width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 2.5px solid var(--c, #d35400); background: transparent; }
+.ll-show.on { background: var(--c, #d35400); }
+.ll-use { flex: none; }
+
+/* buttons in the list keep their own size (the global button rule stretches them) */
+.ll button, .lib-head button, .lib-menu button { flex: none; }
+.ll-chip { flex: none; white-space: nowrap; }
+.ll-count .ll-all { margin-left: auto; }
+.ll-ask { justify-content: flex-end; }
+.ll-ask > span { flex: 1 1 100%; }
+.ll-opt, .ll-months button { flex: none; }
+.ll-opt { width: 100%; }
+/* the Library menu drops down over the drawer */
+.pane[data-pane="library"] { position: relative; }
+.lib-menu { position: absolute; top: 48px; left: 12px; width: min(320px, calc(100% - 24px)); margin: 0; }
+.lib-menu, .ll-pop { background: var(--panel-solid, #fff); }
