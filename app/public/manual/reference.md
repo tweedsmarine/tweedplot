@@ -618,7 +618,8 @@ In the mark editor (Library > Marks > **Edit**, which opens above the list, or r
 | {img:sym:sym-circle:} {img:sym:sym-circle-f:} | Circle, filled circle | {img:sym:sym-square:} {img:sym:sym-square-f:} | Square, filled square |
 | {img:sym:sym-diamond:} {img:sym:sym-diamond-f:} | Diamond, filled diamond | {img:sym:sym-tri-up:} {img:sym:sym-tri-up-f:} | Triangle up, filled |
 | {img:sym:sym-tri-down:} {img:sym:sym-tri-down-f:} | Triangle down, filled | {img:sym:sym-cross:} {img:sym:sym-x:} | Cross, X |
-| {img:sym:sym-star:} {img:sym:sym-flag:} {img:sym:sym-dot:} | Star, flag, dot | {img:sym:sym-rock:} | Rock |
+| {img:sym:sym-star:} {img:sym:sym-flag:} {img:sym:sym-dot:} | Star, flag, dot | {img:sym:sym-excl:} {img:sym:sym-asterisk:} | Exclamation mark, asterisk |
+| | | {img:sym:sym-rock:} | Rock |
 | {img:sym:sym-wreck:} | Wreck | {img:sym:sym-snag:} | Obstruction or snag |
 | {img:sym:sym-pot:} | Pot or trap (fishing gear) | {img:sym:sym-fish:} {img:sym:sym-school:} | Fish, school of fish |
 | {img:sym:sym-tuna:} | Tuna | {img:sym:sym-swordfish:} | Swordfish |
@@ -660,6 +661,8 @@ Untick a barrier to keep it but not use it; rename it in the list; move its poin
 | Backups… | TweedPlot's own daily copies of this library. Using one copies it beside the library and opens the copy: the backup and the library stay as they were |
 
 TweedPlot opens the library last used. Changing library isn't possible while the track recorder is on (stop recording first).
+
+**From the chart.** Double-click a library mark, a barrier (its line, edge or a point), a track or the route on the chart to open it in the Library: its tab, its row (flashed; the search and filters are cleared if they hid it) and, for marks and tracks, its editor. Right-click it for **Edit in the library**, which does the same. A route not saved yet opens in the Route drawer.
 
 **The tabs**: Marks, Routes, Tracks, Routings and Barriers. Each has the same list:
 

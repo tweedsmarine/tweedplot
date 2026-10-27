@@ -685,6 +685,21 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       if (next.size === hidden.size && [...next].every((id) => hidden.has(id))) return;
       hidden = next; draw();
     },
+    /** Open a mark in the Library: its row (search and filters cleared if they hide it) and its editor. */
+    openMark(id) {
+      const m = byId(id);
+      if (!m) return;
+      ui.openTab("library", "marks");
+      editMark(m);
+      if (!markList.highlight(id)) { markList.clearFilters(); markList.highlight(id); }
+    },
+    /** A saved route's name. */
+    routeName: (id) => routes.find((r) => r.id === id)?.name,
+    /** Open a saved route's row in the Library. */
+    openRoute(id) {
+      ui.openTab("library", "routes");
+      if (!routeList.highlight(id)) { routeList.clearFilters(); routeList.highlight(id); }
+    },
     /** The library mark under a map point, if any. */
     markAt(point) {
       if (!prefs.show) return null;

@@ -11,7 +11,7 @@ export const MARK_SYMBOLS = [
   ["sym-tri-up", "Triangle up", "Shapes"], ["sym-tri-up-f", "Filled triangle up", "Shapes"],
   ["sym-tri-down", "Triangle down", "Shapes"], ["sym-tri-down-f", "Filled triangle down", "Shapes"],
   ["sym-cross", "Cross", "Shapes"], ["sym-x", "X", "Shapes"], ["sym-star", "Star", "Shapes"],
-  ["sym-flag", "Flag", "Shapes"], ["sym-dot", "Dot", "Shapes"],
+  ["sym-flag", "Flag", "Shapes"], ["sym-dot", "Dot", "Shapes"], ["sym-excl", "Exclamation mark", "Shapes"], ["sym-asterisk", "Asterisk", "Shapes"],
   ["sym-rock", "Rock", "Seabed and dangers"], ["sym-wreck", "Wreck", "Seabed and dangers"],
   ["sym-snag", "Obstruction / snag", "Seabed and dangers"],
   ["sym-fish", "Fish", "Fish"], ["sym-school", "School of fish", "Fish"], ["sym-tuna", "Tuna", "Fish"],
@@ -67,6 +67,10 @@ function drawSymbol(kind, colour) {
     }
     case "sym-flag": P(line([[-7, 12], [-7, -12]]), false, 3); P(poly([[-7, -12], [10, -6], [-7, 0]]), true); break;
     case "sym-dot": P(circ(0, 0, 5), true); break;
+    case "sym-excl": P(poly([[-3, -13], [3, -13], [1.6, 5], [-1.6, 5]]), true); P(circ(0, 10.5, 2.8), true); break;
+    case "sym-asterisk":
+      for (let i = 0; i < 3; i++) { const a = (i * Math.PI) / 3 + Math.PI / 2; P(line([[-11 * Math.cos(a), -11 * Math.sin(a)], [11 * Math.cos(a), 11 * Math.sin(a)]]), false, 3.5); }
+      break;
     case "sym-rock": // the chart's underwater rock: a cross with a dot in each quarter
       P(line([[-10, 0], [10, 0]]), false, 2.5); P(line([[0, -10], [0, 10]]), false, 2.5);
       for (const [x, y] of [[-6, -6], [6, -6], [-6, 6], [6, 6]]) P(circ(x, y, 1.8), true);

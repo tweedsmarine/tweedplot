@@ -323,12 +323,24 @@ export function libList(root, cfg) {
     filtered: () => shown,
     selected: () => shown.filter((x) => sel.has(x.id)),
     clearSelection() { sel.clear(); renderCount(); renderRows(); },
+    /** Scroll to a row and flash it; true if it's listed (false: the filters hide it). */
+    highlight(id) {
+      const i = shown.findIndex((x) => x.id === id);
+      if (i < 0) return false;
+      scroll.scrollTop = Math.max(0, i * ROW - scroll.clientHeight / 3);
+      renderRows();
+      const el = drawn.get(id);
+      if (el) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 2500); }
+      return true;
+    },
     /** Scroll a row into view. */
     reveal(id) {
       const i = shown.findIndex((x) => x.id === id);
       if (i >= 0) scroll.scrollTop = Math.max(0, i * ROW - scroll.clientHeight / 2);
     },
     get filters() { return state.f; },
+    /** Clear the search and every filter. */
+    clearFilters() { state.f = {}; state.q = ""; search.value = ""; save(); apply(); },
     get sort() { return state.sort; },
     setFilter(key, value) { if (value == null) delete state.f[key]; else state.f[key] = value; save(); apply(); },
     root,

@@ -231,11 +231,12 @@ export function setupBarriers(map, { before, library, toast }) {
   });
 
   // ---------- right-click menu ----------
-  function hitAt(point) {
+  /** The barrier at a map point: its point, its line or edge, or (unless `edge`) inside a zone. */
+  function hitAt(point, edge = false) {
     if (!prefs.show) return null;
     const box = [[point.x - 6, point.y - 6], [point.x + 6, point.y + 6]];
     const p = map.queryRenderedFeatures(box, { layers: ["bar-pt"] }).find((f) => f.properties.id);
-    const l = p ?? map.queryRenderedFeatures(box, { layers: ["bar-hit", "bar-fill"] })[0];
+    const l = p ?? map.queryRenderedFeatures(box, { layers: edge ? ["bar-hit"] : ["bar-hit", "bar-fill"] })[0];
     const b = l && list.find((x) => x.id === l.properties.id);
     return b ? { id: b.id, i: p ? p.properties.i : null, active: b.active, name: b.name } : null;
   }
@@ -254,5 +255,7 @@ export function setupBarriers(map, { before, library, toast }) {
 
   library.onChange(draw);
   refresh();
-  return { hitAt, deletePoint, remove, toggle, refresh, isDrawing: () => !!drawing };
+  /** Show a barrier's row in the Library (the caller opens the Barriers tab). */
+  function reveal(id) { if (!barrierList.highlight(id)) { barrierList.clearFilters(); barrierList.highlight(id); } }
+  return { hitAt, deletePoint, remove, toggle, refresh, reveal, isDrawing: () => !!drawing };
 }

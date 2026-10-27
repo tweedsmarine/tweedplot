@@ -1072,3 +1072,5 @@ button.on.warn { background: #b03a2e; color: #fff; border-color: #b03a2e; }
 .pane[data-pane="library"] { position: relative; }
 .lib-menu { position: absolute; top: 48px; left: 12px; width: min(320px, calc(100% - 24px)); margin: 0; }
 .lib-menu, .ll-pop { background: var(--panel-solid, #fff); }
+.ll-row.flash { animation: ll-flash 2.4s ease-out; }
+@keyframes ll-flash { 0%, 30% { background: color-mix(in srgb, #f0a500 45%, transparent); } 100% { background: transparent; } }

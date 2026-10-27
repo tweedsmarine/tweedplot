@@ -339,6 +339,10 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     selection: () => (selected === null ? null : { label: labelOf(selected), movable }),
     moveSelected,
     deleteSelected,
+    /** Whether a map point is on the course being edited (its legs or marks). */
+    hitAt(point) {
+      return map.queryRenderedFeatures([[point.x - 5, point.y - 5], [point.x + 5, point.y + 5]], { layers: ["rt-legs", "rt-marks"] }).length > 0;
+    },
     current: () => ({ routeId, dirty }),
     addLibraryMark(m) { marks.push({ id: m.id, name: m.name, lon: m.lon, lat: m.lat, rounding: "" }); changed(); },
     libraryMarkChanged(m) {

@@ -446,5 +446,19 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
   $("trk-time").onchange = () => { prefs.atTime = $("trk-time").checked; save(); drawNow(); };
 
   refresh();
-  return { refresh };
+  return {
+    refresh,
+    /** The track under a map point, if any (its summary). */
+    hitAt(point) {
+      const f = map.queryRenderedFeatures([[point.x - 5, point.y - 5], [point.x + 5, point.y + 5]], { layers: ["trk-lines"] })[0];
+      return f ? list.find((t) => t.id === f.properties.id) ?? null : null;
+    },
+    /** Open a track in the Library: its row and its editor (the caller opens the Tracks tab). */
+    open(id) {
+      const t = list.find((x) => x.id === id);
+      if (!t) return;
+      if (!trackList.highlight(id)) { trackList.clearFilters(); trackList.highlight(id); }
+      edit(t);
+    },
+  };
 }

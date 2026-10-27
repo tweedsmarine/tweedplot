@@ -261,6 +261,7 @@ let ruler = null;
 let gribTools = null;
 let arrows = null;
 let barriers = null;
+let tracks = null;
 
 /** A short message at the bottom of the chart ("" hides it); gone after `ms` if given. */
 let toastTimer = null;
@@ -399,7 +400,7 @@ map.on("load", () => {
   document.getElementById("wx-verify").onclick = () => gribTools.openVerify();
   setupTides(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn) });
   ruler = setupRuler(map, { before: "track", ui, library, route, toast, getVariation: () => vessel.variation });
-  const tracks = setupTracks(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn),
+  tracks = setupTracks(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn),
     status: (s) => { document.getElementById("lib-status").textContent = s; } });
   listen("library-changed", () => { clearTimeout(tracksTimer); tracksTimer = setTimeout(() => { tracks.refresh(); barriers?.refresh(); }, 150); });
   barriers = setupBarriers(map, { before: "track", library, toast });
@@ -811,12 +812,46 @@ function placeBoat(pos) {
   feed();
 }
 
+// ---------- opening what's on the chart in the Library ------------------------------
+// Double-click a library mark, barrier, track or the course on the chart: it opens in the
+// Library drawer (its row, and its editor). The right-click menu has the same.
+/** What library object is under a map point: { kind, id, name } (the first of mark, barrier, track, route). */
+function libraryObjectAt(point, edge = false) {
+  const m = library?.markAt(point);
+  if (m) return { kind: "mark", id: m.id, name: m.name || "the mark" };
+  const b = barriers?.isDrawing() ? null : barriers?.hitAt(point, edge);
+  if (b) return { kind: "barrier", id: b.id, name: b.name };
+  const t = tracks?.hitAt(point);
+  if (t) return { kind: "track", id: t.id, name: t.name };
+  if (route?.hitAt(point)) {
+    const id = route.current().routeId;
+    return { kind: "route", id, name: id ? (library?.routeName?.(id) ?? "the route") : "the route" };
+  }
+  return null;
+}
+function openInLibrary(o) {
+  if (!o) return;
+  if (o.kind === "mark") library?.openMark(o.id);
+  else if (o.kind === "barrier") { ui.openTab("library", "barriers"); barriers?.reveal(o.id); }
+  else if (o.kind === "track") { ui.openTab("library", "tracks"); tracks?.open(o.id); }
+  else if (o.kind === "route") { if (o.id) library?.openRoute(o.id); else ui.open("course"); } // a course not saved yet is in the Route drawer
+}
+map.on("dblclick", (e) => {
+  // drawing a barrier or measuring uses double-click to finish
+  if (document.querySelector(".armed") || barriers?.isDrawing() || ruler?.isArmed()) return;
+  const o = libraryObjectAt(e.point, true); // inside a big zone, a double-click still zooms
+  if (!o) return;
+  e.preventDefault(); // not a zoom
+  openInLibrary(o);
+});
+
 // ---------- right-click menu ----------------------------------------------------
 const ctx = document.getElementById("ctx");
 let ctxAt = null;
 let ctxMark = null; // library mark under the right-click, if any
 let ctxRuler = null; // ruler under the right-click: { rid, i, points }
 let ctxBarrier = null; // barrier under the right-click: { id, i, active, name }
+let ctxObject = null; // library object under the right-click (Edit in the library)
 map.on("contextmenu", (e) => {
   e.originalEvent.preventDefault();
   ctxAt = [e.lngLat.lng, e.lngLat.lat];
@@ -829,6 +864,10 @@ map.on("contextmenu", (e) => {
   ctxRuler = ruler?.isArmed() ? null : ruler?.hitAt(e.point) ?? null;
   for (const el of ctx.querySelectorAll(".ruler-item")) el.hidden = !ctxRuler;
   ctxBarrier = ctxRuler || barriers?.isDrawing() ? null : barriers?.hitAt(e.point) ?? null;
+  ctxObject = ctxRuler ? null : libraryObjectAt(e.point);
+  const openBtn = ctx.querySelector('[data-act="open-lib"]');
+  openBtn.hidden = !ctxObject;
+  if (ctxObject) openBtn.textContent = ctxObject.kind === "route" && !ctxObject.id ? "Edit the route (Route drawer)" : `Edit “${ctxObject.name}” in the library`;
   for (const el of ctx.querySelectorAll(".bar-item")) el.hidden = !ctxBarrier;
   if (ctxBarrier) {
     ctx.querySelector('[data-act="bar-pt"]').hidden = ctxBarrier.i == null;
@@ -871,6 +910,7 @@ ctx.addEventListener("click", (e) => {
   if (act === "start") route?.setStart(ctxAt, ctxMark);
   if (act === "mark") route?.addMark(ctxAt, ctxMark);
   if (act === "libmark") library?.newMarkAt(ctxAt);
+  if (act === "open-lib") openInLibrary(ctxObject);
   if (act === "centre") map.easeTo({ center: ctxAt });
   if (act === "meteogram") gribTools?.meteogramAt(ctxAt);
   if (act === "ruler-toggle") {
