@@ -118,9 +118,8 @@ Drawers slide out from the rail; instrument panels, the time slider and the dock
 | {icon:follow} | **Follow** | Keeps the boat centred; dragging the chart turns it off |
 | {icon:ruler} | **Ruler** | Measure: click points on the chart, double-click to finish, Esc to stop (see Measuring) |
 | {icon:targets} | **Target list** | Opens the AIS target list over the chart (also **T**) |
-| {icon:view-nav} {icon:view-plan} {icon:view-inst} | **View** | Steps through Navigation, Planning and Instruments; the icon shows the view you are in |
+| {icon:view-nav} {icon:view-plan} {icon:view-inst} | **View** | Steps through Navigation, Planning and Instruments; the icon shows the view you are in. Right-click (or hold) to choose a view, or to show or hide the chart in this view |
 | {icon:panels} | **Panels** | Shows or hides the rail, drawers and dock in this view |
-| {icon:chart-show} | **Chart** | Shows or hides the chart in this view |
 | {icon:day} {icon:night} | **Colours** | Steps through day, dusk, night red and night green. Right-click it (or hold it on a touch screen) for all four and the brightness at once |
 | {icon:clear-track} | **Clear track** | Clears the short trail behind the boat |
 
@@ -412,7 +411,7 @@ A **view** is an arrangement of the same screen. The **View** button in the tool
 | {icon:view-plan} **Planning** | The chart with the rail, drawers and dock, for routes and weather. The layout the app always had |
 | {icon:view-inst} **Instruments** | A screen of single readings, with no chart |
 
-Every option is still available in every view; a view only decides what is shown to begin with. {icon:panels} **Panels** and {icon:chart-show} **Chart** (also in the toolbar) show or hide the rail, drawers and dock, and the chart, in the current view.
+Every option is still available in every view; a view only decides what is shown to begin with. {icon:panels} **Panels** shows or hides the rail, drawers and dock in the current view. Right-click (or hold) the view button to pick a view directly, or to tick **Show the chart in this view**: the Instruments view starts without the chart, for a second screen or a helm display.
 
 Each panel (group of instruments) has a name you can edit in the {icon:inst} Instruments drawer (the text box in its list entry), and a tick for each view, which says whether the group floats over the chart in that view.
 

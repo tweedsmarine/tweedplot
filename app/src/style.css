@@ -636,7 +636,7 @@ table.gt-table tr.gt-best td.nm { font-weight: 700; }
 /* ---------- views (views.js): a view can hide the rail, drawer and dock ---------- */
 html.no-tools #rail, html.no-tools #drawer, html.no-tools #dock { display: none; }
 html.no-tools { --rail-w: 0px !important; --drawer-w: 0px !important; --dock-h: 0px !important; }
-#tools-btn.on, #chart-btn.on { color: var(--accent); }
+#tools-btn.on { color: var(--accent); }
 /* no chart (the instruments view): a plain dark screen for the readings */
 html.no-map #follow, html.no-map #north-btn, html.no-map #clear-track { visibility: hidden; }
 html.no-map #map, html.no-map .cursor, html.no-map .attribution { visibility: hidden; }
@@ -930,6 +930,8 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 #manual .man-body td .mi, #manual .man-body td .mi-img { margin-right: 2px; }
 
 /* colours and brightness from the toolbar (palette.js) */
+.view-pop { position: fixed; z-index: 30; min-width: 230px; }
+.view-pop .vp-chart { display: flex; align-items: center; gap: 8px; padding: 8px 10px; font-size: 14px; cursor: pointer; }
 .pal-pop { position: fixed; z-index: 30; padding: 8px; display: flex; flex-direction: column; gap: 8px; min-width: 210px; }
 .pal-pop .pal-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
 .pal-pop .pal-modes button { width: auto; }

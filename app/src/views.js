@@ -47,13 +47,10 @@ export function setupViews(map) {
     document.documentElement.classList.toggle("no-tools", !tools);
     document.documentElement.classList.toggle("no-map", !chart);
     document.documentElement.dataset.view = v.id;
-    const cb = $("chart-btn");
-    cb.classList.toggle("on", chart);
-    cb.title = chart ? `Hide the chart in the ${v.name} view` : `Show the chart in the ${v.name} view`;
     const vb = $("view-btn");
     const next = VIEWS[(VIEWS.indexOf(v) + 1) % VIEWS.length];
     vb.querySelector("svg").innerHTML = v.icon;
-    vb.title = `View: ${v.name} (click for ${next.name})`;
+    vb.title = `View: ${v.name} (click for ${next.name}; right-click or hold to choose, or to show or hide the chart)`;
     vb.setAttribute("aria-label", `View: ${v.name}`);
     const tb = $("tools-btn");
     tb.classList.toggle("on", tools);
@@ -67,7 +64,32 @@ export function setupViews(map) {
 
   $("view-btn").onclick = () => api.set(VIEWS[(VIEWS.findIndex((v) => v.id === s.current) + 1) % VIEWS.length].id);
   $("tools-btn").onclick = () => { s.tools[s.current] = !toolsOn(s.current); apply(); };
-  $("chart-btn").onclick = () => { s.map[s.current] = !mapOn(s.current); apply(); };
+
+  // right-click (or hold) the view button: pick a view, and show or hide the chart in this one
+  const pop = document.createElement("div");
+  pop.id = "view-pop";
+  pop.className = "ctx view-pop";
+  pop.hidden = true;
+  document.body.append(pop);
+  function openPop() {
+    const v = def(s.current);
+    pop.innerHTML = `<div class="grp">View</div>${VIEWS.map((x) => `<button data-v="${x.id}" class="${x.id === v.id ? "cur" : ""}">${x.name}</button>`).join("")}
+      <hr /><label class="vp-chart"><input type="checkbox" ${mapOn(v.id) ? "checked" : ""}> Show the chart in the ${v.name} view</label>`;
+    pop.querySelector("input").onchange = (e) => { s.map[s.current] = e.target.checked; apply(); pop.hidden = true; };
+    const r = $("view-btn").getBoundingClientRect();
+    pop.style.left = `${r.right + 8}px`;
+    pop.style.top = `${Math.min(r.top, window.innerHeight - 200)}px`;
+    pop.hidden = false;
+  }
+  pop.addEventListener("click", (e) => { const b = e.target.closest("button[data-v]"); if (b) { api.set(b.dataset.v); pop.hidden = true; } });
+  const vb = $("view-btn");
+  vb.addEventListener("contextmenu", (e) => { e.preventDefault(); openPop(); });
+  let press = null;
+  vb.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse") press = setTimeout(() => { press = "done"; openPop(); }, 550); });
+  vb.addEventListener("pointerup", () => { if (press && press !== "done") clearTimeout(press); });
+  vb.addEventListener("click", (e) => { if (press === "done") { e.stopImmediatePropagation(); press = null; } }, true);
+  document.addEventListener("pointerdown", (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest("#view-btn")) pop.hidden = true; });
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !pop.hidden) { pop.hidden = true; e.preventDefault(); } });
 
   window.addEventListener("racenav-need-tools", () => { if (!toolsOn(s.current)) { s.tools[s.current] = true; apply(); } });
   const api = {

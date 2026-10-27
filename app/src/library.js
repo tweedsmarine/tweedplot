@@ -59,7 +59,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   map.addLayer({ id: "lib-poi", type: "symbol", source: "lib-marks", filter: isPoi,
     layout: { "icon-image": ["concat", "poi:", ["get", "kind"]], "icon-allow-overlap": true, "icon-ignore-placement": true } }, "lib-marks");
   map.addLayer({ id: "lib-sym", type: "symbol", source: "lib-marks", filter: isSym,
-    layout: { "icon-image": ["concat", "sym:", ["get", "kind"], ":", ["coalesce", ["get", "colour"], ""]], "icon-allow-overlap": true, "icon-ignore-placement": true } }, "lib-marks");
+    layout: { "icon-image": ["concat", "sym:", ["get", "kind"], ":", ["coalesce", ["get", "colour"], ""]], "icon-size": 0.8, "icon-allow-overlap": true, "icon-ignore-placement": true } }, "lib-marks");
   map.addLayer({ id: "lib-labels", type: "symbol", source: "lib-marks", minzoom: 8, filter: ["!=", ["get", "name"], ""],
     layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 6], "icon-allow-overlap": false } }, "track");
   let hidden = new Set();

@@ -377,7 +377,8 @@ function obstruction() {
 
 // information symbols are drawn at twice the size of the old ones (more for the small
 // round ones), with thinner lines for the size, so they read beside buoys and rocks
-const SMALL_K = { ca: 1, mf: 1.4, an: 1.5, ab: 1.5, hf: 1.5 };
+// (the caution "!", marine farm, anchor berth and harbour facility were half the size of the rest)
+const SMALL_K = { an: 1.5, ab: 1.8 };
 function small(kind) {
   const k = SMALL_K[kind] ?? 2, n = Math.ceil(30 * k);
   const [c, g] = canvas(n, n);
@@ -393,7 +394,9 @@ function small(kind) {
     case "pi": g.beginPath(); g.arc(cx, cy, 3, 0, 7); g.fill(); break;
     case "pf": g.strokeRect(cx - 6, cy - 6, 12, 12); g.beginPath(); g.arc(cx, cy, 2, 0, 7); g.fill(); break;
     case "mf": g.strokeStyle = MAGENTA; g.strokeRect(cx - 8, cy - 6, 16, 12); g.beginPath(); g.moveTo(cx - 8, cy); g.lineTo(cx + 8, cy); g.moveTo(cx, cy - 6); g.lineTo(cx, cy + 6); g.stroke(); break;
-    case "ca": g.fillStyle = MAGENTA; g.font = "bold 24px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("!", cx, cy + 1); break;
+    case "ca": // caution: a magenta "!" about as tall as the pilot boarding circle
+      g.fillStyle = MAGENTA; g.beginPath(); g.moveTo(cx - 2.2, cy - 10); g.lineTo(cx + 2.2, cy - 10); g.lineTo(cx + 1.2, cy + 4); g.lineTo(cx - 1.2, cy + 4); g.closePath(); g.fill();
+      g.beginPath(); g.arc(cx, cy + 8.2, 1.9, 0, 7); g.fill(); break;
     case "cp": g.strokeStyle = MAGENTA; g.beginPath(); g.arc(cx, cy, 9, 0, 7); g.stroke(); g.beginPath(); g.moveTo(cx - 5, cy); g.lineTo(cx + 5, cy); g.lineTo(cx + 1, cy - 4); g.stroke(); break;
     case "rs": g.fillStyle = COLOURS[3]; g.fillRect(cx - 2.5, cy - 8, 5, 16); g.fillRect(cx - 8, cy - 2.5, 16, 5); break;
     case "ss": g.beginPath(); g.arc(cx, cy + 4, 4, 0, 7); g.stroke(); g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx, cy - 11); g.lineTo(cx + 8, cy - 8); g.lineTo(cx, cy - 5); g.stroke(); break;
