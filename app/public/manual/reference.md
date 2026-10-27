@@ -674,7 +674,7 @@ TweedPlot opens the library last used. Changing library isn't possible while the
 - **Order**: by name, newest or oldest first, and others to suit (marks: deepest first, nearest the chart centre; routes and tracks: longest first).
 - **Whole library** filters, in the band above the tabs, apply to every tab and to the chart at once: **Dates**, **Months**, **Trip** and **In chart view**. Set Dates to a week and every tab lists only what was made (or ran) that week, the chart shows only those marks, and the tracks that match are drawn (up to 200; past that, only those you show yourself). What counts as when: a mark, when it was made (marks whose date is unknown, moved in from another plotter in one go, are left out); a track or trip, any time it ran; a routing, when computed. Routes and barriers aren't filtered by date (In chart view still applies to routes).
 - **Each tab's own filters**, as buttons under its search: each opens its choices, with how many each has; a filter in use is highlighted and has ✕ to clear it; **Clear filters** clears the tab's own.
-  - Marks: Group, Type, Tag, TimeZero symbol, Routes (in a saved route or not), Date unknown.
+  - Marks: Group, Type, Tag, TimeZero symbol, Routes (in a saved route or not), **Duplicates** (marks that repeat another: the same name within 30 m, or unnamed within 5 m; the oldest of each is left out, so Select these then Delete keeps one of each), Date unknown.
   - Tracks: From (logged here, GPX, TimeZero), Sea temperature, Depth (logged along it), On the chart.
   - Routes: From a file. Barriers: Kind, Not used.
 - **★ Saved**, the first button of Whole library, keeps every filter set now (the Whole library ones and each tab's own) under a name, such as Tuna season or Last trip, and brings them all back in one press. The button shows the name while those filters are in use; ✕ beside one in its list forgets it. Saved filters are the same in every library.
@@ -687,6 +687,8 @@ TweedPlot opens the library last used. Changing library isn't possible while the
 - The list is drawn as it scrolls, so tens of thousands of marks or tracks scroll smoothly.
 
 Marks: click a row to go to the mark; **+ Route** adds it to the route being built; **Edit** opens the mark editor above the list, which also shows when it was made and the depth, sea temperature and speed then, and has **Route start** and **Delete**. **Chart shows only the marks listed** draws just the marks the search and filters list (else every mark), handy with Months or a group. Tracks: the round swatch at the left of a row shows or hides the track on the chart; click the row to zoom to it.
+
+**Groups** (Library > Marks > Groups) lists every group (TimeZero's layers come in as groups) with how many marks it has. Untick one to hide its marks on the chart. **Lock** keeps a group's marks from being deleted or moved by accident: on the chart, by Delete, or by Group… to another group; **Unlock** lets them be again. **List** filters the list to the group.
 
 **Trips.** Library > **Trips**. A trip holds what was made while it lasted: the marks made between its start and end, and the tracks that ran in that time. Nothing has to be put into a trip by hand.
 

@@ -62,7 +62,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   let route = null; // the course editor (set by main once both exist)
   let routing = null;
   let editing = null; // mark being edited
-  let prefs = { show: true, chartFiltered: false };
+  let prefs = { show: true, chartFiltered: false, hiddenGroups: [], lockedGroups: [] };
   try { Object.assign(prefs, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
   delete prefs.filter; // the filters belong to the list now
   const savePrefs = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ } };
@@ -82,7 +82,9 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     map.setLayoutProperty("lib-poi", "visibility", vis);
     map.setLayoutProperty("lib-sym", "visibility", vis);
     // every mark, or only those the list shows ("Chart shows only the marks listed")
-    const shown = prefs.chartFiltered && markList ? markList.filtered() : sharedActive() ? marks.filter((m) => sharedTest(m, SHARED_MARK_CHART)) : marks;
+    let shown = prefs.chartFiltered && markList ? markList.filtered() : sharedActive() ? marks.filter((m) => sharedTest(m, SHARED_MARK_CHART)) : marks;
+    // groups hidden in Marks > Groups stay off the chart
+    if (prefs.hiddenGroups?.length) { const h = new Set(prefs.hiddenGroups); shown = shown.filter((m) => !h.has(m.group || "")); }
     map.getSource("lib-marks").setData({ type: "FeatureCollection", features: shown.filter((m) => !hidden.has(m.id)).map((m) => ({
       type: "Feature", properties: m.colour ? { id: m.id, name: m.name, kind: m.kind, colour: m.colour } : { id: m.id, name: m.name, kind: m.kind }, geometry: { type: "Point", coordinates: [m.lon, m.lat] } })) });
   }
@@ -108,6 +110,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     clearTimeout(armTimer);
     sel = id; movable = false; drawSel();
     const m = byId(id);
+    if (m && isLocked(m)) { toast(`${m.name || "The mark"} is in the locked group “${m.group}”: unlock it (Marks > Groups) to move it.`); return; }
     toast(`${m?.name || "Mark"} selected: wait for the ring to turn green, then drag it. Esc to let go.`);
     armTimer = setTimeout(() => { movable = true; drawSel(); toast(`Drag ${m?.name || "the mark"} to move it.`); }, ARM_MS);
   }
@@ -168,6 +171,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     markList.setItems(marks); // draws the chart too (changed)
     renderDupes();
     loadSymbols();
+    renderGroups();
     showName();
     for (const f of listeners) f();
   }
@@ -340,6 +344,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       { key: "tag", label: "Tag", type: "choice", options: (ms) => countBy(ms, tagsOf, (t) => TAG_LABEL[t] || t), test: (m, v) => tagsOf(m).includes(v) },
       { key: "symbol", label: "TimeZero symbol", type: "choice", options: (ms) => countBy(ms.filter((m) => m.symbol?.startsWith("tz:")), (m) => m.symbol, (s) => `Symbol ${s.slice(3)}`), test: (m, v) => m.symbol === v },
       { key: "route", label: "Routes", type: "choice", options: () => [["used", "In a saved route"], ["unused", "In no route"]], test: (m, v) => inRoute(m) === (v === "used") },
+      { key: "dupes", label: "Duplicates", type: "toggle", title: "Marks that repeat another: the same name within 30 m, or unnamed within 5 m (the oldest of each is left out of this list, so Select all then Delete keeps one of each)", test: (m) => dupes().has(m.id) },
       { key: "unknown", label: "Date unknown", type: "toggle", title: "Only marks whose date is only the day they were moved in from another plotter", test: (m) => !!m.date_unknown },
     ],
     row: {
@@ -358,8 +363,8 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     actions: [
       { label: "GPX", title: "Write the selected marks as one GPX file", run: (ms) => exportGpx(ms.length === 1 ? (ms[0].name || "mark") : "marks", ms.map((m) => m.id), [], `${ms.length.toLocaleString()} mark${ms.length === 1 ? "" : "s"}`) },
       { label: "Library file…", title: "Write the selected marks as a library file of their own (to give another boat, or keep apart)", run: (ms) => exportLibraryFile({ marks: ms.map((m) => m.id) }, `${ms.length.toLocaleString()} mark${ms.length === 1 ? "" : "s"}`, ms.length === 1 ? ms[0].name || "mark" : "marks") },
-      { label: "Group…", title: "Move the selected marks to a group", input: { type: "text", label: "Group", list: () => [...new Set(marks.map((m) => m.group).filter(Boolean))].sort(collate), value: (ms) => (new Set(ms.map((m) => m.group)).size === 1 ? ms[0].group : "") },
-        run: (ms, v) => bulk(ms, { group: (v ?? "").trim() }, `moved to ${v?.trim() ? `“${v.trim()}”` : "no group"}`) },
+      { label: "Group…", title: "Move the selected marks to a group (marks in locked groups stay)", input: { type: "text", label: "Group", list: () => [...new Set(marks.map((m) => m.group).filter(Boolean))].sort(collate), value: (ms) => (new Set(ms.map((m) => m.group)).size === 1 ? ms[0].group : "") },
+        run: (ms, v) => { const free = unlocked(ms, "moved"); if (free.length) bulk(free, { group: (v ?? "").trim() }, `moved to ${v?.trim() ? `“${v.trim()}”` : "no group"}`); } },
       { label: "Type…", title: "Give the selected marks a type (a symbol)", input: { type: "select", label: "Type", select: () => kindSelect(), icons: (v) => kindIcon(v) },
         run: (ms, v) => bulk(ms, { kind: v }, `now ${(KIND_LABEL()[v] || v).toLowerCase()}`) },
       { label: "Colour…", title: "Give the selected marks a colour", input: { type: "colour", label: "Colour", value: (ms) => ms[0].colour || "#e67e22" },
@@ -368,11 +373,16 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
         route?.loadRoute({ id: "", name: "", notes: "", start: null, start_mark: null, marks: ms.map((m) => ({ mark: m.id, rounding: "", radius_nm: 0 })) }, marks);
         ui.open("course");
       } },
-      { label: "Delete", danger: true, title: "Delete the selected marks", confirm: (ms) => {
+      { label: "Delete", danger: true, title: "Delete the selected marks (marks in locked groups stay)", confirm: (ms) => {
+          const locked = ms.filter(isLocked).length;
+          ms = ms.filter((m) => !isLocked(m));
           const inR = ms.filter((m) => usedBy.has(m.id)).length;
-          return `Delete ${ms.length === marks.length ? "all " : ""}${ms.length.toLocaleString()} mark${ms.length === 1 ? "" : "s"}?${inR ? ` ${inR.toLocaleString()} ${inR === 1 ? "is" : "are"} in saved routes and will be taken out of them.` : ""}`;
+          if (!ms.length) return `All ${locked.toLocaleString()} are in locked groups, so none will be deleted.`;
+          return `Delete ${ms.length === marks.length ? "all " : ""}${ms.length.toLocaleString()} mark${ms.length === 1 ? "" : "s"}?${inR ? ` ${inR.toLocaleString()} ${inR === 1 ? "is" : "are"} in saved routes and will be taken out of them.` : ""}${locked ? ` ${locked.toLocaleString()} in locked groups stay.` : ""}`;
         },
         run: async (ms) => {
+          ms = unlocked(ms, "deleted");
+          if (!ms.length) return;
           const inR = ms.filter((m) => usedBy.has(m.id)).length;
           try {
             const n = await invoke("marks_delete", { ids: ms.map((m) => m.id), force: true });
@@ -456,6 +466,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   form.querySelector('[data-act="delete"]').onclick = async (e) => {
     const b = e.currentTarget;
     if (!editing) return;
+    if (isLocked(editing)) { status(`“${editing.group}” is locked: unlock it in Marks > Groups to delete its marks.`); activity.note(`${editing.name || "The mark"} is in a locked group`, { details: [`Unlock “${editing.group}” in Library > Marks > Groups to delete it.`] }); return; }
     if (!b.dataset.armed) { b.dataset.armed = "1"; b.textContent = usedBy.has(editing.id) ? "Delete (in routes)?" : "Delete it?"; setTimeout(() => { delete b.dataset.armed; b.textContent = "Delete"; }, 4000); return; }
     delete b.dataset.armed; b.textContent = "Delete";
     try { await invoke("mark_delete", { id: editing.id, force: true }); activity.note(`Deleted ${editing.name || "the mark"}`); } catch (err) { status(String(err)); }
@@ -471,6 +482,68 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     $("lib-symbols").hidden = !symbols.length;
     renderSymbols();
   }
+  // ---------- duplicate marks: the same name within 30 m, or unnamed within 5 m ----------
+  let dupeCache = null, dupeFor = null;
+  function dupes() {
+    if (dupeFor === marks && dupeCache) return dupeCache;
+    const CELL = 0.001; // about 100 m
+    const grid = new Map();
+    const key = (x, y) => `${x}|${y}`;
+    // oldest first, so the one kept is the original
+    const order = [...marks].sort((a, b) => (a.created || Infinity) - (b.created || Infinity));
+    const out = new Set();
+    for (const m of order) {
+      const cx = Math.floor(m.lon / CELL), cy = Math.floor(m.lat / CELL);
+      const name = (m.name || "").trim().toLowerCase();
+      const lim = name ? 30 / 1852 : 5 / 1852;
+      let dup = false;
+      for (let dx = -1; dx <= 1 && !dup; dx++) for (let dy = -1; dy <= 1 && !dup; dy++) {
+        for (const o of grid.get(key(cx + dx, cy + dy)) ?? []) {
+          if ((o.name || "").trim().toLowerCase() === name && distNm([o.lon, o.lat], [m.lon, m.lat]) < lim) { dup = true; break; }
+        }
+      }
+      if (dup) out.add(m.id);
+      else { const k = key(cx, cy); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(m); }
+    }
+    dupeFor = marks; dupeCache = out;
+    return out;
+  }
+
+  // ---------- groups as layers: shown or hidden on the chart, locked against deleting and moving ----------
+  const isLocked = (m) => !!m.group && prefs.lockedGroups.includes(m.group);
+  function unlocked(ms, what) {
+    const free = ms.filter((m) => !isLocked(m));
+    if (free.length < ms.length) activity.note(`${(ms.length - free.length).toLocaleString()} mark${ms.length - free.length === 1 ? " is" : "s are"} in locked groups and weren't ${what}`, { details: ["Unlock a group in Library > Marks > Groups."] });
+    return free;
+  }
+  function renderGroups() {
+    const ul = $("lib-grp-list");
+    if (!$("lib-groups").open) return;
+    ul.innerHTML = "";
+    const c = new Map();
+    for (const m of marks) c.set(m.group || "", (c.get(m.group || "") || 0) + 1);
+    const hidden = new Set(prefs.hiddenGroups), locked = new Set(prefs.lockedGroups);
+    for (const [g, n] of [...c].sort((a, b) => collate(a[0] || "~", b[0] || "~"))) {
+      const li = document.createElement("li");
+      li.className = "grp-row";
+      li.innerHTML = `<input type="checkbox" title="Show this group's marks on the chart"><div class="main"><b></b><small></small></div><button data-act="lock"></button><button data-act="list" title="List only this group's marks">List</button>`;
+      li.querySelector("b").textContent = g || "(no group)";
+      li.querySelector("small").textContent = `${n.toLocaleString()} mark${n === 1 ? "" : "s"}${hidden.has(g) ? " · hidden" : ""}${locked.has(g) ? " · locked" : ""}`;
+      const cb = li.querySelector("input");
+      cb.checked = !hidden.has(g);
+      cb.onchange = () => { prefs.hiddenGroups = cb.checked ? prefs.hiddenGroups.filter((x) => x !== g) : [...prefs.hiddenGroups, g]; savePrefs(); draw(); renderGroups(); };
+      const lk = li.querySelector('[data-act="lock"]');
+      lk.hidden = !g;
+      lk.textContent = locked.has(g) ? "Unlock" : "Lock";
+      lk.classList.toggle("on", locked.has(g));
+      lk.title = locked.has(g) ? "Let this group's marks be deleted and moved again" : "Keep this group's marks from being deleted or moved by accident";
+      lk.onclick = () => { prefs.lockedGroups = locked.has(g) ? prefs.lockedGroups.filter((x) => x !== g) : [...prefs.lockedGroups, g]; savePrefs(); renderGroups(); };
+      li.querySelector('[data-act="list"]').onclick = () => markList.setFilter("group", g);
+      ul.append(li);
+    }
+  }
+  $("lib-groups").addEventListener("toggle", renderGroups);
+
   function renderSymbols() {
     const ul = $("lib-sym-list");
     if (!$("lib-symbols").open) return;

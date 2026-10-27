@@ -334,6 +334,11 @@
         </div>
         <div class="tab" data-tab="marks">
           <div class="wx-row"><label class="grow" title="Draw only the marks the search and filters list (else every mark)"><input id="lib-f-chart" type="checkbox" /> Chart shows only the marks listed</label></div>
+          <details id="lib-groups" class="sub" title="Each group (a TimeZero layer, a season, a mate's marks) shown or hidden on the chart, and locked so it can't be deleted or moved by accident">
+            <summary>Groups</summary>
+            <div class="wx-note">Untick a group to hide its marks on the chart. A locked group's marks can't be deleted or moved (on the chart or to another group) until it's unlocked.</div>
+            <ul id="lib-grp-list" class="list"></ul>
+          </details>
           <details id="lib-symbols" class="sub" title="The symbols your marks had in TimeZero: give each a meaning once, and every mark with it (and later imports) takes it">
             <summary>TimeZero symbols</summary>
             <div class="wx-note">Show draws only the marks with that symbol, to see what it was used for; then pick its type. The meanings are the same in all your libraries.</div>

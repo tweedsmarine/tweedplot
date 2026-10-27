@@ -1145,3 +1145,10 @@ button.on.warn { background: #b03a2e; color: #fff; border-color: #b03a2e; }
 /* seven Library tabs: they wrap rather than run off the drawer */
 .pane[data-pane="library"] .tabs { flex-wrap: wrap; }
 .pane[data-pane="library"] .tabs button { flex: 1 1 auto; padding: 5px 6px; }
+
+/* Marks > Groups (library.js) */
+.grp-row { display: flex; align-items: center; gap: 6px; }
+.grp-row .main { flex: 1; min-width: 0; }
+.grp-row small { display: block; color: var(--quiet); }
+.grp-row button { flex: none; font-size: 12px; }
+#lib-grp-list { max-height: 260px; overflow-y: auto; }
