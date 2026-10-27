@@ -1409,6 +1409,24 @@ async fn library_merge(app: tauri::AppHandle, path: String, job: Option<String>)
     Ok(r)
 }
 
+/// The effort map of the tracks `ids` (library/density.rs): [lon, lat, minutes] per cell.
+#[tauri::command]
+async fn tracks_density(app: tauri::AppHandle, ids: Vec<String>, cell: f64, sog_min: f64, sog_max: f64, job: Option<String>) -> Result<Vec<[f64; 3]>, String> {
+    let job = job.unwrap_or_default();
+    let cancel = job_begin(&job);
+    let l = lib()?;
+    let h = app.clone();
+    let j = job.clone();
+    let r = tauri::async_runtime::spawn_blocking(move || {
+        let mut progress = job_progress(&h, &j);
+        l.track_density(&ids, cell, sog_min, sog_max, &mut progress, &cancel).map_err(es)
+    })
+    .await
+    .map_err(|e| e.to_string());
+    job_end(&job);
+    r?
+}
+
 // ---------- the fishing log ----------
 
 #[tauri::command]
@@ -3530,6 +3548,7 @@ pub fn run() {
             overlay_track,
             trips_list,
             events_list,
+            tracks_density,
             event_save,
             events_delete,
             events_csv,

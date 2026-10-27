@@ -467,6 +467,42 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
   $("trk-time").checked = prefs.atTime;
   $("trk-time").onchange = () => { prefs.atTime = $("trk-time").checked; save(); drawNow(); };
 
+  // ---------- the effort map: where time was spent (library/density.rs) ----------
+  map.addSource("eff", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addLayer({ id: "eff", type: "heatmap", source: "eff", layout: { visibility: "none" },
+    paint: { "heatmap-opacity": 0.75, "heatmap-intensity": 1,
+      "heatmap-color": ["interpolate", ["linear"], ["heatmap-density"], 0, "rgba(0,0,0,0)", 0.1, "rgba(40,60,190,0.5)", 0.3, "#2a9df4", 0.5, "#3cc98b", 0.7, "#f1d630", 0.9, "#f08a24", 1, "#d7301f"] } }, "trk-lines");
+  const eff = { min: 0.5, max: 5, cell: "0.01", ...(prefs.effort ?? {}) };
+  $("eff-min").value = eff.min; $("eff-max").value = eff.max; $("eff-cell").value = eff.cell;
+  let effMade = null;
+  async function makeEffort() {
+    eff.min = Number($("eff-min").value) || 0; eff.max = Number($("eff-max").value) || 5; eff.cell = $("eff-cell").value;
+    prefs.effort = eff; save();
+    const ts = trackList.filtered();
+    if (!ts.length) { $("eff-note").textContent = "No tracks are listed: change the filters."; return; }
+    const job = activity.start(`Effort map of ${ts.length.toLocaleString()} track${ts.length === 1 ? "" : "s"}`, { cancel: (id) => invoke("job_cancel", { job: id }) });
+    try {
+      const cell = Number(eff.cell);
+      const cells = await invoke("tracks_density", { ids: ts.map((t) => t.id), cell, sogMin: eff.min, sogMax: eff.max, job: job.id });
+      // weights: minutes in a cell against the busiest cells (the 98th percentile), so one
+      // long night at anchor doesn't wash the rest out
+      const mins = cells.map((c) => c[2]).sort((a, b) => a - b);
+      const top = mins[Math.floor(mins.length * 0.98)] || mins.at(-1) || 1;
+      map.getSource("eff").setData({ type: "FeatureCollection", features: cells.map((c) => ({ type: "Feature", properties: { w: Math.min(1, c[2] / top) }, geometry: { type: "Point", coordinates: [c[0], c[1]] } })) });
+      // a cell's size on the screen at each zoom (512 px tiles), so neighbours just merge
+      const px8 = (cell * 512 * 256) / 360;
+      map.setPaintProperty("eff", "heatmap-radius", ["interpolate", ["exponential", 2], ["zoom"], 4, Math.max(2, (px8 / 16) * 2.2), 12, px8 * 16 * 2.2]);
+      map.setPaintProperty("eff", "heatmap-weight", ["get", "w"]);
+      map.setLayoutProperty("eff", "visibility", "visible");
+      const hours = mins.reduce((a, b) => a + b, 0) / 60;
+      effMade = { n: ts.length, at: Date.now() };
+      $("eff-note").textContent = `From ${ts.length.toLocaleString()} tracks: ${Math.round(hours).toLocaleString()} h at ${eff.min}–${eff.max} kn in ${cells.length.toLocaleString()} cells. Change the filters and press Show again to update it.`;
+      job.done(`${Math.round(hours).toLocaleString()} h at ${eff.min}–${eff.max} kn.`);
+    } catch (e) { job.fail(String(e)); }
+  }
+  $("eff-make").onclick = makeEffort;
+  $("eff-hide").onclick = () => { map.setLayoutProperty("eff", "visibility", "none"); $("eff-note").textContent = effMade ? "Hidden." : ""; };
+
   onTrips(() => trackList.refresh());
   refresh();
   return {

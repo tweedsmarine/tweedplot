@@ -18,6 +18,7 @@ mod gpx;
 mod manage;
 mod trips;
 mod events;
+mod density;
 pub use events::Event;
 pub mod protect;
 mod overlay;
