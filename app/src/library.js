@@ -509,6 +509,49 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     return out;
   }
 
+  // ---------- selecting marks with a box dragged on the chart ----------
+  (() => {
+    const btn = $("lib-box");
+    let box = null, start = null, armed = false;
+    const stop = () => {
+      armed = false; btn.classList.remove("on", "armed"); map.dragPan.enable(); map.getCanvas().style.cursor = "";
+      box?.remove(); box = null; start = null;
+    };
+    btn.onclick = () => {
+      if (armed) { stop(); return; }
+      armed = true; btn.classList.add("on", "armed"); map.dragPan.disable(); map.getCanvas().style.cursor = "crosshair";
+      toast("Drag a box round the marks to select them (Esc stops).");
+    };
+    const canvas = map.getCanvasContainer();
+    canvas.addEventListener("pointerdown", (e) => {
+      if (!armed || e.button !== 0) return;
+      const r = canvas.getBoundingClientRect();
+      start = [e.clientX - r.left, e.clientY - r.top];
+      box = document.createElement("div");
+      box.className = "sel-box";
+      canvas.append(box);
+      canvas.setPointerCapture(e.pointerId);
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      if (!start || !box) return;
+      const r = canvas.getBoundingClientRect();
+      const x = e.clientX - r.left, y = e.clientY - r.top;
+      Object.assign(box.style, { left: `${Math.min(x, start[0])}px`, top: `${Math.min(y, start[1])}px`, width: `${Math.abs(x - start[0])}px`, height: `${Math.abs(y - start[1])}px` });
+    });
+    canvas.addEventListener("pointerup", (e) => {
+      if (!start) return;
+      const r = canvas.getBoundingClientRect();
+      const a = map.unproject(start), b = map.unproject([e.clientX - r.left, e.clientY - r.top]);
+      const [w, east] = [Math.min(a.lng, b.lng), Math.max(a.lng, b.lng)], [s, n] = [Math.min(a.lat, b.lat), Math.max(a.lat, b.lat)];
+      const inBox = markList.filtered().filter((m) => m.lon >= w && m.lon <= east && m.lat >= s && m.lat <= n).map((m) => m.id);
+      stop();
+      ui.openTab("library", "marks");
+      const total = markList.select(inBox);
+      toast(inBox.length ? `${inBox.length.toLocaleString()} mark${inBox.length === 1 ? "" : "s"} in the box selected (${total.toLocaleString()} in all): the bar above the list says what can be done with them.` : "No listed marks in that box.");
+    });
+    window.addEventListener("keydown", (e) => { if (armed && e.key === "Escape") { stop(); toast(""); } });
+  })();
+
   // ---------- groups as layers: shown or hidden on the chart, locked against deleting and moving ----------
   const isLocked = (m) => !!m.group && prefs.lockedGroups.includes(m.group);
   function unlocked(ms, what) {

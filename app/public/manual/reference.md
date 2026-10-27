@@ -679,7 +679,7 @@ TweedPlot opens the library last used. Changing library isn't possible while the
   - Routes: From a file. Barriers: Kind, Not used.
 - **★ Saved**, the first button of Whole library, keeps every filter set now (the Whole library ones and each tab's own) under a name, such as Tuna season or Last trip, and brings them all back in one press. The button shows the name while those filters are in use; ✕ beside one in its list forgets it. Saved filters are the same in every library.
 - **Months** picks months of the year, any year: Nov, Dec and Jan shows only what was made in the tuna season, whatever the year.
-- **Select**: tick rows one by one, or **Select all** (or **Select these**, all the filters list). A bar then shows how many and what can be done with them:
+- **Select**: tick rows one by one, or **Select all** (or **Select these**, all the filters list). In Marks, **Select on chart** then drag a box on the chart ticks the listed marks inside it (Esc stops). A bar then shows how many and what can be done with them:
   - Marks: **GPX** (one file), **Library file…** (a library of their own, to give another boat or keep apart; the library in use is unchanged), **Group…** (move them to a group: type a new one or pick), **Type…**, **Colour…**, **Route** (a route of them, in the order listed, opened in the Route drawer), **Delete** (marks in saved routes are taken out of them).
   - Tracks: **Show**, **Hide**, **GPX**, **Library file…**, **Colour…**, **Delete**.
   - Routes: **GPX**, **Library file…** (with their marks), **Delete** (their marks stay). Routings: Delete. Barriers: Use, Don't use, Delete.

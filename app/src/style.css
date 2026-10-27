@@ -1152,3 +1152,6 @@ button.on.warn { background: #b03a2e; color: #fff; border-color: #b03a2e; }
 .grp-row small { display: block; color: var(--quiet); }
 .grp-row button { flex: none; font-size: 12px; }
 #lib-grp-list { max-height: 260px; overflow-y: auto; }
+
+.sel-box { position: absolute; z-index: 5; border: 2px dashed #f0a500; background: rgba(240, 165, 0, 0.12); pointer-events: none; }
+#lib-box { flex: none; }

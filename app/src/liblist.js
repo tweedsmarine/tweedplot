@@ -412,6 +412,8 @@ export function libList(root, cfg) {
     filtered: () => shown,
     selected: () => shown.filter((x) => sel.has(x.id)),
     clearSelection() { sel.clear(); renderCount(); renderRows(); },
+    /** Tick these (those listed); returns how many are now ticked. */
+    select(ids) { const listed = new Set(shown.map((x) => x.id)); for (const id of ids) if (listed.has(id)) sel.add(id); renderCount(); renderRows(); return sel.size; },
     /** Scroll to a row and flash it; true if it's listed (false: the filters hide it). */
     highlight(id) {
       const i = shown.findIndex((x) => x.id === id);
