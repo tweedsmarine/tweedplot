@@ -129,9 +129,10 @@ export function start(title, { cancel = null, params = "" } = {}) {
   };
   const job = {
     id,
-    progress(s, done = 0, total = 0) {
+    /** `text` replaces "step: done of total" (e.g. sizes in MB) while the bar still follows done/total. */
+    progress(s, done = 0, total = 0, text = "") {
       if (finished) return;
-      step.textContent = total ? `${s}: ${fmt(done)} of ${fmt(total)}` : `${s}…`;
+      step.textContent = text || (total ? `${s}: ${fmt(done)} of ${fmt(total)}` : `${s}…`);
       bar.hidden = !total;
       if (total) fill.style.width = `${Math.min(100, (done / total) * 100)}%`;
     },

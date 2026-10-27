@@ -75,3 +75,30 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+#[cfg(test)]
+mod real {
+    /// RN_LIB=<a real library.gpkg> cargo test --release --lib real_density -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn real_density() {
+        let Ok(src) = std::env::var("RN_LIB") else { return };
+        let dir = std::env::temp_dir().join("rn-real");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::copy(&src, dir.join("library.gpkg")).unwrap();
+        let t0 = std::time::Instant::now();
+        let lib = crate::Library::open(&dir).unwrap();
+        println!("open + migrate {:?}", t0.elapsed());
+        let ts = lib.tracks().unwrap();
+        let ids: Vec<String> = ts.iter().map(|t| t.id.clone()).collect();
+        let t0 = std::time::Instant::now();
+        let cells = lib.track_density(&ids, 0.01, 0.5, 5.0, &mut |_, _, _| {}, &std::sync::atomic::AtomicBool::new(false)).unwrap();
+        let h: f64 = cells.iter().map(|c| c[2]).sum::<f64>() / 60.0;
+        println!("{} tracks → {} cells, {:.0} h, {:?}", ids.len(), cells.len(), h, t0.elapsed());
+        println!("trips {} events {}", lib.trips().unwrap().len(), lib.events().unwrap().len());
+        let t0 = std::time::Instant::now();
+        let o = crate::Overlay::open(&dir.join("library.gpkg")).unwrap();
+        println!("overlay marks {} in {:?}", o.marks().unwrap().len(), t0.elapsed());
+    }
+}

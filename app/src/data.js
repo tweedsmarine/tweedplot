@@ -21,7 +21,20 @@ export function setupData(map, { toast, reloadTiles } = {}) {
     const lon = (v) => { const w = ((v + 540) % 360) - 180; return `${Math.abs(w).toFixed(1)}°${w < 0 ? "W" : "E"}`; };
     return `${lat(a[1])}–${lat(a[3])} ${lon(a[0])}–${lon(a[2])}`;
   };
-  const say = (t, kind = "") => { const el = $("data-status"); el.textContent = t; el.className = `grow wx-note ${kind}`; };
+  // the drawer's line, and an activity card for each download (seen with the drawer closed):
+  // the first message while busy starts the card, a good/warn/bad one ends it
+  let job = null;
+  const say = (t, kind = "") => {
+    const el = $("data-status"); el.textContent = t; el.className = `grow wx-note ${kind}`;
+    if (busy && !job && !kind) { job = activity.start(t.replace(/…$/, ""), { cancel: () => invoke("data_cancel").catch(() => {}) }); return; }
+    if (job) {
+      if (!kind) job.progress(t.replace(/…$/, ""));
+      else { if (kind === "bad") job.fail(t); else job.done(t, { keep: kind === "warn" }); job = null; }
+      return;
+    }
+    if (kind === "bad") activity.start("Data").fail(t);
+    else if (kind) activity.note(t);
+  };
   const dot = (id, state) => { $(id).className = `dot ${state}`; };
 
   /** The chart view as [w, s, e, n] (east may pass 180). */
@@ -150,7 +163,7 @@ export function setupData(map, { toast, reloadTiles } = {}) {
     busy = on;
     for (const id of ["data-gshhg", "data-etopo", "data-mb", "data-mpi", "data-hr"]) $(id).disabled = on;
     $("data-cancel").disabled = !on;
-    if (!on) $("data-progress").hidden = true;
+    if (!on) { $("data-progress").hidden = true; if (job) { job.done(""); job = null; } }
   }
 
   listen("data-progress", ({ payload }) => {
@@ -160,6 +173,7 @@ export function setupData(map, { toast, reloadTiles } = {}) {
     p.querySelector(".bar").style.width = frac == null ? "100%" : `${(frac * 100).toFixed(1)}%`;
     p.classList.toggle("indeterminate", frac == null);
     p.querySelector("span").textContent = `${payload.stage}${payload.done ? ` · ${fmtMB(payload.done)}${payload.total ? ` of ${fmtMB(payload.total)}` : ""}` : ""}`;
+    job?.progress(payload.stage, payload.done || 0, payload.total || 0, p.querySelector("span").textContent);
   });
 
   $("data-gshhg").onclick = async () => {

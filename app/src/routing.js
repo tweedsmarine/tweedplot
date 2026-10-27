@@ -9,6 +9,7 @@
 //          grib, t0 } }
 import * as maplibregl from "maplibre-gl";
 import { invoke } from "@tauri-apps/api/core";
+import * as activity from "./activity.js";
 import { fmt } from "./weather.js";
 import { routingStats, STATS, hm } from "./stats.js";
 import { setupGates } from "./gates.js";
@@ -207,7 +208,10 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
   }
   async function computeOne(grib, nameExtra) {
     const req = request(grib);
-    const line = msg(`Routing with ${grib.name}…`);
+    const log = msg(`Routing with ${grib.name}…`);
+    // the outcome goes in the drawer's log and on an activity card (seen with the drawer closed)
+    const job = activity.start(`Routing with ${grib.name}`);
+    const line = { set(t, k = "") { log.set(t, k); if (k === "bad") job.fail(t); else job.done(t, { keep: k === "warn" }); } };
     try {
       const r = await invoke("route_compute", { req });
       const it = add({ ...r, request: req, grib: grib.name, t0: r.legs?.[0]?.start ?? req.t0 }, nameExtra);

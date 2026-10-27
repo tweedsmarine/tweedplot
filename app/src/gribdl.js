@@ -4,6 +4,7 @@
 // to the area, and the file is loaded as soon as it is written.
 import { SAILDOCS, SD_MODELS, SD_PARAM_NAMES, saildocsRequest, saildocsBytes } from "./saildocs.js";
 import { invoke } from "@tauri-apps/api/core";
+import * as activity from "./activity.js";
 import { listen } from "@tauri-apps/api/event";
 
 const KEY = "racenav.gribdl";
@@ -211,7 +212,9 @@ export function setupGribDownload(map, { weather, course }) {
 
   // ---------- download ----------------------------------------------------------
   const prog = $("dl-progress");
+  let job = null; // the download's activity card
   listen("gribdl-progress", ({ payload: p }) => {
+    job?.progress(p.stage, p.done, p.total, p.total ? `${p.stage}: ${p.done} of ${p.total} · ${(p.bytes / 1e6).toFixed(1)} MB` : "");
     prog.hidden = false;
     const pc = p.total ? Math.round((100 * p.done) / p.total) : 2;
     prog.querySelector(".bar").style.width = `${pc}%`;
