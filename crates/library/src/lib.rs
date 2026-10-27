@@ -1567,11 +1567,11 @@ fn read_name(name: &str) -> NameInfo {
     }
     if has(&["rock", "rocks", "reef", "pinnacle"]) {
         tag("rock", &mut out);
-        out.kind.get_or_insert("hazard");
+        out.kind.get_or_insert("sym-rock");
     }
     if has(&["wreck", "wrk"]) {
         tag("wreck", &mut out);
-        out.kind = Some("wreck");
+        out.kind = Some("sym-wreck");
     }
     for (w, t) in [("hard", "hard"), ("rough", "rough"), ("rolly", "rough"), ("soft", "soft"), ("mud", "mud"), ("sand", "sand"), ("shell", "shell"), ("gravel", "gravel"), ("weed", "weed"), ("tow", "tow")] {
         if words.contains(&w) {
@@ -1734,7 +1734,7 @@ mod tests {
         assert_eq!(d("13:43").depth, None);
         assert_eq!((d("FOUL").kind, d("FOUL").tags), (Some("foul"), vec!["foul"]));
         assert_eq!(d("hard bottom, rolly").tags, vec!["hard", "rough"]);
-        assert_eq!(d("ROCK").kind, Some("hazard"));
+        assert_eq!(d("ROCK").kind, Some("sym-rock"));
         assert_eq!(d("?").tags, vec!["unsure"]);
         assert_eq!(d("Event 0035").tags, vec!["event"]);
         assert_eq!(d("fast 3 times!").kind, Some("foul"));

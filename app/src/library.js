@@ -11,6 +11,7 @@ import { POI_KINDS, poiImage } from "./poi.js";
 import { iconSelect, imageUrl } from "./iconselect.js";
 import { featureImage } from "./chartfeatures.js";
 import { libList, monthTest, dateTest } from "./liblist.js";
+import { addKindOptions, symImage, SYMBOL_KINDS } from "./marksymbols.js";
 
 const KEY = "racenav.library";
 
@@ -43,7 +44,9 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   // invisible click target so selecting and routing to them works the same
   const isBuoy = ["has", ["get", "kind"], ["literal", BUOY_ICONS]];
   const isPoi = ["has", ["get", "kind"], ["literal", Object.fromEntries(Object.keys(POI_KINDS).map((k) => [k, 1]))]];
-  const isIcon = ["any", isBuoy, isPoi];
+  // shapes, seabed and fish symbols ("sym-…"), drawn in the mark's own colour
+  const isSym = ["==", ["slice", ["get", "kind"], 0, 4], "sym-"];
+  const isIcon = ["any", isBuoy, isPoi, isSym];
   map.addLayer({ id: "lib-marks", type: "circle", source: "lib-marks",
     paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, ["case", isIcon, 11, 2.5], 10, ["case", isIcon, 11, 5]],
              // a mark's own colour (from TimeZero and other plotters), else by its type
@@ -55,6 +58,8 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
               "icon-allow-overlap": true, "icon-ignore-placement": true } }, "lib-marks");
   map.addLayer({ id: "lib-poi", type: "symbol", source: "lib-marks", filter: isPoi,
     layout: { "icon-image": ["concat", "poi:", ["get", "kind"]], "icon-allow-overlap": true, "icon-ignore-placement": true } }, "lib-marks");
+  map.addLayer({ id: "lib-sym", type: "symbol", source: "lib-marks", filter: isSym,
+    layout: { "icon-image": ["concat", "sym:", ["get", "kind"], ":", ["coalesce", ["get", "colour"], ""]], "icon-allow-overlap": true, "icon-ignore-placement": true } }, "lib-marks");
   map.addLayer({ id: "lib-labels", type: "symbol", source: "lib-marks", minzoom: 8, filter: ["!=", ["get", "name"], ""],
     layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 6], "icon-allow-overlap": false } }, "track");
   let hidden = new Set();
@@ -65,6 +70,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     map.setLayoutProperty("lib-labels", "visibility", vis);
     map.setLayoutProperty("lib-buoys", "visibility", vis);
     map.setLayoutProperty("lib-poi", "visibility", vis);
+    map.setLayoutProperty("lib-sym", "visibility", vis);
     // every mark, or only those the list shows ("Chart shows only the marks listed")
     const shown = prefs.chartFiltered && markList ? markList.filtered() : marks;
     map.getSource("lib-marks").setData({ type: "FeatureCollection", features: shown.filter((m) => !hidden.has(m.id)).map((m) => ({
@@ -256,7 +262,8 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   // the mark editor's Type list shows each type's symbol as the chart draws it
   let kindPicker = null;
   const DOTS = { danger: "#c0392b", waypoint: "#5b6b75" };
-  function kindIcon(k) {
+  function kindIcon(k, colour = "") {
+    if (SYMBOL_KINDS[k]) return imageUrl(symImage(`sym:${k}:${colour || ""}`));
     if (BUOY_ICONS[k]) return imageUrl(featureImage(`s57:${BUOY_ICONS[k]}`));
     if (POI_KINDS[k]) return imageUrl(poiImage(`poi:${k}`));
     const c = document.createElement("canvas"); c.width = c.height = 16;
@@ -289,11 +296,14 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       m.depth != null ? `${Math.round(m.depth)} m` : "", m.temp != null ? `${m.temp.toFixed(1)} °C` : "",
       t.join(", "), used ? `in ${used} route${used > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ");
   };
+  // row icons, made once per type and colour (thousands of rows share a few)
+  const dotIcons = new Map();
+  const dotIcon = (k, c) => { const key = `${k}|${SYMBOL_KINDS[k] ? c || "" : ""}`; if (!dotIcons.has(key)) dotIcons.set(key, kindIcon(k, SYMBOL_KINDS[k] ? c : "")); return dotIcons.get(key); };
   const dot = (m) => {
     const i = document.createElement("span");
     i.className = "ll-dot";
-    if (m.colour && !BUOY_ICONS[m.kind] && !POI_KINDS[m.kind]) i.style.background = m.colour;
-    else { i.style.backgroundImage = `url(${kindIcon(m.kind)})`; i.classList.add("icon"); }
+    if (m.colour && !BUOY_ICONS[m.kind] && !POI_KINDS[m.kind] && !SYMBOL_KINDS[m.kind]) i.style.background = m.colour;
+    else { i.style.backgroundImage = `url(${dotIcon(m.kind, m.colour)})`; i.classList.add("icon"); }
     return i;
   };
   markList = libList($("lib-marks-list"), {
@@ -336,7 +346,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       { label: "GPX", title: "Write the selected marks as one GPX file", run: (ms) => exportGpx(ms.length === 1 ? (ms[0].name || "mark") : "marks", ms.map((m) => m.id), [], `${ms.length.toLocaleString()} mark${ms.length === 1 ? "" : "s"}`) },
       { label: "Group…", title: "Move the selected marks to a group", input: { type: "text", label: "Group", list: () => [...new Set(marks.map((m) => m.group).filter(Boolean))].sort(collate), value: (ms) => (new Set(ms.map((m) => m.group)).size === 1 ? ms[0].group : "") },
         run: (ms, v) => bulk(ms, { group: (v ?? "").trim() }, `moved to ${v?.trim() ? `“${v.trim()}”` : "no group"}`) },
-      { label: "Type…", title: "Give the selected marks a type", input: { type: "select", label: "Type", options: () => Object.entries(KIND_LABEL()) },
+      { label: "Type…", title: "Give the selected marks a type (a symbol)", input: { type: "select", label: "Type", select: () => kindSelect(), icons: (v) => kindIcon(v) },
         run: (ms, v) => bulk(ms, { kind: v }, `now ${(KIND_LABEL()[v] || v).toLowerCase()}`) },
       { label: "Colour…", title: "Give the selected marks a colour", input: { type: "colour", label: "Colour", value: (ms) => ms[0].colour || "#e67e22" },
         run: (ms, v) => bulk(ms, { colour: v }, `coloured ${v}`) },
@@ -381,6 +391,9 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
 
   // ---------- the mark editor (above the list) ----------
   const form = $("mark-edit");
+  addKindOptions(form.kind, POI_KINDS); // every type: course marks, buoys, points of interest, shapes, seabed, fish
+  /** A copy of the full type list, for the selection's Type… and the TimeZero symbols. */
+  const kindSelect = () => { const s = form.kind.cloneNode(true); s.removeAttribute("name"); return s; };
   function closeForm() {
     form.hidden = true;
     editing = null;
@@ -390,13 +403,6 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     editing = { ...m };
     form.hidden = false;
     form.name.value = m.name;
-    if (!form.kind.querySelector("optgroup.poi")) {
-      const og = document.createElement("optgroup");
-      og.className = "poi";
-      og.label = "Point of interest";
-      for (const [k, [label]] of Object.entries(POI_KINDS)) og.append(new Option(label, k));
-      form.kind.append(og);
-    }
     form.kind.value = m.kind || "mark";
     kindPicker ??= iconSelect(form.kind, kindIcon);
     kindPicker.refresh();
@@ -453,14 +459,6 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     const ul = $("lib-sym-list");
     if (!$("lib-symbols").open) return;
     ul.innerHTML = "";
-    // the type list needs the point-of-interest options the mark editor adds
-    if (!form.kind.querySelector("optgroup.poi")) {
-      const og = document.createElement("optgroup");
-      og.className = "poi";
-      og.label = "Point of interest";
-      for (const [k, [label]] of Object.entries(POI_KINDS)) og.append(new Option(label, k));
-      form.kind.append(og);
-    }
     for (const sy of symbols) {
       const li = document.createElement("li");
       const showing = markList.filters.symbol === sy.symbol;
@@ -474,10 +472,13 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
         i.style.background = c || "#e67e22";
         chips.append(i);
       }
-      const sel = li.querySelector("select");
-      sel.append(new Option("— not set —", ""));
-      for (const [v, t] of KIND_CHOICES()) sel.append(new Option(t, v));
+      const old = li.querySelector("select");
+      const sel = kindSelect();
+      sel.title = old.title;
+      sel.prepend(new Option("— not set —", ""));
+      old.replaceWith(sel);
       sel.value = sy.kind;
+      iconSelect(sel, (v) => (v ? kindIcon(v, sy.colours[0]?.[0]) : ""));
       sel.onchange = async () => {
         try {
           const n = await invoke("symbol_set", { symbol: sy.symbol, kind: sel.value, label: sy.label });

@@ -611,6 +611,22 @@ In the mark editor (Library > Marks > **Edit**, which opens above the list, or r
 | {img:poi:water} | Water filling | {img:poi:fuel} | Fuel |
 | {img:poi:provisions} | Provisions or shop | {img:poi:info} | Note |
 
+**Symbols for your own marks**, drawn in the mark's own colour (a TimeZero mark keeps its red, blue and so on), or in the colour shown here when it has none:
+
+| Symbol | Type | Symbol | Type |
+| --- | --- | --- | --- |
+| {img:sym:sym-circle:} {img:sym:sym-circle-f:} | Circle, filled circle | {img:sym:sym-square:} {img:sym:sym-square-f:} | Square, filled square |
+| {img:sym:sym-diamond:} {img:sym:sym-diamond-f:} | Diamond, filled diamond | {img:sym:sym-tri-up:} {img:sym:sym-tri-up-f:} | Triangle up, filled |
+| {img:sym:sym-tri-down:} {img:sym:sym-tri-down-f:} | Triangle down, filled | {img:sym:sym-cross:} {img:sym:sym-x:} | Cross, X |
+| {img:sym:sym-star:} {img:sym:sym-flag:} {img:sym:sym-dot:} | Star, flag, dot | {img:sym:sym-rock:} | Rock |
+| {img:sym:sym-wreck:} | Wreck | {img:sym:sym-snag:} | Obstruction or snag |
+| {img:sym:sym-pot:} | Pot or trap | {img:sym:sym-fish:} {img:sym:sym-school:} | Fish, school of fish |
+| {img:sym:sym-tuna:} | Tuna | {img:sym:sym-swordfish:} | Swordfish |
+| {img:sym:sym-shark:} | Shark | {img:sym:sym-skate:} | Skate or ray |
+| {img:sym:sym-crayfish:} | Crayfish | | |
+
+Every type list (the mark editor, Type… for selected marks, and TimeZero symbols) shows each type with its picture. A mark whose name says rock or wreck comes in with the rock or wreck symbol.
+
 Racing marks, waypoints, line ends and dangers show as coloured dots with their names. Groups (e.g. "RNZYS 2026", "Fishing spots") keep the library tidy.
 
 **Barriers**

@@ -15,6 +15,8 @@
 //   });
 //   list.setItems(items); list.filtered(); list.selected();
 
+import { iconSelect } from "./iconselect.js";
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 export { MONTHS };
 
@@ -228,8 +230,8 @@ export function libList(root, cfg) {
     let inp = null;
     if (a.input) {
       if (a.input.type === "select") {
-        inp = document.createElement("select");
-        for (const [v, t] of a.input.options()) inp.append(new Option(t, v));
+        inp = a.input.select ? a.input.select() : document.createElement("select");
+        if (!a.input.select) for (const [v, t] of a.input.options()) inp.append(new Option(t, v));
       } else {
         inp = document.createElement("input");
         inp.type = a.input.type === "colour" ? "color" : "text";
@@ -243,7 +245,9 @@ export function libList(root, cfg) {
         if (a.input.value) inp.value = a.input.value(picked);
       }
       box.append(inp);
-      setTimeout(() => inp.focus(), 0);
+      // a list of symbols shows each one's picture (iconselect.js)
+      if (a.input.icons) iconSelect(inp, a.input.icons).refresh?.();
+      else setTimeout(() => inp.focus(), 0);
       inp.onkeydown = (e) => { if (e.key === "Enter") ok.click(); if (e.key === "Escape") no.click(); };
     }
     const ok = document.createElement("button");
