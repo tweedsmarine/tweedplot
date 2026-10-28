@@ -1,20 +1,59 @@
-# Windows installers for every push to main (and by hand from the Actions tab).
+# Windows installers, only when asked (pushes alone build nothing, so they cost nothing):
+#  - by hand: GitHub › Actions › build › Run workflow (choose which installers), or
+#    `gh workflow run build.yml -f arch=arm64` from a terminal;
+#  - or by putting [build] in the message of the last commit pushed.
 # The installers are attached to the run as artifacts: Actions › the run › Artifacts.
+# Tagged releases are release.yml.
 name: build
 
 on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: Which installers
+        type: choice
+        options: [both, x64, arm64]
+        default: both
+      tests:
+        description: Run the Rust tests first
+        type: boolean
+        default: true
   push:
     branches: [main]
-  pull_request:
-  workflow_dispatch:
 
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # decides whether anything runs: a run by hand, or [build] in the pushed commit's message
+  # (a job skipped by its `if` takes no runner time)
+  plan:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build]')
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+      tests: ${{ steps.m.outputs.tests }}
+    steps:
+      - id: m
+        shell: bash
+        run: |
+          arch="${{ github.event.inputs.arch || 'both' }}"
+          x64='{"arch":"x64","runner":"windows-latest"}'
+          arm='{"arch":"arm64","runner":"windows-11-arm"}'
+          case "$arch" in
+            x64) inc="[$x64]" ;;
+            arm64) inc="[$arm]" ;;
+            *) inc="[$x64,$arm]" ;;
+          esac
+          echo "matrix={\"include\":$inc}" >> "$GITHUB_OUTPUT"
+          echo "tests=${{ github.event.inputs.tests || 'true' }}" >> "$GITHUB_OUTPUT"
+
+  # the library crates' tests on Linux (billed at half the Windows rate; the app isn't built)
   test:
-    runs-on: windows-latest
+    needs: plan
+    if: needs.plan.outputs.tests == 'true'
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -23,14 +62,12 @@ jobs:
         run: cargo test # the workspace's default members: every crate but the app
 
   windows:
+    needs: [plan, test]
+    # build even when the tests were skipped, not when they failed
+    if: always() && needs.plan.result == 'success' && (needs.test.result == 'success' || needs.test.result == 'skipped')
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - arch: x64
-            runner: windows-latest
-          - arch: arm64
-            runner: windows-11-arm
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7

@@ -50,7 +50,7 @@ Configure NMEA inputs and the multiplexer in Settings. Enabled sources are monit
 
 ## Windows builds (GitHub Actions)
 
-- `.github/workflows/build.yml`: every push to `main` (or **Run workflow** on the Actions tab) runs the Rust tests and builds the NSIS installers for **x64** (`windows-latest`) and **ARM64** (`windows-11-arm`, native). They are on the run page under Artifacts for 30 days.
+- `.github/workflows/build.yml`: builds only when asked, so ordinary pushes use no Actions minutes. Either **Actions › build › Run workflow** (choose **both**, **x64** or **arm64**, and whether to run the tests first), `gh workflow run build.yml -f arch=arm64` from a terminal, or put `[build]` in the message of the last commit you push. It runs the Rust tests (on Linux: half the Windows rate) and builds the NSIS installers for **x64** (`windows-latest`) and **ARM64** (`windows-11-arm`, native). They are on the run page under Artifacts for 30 days.
 - `.github/workflows/release.yml`: push a tag `vX.Y.Z` (matching `version` in `app/src-tauri/tauri.conf.json`) and both installers go on a draft pre-release; check it, add notes, Publish.
 - The installers are not code-signed: SmartScreen warns until they are (More info › Run anyway).
 
