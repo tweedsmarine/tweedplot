@@ -486,27 +486,51 @@ impl Store {
 
     /// The sounding at a place: the finest cell there, else the nearest within two cells.
     pub fn sounding_at(&self, lon: f64, lat: f64) -> Option<Sounding> {
-        self.sounding_in(SEABED, lon, lat)
+        self.sounding_in(SEABED, lon, lat, 4.0)
+    }
+
+    /// The nearest sounding to a place within `radius_m` (for the cursor: a few pixels at
+    /// the zoom shown). Beyond about 24 cells the search moves to a coarser level, whose
+    /// cells merge the soundings in them.
+    pub fn sounding_near(&self, lon: f64, lat: f64, radius_m: f64) -> Option<Sounding> {
+        self.sounding_in(SEABED, lon, lat, radius_m)
     }
 
     /// A left-out sounding at a place (within two cells), with why in its `src` bits.
     pub fn left_out_at(&self, lon: f64, lat: f64) -> Option<Sounding> {
-        self.sounding_in(LEFT_OUT, lon, lat)
+        self.sounding_in(LEFT_OUT, lon, lat, 4.0)
     }
 
-    fn sounding_in(&self, table: &str, lon: f64, lat: f64) -> Option<Sounding> {
-        let (cx, cy) = cell_of(lon, lat, MAX_LEVEL)?;
+    /// The nearest left-out sounding within `radius_m`, with why in its `src` bits.
+    pub fn left_out_near(&self, lon: f64, lat: f64, radius_m: f64) -> Option<Sounding> {
+        self.sounding_in(LEFT_OUT, lon, lat, radius_m)
+    }
+
+    fn sounding_in(&self, table: &str, lon: f64, lat: f64, radius_m: f64) -> Option<Sounding> {
+        // the level to search: radius at most about 24 of its cells
+        let mut level = MAX_LEVEL;
+        let mut rc = (radius_m.max(0.0) / cell_size_m(MAX_LEVEL, lat).max(0.01)).max(1.0);
+        while rc > 24.0 && level > MIN_LEVEL {
+            level -= 1;
+            rc /= 2.0;
+        }
+        let r = rc.ceil() as i64;
+        let (cx, cy) = cell_of(lon, lat, level)?;
         let mut tiles: HashMap<(u32, u32), Option<Dense>> = HashMap::new();
         let mut best: Option<(i64, Cell, u32, u32)> = None;
-        for dy in -2i64..=2 {
-            for dx in -2i64..=2 {
+        for dy in -r..=r {
+            for dx in -r..=r {
+                let d2 = dx * dx + dy * dy;
+                if d2 as f64 > (rc + 0.5) * (rc + 0.5) || best.as_ref().is_some_and(|b| d2 >= b.0) {
+                    continue;
+                }
                 let (x, y) = (cx as i64 + dx, cy as i64 + dy);
                 if x < 0 || y < 0 {
                     continue;
                 }
                 let (x, y) = (x as u32, y as u32);
                 let t = tiles.entry((y >> 8, x >> 8)).or_insert_with(|| {
-                    self.blob_in(table, (MAX_LEVEL, y >> 8, x >> 8)).ok().flatten().and_then(|b| {
+                    self.blob_in(table, (level, y >> 8, x >> 8)).ok().flatten().and_then(|b| {
                         let mut d = Dense::new();
                         decode(&b, |x, y, c| d.0[y * TILE + x] = c).ok()?;
                         Some(d)
@@ -514,14 +538,13 @@ impl Store {
                 });
                 let Some(t) = t else { continue };
                 let c = t.0[(y as usize & 255) * TILE + (x as usize & 255)];
-                let d2 = dx * dx + dy * dy;
-                if c.n > 0 && best.as_ref().is_none_or(|b| d2 < b.0) {
+                if c.n > 0 {
                     best = Some((d2, c, x, y));
                 }
             }
         }
         let (_, c, x, y) = best?;
-        let (clon, clat) = cell_centre(x, y, MAX_LEVEL);
+        let (clon, clat) = cell_centre(x, y, level);
         let (dx, dy) = ((clon - lon) * lat.to_radians().cos() * 60.0 * 1852.0, (clat - lat) * 60.0 * 1852.0);
         Some(Sounding { z: c.mean, n: c.n, spread: c.spread(), newest: c.newest as i64 * 3600, src: c.src, off_m: (dx * dx + dy * dy).sqrt() })
     }
@@ -1323,6 +1346,29 @@ mod tests {
         w.finish(&mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
         let back = s.second_opinion(Some(&chart), &mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
         assert_eq!(back, 15);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_cursor_snaps_to_the_nearest_sounding() {
+        let dir = std::env::temp_dir().join(format!("bathy-snap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let s = Store::open(&dir.join("bathy.sqlite")).unwrap();
+        let mut w = s.writer("own", "t", 0).unwrap();
+        w.add(173.2, -41.2, -300.0, 1, SRC_OWN).unwrap();
+        w.add(173.2003, -41.2, -310.0, 1, SRC_OWN).unwrap(); // 25 m east
+        w.reject(173.2, -41.2006, -80.0, 1, SRC_OWN | WHY_SHALLOW); // 67 m south
+        w.finish(&mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
+        s.changed();
+        // 10 m off: nothing within 4 m, the first within 15 m
+        let p = (173.2 + 0.00012, -41.2);
+        assert!(s.sounding_at(p.0, p.1).is_none());
+        let n = s.sounding_near(p.0, p.1, 15.0).unwrap();
+        assert!((n.z + 300.0).abs() < 1e-3 && n.off_m < 12.0, "{n:?}");
+        // a wide snap (zoomed out) finds the left-out one too, at a coarser level
+        assert!(s.left_out_near(173.2, -41.2, 20.0).is_none());
+        let l = s.left_out_near(173.2, -41.2, 150.0).unwrap();
+        assert!((l.z + 80.0).abs() < 1e-3 && l.src & WHY_SHALLOW != 0, "{l:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

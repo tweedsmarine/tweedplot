@@ -264,14 +264,15 @@ pub fn pbathy_fit(area: [f64; 4]) -> Option<(f32, f32)> {
 
 /// The sounding at a place.
 #[tauri::command]
-pub fn pbathy_at(lon: f64, lat: f64) -> Option<bathy::Sounding> {
-    store()?.sounding_at(lon, lat)
+/// The nearest sounding within `radius_m` (the page asks for a few pixels at its zoom).
+pub fn pbathy_at(lon: f64, lat: f64, radius_m: Option<f64>) -> Option<bathy::Sounding> {
+    store()?.sounding_near(lon, lat, radius_m.unwrap_or(4.0).clamp(1.0, 5000.0))
 }
 
 /// A left-out sounding at a place, and why it was left out.
 #[tauri::command]
-pub fn pbathy_left_at(lon: f64, lat: f64) -> Option<bathy::Sounding> {
-    store()?.left_out_at(lon, lat)
+pub fn pbathy_left_at(lon: f64, lat: f64, radius_m: Option<f64>) -> Option<bathy::Sounding> {
+    store()?.left_out_near(lon, lat, radius_m.unwrap_or(4.0).clamp(1.0, 5000.0))
 }
 
 /// Delete all of it.

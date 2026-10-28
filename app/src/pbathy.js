@@ -33,30 +33,37 @@ const visible = () => mapRef?.getLayer("pbathy") && mapRef.getLayoutProperty("pb
 // the sounding under the cursor, asked for at most every 150 ms: `show(text, sounding)`, the
 // text for the position line (only with the layer shown), the sounding for the instruments
 let atBusy = false, atNext = null;
+/** How near the cursor (screen pixels) a sounding is picked up. */
+const SNAP_PX = 8;
 const WHY = { 16: "spike", 32: "too shallow for the chart", 64: "too deep for the chart", 128: "in a run mostly off the chart" };
 export function pbathyAt(lon, lat, show) {
-  if (mapRef && mapRef.getZoom() < 9) { show("", null); return; }
+  if (mapRef && mapRef.getZoom() < 7) { show("", null); return; }
   atNext = [lon, lat, show];
   if (atBusy) return;
   atBusy = true;
   const run = async () => {
     const [lo, la, cb] = atNext; atNext = null;
     try {
-      const s = await invoke("pbathy_at", { lon: lo, lat: la });
+      // snap: the nearest sounding within SNAP_PX pixels at the zoom shown
+      const mpp = 40075016.686 * Math.cos(la * Math.PI / 180) / (512 * 2 ** (mapRef ? mapRef.getZoom() : 12));
+      const radiusM = Math.max(2, SNAP_PX * mpp);
+      const s = await invoke("pbathy_at", { lon: lo, lat: la, radiusM });
       const parts = [];
       if (s && s.z < 0 && visible()) {
         const src = Object.entries(SRC).filter(([b]) => s.src & +b).map(([, n]) => n).join("+");
         const spread = s.n > 1 && s.spread >= 0.05 ? ` ±${s.spread.toFixed(1)}` : "";
         const when = s.newest ? `, ${new Date(s.newest * 1000).toLocaleDateString()}` : "";
-        parts.push(`${(-s.z).toFixed(1)} m${spread} (${src}, ${s.n}×${when})`);
+        const away = s.off_m >= 3 ? `, ${Math.round(s.off_m)} m away` : "";
+        parts.push(`${(-s.z).toFixed(1)} m${spread} (${src}, ${s.n}×${when}${away})`);
       }
       // with Show left out: a left-out sounding here, and why
       if (visible() && current.rejected) {
-        const l = await invoke("pbathy_left_at", { lon: lo, lat: la }).catch(() => null);
+        const l = await invoke("pbathy_left_at", { lon: lo, lat: la, radiusM }).catch(() => null);
         if (l) {
           const why = (l.src & 80) === 80 ? "second echo (about twice the depth)" : Object.entries(WHY).filter(([b]) => l.src & +b).map(([, n]) => n).join(", ") || "off the chart";
           const when = l.newest ? `, ${new Date(l.newest * 1000).toLocaleDateString()}` : "";
-          parts.push(`left out: ${(-l.z).toFixed(1)} m, ${why}${when}`);
+          const away = l.off_m >= 3 ? `, ${Math.round(l.off_m)} m away` : "";
+          parts.push(`left out: ${(-l.z).toFixed(1)} m, ${why}${when}${away}`);
         }
       }
       cb(parts.join("  ·  "), s && s.z < 0 ? s : null);
