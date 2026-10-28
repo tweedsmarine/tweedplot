@@ -341,6 +341,10 @@ pub struct Sounding {
 
 type Key = (u8, u32, u32);
 
+/// How near (finest cells, about 2 m each) the soundings giving a second opinion on a
+/// left-out one must be: see [`Store::second_opinion`].
+pub const AGREE_CELLS: i64 = 5;
+
 /// The table of the seabed's tiles.
 pub(crate) const SEABED: &str = "tiles";
 /// The table of the soundings the checks left out (the same levels, kept apart).
@@ -553,6 +557,110 @@ impl Store {
         Ok(())
     }
 
+    /// A second opinion on what the checks left out: a left-out sounding whose own
+    /// soundings around it (within [`AGREE_CELLS`] cells, about 10 m; at least three cells
+    /// that passed) agree with it, within 5 m or 5 %, goes back in. On a canyon wall or a
+    /// shelf break covered by several tracks the chart's coarse bands were wrong, not the
+    /// sounder; a sounder locked onto something else disagrees with the soundings beside it.
+    /// Returns how many soundings went back in.
+    pub fn second_opinion(&self, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<i64> {
+        let keys: Vec<(u32, u32)> = {
+            let db = self.db();
+            let mut q = db.prepare("SELECT ty, tx FROM left_out WHERE l = ?1 ORDER BY ty, tx")?;
+            let k = q.query_map([MAX_LEVEL], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<std::result::Result<_, _>>()?;
+            k
+        };
+        if keys.is_empty() {
+            return Ok(0);
+        }
+        let mut w = self.writer("", "", 0)?;
+        let mut seabed: HashMap<(u32, u32), Option<Vec<f32>>> = HashMap::new();
+        let mut moved = 0i64;
+        const R: i64 = AGREE_CELLS;
+        for (k, &(ty, tx)) in keys.iter().enumerate() {
+            if k % 200 == 0 {
+                if cancel.load(Ordering::Relaxed) {
+                    let _ = w.conn.execute_batch("ROLLBACK");
+                    return Err(Error::Cancelled);
+                }
+                progress("Second opinion", k, keys.len());
+                if seabed.len() > 2000 {
+                    seabed.clear();
+                }
+            }
+            let Some(b) = w.read_in(LEFT_OUT, (MAX_LEVEL, ty, tx))? else { continue };
+            let mut left = Dense::new();
+            decode(&b, |x, y, c| left.0[y * TILE + x] = c)?;
+            for dy in -1i64..=1 {
+                for dx in -1i64..=1 {
+                    let (yy, xx) = (ty as i64 + dy, tx as i64 + dx);
+                    if yy < 0 || xx < 0 {
+                        continue;
+                    }
+                    let key = (yy as u32, xx as u32);
+                    if !seabed.contains_key(&key) {
+                        let m = w.read_in(SEABED, (MAX_LEVEL, key.0, key.1))?.map(|b| {
+                            let mut v = vec![f32::NAN; TILE * TILE];
+                            let _ = decode(&b, |x, y, c| v[y * TILE + x] = c.mean);
+                            v
+                        });
+                        seabed.insert(key, m);
+                    }
+                }
+            }
+            let at = |gx: i64, gy: i64| -> f32 {
+                if gx < 0 || gy < 0 {
+                    return f32::NAN;
+                }
+                match seabed.get(&((gy >> 8) as u32, (gx >> 8) as u32)) {
+                    Some(Some(v)) => v[((gy & 255) * TILE as i64 + (gx & 255)) as usize],
+                    _ => f32::NAN,
+                }
+            };
+            let mut back = Vec::new();
+            for i in 0..TILE * TILE {
+                let c = left.0[i];
+                if c.n == 0 {
+                    continue;
+                }
+                let (gx, gy) = (tx as i64 * 256 + (i % TILE) as i64, ty as i64 * 256 + (i / TILE) as i64);
+                let (mut sum, mut n) = (0f64, 0u32);
+                for oy in -R..=R {
+                    for ox in -R..=R {
+                        let v = at(gx + ox, gy + oy);
+                        if v.is_finite() {
+                            sum += v as f64;
+                            n += 1;
+                        }
+                    }
+                }
+                if n >= 3 {
+                    let mean = sum / n as f64;
+                    if (c.mean as f64 - mean).abs() <= (0.05 * mean.abs()).max(5.0) {
+                        back.push((i, gx as u32, gy as u32, c));
+                    }
+                }
+            }
+            if back.is_empty() {
+                continue;
+            }
+            for (i, gx, gy, c) in back {
+                left.0[i] = Cell::default();
+                w.add_cell(gx, gy, c)?;
+                moved += c.n as i64;
+            }
+            let (n, blob) = encode(&left);
+            w.write_in(LEFT_OUT, (MAX_LEVEL, ty, tx), n, &blob)?;
+            w.left_dirty.insert((ty, tx));
+        }
+        progress("Second opinion", keys.len(), keys.len());
+        // the tally of what went in isn't a new source
+        w.soundings = 0;
+        w.finish(progress, cancel)?;
+        self.changed();
+        Ok(moved)
+    }
+
     /// The tracks already added, with their modified times.
     pub fn seeded(&self) -> Result<HashMap<String, i64>> {
         let db = self.db();
@@ -631,7 +739,7 @@ impl Store {
         let conn = Connection::open(&self.path)?;
         schema(&conn)?;
         conn.execute_batch("BEGIN")?;
-        Ok(Writer { conn, kind: kind.into(), name: name.into(), bytes, dirty: HashSet::new(), pending: HashMap::new(), pending_n: 0, soundings: 0, seeded: Vec::new(), since_commit: 0, acc: Acc::new(), rejected: HashMap::new(), rejected_n: 0 })
+        Ok(Writer { conn, kind: kind.into(), name: name.into(), bytes, dirty: HashSet::new(), pending: HashMap::new(), pending_n: 0, soundings: 0, seeded: Vec::new(), since_commit: 0, acc: Acc::new(), rejected: HashMap::new(), rejected_n: 0, left_dirty: HashSet::new() })
     }
 }
 
@@ -651,6 +759,8 @@ pub struct Writer {
     acc: Acc,
     rejected: HashMap<(u32, u32), Vec<(u16, Cell)>>,
     rejected_n: i64,
+    /// Left-out tiles changed other than by [`Writer::reject`] (put back by a second opinion).
+    left_dirty: HashSet<(u32, u32)>,
 }
 
 const PENDING_MAX: usize = 4_000_000;
@@ -939,14 +1049,15 @@ impl Writer {
     /// `progress(stage, done, total)`. The coarser tiles are built on all cores.
     pub fn finish(mut self, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<i64> {
         self.flush()?;
-        let left = self.flush_rejected()?;
+        let mut left = self.flush_rejected()?;
+        left.extend(std::mem::take(&mut self.left_dirty));
         let dirty: HashSet<(u32, u32)> = std::mem::take(&mut self.dirty);
         self.build_levels(MAX_LEVEL, dirty, progress, cancel)?;
         self.build_levels_in(LEFT_OUT, MAX_LEVEL, left, &mut |_, _, _| {}, cancel)?;
         for (id, m) in std::mem::take(&mut self.seeded) {
             self.conn.execute("INSERT OR REPLACE INTO seeded (track_id, modified) VALUES (?1, ?2)", params![id, m])?;
         }
-        if self.soundings > 0 || self.rejected_n > 0 {
+        if !self.kind.is_empty() && (self.soundings > 0 || self.rejected_n > 0) {
             self.conn.execute("INSERT INTO sources (kind, name, bytes, added, soundings, rejected) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![self.kind, self.name, self.bytes, now_s(), self.soundings, self.rejected_n])?;
         }
         self.conn.execute_batch("COMMIT")?;
@@ -1057,6 +1168,29 @@ mod tests {
         assert_eq!(k, 1);
         let r: i64 = s.db().query_row("SELECT count(*) FROM rejected", [], |r| r.get(0)).unwrap();
         assert_eq!(r, 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_second_opinion_puts_back_what_neighbours_agree_with() {
+        let dir = std::env::temp_dir().join(format!("bathy-2nd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let s = Store::open(&dir.join("bathy.sqlite")).unwrap();
+        let mut w = s.writer("own", "t", 0).unwrap();
+        // a canyon wall at ~600 m sounded on one line, and two left-out soundings beside it:
+        // one at 605 m (the chart was wrong) and one at 70 m (the sounder was)
+        for i in 0..40 {
+            w.add(173.2 + i as f64 * 0.00003, -41.2, -600.0, 1, SRC_OWN).unwrap();
+        }
+        w.reject(173.2 + 20.0 * 0.00003, -41.20002, -605.0, 1, SRC_OWN);
+        w.reject(173.2 + 10.0 * 0.00003, -41.20002, -70.0, 1, SRC_OWN);
+        w.finish(&mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
+        assert_eq!(s.info().unwrap().rejected, 2);
+        let back = s.second_opinion(&mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
+        assert_eq!(back, 1);
+        let i = s.info().unwrap();
+        assert_eq!(i.rejected, 1);
+        assert_eq!(i.sources.len(), 1); // no source row for it
         let _ = std::fs::remove_dir_all(&dir);
     }
 

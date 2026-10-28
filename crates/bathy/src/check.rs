@@ -20,14 +20,21 @@ pub struct RefGrid {
     lo: Vec<f32>,
     hi: Vec<f32>,
     band: Vec<u8>,
+    /// After [`RefGrid::widen`]: the shallowest `lo` and deepest `hi` within that many cells.
+    wide: Option<(Vec<f32>, Vec<f32>)>,
 }
+
+/// How far the charted range is widened (cells of [`REF_STEP`]: about ±900 m north–south):
+/// on a slope or a canyon wall the chart's depth areas are generalised polygons, and a
+/// sounding near a band's edge may be in the next band.
+pub const WIDEN: usize = 4;
 
 impl RefGrid {
     /// An empty grid over [w, s, e, n] with cells of `step` degrees.
     pub fn new(b: [f64; 4], step: f64) -> RefGrid {
         let nx = (((b[2] - b[0]) / step).ceil() as usize).max(1);
         let ny = (((b[3] - b[1]) / step).ceil() as usize).max(1);
-        RefGrid { west: b[0], south: b[1], step, nx, ny, lo: vec![f32::NAN; nx * ny], hi: vec![f32::INFINITY; nx * ny], band: vec![0; nx * ny] }
+        RefGrid { west: b[0], south: b[1], step, nx, ny, lo: vec![f32::NAN; nx * ny], hi: vec![f32::INFINITY; nx * ny], band: vec![0; nx * ny], wide: None }
     }
 
     /// Paint a depth area (rings in lon/lat, exterior and holes, even-odd) with its range;
@@ -74,8 +81,37 @@ impl RefGrid {
         }
     }
 
-    /// The charted range at a place, widened to the cells around it (about ±1 cell): the
-    /// shallowest `lo` and deepest `hi` near it. None where there's no chart.
+    /// Widen the charted range over `k` cells each way (after painting): each cell takes the
+    /// shallowest `lo` and the deepest `hi` around it (min and max filters, row then column).
+    pub fn widen(&mut self, k: usize) {
+        let (nx, ny) = (self.nx, self.ny);
+        let lo0: Vec<f32> = self.lo.iter().map(|&v| if v.is_nan() { f32::INFINITY } else { v }).collect();
+        let hi0: Vec<f32> = (0..nx * ny).map(|i| if self.lo[i].is_nan() { f32::NEG_INFINITY } else { self.hi[i] }).collect();
+        let pass = |src: &[f32], min: bool, along_x: bool| -> Vec<f32> {
+            let mut out = vec![0f32; nx * ny];
+            for a in 0..(if along_x { ny } else { nx }) {
+                let len = if along_x { nx } else { ny };
+                let at = |b: usize| if along_x { a * nx + b } else { b * nx + a };
+                for b in 0..len {
+                    let (b0, b1) = (b.saturating_sub(k), (b + k + 1).min(len));
+                    let mut v = if min { f32::INFINITY } else { f32::NEG_INFINITY };
+                    for c in b0..b1 {
+                        let x = src[at(c)];
+                        v = if min { v.min(x) } else { v.max(x) };
+                    }
+                    out[at(b)] = v;
+                }
+            }
+            out
+        };
+        let lo = pass(&pass(&lo0, true, true), true, false);
+        let hi = pass(&pass(&hi0, false, true), false, false);
+        self.wide = Some((lo, hi));
+    }
+
+    /// The charted range at a place, widened to the cells around it (over [`WIDEN`] cells
+    /// after [`RefGrid::widen`], else ±1 cell): the shallowest `lo` and deepest `hi` near it.
+    /// None where there's no chart.
     pub fn at(&self, lon: f64, lat: f64) -> Option<(f32, f32)> {
         let i = ((lon - self.west) / self.step).floor() as i64;
         let j = ((lat - self.south) / self.step).floor() as i64;
@@ -84,6 +120,10 @@ impl RefGrid {
         }
         if self.lo[j as usize * self.nx + i as usize].is_nan() {
             return None;
+        }
+        if let Some((lo, hi)) = &self.wide {
+            let k = j as usize * self.nx + i as usize;
+            return Some((lo[k], hi[k]));
         }
         let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
         for dj in -1..=1 {
@@ -129,9 +169,11 @@ impl Reference {
         if let Some(t) = self.tiles.read().unwrap_or_else(|e| e.into_inner()).get(&k) {
             return t.at(lon, lat);
         }
-        // a margin of two cells so the widening reaches across the square's edge
-        let m = 2.0 * REF_STEP;
-        let t = Arc::new((self.build)([k.0 as f64 - m, k.1 as f64 - m, k.0 as f64 + 1.0 + m, k.1 as f64 + 1.0 + m]));
+        // a margin so the widening reaches across the square's edge
+        let m = (WIDEN + 1) as f64 * REF_STEP;
+        let mut g = (self.build)([k.0 as f64 - m, k.1 as f64 - m, k.0 as f64 + 1.0 + m, k.1 as f64 + 1.0 + m]);
+        g.widen(WIDEN);
+        let t = Arc::new(g);
         let r = t.at(lon, lat);
         self.tiles.write().unwrap_or_else(|e| e.into_inner()).insert(k, t);
         r
@@ -283,6 +325,16 @@ mod tests {
         assert!(!off_chart(420.0, (500.0, 1000.0))); // within 20 % + 10 m
         assert!(off_chart(1300.0, (500.0, 1000.0)));
         assert!(!off_chart(3.0, (0.0, 5.0)));
+    }
+
+    #[test]
+    fn widening_takes_in_the_next_band_near_its_edge() {
+        let mut g = grid();
+        g.widen(4); // 0.04° here (cells of 0.01°)
+        assert_eq!(g.at(170.53, -41.5), Some((200.0, 1000.0)));
+        assert_eq!(g.at(170.6, -41.5), Some((500.0, 1000.0)));
+        assert_eq!(g.at(170.2, -41.5), Some((200.0, 500.0)));
+        assert_eq!(g.at(169.95, -41.5), None);
     }
 
     #[test]

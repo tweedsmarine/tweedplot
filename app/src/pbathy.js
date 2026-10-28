@@ -175,7 +175,7 @@ export function setupPbathy(map) {
           return;
         }
         const t = `${name}: ${fmt(r.added)} soundings added in ${Math.round(r.seconds)} s.`
-          + (r.checked ? ` ${fmt(r.rejected)} well off the charted depth left out.` : check() ? " Not checked: no chart depth areas are open." : "");
+          + (r.checked ? ` ${fmt(r.rejected)} well off the charted depth left out${r.back ? `; ${fmt(r.back)} left-out soundings put back where the soundings beside them agree` : ""}.` : check() ? " Not checked: no chart depth areas are open." : "");
         job.done(t); note(t, "good");
         if (!visible()) setShow(true);
       } catch (e) {
@@ -198,6 +198,7 @@ export function setupPbathy(map) {
         const c = r.counts || {};
         t = `${fmt(r.tracks)} tracks: ${fmt(r.kept)} soundings added. Left out: ${fmt(c.spikes ?? r.dropped)} spikes`;
         t += r.checked ? `, ${fmt(c.off_chart)} well off the charted depth, and ${fmt(c.in_runs)} more in ${fmt(c.runs)} runs mostly off it (the sounder locked onto something else).`
+          + (r.back ? ` ${fmt(r.back)} of those left out were put back: the soundings beside them agree (the chart's bands were too coarse there).` : "")
           + (c.unchecked ? ` ${fmt(c.unchecked)} had no chart depth to check against.` : "")
           : check() ? ". Not checked against the chart: no chart depth areas are open." : ".";
       }

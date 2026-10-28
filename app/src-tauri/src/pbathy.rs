@@ -132,7 +132,8 @@ pub async fn pbathy_import(app: tauri::AppHandle, path: String, again: Option<bo
         let t = std::time::Instant::now();
         let reference = if check.unwrap_or(true) { chart_reference() } else { None };
         let (n, rejected) = if pbg { s.import_pbg_checked(&p, reference.as_ref(), &mut prog, &CANCEL) } else { s.import_xyz_checked(&p, reference.as_ref(), &mut prog, &CANCEL) }.map_err(|e| e.to_string())?;
-        Ok(serde_json::json!({ "added": n, "rejected": rejected, "checked": reference.is_some(), "name": name, "seconds": t.elapsed().as_secs_f64() }))
+        let back = if reference.is_some() { s.second_opinion(&mut prog, &CANCEL).map_err(|e| e.to_string())? } else { 0 };
+        Ok(serde_json::json!({ "added": n, "rejected": rejected, "back": back, "checked": reference.is_some(), "name": name, "seconds": t.elapsed().as_secs_f64() }))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -220,8 +221,10 @@ pub async fn pbathy_from_tracks(app: tauri::AppHandle, check: Option<bool>) -> R
             return Err(e);
         }
         let n = w.finish(&mut prog, &CANCEL).map_err(|e| e.to_string())?;
+        // left-out soundings the soundings beside them agree with go back in
+        let back = if reference.is_some() { s.second_opinion(&mut prog, &CANCEL).map_err(|e| e.to_string())? } else { 0 };
         s.changed();
-        Ok(serde_json::json!({ "added": n, "tracks": todo.len(), "with_depth": with_depth.len(), "kept": counts.kept, "dropped": counts.spikes, "counts": counts, "checked": reference.is_some(), "changed": changed }))
+        Ok(serde_json::json!({ "added": n + back, "back": back, "tracks": todo.len(), "with_depth": with_depth.len(), "kept": counts.kept, "dropped": counts.spikes, "counts": counts, "checked": reference.is_some(), "changed": changed }))
     })
     .await
     .map_err(|e| e.to_string())?
