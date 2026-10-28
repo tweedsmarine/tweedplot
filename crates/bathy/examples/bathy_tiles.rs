@@ -19,6 +19,9 @@ fn main() {
     } else if let Some(r) = s.depth_range([w, so, e, n]) {
         (st.shallow, st.deep) = r;
     }
+    if let Ok(f) = std::env::var("FILL_M") {
+        st.fill_m = f.parse().unwrap();
+    }
     if a.get(10).is_some_and(|v| v == "blues") {
         st.palette = bathy::Palette::Blues;
     }

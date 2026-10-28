@@ -1,5 +1,5 @@
-// Chart › Chart data › Personal bathymetry: the boat's own soundings gridded into a
-// seabed (as Olex and TimeZero PBG), drawn in Rust as depth images (/pbathy/z/x/y.png).
+// Chart › Chart data › Own soundings: the boat's own soundings gridded into a seabed,
+// drawn in Rust as depth images (/pbathy/z/x/y.png).
 // Built from the library's tracks with depth, and from TimeZero PBG and XYZ files.
 // Not for navigation: depths as logged, not reduced to chart datum.
 
@@ -13,6 +13,21 @@ const STYLE = "racenav.pbathy.style";
 const SRC = { 1: "own", 2: "TimeZero", 4: "XYZ", 8: "other" };
 
 let mapRef = null;
+// the colours in use (set up below), for tracks coloured by depth with own soundings colours
+let current = { palette: "rainbow", shallow: 0, deep: 500 };
+/** Fill distances on the slider (m). */
+const FILL_STEPS = [0, 2, 4, 8, 15, 25, 50, 100, 150, 250];
+// the same stops as crates/bathy/src/render.rs (position 0–1 along the depth range, RGB)
+const STOPS = {
+  rainbow: [[0, [196, 32, 38]], [0.14, [236, 112, 36]], [0.28, [244, 206, 52]], [0.42, [120, 200, 80]], [0.56, [40, 186, 170]], [0.70, [40, 130, 216]], [0.84, [70, 62, 196]], [1, [92, 28, 128]]],
+  blues: [[0, [205, 240, 236]], [0.2, [150, 210, 234]], [0.45, [96, 164, 220]], [0.7, [58, 110, 184]], [1, [26, 52, 120]]],
+};
+/** The own soundings colours as a scale over depth (m, positive down): { lo, hi, stops: [[depth, css], …] }. */
+export function ownSoundingsScale() {
+  const lo = +current.shallow || 0, hi = Math.max(lo + 1, +current.deep || lo + 1);
+  const st = STOPS[current.palette] || STOPS.rainbow;
+  return { lo, hi, stops: st.map(([t, c]) => [lo + t * (hi - lo), `rgb(${c.join(",")})`]) };
+}
 const visible = () => mapRef?.getLayer("pbathy") && mapRef.getLayoutProperty("pbathy", "visibility") === "visible";
 
 // the sounding under the cursor, asked for at most every 150 ms
@@ -46,8 +61,10 @@ export function setupPbathy(map) {
   const fmtMB = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(0.1, b / 1e6).toFixed(b >= 1e8 ? 0 : 1)} MB`);
   const note = (t, kind = "") => { const el = $("pb-note"); el.textContent = t; el.className = `grow wx-note ${kind}`; };
 
-  let style = { palette: "rainbow", shallow: 0, deep: 500, contours: true, shade: true, fill: true };
+  let style = { palette: "rainbow", shallow: 0, deep: 500, contours: true, shade: true, fill: true, fill_m: 4 };
   try { Object.assign(style, JSON.parse(localStorage.getItem(STYLE) || "{}")); } catch { /* defaults */ }
+  current = style;
+  window.dispatchEvent(new CustomEvent("own-soundings-colours"));
 
   const reload = () => {
     const src = map.getSource("pbathy");
@@ -60,18 +77,29 @@ export function setupPbathy(map) {
     $("pb-contours").checked = style.contours;
     $("pb-shade").checked = style.shade;
     $("pb-fill").checked = style.fill;
+    const k = FILL_STEPS.reduce((b, v, i) => (Math.abs(v - style.fill_m) < Math.abs(FILL_STEPS[b] - style.fill_m) ? i : b), 0);
+    $("pb-fill-m").value = String(k);
+    $("pb-fill-v").textContent = `${FILL_STEPS[k]} m`;
+    $("pb-fill-m").disabled = !style.fill;
   };
   async function applyStyle() {
+    current = style;
     try { localStorage.setItem(STYLE, JSON.stringify(style)); } catch { /* ignore */ }
+    // tracks coloured with these colours follow
+    window.dispatchEvent(new CustomEvent("own-soundings-colours"));
     try { await invoke("pbathy_style", { style }); reload(); } catch (e) { note(`Could not change the colours: ${e}`, "bad"); }
   }
   const readForm = () => {
     const sh = Math.max(0, +$("pb-shallow").value || 0);
     const dp = Math.max(sh + 1, +$("pb-deep").value || sh + 1);
-    style = { palette: $("pb-palette").value, shallow: sh, deep: dp, contours: $("pb-contours").checked, shade: $("pb-shade").checked, fill: $("pb-fill").checked };
+    style = { palette: $("pb-palette").value, shallow: sh, deep: dp, contours: $("pb-contours").checked, shade: $("pb-shade").checked, fill: $("pb-fill").checked, fill_m: FILL_STEPS[+$("pb-fill-m").value] ?? 4 };
+    $("pb-fill-v").textContent = `${style.fill_m} m`;
+    $("pb-fill-m").disabled = !style.fill;
     applyStyle();
   };
-  for (const id of ["pb-palette", "pb-shallow", "pb-deep", "pb-contours", "pb-shade", "pb-fill"]) $(id).onchange = readForm;
+  for (const id of ["pb-palette", "pb-shallow", "pb-deep", "pb-contours", "pb-shade", "pb-fill", "pb-fill-m"]) $(id).onchange = readForm;
+  // the value while dragging; the tiles are drawn again on release
+  $("pb-fill-m").oninput = () => { $("pb-fill-v").textContent = `${FILL_STEPS[+$("pb-fill-m").value]} m`; };
 
   const setShow = (on) => {
     $("pb-show").checked = on;
@@ -146,7 +174,7 @@ export function setupPbathy(map) {
   };
 
   $("pb-tracks").onclick = async () => {
-    startJob("Personal bathymetry from my tracks");
+    startJob("Own soundings from my tracks");
     try {
       const r = await invoke("pbathy_from_tracks");
       let t;
@@ -180,12 +208,12 @@ export function setupPbathy(map) {
     const b = $("pb-del");
     if (!delArmed) {
       b.textContent = "Delete all? Click again";
-      note("This deletes all the personal bathymetry (own soundings and imported files). The tracks and the files stay; it can be built again.", "warn");
+      note("This deletes all the own soundings (from your tracks and the imported files). The tracks and the files stay; it can be built again.", "warn");
       delArmed = setTimeout(() => { delArmed = null; b.textContent = "✕ All"; }, 5000);
       return;
     }
     clearTimeout(delArmed); delArmed = null; b.textContent = "✕ All";
-    try { await invoke("pbathy_clear"); note("Personal bathymetry deleted."); } catch (e) { note(`Could not delete: ${e}`, "bad"); }
+    try { await invoke("pbathy_clear"); note("Own soundings deleted."); } catch (e) { note(`Could not delete: ${e}`, "bad"); }
     refresh(); reload();
   };
 

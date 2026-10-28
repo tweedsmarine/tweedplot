@@ -1,4 +1,4 @@
-//! Personal bathymetry (Olex / TimeZero PBG style): the store of the boat's own soundings,
+//! Own soundings: the store of the boat's own depth soundings gridded into a seabed,
 //! imports of TimeZero PBG and XYZ files, building it from the library's tracks with depth,
 //! and the depth images (`/pbathy/<z>/<x>/<y>.png` on the tile protocol).
 //!
@@ -31,7 +31,7 @@ pub fn dir(app: &tauri::AppHandle) -> PathBuf {
 pub fn open(app: &tauri::AppHandle) {
     match bathy::Store::open(&dir(app).join("bathy.sqlite")) {
         Ok(s) => *STORE.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(s)),
-        Err(e) => eprintln!("personal bathymetry: {e}"),
+        Err(e) => eprintln!("own soundings: {e}"),
     }
 }
 
@@ -40,7 +40,7 @@ pub fn store() -> Option<Arc<bathy::Store>> {
 }
 
 fn need() -> Result<Arc<bathy::Store>, String> {
-    store().ok_or_else(|| "The personal bathymetry could not be opened.".to_string())
+    store().ok_or_else(|| "The own soundings could not be opened.".to_string())
 }
 
 /// The image for a map tile.
@@ -56,7 +56,7 @@ impl Drop for Busy {
 }
 fn busy() -> Result<Busy, String> {
     if BUSY.swap(true, Ordering::SeqCst) {
-        return Err("The personal bathymetry is already being built.".into());
+        return Err("The own soundings are already being built.".into());
     }
     CANCEL.store(false, Ordering::SeqCst);
     Ok(Busy)

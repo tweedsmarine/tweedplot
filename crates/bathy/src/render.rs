@@ -1,8 +1,7 @@
-//! Drawing the personal bathymetry as map tiles (`z/x/y`, 256-pixel PNG, Web Mercator):
-//! depth colours (a rainbow as on Olex and TimeZero PBG, or chart blues) over a depth range
-//! chosen to suit the area, lit from the north-west, with contours. Small gaps between
-//! soundings (up to two cells) are filled from the cells around them; nothing further is
-//! made up. Above 0 m is left clear.
+//! Drawing own soundings as map tiles (`z/x/y`, 256-pixel PNG, Web Mercator): depth colours
+//! (a rainbow, or chart blues) over a depth range chosen to suit the area, lit from the
+//! north-west, with contours. Gaps between soundings up to [`Style::fill_m`] are filled from
+//! the nearest soundings around them; nothing further is made up. Above 0 m is left clear.
 
 use std::sync::Arc;
 
@@ -30,13 +29,19 @@ pub struct Style {
     pub deep: f32,
     pub contours: bool,
     pub shade: bool,
-    /// Fill gaps of up to two cells between soundings.
+    /// Fill gaps between soundings.
     pub fill: bool,
+    /// How far from a sounding gaps are filled (m).
+    pub fill_m: f32,
 }
+
+/// The largest fill (cells of the level drawn): beyond it the filled ring would cost more
+/// to read than the tile itself.
+pub const MAX_FILL_CELLS: i64 = 192;
 
 impl Default for Style {
     fn default() -> Self {
-        Style { palette: Palette::Rainbow, shallow: 0.0, deep: 500.0, contours: true, shade: true, fill: true }
+        Style { palette: Palette::Rainbow, shallow: 0.0, deep: 500.0, contours: true, shade: true, fill: true, fill_m: 4.0 }
     }
 }
 
@@ -104,7 +109,8 @@ impl Store {
 
     /// Heights (m, positive up; NaN where none) for a `g` × `g` block of pixels of map tile
     /// z/x/y starting one pixel above and left of it, and the ground size of a pixel (m).
-    pub fn heights(&self, z: u8, x: u32, y: u32, g: usize, fill: bool) -> Option<(Vec<f32>, f64)> {
+    /// Gaps are filled up to `fill_m` metres from soundings (0: none).
+    pub fn heights(&self, z: u8, x: u32, y: u32, g: usize, fill_m: f32) -> Option<(Vec<f32>, f64)> {
         let level = z.min(MAX_LEVEL);
         let nz = TILE as f64 * (1u64 << z) as f64;
         let nl = cells_across(level) as f64;
@@ -112,12 +118,15 @@ impl Store {
         // where each pixel's centre falls, in cells of the level
         let fx: Vec<f64> = (0..g).map(|i| (x as f64 * TILE as f64 + i as f64 - 0.5) / nz * nl).collect();
         let fy: Vec<f64> = (0..g).map(|j| to_world(0.0, web_lat(y as f64 * TILE as f64 + j as f64 - 0.5)).1 * nl).collect();
-        const R: i64 = 2;
+        let lat_mid = web_lat((y as f64 + 0.5) * TILE as f64);
+        let cell_m = 40_075_016.686 * lat_mid.to_radians().cos() / nl;
+        let r_fill = if fill_m > 0.0 { ((fill_m as f64 / cell_m).round() as i64).clamp(0, MAX_FILL_CELLS) } else { 0 };
+        let r = r_fill.max(1);
         let max = nl as i64 - 1;
-        let cx0 = (fx[0].floor() as i64 - R - 1).clamp(0, max);
-        let cx1 = (fx[g - 1].floor() as i64 + R + 1).clamp(0, max);
-        let cy0 = (fy[0].floor() as i64 - R - 1).clamp(0, max);
-        let cy1 = (fy[g - 1].floor() as i64 + R + 1).clamp(0, max);
+        let cx0 = (fx[0].floor() as i64 - r - 1).clamp(0, max);
+        let cx1 = (fx[g - 1].floor() as i64 + r + 1).clamp(0, max);
+        let cy0 = (fy[0].floor() as i64 - r - 1).clamp(0, max);
+        let cy1 = (fy[g - 1].floor() as i64 + r + 1).clamp(0, max);
         let (w, h) = ((cx1 - cx0 + 1) as usize, (cy1 - cy0 + 1) as usize);
         let mut grid = vec![f32::NAN; w * h];
         let mut any = false;
@@ -145,33 +154,8 @@ impl Store {
         if !any {
             return None;
         }
-        if fill {
-            let mut out = grid.clone();
-            for j in 0..h {
-                for i in 0..w {
-                    if grid[j * w + i].is_finite() {
-                        continue;
-                    }
-                    let (mut s, mut n) = (0.0f32, 0u32);
-                    for dj in -R..=R {
-                        for di in -R..=R {
-                            let (ii, jj) = (i as i64 + di, j as i64 + dj);
-                            if ii < 0 || jj < 0 || ii >= w as i64 || jj >= h as i64 {
-                                continue;
-                            }
-                            let v = grid[jj as usize * w + ii as usize];
-                            if v.is_finite() {
-                                s += v;
-                                n += 1;
-                            }
-                        }
-                    }
-                    if n >= 3 {
-                        out[j * w + i] = s / n as f32;
-                    }
-                }
-            }
-            grid = out;
+        if r_fill > 0 {
+            grid = fill_gaps(&grid, w, h, r_fill as usize);
         }
         let at = |cx: i64, cy: i64| -> f32 {
             if cx < cx0 || cy < cy0 || cx > cx1 || cy > cy1 {
@@ -201,7 +185,6 @@ impl Store {
                 };
             }
         }
-        let lat_mid = web_lat((y as f64 + 0.5) * TILE as f64);
         let res = 40_075_016.686 * lat_mid.to_radians().cos() / nz;
         Some((out, res))
     }
@@ -209,12 +192,58 @@ impl Store {
     fn render(&self, z: u8, x: u32, y: u32) -> Option<Vec<u8>> {
         let style = self.style();
         const G: usize = TILE + 2;
-        let (h, res) = self.heights(z, x, y, G, style.fill)?;
+        let (h, res) = self.heights(z, x, y, G, if style.fill { style.fill_m } else { 0.0 })?;
         if h.iter().all(|v| !v.is_finite() || *v > 0.0) {
             return None;
         }
         Some(shade(&h, G, res, contour_step(z), &style))
     }
+}
+
+/// Fill the gaps (NaN) in a `w` × `h` grid up to `r` cells from data: each gap takes the mean
+/// of the soundings in the smallest square around it (1, 2, 4 … `r` cells out) holding at
+/// least three, so the nearest soundings count, not distant ones. Summed-area tables make
+/// each pass cost the same whatever its size.
+pub fn fill_gaps(grid: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
+    let stride = w + 1;
+    let mut sum = vec![0f64; stride * (h + 1)];
+    let mut cnt = vec![0u32; stride * (h + 1)];
+    for j in 0..h {
+        let (mut rs, mut rc) = (0f64, 0u32);
+        for i in 0..w {
+            let v = grid[j * w + i];
+            if v.is_finite() {
+                rs += v as f64;
+                rc += 1;
+            }
+            sum[(j + 1) * stride + i + 1] = sum[j * stride + i + 1] + rs;
+            cnt[(j + 1) * stride + i + 1] = cnt[j * stride + i + 1] + rc;
+        }
+    }
+    let mut out = grid.to_vec();
+    let mut todo: Vec<usize> = (0..w * h).filter(|&k| !grid[k].is_finite()).collect();
+    let mut rad = 1usize;
+    loop {
+        let rr = rad.min(r);
+        todo.retain(|&k| {
+            let (i, j) = (k % w, k / w);
+            let (x0, x1) = (i.saturating_sub(rr), (i + rr + 1).min(w));
+            let (y0, y1) = (j.saturating_sub(rr), (j + rr + 1).min(h));
+            let n = cnt[y1 * stride + x1] + cnt[y0 * stride + x0] - cnt[y0 * stride + x1] - cnt[y1 * stride + x0];
+            if n >= 3 {
+                let sm = sum[y1 * stride + x1] + sum[y0 * stride + x0] - sum[y0 * stride + x1] - sum[y1 * stride + x0];
+                out[k] = (sm / n as f64) as f32;
+                false
+            } else {
+                true
+            }
+        });
+        if rr >= r || todo.is_empty() {
+            break;
+        }
+        rad *= 2;
+    }
+    out
 }
 
 /// The image: depth colours, lit from the north-west, contours every `step` m; clear above
@@ -302,7 +331,7 @@ mod tests {
         s.changed();
         for z in [10u8, 14, 16, 18] {
             let (tx, ty) = web_tile(173.2018, -41.1987, z);
-            let (h, res) = s.heights(z, tx, ty, 258, false).unwrap();
+            let (h, res) = s.heights(z, tx, ty, 258, 0.0).unwrap();
             // the pixel over the patch's centre has its depth (35 m there), within a cell
             let n = (1u64 << z) as f64 * 256.0;
             let px = ((173.2018 + 180.0) / 360.0 * n - tx as f64 * 256.0) as usize + 1;
@@ -319,6 +348,25 @@ mod tests {
         assert!(s.tile_png(14, tx, ty).is_none());
         assert!(s.tile_png(4, 0, 0).is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn gaps_fill_from_the_nearest_soundings() {
+        // two lines of soundings 10 cells apart: -10 m and -30 m
+        let (w, h) = (40, 40);
+        let mut g = vec![f32::NAN; w * h];
+        for j in 0..h {
+            g[j * w + 10] = -10.0;
+            g[j * w + 20] = -30.0;
+        }
+        let f = fill_gaps(&g, w, h, 2);
+        assert_eq!(f[5 * w + 10], -10.0); // data stays as it is
+        assert!((f[5 * w + 11] + 10.0).abs() < 1e-4); // next to the first line: its depth only
+        assert!(f[5 * w + 15].is_nan()); // five cells from both: beyond 2
+        let f = fill_gaps(&g, w, h, 8);
+        assert!((f[5 * w + 11] + 10.0).abs() < 1e-4); // still the nearest line, not the mean
+        assert!((f[5 * w + 15] + 20.0).abs() < 1e-4); // midway: both lines equally
+        assert!(f[5 * w + 35].is_nan()); // 15 cells out: beyond 8
     }
 
     #[test]

@@ -115,7 +115,7 @@ const map = new maplibregl.Map({
       chart: { type: "vector", tiles: [TILE_URL], minzoom: 0, maxzoom: 16 },
       // high-resolution depths (LINZ coastal elevation, 1 m), drawn in Rust as images
       hires: { type: "raster", tiles: [TILE_URL.replace("{z}/{x}/{y}.pbf", "hires/{z}/{x}/{y}.png")], tileSize: 256, minzoom: 10, maxzoom: 18 },
-      // personal bathymetry (own soundings, TimeZero PBG and XYZ imports), drawn in Rust as images
+      // own soundings (from tracks, TimeZero PBG and XYZ imports), drawn in Rust as images
       pbathy: { type: "raster", tiles: [TILE_URL.replace("{z}/{x}/{y}.pbf", "pbathy/{z}/{x}/{y}.png")], tileSize: 256, minzoom: 6, maxzoom: 20 },
     },
     layers: [
@@ -658,7 +658,7 @@ function setCursor(c) {
 map.on("mousemove", (e) => {
   const where = `${ddm(e.lngLat.lat, "N", "S")}  ${ddm(e.lngLat.lng, "E", "W")}`;
   document.getElementById("cursor").textContent = where;
-  // with the personal bathymetry shown: its sounding under the cursor
+  // with own soundings shown: the sounding under the cursor
   pbathyAt(e.lngLat.lng, e.lngLat.lat, (t) => { document.getElementById("cursor").textContent = t ? `${where}  ·  ${t}` : where; });
   setCursor([e.lngLat.lng, e.lngLat.lat]);
 });

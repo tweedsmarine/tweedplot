@@ -1,5 +1,5 @@
-//! Personal bathymetry: the boat's own depth soundings gridded into a seabed, as Olex and
-//! TimeZero's PBG (Personal Bathymetry Generator) do, drawn as depth images for the chart.
+//! Own soundings: the boat's own depth soundings gridded into a seabed, drawn as depth
+//! images for the chart.
 //!
 //! ## The grid
 //! TimeZero's layout, so its files import without resampling: WGS84 **ellipsoidal**

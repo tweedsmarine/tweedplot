@@ -378,7 +378,7 @@
           </div>
           <div class="wx-row">
             <label class="grow" title="Colour the shown tracks by what was logged along them">Colour by
-              <select id="trk-colour-by"><option value="track">Track colour</option><option value="temp">Sea temperature</option><option value="depth">Depth</option><option value="sog">Speed (SOG)</option></select></label>
+              <select id="trk-colour-by"><option value="track">Track colour</option><option value="temp">Sea temperature</option><option value="depth">Depth</option><option value="soundings" title="Depth in the colours and range set in Chart data › Own soundings, to compare the tracks with the seabed and other tracks">Depth (own soundings colours)</option><option value="sog">Speed (SOG)</option></select></label>
           </div>
           <div class="wx-row">
             <label class="grow" title="How thick the tracks are drawn on the chart (all tracks)">Line width</label>
@@ -487,7 +487,7 @@
         <div class="wx-note">From the LINZ hydrographic layers in the linz folder (any scale band). Click a light, mark or area for its details. Not for navigation.</div>
                 <h3>Layers</h3>
         <div class="wx-row checks"><label title="Show the high-resolution depths on the chart (from about 2 NM range in)"><input id="data-hr-show" type="checkbox" /> High-resolution depths</label>
-          <label title="Show your own soundings (from your tracks, and TimeZero PBG or XYZ files imported in Chart data) as a depth image. Not for navigation"><input id="pb-show" type="checkbox" /> Personal bathymetry</label></div>
+          <label title="Show your own soundings (from your tracks, and TimeZero PBG or XYZ files imported in Chart data) as a depth image. Not for navigation"><input id="pb-show" type="checkbox" /> Own soundings</label></div>
         <h4>Boundaries and fishing rules</h4>
         <div id="mar-box">
           <div class="wx-row checks"><label title="Territorial sea (12 NM), contiguous zone (24 NM), EEZ (200 NM) and the boundaries agreed with Australia (LINZ)"><input id="mar-bounds" type="checkbox" /> Maritime boundaries</label>
@@ -526,19 +526,21 @@
           <div class="wx-row"><span id="data-hr-plan" class="grow wx-note"></span>
             <button id="data-hr" title="Download LINZ's coastal elevation tiles (aerial laser surveys, to about 25 m depth) for the area shown on the chart">Get for chart view</button>
             <button id="data-hr-del" title="Delete all the downloaded high-resolution depths">✕ All</button></div>
-          <div class="data-item"><span class="dot" id="pb-dot"></span><span class="grow"><b>Personal bathymetry</b> (own soundings): <span id="pb-state">—</span></span>
+          <div class="data-item"><span class="dot" id="pb-dot"></span><span class="grow"><b>Own soundings</b> (your soundings as a seabed): <span id="pb-state">—</span></span>
             <button id="pb-zoom" hidden title="Show the area with soundings">Show</button></div>
           <div class="wx-row"><button id="pb-tracks" title="Add the depths logged along the library's tracks (tracks added before are skipped). Spikes (lost bottom, fish, wake) are left out">Add my tracks</button>
             <button id="pb-import" title="Import a TimeZero PBG file (.tzpbg) or XYZ text (longitude, latitude, height on each line, e.g. exported from TimeZero)">Import PBG / XYZ…</button>
             <button id="pb-again" hidden title="Import the same file again: its soundings will count twice">Import again</button>
-            <span class="grow"></span><button id="pb-del" hidden title="Delete all the personal bathymetry (the tracks and files stay)">✕ All</button></div>
+            <span class="grow"></span><button id="pb-del" hidden title="Delete all the own soundings (the tracks and files stay)">✕ All</button></div>
           <div class="wx-row"><label for="pb-palette">Colours</label>
-            <select id="pb-palette" style="min-width:6.5em" title="Rainbow: red shallow to violet deep, as Olex and TimeZero PBG. Blues: as charts"><option value="rainbow">Rainbow</option><option value="blues">Blues</option></select>
+            <select id="pb-palette" style="min-width:6.5em" title="Rainbow: red shallow to violet deep. Blues: as charts. Tracks coloured by Depth (own soundings colours) use these colours too"><option value="rainbow">Rainbow</option><option value="blues">Blues</option></select>
             <input id="pb-shallow" type="number" min="0" step="1" style="width:5em" title="Shallowest depth of the colour range (m)" /> to
             <input id="pb-deep" type="number" min="1" step="1" style="width:5em" title="Deepest depth of the colour range (m)" /> m
             <button id="pb-fit" title="Fit the colour range to the soundings in the chart view">Fit to view</button></div>
           <div class="wx-row checks"><label><input id="pb-contours" type="checkbox" /> Contours</label><label><input id="pb-shade" type="checkbox" /> Shading</label>
-            <label title="Fill gaps of up to two cells (about 4 m) between soundings; nothing further is made up"><input id="pb-fill" type="checkbox" /> Fill small gaps</label></div>
+            <label title="Fill gaps between soundings, from the nearest soundings around them, up to the distance below"><input id="pb-fill" type="checkbox" /> Fill gaps</label></div>
+          <div class="wx-row"><label class="grow" for="pb-fill-m" title="How far from a sounding gaps are filled. Small (a few metres) shows what was sounded; larger joins neighbouring tracks into a surface for reading the ground when zoomed in. Filled areas are an estimate, not soundings">Fill up to</label>
+            <input id="pb-fill-m" type="range" min="0" max="9" step="1" /><span id="pb-fill-v" class="val"></span></div>
           <ul id="pb-sources" class="data-sets"></ul>
           <div class="wx-row"><span id="pb-note" class="grow wx-note">Your own soundings, as logged (below the surface or transducer): not reduced to chart datum, so up to half the tidal range off charted depths. Kept on this computer only. Not for navigation.</span></div>
           <div class="data-item"><span class="dot" id="data-mb-dot"></span><span class="grow"><b>Maritime boundaries</b> (LINZ): <span id="data-mb-state">—</span></span>

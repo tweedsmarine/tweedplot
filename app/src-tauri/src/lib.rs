@@ -3365,7 +3365,7 @@ fn chart_info() -> serde_json::Value {
 }
 
 fn tile_response(path: &str) -> Response<Vec<u8>> {
-    // personal bathymetry: /pbathy/<z>/<x>/<y>.png
+    // own soundings: /pbathy/<z>/<x>/<y>.png
     if let Some(rest) = path.trim_start_matches('/').strip_prefix("pbathy/") {
         let p: Vec<u32> = rest.trim_end_matches(".png").split('/').filter_map(|v| v.parse().ok()).collect();
         let png = match p.as_slice() {

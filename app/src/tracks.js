@@ -5,6 +5,7 @@
 // while plotting is paused); this module starts and stops it and shows its progress.
 import { infoBox } from "./infobox.js";
 import { seaScale } from "./weather.js";
+import { ownSoundingsScale } from "./pbathy.js";
 import { invoke } from "@tauri-apps/api/core";
 import * as activity from "./activity.js";
 import { exportLibraryFile } from "./library.js";
@@ -66,7 +67,9 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
     }
     const by = BY[prefs.colourBy];
     range = by ? rangeOf(by, shown) : null;
-    const f = range && filterOf(range);
+    const own = by?.own ? ownSoundingsScale() : null;
+    // own soundings colours: their range, everything outside it in the end colours
+    const f = own ? range && { lo: own.lo, hi: own.hi, tg: NaN } : range && filterOf(range);
     for (const [t, d] of shown) {
       const colour = colourOf(t);
       for (const seg of d.segments) {
@@ -78,6 +81,7 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
         const key = (p) => {
           const v = p[by.i];
           if (v == null) return "none";
+          if (own) return Math.round((Math.min(f.hi, Math.max(f.lo, v)) - f.lo) / step);
           if (v < f.lo || v > f.hi) return "out";
           return Math.round((v - f.lo) / step);
         };
@@ -99,7 +103,11 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
         }
       }
     }
-    if (f) {
+    if (f && own) {
+      map.setPaintProperty("trk-lines", "line-color", ["case", ["has", "v"], ["interpolate", ["linear"], ["get", "v"], ...own.stops.flat()], NO_VALUE]);
+      map.setPaintProperty("trk-lines", "line-width", ["case", ["has", "v"], prefs.width * 1.2, Math.max(0.8, prefs.width * 0.55)]);
+      map.setPaintProperty("trk-lines", "line-opacity", ["case", ["has", "v"], 0.95, 0.6]);
+    } else if (f) {
       const sc = seaScale(f);
       map.setPaintProperty("trk-lines", "line-color", ["case", ["has", "v"], ["interpolate", ["linear"], ["get", "v"], ...sc.flat()], NO_VALUE]);
       const w = prefs.width;
@@ -123,6 +131,8 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
   const BY = {
     temp: { i: 6, name: "Sea temperature", unit: "°C" },
     depth: { i: 5, name: "Depth", unit: "m" },
+    // depth in the own soundings colours and range (Chart data › Own soundings)
+    soundings: { i: 5, name: "Depth", unit: "m", own: true },
     sog: { i: 3, name: "Speed (SOG)", unit: "kn" },
   };
   let range = null; // { min, max, q } of the shown tracks' values
@@ -160,6 +170,22 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
   floatDrag(leg, "track-key");
   function drawFilter(by, count) {
     const box = $("trk-sea"), note = $("trk-colour-note");
+    if (by?.own) {
+      // no pointers: the range and colours are the own soundings' (Chart data)
+      box.hidden = true;
+      note.textContent = count && !range ? "The shown tracks have no depth logged." : !count ? "Tick tracks to show them."
+        : "Colours and range from Chart data › Own soundings (Fit to view there sets the range).";
+      leg.hidden = !(range && count);
+      if (leg.hidden) return;
+      const o = ownSoundingsScale(), w = o.hi - o.lo;
+      const css = `linear-gradient(to right, ${o.stops.map(([v, c]) => `${c} ${((v - o.lo) / w) * 100}%`).join(", ")})`;
+      leg.innerHTML = `<b></b><div class="bar"></div><div class="ticks"><span></span><span class="tg"></span><span></span></div>`;
+      leg.querySelector("b").textContent = "Depth, m (own soundings colours)";
+      leg.querySelector(".bar").style.background = css;
+      const s = leg.querySelectorAll(".ticks span");
+      s[0].textContent = `${Math.round(o.lo)}`; s[1].textContent = ""; s[2].textContent = `${Math.round(o.hi)}`;
+      return;
+    }
     note.textContent = by && count && !range ? `The shown tracks have no ${by.name.toLowerCase()} logged.` : by && !count ? "Tick tracks to show them." : "";
     const f = range && prefs.filter[prefs.colourBy];
     box.hidden = leg.hidden = !f;
@@ -464,6 +490,8 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
   });
   syncColourControls();
   $("trk-colour-by").onchange = (e) => { prefs.colourBy = e.target.value; syncColourControls(); save(); draw(); };
+  // the own soundings colours changed (Chart data): tracks drawn in them follow
+  window.addEventListener("own-soundings-colours", () => { if (BY[prefs.colourBy]?.own) draw(); });
   $("trk-time").checked = prefs.atTime;
   $("trk-time").onchange = () => { prefs.atTime = $("trk-time").checked; save(); drawNow(); };
 
