@@ -28,6 +28,10 @@ pub struct RefGrid {
 /// on a slope or a canyon wall the chart's depth areas are generalised polygons, and a
 /// sounding near a band's edge may be in the next band.
 pub const WIDEN: usize = 4;
+/// How far the deepest charted depth is looked for when judging a sounding too deep (cells:
+/// about ±5 km): a canyon's head is under shallow bands, and the deep water it leads to may
+/// be kilometres away.
+pub const WIDEN_DEEP: usize = 23;
 
 impl RefGrid {
     /// An empty grid over [w, s, e, n] with cells of `step` degrees.
@@ -81,13 +85,14 @@ impl RefGrid {
         }
     }
 
-    /// Widen the charted range over `k` cells each way (after painting): each cell takes the
-    /// shallowest `lo` and the deepest `hi` around it (min and max filters, row then column).
-    pub fn widen(&mut self, k: usize) {
+    /// Widen the charted range (after painting): each cell takes the shallowest `lo` within
+    /// `k_lo` cells each way and the deepest `hi` within `k_hi` (min and max filters, row then
+    /// column).
+    pub fn widen(&mut self, k_lo: usize, k_hi: usize) {
         let (nx, ny) = (self.nx, self.ny);
         let lo0: Vec<f32> = self.lo.iter().map(|&v| if v.is_nan() { f32::INFINITY } else { v }).collect();
         let hi0: Vec<f32> = (0..nx * ny).map(|i| if self.lo[i].is_nan() { f32::NEG_INFINITY } else { self.hi[i] }).collect();
-        let pass = |src: &[f32], min: bool, along_x: bool| -> Vec<f32> {
+        let pass = |src: &[f32], min: bool, along_x: bool, k: usize| -> Vec<f32> {
             let mut out = vec![0f32; nx * ny];
             for a in 0..(if along_x { ny } else { nx }) {
                 let len = if along_x { nx } else { ny };
@@ -104,8 +109,8 @@ impl RefGrid {
             }
             out
         };
-        let lo = pass(&pass(&lo0, true, true), true, false);
-        let hi = pass(&pass(&hi0, false, true), false, false);
+        let lo = pass(&pass(&lo0, true, true, k_lo), true, false, k_lo);
+        let hi = pass(&pass(&hi0, false, true, k_hi), false, false, k_hi);
         self.wide = Some((lo, hi));
     }
 
@@ -170,9 +175,9 @@ impl Reference {
             return t.at(lon, lat);
         }
         // a margin so the widening reaches across the square's edge
-        let m = (WIDEN + 1) as f64 * REF_STEP;
+        let m = (WIDEN.max(WIDEN_DEEP) + 1) as f64 * REF_STEP;
         let mut g = (self.build)([k.0 as f64 - m, k.1 as f64 - m, k.0 as f64 + 1.0 + m, k.1 as f64 + 1.0 + m]);
-        g.widen(WIDEN);
+        g.widen(WIDEN, WIDEN_DEEP);
         let t = Arc::new(g);
         let r = t.at(lon, lat);
         self.tiles.write().unwrap_or_else(|e| e.into_inner()).insert(k, t);
@@ -415,9 +420,21 @@ mod tests {
     }
 
     #[test]
+    fn deep_water_further_away_counts_for_too_deep_only() {
+        let mut g = grid();
+        g.widen(1, 10); // shallow ±0.01°, deep ±0.1°
+        // on the bank, 0.08° from its edge: shallowest still the bank's, deepest the plain's
+        assert_eq!(g.at(170.42, -41.5), Some((200.0, 1000.0)));
+        assert!(!off_chart(700.0, g.at(170.42, -41.5).unwrap())); // a canyon head
+        let mut g = grid();
+        g.widen(1, 1);
+        assert_eq!(g.at(170.42, -41.5), Some((200.0, 500.0)));
+    }
+
+    #[test]
     fn widening_takes_in_the_next_band_near_its_edge() {
         let mut g = grid();
-        g.widen(4); // 0.04° here (cells of 0.01°)
+        g.widen(4, 4); // 0.04° here (cells of 0.01°)
         assert_eq!(g.at(170.53, -41.5), Some((200.0, 1000.0)));
         assert_eq!(g.at(170.6, -41.5), Some((500.0, 1000.0)));
         assert_eq!(g.at(170.2, -41.5), Some((200.0, 500.0)));
