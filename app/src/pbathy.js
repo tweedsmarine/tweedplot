@@ -54,7 +54,7 @@ export function pbathyAt(lon, lat, show) {
       if (visible() && current.rejected) {
         const l = await invoke("pbathy_left_at", { lon: lo, lat: la }).catch(() => null);
         if (l) {
-          const why = Object.entries(WHY).filter(([b]) => l.src & +b).map(([, n]) => n).join(", ") || "off the chart";
+          const why = (l.src & 80) === 80 ? "second echo (about twice the depth)" : Object.entries(WHY).filter(([b]) => l.src & +b).map(([, n]) => n).join(", ") || "off the chart";
           const when = l.newest ? `, ${new Date(l.newest * 1000).toLocaleDateString()}` : "";
           parts.push(`left out: ${(-l.z).toFixed(1)} m, ${why}${when}`);
         }
@@ -206,7 +206,7 @@ export function setupPbathy(map) {
       else if (!r.tracks) t = `All ${fmt(r.with_depth)} tracks with depth are in already.${r.back ? ` ${fmt(r.back)} left-out soundings were put back on a second look.` : ""}`;
       else {
         const c = r.counts || {};
-        t = `${fmt(r.tracks)} tracks: ${fmt(r.kept)} soundings added. Left out: ${fmt(c.spikes ?? r.dropped)} spikes`;
+        t = `${fmt(r.tracks)} tracks: ${fmt(r.kept)} soundings added. Left out: ${fmt(c.spikes ?? r.dropped)} spikes${c.echoes ? `, ${fmt(c.echoes)} second echoes` : ""}`;
         t += r.checked ? `, ${fmt(c.off_chart)} well off the charted depth, and ${fmt(c.in_runs)} more in ${fmt(c.runs)} runs mostly off it (the sounder locked onto something else).`
           + (r.back ? ` ${fmt(r.back)} of those left out were put back: the soundings beside them agree (the chart's bands were too coarse there).` : "")
           + (c.unchecked ? ` ${fmt(c.unchecked)} had no chart depth to check against.` : "")

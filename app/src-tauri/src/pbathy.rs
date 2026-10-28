@@ -215,6 +215,7 @@ pub async fn pbathy_from_tracks(app: tauri::AppHandle, check: Option<bool>) -> R
                                 bathy::check::Verdict::Spike => bathy::WHY_SPIKE,
                                 bathy::check::Verdict::OffDeep => bathy::WHY_DEEP,
                                 bathy::check::Verdict::Run => bathy::WHY_RUN,
+                                bathy::check::Verdict::Echo => bathy::WHY_SPIKE | bathy::WHY_DEEP,
                                 _ => bathy::WHY_SHALLOW,
                             };
                             w.reject(p.lon, p.lat, -(d as f32), h, bathy::SRC_OWN | why);

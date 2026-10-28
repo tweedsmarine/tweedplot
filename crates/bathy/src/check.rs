@@ -182,10 +182,16 @@ impl Reference {
 
 /// Whether a depth (m, positive down) is well outside a charted range: more than 10 m and
 /// 20 % shallower than its shallowest, or deeper than its deepest.
+///
+/// Too deep is judged far more loosely than too shallow: a sounder's faults read shallow
+/// (fish, a scattering layer, a held depth), while a channel, a drowned river valley or a
+/// canyon narrower than the chart's depth areas really is deeper than charted. Only deeper
+/// than 1.8 × the band's deepest + 20 m counts (a second echo reads about twice the depth;
+/// runs of those are found along the track, see [`check_segment`]).
 pub fn off_chart(d: f64, range: (f32, f32)) -> bool {
     let (lo, hi) = (range.0 as f64, range.1 as f64);
     let too_shallow = lo > 0.0 && d < lo - (10.0 + 0.2 * lo);
-    let too_deep = hi.is_finite() && d > hi + 10.0 + 0.2 * hi;
+    let too_deep = hi.is_finite() && d > 1.8 * hi + 20.0;
     too_shallow || too_deep
 }
 
@@ -204,6 +210,8 @@ pub enum Verdict {
     /// In a run of the track that is mostly off the chart (the sounder locked onto something
     /// else for a while): left out as a whole.
     Run,
+    /// In a run reading about twice the depth either side of it: a second echo.
+    Echo,
 }
 
 /// Counts of each [`Verdict`] (and the fixes with no chart to check against).
@@ -215,6 +223,8 @@ pub struct CheckCounts {
     pub in_runs: usize,
     pub runs: usize,
     pub unchecked: usize,
+    /// In runs reading about twice the depth either side (second echoes).
+    pub echoes: usize,
 }
 
 impl CheckCounts {
@@ -225,6 +235,7 @@ impl CheckCounts {
                 Verdict::Spike => self.spikes += 1,
                 Verdict::OffChart | Verdict::OffDeep => self.off_chart += 1,
                 Verdict::Run => self.in_runs += 1,
+                Verdict::Echo => self.echoes += 1,
                 Verdict::None => {}
             }
         }
@@ -283,8 +294,29 @@ pub fn check_segment(fixes: &[(f64, f64, Option<f64>)], chart: &dyn Fn(f64, f64)
         }
         runs.last_mut().unwrap().push(i);
     }
+    // second echoes: a run between jumps reading about twice the depths either side of it
+    let med = |ix: &[usize]| -> f64 {
+        let mut v: Vec<f64> = ix.iter().map(|&i| d[i].unwrap_or(0.0)).collect();
+        v.sort_by(f64::total_cmp);
+        v[v.len() / 2]
+    };
+    for k in 1..runs.len().saturating_sub(1) {
+        let (before, after) = (&runs[k - 1], &runs[k + 1]);
+        let b = med(&before[before.len().saturating_sub(5)..]);
+        let a = med(&after[..after.len().min(5)]);
+        let m = med(&runs[k]);
+        let twice = |x: f64| x > 0.0 && (m / x - 2.0).abs() < 0.15;
+        if twice(a) && twice(b) {
+            for &i in &runs[k] {
+                v[i] = Verdict::Echo;
+            }
+        }
+    }
     let mut dropped = 0;
     for run in &runs {
+        if run.iter().all(|&i| v[i] == Verdict::Echo) {
+            continue;
+        }
         let checked = run.iter().filter(|&&i| off[i].is_some()).count();
         // only runs too shallow go whole (a sounder locked onto something above the bottom)
         let bad = run.iter().filter(|&&i| off[i] == Some(-1)).count();
@@ -377,7 +409,8 @@ mod tests {
         assert_eq!(g.at(169.95, -41.5), None);
         assert!(off_chart(70.0, (500.0, 1000.0)));
         assert!(!off_chart(420.0, (500.0, 1000.0))); // within 20 % + 10 m
-        assert!(off_chart(1300.0, (500.0, 1000.0)));
+        assert!(!off_chart(1300.0, (500.0, 1000.0))); // a canyon deeper than charted
+        assert!(off_chart(2000.0, (500.0, 1000.0))); // twice: a second echo
         assert!(!off_chart(3.0, (0.0, 5.0)));
     }
 
@@ -412,6 +445,16 @@ mod tests {
         assert_eq!(v[45], Verdict::Spike);
         assert!(v[60..63].iter().all(|x| *x == Verdict::Spike), "{:?}", &v[58..65]);
         assert_eq!(v.iter().filter(|x| **x == Verdict::Spike).count(), 4);
+    }
+
+    #[test]
+    fn a_second_echo_run_goes() {
+        let none = |_: f64, _: f64| None;
+        // 120 m, then 20 fixes locked on the second echo at ~240 m, then 120 m again
+        let f: Vec<_> = (0..60).map(|i| (170.0 + i as f64 * 0.0002, -41.5, Some(if (20..40).contains(&i) { 241.0 + (i % 2) as f64 } else { 120.0 + (i % 3) as f64 }))).collect();
+        let (v, _, _) = check_segment(&f, &none);
+        assert!(v[20..40].iter().all(|x| *x == Verdict::Echo), "{:?}", &v[18..42]);
+        assert!(v[..20].iter().chain(&v[40..]).all(|x| *x == Verdict::Keep));
     }
 
     #[test]

@@ -667,9 +667,15 @@ impl Store {
                 back.push(k);
                 continue;
             }
+            // 0. left out only by the chart, and the chart rule (now) lets it in
+            let (lon, _) = cell_centre(gx as u32, gy as u32, MAX_LEVEL);
+            let chart_only = c.src & (WHY_SPIKE | WHY_RUN) == 0;
+            if chart_only && chart.and_then(|r| r.at(lon, lat)).is_some_and(|rg| !check::off_chart(-(c.mean as f64), rg)) {
+                back.push(k);
+                continue;
+            }
             // 2. deeper than the chart: other days' left-out soundings within DEEP_AGREE_M
             let Some(r) = chart else { continue };
-            let (lon, _) = cell_centre(gx as u32, gy as u32, MAX_LEVEL);
             if !r.at(lon, lat).is_some_and(|(_, hi)| hi.is_finite() && -(c.mean as f64) > hi as f64) {
                 continue;
             }
@@ -1271,7 +1277,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("bathy-chan-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let s = Store::open(&dir.join("bathy.sqlite")).unwrap();
-        // charted 200–500 m; a narrow channel at ~620 m crossed on three days, all left out,
+        // charted 200–500 m; a narrow canyon at ~950 m crossed on three days, all left out,
         // and a shallow lock-on at 80 m on three days, left out too
         let chart = check::Reference::new(|b| {
             let mut g = check::RefGrid::new(b, check::REF_STEP);
@@ -1281,16 +1287,18 @@ mod tests {
         let mut w = s.writer("own", "t", 0).unwrap();
         for (k, day) in [10u32, 40, 90].iter().enumerate() {
             let h = day * 24;
-            w.reject(173.2 + k as f64 * 0.00003, -41.2, -620.0 - k as f32, h, SRC_OWN);
+            w.reject(173.2 + k as f64 * 0.00003, -41.2, -950.0 - k as f32, h, SRC_OWN | WHY_DEEP);
             w.reject(173.3 + k as f64 * 0.00003, -41.2, -80.0, h, SRC_OWN);
         }
         // one more deep one on a single day only: nobody else's
-        w.reject(173.4, -41.2, -650.0, 5 * 24, SRC_OWN);
-        w.reject(173.40003, -41.2, -651.0, 5 * 24 + 1, SRC_OWN);
+        w.reject(173.4, -41.2, -1000.0, 5 * 24, SRC_OWN | WHY_DEEP);
+        w.reject(173.40003, -41.2, -1001.0, 5 * 24 + 1, SRC_OWN | WHY_DEEP);
+        // and one the chart rule now lets in by itself (deeper than charted, not absurdly)
+        w.reject(173.5, -41.2, -620.0, 7 * 24, SRC_OWN | WHY_DEEP);
         w.finish(&mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
-        assert_eq!(s.info().unwrap().rejected, 8);
+        assert_eq!(s.info().unwrap().rejected, 9);
         let back = s.second_opinion(Some(&chart), &mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
-        assert_eq!(back, 3, "the channel only");
+        assert_eq!(back, 4, "the canyon and the 620 m one");
         assert_eq!(s.info().unwrap().rejected, 5);
         let _ = std::fs::remove_dir_all(&dir);
     }
