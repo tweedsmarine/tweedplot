@@ -29,6 +29,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use rusqlite::{params, Connection, OptionalExtension};
 
 pub mod check;
+pub mod live;
 mod import;
 mod render;
 pub use import::{clean_depths, decode_pbg_blob, pbg_level16, pbg_made, PbgTile};
@@ -762,6 +763,39 @@ impl Store {
         Ok(moved)
     }
 
+    /// A setting kept in the store (`meta` table).
+    pub fn meta(&self, k: &str) -> Option<String> {
+        self.db().query_row("SELECT v FROM meta WHERE k = ?1", [k], |r| r.get(0)).optional().ok().flatten().flatten()
+    }
+
+    pub fn set_meta(&self, k: &str, v: &str) -> Result<()> {
+        self.db().execute("INSERT OR REPLACE INTO meta (k, v) VALUES (?1, ?2)", params![k, v])?;
+        Ok(())
+    }
+
+    /// Add to a running source (one row per kind and name, e.g. live soundings per day):
+    /// its soundings and left-out counts grow, its time is the latest.
+    pub fn tally_source(&self, kind: &str, name: &str, soundings: i64, rejected: i64) -> Result<()> {
+        let db = self.db();
+        let n = db.execute(
+            "UPDATE sources SET soundings = soundings + ?3, rejected = rejected + ?4, added = ?5 WHERE kind = ?1 AND name = ?2",
+            params![kind, name, soundings, rejected, now_s()],
+        )?;
+        if n == 0 {
+            db.execute("INSERT INTO sources (kind, name, bytes, added, soundings, rejected) VALUES (?1, ?2, 0, ?3, ?4, ?5)", params![kind, name, now_s(), soundings, rejected])?;
+        }
+        Ok(())
+    }
+
+    /// Mark tracks as added without adding them (their soundings came in live).
+    pub fn mark_seeded(&self, ids: &[(String, i64)]) -> Result<()> {
+        let db = self.db();
+        for (id, m) in ids {
+            db.execute("INSERT OR REPLACE INTO seeded (track_id, modified) VALUES (?1, ?2)", params![id, m])?;
+        }
+        Ok(())
+    }
+
     /// The tracks already added, with their modified times.
     pub fn seeded(&self) -> Result<HashMap<String, i64>> {
         let db = self.db();
@@ -1369,6 +1403,25 @@ mod tests {
         assert!(s.left_out_near(173.2, -41.2, 20.0).is_none());
         let l = s.left_out_near(173.2, -41.2, 150.0).unwrap();
         assert!((l.z + 80.0).abs() < 1e-3 && l.src & WHY_SHALLOW != 0, "{l:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn running_sources_and_settings() {
+        let dir = std::env::temp_dir().join(format!("bathy-tally-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let s = Store::open(&dir.join("bathy.sqlite")).unwrap();
+        s.tally_source("Live", "2026-10-30", 100, 3).unwrap();
+        s.tally_source("Live", "2026-10-30", 50, 1).unwrap();
+        s.tally_source("Live", "2026-10-31", 7, 0).unwrap();
+        let src = s.info().unwrap().sources;
+        assert_eq!(src.len(), 2);
+        assert_eq!((src[0].soundings, src[0].rejected), (150, 4));
+        assert_eq!(s.meta("live"), None);
+        s.set_meta("live", "1").unwrap();
+        assert_eq!(s.meta("live").as_deref(), Some("1"));
+        s.mark_seeded(&[("t9".into(), -1)]).unwrap();
+        assert_eq!(s.seeded().unwrap().get("t9"), Some(&-1));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

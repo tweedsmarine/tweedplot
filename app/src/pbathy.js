@@ -6,9 +6,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import * as activity from "./activity.js";
+import { floatDrag } from "./floatdrag.js";
 
 const $ = (id) => document.getElementById(id);
-const SHOW = "racenav.pbathy.show";
+const SHOW = "racenav.pbathy.show"; // before 30 Oct 2026: one setting for every view
+const VIEWS_KEY = "racenav.pbathy.views";
+/** Shown in a view to begin with: on when planning, off when navigating (the chart's own depths come first). */
+const VIEW_DEFAULT = { nav: false, plan: true, inst: false };
 const STYLE = "racenav.pbathy.style";
 const SRC = { 1: "own", 2: "TimeZero", 4: "XYZ", 8: "other" };
 
@@ -22,11 +26,27 @@ const STOPS = {
   rainbow: [[0, [196, 32, 38]], [0.14, [236, 112, 36]], [0.28, [244, 206, 52]], [0.42, [120, 200, 80]], [0.56, [40, 186, 170]], [0.70, [40, 130, 216]], [0.84, [70, 62, 196]], [1, [92, 28, 128]]],
   blues: [[0, [205, 240, 236]], [0.2, [150, 210, 234]], [0.45, [96, 164, 220]], [0.7, [58, 110, 184]], [1, [26, 52, 120]]],
 };
-/** The own soundings colours as a scale over depth (m, positive down): { lo, hi, stops: [[depth, css], …] }. */
+/** The target depth in use, if it lies between the shallow and deep limits. */
+const targetOf = (s) => (s.target != null && s.target > s.shallow && s.target < s.deep ? +s.target : null);
+/** The own soundings colours as a scale over depth (m, positive down): { lo, hi, tg, stops: [[depth, css], …] }.
+ * With a target, lo..target takes the first half of the palette and target..hi the second (as render.rs). */
 export function ownSoundingsScale() {
   const lo = +current.shallow || 0, hi = Math.max(lo + 1, +current.deep || lo + 1);
+  const tg = targetOf({ ...current, shallow: lo, deep: hi });
   const st = STOPS[current.palette] || STOPS.rainbow;
-  return { lo, hi, stops: st.map(([t, c]) => [lo + t * (hi - lo), `rgb(${c.join(",")})`]) };
+  const at = (t) => (tg == null ? lo + t * (hi - lo) : t <= 0.5 ? lo + (t / 0.5) * (tg - lo) : tg + ((t - 0.5) / 0.5) * (hi - tg));
+  // with a target the halves need a stop at 0.5 exactly
+  const pts = tg == null ? st : [...st.filter(([t]) => t < 0.5), [0.5, colourAt(st, 0.5)], ...st.filter(([t]) => t > 0.5)];
+  return { lo, hi, tg, stops: pts.map(([t, c]) => [at(t), `rgb(${c.map(Math.round).join(",")})`]) };
+}
+function colourAt(st, t) {
+  for (let i = 1; i < st.length; i++) {
+    if (t <= st[i][0]) {
+      const f = (t - st[i - 1][0]) / (st[i][0] - st[i - 1][0]);
+      return st[i][1].map((v, k) => st[i - 1][1][k] + (v - st[i - 1][1][k]) * f);
+    }
+  }
+  return st.at(-1)[1];
 }
 const visible = () => mapRef?.getLayer("pbathy") && mapRef.getLayoutProperty("pbathy", "visibility") === "visible";
 
@@ -73,14 +93,14 @@ export function pbathyAt(lon, lat, show) {
   run();
 }
 
-export function setupPbathy(map) {
+export function setupPbathy(map, { ui } = {}) {
   mapRef = map;
   let job = null;
   const fmt = (n) => Number(n).toLocaleString();
   const fmtMB = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(0.1, b / 1e6).toFixed(b >= 1e8 ? 0 : 1)} MB`);
   const note = (t, kind = "") => { const el = $("pb-note"); el.textContent = t; el.className = `grow wx-note ${kind}`; };
 
-  let style = { palette: "rainbow", shallow: 0, deep: 500, contours: true, shade: true, fill: true, fill_m: 4, rejected: false };
+  let style = { palette: "rainbow", shallow: 0, deep: 500, target: null, contours: true, shade: true, fill: true, fill_m: 4, rejected: false };
   try { Object.assign(style, JSON.parse(localStorage.getItem(STYLE) || "{}")); } catch { /* defaults */ }
   current = style;
   window.dispatchEvent(new CustomEvent("own-soundings-colours"));
@@ -101,6 +121,8 @@ export function setupPbathy(map) {
     $("pb-fill-v").textContent = `${FILL_STEPS[k]} m`;
     $("pb-fill-m").disabled = !style.fill;
     $("pb-rejected").checked = !!style.rejected;
+    $("pb-target").value = style.target == null ? "" : Math.round(style.target);
+    card.draw();
   };
   async function applyStyle() {
     current = style;
@@ -112,12 +134,15 @@ export function setupPbathy(map) {
   const readForm = () => {
     const sh = Math.max(0, +$("pb-shallow").value || 0);
     const dp = Math.max(sh + 1, +$("pb-deep").value || sh + 1);
-    style = { palette: $("pb-palette").value, shallow: sh, deep: dp, contours: $("pb-contours").checked, shade: $("pb-shade").checked, fill: $("pb-fill").checked, fill_m: FILL_STEPS[+$("pb-fill-m").value] ?? 4, rejected: $("pb-rejected").checked };
+    const tv = $("pb-target").value.trim();
+    const tg = tv === "" ? null : Math.min(dp - 0.5, Math.max(sh + 0.5, +tv));
+    style = { palette: $("pb-palette").value, shallow: sh, deep: dp, target: tg, contours: $("pb-contours").checked, shade: $("pb-shade").checked, fill: $("pb-fill").checked, fill_m: FILL_STEPS[+$("pb-fill-m").value] ?? 4, rejected: $("pb-rejected").checked };
+    card.draw();
     $("pb-fill-v").textContent = `${style.fill_m} m`;
     $("pb-fill-m").disabled = !style.fill;
     applyStyle();
   };
-  for (const id of ["pb-palette", "pb-shallow", "pb-deep", "pb-contours", "pb-shade", "pb-fill", "pb-fill-m", "pb-rejected"]) $(id).onchange = readForm;
+  for (const id of ["pb-palette", "pb-shallow", "pb-deep", "pb-target", "pb-contours", "pb-shade", "pb-fill", "pb-fill-m", "pb-rejected"]) $(id).onchange = readForm;
   // check soundings against the chart's depth areas (on unless turned off)
   const CHECK = "racenav.pbathy.check";
   $("pb-check").checked = localStorage.getItem(CHECK) !== "0";
@@ -126,13 +151,27 @@ export function setupPbathy(map) {
   // the value while dragging; the tiles are drawn again on release
   $("pb-fill-m").oninput = () => { $("pb-fill-v").textContent = `${FILL_STEPS[+$("pb-fill-m").value]} m`; };
 
-  const setShow = (on) => {
+  // shown or not per view (Navigation, Planning …): the checkbox, the toolbar button and the card
+  let perView = {};
+  try { perView = JSON.parse(localStorage.getItem(VIEWS_KEY) || "{}"); } catch { /* defaults */ }
+  if (!Object.keys(perView).length && localStorage.getItem(SHOW) === "1") perView.plan = true; // the old single setting
+  const viewNow = () => document.documentElement.dataset.view || "plan";
+  const shownIn = (v) => perView[v] ?? VIEW_DEFAULT[v] ?? false;
+  const applyShow = () => {
+    const on = shownIn(viewNow());
     $("pb-show").checked = on;
-    try { localStorage.setItem(SHOW, on ? "1" : "0"); } catch { /* ignore */ }
+    $("pb-tb")?.classList.toggle("on", on);
     if (map.getLayer("pbathy")) map.setLayoutProperty("pbathy", "visibility", on ? "visible" : "none");
+    card.show(on);
   };
-  $("pb-show").checked = localStorage.getItem(SHOW) === "1";
+  const setShow = (on) => {
+    perView[viewNow()] = on;
+    try { localStorage.setItem(VIEWS_KEY, JSON.stringify(perView)); } catch { /* ignore */ }
+    applyShow();
+  };
   $("pb-show").onchange = (e) => setShow(e.target.checked);
+  $("pb-tb").onclick = () => setShow(!shownIn(viewNow()));
+  window.addEventListener("racenav-view", applyShow);
 
   async function refresh() {
     let st = null;
@@ -229,16 +268,19 @@ export function setupPbathy(map) {
     endJob();
   };
 
-  $("pb-fit").onclick = async () => {
+  async function fitToView() {
     const b = map.getBounds();
     try {
       const r = await invoke("pbathy_fit", { area: [b.getWest(), Math.max(-85, b.getSouth()), b.getEast(), Math.min(85, b.getNorth())] });
       if (!r) { note("No soundings in the chart view to fit the colours to."); return; }
       style.shallow = Math.floor(r[0]); style.deep = Math.ceil(r[1]);
+      if (style.target != null && (style.target <= style.shallow || style.target >= style.deep)) style.target = null;
+      card.fitScale();
       showForm(); applyStyle();
       note(`Colours: ${style.shallow} m to ${style.deep} m (the depths in view).`);
     } catch (e) { note(`Could not fit: ${e}`, "bad"); }
-  };
+  }
+  $("pb-fit").onclick = fitToView;
 
   // two clicks: the first asks
   let delArmed = null;
@@ -255,6 +297,151 @@ export function setupPbathy(map) {
     refresh(); reload();
   };
 
+  // ---------- the card over the chart: the depth range with three pointers ----------
+  // shallow and deep set the colour range, the middle (red) pointer the target depth: the
+  // colours split there and it gets a bold contour. Shown with the layer, in any view.
+  const card = makeCard({
+    get: () => style,
+    set: (s) => { style = { ...style, ...s }; showForm(); applyStyle(); },
+    preview: (s) => { current = { ...style, ...s }; window.dispatchEvent(new CustomEvent("own-soundings-colours")); },
+    fit: () => fitToView(),
+    hide: () => setShow(false),
+    settings: () => {
+      // the drawer may be hidden in this view (Navigation): bring the panels back first
+      window.dispatchEvent(new Event("racenav-need-tools"));
+      ui?.open("chart");
+      requestAnimationFrame(() => $("pb-dot")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+    },
+  });
+  applyShow();
+
+  // ---------- live soundings ----------
+  async function liveRefresh() {
+    let st = null;
+    try { st = await invoke("pbathy_live_status"); } catch { return; }
+    $("pb-live").checked = !!st.on;
+    if (document.activeElement !== $("pb-live-sog")) $("pb-live-sog").value = st.max_sog || 0;
+    const parts = [];
+    if (st.on) parts.push(`Live: ${fmt(st.added || 0)} soundings added today${st.left ? `, ${fmt(st.left)} left out` : ""}${st.transducer_m != null ? ` (transducer ${st.transducer_m} m below the waterline)` : ""}.`);
+    for (const w of st.warnings || []) parts.push(w);
+    const el = $("pb-live-state");
+    el.textContent = parts.join(" ");
+    el.className = `wx-note ${(st.warnings || []).length ? "warn" : ""}`;
+    card.live(st.on ? `Live: ${fmt(st.added || 0)} today${(st.warnings || []).length ? " ⚠" : ""}` : "", (st.warnings || []).join(" "));
+  }
+  const liveSet = async () => {
+    try { await invoke("pbathy_live_set", { on: $("pb-live").checked, maxSog: +$("pb-live-sog").value || 0 }); } catch (e) { note(`Could not change live soundings: ${e}`, "bad"); }
+    liveRefresh();
+  };
+  $("pb-live").onchange = liveSet;
+  $("pb-live-sog").onchange = liveSet;
+  listen("pbathy-live", () => { reload(); liveRefresh(); });
+  liveRefresh();
+  setInterval(liveRefresh, 15000);
+
   showForm();
   invoke("pbathy_style", { style }).catch(() => {}).finally(() => { reload(); refresh(); });
+}
+
+/** The floating card: title (drag to move), palette, Fit, settings, close; and the three-pointer
+ * depth range. `opts`: get() the style, set(changes) apply them, preview(changes) while dragging,
+ * fit(), hide(), settings(). */
+function makeCard(opts) {
+  const el = document.createElement("div");
+  el.id = "pb-card";
+  el.className = "pb-card";
+  el.hidden = true;
+  el.innerHTML = `<div class="pb-head"><b>Own soundings</b><select class="pal" title="Colours: Rainbow (red shallow to violet deep) or Blues (as charts)"><option value="rainbow">Rainbow</option><option value="blues">Blues</option></select>
+      <button class="fit" title="Fit the depth range to the soundings in the chart view">Fit</button>
+      <button class="more" title="All the own soundings settings (Chart › Chart data)">⚙</button>
+      <button class="close" title="Hide own soundings in this view">✕</button></div>
+    <div class="seafilter"><div class="track"><div class="grad"></div><span class="h lo"></span><span class="h tg"></span><span class="h hi"></span></div>
+      <div class="vals"><span class="v min"></span><span class="v lo"></span><span class="v tg"></span><span class="v hi"></span><span class="v max"></span></div></div>
+    <div class="pb-hint">Drag the pointers: shallow and deep set the colours, the red one a target depth (double-click it to clear).</div>
+    <div class="pb-live" hidden></div>`;
+  const parent = document.getElementById("map") || document.body;
+  parent.append(el);
+  floatDrag(el, "own-soundings", el.querySelector(".pb-head"));
+  const track = el.querySelector(".track");
+  let max = 0; // the track runs 0..max m
+  const nice = (v) => { const p = 10 ** Math.floor(Math.log10(Math.max(v, 1))); return [1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10].map((m) => m * p).find((x) => x >= v) ?? v; };
+  const fitScale = () => { const s = opts.get(); max = nice(Math.max(50, s.deep * 1.25)); };
+  let live = null; // the values while dragging
+  function draw() {
+    const s = { ...opts.get(), ...(live || {}) };
+    if (!max || s.deep > max) fitScale();
+    el.querySelector(".pal").value = s.palette;
+    const pc = (v) => `${Math.min(100, Math.max(0, (v / max) * 100))}%`;
+    const tg = s.target != null && s.target > s.shallow && s.target < s.deep ? s.target : null;
+    const sc = scaleFor(s);
+    const w = Math.max(s.deep - s.shallow, 1e-6);
+    const grad = el.querySelector(".grad");
+    grad.style.left = pc(s.shallow);
+    grad.style.width = `calc(${pc(s.deep)} - ${pc(s.shallow)})`;
+    grad.style.background = `linear-gradient(to right, ${sc.map(([v, c]) => `${c} ${((v - s.shallow) / w) * 100}%`).join(", ")})`;
+    el.querySelector(".h.lo").style.left = pc(s.shallow);
+    el.querySelector(".h.hi").style.left = pc(s.deep);
+    const th = el.querySelector(".h.tg");
+    th.style.left = pc(tg ?? (s.shallow + s.deep) / 2);
+    th.classList.toggle("off", tg == null);
+    el.querySelector(".v.min").textContent = "0";
+    el.querySelector(".v.lo").textContent = `${Math.round(s.shallow)} m`;
+    el.querySelector(".v.tg").textContent = tg == null ? "no target" : `target ${Math.round(tg)} m`;
+    el.querySelector(".v.hi").textContent = `${Math.round(s.deep)} m`;
+    el.querySelector(".v.max").textContent = `${max} m`;
+  }
+  // which pointer, and dragging it
+  let drag = null;
+  const valueAt = (e) => ((e.clientX - drag.rect.left) / drag.rect.width) * max;
+  const step = () => (max > 500 ? 5 : max > 100 ? 1 : 0.5);
+  track.addEventListener("pointerdown", (e) => {
+    const s = opts.get();
+    drag = { rect: track.getBoundingClientRect() };
+    const v = valueAt(e);
+    const tg = s.target ?? (s.shallow + s.deep) / 2;
+    drag.k = e.target.classList.contains("h") ? [...e.target.classList].find((c) => ["lo", "tg", "hi"].includes(c))
+      : [["lo", s.shallow], ["tg", tg], ["hi", s.deep]].reduce((a, b) => (Math.abs(b[1] - v) < Math.abs(a[1] - v) ? b : a))[0];
+    live = { shallow: s.shallow, deep: s.deep, target: s.target };
+    track.setPointerCapture(e.pointerId);
+    move(e);
+  });
+  const move = (e) => {
+    if (!drag) return;
+    const q = step();
+    const v = Math.min(max, Math.max(0, Math.round(valueAt(e) / q) * q));
+    if (drag.k === "lo") live.shallow = Math.min(v, live.deep - q);
+    else if (drag.k === "hi") live.deep = Math.max(v, live.shallow + q);
+    else live.target = Math.min(Math.max(v, live.shallow + q), live.deep - q);
+    if (live.target != null && (live.target <= live.shallow || live.target >= live.deep)) live.target = null;
+    draw();
+    opts.preview(live);
+  };
+  track.addEventListener("pointermove", move);
+  track.addEventListener("pointerup", () => {
+    if (!drag) return;
+    const atEnd = drag.k === "hi" && live.deep >= max;
+    drag = null;
+    const s = live; live = null;
+    opts.set(s);
+    // the deep pointer pushed to the end: room to go deeper
+    if (atEnd) { max = nice(max * 1.6); draw(); }
+  });
+  el.querySelector(".h.tg").addEventListener("dblclick", (e) => { e.stopPropagation(); opts.set({ target: null }); });
+  el.querySelector(".pal").onchange = (e) => opts.set({ palette: e.target.value });
+  el.querySelector(".fit").onclick = () => opts.fit();
+  el.querySelector(".close").onclick = () => opts.hide();
+  el.querySelector(".more").onclick = () => opts.settings();
+  return {
+    draw,
+    fitScale: () => { max = 0; },
+    show(on) { el.hidden = !on; if (on) draw(); },
+    live(text, warn) { const l = el.querySelector(".pb-live"); l.hidden = !text; l.textContent = text; l.title = warn || ""; l.classList.toggle("warn", !!warn); },
+  };
+}
+
+/** [[depth, css colour], …] for a style (the same as ownSoundingsScale, for any style). */
+function scaleFor(s) {
+  const keep = current;
+  current = s;
+  try { return ownSoundingsScale().stops; } finally { current = keep; }
 }

@@ -35,6 +35,10 @@ pub struct Style {
     pub fill_m: f32,
     /// Mark the soundings the checks left out (magenta).
     pub rejected: bool,
+    /// A depth of interest (m) between `shallow` and `deep`: the colours run from `shallow` to
+    /// it over the first half of the palette and from it to `deep` over the second, so ground
+    /// near it stands out, and it gets a bold contour (the three pointers, as the sea layers).
+    pub target: Option<f32>,
 }
 
 /// The largest fill (cells of the level drawn): beyond it the filled ring would cost more
@@ -43,7 +47,7 @@ pub const MAX_FILL_CELLS: i64 = 192;
 
 impl Default for Style {
     fn default() -> Self {
-        Style { palette: Palette::Rainbow, shallow: 0.0, deep: 500.0, contours: true, shade: true, fill: true, fill_m: 4.0, rejected: false }
+        Style { palette: Palette::Rainbow, shallow: 0.0, deep: 500.0, contours: true, shade: true, fill: true, fill_m: 4.0, rejected: false, target: None }
     }
 }
 
@@ -85,7 +89,11 @@ pub fn colour(depth: f32, s: &Style) -> [f32; 3] {
         Palette::Blues => BLUES,
     };
     let span = (s.deep - s.shallow).max(0.1);
-    let t = ((depth - s.shallow) / span).clamp(0.0, 1.0);
+    let t = match s.target.filter(|tg| *tg > s.shallow && *tg < s.deep) {
+        Some(tg) if depth <= tg => 0.5 * ((depth - s.shallow) / (tg - s.shallow)).clamp(0.0, 1.0),
+        Some(tg) => 0.5 + 0.5 * ((depth - tg) / (s.deep - tg)).clamp(0.0, 1.0),
+        None => ((depth - s.shallow) / span).clamp(0.0, 1.0),
+    };
     for w in stops.windows(2) {
         if t <= w[1].0 {
             let f = (t - w[0].0) / (w[1].0 - w[0].0);
@@ -329,6 +337,20 @@ fn shade(h: &[f32], g: usize, res: f64, step: f32, s: &Style) -> Vec<u8> {
                 let k = (0.55 + 0.45 * lit / lz.max(0.01)).min(1.15);
                 col = col.map(|v| (v * k).min(255.0));
             }
+            // the target depth: a bold line (two pixels) where the seabed crosses it
+            if let Some(tg) = s.target.filter(|tg| *tg > s.shallow && *tg < s.deep) {
+                let side = |v: f32| -v > tg;
+                let me = side(c);
+                let cross = [(x + 2, y + 1), (x + 1, y + 2), (x, y + 1), (x + 1, y)].iter().any(|&(xx, yy)| {
+                    let v = at(xx, yy);
+                    v.is_finite() && side(v) != me
+                });
+                if cross {
+                    let o = (y * n + x) * 4;
+                    rgba[o..o + 4].copy_from_slice(&[15, 18, 28, 255]);
+                    continue;
+                }
+            }
             if s.contours {
                 let band = |v: f32| (v / step).floor();
                 let (r, d) = (at(x + 2, y + 1), at(x + 1, y + 2));
@@ -454,6 +476,19 @@ mod tests {
         assert!((f[5 * w + 11] + 10.0).abs() < 1e-4); // still the nearest line, not the mean
         assert!((f[5 * w + 15] + 20.0).abs() < 1e-4); // midway: both lines equally
         assert!(f[5 * w + 35].is_nan()); // 15 cells out: beyond 8
+    }
+
+    #[test]
+    fn a_target_splits_the_palette() {
+        let s = Style { shallow: 0.0, deep: 1000.0, target: Some(200.0), ..Style::default() };
+        // 200 m is the middle of the palette; 100 m a quarter; 600 m three quarters
+        let mid = colour(200.0, &Style { target: None, shallow: 0.0, deep: 400.0, ..Style::default() });
+        assert_eq!(colour(200.0, &s), mid);
+        assert_eq!(colour(100.0, &s), colour(100.0, &Style { target: None, shallow: 0.0, deep: 400.0, ..Style::default() }));
+        assert_eq!(colour(600.0, &s), colour(300.0, &Style { target: None, shallow: 0.0, deep: 400.0, ..Style::default() }));
+        // a target outside the range is ignored
+        let out = Style { target: Some(2000.0), ..s.clone() };
+        assert_eq!(colour(500.0, &out), colour(500.0, &Style { target: None, ..s }));
     }
 
     #[test]

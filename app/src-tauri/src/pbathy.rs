@@ -169,7 +169,8 @@ pub async fn pbathy_from_tracks(app: tauri::AppHandle, check: Option<bool>) -> R
         let seeded = s.seeded().map_err(|e| e.to_string())?;
         let tracks = lib.tracks().map_err(|e| e.to_string())?;
         let with_depth: Vec<_> = tracks.iter().filter(|t| t.has_depth).collect();
-        let todo: Vec<&library::TrackSummary> = with_depth.iter().copied().filter(|t| seeded.get(&t.id) != Some(&t.modified)).collect();
+        // tracks recorded with live soundings on (seeded as -1) came in live
+        let todo: Vec<&library::TrackSummary> = with_depth.iter().copied().filter(|t| seeded.get(&t.id) != Some(&t.modified) && seeded.get(&t.id) != Some(&-1)).collect();
         // a track changed since it was added would count twice: those wait for a rebuild
         let changed = todo.iter().filter(|t| seeded.contains_key(&t.id)).count();
         let todo: Vec<String> = todo.iter().filter(|t| !seeded.contains_key(&t.id)).map(|t| t.id.clone()).collect();
@@ -282,4 +283,178 @@ pub fn pbathy_clear() -> Result<(), String> {
         return Err("Wait for the build to finish (or cancel it).".into());
     }
     need()?.clear().map_err(|e| e.to_string())
+}
+
+// ---------- live soundings ----------------------------------------------------------------
+
+/// Live soundings: on or off, the speed above which none are taken (0: no limit; a hull
+/// planing or the sounder in aerated water reads rubbish), and what's happened today.
+struct Live {
+    on: bool,
+    max_sog: f64,
+    logger: bathy::live::Logger,
+    reference: Option<Arc<bathy::check::Reference>>,
+    day: String,
+    added: i64,
+    left: i64,
+    /// When a depth last arrived (Unix s), and which kind it was.
+    last_depth: f64,
+    kind: &'static str,
+    transducer_m: Option<f64>,
+    /// When the settings (transducer depth) were last read.
+    settings_at: f64,
+    flushing: bool,
+}
+
+static LIVE: std::sync::Mutex<Option<Live>> = std::sync::Mutex::new(None);
+
+fn now_f() -> f64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0)
+}
+
+fn today() -> String {
+    // local date for the day's source row
+    let t = chrono::Local::now();
+    t.format("%Y-%m-%d").to_string()
+}
+
+fn live_state() -> std::sync::MutexGuard<'static, Option<Live>> {
+    let mut g = LIVE.lock().unwrap_or_else(|e| e.into_inner());
+    if g.is_none() {
+        let (on, max_sog) = store().map_or((false, 0.0), |s| {
+            (s.meta("live_on").as_deref() == Some("1"), s.meta("live_max_sog").and_then(|v| v.parse().ok()).unwrap_or(0.0))
+        });
+        *g = Some(Live { on, max_sog, logger: Default::default(), reference: None, day: today(), added: 0, left: 0, last_depth: 0.0, kind: "", transducer_m: None, settings_at: 0.0, flushing: false });
+    }
+    g
+}
+
+/// A vessel update (Signal K or NMEA, whichever source is selected for depth): take a
+/// sounding from it when live soundings are on: depth below the transducer plus the
+/// transducer depth (Settings › Vessel), or below the surface when that's all there is.
+pub fn live_vessel(app: &tauri::AppHandle, v: &signalk::VesselState) {
+    let mut g = live_state();
+    let Some(l) = g.as_mut() else { return };
+    if !l.on {
+        return;
+    }
+    let now = now_f();
+    if now - l.settings_at > 60.0 {
+        l.settings_at = now;
+        l.transducer_m = crate::settings::settings_get(app.clone()).ok().and_then(|s| s.vessel.transducer_depth_m);
+    }
+    let depth = if let Some(d) = v.depth {
+        l.kind = "transducer";
+        Some(d + l.transducer_m.unwrap_or(0.0))
+    } else if let Some(d) = v.depth_surface {
+        l.kind = "surface";
+        Some(d)
+    } else {
+        None
+    };
+    let (Some(d), Some(lat), Some(lon)) = (depth, v.lat, v.lon) else { return };
+    if l.max_sog > 0.0 && v.sog.is_some_and(|s| s > l.max_sog) {
+        return;
+    }
+    if l.logger.offer(bathy::live::Fix { t: now, lon, lat, depth: d }) {
+        l.last_depth = now;
+    }
+    if !l.flushing {
+        if let Some(batch) = l.logger.take(false) {
+            l.flushing = true;
+            if l.reference.is_none() {
+                l.reference = chart_reference().map(Arc::new);
+            }
+            let reference = l.reference.clone();
+            let app = app.clone();
+            std::thread::spawn(move || live_flush(&app, batch, reference));
+        }
+    }
+}
+
+fn live_flush(app: &tauri::AppHandle, (ctx, new): (Vec<bathy::live::Fix>, Vec<bathy::live::Fix>), reference: Option<Arc<bathy::check::Reference>>) {
+    let r = (|| -> Result<(i64, i64), String> {
+        let s = need()?;
+        if BUSY.load(Ordering::SeqCst) {
+            return Err("busy".into()); // an import or build is writing: this batch waits for the next
+        }
+        let none = |_: f64, _: f64| None;
+        let chart: &dyn Fn(f64, f64) -> Option<(f32, f32)> = match &reference {
+            Some(r) => &|lon, lat| r.at(lon, lat),
+            None => &none,
+        };
+        let mut w = s.writer("", "", 0).map_err(|e| e.to_string())?;
+        let (a, l) = bathy::live::add_batch(&mut w, &ctx, &new, chart).map_err(|e| e.to_string())?;
+        w.finish(&mut |_, _, _| {}, &AtomicBool::new(false)).map_err(|e| e.to_string())?;
+        s.tally_source("Live", &today(), a, l).map_err(|e| e.to_string())?;
+        // the track being recorded now came in live: Add my tracks leaves it alone
+        if let Some(id) = crate::rec_track_id() {
+            let _ = s.mark_seeded(&[(id, -1)]);
+        }
+        s.changed();
+        Ok((a, l))
+    })();
+    let mut g = live_state();
+    if let Some(l) = g.as_mut() {
+        l.flushing = false;
+        let day = today();
+        if day != l.day {
+            l.day = day;
+            l.added = 0;
+            l.left = 0;
+        }
+        match r {
+            Ok((a, lo)) => {
+                l.added += a;
+                l.left += lo;
+                let _ = app.emit("pbathy-live", serde_json::json!({ "added": l.added, "left": l.left }));
+            }
+            Err(e) if e == "busy" => {}
+            Err(e) => eprintln!("own soundings, live: {e}"),
+        }
+    }
+}
+
+/// Live soundings: on or off, the speed limit, today's counts, and anything to warn about.
+#[tauri::command]
+pub fn pbathy_live_status(app: tauri::AppHandle) -> serde_json::Value {
+    let transducer = crate::settings::settings_get(app).ok().and_then(|s| s.vessel.transducer_depth_m);
+    let g = live_state();
+    let Some(l) = g.as_ref() else { return serde_json::json!({}) };
+    let now = now_f();
+    let mut warn: Vec<&str> = Vec::new();
+    if l.on {
+        if l.last_depth == 0.0 || now - l.last_depth > 30.0 {
+            warn.push("No depth with a position arriving from the selected source (Settings › Connections).");
+        } else if l.kind == "transducer" && transducer.is_none() {
+            warn.push("Transducer depth not set (Settings › Vessel): the soundings are below the transducer, its depth shallower than below the surface.");
+        } else if l.kind == "surface" {
+            warn.push("No depth below the transducer arriving: using the depth below the surface the source gives.");
+        }
+    } else if transducer.is_none() {
+        warn.push("Set the transducer depth in Settings › Vessel before turning this on: soundings are taken below the transducer.");
+    }
+    serde_json::json!({
+        "on": l.on, "max_sog": l.max_sog, "added": l.added, "left": l.left,
+        "last": l.last_depth, "kind": l.kind, "transducer_m": transducer, "warnings": warn,
+    })
+}
+
+/// Turn live soundings on or off, and set the speed limit (kn, 0 = none).
+#[tauri::command]
+pub fn pbathy_live_set(on: bool, max_sog: Option<f64>) -> Result<(), String> {
+    let s = need()?;
+    let mut g = live_state();
+    let Some(l) = g.as_mut() else { return Ok(()) };
+    l.on = on;
+    if let Some(m) = max_sog {
+        l.max_sog = m.max(0.0);
+    }
+    if !on {
+        // what's waiting goes in with the next batch when turned on again; drop it now
+        let _ = l.logger.take(true);
+    }
+    s.set_meta("live_on", if on { "1" } else { "0" }).map_err(|e| e.to_string())?;
+    s.set_meta("live_max_sog", &l.max_sog.to_string()).map_err(|e| e.to_string())?;
+    Ok(())
 }

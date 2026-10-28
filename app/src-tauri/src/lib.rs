@@ -2126,7 +2126,14 @@ fn rec_resume() {
 }
 
 /// Offer a Signal K fix to the recorder; saves every 30 s.
+/// The track being recorded now, if any.
+pub(crate) fn rec_track_id() -> Option<String> {
+    REC.lock().unwrap().as_ref().map(|r| r.track.id.clone())
+}
+
 pub(crate) fn rec_vessel(app: &tauri::AppHandle, v: &signalk::VesselState) {
+    // own soundings, live (when on): every depth update, not only the track's fixes
+    pbathy::live_vessel(app, v);
     let (Some(lat), Some(lon)) = (v.lat, v.lon) else {
         return;
     };
@@ -3598,6 +3605,8 @@ pub fn run() {
             pbathy::pbathy_fit,
             pbathy::pbathy_at,
             pbathy::pbathy_left_at,
+            pbathy::pbathy_live_status,
+            pbathy::pbathy_live_set,
             pbathy::pbathy_clear,
             rules_at,
             rule_info,

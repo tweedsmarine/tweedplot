@@ -137,7 +137,7 @@ const map = new maplibregl.Map({
       { id: "hires", type: "raster", source: "hires", minzoom: 10, layout: { visibility: localStorage.getItem("racenav.hires.show") === "0" ? "none" : "visible" },
         paint: { "raster-opacity": 0.92, "raster-resampling": "linear" } },
       // over the charted depths too: it's what the skipper surveyed (not for navigation)
-      { id: "pbathy", type: "raster", source: "pbathy", minzoom: 3, layout: { visibility: localStorage.getItem("racenav.pbathy.show") === "1" ? "visible" : "none" },
+      { id: "pbathy", type: "raster", source: "pbathy", minzoom: 3, layout: { visibility: "none" }, // per view: pbathy.js
         paint: { "raster-opacity": 0.95, "raster-resampling": "nearest" } },
       { id: "depcnt", type: "line", source: "chart", "source-layer": "depcnt", layout: { visibility: "none" },
         paint: { "line-color": "#7d97a6", "line-width": 0.6 } },
@@ -348,7 +348,7 @@ map.on("load", () => {
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
   window.__weather = weather; // debugging handle
   setupData(map, { toast, reloadTiles: reloadChartTiles });
-  setupPbathy(map);
+  setupPbathy(map, { ui });
   setupS63(map, { toast });
   setupPalette();
   setupBrand();

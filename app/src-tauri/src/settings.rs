@@ -33,6 +33,9 @@ pub struct VesselProfile {
     pub reference_lon: Option<f64>,
     pub gps_antenna_from_bow_m: Option<f64>,
     pub gps_antenna_from_centerline_m: Option<f64>,
+    /// Depth of the sounder's transducer below the waterline (m): added to the depth below the
+    /// transducer for own soundings.
+    pub transducer_depth_m: Option<f64>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -120,6 +123,7 @@ fn validate(s: &Settings) -> Result<(), String> {
         ("Length", v.length_m, 1000.0),
         ("Breadth", v.breadth_m, 200.0),
         ("Air draft", v.air_draft_m, 300.0),
+        ("Transducer depth", v.transducer_depth_m, 50.0),
         (
             "GPS antenna distance from bow",
             v.gps_antenna_from_bow_m,

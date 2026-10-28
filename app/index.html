@@ -487,7 +487,7 @@
         <div class="wx-note">From the LINZ hydrographic layers in the linz folder (any scale band). Click a light, mark or area for its details. Not for navigation.</div>
                 <h3>Layers</h3>
         <div class="wx-row checks"><label title="Show the high-resolution depths on the chart (from about 2 NM range in)"><input id="data-hr-show" type="checkbox" /> High-resolution depths</label>
-          <label title="Show your own soundings (from your tracks, and TimeZero PBG or XYZ files imported in Chart data) as a depth image. Not for navigation"><input id="pb-show" type="checkbox" /> Own soundings</label></div>
+          <label title="Show your own soundings (from your tracks, and TimeZero PBG or XYZ files imported in Chart data) as a depth image, in this view (each view keeps its own choice: on in Planning, off in Navigation to begin with; the toolbar button does the same). Not for navigation"><input id="pb-show" type="checkbox" /> Own soundings (this view)</label></div>
         <h4>Boundaries and fishing rules</h4>
         <div id="mar-box">
           <div class="wx-row checks"><label title="Territorial sea (12 NM), contiguous zone (24 NM), EEZ (200 NM) and the boundaries agreed with Australia (LINZ)"><input id="mar-bounds" type="checkbox" /> Maritime boundaries</label>
@@ -528,6 +528,9 @@
             <button id="data-hr-del" title="Delete all the downloaded high-resolution depths">✕ All</button></div>
           <div class="data-item"><span class="dot" id="pb-dot"></span><span class="grow"><b>Own soundings</b> (your soundings as a seabed): <span id="pb-state">—</span></span>
             <button id="pb-zoom" hidden title="Turn the own soundings on and zoom to where nearly all of them are">Show</button></div>
+          <div class="wx-row checks"><label title="Add depths to own soundings as they come in from the depth source selected in Settings (Signal K, NMEA 0183, or NMEA 2000 through Signal K): about one a second, checked as tracks are, added a minute at a time. Depth below the transducer plus the transducer depth set in Settings › Vessel"><input id="pb-live" type="checkbox" /> Add soundings live</label>
+            <label title="Take none above this speed (aerated water, planing): 0 for no limit">up to <input id="pb-live-sog" type="number" min="0" max="60" step="1" style="width:4em" /> kn</label></div>
+          <div id="pb-live-state" class="wx-note"></div>
           <div class="wx-row"><button id="pb-tracks" title="Add the depths logged along the library's tracks (tracks added before are skipped). Spikes (lost bottom, fish, wake) are left out">Add my tracks</button>
             <button id="pb-import" title="Import a TimeZero PBG file (.tzpbg) or XYZ text (longitude, latitude, height on each line, e.g. exported from TimeZero)">Import PBG / XYZ…</button>
             <button id="pb-again" hidden title="Import the same file again: its soundings will count twice">Import again</button>
@@ -537,6 +540,8 @@
             <input id="pb-shallow" type="number" min="0" step="1" style="width:5em" title="Shallowest depth of the colour range (m)" /> to
             <input id="pb-deep" type="number" min="1" step="1" style="width:5em" title="Deepest depth of the colour range (m)" /> m
             <button id="pb-fit" title="Fit the colour range to the soundings in the chart view">Fit to view</button></div>
+          <div class="wx-row"><label class="grow" for="pb-target" title="A depth of interest: the colours split there (shallow to it over the first half, it to deep over the second) and it gets a bold contour. Empty for none. The red pointer on the card over the chart sets it too">Target depth</label>
+            <input id="pb-target" type="number" min="0" step="1" style="width:5em" placeholder="none" /> m</div>
           <div class="wx-row checks"><label><input id="pb-contours" type="checkbox" /> Contours</label><label><input id="pb-shade" type="checkbox" /> Shading</label>
             <label title="Fill gaps between soundings, from the nearest soundings around them, up to the distance below"><input id="pb-fill" type="checkbox" /> Fill gaps</label></div>
           <div class="wx-row checks"><label title="When adding tracks or importing files, leave out soundings well off the chart's depth there (more than 10 m and 20 % outside the charted depth bands within about 900 m), and whole runs of a track that are mostly off it: the sounder locked onto fish, a scattering layer or a second echo. They are kept apart, not lost. Afterwards, left-out soundings that your soundings beside them agree with are put back"><input id="pb-check" type="checkbox" /> Check against the chart</label>
@@ -666,6 +671,7 @@
         <svg viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg></button>
       <button id="shoot-btn" class="tb-fish" aria-label="Shoot" title="Shoot (right-click or hold to choose net, line or pots)"><svg viewBox="0 0 24 24"><path d="M3 8c2 1.5 4 1.5 6 0s4-1.5 6 0 4 1.5 6 0"/><path d="M12 11v10M8 17l4 4 4-4"/></svg><span class="tb-gear"></span></button>
       <button id="haul-btn" class="tb-fish" aria-label="Haul" title="Haul (right-click or hold to choose net, line or pots)"><svg viewBox="0 0 24 24"><path d="M3 8c2 1.5 4 1.5 6 0s4-1.5 6 0 4 1.5 6 0"/><path d="M12 21V11M8 15l4-4 4 4"/></svg><span class="tb-gear"></span></button>
+      <button id="pb-tb" aria-label="Own soundings" title="Own soundings: show or hide your soundings as a seabed in this view, with the depth range card (on in Planning, off in Navigation to begin with)"><svg viewBox="0 0 24 24"><path d="M2 7c2.5 1.5 5 1.5 7.5 0s5-1.5 7.5 0 3.5 1.5 5 0"/><path d="M2 20l4-5 3 2 4-6 3 3 3-4 3 2v8z" class="fill" opacity=".55"/></svg></button>
       <button id="targets-btn" title="Target list: AIS targets with range, bearing, CPA and TCPA (T)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/><circle cx="16" cy="9" r="1.2" fill="currentColor"/></svg></button>
       <button id="view-btn" aria-label="View" title="View: Navigation, Planning or Instruments (right-click for the chart and the other views)">
         <svg viewBox="0 0 24 24"></svg></button>
@@ -746,6 +752,7 @@
               <label>Length overall<input name="lengthM" type="number" min="0" max="1000" step="0.1" /></label>
               <label>Breadth<input name="breadthM" type="number" min="0" max="200" step="0.1" /></label>
               <label>Air draft<input name="airDraftM" type="number" min="0" max="300" step="0.1" /></label>
+              <label title="How far below the waterline the sounder's transducer is. Added to the depth below the transducer for own soundings, so they are depths below the surface">Transducer depth<input name="transducerDepthM" type="number" min="0" max="50" step="0.1" placeholder="for own soundings" /></label>
             </div>
             <h3>Position and GPS antenna</h3>
             <p class="settings-note">Optional default chart location when the app starts without a GPS fix. A live GPS fix takes precedence, and setting this will not move the chart after you have chosen a location.</p>

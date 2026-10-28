@@ -1179,3 +1179,18 @@ button.on.warn { background: #b03a2e; color: #fff; border-color: #b03a2e; }
 .haul-buttons button { padding: 14px 4px; font-size: 16px; font-weight: 600; border-radius: 8px; }
 .haul-buttons .haul-catch { background: #e4f4ee; border-color: #16a085; color: #0d5e4e; font-size: 19px; }
 .haul-list { list-style: none; margin: 0; padding: 0; font-size: 12px; color: var(--quiet); max-height: 120px; overflow: auto; }
+
+/* own soundings: the card over the chart with the depth range (pbathy.js) */
+.pb-card { position: absolute; right: 10px; bottom: 120px; z-index: 4; width: 330px; padding: 6px 8px 4px; border-radius: 6px;
+  background: var(--panel, #fff); color: var(--ink, #1d2a33); box-shadow: 0 2px 8px rgba(0, 0, 0, .25); font-size: 12px; }
+.pb-card[hidden] { display: none; }
+.pb-card .pb-head { display: flex; align-items: center; gap: 4px; cursor: move; margin-bottom: 2px; }
+.pb-card .pb-head b { flex: 1; white-space: nowrap; }
+.pb-card .pb-head button, .pb-card .pb-head select { padding: 1px 6px; font-size: 11px; }
+.pb-card .seafilter { margin-top: 4px; }
+.pb-card .h.tg.off { opacity: .35; }
+.pb-card .vals .min, .pb-card .vals .max { color: var(--quiet); }
+.pb-card .pb-hint { font-size: 10px; color: var(--quiet); margin-top: 2px; }
+#pb-tb.on { color: var(--accent, #1f6fb2); }
+.pb-card .pb-live { font-size: 11px; margin-top: 3px; color: var(--ink, #1d2a33); }
+.pb-card .pb-live.warn { color: #b9770e; }

@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 const EMPTY_PROFILE = {
   name: "", imo: "", callSign: "", mmsi: "", draftM: null, lengthM: null,
   breadthM: null, airDraftM: null, referenceLat: null, referenceLon: null,
-  gpsAntennaFromBowM: null, gpsAntennaFromCenterlineM: null,
+  gpsAntennaFromBowM: null, gpsAntennaFromCenterlineM: null, transducerDepthM: null,
 };
 
 const INPUTS = Object.keys(EMPTY_PROFILE);
