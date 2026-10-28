@@ -3261,7 +3261,7 @@ async fn setter_open(app: tauri::AppHandle) -> Result<(), String> {
         return w.set_focus().map_err(|e| e.to_string());
     }
     tauri::WebviewWindowBuilder::new(&app, "line-set", tauri::WebviewUrl::App("setter.html".into()))
-        .title("TweedPlot line setting")
+        .title("TweedPlot line shooting")
         .inner_size(560.0, 760.0)
         .min_inner_size(360.0, 420.0)
         .always_on_top(true)

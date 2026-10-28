@@ -143,7 +143,7 @@ async function start() {
   const iv = interval();
   try {
     const ev = await invoke("event_save", { event: {
-      kind: "line-set", name: "Line set", at: Math.floor(Date.now() / 1000),
+      kind: "line-set", name: "Line shot", at: Math.floor(Date.now() / 1000),
       lat: pos?.lat ?? null, lon: pos?.lon ?? null, depth: pos?.depth ?? null, temp: pos?.water_temp ?? null, sog: pos?.sog ?? null, cog: pos?.cog ?? null,
       notes: [b1 && `radio buoy ${b1} at the start`, $("st-notes").value.trim()].filter(Boolean).join(" · "),
       data: { buoy_start: b1 || null, buoy_end: $("st-b2").value.trim() || null, mode: cfg.mode, interval_s: iv.s, spacing_m: cfg.mode === "distance" ? cfg.spacing : null,
@@ -251,7 +251,7 @@ function render() {
   $("st-target").textContent = cfg.target ? `of ${cfg.target.toLocaleString()}` : "";
   const ms = run.activeMs + (run.state === "running" ? Date.now() - run.resumedWall : 0);
   $("st-time").textContent = `${Math.floor(ms / 3600000) ? `${Math.floor(ms / 3600000)}:` : ""}${String(Math.floor(ms / 60000) % 60).padStart(Math.floor(ms / 3600000) ? 2 : 1, "0")}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
-  $("st-state").textContent = run.state === "running" ? (run.last || run.ending ? "Setting: last basket" : "Setting") : run.state === "paused" ? "Paused" : "Finished";
+  $("st-state").textContent = run.state === "running" ? (run.last || run.ending ? "Shooting: last basket" : "Shooting") : run.state === "paused" ? "Paused" : "Finished";
   live();
 }
 
@@ -312,7 +312,7 @@ async function finish() {
   const pos = fixed() ? boat : null;
   try {
     await invoke("event_save", { event: {
-      kind: "line-end", name: "Line set finished", at: Math.floor(Date.now() / 1000),
+      kind: "line-end", name: "Line shot finished", at: Math.floor(Date.now() / 1000),
       lat: pos?.lat ?? null, lon: pos?.lon ?? null, depth: pos?.depth ?? null, temp: pos?.water_temp ?? null, sog: pos?.sog ?? null, cog: pos?.cog ?? null,
       notes: `${run.hooks.toLocaleString()} hooks, ${run.floats} floats, ${run.baskets} baskets in ${$("st-time").textContent}${b2 ? ` · radio buoy ${b2} at the end` : ""}`,
       pair: run.eventId ?? "",
@@ -357,7 +357,7 @@ function setButtons() {
   $("st-last").classList.toggle("on", !!run?.last);
   $("st-buoy").disabled = done;
   $("st-finish").disabled = done;
-  document.title = on ? `Setting · ${run.hooks} hooks` : "TweedPlot line setting";
+  document.title = on ? `Shooting · ${run.hooks} hooks` : "TweedPlot line shooting";
 }
 
 // ---------- the controls ----------

@@ -14,24 +14,29 @@ import { ask } from "./ask.js";
 import { ddm, exportLibraryFile } from "./library.js";
 import { sharedTest, sharedActive, onShared } from "./libfilter.js";
 import { distNm } from "./instruments.js";
+import { infoBox } from "./infobox.js";
 
 const $ = (id) => document.getElementById(id);
 const KEY = "racenav.events";
 // what each button saves; "start" is the kind a haul ends
 const KINDS = {
   "net-shot": { label: "Net shot", gear: "net", icon: "sym-tri-down", colour: "#1f6fb2" },
-  "net-haul": { label: "Net hauled", gear: "net", icon: "sym-tri-up", colour: "#d35400", start: "net-shot" },
-  "line-set": { label: "Line set", gear: "line", icon: "sym-tri-down", colour: "#1f6fb2", window: true },
-  "line-haul": { label: "Line hauled", gear: "line", icon: "sym-tri-up", colour: "#d35400", start: "line-set" },
-  "pot-set": { label: "Pots set", gear: "pot", icon: "sym-tri-down", colour: "#1f6fb2" },
-  "pot-haul": { label: "Pots hauled", gear: "pot", icon: "sym-tri-up", colour: "#d35400", start: "pot-set" },
+  "net-haul": { label: "Net haul started", button: "Net haul", gear: "net", icon: "sym-tri-up", colour: "#d35400", start: "net-shot", dialog: true },
+  "line-set": { label: "Line shot", gear: "line", icon: "sym-tri-down", colour: "#1f6fb2", window: true },
+  "line-haul": { label: "Line haul started", button: "Line haul", gear: "line", icon: "sym-tri-up", colour: "#d35400", start: "line-set", dialog: true },
+  "pot-set": { label: "Pots shot", gear: "pot", icon: "sym-tri-down", colour: "#1f6fb2" },
+  "pot-haul": { label: "Pots haul started", button: "Pots haul", gear: "pot", icon: "sym-tri-up", colour: "#d35400", start: "pot-set", dialog: true },
   catch: { label: "Catch", gear: "", icon: "sym-fish", colour: "#16a085", ask: "What was caught (and how much)?" },
-  // written by the line-setting window (setter.js), not by a button here
-  "line-end": { label: "Line set finished", gear: "", icon: "sym-square", colour: "#1f6fb2", auto: true },
+  // written by the line-shooting window (setter.js) or the haul box, not by a button here
+  "line-end": { label: "Line shot finished", gear: "", icon: "sym-square", colour: "#1f6fb2", auto: true },
+  "haul-end": { label: "Haul finished", gear: "", icon: "sym-square", colour: "#d35400", auto: true },
   float: { label: "Float", gear: "", icon: "sym-dot", colour: "#d35400", auto: true },
   "radio-buoy": { label: "Radio buoy", gear: "", icon: "sym-flag", colour: "#c2185b", auto: true },
   note: { label: "Note", gear: "", icon: "sym-excl", colour: "#5b6b75", ask: "The note" },
 };
+// the shoot and haul kinds of each gear
+const SHOOT = { net: "net-shot", line: "line-set", pot: "pot-set" };
+const HAUL = { net: "net-haul", line: "line-haul", pot: "pot-haul" };
 const GEAR = { net: "Net", line: "Longline", pot: "Pots" };
 const clock = (t) => new Date(t * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 const day = (t) => new Date(t * 1000).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -53,9 +58,11 @@ export function setupEvents(map, { ui, getBoat }) {
       if (k.auto || (k.gear && !prefs.gear.includes(k.gear))) continue;
       const b = document.createElement("button");
       b.className = `evt-btn ${k.start ? "haul" : k.gear ? "shot" : "other"}`;
-      b.textContent = k.label;
-      b.title = k.window ? "Open the line-setting window: the snood and float beeper (it logs the set when started)" : `Save “${k.label}” now, with the boat's position, depth and sea temperature`;
-      b.onclick = () => (k.window ? invoke("setter_open").catch((e) => activity.start("Line setting").fail(String(e))) : log(kind));
+      b.textContent = k.button ?? k.label;
+      b.title = k.window ? "Open the line-shooting window: the snood and float beeper (it logs the shot when started)"
+        : k.dialog ? `Open the haul box: Start haul, Catch as it comes aboard, End haul`
+        : `Save “${k.label}” now, with the boat's position, depth and sea temperature`;
+      b.onclick = () => (k.window ? openSetter() : k.dialog ? openHaul(k.gear) : log(kind));
       box.append(b);
     }
     const g = $("evt-gear");
@@ -71,29 +78,161 @@ export function setupEvents(map, { ui, getBoat }) {
     }
   }
 
-  async function log(kind) {
+  async function log(kind, extra = {}) {
     const k = KINDS[kind];
     const at = Math.floor(Date.now() / 1000); // the moment pressed, even if a note is asked for
     const { pos, v = {} } = getBoat() ?? {};
     let notes = "";
-    if (k.ask) {
+    if (k.ask && extra.notes == null) {
       const a = await ask({ title: `${k.label} at ${clock(at)}`, fields: [{ key: "notes", label: k.ask, type: "text" }], ok: "Save" });
       if (!a) return;
       notes = a.notes;
     }
-    const e = { kind, name: k.label, at, lat: pos?.[1] ?? null, lon: pos?.[0] ?? null, depth: v.depth ?? null, temp: v.water_temp ?? null, sog: v.sog ?? null, cog: v.cog ?? null, notes };
+    if (extra.notes != null) { notes = extra.notes; }
+    const e = { kind, name: k.label, at, lat: pos?.[1] ?? null, lon: pos?.[0] ?? null, depth: v.depth ?? null, temp: v.water_temp ?? null, sog: v.sog ?? null, cog: v.cog ?? null, notes, ...extra };
+    if (extra.quiet) delete e.quiet;
     try {
       const saved = await invoke("event_save", { event: e });
-      const extra = [];
-      if (!pos) extra.push("No position from Signal K: saved without one (Edit can add notes).");
+      if (extra.quiet) { await refresh(); return saved; }
+      const lines = [];
+      if (!pos) lines.push("No position from Signal K: saved without one (Edit can add notes).");
       const shot = saved.pair && byId(saved.pair);
-      if (shot) extra.push(`Tow: ${dur(saved.at - shot.at)} since ${k.label.replace("hauled", "").trim().toLowerCase()} ${shot.kind.endsWith("shot") ? "shot" : "set"} at ${clock(shot.at)}.`);
-      activity.note(`${k.label} ${clock(at)}`, { details: [...extra, ...(saved.depth != null ? [`Depth ${saved.depth.toFixed(1)} m`] : []), ...(saved.temp != null ? [`Sea ${saved.temp.toFixed(1)} °C`] : [])] });
+      if (shot) lines.push(`${shot.kind === "net-shot" ? "Tow" : "Soak"}: ${dur(saved.at - shot.at)} since it was shot at ${clock(shot.at)}.`);
+      activity.note(`${k.label} ${clock(at)}`, { details: [...lines, ...(saved.depth != null ? [`Depth ${saved.depth.toFixed(1)} m`] : []), ...(saved.temp != null ? [`Sea ${saved.temp.toFixed(1)} °C`] : [])] });
       if (prefs.auto && k.gear && !k.start) startTimer();
       if (prefs.auto && k.start) stopTimer();
+      await refresh();
+      return saved;
     } catch (err) { activity.start(`Saving ${k.label}`).fail(String(err)); }
     refresh();
+    return null;
   }
+
+  // ---------- shooting and hauling (the toolbar's Shoot and Haul, and the Log's buttons) ----------
+  const GEAR_LABEL = { net: "Net", line: "Line", pot: "Pots" };
+  function openSetter() { invoke("setter_open").catch((e) => activity.start("Shooting the line").fail(String(e))); }
+  function shoot(gear) {
+    prefs.lastGear = gear; save(); renderTools();
+    if (gear === "line") openSetter();
+    else log(SHOOT[gear]);
+  }
+
+  // the haul box: Start haul at the first float (or the net / first pot), Catch as it comes
+  // aboard (per hook, per basket: as the skipper likes), End haul at the last. A haul in
+  // progress is read back from the log, so it survives closing the box or the app.
+  const haulPrefs = () => (prefs.haul ??= { what: "", n: 1 });
+  function haulState(gear) {
+    const start = events.filter((e) => e.kind === HAUL[gear]).sort((a, b) => b.at - a.at)[0];
+    if (!start || events.some((e) => e.kind === "haul-end" && e.pair === start.id)) return null;
+    const catches = events.filter((e) => e.kind === "catch" && e.data?.haul === start.id);
+    return { start, catches, n: catches.reduce((a, c) => a + (Number(c.data?.n) || 1), 0) };
+  }
+  let haulBox = null, haulGear = "line", haulTick = 0;
+  function openHaul(gear) {
+    haulGear = gear;
+    prefs.lastGear = gear; save(); renderTools();
+    const el = document.createElement("div");
+    el.className = "haul-box";
+    el.innerHTML = `<div class="haul-state"><b></b><small></small></div>
+      <div class="haul-what"><label>Catch <input class="haul-text" type="text" placeholder="e.g. bigeye, or a basket"></label><label>Number <input class="haul-n" type="number" min="1" step="1"></label></div>
+      <div class="haul-buttons"><button class="haul-start on">Start haul</button><button class="haul-catch">Catch</button><button class="haul-end warn">End haul</button></div>
+      <ul class="haul-list"></ul>`;
+    const text = el.querySelector(".haul-text"), num = el.querySelector(".haul-n");
+    text.value = haulPrefs().what; num.value = haulPrefs().n;
+    text.onchange = () => { haulPrefs().what = text.value.trim(); save(); };
+    num.onchange = () => { haulPrefs().n = Math.max(1, Number(num.value) || 1); save(); };
+    el.querySelector(".haul-start").onclick = async () => {
+      if (haulState(gear)) return;
+      await log(HAUL[gear]);
+      renderHaul();
+    };
+    el.querySelector(".haul-catch").onclick = async () => {
+      const st = haulState(gear);
+      if (!st) return;
+      const n = Math.max(1, Number(num.value) || 1), what = text.value.trim();
+      await log("catch", { quiet: true, notes: [n > 1 ? `${n} ×` : "", what].filter(Boolean).join(" "), data: { haul: st.start.id, n, what } });
+      renderHaul();
+    };
+    const endBtn = el.querySelector(".haul-end");
+    endBtn.onclick = async () => {
+      const st = haulState(gear);
+      if (!st) return;
+      if (!endBtn.dataset.armed) { endBtn.dataset.armed = "1"; endBtn.textContent = "End the haul?"; setTimeout(() => { delete endBtn.dataset.armed; endBtn.textContent = "End haul"; }, 3000); return; }
+      delete endBtn.dataset.armed; endBtn.textContent = "End haul";
+      const shot = st.start.pair && byId(st.start.pair);
+      await log("haul-end", { name: `${GEAR_LABEL[gear]} haul finished`, pair: st.start.id,
+        notes: `${st.n} caught in ${dur(Date.now() / 1000 - st.start.at)}${shot ? `, soak ${dur(st.start.at - shot.at)}` : ""}`,
+        data: { gear, catches: st.n, haul: st.start.id, shot: shot?.id ?? null } });
+      renderHaul();
+    };
+    haulBox = infoBox(map, "haul", { width: 340, height: 330 });
+    haulBox.open(el, { title: `${GEAR_LABEL[gear]} haul`, onClose: () => { clearInterval(haulTick); haulBox = null; } });
+    renderHaul();
+    clearInterval(haulTick);
+    haulTick = setInterval(renderHaul, 15000);
+  }
+  // the last haul of this gear that's finished, if it's newer than the last shot
+  function lastHaulEnd() {
+    const end = events.filter((e) => e.kind === "haul-end" && e.data?.gear === haulGear).sort((a, b) => b.at - a.at)[0];
+    const shot = events.filter((e) => e.kind === SHOOT[haulGear]).sort((a, b) => b.at - a.at)[0];
+    return end && (!shot || end.at > shot.at) ? end : null;
+  }
+  function renderHaul() {
+    const el = document.querySelector(".haul-box");
+    if (!haulBox || !el) return;
+    const st = haulState(haulGear);
+    const shot = st ? st.start.pair && byId(st.start.pair) : events.filter((e) => e.kind === SHOOT[haulGear]).sort((a, b) => b.at - a.at)[0];
+    el.querySelector(".haul-state b").textContent = st ? `Hauling since ${clock(st.start.at)} · ${st.n} caught` : "Not hauling";
+    el.querySelector(".haul-state small").textContent = st
+      ? `${dur(Date.now() / 1000 - st.start.at)} so far${shot ? ` · shot at ${clock(shot.at)}, soak ${dur(st.start.at - shot.at)}` : ""}`
+      : lastHaulEnd() ? `Last haul finished at ${clock(lastHaulEnd().at)}: ${lastHaulEnd().notes}. Start haul when the next comes aboard.`
+      : shot ? `Last shot at ${clock(shot.at)} (${dur(Date.now() / 1000 - shot.at)} ago). Start haul when the first ${haulGear === "line" ? "float" : haulGear === "pot" ? "pot" : "of the net"} comes aboard.` : "Start haul when the gear starts coming aboard.";
+    el.querySelector(".haul-start").disabled = !!st;
+    el.querySelector(".haul-catch").disabled = !st;
+    el.querySelector(".haul-end").disabled = !st;
+    const ul = el.querySelector(".haul-list");
+    ul.innerHTML = "";
+    for (const c of (st?.catches ?? []).slice().sort((a, b) => b.at - a.at).slice(0, 8)) {
+      const li = document.createElement("li");
+      li.textContent = `${clock(c.at)}  ${c.notes || "catch"}`;
+      ul.append(li);
+    }
+  }
+
+  // ---------- the toolbar's Shoot and Haul: left click the last gear, right-click (or hold) to choose ----------
+  function renderTools() {
+    const g = prefs.lastGear ?? "line";
+    for (const [id, verb] of [["shoot-btn", "Shoot"], ["haul-btn", "Haul"]]) {
+      const b = $(id);
+      if (!b) continue;
+      b.title = `${verb} the ${GEAR_LABEL[g].toLowerCase()} (right-click or hold to choose net, line or pots)`;
+      b.querySelector(".tb-gear").textContent = GEAR_LABEL[g][0];
+    }
+  }
+  const gearPop = document.createElement("div");
+  gearPop.className = "ctx gear-pop";
+  gearPop.hidden = true;
+  document.body.append(gearPop);
+  function openGearPop(btn, verb) {
+    gearPop.innerHTML = `<div class="grp">${verb}</div>${Object.entries(GEAR_LABEL).map(([g, l]) => `<button data-g="${g}" class="${g === prefs.lastGear ? "cur" : ""}">${verb} ${verb === "Shoot" ? (g === "pot" ? "pots" : `the ${l.toLowerCase()}`) : (g === "pot" ? "pots" : `the ${l.toLowerCase()}`)}</button>`).join("")}`;
+    gearPop.onclick = (e) => { const b = e.target.closest("button[data-g]"); if (!b) return; gearPop.hidden = true; (verb === "Shoot" ? shoot : openHaul)(b.dataset.g); };
+    const r = btn.getBoundingClientRect();
+    gearPop.style.left = `${r.right + 8}px`;
+    gearPop.style.top = `${Math.min(r.top, window.innerHeight - 160)}px`;
+    gearPop.hidden = false;
+  }
+  document.addEventListener("pointerdown", (e) => { if (!gearPop.hidden && !gearPop.contains(e.target) && !e.target.closest("#shoot-btn, #haul-btn")) gearPop.hidden = true; });
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !gearPop.hidden) { gearPop.hidden = true; e.preventDefault(); } });
+  for (const [id, verb] of [["shoot-btn", "Shoot"], ["haul-btn", "Haul"]]) {
+    const b = $(id);
+    if (!b) continue;
+    let press = null;
+    b.onclick = (e) => { if (press === "done") { press = null; e.preventDefault(); return; } const g = prefs.lastGear ?? "line"; if (verb === "Shoot") shoot(g); else openHaul(g); };
+    b.addEventListener("contextmenu", (e) => { e.preventDefault(); openGearPop(b, verb); });
+    b.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse") press = setTimeout(() => { press = "done"; openGearPop(b, verb); }, 550); });
+    b.addEventListener("pointerup", () => { if (press && press !== "done") { clearTimeout(press); press = null; } });
+  }
+  renderTools();
 
   // ---------- gear in the water ----------
   let openTimer = 0;
@@ -265,6 +404,7 @@ export function setupEvents(map, { ui, getBoat }) {
     try { events = await invoke("events_list"); } catch { events = []; }
     // a set's floats (dozens a set) are listed only when asked for; they're always on the chart
     list.setItems(prefs.floats ? events : events.filter((e) => e.kind !== "float"));
+    renderHaul();
     renderOpen();
   }
   listen("events-changed", () => refresh());
@@ -272,5 +412,5 @@ export function setupEvents(map, { ui, getBoat }) {
   renderButtons();
   renderTimer();
   refresh();
-  return { refresh, events: () => events, sharedActive };
+  return { refresh, events: () => events, sharedActive, shoot, openHaul };
 }
