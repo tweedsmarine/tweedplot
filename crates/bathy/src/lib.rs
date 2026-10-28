@@ -341,9 +341,11 @@ pub struct Sounding {
 
 type Key = (u8, u32, u32);
 
-/// How near (finest cells, about 2 m each) the soundings giving a second opinion on a
-/// left-out one must be: see [`Store::second_opinion`].
-pub const AGREE_CELLS: i64 = 5;
+/// How near the passed soundings giving a second opinion on a left-out one must be (m):
+/// see [`Store::second_opinion`].
+pub const AGREE_M: f64 = 50.0;
+/// How near other days' left-out soundings vouching for one deeper than the chart must be (m).
+pub const DEEP_AGREE_M: f64 = 200.0;
 
 /// The table of the seabed's tiles.
 pub(crate) const SEABED: &str = "tiles";
@@ -558,153 +560,149 @@ impl Store {
     }
 
     /// A second opinion on what the checks left out: a left-out sounding whose own
-    /// soundings around it (within [`AGREE_CELLS`] cells, about 10 m; at least three cells
-    /// that passed) agree with it, within 5 m or 5 %, goes back in. On a canyon wall or a
+    /// soundings around it (within [`AGREE_M`]; at least three
+    /// 7 m cells that passed) agree with it, within 5 m or 5 %, goes back in. On a canyon wall or a
     /// shelf break covered by several tracks the chart's coarse bands were wrong, not the
     /// sounder; a sounder locked onto something else disagrees with the soundings beside it.
     ///
     /// With `chart`, also: a left-out sounding *deeper* than the chart (a drowned river
     /// channel or a canyon narrower than the chart's depth areas) goes back in when left-out
-    /// soundings from at least two other days within the same distance agree with it. A
+    /// soundings from at least two other days within [`DEEP_AGREE_M`] agree with it. A
     /// sounder's faults read shallow (fish, a scattering layer, a held depth), and a run
     /// from one trip can't vouch for itself; soundings too shallow need passed ones.
     ///
     /// Returns how many soundings went back in.
     pub fn second_opinion(&self, chart: Option<&check::Reference>, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<i64> {
-        let keys: Vec<(u32, u32)> = {
+        // every left-out cell, in memory (16 bytes each), and in buckets for the deep rule
+        let mut cells: Vec<(i64, i64, Cell)> = Vec::new();
+        {
             let db = self.db();
-            let mut q = db.prepare("SELECT ty, tx FROM left_out WHERE l = ?1 ORDER BY ty, tx")?;
-            let k = q.query_map([MAX_LEVEL], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<std::result::Result<_, _>>()?;
-            k
-        };
-        if keys.is_empty() {
+            let mut q = db.prepare("SELECT ty, tx, data FROM left_out WHERE l = ?1 ORDER BY ty, tx")?;
+            let mut rows = q.query([MAX_LEVEL])?;
+            while let Some(r) = rows.next()? {
+                let (ty, tx, b): (i64, i64, Vec<u8>) = (r.get(0)?, r.get(1)?, r.get(2)?);
+                decode(&b, |x, y, c| cells.push((tx * 256 + x as i64, ty * 256 + y as i64, c)))?;
+            }
+        }
+        if cells.is_empty() {
             return Ok(0);
         }
-        let mut w = self.writer("", "", 0)?;
+        const B: i64 = 64; // bucket: 64 cells (about 115 m)
+        let mut buckets: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+        if chart.is_some() {
+            for (i, c) in cells.iter().enumerate() {
+                buckets.entry((c.0.div_euclid(B), c.1.div_euclid(B))).or_default().push(i);
+            }
+        }
+        // the seabed one level up (cells of about 7 m), for agreement with passed soundings
+        const UP: u8 = MAX_LEVEL - 2;
         let mut seabed: HashMap<(u32, u32), Option<Vec<f32>>> = HashMap::new();
-        // left-out cells around (mean, day of the newest sounding), for deep ones' agreement
-        let mut lefts: HashMap<(u32, u32), Option<Vec<(f32, u32)>>> = HashMap::new();
-        let mut moved = 0i64;
-        const R: i64 = AGREE_CELLS;
-        for (k, &(ty, tx)) in keys.iter().enumerate() {
-            if k % 200 == 0 {
+        let mut w = self.writer("", "", 0)?;
+        let agree = |a: f64, b: f64| (a - b).abs() <= (0.05 * b.abs()).max(5.0);
+        let mut back: Vec<usize> = Vec::new();
+        for (k, &(gx, gy, c)) in cells.iter().enumerate() {
+            if k % 20_000 == 0 {
                 if cancel.load(Ordering::Relaxed) {
                     let _ = w.conn.execute_batch("ROLLBACK");
                     return Err(Error::Cancelled);
                 }
-                progress("Second opinion", k, keys.len());
-                if seabed.len() > 2000 {
+                progress("Second opinion", k, cells.len());
+                if seabed.len() > 4000 {
                     seabed.clear();
                 }
-                if lefts.len() > 2000 {
-                    lefts.clear();
-                }
             }
-            let Some(b) = w.read_in(LEFT_OUT, (MAX_LEVEL, ty, tx))? else { continue };
-            let mut left = Dense::new();
-            decode(&b, |x, y, c| left.0[y * TILE + x] = c)?;
-            for dy in -1i64..=1 {
-                for dx in -1i64..=1 {
-                    let (yy, xx) = (ty as i64 + dy, tx as i64 + dx);
-                    if yy < 0 || xx < 0 {
+            let (_, lat) = cell_centre(gx as u32, gy as u32, MAX_LEVEL);
+            let cell_m = cell_size_m(MAX_LEVEL, lat).max(0.1);
+            // 1. the passed soundings within about AGREE_M
+            let (ux, uy) = (gx >> 2, gy >> 2);
+            let r_up = (AGREE_M / (cell_m * 4.0)).ceil() as i64;
+            let (mut sum, mut n) = (0f64, 0u32);
+            for oy in -r_up..=r_up {
+                for ox in -r_up..=r_up {
+                    let (x, y) = (ux + ox, uy + oy);
+                    if x < 0 || y < 0 {
                         continue;
                     }
-                    let key = (yy as u32, xx as u32);
-                    if chart.is_some() && !lefts.contains_key(&key) {
-                        let m = w.read_in(LEFT_OUT, (MAX_LEVEL, key.0, key.1))?.map(|b| {
-                            let mut v = vec![(f32::NAN, 0u32); TILE * TILE];
-                            let _ = decode(&b, |x, y, c| v[y * TILE + x] = (c.mean, c.newest / 24));
-                            v
-                        });
-                        lefts.insert(key, m);
-                    }
+                    let key = ((y >> 8) as u32, (x >> 8) as u32);
                     if !seabed.contains_key(&key) {
-                        let m = w.read_in(SEABED, (MAX_LEVEL, key.0, key.1))?.map(|b| {
+                        let m = w.read_in(SEABED, (UP, key.0, key.1))?.map(|b| {
                             let mut v = vec![f32::NAN; TILE * TILE];
                             let _ = decode(&b, |x, y, c| v[y * TILE + x] = c.mean);
                             v
                         });
                         seabed.insert(key, m);
                     }
-                }
-            }
-            let at = |gx: i64, gy: i64| -> f32 {
-                if gx < 0 || gy < 0 {
-                    return f32::NAN;
-                }
-                match seabed.get(&((gy >> 8) as u32, (gx >> 8) as u32)) {
-                    Some(Some(v)) => v[((gy & 255) * TILE as i64 + (gx & 255)) as usize],
-                    _ => f32::NAN,
-                }
-            };
-            let left_at = |gx: i64, gy: i64| -> (f32, u32) {
-                if gx < 0 || gy < 0 {
-                    return (f32::NAN, 0);
-                }
-                match lefts.get(&((gy >> 8) as u32, (gx >> 8) as u32)) {
-                    Some(Some(v)) => v[((gy & 255) * TILE as i64 + (gx & 255)) as usize],
-                    _ => (f32::NAN, 0),
-                }
-            };
-            let agree = |a: f64, b: f64| (a - b).abs() <= (0.05 * b.abs()).max(5.0);
-            let mut back = Vec::new();
-            for i in 0..TILE * TILE {
-                let c = left.0[i];
-                if c.n == 0 {
-                    continue;
-                }
-                let (gx, gy) = (tx as i64 * 256 + (i % TILE) as i64, ty as i64 * 256 + (i / TILE) as i64);
-                let (mut sum, mut n) = (0f64, 0u32);
-                for oy in -R..=R {
-                    for ox in -R..=R {
-                        let v = at(gx + ox, gy + oy);
-                        if v.is_finite() {
-                            sum += v as f64;
+                    if let Some(Some(v)) = seabed.get(&key) {
+                        let z = v[((y & 255) * TILE as i64 + (x & 255)) as usize];
+                        if z.is_finite() {
+                            sum += z as f64;
                             n += 1;
                         }
                     }
                 }
-                if n >= 3 && agree(c.mean as f64, sum / n as f64) {
-                    back.push((i, gx as u32, gy as u32, c));
-                    continue;
-                }
-                // deeper than the chart: other days' left-out soundings beside it
-                let Some(r) = chart else { continue };
-                let (lon, lat) = cell_centre(gx as u32, gy as u32, MAX_LEVEL);
-                let deep = r.at(lon, lat).is_some_and(|(_, hi)| hi.is_finite() && -(c.mean as f64) > hi as f64);
-                if !deep {
-                    continue;
-                }
-                let own = c.newest / 24;
-                let mut days: Vec<u32> = Vec::new();
-                for oy in -R..=R {
-                    for ox in -R..=R {
-                        if ox == 0 && oy == 0 {
+            }
+            if n >= 3 && agree(c.mean as f64, sum / n as f64) {
+                back.push(k);
+                continue;
+            }
+            // 2. deeper than the chart: other days' left-out soundings within DEEP_AGREE_M
+            let Some(r) = chart else { continue };
+            let (lon, _) = cell_centre(gx as u32, gy as u32, MAX_LEVEL);
+            if !r.at(lon, lat).is_some_and(|(_, hi)| hi.is_finite() && -(c.mean as f64) > hi as f64) {
+                continue;
+            }
+            let rc = DEEP_AGREE_M / cell_m;
+            let rb = (rc / B as f64).ceil() as i64;
+            let own = c.newest / 24;
+            let mut days: Vec<u32> = Vec::new();
+            'look: for by in (gy.div_euclid(B) - rb)..=(gy.div_euclid(B) + rb) {
+                for bx in (gx.div_euclid(B) - rb)..=(gx.div_euclid(B) + rb) {
+                    let Some(list) = buckets.get(&(bx, by)) else { continue };
+                    for &j in list {
+                        let (x, y, o) = cells[j];
+                        let day = o.newest / 24;
+                        if day == own || days.contains(&day) {
                             continue;
                         }
-                        let (v, day) = left_at(gx + ox, gy + oy);
-                        if v.is_finite() && day != own && agree(v as f64, c.mean as f64) && !days.contains(&day) {
+                        let (dx, dy) = ((x - gx) as f64, (y - gy) as f64);
+                        if dx * dx + dy * dy <= rc * rc && agree(o.mean as f64, c.mean as f64) {
                             days.push(day);
+                            if days.len() >= 2 {
+                                break 'look;
+                            }
                         }
                     }
                 }
-                if days.len() >= 2 {
-                    back.push((i, gx as u32, gy as u32, c));
-                }
             }
-            if back.is_empty() {
-                continue;
+            if days.len() >= 2 {
+                back.push(k);
             }
-            for (i, gx, gy, c) in back {
+        }
+        progress("Second opinion", cells.len(), cells.len());
+        if back.is_empty() {
+            let _ = w.conn.execute_batch("ROLLBACK");
+            return Ok(0);
+        }
+        // take them out of their left-out tiles and put them in the seabed
+        let mut by_tile: HashMap<(u32, u32), Vec<usize>> = HashMap::new();
+        let mut moved = 0i64;
+        for &k in &back {
+            let (gx, gy, c) = cells[k];
+            by_tile.entry(((gy >> 8) as u32, (gx >> 8) as u32)).or_default().push(((gy & 255) * TILE as i64 + (gx & 255)) as usize);
+            w.add_cell(gx as u32, gy as u32, c)?;
+            moved += c.n as i64;
+        }
+        for ((ty, tx), idx) in by_tile {
+            let Some(b) = w.read_in(LEFT_OUT, (MAX_LEVEL, ty, tx))? else { continue };
+            let mut left = Dense::new();
+            decode(&b, |x, y, c| left.0[y * TILE + x] = c)?;
+            for i in idx {
                 left.0[i] = Cell::default();
-                w.add_cell(gx, gy, c)?;
-                moved += c.n as i64;
             }
             let (n, blob) = encode(&left);
             w.write_in(LEFT_OUT, (MAX_LEVEL, ty, tx), n, &blob)?;
             w.left_dirty.insert((ty, tx));
         }
-        progress("Second opinion", keys.len(), keys.len());
         // the tally of what went in isn't a new source
         w.soundings = 0;
         w.finish(progress, cancel)?;
@@ -1271,6 +1269,29 @@ mod tests {
         let back = s.second_opinion(Some(&chart), &mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
         assert_eq!(back, 3, "the channel only");
         assert_eq!(s.info().unwrap().rejected, 5);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn channel_crossings_far_apart_vouch_for_each_other() {
+        let dir = std::env::temp_dir().join(format!("bathy-cross-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let s = Store::open(&dir.join("bathy.sqlite")).unwrap();
+        let chart = check::Reference::new(|b| {
+            let mut g = check::RefGrid::new(b, check::REF_STEP);
+            g.paint(1, 200.0, Some(500.0), &[vec![[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]]]);
+            g
+        });
+        // a channel along 41.2° S crossed on three days, 100 m apart along it
+        let mut w = s.writer("own", "t", 0).unwrap();
+        for (k, day) in [3u32, 30, 300].iter().enumerate() {
+            for j in 0..5 {
+                w.reject(173.2 + k as f64 * 0.0012, -41.2 + j as f64 * 0.00002, -640.0 - k as f32 * 3.0, day * 24, SRC_OWN);
+            }
+        }
+        w.finish(&mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
+        let back = s.second_opinion(Some(&chart), &mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
+        assert_eq!(back, 15);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
