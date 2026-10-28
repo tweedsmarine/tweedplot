@@ -33,6 +33,8 @@ pub struct Style {
     pub fill: bool,
     /// How far from a sounding gaps are filled (m).
     pub fill_m: f32,
+    /// Mark the soundings the checks left out (magenta), from zoom 12 in.
+    pub rejected: bool,
 }
 
 /// The largest fill (cells of the level drawn): beyond it the filled ring would cost more
@@ -41,7 +43,7 @@ pub const MAX_FILL_CELLS: i64 = 192;
 
 impl Default for Style {
     fn default() -> Self {
-        Style { palette: Palette::Rainbow, shallow: 0.0, deep: 500.0, contours: true, shade: true, fill: true, fill_m: 4.0 }
+        Style { palette: Palette::Rainbow, shallow: 0.0, deep: 500.0, contours: true, shade: true, fill: true, fill_m: 4.0, rejected: false }
     }
 }
 
@@ -192,11 +194,69 @@ impl Store {
     fn render(&self, z: u8, x: u32, y: u32) -> Option<Vec<u8>> {
         let style = self.style();
         const G: usize = TILE + 2;
-        let (h, res) = self.heights(z, x, y, G, if style.fill { style.fill_m } else { 0.0 })?;
-        if h.iter().all(|v| !v.is_finite() || *v > 0.0) {
-            return None;
+        let mut rgba = None;
+        if let Some((h, res)) = self.heights(z, x, y, G, if style.fill { style.fill_m } else { 0.0 }) {
+            if !h.iter().all(|v| !v.is_finite() || *v > 0.0) {
+                rgba = Some(shade(&h, G, res, contour_step(z), &style));
+            }
         }
-        Some(shade(&h, G, res, contour_step(z), &style))
+        if style.rejected && z >= 12 {
+            let marks = self.rejected_pixels(z, x, y);
+            if !marks.is_empty() {
+                let buf = rgba.get_or_insert_with(|| vec![0u8; TILE * TILE * 4]);
+                // at least 2 pixels across, or the cell's own size when zoomed in
+                let size = ((1u64 << z.saturating_sub(MAX_LEVEL)) as i64).max(2);
+                for (px, py) in marks {
+                    for dy in 0..size {
+                        for dx in 0..size {
+                            let (i, j) = (px - size / 2 + dx, py - size / 2 + dy);
+                            if i >= 0 && j >= 0 && (i as usize) < TILE && (j as usize) < TILE {
+                                let o = (j as usize * TILE + i as usize) * 4;
+                                buf[o..o + 4].copy_from_slice(&[220, 0, 200, 255]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        rgba.map(|b| png_of(&b))
+    }
+
+    /// The pixels of map tile z/x/y with a left-out sounding in them.
+    fn rejected_pixels(&self, z: u8, x: u32, y: u32) -> Vec<(i64, i64)> {
+        let nz = TILE as f64 * (1u64 << z) as f64;
+        let nl = cells_across(MAX_LEVEL) as f64;
+        let web_lat = |py: f64| (std::f64::consts::PI * (1.0 - 2.0 * py / nz)).sinh().atan().to_degrees();
+        let web_y = |lat: f64| {
+            let r = lat.to_radians();
+            (1.0 - (r.tan() + 1.0 / r.cos()).ln() / std::f64::consts::PI) / 2.0 * nz
+        };
+        let cx0 = (x as f64 * TILE as f64 / nz * nl).floor() as i64;
+        let cx1 = ((x + 1) as f64 * TILE as f64 / nz * nl).floor() as i64;
+        let cy0 = (to_world(0.0, web_lat(y as f64 * TILE as f64)).1 * nl).floor() as i64;
+        let cy1 = (to_world(0.0, web_lat((y + 1) as f64 * TILE as f64)).1 * nl).floor() as i64;
+        let mut out = Vec::new();
+        let Ok(db) = self.conn.lock() else { return out };
+        let Ok(mut q) = db.prepare("SELECT ty, tx, data FROM rejected WHERE ty BETWEEN ?1 AND ?2 AND tx BETWEEN ?3 AND ?4") else { return out };
+        let rows: Vec<(i64, i64, Vec<u8>)> = q
+            .query_map(rusqlite::params![cy0 >> 8, cy1 >> 8, cx0 >> 8, cx1 >> 8], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map(|it| it.flatten().collect())
+            .unwrap_or_default();
+        drop(q);
+        drop(db);
+        for (ty, tx, b) in rows {
+            let _ = crate::decode(&b, |cx, cy, _| {
+                let (gx, gy) = ((tx << 8) + cx as i64, (ty << 8) + cy as i64);
+                if gx < cx0 || gx > cx1 || gy < cy0 || gy > cy1 {
+                    return;
+                }
+                let (_, lat) = crate::cell_centre(gx as u32, gy as u32, MAX_LEVEL);
+                let px = ((gx as f64 + 0.5) / nl * nz - x as f64 * TILE as f64).floor() as i64;
+                let py = (web_y(lat) - y as f64 * TILE as f64).floor() as i64;
+                out.push((px, py));
+            });
+        }
+        out
     }
 }
 
@@ -289,6 +349,12 @@ fn shade(h: &[f32], g: usize, res: f64, step: f32, s: &Style) -> Vec<u8> {
             rgba[o..o + 4].copy_from_slice(&[col[0] as u8, col[1] as u8, col[2] as u8, 235]);
         }
     }
+    rgba
+}
+
+/// A 256-pixel RGBA image as PNG.
+fn png_of(rgba: &[u8]) -> Vec<u8> {
+    let n = TILE;
     let mut out = Vec::new();
     {
         let mut enc = png::Encoder::new(&mut out, n as u32, n as u32);
@@ -296,7 +362,7 @@ fn shade(h: &[f32], g: usize, res: f64, step: f32, s: &Style) -> Vec<u8> {
         enc.set_depth(png::BitDepth::Eight);
         enc.set_compression(png::Compression::Fast);
         if let Ok(mut w) = enc.write_header() {
-            let _ = w.write_image_data(&rgba);
+            let _ = w.write_image_data(rgba);
         }
     }
     out
@@ -347,6 +413,33 @@ mod tests {
         let (tx, ty) = web_tile(174.5, -41.2, 14);
         assert!(s.tile_png(14, tx, ty).is_none());
         assert!(s.tile_png(4, 0, 0).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn marks_rejected_soundings() {
+        let dir = std::env::temp_dir().join(format!("bathy-rej-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let s = Store::open(&dir.join("bathy.sqlite")).unwrap();
+        let mut w = s.writer("own", "t", 0).unwrap();
+        for i in 0..50 {
+            w.reject(173.2 + i as f64 * 0.0001, -41.2, -70.0, 1, SRC_OWN);
+        }
+        assert_eq!(w.rejected(), 50);
+        w.finish(&mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
+        s.changed();
+        assert_eq!(s.info().unwrap().rejected, 50);
+        assert_eq!(s.info().unwrap().cells, 0);
+        let (tx, ty) = web_tile(173.2025, -41.2, 15);
+        assert!(s.tile_png(15, tx, ty).is_none()); // not shown unless asked for
+        s.set_style(Style { rejected: true, ..Style::default() });
+        let png = s.tile_png(15, tx, ty).expect("marks");
+        let d = png::Decoder::new(std::io::Cursor::new(png.as_ref().clone()));
+        let mut r = d.read_info().unwrap();
+        let mut buf = vec![0; r.output_buffer_size()];
+        r.next_frame(&mut buf).unwrap();
+        let magenta = buf.chunks(4).filter(|p| p == &[220, 0, 200, 255]).count();
+        assert!(magenta > 50, "{magenta}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

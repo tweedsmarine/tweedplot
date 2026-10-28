@@ -28,6 +28,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+pub mod check;
 mod import;
 mod render;
 pub use import::{clean_depths, decode_pbg_blob, pbg_level16, pbg_made, PbgTile};
@@ -255,6 +256,8 @@ pub struct SourceInfo {
     pub added: i64,
     /// Soundings (or grid cells) it brought.
     pub soundings: i64,
+    /// Soundings it brought that the checks left out.
+    pub rejected: i64,
 }
 
 /// What's in the store.
@@ -267,6 +270,8 @@ pub struct Info {
     pub bounds: Option<[f64; 4]>,
     pub bytes: u64,
     pub sources: Vec<SourceInfo>,
+    /// Soundings left out by the checks (kept apart, to be shown).
+    pub rejected: i64,
 }
 
 /// The sounding at a place.
@@ -303,10 +308,13 @@ fn schema(c: &Connection) -> Result<()> {
         "PRAGMA journal_mode = WAL;
          PRAGMA synchronous = NORMAL;
          CREATE TABLE IF NOT EXISTS tiles (l INTEGER NOT NULL, ty INTEGER NOT NULL, tx INTEGER NOT NULL, n INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (l, ty, tx)) WITHOUT ROWID;
+         CREATE TABLE IF NOT EXISTS rejected (ty INTEGER NOT NULL, tx INTEGER NOT NULL, n INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (ty, tx)) WITHOUT ROWID;
          CREATE TABLE IF NOT EXISTS sources (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, bytes INTEGER NOT NULL DEFAULT 0, added INTEGER NOT NULL, soundings INTEGER NOT NULL DEFAULT 0);
          CREATE TABLE IF NOT EXISTS seeded (track_id TEXT PRIMARY KEY, modified INTEGER NOT NULL);
          CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);",
     )?;
+    // stores made before the checks have no column for what they left out
+    let _ = c.execute_batch("ALTER TABLE sources ADD COLUMN rejected INTEGER NOT NULL DEFAULT 0");
     c.busy_timeout(std::time::Duration::from_secs(30))?;
     Ok(())
 }
@@ -441,12 +449,13 @@ impl Store {
             let (e, s) = from_world((x1 + 1) as f64 / n, (y1 + 1) as f64 / n);
             [w, s, e, nn]
         });
-        let mut q = db.prepare("SELECT kind, name, bytes, added, soundings FROM sources ORDER BY id")?;
+        let mut q = db.prepare("SELECT kind, name, bytes, added, soundings, rejected FROM sources ORDER BY id")?;
         let sources = q
-            .query_map([], |r| Ok(SourceInfo { kind: r.get(0)?, name: r.get(1)?, bytes: r.get(2)?, added: r.get(3)?, soundings: r.get(4)? }))?
+            .query_map([], |r| Ok(SourceInfo { kind: r.get(0)?, name: r.get(1)?, bytes: r.get(2)?, added: r.get(3)?, soundings: r.get(4)?, rejected: r.get(5)? }))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
+        let rejected: i64 = db.query_row("SELECT coalesce(sum(n), 0) FROM rejected", [], |r| r.get(0))?;
         let bytes = ["", "-wal"].iter().filter_map(|s| std::fs::metadata(format!("{}{s}", self.path.display())).ok()).map(|m| m.len()).sum();
-        Ok(Info { cells, tiles, bounds, bytes, sources })
+        Ok(Info { cells, tiles, bounds, bytes, sources, rejected })
     }
 
     /// The tracks already added, with their modified times.
@@ -469,7 +478,7 @@ impl Store {
 
     /// Remove everything.
     pub fn clear(&self) -> Result<()> {
-        self.db().execute_batch("DELETE FROM tiles; DELETE FROM sources; DELETE FROM seeded; VACUUM;")?;
+        self.db().execute_batch("DELETE FROM tiles; DELETE FROM rejected; DELETE FROM sources; DELETE FROM seeded; VACUUM;")?;
         self.changed();
         Ok(())
     }
@@ -527,7 +536,7 @@ impl Store {
         let conn = Connection::open(&self.path)?;
         schema(&conn)?;
         conn.execute_batch("BEGIN")?;
-        Ok(Writer { conn, kind: kind.into(), name: name.into(), bytes, dirty: HashSet::new(), pending: HashMap::new(), pending_n: 0, soundings: 0, seeded: Vec::new(), since_commit: 0, acc: Acc::new() })
+        Ok(Writer { conn, kind: kind.into(), name: name.into(), bytes, dirty: HashSet::new(), pending: HashMap::new(), pending_n: 0, soundings: 0, seeded: Vec::new(), since_commit: 0, acc: Acc::new(), rejected: HashMap::new(), rejected_n: 0 })
     }
 }
 
@@ -545,6 +554,8 @@ pub struct Writer {
     seeded: Vec<(String, i64)>,
     since_commit: usize,
     acc: Acc,
+    rejected: HashMap<(u32, u32), Vec<(u16, Cell)>>,
+    rejected_n: i64,
 }
 
 const PENDING_MAX: usize = 4_000_000;
@@ -723,6 +734,44 @@ impl Writer {
         Ok(())
     }
 
+    /// A sounding left out by the checks: kept apart (not in the seabed), to be shown.
+    pub fn reject(&mut self, lon: f64, lat: f64, z: f32, hours: u32, src: u8) {
+        if !z.is_finite() {
+            return;
+        }
+        let Some((cx, cy)) = cell_of(lon, lat, MAX_LEVEL) else { return };
+        self.reject_cell(cx, cy, Cell::one(z, hours, src));
+    }
+
+    /// A finest-level cell left out by the checks.
+    pub fn reject_cell(&mut self, cx: u32, cy: u32, c: Cell) {
+        let idx = ((cy & 255) * TILE as u32 + (cx & 255)) as u16;
+        self.rejected.entry((cy >> 8, cx >> 8)).or_default().push((idx, c));
+        self.rejected_n += c.n as i64;
+    }
+
+    /// Soundings left out so far.
+    pub fn rejected(&self) -> i64 {
+        self.rejected_n
+    }
+
+    fn flush_rejected(&mut self) -> Result<()> {
+        let mut p: Vec<_> = std::mem::take(&mut self.rejected).into_iter().collect();
+        p.sort_by_key(|(k, _)| *k);
+        for ((ty, tx), cells) in p {
+            let b: Option<Vec<u8>> = self.conn.query_row("SELECT data FROM rejected WHERE ty = ?1 AND tx = ?2", params![ty, tx], |r| r.get(0)).optional()?;
+            if let Some(b) = b {
+                self.acc.add_blob(&b, None)?;
+            }
+            for (i, c) in &cells {
+                self.acc.add(*i as usize, c);
+            }
+            let (n, blob) = self.acc.take();
+            self.conn.execute("INSERT OR REPLACE INTO rejected (ty, tx, n, data) VALUES (?1, ?2, ?3, ?4)", params![ty, tx, n as i64, blob])?;
+        }
+        Ok(())
+    }
+
     /// Note a track as added (so building again skips it).
     pub fn mark_seeded(&mut self, track_id: &str, modified: i64) {
         self.seeded.push((track_id.to_string(), modified));
@@ -738,6 +787,7 @@ impl Writer {
     pub fn finish(mut self, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<i64> {
         use rayon::prelude::*;
         self.flush()?;
+        self.flush_rejected()?;
         let mut dirty: HashSet<(u32, u32)> = std::mem::take(&mut self.dirty);
         for level in (MIN_LEVEL..MAX_LEVEL).rev() {
             let mut parents: Vec<(u32, u32)> = dirty.iter().map(|&(y, x)| (y >> 1, x >> 1)).collect::<HashSet<_>>().into_iter().collect();
@@ -780,8 +830,8 @@ impl Writer {
         for (id, m) in std::mem::take(&mut self.seeded) {
             self.conn.execute("INSERT OR REPLACE INTO seeded (track_id, modified) VALUES (?1, ?2)", params![id, m])?;
         }
-        if self.soundings > 0 {
-            self.conn.execute("INSERT INTO sources (kind, name, bytes, added, soundings) VALUES (?1, ?2, ?3, ?4, ?5)", params![self.kind, self.name, self.bytes, now_s(), self.soundings])?;
+        if self.soundings > 0 || self.rejected_n > 0 {
+            self.conn.execute("INSERT INTO sources (kind, name, bytes, added, soundings, rejected) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![self.kind, self.name, self.bytes, now_s(), self.soundings, self.rejected_n])?;
         }
         self.conn.execute_batch("COMMIT")?;
         let _ = self.conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE)");

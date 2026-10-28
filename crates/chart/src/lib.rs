@@ -907,6 +907,22 @@ impl ChartStore {
         }
     }
 
+    /// Every depth-area polygon touching `bbox` [w, s, e, n], coarse bands first, with its
+    /// depth range: `f(band, drval1, drval2, rings)`. For checking soundings against the chart.
+    pub fn for_each_depth_band(&self, bbox: [f64; 4], mut f: impl FnMut(u8, Option<f64>, Option<f64>, &[geom::Ring])) {
+        let mut tables: Vec<&TableInfo> = self.tables.iter().filter(|t| t.kind == Kind::DepthArea).collect();
+        tables.sort_by_key(|t| t.band);
+        for t in tables {
+            self.query(t, bbox, &["drval1", "drval2"], |vals, g| {
+                if let Geom::Polygons(polys) = g {
+                    for p in &polys {
+                        f(t.band, vals[0], vals[1], p);
+                    }
+                }
+            });
+        }
+    }
+
     /// Every lake polygon touching `bbox` (inland water), and the rivers too if `rivers`.
     pub fn for_each_lake(&self, bbox: [f64; 4], rivers: bool, mut f: impl FnMut(&[geom::Ring])) {
         for t in self.tables.iter().filter(|t| {

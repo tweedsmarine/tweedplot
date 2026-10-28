@@ -106,7 +106,7 @@ pub async fn pbathy_pick_file(app: tauri::AppHandle) -> Result<Option<String>, S
 /// Import a TimeZero PBG or XYZ file into the store. `again`: import it even if a file of
 /// the same name and size was imported before (its soundings would count twice).
 #[tauri::command]
-pub async fn pbathy_import(app: tauri::AppHandle, path: String, again: Option<bool>) -> Result<serde_json::Value, String> {
+pub async fn pbathy_import(app: tauri::AppHandle, path: String, again: Option<bool>, check: Option<bool>) -> Result<serde_json::Value, String> {
     let s = need()?;
     let _b = busy()?;
     tauri::async_runtime::spawn_blocking(move || {
@@ -121,18 +121,37 @@ pub async fn pbathy_import(app: tauri::AppHandle, path: String, again: Option<bo
         }
         let mut prog = progress(&app);
         let t = std::time::Instant::now();
-        let n = if pbg { s.import_pbg(&p, &mut prog, &CANCEL) } else { s.import_xyz(&p, &mut prog, &CANCEL) }.map_err(|e| e.to_string())?;
-        Ok(serde_json::json!({ "added": n, "name": name, "seconds": t.elapsed().as_secs_f64() }))
+        let reference = if check.unwrap_or(true) { chart_reference() } else { None };
+        let (n, rejected) = if pbg { s.import_pbg_checked(&p, reference.as_ref(), &mut prog, &CANCEL) } else { s.import_xyz_checked(&p, reference.as_ref(), &mut prog, &CANCEL) }.map_err(|e| e.to_string())?;
+        Ok(serde_json::json!({ "added": n, "rejected": rejected, "checked": reference.is_some(), "name": name, "seconds": t.elapsed().as_secs_f64() }))
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// The chart's depth areas (LINZ, and any ENC) as the reference soundings are checked
+/// against, when the charts are open and have depth areas.
+fn chart_reference() -> Option<bathy::check::Reference> {
+    let store = crate::charts()?;
+    if !store.tables.iter().any(|t| t.kind == chart::Kind::DepthArea) {
+        return None;
+    }
+    Some(bathy::check::Reference::new(move |b| {
+        let mut g = bathy::check::RefGrid::new(b, bathy::check::REF_STEP);
+        store.for_each_depth_band(b, |band, lo, hi, rings| {
+            if let Some(lo) = lo {
+                g.paint(band, lo.max(0.0), hi, rings);
+            }
+        });
+        g
+    }))
 }
 
 /// Add the depths logged along the library's tracks (those not added before, or changed
 /// since), spikes dropped. Heights are as logged: below the surface or transducer, not
 /// reduced to chart datum.
 #[tauri::command]
-pub async fn pbathy_from_tracks(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+pub async fn pbathy_from_tracks(app: tauri::AppHandle, check: Option<bool>) -> Result<serde_json::Value, String> {
     let s = need()?;
     let lib = crate::lib()?;
     let _b = busy()?;
@@ -150,7 +169,13 @@ pub async fn pbathy_from_tracks(app: tauri::AppHandle) -> Result<serde_json::Val
         let modified: std::collections::HashMap<&str, i64> = tracks.iter().map(|t| (t.id.as_str(), t.modified)).collect();
         let mut w = s.writer("Own tracks", &format!("{} tracks from {}", todo.len(), lib.name()), 0).map_err(|e| e.to_string())?;
         let mut err: Option<String> = None;
-        let (mut kept, mut dropped) = (0usize, 0usize);
+        let reference = if check.unwrap_or(true) { chart_reference() } else { None };
+        let none = |_: f64, _: f64| None;
+        let chart: &dyn Fn(f64, f64) -> Option<(f32, f32)> = match &reference {
+            Some(r) => &|lon, lat| r.at(lon, lat),
+            None => &none,
+        };
+        let mut counts = bathy::check::CheckCounts::default();
         let mut prog = progress(&app);
         lib.for_each_track(
             &todo,
@@ -159,21 +184,20 @@ pub async fn pbathy_from_tracks(app: tauri::AppHandle) -> Result<serde_json::Val
                     return;
                 }
                 for seg in segs {
-                    let d: Vec<Option<f64>> = seg.iter().map(|p| p.depth).collect();
-                    let keep = bathy::clean_depths(&d);
-                    for (p, k) in seg.iter().zip(keep) {
-                        if p.depth.is_none() {
-                            continue;
-                        }
-                        if !k {
-                            dropped += 1;
-                            continue;
-                        }
-                        kept += 1;
+                    let fixes: Vec<(f64, f64, Option<f64>)> = seg.iter().map(|p| (p.lon, p.lat, p.depth)).collect();
+                    let (verdicts, runs, unchecked) = bathy::check::check_segment(&fixes, chart);
+                    counts.add(&verdicts, runs);
+                    counts.unchecked += unchecked;
+                    for (p, v) in seg.iter().zip(verdicts) {
+                        let Some(d) = p.depth else { continue };
                         let h = bathy::hours(p.t.unwrap_or(0));
-                        if let Err(e) = w.add(p.lon, p.lat, -(p.depth.unwrap_or(0.0) as f32), h, bathy::SRC_OWN) {
-                            err = Some(e.to_string());
-                            return;
+                        if v == bathy::check::Verdict::Keep {
+                            if let Err(e) = w.add(p.lon, p.lat, -(d as f32), h, bathy::SRC_OWN) {
+                                err = Some(e.to_string());
+                                return;
+                            }
+                        } else if d.is_finite() && d > 0.0 {
+                            w.reject(p.lon, p.lat, -(d as f32), h, bathy::SRC_OWN);
                         }
                     }
                 }
@@ -188,7 +212,7 @@ pub async fn pbathy_from_tracks(app: tauri::AppHandle) -> Result<serde_json::Val
         }
         let n = w.finish(&mut prog, &CANCEL).map_err(|e| e.to_string())?;
         s.changed();
-        Ok(serde_json::json!({ "added": n, "tracks": todo.len(), "with_depth": with_depth.len(), "kept": kept, "dropped": dropped, "changed": changed }))
+        Ok(serde_json::json!({ "added": n, "tracks": todo.len(), "with_depth": with_depth.len(), "kept": counts.kept, "dropped": counts.spikes, "counts": counts, "checked": reference.is_some(), "changed": changed }))
     })
     .await
     .map_err(|e| e.to_string())?

@@ -63,7 +63,7 @@ export function setupPbathy(map) {
   const fmtMB = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(0.1, b / 1e6).toFixed(b >= 1e8 ? 0 : 1)} MB`);
   const note = (t, kind = "") => { const el = $("pb-note"); el.textContent = t; el.className = `grow wx-note ${kind}`; };
 
-  let style = { palette: "rainbow", shallow: 0, deep: 500, contours: true, shade: true, fill: true, fill_m: 4 };
+  let style = { palette: "rainbow", shallow: 0, deep: 500, contours: true, shade: true, fill: true, fill_m: 4, rejected: false };
   try { Object.assign(style, JSON.parse(localStorage.getItem(STYLE) || "{}")); } catch { /* defaults */ }
   current = style;
   window.dispatchEvent(new CustomEvent("own-soundings-colours"));
@@ -83,6 +83,7 @@ export function setupPbathy(map) {
     $("pb-fill-m").value = String(k);
     $("pb-fill-v").textContent = `${FILL_STEPS[k]} m`;
     $("pb-fill-m").disabled = !style.fill;
+    $("pb-rejected").checked = !!style.rejected;
   };
   async function applyStyle() {
     current = style;
@@ -94,12 +95,17 @@ export function setupPbathy(map) {
   const readForm = () => {
     const sh = Math.max(0, +$("pb-shallow").value || 0);
     const dp = Math.max(sh + 1, +$("pb-deep").value || sh + 1);
-    style = { palette: $("pb-palette").value, shallow: sh, deep: dp, contours: $("pb-contours").checked, shade: $("pb-shade").checked, fill: $("pb-fill").checked, fill_m: FILL_STEPS[+$("pb-fill-m").value] ?? 4 };
+    style = { palette: $("pb-palette").value, shallow: sh, deep: dp, contours: $("pb-contours").checked, shade: $("pb-shade").checked, fill: $("pb-fill").checked, fill_m: FILL_STEPS[+$("pb-fill-m").value] ?? 4, rejected: $("pb-rejected").checked };
     $("pb-fill-v").textContent = `${style.fill_m} m`;
     $("pb-fill-m").disabled = !style.fill;
     applyStyle();
   };
-  for (const id of ["pb-palette", "pb-shallow", "pb-deep", "pb-contours", "pb-shade", "pb-fill", "pb-fill-m"]) $(id).onchange = readForm;
+  for (const id of ["pb-palette", "pb-shallow", "pb-deep", "pb-contours", "pb-shade", "pb-fill", "pb-fill-m", "pb-rejected"]) $(id).onchange = readForm;
+  // check soundings against the chart's depth areas (on unless turned off)
+  const CHECK = "racenav.pbathy.check";
+  $("pb-check").checked = localStorage.getItem(CHECK) !== "0";
+  $("pb-check").onchange = (e) => { try { localStorage.setItem(CHECK, e.target.checked ? "1" : "0"); } catch { /* ignore */ } };
+  const check = () => $("pb-check").checked;
   // the value while dragging; the tiles are drawn again on release
   $("pb-fill-m").oninput = () => { $("pb-fill-v").textContent = `${FILL_STEPS[+$("pb-fill-m").value]} m`; };
 
@@ -116,14 +122,14 @@ export function setupPbathy(map) {
     try { st = await invoke("pbathy_status"); } catch (e) { $("pb-state").textContent = String(e); return; }
     const i = st.info;
     $("pb-dot").className = `dot ${i.cells > 0 ? "ok" : ""}`;
-    $("pb-state").textContent = i.cells > 0 ? `${fmt(i.cells)} cells (about 2 m), ${fmtMB(i.bytes)}` : "empty";
+    $("pb-state").textContent = i.cells > 0 ? `${fmt(i.cells)} cells (about 2 m), ${fmtMB(i.bytes)}${i.rejected ? `, ${fmt(i.rejected)} soundings left out` : ""}` : "empty";
     $("pb-zoom").hidden = !i.bounds;
     $("pb-del").hidden = !(i.cells > 0);
     const ul = $("pb-sources");
     ul.innerHTML = "";
     for (const s of i.sources) {
       const li = document.createElement("li");
-      li.textContent = `${s.kind}: ${s.name} · ${fmt(s.soundings)} soundings · ${new Date(s.added * 1000).toLocaleDateString()}`;
+      li.textContent = `${s.kind}: ${s.name} · ${fmt(s.soundings)} soundings${s.rejected ? ` (${fmt(s.rejected)} left out)` : ""} · ${new Date(s.added * 1000).toLocaleDateString()}`;
       ul.append(li);
     }
     $("pb-zoom").onclick = () => i.bounds && map.fitBounds([[i.bounds[0], i.bounds[1]], [i.bounds[2], i.bounds[3]]], { padding: 40, duration: 600 });
@@ -152,7 +158,7 @@ export function setupPbathy(map) {
     const run = async (again) => {
       startJob(`Import soundings: ${name}`);
       try {
-        const r = await invoke("pbathy_import", { path, again });
+        const r = await invoke("pbathy_import", { path, again, check: check() });
         if (r.already) {
           const t = `${name} was imported before: not added again (Import again adds it twice).`;
           job.done(t); note(t, "warn");
@@ -163,7 +169,8 @@ export function setupPbathy(map) {
           setTimeout(() => { b.hidden = true; }, 15000);
           return;
         }
-        const t = `${name}: ${fmt(r.added)} soundings added in ${Math.round(r.seconds)} s.`;
+        const t = `${name}: ${fmt(r.added)} soundings added in ${Math.round(r.seconds)} s.`
+          + (r.checked ? ` ${fmt(r.rejected)} well off the charted depth left out.` : check() ? " Not checked: no chart depth areas are open." : "");
         job.done(t); note(t, "good");
         if (!visible()) setShow(true);
       } catch (e) {
@@ -178,11 +185,17 @@ export function setupPbathy(map) {
   $("pb-tracks").onclick = async () => {
     startJob("Own soundings from my tracks");
     try {
-      const r = await invoke("pbathy_from_tracks");
+      const r = await invoke("pbathy_from_tracks", { check: check() });
       let t;
       if (!r.with_depth) t = "No tracks in the library have depth logged.";
       else if (!r.tracks) t = `All ${fmt(r.with_depth)} tracks with depth are in already.`;
-      else t = `${fmt(r.tracks)} tracks: ${fmt(r.kept)} soundings added, ${fmt(r.dropped)} spikes left out.`;
+      else {
+        const c = r.counts || {};
+        t = `${fmt(r.tracks)} tracks: ${fmt(r.kept)} soundings added. Left out: ${fmt(c.spikes ?? r.dropped)} spikes`;
+        t += r.checked ? `, ${fmt(c.off_chart)} well off the charted depth, and ${fmt(c.in_runs)} more in ${fmt(c.runs)} runs mostly off it (the sounder locked onto something else).`
+          + (c.unchecked ? ` ${fmt(c.unchecked)} had no chart depth to check against.` : "")
+          : check() ? ". Not checked against the chart: no chart depth areas are open." : ".";
+      }
       if (r.changed) t += ` ${r.changed} track${r.changed === 1 ? " has" : "s have"} changed since being added (not added again; delete all and rebuild to take the changes).`;
       job.done(t, { keep: !!r.changed }); note(t, r.tracks ? "good" : "");
       if (r.tracks && !visible()) setShow(true);

@@ -539,6 +539,8 @@
             <button id="pb-fit" title="Fit the colour range to the soundings in the chart view">Fit to view</button></div>
           <div class="wx-row checks"><label><input id="pb-contours" type="checkbox" /> Contours</label><label><input id="pb-shade" type="checkbox" /> Shading</label>
             <label title="Fill gaps between soundings, from the nearest soundings around them, up to the distance below"><input id="pb-fill" type="checkbox" /> Fill gaps</label></div>
+          <div class="wx-row checks"><label title="When adding tracks or importing files, leave out soundings well off the chart's depth there (more than 10 m and 20 % outside the charted depth band), and whole runs of a track that are mostly off it: the sounder locked onto fish, a scattering layer or a second echo. They are kept apart, not lost"><input id="pb-check" type="checkbox" /> Check against the chart</label>
+            <label title="Mark the soundings left out (spikes, off the chart) in magenta, from about 5 NM range in"><input id="pb-rejected" type="checkbox" /> Show left out</label></div>
           <div class="wx-row"><label class="grow" for="pb-fill-m" title="How far from a sounding gaps are filled. Small (a few metres) shows what was sounded; larger joins neighbouring tracks into a surface for reading the ground when zoomed in. Filled areas are an estimate, not soundings">Fill up to</label>
             <input id="pb-fill-m" type="range" min="0" max="9" step="1" /><span id="pb-fill-v" class="val"></span></div>
           <ul id="pb-sources" class="data-sets"></ul>

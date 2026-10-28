@@ -125,6 +125,12 @@ impl Store {
     /// Import a TimeZero PBG file (`.tzpbg`, or a `.dbpbg` / `.dbwassp` taken out of one).
     /// Returns the cells added. `progress(stage, done, total)`.
     pub fn import_pbg(&self, path: &Path, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<i64> {
+        self.import_pbg_checked(path, None, progress, cancel).map(|r| r.0)
+    }
+
+    /// [`Store::import_pbg`], leaving out (and keeping apart) cells well off the chart's
+    /// depth there when `chart` is given. Returns (cells added, cells left out).
+    pub fn import_pbg_checked(&self, path: &Path, chart: Option<&crate::check::Reference>, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<(i64, i64)> {
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let bytes = std::fs::metadata(path)?.len() as i64;
         let mut magic = [0u8; 4];
@@ -141,14 +147,14 @@ impl Store {
                 &mut |level, ty, tx, b| {
                     batch.push((level, ty, tx, b));
                     if batch.len() >= BATCH {
-                        put_batch(w, std::mem::take(&mut batch), h)?;
+                        put_batch(w, std::mem::take(&mut batch), h, chart)?;
                     }
                     Ok(())
                 },
                 progress,
                 cancel,
             )?;
-            put_batch(w, batch, h)?;
+            put_batch(w, batch, h, chart)?;
             Ok(())
         };
         if &magic[..2] == b"PK" {
@@ -182,15 +188,22 @@ impl Store {
         } else {
             return Err(Error::Format("not a TimeZero PBG file".into()));
         }
+        let rejected = w.rejected();
         let n = w.finish(progress, cancel)?;
         self.changed();
-        Ok(n)
+        Ok((n, rejected))
     }
 
     /// Import an XYZ text file: longitude, latitude, height (m, negative down) on each line,
     /// separated by commas, semicolons, tabs or spaces; lines that don't parse (a header)
     /// are skipped. Returns the soundings added.
     pub fn import_xyz(&self, path: &Path, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<i64> {
+        self.import_xyz_checked(path, None, progress, cancel).map(|r| r.0)
+    }
+
+    /// [`Store::import_xyz`], leaving out (and keeping apart) points well off the chart's
+    /// depth there when `chart` is given. Returns (soundings added, soundings left out).
+    pub fn import_xyz_checked(&self, path: &Path, chart: Option<&crate::check::Reference>, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<(i64, i64)> {
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let bytes = std::fs::metadata(path)?.len();
         let h = hours(mtime_s(path));
@@ -223,11 +236,16 @@ impl Store {
             if !plausible(z) {
                 continue;
             }
+            if chart.is_some_and(|c| c.at(lon, lat).is_some_and(|rg| crate::check::off_chart(-z as f64, rg))) {
+                w.reject(lon, lat, z, h, SRC_XYZ);
+                continue;
+            }
             w.add(lon, lat, z, h, SRC_XYZ)?;
         }
+        let rejected = w.rejected();
         let n = w.finish(progress, cancel)?;
         self.changed();
-        Ok(n)
+        Ok((n, rejected))
     }
 }
 
@@ -235,14 +253,35 @@ const BATCH: usize = 512;
 
 /// Put PBG tiles (as stored) into the store: unpacked in parallel, the finest level merged
 /// a batch at a time, any other level cell by cell.
-fn put_batch(w: &mut crate::Writer, batch: Vec<(u8, u32, u32, Vec<u8>)>, h: u32) -> Result<()> {
+fn put_batch(w: &mut crate::Writer, batch: Vec<(u8, u32, u32, Vec<u8>)>, h: u32, chart: Option<&crate::check::Reference>) -> Result<()> {
     use rayon::prelude::*;
-    let tiles: Vec<PbgTile> = batch
+    // unpacked, and (finest level) checked against the chart, on all cores
+    let tiles: Vec<(PbgTile, Vec<(u8, u8, f32)>)> = batch
         .into_par_iter()
         .filter_map(|(level, ty, tx, b)| decode_pbg_blob(&b).ok().map(|cells| PbgTile { level, ty, tx, cells }))
+        .map(|mut t| {
+            let mut bad = Vec::new();
+            if let (Some(r), true) = (chart, t.level == MAX_LEVEL) {
+                t.cells.retain(|&(x, y, z)| {
+                    if !plausible(z) {
+                        return true; // dropped below anyway
+                    }
+                    let (lon, lat) = crate::cell_centre(t.tx * 256 + x as u32, t.ty * 256 + y as u32, MAX_LEVEL);
+                    let off = r.at(lon, lat).is_some_and(|rg| crate::check::off_chart(-z as f64, rg));
+                    if off {
+                        bad.push((x, y, z));
+                    }
+                    !off
+                });
+            }
+            (t, bad)
+        })
         .collect();
     let mut finest = Vec::with_capacity(tiles.len());
-    for t in tiles {
+    for (t, bad) in tiles {
+        for (x, y, z) in bad {
+            w.reject_cell(t.tx * 256 + x as u32, t.ty * 256 + y as u32, Cell::one(z, h, SRC_PBG));
+        }
         if t.level == MAX_LEVEL {
             let cells: Vec<(u8, u8, Cell)> = t.cells.iter().filter(|c| plausible(c.2)).map(|&(x, y, z)| (x, y, Cell::one(z, h, SRC_PBG))).collect();
             if !cells.is_empty() {
@@ -377,6 +416,30 @@ mod tests {
         assert_eq!(p.src, SRC_PBG);
         assert_eq!(p.newest, 1709078400 - 3600); // the file's date, to the hour (27 Feb 2024 23:00 UTC)
         assert!(s.has_source("TimeZero PBG", "test.tzpbg", std::fs::metadata(&pbg).unwrap().len() as i64));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_checked_import_leaves_out_what_the_chart_contradicts() {
+        let dir = std::env::temp_dir().join(format!("bathy-pbgchk-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let pbg = dir.join("t.tzpbg");
+        // 100 cells at 300 m, and 20 at 60 m, in an area charted 200–500 m
+        let mut pts: Vec<(f64, f64, f32)> = (0..100).map(|i| (171.99 + i as f64 * 0.00005, -40.158, -300.0)).collect();
+        pts.extend((0..20).map(|i| (171.99 + i as f64 * 0.00005, -40.159, -60.0)));
+        make_pbg(&pbg, &pts);
+        let reference = crate::check::Reference::new(|b| {
+            let mut g = crate::check::RefGrid::new(b, crate::check::REF_STEP);
+            g.paint(1, 200.0, Some(500.0), &[vec![[171.0, -41.0], [173.0, -41.0], [173.0, -39.0], [171.0, -39.0]]]);
+            g
+        });
+        let s = Store::open(&dir.join("bathy.sqlite")).unwrap();
+        let (n, rej) = s.import_pbg_checked(&pbg, Some(&reference), &mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
+        assert!((80..=100).contains(&n), "{n}");
+        assert!((15..=20).contains(&rej), "{rej}");
+        assert_eq!(s.info().unwrap().rejected, rej);
+        assert!(s.sounding_at(171.99 + 0.0002, -40.159).is_none_or(|p| p.z < -200.0));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
