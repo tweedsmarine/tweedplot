@@ -33,7 +33,7 @@ pub struct Style {
     pub fill: bool,
     /// How far from a sounding gaps are filled (m).
     pub fill_m: f32,
-    /// Mark the soundings the checks left out (magenta), from zoom 12 in.
+    /// Mark the soundings the checks left out (magenta).
     pub rejected: bool,
 }
 
@@ -200,20 +200,17 @@ impl Store {
                 rgba = Some(shade(&h, G, res, contour_step(z), &style));
             }
         }
-        if style.rejected && z >= 12 {
-            let marks = self.rejected_pixels(z, x, y);
-            if !marks.is_empty() {
+        if style.rejected {
+            if let Some(mask) = self.left_out_mask(z, x, y) {
                 let buf = rgba.get_or_insert_with(|| vec![0u8; TILE * TILE * 4]);
-                // at least 2 pixels across, or the cell's own size when zoomed in
-                let size = ((1u64 << z.saturating_sub(MAX_LEVEL)) as i64).max(2);
-                for (px, py) in marks {
-                    for dy in 0..size {
-                        for dx in 0..size {
-                            let (i, j) = (px - size / 2 + dx, py - size / 2 + dy);
-                            if i >= 0 && j >= 0 && (i as usize) < TILE && (j as usize) < TILE {
-                                let o = (j as usize * TILE + i as usize) * 4;
-                                buf[o..o + 4].copy_from_slice(&[220, 0, 200, 255]);
-                            }
+                // zoomed out a cell is a pixel: 2 × 2 so a line of them shows
+                let grow = z <= MAX_LEVEL;
+                for j in 0..TILE {
+                    for i in 0..TILE {
+                        let on = mask[j * TILE + i] || (grow && ((i > 0 && mask[j * TILE + i - 1]) || (j > 0 && mask[(j - 1) * TILE + i]) || (i > 0 && j > 0 && mask[(j - 1) * TILE + i - 1])));
+                        if on {
+                            let o = (j * TILE + i) * 4;
+                            buf[o..o + 4].copy_from_slice(&[220, 0, 200, 255]);
                         }
                     }
                 }
@@ -222,41 +219,35 @@ impl Store {
         rgba.map(|b| png_of(&b))
     }
 
-    /// The pixels of map tile z/x/y with a left-out sounding in them.
-    fn rejected_pixels(&self, z: u8, x: u32, y: u32) -> Vec<(i64, i64)> {
+    /// Which pixels of map tile z/x/y have a left-out sounding in them (at the level drawn
+    /// at this zoom, as the seabed), or None if none do.
+    fn left_out_mask(&self, z: u8, x: u32, y: u32) -> Option<Vec<bool>> {
+        let level = z.min(MAX_LEVEL);
         let nz = TILE as f64 * (1u64 << z) as f64;
-        let nl = cells_across(MAX_LEVEL) as f64;
+        let nl = cells_across(level) as f64;
         let web_lat = |py: f64| (std::f64::consts::PI * (1.0 - 2.0 * py / nz)).sinh().atan().to_degrees();
-        let web_y = |lat: f64| {
-            let r = lat.to_radians();
-            (1.0 - (r.tan() + 1.0 / r.cos()).ln() / std::f64::consts::PI) / 2.0 * nz
-        };
-        let cx0 = (x as f64 * TILE as f64 / nz * nl).floor() as i64;
-        let cx1 = ((x + 1) as f64 * TILE as f64 / nz * nl).floor() as i64;
-        let cy0 = (to_world(0.0, web_lat(y as f64 * TILE as f64)).1 * nl).floor() as i64;
-        let cy1 = (to_world(0.0, web_lat((y + 1) as f64 * TILE as f64)).1 * nl).floor() as i64;
-        let mut out = Vec::new();
-        let Ok(db) = self.conn.lock() else { return out };
-        let Ok(mut q) = db.prepare("SELECT ty, tx, data FROM rejected WHERE ty BETWEEN ?1 AND ?2 AND tx BETWEEN ?3 AND ?4") else { return out };
-        let rows: Vec<(i64, i64, Vec<u8>)> = q
-            .query_map(rusqlite::params![cy0 >> 8, cy1 >> 8, cx0 >> 8, cx1 >> 8], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-            .map(|it| it.flatten().collect())
-            .unwrap_or_default();
-        drop(q);
-        drop(db);
-        for (ty, tx, b) in rows {
-            let _ = crate::decode(&b, |cx, cy, _| {
-                let (gx, gy) = ((tx << 8) + cx as i64, (ty << 8) + cy as i64);
-                if gx < cx0 || gx > cx1 || gy < cy0 || gy > cy1 {
-                    return;
+        let cx: Vec<i64> = (0..TILE).map(|i| ((x as f64 * TILE as f64 + i as f64 + 0.5) / nz * nl).floor() as i64).collect();
+        let cy: Vec<i64> = (0..TILE).map(|j| (to_world(0.0, web_lat(y as f64 * TILE as f64 + j as f64 + 0.5)).1 * nl).floor() as i64).collect();
+        let mut mask = vec![false; TILE * TILE];
+        let mut any = false;
+        let mut tiles: std::collections::HashMap<(i64, i64), Arc<Vec<f32>>> = std::collections::HashMap::new();
+        for j in 0..TILE {
+            for i in 0..TILE {
+                let (gx, gy) = (cx[i], cy[j]);
+                if gx < 0 || gy < 0 {
+                    continue;
                 }
-                let (_, lat) = crate::cell_centre(gx as u32, gy as u32, MAX_LEVEL);
-                let px = ((gx as f64 + 0.5) / nl * nz - x as f64 * TILE as f64).floor() as i64;
-                let py = (web_y(lat) - y as f64 * TILE as f64).floor() as i64;
-                out.push((px, py));
-            });
+                let t = tiles.entry((gy >> 8, gx >> 8)).or_insert_with(|| self.means_in(crate::LEFT_OUT, level, (gy >> 8) as u32, (gx >> 8) as u32));
+                if t.is_empty() {
+                    continue;
+                }
+                if t[((gy & 255) as usize) * TILE + (gx & 255) as usize].is_finite() {
+                    mask[j * TILE + i] = true;
+                    any = true;
+                }
+            }
         }
-        out
+        any.then_some(mask)
     }
 }
 
@@ -440,6 +431,9 @@ mod tests {
         r.next_frame(&mut buf).unwrap();
         let magenta = buf.chunks(4).filter(|p| p == &[220, 0, 200, 255]).count();
         assert!(magenta > 50, "{magenta}");
+        // zoomed right out too
+        let (tx, ty) = web_tile(173.2025, -41.2, 8);
+        assert!(s.tile_png(8, tx, ty).is_some());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

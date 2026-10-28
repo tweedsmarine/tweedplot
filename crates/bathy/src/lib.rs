@@ -341,6 +341,11 @@ pub struct Sounding {
 
 type Key = (u8, u32, u32);
 
+/// The table of the seabed's tiles.
+pub(crate) const SEABED: &str = "tiles";
+/// The table of the soundings the checks left out (the same levels, kept apart).
+pub(crate) const LEFT_OUT: &str = "left_out";
+
 /// The bathymetry file (SQLite) and caches for drawing.
 pub struct Store {
     path: PathBuf,
@@ -359,6 +364,7 @@ fn schema(c: &Connection) -> Result<()> {
          PRAGMA synchronous = NORMAL;
          CREATE TABLE IF NOT EXISTS tiles (l INTEGER NOT NULL, ty INTEGER NOT NULL, tx INTEGER NOT NULL, n INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (l, ty, tx)) WITHOUT ROWID;
          CREATE TABLE IF NOT EXISTS rejected (ty INTEGER NOT NULL, tx INTEGER NOT NULL, n INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (ty, tx)) WITHOUT ROWID;
+         CREATE TABLE IF NOT EXISTS left_out (l INTEGER NOT NULL, ty INTEGER NOT NULL, tx INTEGER NOT NULL, n INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (l, ty, tx)) WITHOUT ROWID;
          CREATE TABLE IF NOT EXISTS sources (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, bytes INTEGER NOT NULL DEFAULT 0, added INTEGER NOT NULL, soundings INTEGER NOT NULL DEFAULT 0);
          CREATE TABLE IF NOT EXISTS seeded (track_id TEXT PRIMARY KEY, modified INTEGER NOT NULL);
          CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);",
@@ -427,7 +433,11 @@ impl Store {
     }
 
     fn blob(&self, k: Key) -> Result<Option<Vec<u8>>> {
-        Ok(self.db().query_row("SELECT data FROM tiles WHERE l = ?1 AND ty = ?2 AND tx = ?3", params![k.0, k.1, k.2], |r| r.get(0)).optional()?)
+        self.blob_in(SEABED, k)
+    }
+
+    fn blob_in(&self, table: &str, k: Key) -> Result<Option<Vec<u8>>> {
+        Ok(self.db().query_row(&format!("SELECT data FROM {table} WHERE l = ?1 AND ty = ?2 AND tx = ?3"), params![k.0, k.1, k.2], |r| r.get(0)).optional()?)
     }
 
     /// A tile's cells, when it has any.
@@ -440,12 +450,17 @@ impl Store {
 
     /// A tile's mean heights (NaN where empty), cached; an empty Vec where there's no tile.
     pub(crate) fn means(&self, level: u8, ty: u32, tx: u32) -> Arc<Vec<f32>> {
-        let k = (level, ty, tx);
+        self.means_in(SEABED, level, ty, tx)
+    }
+
+    /// [`Store::means`] of the seabed ([`SEABED`]) or of what the checks left out ([`LEFT_OUT`]).
+    pub(crate) fn means_in(&self, table: &'static str, level: u8, ty: u32, tx: u32) -> Arc<Vec<f32>> {
+        let k = (level + if table == LEFT_OUT { 64 } else { 0 }, ty, tx);
         if let Some(m) = self.means.lock().unwrap_or_else(|e| e.into_inner()).get(&k) {
             return m.clone();
         }
         let mut v = Vec::new();
-        if let Ok(Some(b)) = self.blob(k) {
+        if let Ok(Some(b)) = self.blob_in(table, (level, ty, tx)) {
             v = vec![f32::NAN; TILE * TILE];
             if decode(&b, |x, y, c| v[y * TILE + x] = c.mean).is_err() {
                 v.clear();
@@ -491,7 +506,7 @@ impl Store {
         let sources = q
             .query_map([], |r| Ok(SourceInfo { kind: r.get(0)?, name: r.get(1)?, bytes: r.get(2)?, added: r.get(3)?, soundings: r.get(4)?, rejected: r.get(5)? }))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        let rejected: i64 = db.query_row("SELECT coalesce(sum(n), 0) FROM rejected", [], |r| r.get(0))?;
+        let rejected: i64 = db.query_row("SELECT coalesce(sum(n), 0) FROM left_out WHERE l = ?1", [MAX_LEVEL], |r| r.get(0))?;
         let bytes = ["", "-wal"].iter().filter_map(|s| std::fs::metadata(format!("{}{s}", self.path.display())).ok()).map(|m| m.len()).sum();
         Ok(Info { cells, tiles, bounds, bytes, sources, rejected })
     }
@@ -499,6 +514,24 @@ impl Store {
     /// Build the coarsest levels where a store made by an older TweedPlot stops at level 6
     /// (quick: a few tiles). Called on opening.
     pub fn ensure_levels(&self) -> Result<()> {
+        // left-out soundings from the first checks (29 Oct 2026): finest level only, no levels
+        let old: Vec<(u32, u32, i64, Vec<u8>)> = {
+            let db = self.db();
+            let mut q = db.prepare("SELECT ty, tx, n, data FROM rejected")?;
+            let v = q.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect::<std::result::Result<_, _>>()?;
+            v
+        };
+        if !old.is_empty() {
+            let mut w = self.writer("", "", 0)?;
+            let mut dirty = HashSet::new();
+            for (ty, tx, n, b) in old {
+                w.write_in(LEFT_OUT, (MAX_LEVEL, ty, tx), n as usize, &b)?;
+                dirty.insert((ty, tx));
+            }
+            w.build_levels_in(LEFT_OUT, MAX_LEVEL, dirty, &mut |_, _, _| {}, &AtomicBool::new(false))?;
+            w.conn.execute_batch("DELETE FROM rejected; COMMIT")?;
+            self.changed();
+        }
         let (old, new): (i64, i64) = self.db().query_row(
             "SELECT (SELECT count(*) FROM tiles WHERE l = ?1), (SELECT count(*) FROM tiles WHERE l = ?2)",
             params![OLD_MIN_LEVEL, MIN_LEVEL],
@@ -540,7 +573,7 @@ impl Store {
 
     /// Remove everything.
     pub fn clear(&self) -> Result<()> {
-        self.db().execute_batch("DELETE FROM tiles; DELETE FROM rejected; DELETE FROM sources; DELETE FROM seeded; VACUUM;")?;
+        self.db().execute_batch("DELETE FROM tiles; DELETE FROM rejected; DELETE FROM left_out; DELETE FROM sources; DELETE FROM seeded; VACUUM;")?;
         self.changed();
         Ok(())
     }
@@ -678,14 +711,22 @@ impl Acc {
 
 impl Writer {
     fn read_blob(&self, k: Key) -> Result<Option<Vec<u8>>> {
-        Ok(self.conn.query_row("SELECT data FROM tiles WHERE l = ?1 AND ty = ?2 AND tx = ?3", params![k.0, k.1, k.2], |r| r.get(0)).optional()?)
+        self.read_in(SEABED, k)
+    }
+
+    fn read_in(&self, table: &str, k: Key) -> Result<Option<Vec<u8>>> {
+        Ok(self.conn.query_row(&format!("SELECT data FROM {table} WHERE l = ?1 AND ty = ?2 AND tx = ?3"), params![k.0, k.1, k.2], |r| r.get(0)).optional()?)
     }
 
     fn write_blob(&mut self, k: Key, n: usize, blob: &[u8]) -> Result<()> {
+        self.write_in(SEABED, k, n, blob)
+    }
+
+    fn write_in(&mut self, table: &str, k: Key, n: usize, blob: &[u8]) -> Result<()> {
         if n == 0 {
-            self.conn.execute("DELETE FROM tiles WHERE l = ?1 AND ty = ?2 AND tx = ?3", params![k.0, k.1, k.2])?;
+            self.conn.execute(&format!("DELETE FROM {table} WHERE l = ?1 AND ty = ?2 AND tx = ?3"), params![k.0, k.1, k.2])?;
         } else {
-            self.conn.execute("INSERT OR REPLACE INTO tiles (l, ty, tx, n, data) VALUES (?1, ?2, ?3, ?4, ?5)", params![k.0, k.1, k.2, n as i64, blob])?;
+            self.conn.execute(&format!("INSERT OR REPLACE INTO {table} (l, ty, tx, n, data) VALUES (?1, ?2, ?3, ?4, ?5)"), params![k.0, k.1, k.2, n as i64, blob])?;
         }
         self.since_commit += 1;
         if self.since_commit >= 4000 {
@@ -817,21 +858,23 @@ impl Writer {
         self.rejected_n
     }
 
-    fn flush_rejected(&mut self) -> Result<()> {
+    /// Write the left-out soundings (finest level); returns the tiles changed.
+    fn flush_rejected(&mut self) -> Result<HashSet<(u32, u32)>> {
         let mut p: Vec<_> = std::mem::take(&mut self.rejected).into_iter().collect();
         p.sort_by_key(|(k, _)| *k);
+        let mut dirty = HashSet::new();
         for ((ty, tx), cells) in p {
-            let b: Option<Vec<u8>> = self.conn.query_row("SELECT data FROM rejected WHERE ty = ?1 AND tx = ?2", params![ty, tx], |r| r.get(0)).optional()?;
-            if let Some(b) = b {
+            if let Some(b) = self.read_in(LEFT_OUT, (MAX_LEVEL, ty, tx))? {
                 self.acc.add_blob(&b, None)?;
             }
             for (i, c) in &cells {
                 self.acc.add(*i as usize, c);
             }
             let (n, blob) = self.acc.take();
-            self.conn.execute("INSERT OR REPLACE INTO rejected (ty, tx, n, data) VALUES (?1, ?2, ?3, ?4)", params![ty, tx, n as i64, blob])?;
+            self.write_in(LEFT_OUT, (MAX_LEVEL, ty, tx), n, &blob)?;
+            dirty.insert((ty, tx));
         }
-        Ok(())
+        Ok(dirty)
     }
 
     /// Note a track as added (so building again skips it).
@@ -845,7 +888,11 @@ impl Writer {
     }
 
     /// Rebuild the levels coarser than `from` over its tiles `dirty` (ty, tx), on all cores.
-    fn build_levels(&mut self, from: u8, mut dirty: HashSet<(u32, u32)>, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<()> {
+    fn build_levels(&mut self, from: u8, dirty: HashSet<(u32, u32)>, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<()> {
+        self.build_levels_in(SEABED, from, dirty, progress, cancel)
+    }
+
+    fn build_levels_in(&mut self, table: &str, from: u8, mut dirty: HashSet<(u32, u32)>, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<()> {
         use rayon::prelude::*;
         for level in (MIN_LEVEL..from).rev() {
             let mut parents: Vec<(u32, u32)> = dirty.iter().map(|&(y, x)| (y >> 1, x >> 1)).collect::<HashSet<_>>().into_iter().collect();
@@ -862,7 +909,7 @@ impl Writer {
                 for &(py, px) in chunk {
                     let mut kids = Vec::with_capacity(4);
                     for (cy, cx) in [(0u32, 0u32), (0, 1), (1, 0), (1, 1)] {
-                        if let Some(b) = self.read_blob((level + 1, py * 2 + cy, px * 2 + cx))? {
+                        if let Some(b) = self.read_in(table, (level + 1, py * 2 + cy, px * 2 + cx))? {
                             kids.push(((cy as usize, cx as usize), b));
                         }
                     }
@@ -880,7 +927,7 @@ impl Writer {
                     .collect();
                 for r in built {
                     let (k, n, blob) = r?;
-                    self.write_blob((level, k.0, k.1), n, &blob)?;
+                    self.write_in(table, (level, k.0, k.1), n, &blob)?;
                 }
             }
             dirty = parents.into_iter().collect();
@@ -892,9 +939,10 @@ impl Writer {
     /// `progress(stage, done, total)`. The coarser tiles are built on all cores.
     pub fn finish(mut self, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<i64> {
         self.flush()?;
-        self.flush_rejected()?;
+        let left = self.flush_rejected()?;
         let dirty: HashSet<(u32, u32)> = std::mem::take(&mut self.dirty);
         self.build_levels(MAX_LEVEL, dirty, progress, cancel)?;
+        self.build_levels_in(LEFT_OUT, MAX_LEVEL, left, &mut |_, _, _| {}, cancel)?;
         for (id, m) in std::mem::take(&mut self.seeded) {
             self.conn.execute("INSERT OR REPLACE INTO seeded (track_id, modified) VALUES (?1, ?2)", params![id, m])?;
         }
@@ -987,6 +1035,28 @@ mod tests {
         let mut n = 0;
         decode(&b, |_, _, c| n += c.n).unwrap();
         assert_eq!(n, 50);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn left_out_from_the_first_checks_moves_over() {
+        let dir = std::env::temp_dir().join(format!("bathy-lo-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let s = Store::open(&dir.join("bathy.sqlite")).unwrap();
+        let mut w = s.writer("own", "t", 0).unwrap();
+        for i in 0..30 {
+            w.reject(173.2 + i as f64 * 0.001, -41.2, -70.0, 1, SRC_OWN);
+        }
+        w.finish(&mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
+        // as the first checks stored them: finest tiles in `rejected`, no levels
+        s.db().execute_batch("INSERT INTO rejected (ty, tx, n, data) SELECT ty, tx, n, data FROM left_out WHERE l = 16; DELETE FROM left_out;").unwrap();
+        assert_eq!(s.info().unwrap().rejected, 0);
+        s.ensure_levels().unwrap();
+        assert_eq!(s.info().unwrap().rejected, 30);
+        let k: i64 = s.db().query_row("SELECT count(*) FROM left_out WHERE l = 3", [], |r| r.get(0)).unwrap();
+        assert_eq!(k, 1);
+        let r: i64 = s.db().query_row("SELECT count(*) FROM rejected", [], |r| r.get(0)).unwrap();
+        assert_eq!(r, 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
