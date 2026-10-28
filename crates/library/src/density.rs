@@ -50,6 +50,26 @@ impl Library {
     }
 }
 
+impl Library {
+    /// Each track's segments in turn (for building the personal bathymetry from logged depths):
+    /// `f(id, segments)`. Tracks with no points are skipped.
+    pub fn for_each_track(&self, ids: &[String], f: &mut dyn FnMut(&str, &[Vec<crate::TrackPoint>]), progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<()> {
+        for (k, id) in ids.iter().enumerate() {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(Error::Cancelled);
+            }
+            if k % 100 == 0 {
+                progress("Tracks", k, ids.len());
+            }
+            let data: Option<Vec<u8>> = self.db().query_row("SELECT data FROM track_data WHERE track_id = ?1", [id], |r| r.get(0)).optional()?;
+            let Some(data) = data.filter(|d| !d.is_empty()) else { continue };
+            f(id, &store::decode_segments(&data)?);
+        }
+        progress("Tracks", ids.len(), ids.len());
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{Library, Track, TrackPoint};

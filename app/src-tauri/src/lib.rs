@@ -10,6 +10,7 @@
 
 mod live;
 mod nmea;
+mod pbathy;
 mod radar_sim;
 mod s63_cmd;
 mod settings;
@@ -3364,6 +3365,20 @@ fn chart_info() -> serde_json::Value {
 }
 
 fn tile_response(path: &str) -> Response<Vec<u8>> {
+    // personal bathymetry: /pbathy/<z>/<x>/<y>.png
+    if let Some(rest) = path.trim_start_matches('/').strip_prefix("pbathy/") {
+        let p: Vec<u32> = rest.trim_end_matches(".png").split('/').filter_map(|v| v.parse().ok()).collect();
+        let png = match p.as_slice() {
+            [z, x, y] => pbathy::tile_png(*z as u8, *x, *y).map(|t| t.as_ref().clone()),
+            _ => None,
+        };
+        return Response::builder()
+            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .header(header::CACHE_CONTROL, "no-store")
+            .header(header::CONTENT_TYPE, "image/png")
+            .body(png.unwrap_or_else(|| clear_png().to_vec()))
+            .expect("valid response");
+    }
     // high-resolution depth images: /hires/<z>/<x>/<y>.png
     if let Some(rest) = path.trim_start_matches('/').strip_prefix("hires/") {
         let p: Vec<u32> = rest.trim_end_matches(".png").split('/').filter_map(|v| v.parse().ok()).collect();
@@ -3574,6 +3589,15 @@ pub fn run() {
             hires_status,
             hires_delete,
             hires_height,
+            pbathy::pbathy_status,
+            pbathy::pbathy_pick_file,
+            pbathy::pbathy_import,
+            pbathy::pbathy_from_tracks,
+            pbathy::pbathy_cancel,
+            pbathy::pbathy_style,
+            pbathy::pbathy_fit,
+            pbathy::pbathy_at,
+            pbathy::pbathy_clear,
             rules_at,
             rule_info,
             tides_info,
@@ -3799,6 +3823,7 @@ pub fn run() {
             std::thread::spawn(move || {
                 s63_cmd::load(&h);
                 open_hires(&h);
+                pbathy::open(&h);
                 open_charts(h);
             });
 

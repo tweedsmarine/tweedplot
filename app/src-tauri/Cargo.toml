@@ -30,6 +30,7 @@ png = "0.17"
 grib.workspace = true
 routing.workspace = true
 library.workspace = true
+bathy.workspace = true
 tracking.workspace = true
 gribdl.workspace = true
 tides.workspace = true

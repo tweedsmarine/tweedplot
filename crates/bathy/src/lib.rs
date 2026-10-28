@@ -1,0 +1,785 @@
+//! Personal bathymetry: the boat's own depth soundings gridded into a seabed, as Olex and
+//! TimeZero's PBG (Personal Bathymetry Generator) do, drawn as depth images for the chart.
+//!
+//! ## The grid
+//! TimeZero's layout, so its files import without resampling: WGS84 **ellipsoidal**
+//! Mercator (EPSG:3395; not the spherical Web Mercator of the chart tiles), a quadtree of
+//! 256 × 256-cell tiles, level 16 the finest (cells 360°/2²⁴ wide: about 2.4 m at the
+//! equator, 1.8 m at 41° S). Levels [`MIN_LEVEL`]..16 are kept; each coarser level merges
+//! 2 × 2 cells of the one below. Tiles are numbered from the top-left (as map tiles); TimeZero
+//! numbers its rows from the south.
+//!
+//! ## A cell
+//! Not the soundings themselves but their running statistics ([`Cell`]): count, mean,
+//! sum of squared differences (for the spread), the newest time and which kinds of source
+//! went in. Adding a sounding, another boat's grid or an imported file is the same merge,
+//! and gives the same answer in any order.
+//!
+//! Heights are metres, positive up (a depth of 30 m is -30), as recorded: own soundings
+//! are below the surface or the transducer, not reduced to chart datum. Not for navigation.
+
+use std::collections::{HashMap, HashSet};
+use std::f64::consts::PI;
+use std::io::{Read, Write as _};
+use std::num::NonZeroUsize;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
+
+use rusqlite::{params, Connection, OptionalExtension};
+
+mod import;
+mod render;
+pub use import::{clean_depths, decode_pbg_blob, pbg_level16, pbg_made, PbgTile};
+pub use render::{Palette, Style};
+
+/// The finest level (TimeZero's).
+pub const MAX_LEVEL: u8 = 16;
+/// The coarsest level kept (a tile is about 600 km across).
+pub const MIN_LEVEL: u8 = 6;
+/// Cells along a tile's side.
+pub const TILE: usize = 256;
+
+/// Kinds of source, as bits of [`Cell::src`].
+pub const SRC_OWN: u8 = 1;
+pub const SRC_PBG: u8 = 2;
+pub const SRC_XYZ: u8 = 4;
+pub const SRC_OTHER: u8 = 8;
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("database: {0}")]
+    Sql(#[from] rusqlite::Error),
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+    #[error("zip: {0}")]
+    Zip(#[from] zip::result::ZipError),
+    #[error("{0}")]
+    Format(String),
+    #[error("cancelled")]
+    Cancelled,
+}
+pub type Result<T> = std::result::Result<T, Error>;
+
+// ---------- ellipsoidal Mercator ---------------------------------------------------------
+
+const E: f64 = 0.081_819_190_842_621_5; // WGS84 first eccentricity
+const MAX_LAT: f64 = 85.0;
+
+/// Mercator northing (radians of the equator) of a latitude, on the WGS84 ellipsoid.
+pub fn merc_y(lat: f64) -> f64 {
+    let p = lat.clamp(-MAX_LAT, MAX_LAT).to_radians();
+    let s = p.sin();
+    ((PI / 4.0 + p / 2.0).tan() * ((1.0 - E * s) / (1.0 + E * s)).powf(E / 2.0)).ln()
+}
+
+/// Latitude of a Mercator northing (inverse of [`merc_y`]).
+pub fn merc_lat(y: f64) -> f64 {
+    let t = (-y).exp();
+    let mut p = PI / 2.0 - 2.0 * t.atan();
+    for _ in 0..8 {
+        let s = p.sin();
+        p = PI / 2.0 - 2.0 * (t * ((1.0 - E * s) / (1.0 + E * s)).powf(E / 2.0)).atan();
+    }
+    p.to_degrees()
+}
+
+/// A place as fractions of the world (x east from 180° W, y down from the top), 0..1.
+pub fn to_world(lon: f64, lat: f64) -> (f64, f64) {
+    let lon = ((lon + 180.0).rem_euclid(360.0)) - 180.0;
+    ((lon + 180.0) / 360.0, (1.0 - merc_y(lat) / PI) / 2.0)
+}
+
+/// The place at world fractions `(u, v)`.
+pub fn from_world(u: f64, v: f64) -> (f64, f64) {
+    (u * 360.0 - 180.0, merc_lat(PI * (1.0 - 2.0 * v)))
+}
+
+/// Cells across the world at a level.
+pub fn cells_across(level: u8) -> u64 {
+    (TILE as u64) << level
+}
+
+/// The cell (column, row from the top) a place is in at a level.
+pub fn cell_of(lon: f64, lat: f64, level: u8) -> Option<(u32, u32)> {
+    if !lon.is_finite() || !lat.is_finite() || lat.abs() > MAX_LAT {
+        return None;
+    }
+    let (u, v) = to_world(lon, lat);
+    let n = cells_across(level) as f64;
+    let (cx, cy) = ((u * n).floor(), (v * n).floor());
+    if cx < 0.0 || cy < 0.0 || cx >= n || cy >= n {
+        return None;
+    }
+    Some((cx as u32, cy as u32))
+}
+
+/// The centre of a cell.
+pub fn cell_centre(cx: u32, cy: u32, level: u8) -> (f64, f64) {
+    let n = cells_across(level) as f64;
+    from_world((cx as f64 + 0.5) / n, (cy as f64 + 0.5) / n)
+}
+
+/// Ground width of a cell (m) at a latitude.
+pub fn cell_size_m(level: u8, lat: f64) -> f64 {
+    40_075_016.686 * lat.to_radians().cos() / cells_across(level) as f64
+}
+
+// ---------- cells -------------------------------------------------------------------------
+
+/// Running statistics of the soundings in a cell.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Cell {
+    /// Soundings merged (0 = empty).
+    pub n: u32,
+    /// Mean height (m, positive up).
+    pub mean: f32,
+    /// Sum of squared differences from the mean (m²): the spread is √(m2 / n).
+    pub m2: f32,
+    /// Newest sounding, hours since 1970 (0 = unknown).
+    pub newest: u32,
+    /// Kinds of source ([`SRC_OWN`] …).
+    pub src: u8,
+}
+
+impl Cell {
+    pub fn one(z: f32, hours: u32, src: u8) -> Cell {
+        Cell { n: 1, mean: z, m2: 0.0, newest: hours, src }
+    }
+    pub fn is_empty(&self) -> bool {
+        self.n == 0
+    }
+    /// Add another cell's soundings (Chan's parallel update).
+    pub fn merge(&mut self, o: &Cell) {
+        if o.n == 0 {
+            return;
+        }
+        if self.n == 0 {
+            *self = *o;
+            return;
+        }
+        let (na, nb) = (self.n as f64, o.n as f64);
+        let n = na + nb;
+        let d = o.mean as f64 - self.mean as f64;
+        self.mean = (self.mean as f64 + d * nb / n) as f32;
+        self.m2 = (self.m2 as f64 + o.m2 as f64 + d * d * na * nb / n) as f32;
+        self.n = self.n.saturating_add(o.n);
+        self.newest = self.newest.max(o.newest);
+        self.src |= o.src;
+    }
+    /// Standard deviation of the soundings (m).
+    pub fn spread(&self) -> f32 {
+        if self.n < 2 {
+            0.0
+        } else {
+            (self.m2.max(0.0) / self.n as f32).sqrt()
+        }
+    }
+}
+
+/// A tile's cells, all 256 × 256 (empty ones n = 0), row by row from the top.
+pub struct Dense(pub Vec<Cell>);
+
+impl Dense {
+    pub fn new() -> Dense {
+        Dense(vec![Cell::default(); TILE * TILE])
+    }
+    pub fn count(&self) -> usize {
+        self.0.iter().filter(|c| c.n > 0).count()
+    }
+}
+
+impl Default for Dense {
+    fn default() -> Self {
+        Dense::new()
+    }
+}
+
+const MAGIC: &[u8; 4] = b"TPB1";
+const REC: usize = 19;
+
+/// A tile as stored: "TPB1", the number of cells, then zlib of 19-byte records
+/// (x u8, y u8, n u32, mean f32, m2 f32, newest u32, src u8; little-endian).
+pub fn encode(d: &Dense) -> (usize, Vec<u8>) {
+    let mut raw = Vec::with_capacity(4096);
+    let mut count = 0usize;
+    for (i, c) in d.0.iter().enumerate() {
+        if c.n == 0 {
+            continue;
+        }
+        count += 1;
+        raw.push((i % TILE) as u8);
+        raw.push((i / TILE) as u8);
+        raw.extend_from_slice(&c.n.to_le_bytes());
+        raw.extend_from_slice(&c.mean.to_le_bytes());
+        raw.extend_from_slice(&c.m2.to_le_bytes());
+        raw.extend_from_slice(&c.newest.to_le_bytes());
+        raw.push(c.src);
+    }
+    let mut out = Vec::with_capacity(raw.len() / 2 + 16);
+    out.extend_from_slice(MAGIC);
+    out.extend_from_slice(&(count as u32).to_le_bytes());
+    let mut z = flate2::write::ZlibEncoder::new(out, flate2::Compression::fast());
+    let _ = z.write_all(&raw);
+    (count, z.finish().unwrap_or_default())
+}
+
+/// Read a stored tile: calls `f(x, y, cell)` for each cell.
+pub fn decode(b: &[u8], mut f: impl FnMut(usize, usize, Cell)) -> Result<()> {
+    if b.len() < 8 || &b[..4] != MAGIC {
+        return Err(Error::Format("not a bathymetry tile".into()));
+    }
+    let count = u32::from_le_bytes(b[4..8].try_into().unwrap()) as usize;
+    let mut raw = Vec::with_capacity(count * REC);
+    flate2::read::ZlibDecoder::new(&b[8..]).read_to_end(&mut raw)?;
+    if raw.len() != count * REC {
+        return Err(Error::Format("bathymetry tile cut short".into()));
+    }
+    let f32_at = |r: &[u8], o: usize| f32::from_le_bytes(r[o..o + 4].try_into().unwrap());
+    let u32_at = |r: &[u8], o: usize| u32::from_le_bytes(r[o..o + 4].try_into().unwrap());
+    for r in raw.chunks_exact(REC) {
+        f(r[0] as usize, r[1] as usize, Cell { n: u32_at(r, 2), mean: f32_at(r, 6), m2: f32_at(r, 10), newest: u32_at(r, 14), src: r[18] });
+    }
+    Ok(())
+}
+
+// ---------- the store ---------------------------------------------------------------------
+
+/// One import or build, as listed.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SourceInfo {
+    pub kind: String,
+    pub name: String,
+    pub bytes: i64,
+    /// When it was added (Unix seconds).
+    pub added: i64,
+    /// Soundings (or grid cells) it brought.
+    pub soundings: i64,
+}
+
+/// What's in the store.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Info {
+    /// Cells with soundings at the finest level.
+    pub cells: i64,
+    pub tiles: i64,
+    /// [w, s, e, n] of the finest tiles, when there are any.
+    pub bounds: Option<[f64; 4]>,
+    pub bytes: u64,
+    pub sources: Vec<SourceInfo>,
+}
+
+/// The sounding at a place.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Sounding {
+    /// Mean height (m, positive up).
+    pub z: f32,
+    pub n: u32,
+    /// Standard deviation (m).
+    pub spread: f32,
+    /// Newest sounding (Unix seconds, 0 = unknown).
+    pub newest: i64,
+    pub src: u8,
+    /// Distance to the cell's centre (m): soundings are looked for up to two cells away.
+    pub off_m: f64,
+}
+
+type Key = (u8, u32, u32);
+
+/// The bathymetry file (SQLite) and caches for drawing.
+pub struct Store {
+    path: PathBuf,
+    conn: Mutex<Connection>,
+    /// Mean heights of tiles (NaN where empty; empty Vec for a tile with no data).
+    means: Mutex<lru::LruCache<Key, Arc<Vec<f32>>>>,
+    images: Mutex<lru::LruCache<(u8, u32, u32), Option<Arc<Vec<u8>>>>>,
+    style: RwLock<Style>,
+    /// Bumped whenever the data or the style change (the page reloads its tiles).
+    generation: AtomicU64,
+}
+
+fn schema(c: &Connection) -> Result<()> {
+    c.execute_batch(
+        "PRAGMA journal_mode = WAL;
+         PRAGMA synchronous = NORMAL;
+         CREATE TABLE IF NOT EXISTS tiles (l INTEGER NOT NULL, ty INTEGER NOT NULL, tx INTEGER NOT NULL, n INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (l, ty, tx)) WITHOUT ROWID;
+         CREATE TABLE IF NOT EXISTS sources (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, bytes INTEGER NOT NULL DEFAULT 0, added INTEGER NOT NULL, soundings INTEGER NOT NULL DEFAULT 0);
+         CREATE TABLE IF NOT EXISTS seeded (track_id TEXT PRIMARY KEY, modified INTEGER NOT NULL);
+         CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);",
+    )?;
+    c.busy_timeout(std::time::Duration::from_secs(30))?;
+    Ok(())
+}
+
+fn now_s() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+}
+
+/// Unix seconds as the hours a [`Cell`] keeps.
+pub fn hours(unix_s: i64) -> u32 {
+    (unix_s.max(0) / 3600).min(u32::MAX as i64) as u32
+}
+
+impl Store {
+    /// Open (or create) the store at `path`.
+    pub fn open(path: &Path) -> Result<Store> {
+        if let Some(d) = path.parent() {
+            std::fs::create_dir_all(d)?;
+        }
+        let conn = Connection::open(path)?;
+        schema(&conn)?;
+        Ok(Store {
+            path: path.to_path_buf(),
+            conn: Mutex::new(conn),
+            means: Mutex::new(lru::LruCache::new(NonZeroUsize::new(192).unwrap())),
+            images: Mutex::new(lru::LruCache::new(NonZeroUsize::new(768).unwrap())),
+            style: RwLock::new(Style::default()),
+            generation: AtomicU64::new(1),
+        })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn db(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.conn.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Changes whenever what's drawn changes.
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
+    }
+
+    /// Forget the drawn images and cached tiles (after an import, or a style change).
+    pub fn changed(&self) {
+        self.means.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.images.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.generation.fetch_add(1, Ordering::AcqRel);
+    }
+
+    pub fn style(&self) -> Style {
+        self.style.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    pub fn set_style(&self, s: Style) {
+        *self.style.write().unwrap_or_else(|e| e.into_inner()) = s;
+        self.images.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.generation.fetch_add(1, Ordering::AcqRel);
+    }
+
+    fn blob(&self, k: Key) -> Result<Option<Vec<u8>>> {
+        Ok(self.db().query_row("SELECT data FROM tiles WHERE l = ?1 AND ty = ?2 AND tx = ?3", params![k.0, k.1, k.2], |r| r.get(0)).optional()?)
+    }
+
+    /// A tile's cells, when it has any.
+    pub fn tile(&self, level: u8, ty: u32, tx: u32) -> Result<Option<Dense>> {
+        let Some(b) = self.blob((level, ty, tx))? else { return Ok(None) };
+        let mut d = Dense::new();
+        decode(&b, |x, y, c| d.0[y * TILE + x] = c)?;
+        Ok(Some(d))
+    }
+
+    /// A tile's mean heights (NaN where empty), cached; an empty Vec where there's no tile.
+    pub(crate) fn means(&self, level: u8, ty: u32, tx: u32) -> Arc<Vec<f32>> {
+        let k = (level, ty, tx);
+        if let Some(m) = self.means.lock().unwrap_or_else(|e| e.into_inner()).get(&k) {
+            return m.clone();
+        }
+        let mut v = Vec::new();
+        if let Ok(Some(b)) = self.blob(k) {
+            v = vec![f32::NAN; TILE * TILE];
+            if decode(&b, |x, y, c| v[y * TILE + x] = c.mean).is_err() {
+                v.clear();
+            }
+        }
+        let m = Arc::new(v);
+        self.means.lock().unwrap_or_else(|e| e.into_inner()).put(k, m.clone());
+        m
+    }
+
+    /// The sounding at a place: the finest cell there, else the nearest within two cells.
+    pub fn sounding_at(&self, lon: f64, lat: f64) -> Option<Sounding> {
+        let (cx, cy) = cell_of(lon, lat, MAX_LEVEL)?;
+        let mut tiles: HashMap<(u32, u32), Option<Dense>> = HashMap::new();
+        let mut best: Option<(i64, Cell, u32, u32)> = None;
+        for dy in -2i64..=2 {
+            for dx in -2i64..=2 {
+                let (x, y) = (cx as i64 + dx, cy as i64 + dy);
+                if x < 0 || y < 0 {
+                    continue;
+                }
+                let (x, y) = (x as u32, y as u32);
+                let t = tiles.entry((y >> 8, x >> 8)).or_insert_with(|| self.tile(MAX_LEVEL, y >> 8, x >> 8).ok().flatten());
+                let Some(t) = t else { continue };
+                let c = t.0[(y as usize & 255) * TILE + (x as usize & 255)];
+                let d2 = dx * dx + dy * dy;
+                if c.n > 0 && best.as_ref().is_none_or(|b| d2 < b.0) {
+                    best = Some((d2, c, x, y));
+                }
+            }
+        }
+        let (_, c, x, y) = best?;
+        let (clon, clat) = cell_centre(x, y, MAX_LEVEL);
+        let (dx, dy) = ((clon - lon) * lat.to_radians().cos() * 60.0 * 1852.0, (clat - lat) * 60.0 * 1852.0);
+        Some(Sounding { z: c.mean, n: c.n, spread: c.spread(), newest: c.newest as i64 * 3600, src: c.src, off_m: (dx * dx + dy * dy).sqrt() })
+    }
+
+    pub fn info(&self) -> Result<Info> {
+        let db = self.db();
+        let (cells, tiles): (i64, i64) = db.query_row("SELECT coalesce(sum(n), 0), count(*) FROM tiles WHERE l = ?1", [MAX_LEVEL], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        let b: Option<(i64, i64, i64, i64)> = db
+            .query_row("SELECT min(tx), min(ty), max(tx), max(ty) FROM tiles WHERE l = ?1", [MAX_LEVEL], |r| {
+                Ok(match (r.get::<_, Option<i64>>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, Option<i64>>(2)?, r.get::<_, Option<i64>>(3)?) {
+                    (Some(a), Some(b), Some(c), Some(d)) => Some((a, b, c, d)),
+                    _ => None,
+                })
+            })?;
+        let bounds = b.map(|(x0, y0, x1, y1)| {
+            let n = (1u64 << MAX_LEVEL) as f64;
+            let (w, nn) = from_world(x0 as f64 / n, y0 as f64 / n);
+            let (e, s) = from_world((x1 + 1) as f64 / n, (y1 + 1) as f64 / n);
+            [w, s, e, nn]
+        });
+        let mut q = db.prepare("SELECT kind, name, bytes, added, soundings FROM sources ORDER BY id")?;
+        let sources = q
+            .query_map([], |r| Ok(SourceInfo { kind: r.get(0)?, name: r.get(1)?, bytes: r.get(2)?, added: r.get(3)?, soundings: r.get(4)? }))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let bytes = ["", "-wal"].iter().filter_map(|s| std::fs::metadata(format!("{}{s}", self.path.display())).ok()).map(|m| m.len()).sum();
+        Ok(Info { cells, tiles, bounds, bytes, sources })
+    }
+
+    /// The tracks already added, with their modified times.
+    pub fn seeded(&self) -> Result<HashMap<String, i64>> {
+        let db = self.db();
+        let mut q = db.prepare("SELECT track_id, modified FROM seeded")?;
+        let m = q.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<std::result::Result<HashMap<_, _>, _>>()?;
+        Ok(m)
+    }
+
+    /// Whether a file of this name and size was imported already.
+    pub fn has_source(&self, kind: &str, name: &str, bytes: i64) -> bool {
+        self.db()
+            .query_row("SELECT 1 FROM sources WHERE kind = ?1 AND name = ?2 AND bytes = ?3", params![kind, name, bytes], |_| Ok(()))
+            .optional()
+            .ok()
+            .flatten()
+            .is_some()
+    }
+
+    /// Remove everything.
+    pub fn clear(&self) -> Result<()> {
+        self.db().execute_batch("DELETE FROM tiles; DELETE FROM sources; DELETE FROM seeded; VACUUM;")?;
+        self.changed();
+        Ok(())
+    }
+
+    /// Depths (positive down, m) from the 2nd to the 98th percentile in an area [w, s, e, n],
+    /// from a level with at most about 16 × 16 tiles over it: a colour range that fits the view.
+    pub fn depth_range(&self, area: [f64; 4]) -> Option<(f32, f32)> {
+        let [w, s, e, n] = area;
+        let (u0, v0) = to_world(w.max(-180.0), n.min(MAX_LAT));
+        let (u1, v1) = to_world(e.min(180.0 - 1e-9), s.max(-MAX_LAT));
+        let mut level = MAX_LEVEL;
+        while level > MIN_LEVEL && ((u1 - u0) * (1u64 << level) as f64 > 16.0 || (v1 - v0) * (1u64 << level) as f64 > 16.0) {
+            level -= 1;
+        }
+        let nc = cells_across(level) as f64;
+        let (cx0, cx1) = ((u0 * nc).floor() as u64, (u1 * nc).floor() as u64);
+        let (cy0, cy1) = ((v0 * nc).floor() as u64, (v1 * nc).floor() as u64);
+        let mut depths = Vec::new();
+        for ty in (cy0 >> 8)..=(cy1 >> 8) {
+            for tx in (cx0 >> 8)..=(cx1 >> 8) {
+                let m = self.means(level, ty as u32, tx as u32);
+                if m.is_empty() {
+                    continue;
+                }
+                for y in 0..TILE as u64 {
+                    let cy = (ty << 8) + y;
+                    if cy < cy0 || cy > cy1 {
+                        continue;
+                    }
+                    for x in 0..TILE as u64 {
+                        let cx = (tx << 8) + x;
+                        if cx < cx0 || cx > cx1 {
+                            continue;
+                        }
+                        let z = m[(y * TILE as u64 + x) as usize];
+                        if z.is_finite() && z < 0.0 {
+                            depths.push(-z);
+                        }
+                    }
+                }
+            }
+        }
+        if depths.len() < 10 {
+            return None;
+        }
+        depths.sort_by(f32::total_cmp);
+        let at = |p: f64| depths[((depths.len() - 1) as f64 * p).round() as usize];
+        let (a, b) = (at(0.02), at(0.98));
+        Some((a, b.max(a + 1.0)))
+    }
+
+    /// A writer adding soundings or grids (one import or build); the store's drawing goes
+    /// on meanwhile and sees the new data once [`Writer::finish`] returns.
+    pub fn writer(&self, kind: &str, name: &str, bytes: i64) -> Result<Writer> {
+        let conn = Connection::open(&self.path)?;
+        schema(&conn)?;
+        conn.execute_batch("BEGIN")?;
+        Ok(Writer { conn, kind: kind.into(), name: name.into(), bytes, dirty: HashSet::new(), pending: HashMap::new(), pending_n: 0, soundings: 0, seeded: Vec::new(), since_commit: 0 })
+    }
+}
+
+/// Adds soundings or whole tiles to a [`Store`] (see [`Store::writer`]).
+pub struct Writer {
+    conn: Connection,
+    kind: String,
+    name: String,
+    bytes: i64,
+    /// Finest tiles changed (ty, tx), for the coarser levels.
+    dirty: HashSet<(u32, u32)>,
+    pending: HashMap<(u32, u32), Vec<(u16, Cell)>>,
+    pending_n: usize,
+    soundings: i64,
+    seeded: Vec<(String, i64)>,
+    since_commit: usize,
+}
+
+const PENDING_MAX: usize = 4_000_000;
+
+impl Writer {
+    fn read(&self, k: Key) -> Result<Option<Dense>> {
+        let b: Option<Vec<u8>> = self.conn.query_row("SELECT data FROM tiles WHERE l = ?1 AND ty = ?2 AND tx = ?3", params![k.0, k.1, k.2], |r| r.get(0)).optional()?;
+        let Some(b) = b else { return Ok(None) };
+        let mut d = Dense::new();
+        decode(&b, |x, y, c| d.0[y * TILE + x] = c)?;
+        Ok(Some(d))
+    }
+
+    fn write(&mut self, k: Key, d: &Dense) -> Result<()> {
+        let (n, blob) = encode(d);
+        if n == 0 {
+            self.conn.execute("DELETE FROM tiles WHERE l = ?1 AND ty = ?2 AND tx = ?3", params![k.0, k.1, k.2])?;
+        } else {
+            self.conn.execute("INSERT OR REPLACE INTO tiles (l, ty, tx, n, data) VALUES (?1, ?2, ?3, ?4, ?5)", params![k.0, k.1, k.2, n as i64, blob])?;
+        }
+        self.since_commit += 1;
+        if self.since_commit >= 4000 {
+            self.conn.execute_batch("COMMIT; BEGIN")?;
+            self.since_commit = 0;
+        }
+        Ok(())
+    }
+
+    /// One sounding: height `z` (m, positive up) at a place.
+    pub fn add(&mut self, lon: f64, lat: f64, z: f32, hours: u32, src: u8) -> Result<()> {
+        if !z.is_finite() {
+            return Ok(());
+        }
+        let Some((cx, cy)) = cell_of(lon, lat, MAX_LEVEL) else { return Ok(()) };
+        self.add_cell(cx, cy, Cell::one(z, hours, src))
+    }
+
+    /// Cell statistics at finest-level cell (cx, cy).
+    pub fn add_cell(&mut self, cx: u32, cy: u32, c: Cell) -> Result<()> {
+        let idx = ((cy & 255) * TILE as u32 + (cx & 255)) as u16;
+        self.pending.entry((cy >> 8, cx >> 8)).or_default().push((idx, c));
+        self.pending_n += 1;
+        self.soundings += c.n as i64;
+        if self.pending_n >= PENDING_MAX {
+            self.flush()?;
+        }
+        Ok(())
+    }
+
+    /// A whole finest-level tile at once (an imported grid): merged with what's there.
+    pub fn add_tile(&mut self, ty: u32, tx: u32, cells: &[(u8, u8, Cell)]) -> Result<()> {
+        if let Some(p) = self.pending.remove(&(ty, tx)) {
+            self.pending_n -= p.len();
+            self.merge_into((ty, tx), &p)?;
+        }
+        let mut d = self.read((MAX_LEVEL, ty, tx))?.unwrap_or_default();
+        for (x, y, c) in cells {
+            d.0[*y as usize * TILE + *x as usize].merge(c);
+            self.soundings += c.n as i64;
+        }
+        self.write((MAX_LEVEL, ty, tx), &d)?;
+        self.dirty.insert((ty, tx));
+        Ok(())
+    }
+
+    fn merge_into(&mut self, k: (u32, u32), cells: &[(u16, Cell)]) -> Result<()> {
+        let mut d = self.read((MAX_LEVEL, k.0, k.1))?.unwrap_or_default();
+        for (i, c) in cells {
+            d.0[*i as usize].merge(c);
+        }
+        self.write((MAX_LEVEL, k.0, k.1), &d)?;
+        self.dirty.insert(k);
+        Ok(())
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        let mut p: Vec<_> = std::mem::take(&mut self.pending).into_iter().collect();
+        p.sort_by_key(|(k, _)| *k);
+        for (k, cells) in p {
+            self.merge_into(k, &cells)?;
+        }
+        self.pending_n = 0;
+        Ok(())
+    }
+
+    /// Note a track as added (so building again skips it).
+    pub fn mark_seeded(&mut self, track_id: &str, modified: i64) {
+        self.seeded.push((track_id.to_string(), modified));
+    }
+
+    /// Soundings added so far.
+    pub fn soundings(&self) -> i64 {
+        self.soundings
+    }
+
+    /// Write what's left, rebuild the coarser levels over what changed, and commit.
+    /// `progress(stage, done, total)`.
+    pub fn finish(mut self, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<i64> {
+        self.flush()?;
+        let mut dirty: HashSet<(u32, u32)> = std::mem::take(&mut self.dirty);
+        for level in (MIN_LEVEL..MAX_LEVEL).rev() {
+            if cancel.load(Ordering::Relaxed) {
+                let _ = self.conn.execute_batch("ROLLBACK");
+                return Err(Error::Cancelled);
+            }
+            let mut parents: Vec<(u32, u32)> = dirty.iter().map(|&(y, x)| (y >> 1, x >> 1)).collect::<HashSet<_>>().into_iter().collect();
+            parents.sort();
+            let total = parents.len();
+            for (i, &(py, px)) in parents.iter().enumerate() {
+                if i % 500 == 0 {
+                    progress(&format!("Coarser levels: level {level}"), i, total);
+                }
+                let mut d = Dense::new();
+                for (cy, cx) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+                    let Some(child) = self.read((level + 1, py * 2 + cy, px * 2 + cx))? else { continue };
+                    for y in 0..TILE {
+                        for x in 0..TILE {
+                            let c = child.0[y * TILE + x];
+                            if c.n > 0 {
+                                d.0[(cy as usize * 128 + y / 2) * TILE + cx as usize * 128 + x / 2].merge(&c);
+                            }
+                        }
+                    }
+                }
+                self.write((level, py, px), &d)?;
+            }
+            dirty = parents.into_iter().collect();
+        }
+        for (id, m) in std::mem::take(&mut self.seeded) {
+            self.conn.execute("INSERT OR REPLACE INTO seeded (track_id, modified) VALUES (?1, ?2)", params![id, m])?;
+        }
+        if self.soundings > 0 {
+            self.conn.execute("INSERT INTO sources (kind, name, bytes, added, soundings) VALUES (?1, ?2, ?3, ?4, ?5)", params![self.kind, self.name, self.bytes, now_s(), self.soundings])?;
+        }
+        self.conn.execute_batch("COMMIT")?;
+        let _ = self.conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE)");
+        Ok(self.soundings)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mercator_round_trip_and_timezero_cells() {
+        for lat in [-80.0, -41.27, -0.1, 0.0, 12.5, 60.0] {
+            let y = merc_y(lat);
+            assert!((merc_lat(y) - lat).abs() < 1e-10, "{lat}");
+        }
+        // TimeZero's XYZ export puts points on the cells' top-left corners: they are whole
+        // cells in ellipsoidal Mercator (lines from Chris's timezero.xyz)
+        for (lon, lat) in [(171.991846561432, -40.1582038082353), (171.99193239212, -40.1582202721742), (171.992018222809, -40.1583025918085)] {
+            let (u, v) = to_world(lon, lat);
+            let n = cells_across(16) as f64;
+            assert!(((u * n) - (u * n).round()).abs() < 1e-4, "x {}", u * n);
+            assert!(((v * n) - (v * n).round()).abs() < 1e-4, "y {}", v * n);
+        }
+        let (cx, cy) = cell_of(171.991846561432 + 1e-7, -40.1582038082353 - 1e-7, 16).unwrap();
+        assert_eq!((cx, cy), (16404009, 10423809));
+        let c = cell_centre(cx, cy, 16);
+        assert!((c.0 - 171.99186).abs() < 1e-4 && (c.1 + 40.15821).abs() < 1e-4, "{c:?}");
+        assert!((cell_size_m(16, -41.0) - 1.80).abs() < 0.01);
+    }
+
+    #[test]
+    fn merging_cells_matches_all_at_once() {
+        let v = [-30.0f32, -31.5, -29.0, -30.5, -33.0, -28.0];
+        let mut a = Cell::default();
+        for &z in &v[..2] {
+            a.merge(&Cell::one(z, 10, SRC_OWN));
+        }
+        let mut b = Cell::default();
+        for &z in &v[2..] {
+            b.merge(&Cell::one(z, 20, SRC_PBG));
+        }
+        a.merge(&b);
+        let mean = v.iter().sum::<f32>() / v.len() as f32;
+        let var = v.iter().map(|z| (z - mean).powi(2)).sum::<f32>() / v.len() as f32;
+        assert_eq!(a.n, 6);
+        assert!((a.mean - mean).abs() < 1e-5);
+        assert!((a.spread() - var.sqrt()).abs() < 1e-4);
+        assert_eq!((a.newest, a.src), (20, SRC_OWN | SRC_PBG));
+    }
+
+    #[test]
+    fn tiles_round_trip() {
+        let mut d = Dense::new();
+        d.0[0] = Cell::one(-5.0, 1, SRC_OWN);
+        d.0[255 * TILE + 254] = Cell { n: 7, mean: -1200.5, m2: 3.0, newest: 99, src: SRC_XYZ };
+        let (n, b) = encode(&d);
+        assert_eq!(n, 2);
+        let mut got = Vec::new();
+        decode(&b, |x, y, c| got.push((x, y, c))).unwrap();
+        assert_eq!(got, vec![(0, 0, d.0[0]), (254, 255, d.0[255 * TILE + 254])]);
+    }
+
+    #[test]
+    fn store_adds_and_builds_levels() {
+        let dir = std::env::temp_dir().join(format!("bathy-store-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let s = Store::open(&dir.join("bathy.sqlite")).unwrap();
+        let mut w = s.writer("own", "test", 0).unwrap();
+        // a line of soundings off Nelson, 20 m to 40 m, and one sounding twice
+        for i in 0..200 {
+            w.add(173.2 + i as f64 * 0.0001, -41.2, -20.0 - i as f32 * 0.1, 500_000, SRC_OWN).unwrap();
+        }
+        w.add(173.2, -41.2, -22.0, 500_001, SRC_OWN).unwrap();
+        w.mark_seeded("t1", 5);
+        assert_eq!(w.finish(&mut |_, _, _| {}, &AtomicBool::new(false)).unwrap(), 201);
+        s.changed();
+        let p = s.sounding_at(173.2, -41.2).unwrap();
+        assert_eq!(p.n, 2);
+        assert!((p.z + 21.0).abs() < 1e-4 && (p.spread - 1.0).abs() < 1e-4, "{p:?}");
+        let info = s.info().unwrap();
+        assert!(info.cells >= 190 && info.cells <= 201, "{}", info.cells);
+        let b = info.bounds.unwrap();
+        assert!(b[0] <= 173.2 && b[2] >= 173.22 && b[1] <= -41.2 && b[3] >= -41.2, "{b:?}");
+        assert_eq!(info.sources.len(), 1);
+        assert_eq!(s.seeded().unwrap().get("t1"), Some(&5));
+        // every coarser level has the soundings, all 201 of them
+        let db = s.db();
+        for l in MIN_LEVEL..=MAX_LEVEL {
+            let mut q = db.prepare("SELECT data FROM tiles WHERE l = ?1").unwrap();
+            let blobs: Vec<Vec<u8>> = q.query_map([l], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect();
+            let mut n = 0;
+            for b in &blobs {
+                decode(b, |_, _, c| n += c.n).unwrap();
+            }
+            assert_eq!(n, 201, "level {l}");
+        }
+        drop(db);
+        let r = s.depth_range([173.19, -41.21, 173.23, -41.19]).unwrap();
+        assert!(r.0 >= 20.0 && r.0 < 21.0 && r.1 > 39.0 && r.1 <= 40.0, "{r:?}");
+        s.clear().unwrap();
+        assert_eq!(s.info().unwrap().cells, 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

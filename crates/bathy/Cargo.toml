@@ -1,0 +1,16 @@
+[package]
+name = "bathy"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Personal bathymetry: the boat's own soundings (and imported TimeZero PBG / XYZ files) gridded into a seabed, drawn as depth images"
+
+[dependencies]
+rusqlite.workspace = true
+zip.workspace = true
+lru.workspace = true
+flate2 = "1"
+png = "0.17"
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true

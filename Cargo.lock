@@ -162,6 +162,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
+name = "bathy"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "lru",
+ "png 0.17.16",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "zip",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3198,6 +3212,7 @@ name = "racenav-app"
 version = "0.1.0"
 dependencies = [
  "ais",
+ "bathy",
  "chart",
  "chrono",
  "grib",

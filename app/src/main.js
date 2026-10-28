@@ -45,6 +45,7 @@ import { setupUiPrefs } from "./uiprefs.js";
 import { setupTooltips } from "./tooltips.js";
 import { setupManual } from "./manual.js";
 import { setupData } from "./data.js";
+import { setupPbathy, pbathyAt } from "./pbathy.js";
 import { setupS63 } from "./s63.js";
 import { setupReplay } from "./replay.js";
 import { setupPalette } from "./palette.js";
@@ -114,6 +115,8 @@ const map = new maplibregl.Map({
       chart: { type: "vector", tiles: [TILE_URL], minzoom: 0, maxzoom: 16 },
       // high-resolution depths (LINZ coastal elevation, 1 m), drawn in Rust as images
       hires: { type: "raster", tiles: [TILE_URL.replace("{z}/{x}/{y}.pbf", "hires/{z}/{x}/{y}.png")], tileSize: 256, minzoom: 10, maxzoom: 18 },
+      // personal bathymetry (own soundings, TimeZero PBG and XYZ imports), drawn in Rust as images
+      pbathy: { type: "raster", tiles: [TILE_URL.replace("{z}/{x}/{y}.pbf", "pbathy/{z}/{x}/{y}.png")], tileSize: 256, minzoom: 6, maxzoom: 20 },
     },
     layers: [
       { id: "sea", type: "background", paint: { "background-color": css("--sea") } },
@@ -133,6 +136,9 @@ const map = new maplibregl.Map({
       // over the charted depth areas, under the chart's contours (the safety contour stays on top)
       { id: "hires", type: "raster", source: "hires", minzoom: 10, layout: { visibility: localStorage.getItem("racenav.hires.show") === "0" ? "none" : "visible" },
         paint: { "raster-opacity": 0.92, "raster-resampling": "linear" } },
+      // over the charted depths too: it's what the skipper surveyed (not for navigation)
+      { id: "pbathy", type: "raster", source: "pbathy", minzoom: 6, layout: { visibility: localStorage.getItem("racenav.pbathy.show") === "1" ? "visible" : "none" },
+        paint: { "raster-opacity": 0.95, "raster-resampling": "nearest" } },
       { id: "depcnt", type: "line", source: "chart", "source-layer": "depcnt", layout: { visibility: "none" },
         paint: { "line-color": "#7d97a6", "line-width": 0.6 } },
       { id: "safety-contour", type: "line", source: "chart", "source-layer": "depcnt",
@@ -342,6 +348,7 @@ map.on("load", () => {
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
   window.__weather = weather; // debugging handle
   setupData(map, { toast, reloadTiles: reloadChartTiles });
+  setupPbathy(map);
   setupS63(map, { toast });
   setupPalette();
   setupBrand();
@@ -649,7 +656,10 @@ function setCursor(c) {
   }, wait);
 }
 map.on("mousemove", (e) => {
-  document.getElementById("cursor").textContent = `${ddm(e.lngLat.lat, "N", "S")}  ${ddm(e.lngLat.lng, "E", "W")}`;
+  const where = `${ddm(e.lngLat.lat, "N", "S")}  ${ddm(e.lngLat.lng, "E", "W")}`;
+  document.getElementById("cursor").textContent = where;
+  // with the personal bathymetry shown: its sounding under the cursor
+  pbathyAt(e.lngLat.lng, e.lngLat.lat, (t) => { document.getElementById("cursor").textContent = t ? `${where}  ·  ${t}` : where; });
   setCursor([e.lngLat.lng, e.lngLat.lat]);
 });
 // touch screens have no hover: a tap sets the cursor

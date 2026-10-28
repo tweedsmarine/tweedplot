@@ -1,0 +1,395 @@
+//! Drawing the personal bathymetry as map tiles (`z/x/y`, 256-pixel PNG, Web Mercator):
+//! depth colours (a rainbow as on Olex and TimeZero PBG, or chart blues) over a depth range
+//! chosen to suit the area, lit from the north-west, with contours. Small gaps between
+//! soundings (up to two cells) are filled from the cells around them; nothing further is
+//! made up. Above 0 m is left clear.
+
+use std::sync::Arc;
+
+use serde::{Deserialize, Serialize};
+
+use crate::{cells_across, to_world, Store, MAX_LEVEL, MIN_LEVEL, TILE};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Palette {
+    /// Red (shallow) through yellow, green, cyan and blue to violet (deep).
+    Rainbow,
+    /// Pale (shallow) to dark blue (deep), as charts.
+    Blues,
+}
+
+/// How the bathymetry is drawn.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Style {
+    pub palette: Palette,
+    /// The colour range (m, positive down): shallower than `shallow` takes the first colour,
+    /// deeper than `deep` the last.
+    pub shallow: f32,
+    pub deep: f32,
+    pub contours: bool,
+    pub shade: bool,
+    /// Fill gaps of up to two cells between soundings.
+    pub fill: bool,
+}
+
+impl Default for Style {
+    fn default() -> Self {
+        Style { palette: Palette::Rainbow, shallow: 0.0, deep: 500.0, contours: true, shade: true, fill: true }
+    }
+}
+
+/// Contour interval (m) at a zoom.
+fn contour_step(z: u8) -> f32 {
+    match z {
+        17.. => 1.0,
+        16 => 2.0,
+        15 => 5.0,
+        13 | 14 => 10.0,
+        11 | 12 => 20.0,
+        9 | 10 => 50.0,
+        _ => 100.0,
+    }
+}
+
+const RAINBOW: &[(f32, [f32; 3])] = &[
+    (0.0, [196.0, 32.0, 38.0]),
+    (0.14, [236.0, 112.0, 36.0]),
+    (0.28, [244.0, 206.0, 52.0]),
+    (0.42, [120.0, 200.0, 80.0]),
+    (0.56, [40.0, 186.0, 170.0]),
+    (0.70, [40.0, 130.0, 216.0]),
+    (0.84, [70.0, 62.0, 196.0]),
+    (1.0, [92.0, 28.0, 128.0]),
+];
+const BLUES: &[(f32, [f32; 3])] = &[
+    (0.0, [205.0, 240.0, 236.0]),
+    (0.2, [150.0, 210.0, 234.0]),
+    (0.45, [96.0, 164.0, 220.0]),
+    (0.7, [58.0, 110.0, 184.0]),
+    (1.0, [26.0, 52.0, 120.0]),
+];
+
+/// Colour of a depth (m, positive down) in a style.
+pub fn colour(depth: f32, s: &Style) -> [f32; 3] {
+    let stops = match s.palette {
+        Palette::Rainbow => RAINBOW,
+        Palette::Blues => BLUES,
+    };
+    let span = (s.deep - s.shallow).max(0.1);
+    let t = ((depth - s.shallow) / span).clamp(0.0, 1.0);
+    for w in stops.windows(2) {
+        if t <= w[1].0 {
+            let f = (t - w[0].0) / (w[1].0 - w[0].0);
+            return [0, 1, 2].map(|i| w[0].1[i] + (w[1].1[i] - w[0].1[i]) * f);
+        }
+    }
+    stops[stops.len() - 1].1
+}
+
+impl Store {
+    /// The image for map tile `z/x/y`, or None where there are no soundings.
+    pub fn tile_png(&self, z: u8, x: u32, y: u32) -> Option<Arc<Vec<u8>>> {
+        if z < MIN_LEVEL || z > 24 || x >= 1 << z || y >= 1 << z {
+            return None;
+        }
+        if let Some(t) = self.images.lock().unwrap_or_else(|e| e.into_inner()).get(&(z, x, y)) {
+            return t.clone();
+        }
+        let png = self.render(z, x, y).map(Arc::new);
+        self.images.lock().unwrap_or_else(|e| e.into_inner()).put((z, x, y), png.clone());
+        png
+    }
+
+    /// Heights (m, positive up; NaN where none) for a `g` × `g` block of pixels of map tile
+    /// z/x/y starting one pixel above and left of it, and the ground size of a pixel (m).
+    pub fn heights(&self, z: u8, x: u32, y: u32, g: usize, fill: bool) -> Option<(Vec<f32>, f64)> {
+        let level = z.min(MAX_LEVEL);
+        let nz = TILE as f64 * (1u64 << z) as f64;
+        let nl = cells_across(level) as f64;
+        let web_lat = |py: f64| (std::f64::consts::PI * (1.0 - 2.0 * py / nz)).sinh().atan().to_degrees();
+        // where each pixel's centre falls, in cells of the level
+        let fx: Vec<f64> = (0..g).map(|i| (x as f64 * TILE as f64 + i as f64 - 0.5) / nz * nl).collect();
+        let fy: Vec<f64> = (0..g).map(|j| to_world(0.0, web_lat(y as f64 * TILE as f64 + j as f64 - 0.5)).1 * nl).collect();
+        const R: i64 = 2;
+        let max = nl as i64 - 1;
+        let cx0 = (fx[0].floor() as i64 - R - 1).clamp(0, max);
+        let cx1 = (fx[g - 1].floor() as i64 + R + 1).clamp(0, max);
+        let cy0 = (fy[0].floor() as i64 - R - 1).clamp(0, max);
+        let cy1 = (fy[g - 1].floor() as i64 + R + 1).clamp(0, max);
+        let (w, h) = ((cx1 - cx0 + 1) as usize, (cy1 - cy0 + 1) as usize);
+        let mut grid = vec![f32::NAN; w * h];
+        let mut any = false;
+        for ty in (cy0 >> 8)..=(cy1 >> 8) {
+            for tx in (cx0 >> 8)..=(cx1 >> 8) {
+                let m = self.means(level, ty as u32, tx as u32);
+                if m.is_empty() {
+                    continue;
+                }
+                let (ax, bx) = ((tx << 8).max(cx0), ((tx << 8) + 255).min(cx1));
+                let (ay, by) = ((ty << 8).max(cy0), ((ty << 8) + 255).min(cy1));
+                for cy in ay..=by {
+                    let src = &m[((cy - (ty << 8)) as usize) * TILE..][..TILE];
+                    let dst = &mut grid[(cy - cy0) as usize * w..][..w];
+                    for cx in ax..=bx {
+                        let v = src[(cx - (tx << 8)) as usize];
+                        if v.is_finite() {
+                            dst[(cx - cx0) as usize] = v;
+                            any = true;
+                        }
+                    }
+                }
+            }
+        }
+        if !any {
+            return None;
+        }
+        if fill {
+            let mut out = grid.clone();
+            for j in 0..h {
+                for i in 0..w {
+                    if grid[j * w + i].is_finite() {
+                        continue;
+                    }
+                    let (mut s, mut n) = (0.0f32, 0u32);
+                    for dj in -R..=R {
+                        for di in -R..=R {
+                            let (ii, jj) = (i as i64 + di, j as i64 + dj);
+                            if ii < 0 || jj < 0 || ii >= w as i64 || jj >= h as i64 {
+                                continue;
+                            }
+                            let v = grid[jj as usize * w + ii as usize];
+                            if v.is_finite() {
+                                s += v;
+                                n += 1;
+                            }
+                        }
+                    }
+                    if n >= 3 {
+                        out[j * w + i] = s / n as f32;
+                    }
+                }
+            }
+            grid = out;
+        }
+        let at = |cx: i64, cy: i64| -> f32 {
+            if cx < cx0 || cy < cy0 || cx > cx1 || cy > cy1 {
+                f32::NAN
+            } else {
+                grid[(cy - cy0) as usize * w + (cx - cx0) as usize]
+            }
+        };
+        let mut out = vec![f32::NAN; g * g];
+        let smooth = z > MAX_LEVEL;
+        for j in 0..g {
+            for i in 0..g {
+                let (px, py) = (fx[i], fy[j]);
+                out[j * g + i] = if smooth {
+                    // between cell centres
+                    let (sx, sy) = (px - 0.5, py - 0.5);
+                    let (x0, y0) = (sx.floor() as i64, sy.floor() as i64);
+                    let (ax, ay) = ((sx - x0 as f64) as f32, (sy - y0 as f64) as f32);
+                    let v = [at(x0, y0), at(x0 + 1, y0), at(x0, y0 + 1), at(x0 + 1, y0 + 1)];
+                    if v.iter().all(|v| v.is_finite()) {
+                        (v[0] * (1.0 - ax) + v[1] * ax) * (1.0 - ay) + (v[2] * (1.0 - ax) + v[3] * ax) * ay
+                    } else {
+                        at(px.floor() as i64, py.floor() as i64)
+                    }
+                } else {
+                    at(px.floor() as i64, py.floor() as i64)
+                };
+            }
+        }
+        let lat_mid = web_lat((y as f64 + 0.5) * TILE as f64);
+        let res = 40_075_016.686 * lat_mid.to_radians().cos() / nz;
+        Some((out, res))
+    }
+
+    fn render(&self, z: u8, x: u32, y: u32) -> Option<Vec<u8>> {
+        let style = self.style();
+        const G: usize = TILE + 2;
+        let (h, res) = self.heights(z, x, y, G, style.fill)?;
+        if h.iter().all(|v| !v.is_finite() || *v > 0.0) {
+            return None;
+        }
+        Some(shade(&h, G, res, contour_step(z), &style))
+    }
+}
+
+/// The image: depth colours, lit from the north-west, contours every `step` m; clear above
+/// 0 m and where there's no data. `h` is `g` × `g` with a border of one pixel.
+fn shade(h: &[f32], g: usize, res: f64, step: f32, s: &Style) -> Vec<u8> {
+    let n = g - 2;
+    let mut rgba = vec![0u8; n * n * 4];
+    let at = |x: usize, y: usize| h[y * g + x];
+    let (az, alt) = (315f32.to_radians(), 45f32.to_radians());
+    let (lx, ly, lz) = (alt.cos() * az.sin(), alt.cos() * az.cos(), alt.sin());
+    let exaggerate = 3.0f32;
+    for y in 0..n {
+        for x in 0..n {
+            let c = at(x + 1, y + 1);
+            if !c.is_finite() || c > 0.0 {
+                continue;
+            }
+            let pick = |xx: usize, yy: usize| {
+                let v = at(xx, yy);
+                if v.is_finite() {
+                    v
+                } else {
+                    c
+                }
+            };
+            let mut col = colour(-c, s);
+            if s.shade {
+                let dzdx = (pick(x + 2, y + 1) - pick(x, y + 1)) / (2.0 * res as f32) * exaggerate;
+                let dzdy = (pick(x + 1, y) - pick(x + 1, y + 2)) / (2.0 * res as f32) * exaggerate;
+                let norm = (dzdx * dzdx + dzdy * dzdy + 1.0).sqrt();
+                let lit = ((-dzdx * lx - dzdy * ly + lz) / norm).clamp(0.0, 1.0);
+                let k = (0.55 + 0.45 * lit / lz.max(0.01)).min(1.15);
+                col = col.map(|v| (v * k).min(255.0));
+            }
+            if s.contours {
+                let band = |v: f32| (v / step).floor();
+                let (r, d) = (at(x + 2, y + 1), at(x + 1, y + 2));
+                if (r.is_finite() && band(c) != band(r)) || (d.is_finite() && band(c) != band(d)) {
+                    col = [col[0] * 0.4 + 20.0 * 0.6, col[1] * 0.4 + 30.0 * 0.6, col[2] * 0.4 + 45.0 * 0.6];
+                }
+            }
+            let o = (y * n + x) * 4;
+            rgba[o..o + 4].copy_from_slice(&[col[0] as u8, col[1] as u8, col[2] as u8, 235]);
+        }
+    }
+    let mut out = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut out, n as u32, n as u32);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.set_compression(png::Compression::Fast);
+        if let Ok(mut w) = enc.write_header() {
+            let _ = w.write_image_data(&rgba);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Store, SRC_OWN};
+    use std::sync::atomic::AtomicBool;
+
+    fn web_tile(lon: f64, lat: f64, z: u8) -> (u32, u32) {
+        let n = (1u64 << z) as f64;
+        let r = lat.to_radians();
+        (((lon + 180.0) / 360.0 * n) as u32, ((1.0 - (r.tan() + 1.0 / r.cos()).ln() / std::f64::consts::PI) / 2.0 * n) as u32)
+    }
+
+    #[test]
+    fn draws_soundings_where_they_are() {
+        let dir = std::env::temp_dir().join(format!("bathy-render-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let s = Store::open(&dir.join("bathy.sqlite")).unwrap();
+        let mut w = s.writer("own", "t", 0).unwrap();
+        // a 300 m × 300 m patch sloping from 20 m to 50 m, every 1.5 m
+        for i in 0..200 {
+            for j in 0..200 {
+                let (lon, lat) = (173.2 + i as f64 * 1.5 / 84_000.0, -41.2 + j as f64 * 1.5 / 111_000.0);
+                w.add(lon, lat, -20.0 - i as f32 * 0.15, 1, SRC_OWN).unwrap();
+            }
+        }
+        w.finish(&mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
+        s.changed();
+        for z in [10u8, 14, 16, 18] {
+            let (tx, ty) = web_tile(173.2018, -41.1987, z);
+            let (h, res) = s.heights(z, tx, ty, 258, false).unwrap();
+            // the pixel over the patch's centre has its depth (35 m there), within a cell
+            let n = (1u64 << z) as f64 * 256.0;
+            let px = ((173.2018 + 180.0) / 360.0 * n - tx as f64 * 256.0) as usize + 1;
+            let r = (-41.1987f64).to_radians();
+            let py = ((1.0 - (r.tan() + 1.0 / r.cos()).ln() / std::f64::consts::PI) / 2.0 * n - ty as f64 * 256.0) as usize + 1;
+            let v = h[py * 258 + px];
+            // the slope is 0.1 m per metre east: allow for where in the pixel the centre falls
+            assert!((v + 35.0).abs() < 1.5 + 0.1 * res as f32, "z{z}: {v} (pixel {res:.1} m)");
+            let png = s.tile_png(z, tx, ty).expect("an image");
+            assert_eq!(&png[1..4], b"PNG");
+        }
+        // a tile far away has nothing
+        let (tx, ty) = web_tile(174.5, -41.2, 14);
+        assert!(s.tile_png(14, tx, ty).is_none());
+        assert!(s.tile_png(4, 0, 0).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn colours() {
+        let s = Style::default();
+        assert_eq!(colour(-5.0, &s), RAINBOW[0].1);
+        assert_eq!(colour(9999.0, &s), RAINBOW[RAINBOW.len() - 1].1);
+        let b = Style { palette: Palette::Blues, ..Style::default() };
+        assert_eq!(colour(0.0, &b), BLUES[0].1);
+    }
+}
+
+#[cfg(test)]
+mod real {
+    use crate::Store;
+    use std::sync::atomic::AtomicBool;
+
+    /// `RACENAV_TEST_PBG=/path/file.tzpbg cargo test -p bathy --release real_pbg -- --ignored --nocapture`
+    /// Imports the file into a scratch store and draws an overview PNG of each zoom 8 tile with data.
+    #[test]
+    #[ignore]
+    fn real_pbg() {
+        let p = std::path::PathBuf::from(std::env::var("RACENAV_TEST_PBG").unwrap());
+        let out = std::env::var("RACENAV_TEST_OUT").map(std::path::PathBuf::from).unwrap_or_else(|_| std::env::temp_dir().join("bathy-real"));
+        let _ = std::fs::remove_dir_all(&out);
+        std::fs::create_dir_all(&out).unwrap();
+        let s = Store::open(&out.join("bathy.sqlite")).unwrap();
+        let t = std::time::Instant::now();
+        let mut last = String::new();
+        let n = s
+            .import_pbg(
+                &p,
+                &mut |st, d, tot| {
+                    if st != last {
+                        println!("{st} {d}/{tot} at {:?}", t.elapsed());
+                        last = st.to_string();
+                    }
+                },
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+        println!("imported {n} cells in {:?}", t.elapsed());
+        let info = s.info().unwrap();
+        println!("{:?}", (info.cells, info.tiles, info.bounds, info.bytes));
+        let b = info.bounds.unwrap();
+        // the main area's colour range
+        if let Some(r) = s.depth_range(b) {
+            println!("depth range {r:?}");
+            s.set_style(crate::Style { deep: r.1, shallow: r.0, ..crate::Style::default() });
+        }
+        let t = std::time::Instant::now();
+        let mut drawn = 0;
+        for z in [8u8, 12] {
+            let n = (1u64 << z) as f64;
+            let tx = |lon: f64| ((lon + 180.0) / 360.0 * n) as u32;
+            let ty = |lat: f64| {
+                let r = lat.to_radians();
+                ((1.0 - (r.tan() + 1.0 / r.cos()).ln() / std::f64::consts::PI) / 2.0 * n) as u32
+            };
+            for x in tx(b[0].max(160.0))..=tx(b[2]) {
+                for y in ty(b[3].min(-30.0))..=ty(b[1]) {
+                    if let Some(png) = s.tile_png(z, x, y) {
+                        drawn += 1;
+                        if z == 8 {
+                            std::fs::write(out.join(format!("z{z}_{x}_{y}.png")), png.as_ref()).unwrap();
+                        }
+                    }
+                }
+            }
+            println!("z{z}: {drawn} tiles drawn so far, {:?}", t.elapsed());
+        }
+        assert!(drawn > 0);
+    }
+}

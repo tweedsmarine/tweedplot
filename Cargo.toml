@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing", "crates/library", "crates/tracking", "crates/gribdl", "crates/tides", "crates/ais", "crates/stations", "crates/marine-nmea", "app/src-tauri", "tools/oem"]
+members = ["crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing", "crates/library", "crates/tracking", "crates/gribdl", "crates/tides", "crates/ais", "crates/stations", "crates/marine-nmea", "crates/bathy", "app/src-tauri", "tools/oem"]
 # `cargo test` at the root skips the GUI app; build it with `npm run tauri dev` in app/.
-default-members = ["crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing", "crates/library", "crates/tracking", "crates/gribdl", "crates/tides", "crates/ais", "crates/stations"]
+default-members = ["crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing", "crates/library", "crates/tracking", "crates/gribdl", "crates/tides", "crates/ais", "crates/stations", "crates/bathy"]
 
 [workspace.package]
 edition = "2021"
@@ -23,6 +23,7 @@ tides = { path = "crates/tides" }
 ais = { path = "crates/ais" }
 stations = { path = "crates/stations" }
 marine-nmea = { path = "crates/marine-nmea" }
+bathy = { path = "crates/bathy" }
 serialport = { version = "4.8", default-features = false }
 thiserror = "1"
 serde = { version = "1", features = ["derive"] }
@@ -68,4 +69,6 @@ opt-level = 3
 [profile.dev.package.zip]
 opt-level = 3
 [profile.dev.package.miniz_oxide]
+opt-level = 3
+[profile.dev.package.bathy]
 opt-level = 3

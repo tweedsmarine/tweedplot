@@ -57,6 +57,7 @@ TweedPlot runs on Windows 10 or 11 (Intel or ARM) and keeps all its data in plai
 | `coastline` | The world coastline (GSHHG) | Downloaded from Chart data |
 | `bathy` | Detailed depths (ETOPO) for the areas you fetched | Downloaded from Chart data |
 | `hires` | High-resolution depths (LINZ coastal), one file per Topo50 sheet | Downloaded from Chart data |
+| `pbathy` | Personal bathymetry (`bathy.sqlite`): your own soundings and the PBG and XYZ files imported | Built from Chart data |
 | `marine` | Maritime boundaries (LINZ) and fishing rules (MPI) | Downloaded from Chart data |
 
 Advanced: the environment variables `RACENAV_GRIB_DIR`, `RACENAV_POLAR_DIR`, `RACENAV_LIBRARY_DIR` and `RACENAV_SK_URL` point TweedPlot elsewhere.
@@ -186,7 +187,7 @@ Wharves, breakwaters, jetties, pontoons, floating docks and causeways are drawn 
 | --- | --- |
 | **Safety** | **Safety depth** and **safety contour** (below), with the draft from **Settings › Vessel** beside them and how much water the safety depth leaves under the keel |
 | **Chart display** | **Display**: Base, Standard or All (below); **Standard display**; **Light sectors**, **Names and labels**, **Soundings**; **Chart symbol size** |
-| **Layers** | **High-resolution depths**, and the boundaries and fishing rules (see *Boundaries and fishing rules*) |
+| **Layers** | **High-resolution depths**, **Personal bathymetry**, and the boundaries and fishing rules (see *Boundaries and fishing rules*) |
 | **Own ship** | **Heading line**, **COG line** and **Wind arrows** (see Your boat) |
 | **Chart data** | Every download and import: world coastline, detailed depths, high-resolution depths, boundaries, fishing rules, the LINZ charts, and **Encrypted charts (S-63)** |
 
@@ -253,6 +254,7 @@ Outside New Zealand, TweedPlot shades the sea by depth from free world data. **C
 | **Detailed depths** (ETOPO 2022) | **Get for chart view**, for the area on screen, typically 1–5 MB | Finer depth bands from zoom 4 and contours (5 m to 5000 m) from zoom 7 |
 | **NZ charts** (LINZ) | **LINZ…** opens the LINZ Data Service (see above) | The full hydrographic chart |
 | **High-resolution depths** (LINZ coastal, 1 m) | **Get for chart view**, zoomed in to the area; one file per Topo50 sheet, its size depending on how much was surveyed | Shaded depths with contours from about 5 NM range in, where LINZ has flown a survey (see below) |
+| **Personal bathymetry** (own soundings) | **Add my tracks**, and **Import PBG / XYZ…** | Your own soundings as a depth image, with the sounding under the cursor (see below) |
 | **Maritime boundaries** (LINZ) | **Download**, under 1 MB | Territorial sea (12 NM), contiguous zone (24 NM), EEZ (200 NM) and the boundaries agreed with Australia (see Boundaries and fishing rules) |
 | **Fishing rules** (MPI) | **Download**, several MB; **Update** before a trip | MPI's commercial fishing regulations, customary areas, voluntary closures and fisheries areas (see Boundaries and fishing rules) |
 
@@ -261,6 +263,16 @@ For detailed depths, zoom the chart to the area you want, pick the **Detail** (1
 **High-resolution depths.** LINZ publishes 1 m elevation models of the coast from aerial laser surveys (lidar), which reach the seabed down to about 25 m in clear water. Where they exist they show far more than the chart: channels, banks, bars, reefs and the shape of the seabed in harbours and anchorages. Zoom in to the area (the line under the row says how many sheets cover the chart view, how many LINZ has data for and how many are downloaded), press **Get for chart view**, and the depths are drawn from about 5 NM range in, shaded as if lit from the north-west, with contours every 10 m, 5 m, 2 m or 1 m as you zoom in. **Show** turns them on and off; **✕ All** deletes them. LINZ keeps one file for each Topo50 map sheet (24 × 36 km), from well under 1 MB where only a strip of coast was surveyed to tens of MB where the whole sheet was; up to 60 are fetched at a time.
 
 The heights are above NZVD2016, about mean sea level, not chart datum: the depths shown are deeper than the charted depths by roughly half the tidal range, so use them for the shape of the bottom, not for clearance. Above 0 m nothing is drawn (the chart shows the land and the drying areas). Surveys were flown in different years, and sand moves. Not for navigation.
+
+**Personal bathymetry.** As Olex and TimeZero's PBG do, TweedPlot builds a seabed from your own soundings: every depth logged along your tracks, and any TimeZero PBG (`.tzpbg`) or XYZ file you import, gridded into cells of about 2 m (TimeZero's own grid, so its files import exactly). Each cell keeps how many soundings went into it, their mean, their spread, the newest date and where they came from. Soundings add up over the years, and the same cell from several trips averages out.
+
+- **Add my tracks** adds the depth logged along every track in the library that has depth (the recorder logs it from the sounder; TimeZero track imports keep it too). Tracks added before are skipped, so press it again after a trip. Spikes are left out: a depth more than 2 m or 10 % off the fixes around it (the sounder losing the bottom, seeing fish or a wake).
+- **Import PBG / XYZ…** reads a TimeZero PBG file, or XYZ text with longitude, latitude and height on each line (negative down, as TimeZero exports). A file imported before is not added again unless you press **Import again** (its soundings would count twice). A large file takes a minute or two.
+- **Personal bathymetry** in **Layers** shows it, from zoom 6 in, over the chart's depth areas. Moving the cursor over it shows the depth there, the spread (±) where there are several soundings, the source, how many soundings and the newest date, on the position line at the bottom.
+- **Colours**: **Rainbow** (red shallow to violet deep, as Olex and PBG) or **Blues** (as charts), over a depth range. **Fit to view** sets the range to the depths in the chart view, so the ground you're working stands out. **Contours** (from 100 m apart when zoomed out to 1 m close in), **Shading** (lit from the north-west) and **Fill small gaps** (up to two cells between soundings; nothing further is made up).
+- **✕ All** deletes it (click twice). The tracks and the imported files stay, so it can be built again. Your soundings stay on this computer: TweedPlot doesn't send them anywhere.
+
+The depths are as the sounder gave them, below the surface or the transducer, not reduced to chart datum: they differ from charted depths by up to half the tidal range, and by the transducer depth. Use them for the shape of the bottom and to find ground again, not for clearance. Not for navigation.
 
 World depths and ETOPO depths are for orientation only. They are coarse, or interpolated near the coast, and routing does not use them: the routing safety depth works only on LINZ depth areas. Not for navigation.
 
