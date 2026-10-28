@@ -4,6 +4,6 @@ fn main() {
     let s = bathy::Store::open(std::path::Path::new(&a[1])).unwrap();
     let before = s.info().unwrap().rejected;
     let t = std::time::Instant::now();
-    let back = s.second_opinion(&mut |_, _, _| {}, &Default::default()).unwrap();
+    let back = s.second_opinion(None, &mut |_, _, _| {}, &Default::default()).unwrap();
     println!("left out {before}: {back} put back in {:?}; now {}", t.elapsed(), s.info().unwrap().rejected);
 }

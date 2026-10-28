@@ -132,7 +132,7 @@ pub async fn pbathy_import(app: tauri::AppHandle, path: String, again: Option<bo
         let t = std::time::Instant::now();
         let reference = if check.unwrap_or(true) { chart_reference() } else { None };
         let (n, rejected) = if pbg { s.import_pbg_checked(&p, reference.as_ref(), &mut prog, &CANCEL) } else { s.import_xyz_checked(&p, reference.as_ref(), &mut prog, &CANCEL) }.map_err(|e| e.to_string())?;
-        let back = if reference.is_some() { s.second_opinion(&mut prog, &CANCEL).map_err(|e| e.to_string())? } else { 0 };
+        let back = if reference.is_some() { s.second_opinion(reference.as_ref(), &mut prog, &CANCEL).map_err(|e| e.to_string())? } else { 0 };
         Ok(serde_json::json!({ "added": n, "rejected": rejected, "back": back, "checked": reference.is_some(), "name": name, "seconds": t.elapsed().as_secs_f64() }))
     })
     .await
@@ -174,7 +174,11 @@ pub async fn pbathy_from_tracks(app: tauri::AppHandle, check: Option<bool>) -> R
         let changed = todo.iter().filter(|t| seeded.contains_key(&t.id)).count();
         let todo: Vec<String> = todo.iter().filter(|t| !seeded.contains_key(&t.id)).map(|t| t.id.clone()).collect();
         if todo.is_empty() {
-            return Ok(serde_json::json!({ "added": 0, "tracks": 0, "with_depth": with_depth.len(), "changed": changed }));
+            // nothing new: still give what was left out a second opinion (the rules improve)
+            let reference = if check.unwrap_or(true) { chart_reference() } else { None };
+            let mut prog = progress(&app);
+            let back = if reference.is_some() { s.second_opinion(reference.as_ref(), &mut prog, &CANCEL).map_err(|e| e.to_string())? } else { 0 };
+            return Ok(serde_json::json!({ "added": back, "back": back, "tracks": 0, "with_depth": with_depth.len(), "changed": changed }));
         }
         let modified: std::collections::HashMap<&str, i64> = tracks.iter().map(|t| (t.id.as_str(), t.modified)).collect();
         let mut w = s.writer("Own tracks", &format!("{} tracks from {}", todo.len(), lib.name()), 0).map_err(|e| e.to_string())?;
@@ -222,7 +226,7 @@ pub async fn pbathy_from_tracks(app: tauri::AppHandle, check: Option<bool>) -> R
         }
         let n = w.finish(&mut prog, &CANCEL).map_err(|e| e.to_string())?;
         // left-out soundings the soundings beside them agree with go back in
-        let back = if reference.is_some() { s.second_opinion(&mut prog, &CANCEL).map_err(|e| e.to_string())? } else { 0 };
+        let back = if reference.is_some() { s.second_opinion(reference.as_ref(), &mut prog, &CANCEL).map_err(|e| e.to_string())? } else { 0 };
         s.changed();
         Ok(serde_json::json!({ "added": n + back, "back": back, "tracks": todo.len(), "with_depth": with_depth.len(), "kept": counts.kept, "dropped": counts.spikes, "counts": counts, "checked": reference.is_some(), "changed": changed }))
     })

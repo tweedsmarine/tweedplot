@@ -193,7 +193,7 @@ export function setupPbathy(map) {
       const r = await invoke("pbathy_from_tracks", { check: check() });
       let t;
       if (!r.with_depth) t = "No tracks in the library have depth logged.";
-      else if (!r.tracks) t = `All ${fmt(r.with_depth)} tracks with depth are in already.`;
+      else if (!r.tracks) t = `All ${fmt(r.with_depth)} tracks with depth are in already.${r.back ? ` ${fmt(r.back)} left-out soundings were put back on a second look.` : ""}`;
       else {
         const c = r.counts || {};
         t = `${fmt(r.tracks)} tracks: ${fmt(r.kept)} soundings added. Left out: ${fmt(c.spikes ?? r.dropped)} spikes`;

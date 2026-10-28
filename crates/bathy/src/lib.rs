@@ -562,8 +562,15 @@ impl Store {
     /// that passed) agree with it, within 5 m or 5 %, goes back in. On a canyon wall or a
     /// shelf break covered by several tracks the chart's coarse bands were wrong, not the
     /// sounder; a sounder locked onto something else disagrees with the soundings beside it.
+    ///
+    /// With `chart`, also: a left-out sounding *deeper* than the chart (a drowned river
+    /// channel or a canyon narrower than the chart's depth areas) goes back in when left-out
+    /// soundings from at least two other days within the same distance agree with it. A
+    /// sounder's faults read shallow (fish, a scattering layer, a held depth), and a run
+    /// from one trip can't vouch for itself; soundings too shallow need passed ones.
+    ///
     /// Returns how many soundings went back in.
-    pub fn second_opinion(&self, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<i64> {
+    pub fn second_opinion(&self, chart: Option<&check::Reference>, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<i64> {
         let keys: Vec<(u32, u32)> = {
             let db = self.db();
             let mut q = db.prepare("SELECT ty, tx FROM left_out WHERE l = ?1 ORDER BY ty, tx")?;
@@ -575,6 +582,8 @@ impl Store {
         }
         let mut w = self.writer("", "", 0)?;
         let mut seabed: HashMap<(u32, u32), Option<Vec<f32>>> = HashMap::new();
+        // left-out cells around (mean, day of the newest sounding), for deep ones' agreement
+        let mut lefts: HashMap<(u32, u32), Option<Vec<(f32, u32)>>> = HashMap::new();
         let mut moved = 0i64;
         const R: i64 = AGREE_CELLS;
         for (k, &(ty, tx)) in keys.iter().enumerate() {
@@ -587,6 +596,9 @@ impl Store {
                 if seabed.len() > 2000 {
                     seabed.clear();
                 }
+                if lefts.len() > 2000 {
+                    lefts.clear();
+                }
             }
             let Some(b) = w.read_in(LEFT_OUT, (MAX_LEVEL, ty, tx))? else { continue };
             let mut left = Dense::new();
@@ -598,6 +610,14 @@ impl Store {
                         continue;
                     }
                     let key = (yy as u32, xx as u32);
+                    if chart.is_some() && !lefts.contains_key(&key) {
+                        let m = w.read_in(LEFT_OUT, (MAX_LEVEL, key.0, key.1))?.map(|b| {
+                            let mut v = vec![(f32::NAN, 0u32); TILE * TILE];
+                            let _ = decode(&b, |x, y, c| v[y * TILE + x] = (c.mean, c.newest / 24));
+                            v
+                        });
+                        lefts.insert(key, m);
+                    }
                     if !seabed.contains_key(&key) {
                         let m = w.read_in(SEABED, (MAX_LEVEL, key.0, key.1))?.map(|b| {
                             let mut v = vec![f32::NAN; TILE * TILE];
@@ -617,6 +637,16 @@ impl Store {
                     _ => f32::NAN,
                 }
             };
+            let left_at = |gx: i64, gy: i64| -> (f32, u32) {
+                if gx < 0 || gy < 0 {
+                    return (f32::NAN, 0);
+                }
+                match lefts.get(&((gy >> 8) as u32, (gx >> 8) as u32)) {
+                    Some(Some(v)) => v[((gy & 255) * TILE as i64 + (gx & 255)) as usize],
+                    _ => (f32::NAN, 0),
+                }
+            };
+            let agree = |a: f64, b: f64| (a - b).abs() <= (0.05 * b.abs()).max(5.0);
             let mut back = Vec::new();
             for i in 0..TILE * TILE {
                 let c = left.0[i];
@@ -634,11 +664,32 @@ impl Store {
                         }
                     }
                 }
-                if n >= 3 {
-                    let mean = sum / n as f64;
-                    if (c.mean as f64 - mean).abs() <= (0.05 * mean.abs()).max(5.0) {
-                        back.push((i, gx as u32, gy as u32, c));
+                if n >= 3 && agree(c.mean as f64, sum / n as f64) {
+                    back.push((i, gx as u32, gy as u32, c));
+                    continue;
+                }
+                // deeper than the chart: other days' left-out soundings beside it
+                let Some(r) = chart else { continue };
+                let (lon, lat) = cell_centre(gx as u32, gy as u32, MAX_LEVEL);
+                let deep = r.at(lon, lat).is_some_and(|(_, hi)| hi.is_finite() && -(c.mean as f64) > hi as f64);
+                if !deep {
+                    continue;
+                }
+                let own = c.newest / 24;
+                let mut days: Vec<u32> = Vec::new();
+                for oy in -R..=R {
+                    for ox in -R..=R {
+                        if ox == 0 && oy == 0 {
+                            continue;
+                        }
+                        let (v, day) = left_at(gx + ox, gy + oy);
+                        if v.is_finite() && day != own && agree(v as f64, c.mean as f64) && !days.contains(&day) {
+                            days.push(day);
+                        }
                     }
+                }
+                if days.len() >= 2 {
+                    back.push((i, gx as u32, gy as u32, c));
                 }
             }
             if back.is_empty() {
@@ -1186,11 +1237,40 @@ mod tests {
         w.reject(173.2 + 10.0 * 0.00003, -41.20002, -70.0, 1, SRC_OWN);
         w.finish(&mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
         assert_eq!(s.info().unwrap().rejected, 2);
-        let back = s.second_opinion(&mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
+        let back = s.second_opinion(None, &mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
         assert_eq!(back, 1);
         let i = s.info().unwrap();
         assert_eq!(i.rejected, 1);
         assert_eq!(i.sources.len(), 1); // no source row for it
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_channel_deeper_than_the_chart_vouched_for_by_other_days() {
+        let dir = std::env::temp_dir().join(format!("bathy-chan-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let s = Store::open(&dir.join("bathy.sqlite")).unwrap();
+        // charted 200–500 m; a narrow channel at ~620 m crossed on three days, all left out,
+        // and a shallow lock-on at 80 m on three days, left out too
+        let chart = check::Reference::new(|b| {
+            let mut g = check::RefGrid::new(b, check::REF_STEP);
+            g.paint(1, 200.0, Some(500.0), &[vec![[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]]]);
+            g
+        });
+        let mut w = s.writer("own", "t", 0).unwrap();
+        for (k, day) in [10u32, 40, 90].iter().enumerate() {
+            let h = day * 24;
+            w.reject(173.2 + k as f64 * 0.00003, -41.2, -620.0 - k as f32, h, SRC_OWN);
+            w.reject(173.3 + k as f64 * 0.00003, -41.2, -80.0, h, SRC_OWN);
+        }
+        // one more deep one on a single day only: nobody else's
+        w.reject(173.4, -41.2, -650.0, 5 * 24, SRC_OWN);
+        w.reject(173.40003, -41.2, -651.0, 5 * 24 + 1, SRC_OWN);
+        w.finish(&mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
+        assert_eq!(s.info().unwrap().rejected, 8);
+        let back = s.second_opinion(Some(&chart), &mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
+        assert_eq!(back, 3, "the channel only");
+        assert_eq!(s.info().unwrap().rejected, 5);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
