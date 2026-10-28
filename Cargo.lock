@@ -168,6 +168,7 @@ dependencies = [
  "flate2",
  "lru",
  "png 0.17.16",
+ "rayon",
  "rusqlite",
  "serde",
  "serde_json",

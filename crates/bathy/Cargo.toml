@@ -9,6 +9,7 @@ description = "Personal bathymetry: the boat's own soundings (and imported TimeZ
 rusqlite.workspace = true
 zip.workspace = true
 lru.workspace = true
+rayon.workspace = true
 flate2 = "1"
 png = "0.17"
 thiserror.workspace = true

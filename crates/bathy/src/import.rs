@@ -40,13 +40,26 @@ pub fn decode_pbg_blob(b: &[u8]) -> Result<Vec<(u8, u8, f32)>> {
 /// Read the finest level of a PBG database, calling `f` for each tile. Returns the level
 /// read and when the file was made (Unix seconds, 0 if unknown).
 pub fn pbg_level16(db: &Path, f: &mut dyn FnMut(PbgTile) -> Result<()>, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<(u8, i64)> {
+    pbg_rows(
+        db,
+        &mut |level, ty, tx, b| match decode_pbg_blob(&b) {
+            Ok(cells) => f(PbgTile { level, ty, tx, cells }),
+            Err(_) => Ok(()), // a damaged tile: skip it
+        },
+        progress,
+        cancel,
+    )
+}
+
+/// The finest level's tiles of a PBG database as stored: `f(level, row from the top,
+/// column, blob)`. Returns the level and when the file was made (Unix seconds, 0 if unknown).
+fn pbg_rows(db: &Path, f: &mut dyn FnMut(u8, u32, u32, Vec<u8>) -> Result<()>, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<(u8, i64)> {
     let c = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
     let has: Option<String> = c.query_row("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'MX_RCL'", [], |r| r.get(0)).optional()?;
     if has.is_none() {
         return Err(Error::Format("not a TimeZero PBG database (no MX_RCL table)".into()));
     }
-    let made: Option<String> = c.query_row("SELECT CAT_PRODDATE FROM MX_CATALOG LIMIT 1", [], |r| r.get(0)).optional().ok().flatten().flatten();
-    let made = made.as_deref().and_then(parse_time).unwrap_or(0);
+    let made = pbg_made(db);
     let Some(level): Option<u8> = c.query_row("SELECT max(l) FROM MX_RCL", [], |r| r.get(0))? else {
         return Ok((MAX_LEVEL, made)); // empty
     };
@@ -68,11 +81,7 @@ pub fn pbg_level16(db: &Path, f: &mut dyn FnMut(PbgTile) -> Result<()>, progress
         if r < 0 || col < 0 || r as u64 >= span || col as u64 >= span {
             continue;
         }
-        let cells = match decode_pbg_blob(&b) {
-            Ok(c) => c,
-            Err(_) => continue, // a damaged tile: skip it
-        };
-        f(PbgTile { level, ty: (span - 1 - r as u64) as u32, tx: col as u32, cells })?;
+        f(level, (span - 1 - r as u64) as u32, col as u32, b)?;
     }
     progress("Reading", total as usize, total as usize);
     Ok((level, made))
@@ -125,7 +134,21 @@ impl Store {
         let add = |db: &Path, w: &mut crate::Writer, progress: &mut dyn FnMut(&str, usize, usize)| -> Result<()> {
             let made = pbg_made(db);
             let h = if made > 0 { hours(made) } else { fallback };
-            pbg_level16(db, &mut |t| put(w, t, h), progress, cancel)?;
+            // tiles a batch at a time: unpacked and merged on all cores
+            let mut batch: Vec<(u8, u32, u32, Vec<u8>)> = Vec::with_capacity(BATCH);
+            pbg_rows(
+                db,
+                &mut |level, ty, tx, b| {
+                    batch.push((level, ty, tx, b));
+                    if batch.len() >= BATCH {
+                        put_batch(w, std::mem::take(&mut batch), h)?;
+                    }
+                    Ok(())
+                },
+                progress,
+                cancel,
+            )?;
+            put_batch(w, batch, h)?;
             Ok(())
         };
         if &magic[..2] == b"PK" {
@@ -206,6 +229,30 @@ impl Store {
         self.changed();
         Ok(n)
     }
+}
+
+const BATCH: usize = 512;
+
+/// Put PBG tiles (as stored) into the store: unpacked in parallel, the finest level merged
+/// a batch at a time, any other level cell by cell.
+fn put_batch(w: &mut crate::Writer, batch: Vec<(u8, u32, u32, Vec<u8>)>, h: u32) -> Result<()> {
+    use rayon::prelude::*;
+    let tiles: Vec<PbgTile> = batch
+        .into_par_iter()
+        .filter_map(|(level, ty, tx, b)| decode_pbg_blob(&b).ok().map(|cells| PbgTile { level, ty, tx, cells }))
+        .collect();
+    let mut finest = Vec::with_capacity(tiles.len());
+    for t in tiles {
+        if t.level == MAX_LEVEL {
+            let cells: Vec<(u8, u8, Cell)> = t.cells.iter().filter(|c| plausible(c.2)).map(|&(x, y, z)| (x, y, Cell::one(z, h, SRC_PBG))).collect();
+            if !cells.is_empty() {
+                finest.push((t.ty, t.tx, cells));
+            }
+        } else {
+            put(w, t, h)?;
+        }
+    }
+    w.add_tiles(finest)
 }
 
 /// Put a PBG tile into the store: straight in when it's at the finest level, else cell by cell.

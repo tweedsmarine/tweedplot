@@ -527,7 +527,7 @@ impl Store {
         let conn = Connection::open(&self.path)?;
         schema(&conn)?;
         conn.execute_batch("BEGIN")?;
-        Ok(Writer { conn, kind: kind.into(), name: name.into(), bytes, dirty: HashSet::new(), pending: HashMap::new(), pending_n: 0, soundings: 0, seeded: Vec::new(), since_commit: 0 })
+        Ok(Writer { conn, kind: kind.into(), name: name.into(), bytes, dirty: HashSet::new(), pending: HashMap::new(), pending_n: 0, soundings: 0, seeded: Vec::new(), since_commit: 0, acc: Acc::new() })
     }
 }
 
@@ -544,21 +544,71 @@ pub struct Writer {
     soundings: i64,
     seeded: Vec<(String, i64)>,
     since_commit: usize,
+    acc: Acc,
 }
 
 const PENDING_MAX: usize = 4_000_000;
 
+/// One tile being built: its cells, and which are in use (so only those are visited).
+struct Acc {
+    d: Vec<Cell>,
+    touched: Vec<u16>,
+}
+
+impl Acc {
+    fn new() -> Acc {
+        Acc { d: vec![Cell::default(); TILE * TILE], touched: Vec::with_capacity(4096) }
+    }
+    #[inline]
+    fn add(&mut self, i: usize, c: &Cell) {
+        if c.n == 0 {
+            return;
+        }
+        let e = &mut self.d[i];
+        if e.n == 0 {
+            self.touched.push(i as u16);
+        }
+        e.merge(c);
+    }
+    /// Add a stored tile: as it is, or (`quadrant` = Some((row, col))) halved into that
+    /// quarter of a tile one level coarser.
+    fn add_blob(&mut self, b: &[u8], quadrant: Option<(usize, usize)>) -> Result<()> {
+        match quadrant {
+            None => decode(b, |x, y, c| self.add(y * TILE + x, &c)),
+            Some((qy, qx)) => decode(b, |x, y, c| self.add((qy * 128 + y / 2) * TILE + qx * 128 + x / 2, &c)),
+        }
+    }
+    /// The tile as stored ([`encode`]'s format), and empty again.
+    fn take(&mut self) -> (usize, Vec<u8>) {
+        self.touched.sort_unstable();
+        let mut raw = Vec::with_capacity(self.touched.len() * REC);
+        for &i in &self.touched {
+            let c = std::mem::take(&mut self.d[i as usize]);
+            raw.push((i as usize % TILE) as u8);
+            raw.push((i as usize / TILE) as u8);
+            raw.extend_from_slice(&c.n.to_le_bytes());
+            raw.extend_from_slice(&c.mean.to_le_bytes());
+            raw.extend_from_slice(&c.m2.to_le_bytes());
+            raw.extend_from_slice(&c.newest.to_le_bytes());
+            raw.push(c.src);
+        }
+        let count = self.touched.len();
+        self.touched.clear();
+        let mut out = Vec::with_capacity(raw.len() / 2 + 16);
+        out.extend_from_slice(MAGIC);
+        out.extend_from_slice(&(count as u32).to_le_bytes());
+        let mut z = flate2::write::ZlibEncoder::new(out, flate2::Compression::fast());
+        let _ = z.write_all(&raw);
+        (count, z.finish().unwrap_or_default())
+    }
+}
+
 impl Writer {
-    fn read(&self, k: Key) -> Result<Option<Dense>> {
-        let b: Option<Vec<u8>> = self.conn.query_row("SELECT data FROM tiles WHERE l = ?1 AND ty = ?2 AND tx = ?3", params![k.0, k.1, k.2], |r| r.get(0)).optional()?;
-        let Some(b) = b else { return Ok(None) };
-        let mut d = Dense::new();
-        decode(&b, |x, y, c| d.0[y * TILE + x] = c)?;
-        Ok(Some(d))
+    fn read_blob(&self, k: Key) -> Result<Option<Vec<u8>>> {
+        Ok(self.conn.query_row("SELECT data FROM tiles WHERE l = ?1 AND ty = ?2 AND tx = ?3", params![k.0, k.1, k.2], |r| r.get(0)).optional()?)
     }
 
-    fn write(&mut self, k: Key, d: &Dense) -> Result<()> {
-        let (n, blob) = encode(d);
+    fn write_blob(&mut self, k: Key, n: usize, blob: &[u8]) -> Result<()> {
         if n == 0 {
             self.conn.execute("DELETE FROM tiles WHERE l = ?1 AND ty = ?2 AND tx = ?3", params![k.0, k.1, k.2])?;
         } else {
@@ -595,26 +645,70 @@ impl Writer {
 
     /// A whole finest-level tile at once (an imported grid): merged with what's there.
     pub fn add_tile(&mut self, ty: u32, tx: u32, cells: &[(u8, u8, Cell)]) -> Result<()> {
-        if let Some(p) = self.pending.remove(&(ty, tx)) {
-            self.pending_n -= p.len();
-            self.merge_into((ty, tx), &p)?;
+        let pend = self.pending.remove(&(ty, tx)).unwrap_or_default();
+        self.pending_n -= pend.len();
+        if let Some(b) = self.read_blob((MAX_LEVEL, ty, tx))? {
+            self.acc.add_blob(&b, None)?;
         }
-        let mut d = self.read((MAX_LEVEL, ty, tx))?.unwrap_or_default();
+        for (i, c) in &pend {
+            self.acc.add(*i as usize, c);
+        }
         for (x, y, c) in cells {
-            d.0[*y as usize * TILE + *x as usize].merge(c);
+            self.acc.add(*y as usize * TILE + *x as usize, c);
             self.soundings += c.n as i64;
         }
-        self.write((MAX_LEVEL, ty, tx), &d)?;
+        let (n, blob) = self.acc.take();
+        self.write_blob((MAX_LEVEL, ty, tx), n, &blob)?;
         self.dirty.insert((ty, tx));
         Ok(())
     }
 
-    fn merge_into(&mut self, k: (u32, u32), cells: &[(u16, Cell)]) -> Result<()> {
-        let mut d = self.read((MAX_LEVEL, k.0, k.1))?.unwrap_or_default();
-        for (i, c) in cells {
-            d.0[*i as usize].merge(c);
+    /// Whole finest-level tiles (an imported grid), merged with what's there on all cores.
+    pub fn add_tiles(&mut self, tiles: Vec<(u32, u32, Vec<(u8, u8, Cell)>)>) -> Result<()> {
+        use rayon::prelude::*;
+        let mut work = Vec::with_capacity(tiles.len());
+        for (ty, tx, cells) in tiles {
+            let pend = self.pending.remove(&(ty, tx)).unwrap_or_default();
+            self.pending_n -= pend.len();
+            let old = self.read_blob((MAX_LEVEL, ty, tx))?;
+            work.push(((ty, tx), old, pend, cells));
         }
-        self.write((MAX_LEVEL, k.0, k.1), &d)?;
+        let built: Vec<Result<((u32, u32), usize, Vec<u8>, i64)>> = work
+            .into_par_iter()
+            .map_init(Acc::new, |acc, (k, old, pend, cells)| {
+                if let Some(b) = &old {
+                    acc.add_blob(b, None)?;
+                }
+                for (i, c) in &pend {
+                    acc.add(*i as usize, c);
+                }
+                let mut n = 0i64;
+                for (x, y, c) in &cells {
+                    acc.add(*y as usize * TILE + *x as usize, c);
+                    n += c.n as i64;
+                }
+                let (count, blob) = acc.take();
+                Ok((k, count, blob, n))
+            })
+            .collect();
+        for r in built {
+            let (k, count, blob, n) = r?;
+            self.write_blob((MAX_LEVEL, k.0, k.1), count, &blob)?;
+            self.dirty.insert(k);
+            self.soundings += n;
+        }
+        Ok(())
+    }
+
+    fn merge_into(&mut self, k: (u32, u32), cells: &[(u16, Cell)]) -> Result<()> {
+        if let Some(b) = self.read_blob((MAX_LEVEL, k.0, k.1))? {
+            self.acc.add_blob(&b, None)?;
+        }
+        for (i, c) in cells {
+            self.acc.add(*i as usize, c);
+        }
+        let (n, blob) = self.acc.take();
+        self.write_blob((MAX_LEVEL, k.0, k.1), n, &blob)?;
         self.dirty.insert(k);
         Ok(())
     }
@@ -640,35 +734,46 @@ impl Writer {
     }
 
     /// Write what's left, rebuild the coarser levels over what changed, and commit.
-    /// `progress(stage, done, total)`.
+    /// `progress(stage, done, total)`. The coarser tiles are built on all cores.
     pub fn finish(mut self, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<i64> {
+        use rayon::prelude::*;
         self.flush()?;
         let mut dirty: HashSet<(u32, u32)> = std::mem::take(&mut self.dirty);
         for level in (MIN_LEVEL..MAX_LEVEL).rev() {
-            if cancel.load(Ordering::Relaxed) {
-                let _ = self.conn.execute_batch("ROLLBACK");
-                return Err(Error::Cancelled);
-            }
             let mut parents: Vec<(u32, u32)> = dirty.iter().map(|&(y, x)| (y >> 1, x >> 1)).collect::<HashSet<_>>().into_iter().collect();
             parents.sort();
             let total = parents.len();
-            for (i, &(py, px)) in parents.iter().enumerate() {
-                if i % 500 == 0 {
-                    progress(&format!("Coarser levels: level {level}"), i, total);
+            for (ci, chunk) in parents.chunks(1024).enumerate() {
+                if cancel.load(Ordering::Relaxed) {
+                    let _ = self.conn.execute_batch("ROLLBACK");
+                    return Err(Error::Cancelled);
                 }
-                let mut d = Dense::new();
-                for (cy, cx) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
-                    let Some(child) = self.read((level + 1, py * 2 + cy, px * 2 + cx))? else { continue };
-                    for y in 0..TILE {
-                        for x in 0..TILE {
-                            let c = child.0[y * TILE + x];
-                            if c.n > 0 {
-                                d.0[(cy as usize * 128 + y / 2) * TILE + cx as usize * 128 + x / 2].merge(&c);
-                            }
+                progress(&format!("Coarser levels: level {level}"), ci * 1024, total);
+                // read the children (one connection), merge them on all cores, write
+                let mut work: Vec<((u32, u32), Vec<((usize, usize), Vec<u8>)>)> = Vec::with_capacity(chunk.len());
+                for &(py, px) in chunk {
+                    let mut kids = Vec::with_capacity(4);
+                    for (cy, cx) in [(0u32, 0u32), (0, 1), (1, 0), (1, 1)] {
+                        if let Some(b) = self.read_blob((level + 1, py * 2 + cy, px * 2 + cx))? {
+                            kids.push(((cy as usize, cx as usize), b));
                         }
                     }
+                    work.push(((py, px), kids));
                 }
-                self.write((level, py, px), &d)?;
+                let built: Vec<Result<((u32, u32), usize, Vec<u8>)>> = work
+                    .into_par_iter()
+                    .map_init(Acc::new, |acc, (k, kids)| {
+                        for (q, b) in &kids {
+                            acc.add_blob(b, Some(*q))?;
+                        }
+                        let (n, blob) = acc.take();
+                        Ok((k, n, blob))
+                    })
+                    .collect();
+                for r in built {
+                    let (k, n, blob) = r?;
+                    self.write_blob((level, k.0, k.1), n, &blob)?;
+                }
             }
             dirty = parents.into_iter().collect();
         }
