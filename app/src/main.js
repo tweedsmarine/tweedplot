@@ -116,7 +116,7 @@ const map = new maplibregl.Map({
       // high-resolution depths (LINZ coastal elevation, 1 m), drawn in Rust as images
       hires: { type: "raster", tiles: [TILE_URL.replace("{z}/{x}/{y}.pbf", "hires/{z}/{x}/{y}.png")], tileSize: 256, minzoom: 10, maxzoom: 18 },
       // own soundings (from tracks, TimeZero PBG and XYZ imports), drawn in Rust as images
-      pbathy: { type: "raster", tiles: [TILE_URL.replace("{z}/{x}/{y}.pbf", "pbathy/{z}/{x}/{y}.png")], tileSize: 256, minzoom: 6, maxzoom: 20 },
+      pbathy: { type: "raster", tiles: [TILE_URL.replace("{z}/{x}/{y}.pbf", "pbathy/{z}/{x}/{y}.png")], tileSize: 256, minzoom: 3, maxzoom: 20 },
     },
     layers: [
       { id: "sea", type: "background", paint: { "background-color": css("--sea") } },
@@ -137,7 +137,7 @@ const map = new maplibregl.Map({
       { id: "hires", type: "raster", source: "hires", minzoom: 10, layout: { visibility: localStorage.getItem("racenav.hires.show") === "0" ? "none" : "visible" },
         paint: { "raster-opacity": 0.92, "raster-resampling": "linear" } },
       // over the charted depths too: it's what the skipper surveyed (not for navigation)
-      { id: "pbathy", type: "raster", source: "pbathy", minzoom: 6, layout: { visibility: localStorage.getItem("racenav.pbathy.show") === "1" ? "visible" : "none" },
+      { id: "pbathy", type: "raster", source: "pbathy", minzoom: 3, layout: { visibility: localStorage.getItem("racenav.pbathy.show") === "1" ? "visible" : "none" },
         paint: { "raster-opacity": 0.95, "raster-resampling": "nearest" } },
       { id: "depcnt", type: "line", source: "chart", "source-layer": "depcnt", layout: { visibility: "none" },
         paint: { "line-color": "#7d97a6", "line-width": 0.6 } },

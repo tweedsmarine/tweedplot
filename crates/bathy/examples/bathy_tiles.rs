@@ -7,6 +7,7 @@ fn main() {
         std::process::exit(2);
     }
     let s = bathy::Store::open(std::path::Path::new(&a[1])).unwrap();
+    s.ensure_levels().unwrap();
     let z: u8 = a[2].parse().unwrap();
     let f = |i: usize| a[i].parse::<f64>().unwrap();
     let (w, so, e, n) = (f(3), f(4), f(5), f(6));

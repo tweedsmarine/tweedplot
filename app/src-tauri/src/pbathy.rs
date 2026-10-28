@@ -30,7 +30,16 @@ pub fn dir(app: &tauri::AppHandle) -> PathBuf {
 /// Open the store (at start-up; quick, nothing is read until drawn).
 pub fn open(app: &tauri::AppHandle) {
     match bathy::Store::open(&dir(app).join("bathy.sqlite")) {
-        Ok(s) => *STORE.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(s)),
+        Ok(s) => {
+            let s = Arc::new(s);
+            *STORE.write().unwrap_or_else(|e| e.into_inner()) = Some(s.clone());
+            // a store from an older TweedPlot: the zoomed-out levels (a few tiles)
+            std::thread::spawn(move || {
+                if let Err(e) = s.ensure_levels() {
+                    eprintln!("own soundings: {e}");
+                }
+            });
+        }
         Err(e) => eprintln!("own soundings: {e}"),
     }
 }

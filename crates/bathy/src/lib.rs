@@ -37,7 +37,9 @@ pub use render::{Palette, Style};
 /// The finest level (TimeZero's).
 pub const MAX_LEVEL: u8 = 16;
 /// The coarsest level kept (a tile is about 600 km across).
-pub const MIN_LEVEL: u8 = 6;
+pub const MIN_LEVEL: u8 = 3;
+/// The coarsest level stores made before 30 Oct 2026 have (see [`Store::ensure_levels`]).
+const OLD_MIN_LEVEL: u8 = 6;
 /// Cells along a tile's side.
 pub const TILE: usize = 256;
 
@@ -274,6 +276,54 @@ pub struct Info {
     pub rejected: i64,
 }
 
+/// The area holding nearly all the soundings [w, s, e, n] (e may pass 180), from the
+/// level-10 tiles weighted by their cells: the outermost 0.5 % each side (a stray fix, a
+/// sounding at 0° 0°) is left out, and an area across 180° (the Chatham Rise) stays whole.
+fn main_area(db: &Connection) -> Result<Option<[f64; 4]>> {
+    const L: u8 = 10;
+    let mut q = db.prepare("SELECT ty, tx, n FROM tiles WHERE l = ?1")?;
+    let t: Vec<(i64, i64, i64)> = q.query_map([L], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<std::result::Result<_, _>>()?;
+    if t.is_empty() {
+        return Ok(None);
+    }
+    let n = 1i64 << L;
+    let total: i64 = t.iter().map(|x| x.2.max(1)).sum();
+    // (lowest, highest) tile index holding all but `cut` of the cells either side
+    let range = |mut v: Vec<(i64, i64)>| -> (i64, i64) {
+        v.sort();
+        let cut = total / 200;
+        let (mut acc, mut lo) = (0, v[0].0);
+        for &(i, c) in &v {
+            acc += c;
+            if acc > cut {
+                lo = i;
+                break;
+            }
+        }
+        let (mut acc, mut hi) = (0, v[v.len() - 1].0);
+        for &(i, c) in v.iter().rev() {
+            acc += c;
+            if acc > cut {
+                hi = i;
+                break;
+            }
+        }
+        (lo, hi)
+    };
+    let (y0, y1) = range(t.iter().map(|x| (x.0, x.2.max(1))).collect());
+    let (x0, x1) = range(t.iter().map(|x| (x.1, x.2.max(1))).collect());
+    // the same with longitudes counted from 0° (so 180° is in the middle)
+    let (s0, s1) = range(t.iter().map(|x| ((x.1 + n / 2) % n, x.2.max(1))).collect());
+    let (x0, x1) = if s1 - s0 < x1 - x0 { (s0 - n / 2, s1 - n / 2) } else { (x0, x1) };
+    let nf = n as f64;
+    let w = x0 as f64 / nf * 360.0 - 180.0;
+    let e = (x1 + 1) as f64 / nf * 360.0 - 180.0;
+    let (_, north) = from_world(0.0, y0 as f64 / nf);
+    let (_, south) = from_world(0.0, (y1 + 1) as f64 / nf);
+    let w2 = (w + 180.0).rem_euclid(360.0) - 180.0;
+    Ok(Some([w2, south, w2 + (e - w), north]))
+}
+
 /// The sounding at a place.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Sounding {
@@ -436,19 +486,7 @@ impl Store {
     pub fn info(&self) -> Result<Info> {
         let db = self.db();
         let (cells, tiles): (i64, i64) = db.query_row("SELECT coalesce(sum(n), 0), count(*) FROM tiles WHERE l = ?1", [MAX_LEVEL], |r| Ok((r.get(0)?, r.get(1)?)))?;
-        let b: Option<(i64, i64, i64, i64)> = db
-            .query_row("SELECT min(tx), min(ty), max(tx), max(ty) FROM tiles WHERE l = ?1", [MAX_LEVEL], |r| {
-                Ok(match (r.get::<_, Option<i64>>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, Option<i64>>(2)?, r.get::<_, Option<i64>>(3)?) {
-                    (Some(a), Some(b), Some(c), Some(d)) => Some((a, b, c, d)),
-                    _ => None,
-                })
-            })?;
-        let bounds = b.map(|(x0, y0, x1, y1)| {
-            let n = (1u64 << MAX_LEVEL) as f64;
-            let (w, nn) = from_world(x0 as f64 / n, y0 as f64 / n);
-            let (e, s) = from_world((x1 + 1) as f64 / n, (y1 + 1) as f64 / n);
-            [w, s, e, nn]
-        });
+        let bounds = main_area(&db)?;
         let mut q = db.prepare("SELECT kind, name, bytes, added, soundings, rejected FROM sources ORDER BY id")?;
         let sources = q
             .query_map([], |r| Ok(SourceInfo { kind: r.get(0)?, name: r.get(1)?, bytes: r.get(2)?, added: r.get(3)?, soundings: r.get(4)?, rejected: r.get(5)? }))?
@@ -456,6 +494,30 @@ impl Store {
         let rejected: i64 = db.query_row("SELECT coalesce(sum(n), 0) FROM rejected", [], |r| r.get(0))?;
         let bytes = ["", "-wal"].iter().filter_map(|s| std::fs::metadata(format!("{}{s}", self.path.display())).ok()).map(|m| m.len()).sum();
         Ok(Info { cells, tiles, bounds, bytes, sources, rejected })
+    }
+
+    /// Build the coarsest levels where a store made by an older TweedPlot stops at level 6
+    /// (quick: a few tiles). Called on opening.
+    pub fn ensure_levels(&self) -> Result<()> {
+        let (old, new): (i64, i64) = self.db().query_row(
+            "SELECT (SELECT count(*) FROM tiles WHERE l = ?1), (SELECT count(*) FROM tiles WHERE l = ?2)",
+            params![OLD_MIN_LEVEL, MIN_LEVEL],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        if old == 0 || new > 0 {
+            return Ok(());
+        }
+        let keys: Vec<(u32, u32)> = {
+            let db = self.db();
+            let mut q = db.prepare("SELECT ty, tx FROM tiles WHERE l = ?1")?;
+            let k = q.query_map([OLD_MIN_LEVEL], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<std::result::Result<_, _>>()?;
+            k
+        };
+        let mut w = self.writer("", "", 0)?;
+        w.build_levels(OLD_MIN_LEVEL, keys.into_iter().collect(), &mut |_, _, _| {}, &AtomicBool::new(false))?;
+        w.conn.execute_batch("COMMIT")?;
+        self.changed();
+        Ok(())
     }
 
     /// The tracks already added, with their modified times.
@@ -782,14 +844,10 @@ impl Writer {
         self.soundings
     }
 
-    /// Write what's left, rebuild the coarser levels over what changed, and commit.
-    /// `progress(stage, done, total)`. The coarser tiles are built on all cores.
-    pub fn finish(mut self, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<i64> {
+    /// Rebuild the levels coarser than `from` over its tiles `dirty` (ty, tx), on all cores.
+    fn build_levels(&mut self, from: u8, mut dirty: HashSet<(u32, u32)>, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<()> {
         use rayon::prelude::*;
-        self.flush()?;
-        self.flush_rejected()?;
-        let mut dirty: HashSet<(u32, u32)> = std::mem::take(&mut self.dirty);
-        for level in (MIN_LEVEL..MAX_LEVEL).rev() {
+        for level in (MIN_LEVEL..from).rev() {
             let mut parents: Vec<(u32, u32)> = dirty.iter().map(|&(y, x)| (y >> 1, x >> 1)).collect::<HashSet<_>>().into_iter().collect();
             parents.sort();
             let total = parents.len();
@@ -827,6 +885,16 @@ impl Writer {
             }
             dirty = parents.into_iter().collect();
         }
+        Ok(())
+    }
+
+    /// Write what's left, rebuild the coarser levels over what changed, and commit.
+    /// `progress(stage, done, total)`. The coarser tiles are built on all cores.
+    pub fn finish(mut self, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<i64> {
+        self.flush()?;
+        self.flush_rejected()?;
+        let dirty: HashSet<(u32, u32)> = std::mem::take(&mut self.dirty);
+        self.build_levels(MAX_LEVEL, dirty, progress, cancel)?;
         for (id, m) in std::mem::take(&mut self.seeded) {
             self.conn.execute("INSERT OR REPLACE INTO seeded (track_id, modified) VALUES (?1, ?2)", params![id, m])?;
         }
@@ -882,6 +950,44 @@ mod tests {
         assert!((a.mean - mean).abs() < 1e-5);
         assert!((a.spread() - var.sqrt()).abs() < 1e-4);
         assert_eq!((a.newest, a.src), (20, SRC_OWN | SRC_PBG));
+    }
+
+    #[test]
+    fn main_area_skips_strays_and_spans_180() {
+        let dir = std::env::temp_dir().join(format!("bathy-area-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let s = Store::open(&dir.join("bathy.sqlite")).unwrap();
+        let mut w = s.writer("own", "t", 0).unwrap();
+        // the Chatham Rise either side of 180°, and one stray fix at 0° 0°
+        for i in 0..400 {
+            w.add(179.0 + i as f64 * 0.005, -43.5, -400.0, 1, SRC_OWN).unwrap();
+        }
+        w.add(0.0, 0.0, -50.0, 1, SRC_OWN).unwrap();
+        w.finish(&mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
+        let b = s.info().unwrap().bounds.unwrap();
+        assert!(b[0] > 178.5 && b[0] < 179.1 && b[2] > 180.9 && b[2] < 181.5, "{b:?}");
+        assert!(b[1] < -43.5 && b[3] > -43.5 && b[3] - b[1] < 1.0, "{b:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn old_stores_get_the_coarse_levels() {
+        let dir = std::env::temp_dir().join(format!("bathy-old-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let s = Store::open(&dir.join("bathy.sqlite")).unwrap();
+        let mut w = s.writer("own", "t", 0).unwrap();
+        for i in 0..50 {
+            w.add(173.2 + i as f64 * 0.001, -41.2, -30.0, 1, SRC_OWN).unwrap();
+        }
+        w.finish(&mut |_, _, _| {}, &AtomicBool::new(false)).unwrap();
+        // as an older TweedPlot left it: nothing below level 6
+        s.db().execute("DELETE FROM tiles WHERE l < 6", []).unwrap();
+        s.ensure_levels().unwrap();
+        let b: Vec<u8> = s.db().query_row("SELECT data FROM tiles WHERE l = 3", [], |r| r.get(0)).unwrap();
+        let mut n = 0;
+        decode(&b, |_, _, c| n += c.n).unwrap();
+        assert_eq!(n, 50);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -132,7 +132,12 @@ export function setupPbathy(map) {
       li.textContent = `${s.kind}: ${s.name} · ${fmt(s.soundings)} soundings${s.rejected ? ` (${fmt(s.rejected)} left out)` : ""} · ${new Date(s.added * 1000).toLocaleDateString()}`;
       ul.append(li);
     }
-    $("pb-zoom").onclick = () => i.bounds && map.fitBounds([[i.bounds[0], i.bounds[1]], [i.bounds[2], i.bounds[3]]], { padding: 40, duration: 600 });
+    // the area with nearly all of them (strays left out), and the layer turned on
+    $("pb-zoom").onclick = () => {
+      if (!i.bounds) return;
+      if (!visible()) setShow(true);
+      map.fitBounds([[i.bounds[0], i.bounds[1]], [i.bounds[2], i.bounds[3]]], { padding: 40, duration: 600 });
+    };
   }
 
   const startJob = (title) => {
