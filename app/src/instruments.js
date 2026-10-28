@@ -62,6 +62,10 @@ export const ITEMS = {
   CLAT: { label: "Cursor lat", unit: "", group: "Cursor", wide: true, get: (c) => c.cursor?.[1] ?? null, fmt: (x) => ddm(x, "N", "S") },
   CLON: { label: "Cursor lon", unit: "", group: "Cursor", wide: true, get: (c) => c.cursor?.[0] ?? null, fmt: (x) => ddm(x, "E", "W") },
   CBRG: { label: "Brg to cursor", unit: "°T", group: "Cursor", get: (c) => cursorLeg(c)?.brg ?? null, fmt: deg3 },
+  // own soundings (Chart data) under the cursor, from zoom 9 in
+  CSND: { label: "Own sounding", unit: "m", group: "Cursor", get: (c) => (c.sounding ? -c.sounding.z : null), fmt: f1 },
+  CSNDS: { label: "Sounding spread", unit: "±m", group: "Cursor", get: (c) => (c.sounding && c.sounding.n > 1 ? c.sounding.spread : null), fmt: f1 },
+  CSNDN: { label: "Soundings", unit: "", group: "Cursor", get: (c) => c.sounding?.n ?? null, fmt: (n) => String(n) },
   CRNG: { label: "Rng to cursor", unit: "NM", group: "Cursor", get: (c) => cursorLeg(c)?.nm ?? null, fmt: (x) => (x < 10 ? x.toFixed(2) : x.toFixed(1)) },
 
   // the GRIB shown on the chart, at the cursor and the slider time (Weather panel)

@@ -30,10 +30,11 @@ export function ownSoundingsScale() {
 }
 const visible = () => mapRef?.getLayer("pbathy") && mapRef.getLayoutProperty("pbathy", "visibility") === "visible";
 
-// the sounding under the cursor, asked for at most every 150 ms
+// the sounding under the cursor, asked for at most every 150 ms: `show(text, sounding)`, the
+// text for the position line (only with the layer shown), the sounding for the instruments
 let atBusy = false, atNext = null;
 export function pbathyAt(lon, lat, show) {
-  if (!visible() || (mapRef && mapRef.getZoom() < 9)) { show(""); return; }
+  if (mapRef && mapRef.getZoom() < 9) { show("", null); return; }
   atNext = [lon, lat, show];
   if (atBusy) return;
   atBusy = true;
@@ -41,14 +42,15 @@ export function pbathyAt(lon, lat, show) {
     const [lo, la, cb] = atNext; atNext = null;
     try {
       const s = await invoke("pbathy_at", { lon: lo, lat: la });
-      if (!s || s.z >= 0) cb("");
+      if (!s || s.z >= 0) cb("", null);
+      else if (!visible()) cb("", s);
       else {
         const src = Object.entries(SRC).filter(([b]) => s.src & +b).map(([, n]) => n).join("+");
         const spread = s.n > 1 && s.spread >= 0.05 ? ` ±${s.spread.toFixed(1)}` : "";
         const when = s.newest ? `, ${new Date(s.newest * 1000).toLocaleDateString()}` : "";
-        cb(`${(-s.z).toFixed(1)} m${spread} (${src}, ${s.n}×${when})`);
+        cb(`${(-s.z).toFixed(1)} m${spread} (${src}, ${s.n}×${when})`, s);
       }
-    } catch { cb(""); }
+    } catch { cb("", null); }
     setTimeout(() => { if (atNext) run(); else atBusy = false; }, 150);
   };
   run();

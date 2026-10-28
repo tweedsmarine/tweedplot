@@ -659,12 +659,12 @@ map.on("mousemove", (e) => {
   const where = `${ddm(e.lngLat.lat, "N", "S")}  ${ddm(e.lngLat.lng, "E", "W")}`;
   document.getElementById("cursor").textContent = where;
   // with own soundings shown: the sounding under the cursor
-  pbathyAt(e.lngLat.lng, e.lngLat.lat, (t) => { document.getElementById("cursor").textContent = t ? `${where}  ·  ${t}` : where; });
+  pbathyAt(e.lngLat.lng, e.lngLat.lat, (t, s) => { document.getElementById("cursor").textContent = t ? `${where}  ·  ${t}` : where; inst.update({ sounding: s }); });
   setCursor([e.lngLat.lng, e.lngLat.lat]);
 });
 // touch screens have no hover: a tap sets the cursor
 map.on("click", (e) => setCursor([e.lngLat.lng, e.lngLat.lat]));
-map.getCanvas().addEventListener("mouseleave", () => { setCursor(null); if (!signalKActive()) arrows?.clear(); });
+map.getCanvas().addEventListener("mouseleave", () => { setCursor(null); inst.update({ sounding: null }); if (!signalKActive()) arrows?.clear(); });
 
 // ---------- follow / track -------------------------------------------------
 let follow = true;
