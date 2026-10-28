@@ -48,6 +48,13 @@ pub const SRC_OWN: u8 = 1;
 pub const SRC_PBG: u8 = 2;
 pub const SRC_XYZ: u8 = 4;
 pub const SRC_OTHER: u8 = 8;
+/// Why a left-out sounding was left out (more bits of [`Cell::src`], left-out cells only).
+pub const WHY_SPIKE: u8 = 16;
+pub const WHY_SHALLOW: u8 = 32;
+pub const WHY_DEEP: u8 = 64;
+pub const WHY_RUN: u8 = 128;
+/// The source bits of [`Cell::src`] (without the reasons).
+pub const SRC_BITS: u8 = 15;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -479,6 +486,15 @@ impl Store {
 
     /// The sounding at a place: the finest cell there, else the nearest within two cells.
     pub fn sounding_at(&self, lon: f64, lat: f64) -> Option<Sounding> {
+        self.sounding_in(SEABED, lon, lat)
+    }
+
+    /// A left-out sounding at a place (within two cells), with why in its `src` bits.
+    pub fn left_out_at(&self, lon: f64, lat: f64) -> Option<Sounding> {
+        self.sounding_in(LEFT_OUT, lon, lat)
+    }
+
+    fn sounding_in(&self, table: &str, lon: f64, lat: f64) -> Option<Sounding> {
         let (cx, cy) = cell_of(lon, lat, MAX_LEVEL)?;
         let mut tiles: HashMap<(u32, u32), Option<Dense>> = HashMap::new();
         let mut best: Option<(i64, Cell, u32, u32)> = None;
@@ -489,7 +505,13 @@ impl Store {
                     continue;
                 }
                 let (x, y) = (x as u32, y as u32);
-                let t = tiles.entry((y >> 8, x >> 8)).or_insert_with(|| self.tile(MAX_LEVEL, y >> 8, x >> 8).ok().flatten());
+                let t = tiles.entry((y >> 8, x >> 8)).or_insert_with(|| {
+                    self.blob_in(table, (MAX_LEVEL, y >> 8, x >> 8)).ok().flatten().and_then(|b| {
+                        let mut d = Dense::new();
+                        decode(&b, |x, y, c| d.0[y * TILE + x] = c).ok()?;
+                        Some(d)
+                    })
+                });
                 let Some(t) = t else { continue };
                 let c = t.0[(y as usize & 255) * TILE + (x as usize & 255)];
                 let d2 = dx * dx + dy * dy;
@@ -687,7 +709,8 @@ impl Store {
         let mut by_tile: HashMap<(u32, u32), Vec<usize>> = HashMap::new();
         let mut moved = 0i64;
         for &k in &back {
-            let (gx, gy, c) = cells[k];
+            let (gx, gy, mut c) = cells[k];
+            c.src &= SRC_BITS;
             by_tile.entry(((gy >> 8) as u32, (gx >> 8) as u32)).or_default().push(((gy & 255) * TILE as i64 + (gx & 255)) as usize);
             w.add_cell(gx as u32, gy as u32, c)?;
             moved += c.n as i64;

@@ -211,7 +211,13 @@ pub async fn pbathy_from_tracks(app: tauri::AppHandle, check: Option<bool>) -> R
                                 return;
                             }
                         } else if d.is_finite() && d > 0.0 {
-                            w.reject(p.lon, p.lat, -(d as f32), h, bathy::SRC_OWN);
+                            let why = match v {
+                                bathy::check::Verdict::Spike => bathy::WHY_SPIKE,
+                                bathy::check::Verdict::OffDeep => bathy::WHY_DEEP,
+                                bathy::check::Verdict::Run => bathy::WHY_RUN,
+                                _ => bathy::WHY_SHALLOW,
+                            };
+                            w.reject(p.lon, p.lat, -(d as f32), h, bathy::SRC_OWN | why);
                         }
                     }
                 }
@@ -259,6 +265,12 @@ pub fn pbathy_fit(area: [f64; 4]) -> Option<(f32, f32)> {
 #[tauri::command]
 pub fn pbathy_at(lon: f64, lat: f64) -> Option<bathy::Sounding> {
     store()?.sounding_at(lon, lat)
+}
+
+/// A left-out sounding at a place, and why it was left out.
+#[tauri::command]
+pub fn pbathy_left_at(lon: f64, lat: f64) -> Option<bathy::Sounding> {
+    store()?.left_out_at(lon, lat)
 }
 
 /// Delete all of it.

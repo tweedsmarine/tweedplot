@@ -236,8 +236,9 @@ impl Store {
             if !plausible(z) {
                 continue;
             }
-            if chart.is_some_and(|c| c.at(lon, lat).is_some_and(|rg| crate::check::off_chart(-z as f64, rg))) {
-                w.reject(lon, lat, z, h, SRC_XYZ);
+            if let Some(rg) = chart.and_then(|c| c.at(lon, lat)).filter(|rg| crate::check::off_chart(-z as f64, *rg)) {
+                let why = if (-z as f64) < rg.0 as f64 { crate::WHY_SHALLOW } else { crate::WHY_DEEP };
+                w.reject(lon, lat, z, h, SRC_XYZ | why);
                 continue;
             }
             w.add(lon, lat, z, h, SRC_XYZ)?;
@@ -256,20 +257,22 @@ const BATCH: usize = 512;
 fn put_batch(w: &mut crate::Writer, batch: Vec<(u8, u32, u32, Vec<u8>)>, h: u32, chart: Option<&crate::check::Reference>) -> Result<()> {
     use rayon::prelude::*;
     // unpacked, and (finest level) checked against the chart, on all cores
-    let tiles: Vec<(PbgTile, Vec<(u8, u8, f32)>)> = batch
+    let tiles: Vec<(PbgTile, Vec<(u8, u8, f32, u8)>)> = batch
         .into_par_iter()
         .filter_map(|(level, ty, tx, b)| decode_pbg_blob(&b).ok().map(|cells| PbgTile { level, ty, tx, cells }))
         .map(|mut t| {
-            let mut bad = Vec::new();
+            let mut bad: Vec<(u8, u8, f32, u8)> = Vec::new();
             if let (Some(r), true) = (chart, t.level == MAX_LEVEL) {
                 t.cells.retain(|&(x, y, z)| {
                     if !plausible(z) {
                         return true; // dropped below anyway
                     }
                     let (lon, lat) = crate::cell_centre(t.tx * 256 + x as u32, t.ty * 256 + y as u32, MAX_LEVEL);
-                    let off = r.at(lon, lat).is_some_and(|rg| crate::check::off_chart(-z as f64, rg));
+                    let rg = r.at(lon, lat);
+                    let off = rg.is_some_and(|rg| crate::check::off_chart(-z as f64, rg));
                     if off {
-                        bad.push((x, y, z));
+                        let shallow = rg.is_some_and(|rg| (-z as f64) < rg.0 as f64);
+                        bad.push((x, y, z, if shallow { crate::WHY_SHALLOW } else { crate::WHY_DEEP }));
                     }
                     !off
                 });
@@ -279,8 +282,8 @@ fn put_batch(w: &mut crate::Writer, batch: Vec<(u8, u32, u32, Vec<u8>)>, h: u32,
         .collect();
     let mut finest = Vec::with_capacity(tiles.len());
     for (t, bad) in tiles {
-        for (x, y, z) in bad {
-            w.reject_cell(t.tx * 256 + x as u32, t.ty * 256 + y as u32, Cell::one(z, h, SRC_PBG));
+        for (x, y, z, why) in bad {
+            w.reject_cell(t.tx * 256 + x as u32, t.ty * 256 + y as u32, Cell::one(z, h, SRC_PBG | why));
         }
         if t.level == MAX_LEVEL {
             let cells: Vec<(u8, u8, Cell)> = t.cells.iter().filter(|c| plausible(c.2)).map(|&(x, y, z)| (x, y, Cell::one(z, h, SRC_PBG))).collect();

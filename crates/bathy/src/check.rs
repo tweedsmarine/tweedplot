@@ -197,8 +197,10 @@ pub enum Verdict {
     Keep,
     /// A spike: far off the fixes around it.
     Spike,
-    /// Well outside the charted depth here.
+    /// Well shallower than the charted depth here.
     OffChart,
+    /// Well deeper than the charted depth here.
+    OffDeep,
     /// In a run of the track that is mostly off the chart (the sounder locked onto something
     /// else for a while): left out as a whole.
     Run,
@@ -221,7 +223,7 @@ impl CheckCounts {
             match x {
                 Verdict::Keep => self.kept += 1,
                 Verdict::Spike => self.spikes += 1,
-                Verdict::OffChart => self.off_chart += 1,
+                Verdict::OffChart | Verdict::OffDeep => self.off_chart += 1,
                 Verdict::Run => self.in_runs += 1,
                 Verdict::None => {}
             }
@@ -246,34 +248,35 @@ fn metres(a: (f64, f64), b: (f64, f64)) -> f64 {
 /// chart is left out whole, the ones that happened to fit included; elsewhere only the
 /// depths off the chart are.
 pub fn check_segment(fixes: &[(f64, f64, Option<f64>)], chart: &dyn Fn(f64, f64) -> Option<(f32, f32)>) -> (Vec<Verdict>, usize, usize) {
-    let d: Vec<Option<f64>> = fixes.iter().map(|f| f.2).collect();
-    let keep = crate::clean_depths(&d);
+    let d: Vec<Option<f64>> = fixes.iter().map(|f| f.2.filter(|v| v.is_finite() && *v > 0.3 && *v < 11_000.0)).collect();
+    let spike = spikes(fixes, &d);
     let mut v: Vec<Verdict> = (0..fixes.len())
-        .map(|i| match (d[i], keep[i]) {
-            (None, _) => Verdict::None,
-            (Some(_), false) => Verdict::Spike,
+        .map(|i| match (fixes[i].2, d[i], spike[i]) {
+            (None, _, _) => Verdict::None,
+            (Some(_), None, _) | (_, _, true) => Verdict::Spike,
             _ => Verdict::Keep,
         })
         .collect();
-    let mut off = vec![None::<bool>; fixes.len()];
+    // -1 well shallower than the chart, 1 well deeper, 0 within it, None no chart
+    let mut off = vec![None::<i8>; fixes.len()];
     let mut unchecked = 0;
     for i in 0..fixes.len() {
         if v[i] == Verdict::Keep {
-            off[i] = chart(fixes[i].0, fixes[i].1).map(|r| off_chart(d[i].unwrap_or(0.0), r));
+            let dd = d[i].unwrap_or(0.0);
+            off[i] = chart(fixes[i].0, fixes[i].1).map(|r| if !off_chart(dd, r) { 0 } else if dd < r.0 as f64 { -1 } else { 1 });
             if off[i].is_none() {
                 unchecked += 1;
             }
         }
     }
+    let mark = |o: Option<i8>| if o == Some(1) { Verdict::OffDeep } else { Verdict::OffChart };
     // runs between impossible jumps
     let kept: Vec<usize> = (0..fixes.len()).filter(|&i| v[i] == Verdict::Keep).collect();
     let mut runs: Vec<Vec<usize>> = Vec::new();
     for (k, &i) in kept.iter().enumerate() {
         let new = k == 0 || {
             let p = kept[k - 1];
-            let (a, b) = (d[p].unwrap_or(0.0), d[i].unwrap_or(0.0));
-            let dist = metres((fixes[p].0, fixes[p].1), (fixes[i].0, fixes[i].1));
-            (a - b).abs() > 5.0 + 0.2 * a.max(b) + dist
+            jump(fixes, &d, p, i)
         };
         if new {
             runs.push(Vec::new());
@@ -283,22 +286,73 @@ pub fn check_segment(fixes: &[(f64, f64, Option<f64>)], chart: &dyn Fn(f64, f64)
     let mut dropped = 0;
     for run in &runs {
         let checked = run.iter().filter(|&&i| off[i].is_some()).count();
-        let bad = run.iter().filter(|&&i| off[i] == Some(true)).count();
+        // only runs too shallow go whole (a sounder locked onto something above the bottom)
+        let bad = run.iter().filter(|&&i| off[i] == Some(-1)).count();
         if checked > 0 && bad * 2 >= checked {
             dropped += 1;
             for &i in run {
-                v[i] = if off[i] == Some(true) { Verdict::OffChart } else { Verdict::Run };
+                v[i] = if off[i].is_some_and(|o| o != 0) { mark(off[i]) } else { Verdict::Run };
             }
         } else {
             for &i in run {
-                if off[i] == Some(true) {
-                    v[i] = Verdict::OffChart;
+                if off[i].is_some_and(|o| o != 0) {
+                    v[i] = mark(off[i]);
                 }
             }
         }
     }
     (v, dropped, unchecked)
 }
+
+/// How much the depth (m) may change between fixes `a` and `b` on a real seabed: a 63° slope
+/// over the distance run, plus 10 m and 10 % (the sounder's own scatter, heave).
+fn allow(fixes: &[(f64, f64, Option<f64>)], d: &[Option<f64>], a: usize, b: usize) -> f64 {
+    let dist = metres((fixes[a].0, fixes[a].1), (fixes[b].0, fixes[b].1));
+    10.0 + 0.1 * d[a].unwrap_or(0.0).max(d[b].unwrap_or(0.0)) + 2.0 * dist
+}
+
+fn jump(fixes: &[(f64, f64, Option<f64>)], d: &[Option<f64>], a: usize, b: usize) -> bool {
+    (d[a].unwrap_or(0.0) - d[b].unwrap_or(0.0)).abs() > allow(fixes, d, a, b)
+}
+
+/// Spikes: short excursions (up to [`SPIKE_FIXES`] fixes) that start and end with depth jumps
+/// steeper than a seabed could be ([`allow`]), one each way, with the depths either side of
+/// them agreeing. Crossing a narrow channel or a bank goes down and up at a believable slope
+/// and stays; a fish school, the wake or a lost bottom jumps and comes back.
+fn spikes(fixes: &[(f64, f64, Option<f64>)], d: &[Option<f64>]) -> Vec<bool> {
+    let idx: Vec<usize> = (0..fixes.len()).filter(|&i| d[i].is_some()).collect();
+    let mut out = vec![false; fixes.len()];
+    let dep = |i: usize| d[i].unwrap_or(0.0);
+    let mut k = 1;
+    while k + 1 < idx.len() {
+        let (p, i) = (idx[k - 1], idx[k]);
+        if !jump(fixes, d, p, i) {
+            k += 1;
+            continue;
+        }
+        let up = dep(i) < dep(p);
+        let mut found = None;
+        for m in k..(k + SPIKE_FIXES).min(idx.len() - 1) {
+            let (a, b) = (idx[m], idx[m + 1]);
+            if jump(fixes, d, a, b) && (dep(b) < dep(a)) != up && !jump(fixes, d, p, b) {
+                found = Some(m);
+                break;
+            }
+        }
+        if let Some(m) = found {
+            for &j in &idx[k..=m] {
+                out[j] = true;
+            }
+            k = m + 1;
+        } else {
+            k += 1;
+        }
+    }
+    out
+}
+
+/// The longest spike (fixes).
+pub const SPIKE_FIXES: usize = 5;
 
 #[cfg(test)]
 mod tests {
@@ -335,6 +389,29 @@ mod tests {
         assert_eq!(g.at(170.6, -41.5), Some((500.0, 1000.0)));
         assert_eq!(g.at(170.2, -41.5), Some((200.0, 500.0)));
         assert_eq!(g.at(169.95, -41.5), None);
+    }
+
+    #[test]
+    fn channels_stay_and_spikes_go() {
+        let none = |_: f64, _: f64| None;
+        // steaming east, a fix every ~17 m, 300 m deep; a channel 80 m deeper crossed at
+        // ~20° walls; a one-fix lost bottom; and a 3-fix fish school at 120 m
+        let mut f = Vec::new();
+        for i in 0..80 {
+            let lon = 170.0 + i as f64 * 0.0002;
+            let d = match i {
+                20..=31 => 300.0 + 80.0 * (1.0 - ((i as f64 - 25.5) / 6.0).abs()).max(0.0) * 1.0,
+                45 => 2.0,
+                60..=62 => 120.0,
+                _ => 300.0 + (i % 3) as f64,
+            };
+            f.push((lon, -41.5, Some(d)));
+        }
+        let (v, _, _) = check_segment(&f, &none);
+        assert!(v[20..32].iter().all(|x| *x == Verdict::Keep), "{:?}", &v[18..34]);
+        assert_eq!(v[45], Verdict::Spike);
+        assert!(v[60..63].iter().all(|x| *x == Verdict::Spike), "{:?}", &v[58..65]);
+        assert_eq!(v.iter().filter(|x| **x == Verdict::Spike).count(), 4);
     }
 
     #[test]

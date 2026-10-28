@@ -3597,6 +3597,7 @@ pub fn run() {
             pbathy::pbathy_style,
             pbathy::pbathy_fit,
             pbathy::pbathy_at,
+            pbathy::pbathy_left_at,
             pbathy::pbathy_clear,
             rules_at,
             rule_info,

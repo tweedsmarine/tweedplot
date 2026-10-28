@@ -33,6 +33,7 @@ const visible = () => mapRef?.getLayer("pbathy") && mapRef.getLayoutProperty("pb
 // the sounding under the cursor, asked for at most every 150 ms: `show(text, sounding)`, the
 // text for the position line (only with the layer shown), the sounding for the instruments
 let atBusy = false, atNext = null;
+const WHY = { 16: "spike", 32: "too shallow for the chart", 64: "too deep for the chart", 128: "in a run mostly off the chart" };
 export function pbathyAt(lon, lat, show) {
   if (mapRef && mapRef.getZoom() < 9) { show("", null); return; }
   atNext = [lon, lat, show];
@@ -42,14 +43,23 @@ export function pbathyAt(lon, lat, show) {
     const [lo, la, cb] = atNext; atNext = null;
     try {
       const s = await invoke("pbathy_at", { lon: lo, lat: la });
-      if (!s || s.z >= 0) cb("", null);
-      else if (!visible()) cb("", s);
-      else {
+      const parts = [];
+      if (s && s.z < 0 && visible()) {
         const src = Object.entries(SRC).filter(([b]) => s.src & +b).map(([, n]) => n).join("+");
         const spread = s.n > 1 && s.spread >= 0.05 ? ` ±${s.spread.toFixed(1)}` : "";
         const when = s.newest ? `, ${new Date(s.newest * 1000).toLocaleDateString()}` : "";
-        cb(`${(-s.z).toFixed(1)} m${spread} (${src}, ${s.n}×${when})`, s);
+        parts.push(`${(-s.z).toFixed(1)} m${spread} (${src}, ${s.n}×${when})`);
       }
+      // with Show left out: a left-out sounding here, and why
+      if (visible() && current.rejected) {
+        const l = await invoke("pbathy_left_at", { lon: lo, lat: la }).catch(() => null);
+        if (l) {
+          const why = Object.entries(WHY).filter(([b]) => l.src & +b).map(([, n]) => n).join(", ") || "off the chart";
+          const when = l.newest ? `, ${new Date(l.newest * 1000).toLocaleDateString()}` : "";
+          parts.push(`left out: ${(-l.z).toFixed(1)} m, ${why}${when}`);
+        }
+      }
+      cb(parts.join("  ·  "), s && s.z < 0 ? s : null);
     } catch { cb("", null); }
     setTimeout(() => { if (atNext) run(); else atBusy = false; }, 150);
   };
