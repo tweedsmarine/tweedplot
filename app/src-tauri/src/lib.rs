@@ -534,9 +534,21 @@ fn grib_grid(
                     .collect(),
             )
         }
+        "ssh" => f.grid_at(P::SeaLevel, t)?,
+        // the way the water flows, degrees true
+        "currentdir" => {
+            let ((g, u), (_, v)) = (f.grid_at(P::CurrentU, t)?, f.grid_at(P::CurrentV, t)?);
+            (
+                g,
+                u.iter()
+                    .zip(&v)
+                    .map(|(a, b)| (a.atan2(*b).to_degrees() + 360.0) % 360.0)
+                    .collect(),
+            )
+        }
         _ => return None,
     };
-    let turn = ((g.lon0 + g.dlon * (g.ni as f64 - 1.0) / 2.0 - (bbox[0] + bbox[2]) / 2.0) / 360.0)
+    let turn =  ((g.lon0 + g.dlon * (g.ni as f64 - 1.0) / 2.0 - (bbox[0] + bbox[2]) / 2.0) / 360.0)
         .round()
         * 360.0;
     let bbox = [bbox[0] + turn, bbox[1], bbox[2] + turn, bbox[3]];
@@ -558,6 +570,7 @@ fn grib_grid(
             let k = match layer.as_str() {
                 "sst" | "subt" | "sss" | "subs" | "skin" => 100.0,
                 "chl" => 1000.0,
+                "ssh" => 100.0,
                 _ => 10.0,
             };
             out.push(x.is_finite().then(|| (x * k).round() / k));
@@ -810,6 +823,7 @@ fn point_values(f: &grib::GribFile, lat: f64, lon: f64, t: i64) -> serde_json::V
                     "subs": f.value(grib::Param::SubSalinity, lat, lon, t).map(|s| (s * 100.0).round() / 100.0),
                     "skin": f.value(grib::Param::SkinTemp, lat, lon, t).map(|k| ((k - 273.15) * 100.0).round() / 100.0),
                     "chl": f.value(grib::Param::Chlorophyll, lat, lon, t).map(|c| (c * 1000.0).round() / 1000.0),
+                    "ssh": f.value(grib::Param::SeaLevel, lat, lon, t).map(|h| (h * 100.0).round() / 100.0),
                     "depth": f.series(grib::Param::SubTemp).first().or(f.series(grib::Param::SubSalinity).first()).map(|x| x.surface_value),
                     "cur": f.current(lat, lon, t).map(|(u, v)| serde_json::json!({
                         "kn": ((u * u + v * v).sqrt() * 3600.0 / 1852.0 * 100.0).round() / 100.0,
@@ -851,6 +865,23 @@ async fn grib_along(first: Option<String>, pts: Vec<(f64, f64, i64)>) -> Vec<ser
     })
     .await
     .unwrap_or_default()
+}
+
+/// Ask where to save a weather snapshot (PNG) and write it; returns the path, or None if cancelled.
+#[tauri::command]
+async fn weather_save_png(app: tauri::AppHandle, data: Vec<u8>, suggest: Option<String>) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let mut d = app.dialog().file().set_title("Save the weather view").add_filter("PNG image", &["png"]);
+    if let Some(s) = suggest {
+        d = d.set_file_name(&s);
+    }
+    let Some(p) = d.blocking_save_file() else { return Ok(None) };
+    let mut p = p.into_path().map_err(|e| e.to_string())?;
+    if p.extension().is_none_or(|x| !x.eq_ignore_ascii_case("png")) {
+        p.set_extension("png");
+    }
+    std::fs::write(&p, data).map_err(|e| e.to_string())?;
+    Ok(Some(p.to_string_lossy().into_owned()))
 }
 
 /// Signal K URL: `RACENAV_SK_URL` environment variable, else the local server.
@@ -3759,6 +3790,7 @@ pub fn run() {
             library_save_copy,
             library_merge,
             library_file_contents,
+            weather_save_png,
             pbathy::pbathy_pick_xyz_save,
             pbathy::pbathy_export_xyz,
             pbathy::pbathy_import_from_library,

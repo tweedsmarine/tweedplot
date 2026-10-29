@@ -232,7 +232,7 @@ impl Model {
             },
             Model::HycomEspc => ModelInfo {
                 id: self,
-                name: "HYCOM ocean model 1/12° (temperature, salinity, currents)",
+                name: "HYCOM ocean model 1/12° (temperature, salinity, currents, sea surface height)",
                 res_deg: 0.08,
                 max_hours: 192,
                 // the surface fields are hourly, but the server is very slow on hourly
@@ -242,6 +242,7 @@ impl Model {
                     ParamInfo { id: "sst", name: "Sea surface temperature", fields: 1, default: true },
                     ParamInfo { id: "sss", name: "Sea surface salinity", fields: 1, default: true },
                     ParamInfo { id: "current", name: "Surface currents", fields: 2, default: true },
+                    ParamInfo { id: "ssh", name: "Sea surface height (non-tidal analysis and forecast)", fields: 1, default: false },
                     ParamInfo { id: "depth", name: "Temperature and salinity at a depth", fields: 2, default: false },
                 ],
                 delay_h: 0,

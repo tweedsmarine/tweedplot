@@ -53,6 +53,7 @@
         <div class="wx-row checks">
           <label id="wx-arrows-row"><input id="wx-arrows" type="checkbox" /> Wind barbs</label>
           <label id="wx-wavearrows-row"><input id="wx-wavearrows" type="checkbox" /> Wave direction</label>
+          <label id="wx-currarrows-row" title="Blue arrows showing which way the current flows, longer where it is stronger"><input id="wx-currarrows" type="checkbox" /> Current direction</label>
           <span id="wx-isobars-row" class="iso"><label><input id="wx-isobars" type="checkbox" /> Isobars</label>
             <select id="wx-isostep" title="Isobar interval. Auto: wider when zoomed out (×2 below zoom 4, ×4 below zoom 2.5)">
               <option value="1">1 hPa</option><option value="2">2 hPa</option><option value="3">3 hPa</option><option value="4">4 hPa</option>
@@ -674,6 +675,7 @@
       <button id="haul-btn" class="tb-fish" aria-label="Haul" title="Haul (right-click or hold to choose net, line or pots)"><svg viewBox="0 0 24 24"><path d="M3 8c2 1.5 4 1.5 6 0s4-1.5 6 0 4 1.5 6 0"/><path d="M12 21V11M8 15l4-4 4 4"/></svg><span class="tb-gear"></span></button>
       <button id="pb-tb" aria-label="Own soundings" title="Own soundings: show or hide your soundings as a seabed in this view, with the depth range card (on in Planning, off in Navigation to begin with)"><svg viewBox="0 0 24 24"><path d="M2 7c2.5 1.5 5 1.5 7.5 0s5-1.5 7.5 0 3.5 1.5 5 0"/><path d="M2 20l4-5 3 2 4-6 3 3 3-4 3 2v8z" class="fill" opacity=".55"/></svg></button>
       <button id="targets-btn" title="Target list: AIS targets with range, bearing, CPA and TCPA (T)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/><circle cx="16" cy="9" r="1.2" fill="currentColor"/></svg></button>
+      <button id="wx-pop-btn" aria-label="Weather panel" title="Weather panel: time slider, what to show from the loaded GRIBs, the filter and the readout at the cursor"><svg viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .6-7.95A5.5 5.5 0 0 0 7 9.5 4.3 4.3 0 0 0 7 18z"/><path d="M8 21l1-2M12 21l1-2M16 21l1-2"/></svg></button>
       <button id="view-btn" aria-label="View" title="View: Navigation, Planning or Instruments (right-click for the chart and the other views)">
         <svg viewBox="0 0 24 24"></svg></button>
       <button id="tools-btn" aria-label="Show or hide the panels" title="Show or hide the panels and dock in this view">

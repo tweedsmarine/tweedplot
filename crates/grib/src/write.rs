@@ -66,7 +66,7 @@ fn decimals(f: &Field) -> i32 {
         Param::SeaTemp | Param::SubTemp => 2,
         Param::Salinity | Param::SubSalinity => 3,
         Param::SkinTemp => 2,
-        Param::Chlorophyll => 3,
+        Param::Chlorophyll | Param::SeaLevel => 3,
         _ => 3,
     }
 }

@@ -174,6 +174,11 @@ fn hycom_parts(params: &[String]) -> (Vec<&'static str>, bool) {
     (surf, has("depth"))
 }
 
+/// HYCOM's separate hourly water surface elevation dataset.
+fn hycom_ssh(params: &[String]) -> bool {
+    params.iter().any(|x| x == "ssh")
+}
+
 fn iso(t: i64) -> String {
     chrono::DateTime::from_timestamp(t, 0).unwrap_or_default().format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
@@ -182,7 +187,7 @@ fn iso(t: i64) -> String {
 /// fields; "ts3z": 3-hourly temperature and salinity at depths).
 pub fn hycom_url(dataset: &str, vars: &[&str], area: [f64; 4], t0: i64, hours: u32, every: u32, depth: Option<f64>) -> Result<String> {
     let [w, s, e, n] = area_ok(area)?;
-    let native = if dataset == "ice" { 1 } else { 3 };
+    let native = if dataset == "ice" || dataset == "ssh" { 1 } else { 3 };
     let stride = (every.max(native) / native).max(1);
     let vars: String = vars.iter().map(|v| format!("var={v}&")).collect();
     let vert = depth.map(|d| format!("&vertCoord={d}")).unwrap_or_default();
@@ -215,6 +220,7 @@ fn kind_of(var: &str, depth: Option<f64>) -> Option<Kind> {
         "ssv" | "water_v" => Kind { param: Param::CurrentV, category: 1, number: 3, surface_type: 1, kelvin: false },
         "sea_surface_temperature" => Kind { param: Param::SkinTemp, category: 3, number: 192, surface_type: 1, kelvin: true },
         "chlor_a" => Kind { param: Param::Chlorophyll, category: 4, number: 192, surface_type: 1, kelvin: false },
+        "surf_el" => Kind { param: Param::SeaLevel, category: 3, number: 1, surface_type: 1, kelvin: false },
         _ => return None,
     })
 }
@@ -345,7 +351,8 @@ pub fn download(req: &Request, now: i64, dir: &Path, progress: Progress, cancel:
         }
         Model::HycomEspc => {
             let (surf, deep) = hycom_parts(&req.params);
-            if surf.is_empty() && !deep {
+            let ssh = hycom_ssh(&req.params);
+            if surf.is_empty() && !deep && !ssh {
                 return Err(Error::Bad("choose at least one parameter".into()));
             }
             // from the last whole 3 hours (the analysis) to the forecast length asked
@@ -362,6 +369,9 @@ pub fn download(req: &Request, now: i64, dir: &Path, progress: Progress, cancel:
                 if !surf.is_empty() {
                     jobs.push(("ice", surf.clone(), start, len, req.every, None));
                 }
+                if ssh {
+                    jobs.push(("ssh", vec!["surf_el"], start, len, req.every, None));
+                }
                 if deep {
                     let dep = if req.depth > 0.0 { req.depth } else { 50.0 };
                     jobs.push(("ts3z", vec!["water_temp", "salinity"], start, len, req.every.max(3), Some(dep)));
@@ -376,7 +386,7 @@ pub fn download(req: &Request, now: i64, dir: &Path, progress: Progress, cancel:
                     return Err(Error::Cancelled);
                 }
                 // the day's last step only (the next day's request starts on the next one)
-                let span = if *len >= 24 { 24 - every.max(&if *ds == "ice" { 1 } else { 3 }) } else { *len };
+                let span = if *len >= 24 { 24 - every.max(&if *ds == "ice" || *ds == "ssh" { 1 } else { 3 }) } else { *len };
                 let url = hycom_url(ds, vars, req.area, *start, span, *every, *dep)?;
                 let data = get_retry(&slow, &url, cancel)?;
                 bytes += data.len() as u64;

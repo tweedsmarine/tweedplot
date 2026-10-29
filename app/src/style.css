@@ -884,6 +884,28 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 .float-win header .grow { flex: 1; }
 .float-win header select, .float-win header button { flex: none; width: auto; min-width: 0; font-size: 11px; padding: 1px 6px; cursor: pointer; }
 .float-win footer { padding: 3px 8px; border-top: 1px solid var(--line); }
+/* the pop-up Weather panel */
+#wxp { width: 340px; height: auto; max-height: calc(100vh - 120px); min-width: 280px; resize: horizontal; top: 70px; right: 70px; }
+#wxp.folded .wxp-body, #wxp.folded .wxp-run, #wxp.folded .wx-legend, #wxp.folded .seafilter { display: none; }
+#wxp .wxp-body { overflow: auto; padding: 0 8px 6px; }
+#wxp .wxp-head { font-weight: 600; padding: 4px 0 2px; border-top: 1px solid var(--line); }
+#wxp .wxp-run { padding: 3px 8px; font-size: 11px; opacity: 0.8; }
+#wxp .wxp-run.stale { color: #b3261e; opacity: 1; font-weight: 600; }
+#wxp .wxp-time { padding: 2px 8px; }
+#wxp .wx-mini { position: static; }
+#wxp details { border-top: 1px solid var(--line); padding: 3px 0; }
+#wxp summary { cursor: pointer; font-weight: 600; padding: 2px 0; }
+#wxp .wxp-row { display: flex; align-items: center; gap: 6px; padding: 1px 0; cursor: pointer; }
+#wxp .wxp-row select { margin-left: auto; max-width: 150px; font-size: 11px; }
+#wxp .wxp-row .wx-note { margin-left: auto; }
+#wxp .wxp-presets { display: flex; gap: 4px; margin-top: 4px; }
+#wxp .wxp-presets select { flex: 1; min-width: 0; }
+#wxp .wxp-grid { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; font-variant-numeric: tabular-nums; }
+#wxp .wxp-grid span { opacity: 0.7; }
+#wxp .wxp-warn { margin-top: 4px; padding: 3px 6px; border-radius: 4px; min-height: 1.4em; font-weight: 600; }
+#wxp .wxp-warn:not(:empty) { background: #fde7e5; color: #8c1d18; }
+#wxp .seafilter { margin-top: 4px; }
+#wx-pop-btn.on { background: var(--tile-bg); color: var(--tile-ink); }
 .tgt-scroll { flex: 1; overflow: auto; }
 #tgt-table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
 #tgt-table th { position: sticky; top: 0; z-index: 2; background: #fff; box-shadow: 0 1px 0 var(--line); text-align: left; padding: 3px 5px; border-bottom: 1px solid var(--line); cursor: pointer; white-space: nowrap; font-weight: 600; }

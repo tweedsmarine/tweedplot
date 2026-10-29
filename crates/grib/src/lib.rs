@@ -80,6 +80,8 @@ pub enum Param {
     SkinTemp,
     /// Chlorophyll-a concentration (mg m-3), local code 10/4/192.
     Chlorophyll,
+    /// Sea surface height above the geoid (m), 10/3/1 "deviation of sea level from mean".
+    SeaLevel,
     Other(u8, u8, u8),
 }
 
@@ -105,6 +107,7 @@ impl Param {
             (0, 7, 6) => Param::Cape,
             (10, 3, 192) => Param::SkinTemp,
             (10, 4, 192) => Param::Chlorophyll,
+            (10, 3, 1) => Param::SeaLevel,
             (10, 3, 0) if surface == 160 => Param::SubTemp,
             (10, 3, 0) => Param::SeaTemp,
             (10, 4, 21) if surface == 160 => Param::SubSalinity,
@@ -587,6 +590,7 @@ pub fn scan(path: impl AsRef<Path>) -> Result<FileInfo, GribError> {
                     Param::SeaTemp | Param::SubTemp => "sea temperature",
                     Param::SkinTemp => "satellite sea temperature",
                     Param::Chlorophyll => "chlorophyll",
+                    Param::SeaLevel => "sea surface height",
                     Param::Salinity | Param::SubSalinity => "salinity",
                     Param::Other(..) => "other",
                 };
@@ -690,6 +694,7 @@ pub fn fmt_area(b: &[f64; 4]) -> String {
 pub fn hold_s(p: Param) -> (i64, i64) {
     match p {
         Param::SeaTemp | Param::Salinity | Param::SubTemp | Param::SubSalinity => (12 * 3600, 4 * 86400),
+        Param::SeaLevel => (3600, 12 * 3600),
         // hourly satellite views: the last stands half a day
         Param::SkinTemp => (3600, 12 * 3600),
         // daily, and three days old when published
