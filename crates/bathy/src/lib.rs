@@ -32,6 +32,7 @@ pub mod check;
 pub mod live;
 mod import;
 mod render;
+pub mod share;
 pub use import::{clean_depths, decode_pbg_blob, pbg_level16, pbg_made, PbgTile};
 pub use render::{Palette, Style};
 
@@ -816,7 +817,7 @@ impl Store {
 
     /// Remove everything.
     pub fn clear(&self) -> Result<()> {
-        self.db().execute_batch("DELETE FROM tiles; DELETE FROM rejected; DELETE FROM left_out; DELETE FROM sources; DELETE FROM seeded; VACUUM;")?;
+        self.db().execute_batch("DELETE FROM tiles; DELETE FROM rejected; DELETE FROM left_out; DELETE FROM sources; DELETE FROM seeded; DELETE FROM meta WHERE k = 'origin'; VACUUM;")?;
         self.changed();
         Ok(())
     }

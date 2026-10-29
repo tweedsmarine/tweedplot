@@ -4,9 +4,37 @@
 use std::path::Path;
 
 use rusqlite::{params, Connection};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{now, Library, Result};
+
+/// Which categories a merge brings in (all by default).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Scope {
+    pub marks: bool,
+    pub routes: bool,
+    pub tracks: bool,
+    pub events: bool,
+    pub trips: bool,
+    pub routings: bool,
+    pub barriers: bool,
+}
+
+impl Default for Scope {
+    fn default() -> Self {
+        Scope { marks: true, routes: true, tracks: true, events: true, trips: true, routings: true, barriers: true }
+    }
+}
+
+/// The categories an export keeps besides the chosen marks, routes, tracks and logs
+/// (none by default).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Also {
+    pub trips: bool,
+    pub routings: bool,
+    pub barriers: bool,
+}
 
 /// The tables that have a Trash, with how a row is named and described in it.
 const KINDS: [(&str, &str, &str); 7] = [
@@ -56,6 +84,8 @@ pub struct Counts {
     pub tracks: usize,
     pub routings: usize,
     pub barriers: usize,
+    pub events: usize,
+    pub trips: usize,
 }
 
 fn fill_ids(c: &Connection, ids: &[String]) -> Result<()> {
@@ -172,13 +202,24 @@ impl Library {
         n.routes = tx.execute("UPDATE routes SET deleted_at = ?2 WHERE import_id = ?1 AND deleted_at IS NULL", params![id, t])?;
         n.tracks = tx.execute("UPDATE tracks SET deleted_at = ?2 WHERE import_id = ?1 AND deleted_at IS NULL", params![id, t])?;
         n.barriers = tx.execute("UPDATE barriers SET deleted_at = ?2 WHERE import_id = ?1 AND deleted_at IS NULL", params![id, t])?;
+        n.events = tx.execute("UPDATE events SET deleted_at = ?2 WHERE import_id = ?1 AND deleted_at IS NULL", params![id, t])?;
         tx.commit()?;
         Ok(n)
     }
 
-    /// Write the chosen marks, routes (with their marks) and tracks as a library file of
-    /// their own at `to`, e.g. to give another boat. The library in use is unchanged.
-    pub fn export_library(&self, to: &Path, marks: &[String], routes: &[String], tracks: &[String], events: &[String], keep_notes: bool) -> Result<Counts> {
+    /// What a library file holds, without opening it as a library (nothing in it changes):
+    /// how many of each category, for previewing before a merge.
+    pub fn peek(path: &Path) -> Result<Counts> {
+        let c = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        // a library made before a table existed (the log, trips) simply has none
+        let count = |t: &str| c.query_row(&format!("SELECT count(*) FROM {t} WHERE deleted_at IS NULL"), [], |r| r.get::<_, i64>(0)).map(|n| n as usize).unwrap_or(0);
+        Ok(Counts { marks: count("marks"), routes: count("routes"), tracks: count("tracks"), routings: count("routings"), barriers: count("barriers"), events: count("events"), trips: count("trips") })
+    }
+
+    /// Write the chosen marks, routes (with their marks), tracks and logs, and whole
+    /// categories of trips, routings and barriers (`also`), as a library file of their own
+    /// at `to`, e.g. to give another boat. The library in use is unchanged.
+    pub fn export_library(&self, to: &Path, marks: &[String], routes: &[String], tracks: &[String], events: &[String], also: Also, keep_notes: bool) -> Result<Counts> {
         if to.canonicalize().ok().is_some_and(|p| Some(p) == self.path().canonicalize().ok()) {
             return Err(crate::Error::Store("that's the library in use: choose another file".into()));
         }
@@ -204,12 +245,20 @@ impl Library {
             )?;
             tx.execute("DELETE FROM tracks WHERE deleted_at IS NOT NULL OR id NOT IN (SELECT id FROM keep_tracks)", [])?;
             tx.execute("DELETE FROM events WHERE deleted_at IS NOT NULL OR id NOT IN (SELECT id FROM keep_events)", [])?;
-            for t in ["routings", "barriers", "trips", "imports"] {
-                tx.execute(&format!("DELETE FROM {t}"), [])?;
+            for (t, keep) in [("routings", also.routings), ("barriers", also.barriers), ("trips", also.trips)] {
+                if keep {
+                    tx.execute(&format!("DELETE FROM {t} WHERE deleted_at IS NOT NULL"), [])?;
+                } else {
+                    tx.execute(&format!("DELETE FROM {t}"), [])?;
+                }
             }
+            tx.execute("DELETE FROM imports", [])?;
+            tx.execute("UPDATE barriers SET import_id = NULL", [])?;
             tx.execute("UPDATE events SET import_id = NULL", [])?;
             if !keep_notes {
                 tx.execute("UPDATE events SET notes = ''", [])?;
+                tx.execute("UPDATE trips SET notes = ''", [])?;
+                tx.execute("UPDATE barriers SET notes = ''", [])?;
             }
             for t in ["marks", "routes", "tracks"] {
                 tx.execute(&format!("UPDATE {t} SET import_id = NULL, trip_id = NULL"), [])?;
@@ -218,7 +267,7 @@ impl Library {
                 }
             }
             let count = |t: &str| tx.query_row(&format!("SELECT count(*) FROM {t}"), [], |r| r.get::<_, i64>(0)).map(|n| n as usize);
-            let n = Counts { marks: count("marks")?, routes: count("routes")?, tracks: count("tracks")?, ..Default::default() };
+            let n = Counts { marks: count("marks")?, routes: count("routes")?, tracks: count("tracks")?, routings: count("routings")?, barriers: count("barriers")?, events: count("events")?, trips: count("trips")? };
             tx.commit()?;
             c.execute_batch("VACUUM")?;
             Ok(n)
@@ -238,6 +287,7 @@ impl Library {
 
 #[cfg(test)]
 mod tests {
+    use super::{Also, Scope};
     use crate::{Library, Mark};
 
     fn mark(name: &str, lat: f64) -> Mark {
@@ -274,11 +324,29 @@ mod tests {
         // part of it as a library of its own
         let keep: Vec<String> = lib.marks().unwrap().into_iter().filter(|m| m.name != "A").map(|m| m.id).collect();
         let out = dir.join("part.gpkg");
-        let n = lib.export_library(&out, &keep, &[], &[], &[], true).unwrap();
+        let n = lib.export_library(&out, &keep, &[], &[], &[], Also::default(), true).unwrap();
         assert_eq!(n.marks, 2);
         let other = Library::open_file(&out).unwrap();
         assert_eq!(other.marks().unwrap().len(), 2);
         assert_eq!(lib.marks().unwrap().len(), 3);
+
+        // categories as a whole, a peek into the file, and a merge of only some of it
+        lib.save_barrier(crate::Barrier { name: "Cable".into(), points: vec![[174.0, -36.0], [174.1, -36.0]], ..Default::default() }).unwrap();
+        lib.save_trip(crate::Trip { name: "Trip 1".into(), started: Some(1000), ended: Some(2000), ..Default::default() }).unwrap();
+        lib.save_event(crate::Event { kind: "note".into(), name: "Note".into(), at: 1500, ..Default::default() }).unwrap();
+        let all = dir.join("all.gpkg");
+        let ev: Vec<String> = lib.events().unwrap().into_iter().map(|e| e.id).collect();
+        lib.export_library(&all, &[], &[], &[], &ev, Also { trips: true, barriers: true, routings: false }, true).unwrap();
+        let c = Library::peek(&all).unwrap();
+        assert_eq!((c.marks, c.events, c.trips, c.barriers, c.routings), (0, 1, 1, 1, 0));
+        let fresh = Library::open_file(dir.join("fresh.gpkg")).unwrap();
+        let only = Scope { marks: false, routes: false, tracks: false, events: true, trips: false, routings: false, barriers: false };
+        let rep = fresh.merge_from_scope(&all, only, &mut |_, _, _| {}, &std::sync::atomic::AtomicBool::new(false)).unwrap();
+        assert_eq!(rep.events_added, 1);
+        assert_eq!((fresh.events().unwrap().len(), fresh.trips().unwrap().len(), fresh.barriers().unwrap().len()), (1, 0, 0));
+        let rep = fresh.merge_from(&all, &mut |_, _, _| {}, &std::sync::atomic::AtomicBool::new(false)).unwrap();
+        assert_eq!((rep.events_added, rep.trips_added), (0, 1));
+        assert_eq!((fresh.trips().unwrap().len(), fresh.barriers().unwrap().len()), (1, 1));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

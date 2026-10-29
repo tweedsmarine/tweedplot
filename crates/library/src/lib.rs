@@ -25,7 +25,7 @@ pub mod protect;
 mod overlay;
 pub use overlay::Overlay;
 pub use trips::Trip;
-pub use manage::{Counts, ImportInfo, TrashItem};
+pub use manage::{Also, Counts, ImportInfo, Scope, TrashItem};
 pub mod store;
 pub mod tracks;
 pub mod tzd;
@@ -211,6 +211,14 @@ pub struct ImportReport {
     /// Routes in the file that were already here.
     pub routes_matched: usize,
     pub tracks_added: Vec<String>,
+    #[serde(default)]
+    pub routings_added: usize,
+    #[serde(default)]
+    pub barriers_added: usize,
+    #[serde(default)]
+    pub events_added: usize,
+    #[serde(default)]
+    pub trips_added: usize,
     /// What the file held that wasn't brought in (TimeZero lines, areas, circles, tracks).
     #[serde(default)]
     pub not_imported: Vec<String>,
@@ -547,6 +555,13 @@ impl Library {
     /// tracks (matched by their first and last fix), routings and barriers (by id). The
     /// other library isn't changed. `progress(step, done, total)`; `cancel` stops part way.
     pub fn merge_from(&self, other: &Path, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<ImportReport> {
+        self.merge_from_scope(other, Scope::default(), progress, cancel)
+    }
+
+    /// [`Library::merge_from`] bringing in only the categories in `scope`, and the logs and
+    /// trips (by id, and by name and start). Routes need their marks: with marks left out
+    /// the marks the chosen routes use still come in.
+    pub fn merge_from_scope(&self, other: &Path, scope: Scope, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<ImportReport> {
         if other.canonicalize().ok() == self.path().canonicalize().ok() {
             return Err(Error::Store("that's the library already open".into()));
         }
@@ -555,7 +570,12 @@ impl Library {
         let id = self.begin_import(&other.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), "library")?;
         let mut rep = ImportReport::default();
         // marks: the same id is the same mark; else matched as an import matches
-        let theirs = o.marks()?;
+        let mut theirs = o.marks()?;
+        let their_routes = if scope.routes { o.routes()? } else { Vec::new() };
+        if !scope.marks {
+            let used: std::collections::HashSet<&str> = their_routes.iter().flat_map(|r| r.marks.iter().map(|m| m.mark.as_str()).chain(r.start_mark.as_deref())).collect();
+            theirs.retain(|m| used.contains(m.id.as_str()));
+        }
         let mut ours = self.marks()?;
         let by_id: std::collections::HashSet<String> = ours.iter().map(|m| m.id.clone()).collect();
         const CELL: f64 = 0.01;
@@ -609,7 +629,7 @@ impl Library {
         let mut known: std::collections::HashSet<(String, Vec<String>)> = self.routes()?.iter().map(|r| route_key(&r.name, &r.marks)).collect();
         let route_ids: std::collections::HashSet<String> = self.routes()?.into_iter().map(|r| r.id).collect();
         let mut new_routes = Vec::new();
-        for mut r in o.routes()? {
+        for mut r in their_routes {
             for x in &mut r.marks {
                 if let Some(to) = map.get(&x.mark) {
                     x.mark = to.clone();
@@ -635,21 +655,67 @@ impl Library {
             tx.commit()?;
         }
         // routings and barriers: by id
-        let have_x: std::collections::HashSet<String> = self.routings()?.into_iter().map(|r| r.id).collect();
-        for s in o.routings()? {
-            if !have_x.contains(&s.id) {
-                write_routing(&self.db(), &o.routing(&s.id)?)?;
+        if scope.routings {
+            let have_x: std::collections::HashSet<String> = self.routings()?.into_iter().map(|r| r.id).collect();
+            for s in o.routings()? {
+                if !have_x.contains(&s.id) {
+                    write_routing(&self.db(), &o.routing(&s.id)?)?;
+                    rep.routings_added += 1;
+                }
             }
         }
-        let have_b: std::collections::HashSet<String> = self.barriers()?.into_iter().map(|b| b.id).collect();
-        for b in o.barriers()? {
-            if !have_b.contains(&b.id) {
-                self.save_barrier(b)?;
+        if scope.barriers {
+            let have_b: std::collections::HashSet<String> = self.barriers()?.into_iter().map(|b| b.id).collect();
+            for b in o.barriers()? {
+                if !have_b.contains(&b.id) {
+                    self.save_barrier(b)?;
+                    rep.barriers_added += 1;
+                }
+            }
+        }
+        // logs: by id (a deleted one stays deleted)
+        if scope.events {
+            let have: std::collections::HashSet<String> = {
+                let c = self.db();
+                let mut q = c.prepare("SELECT id FROM events")?;
+                let v = q.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+                v
+            };
+            let c = self.db();
+            for e in o.events()? {
+                if have.contains(&e.id) {
+                    continue;
+                }
+                c.execute(
+                    "INSERT INTO events (id, kind, name, at, lat, lon, depth, temp, sog, cog, notes, pair, data, import_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                    params![e.id, e.kind, e.name, e.at, e.lat, e.lon, e.depth, e.temp, e.sog, e.cog, e.notes, e.pair, if e.data.is_null() { "{}".to_string() } else { e.data.to_string() }, id],
+                )?;
+                rep.events_added += 1;
+            }
+        }
+        // trips: the same name and start is the same trip. One that was still on comes in ended
+        // (only one trip can be on, and it's this library's).
+        if scope.trips {
+            let key = |name: &str, started: Option<i64>| (name.trim().to_lowercase(), started);
+            let mut have: std::collections::HashSet<(String, Option<i64>)> = self.trips()?.iter().map(|t| key(&t.name, t.started)).collect();
+            let c = self.db();
+            for t in o.trips()? {
+                if !have.insert(key(&t.name, t.started)) {
+                    continue;
+                }
+                c.execute(
+                    "INSERT INTO trips (name, number, fishery, crew, notes, started, ended) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![t.name, t.number, t.fishery, t.crew, t.notes, t.started, t.ended.or(t.started)],
+                )?;
+                rep.trips_added += 1;
+            }
+            if rep.trips_added > 0 {
+                rep.notes.push("Trips can't be taken out again by Undo an import: delete them from the Trips list".into());
             }
         }
         // tracks: by first and last fix, a few hundred at a time
         let have: std::collections::HashSet<(i64, i64)> = self.tracks()?.into_iter().filter_map(|t| t.stats.start.zip(t.stats.end)).collect();
-        let theirs = o.tracks()?;
+        let theirs = if scope.tracks { o.tracks()? } else { Vec::new() };
         let total = theirs.len();
         let mut batch = Vec::new();
         let mut same = 0;
