@@ -1389,9 +1389,10 @@ async fn library_save_copy(path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || l.backup_to(std::path::Path::new(&path)).map_err(es)).await.map_err(|e| e.to_string())?
 }
 
-/// Bring another library's marks, routes, tracks, routings and barriers into the one in use.
+/// Bring another library's marks, routes, tracks, logs, trips, routings and barriers into
+/// the one in use: all of them, or the categories in `what`.
 #[tauri::command]
-async fn library_merge(app: tauri::AppHandle, path: String, job: Option<String>) -> Result<library::ImportReport, String> {
+async fn library_merge(app: tauri::AppHandle, path: String, job: Option<String>, what: Option<library::Scope>) -> Result<library::ImportReport, String> {
     let job = job.unwrap_or_default();
     let cancel = job_begin(&job);
     let l = lib()?;
@@ -1399,7 +1400,7 @@ async fn library_merge(app: tauri::AppHandle, path: String, job: Option<String>)
     let j = job.clone();
     let r = tauri::async_runtime::spawn_blocking(move || {
         let mut progress = job_progress(&h, &j);
-        l.merge_from(std::path::Path::new(&path), &mut progress, &cancel).map_err(es)
+        l.merge_from_scope(std::path::Path::new(&path), what.unwrap_or_default(), &mut progress, &cancel).map_err(es)
     })
     .await
     .map_err(|e| e.to_string());
@@ -1408,6 +1409,21 @@ async fn library_merge(app: tauri::AppHandle, path: String, job: Option<String>)
     let _ = symbols_sync(&app);
     library_changed(&app);
     Ok(r)
+}
+
+/// What a library file holds, to choose from before bringing it in: how many of each
+/// category, and the own soundings.
+#[tauri::command]
+async fn library_file_contents(path: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = PathBuf::from(&path);
+        let n = library::Library::peek(&p).map_err(es)?;
+        let mut v = serde_json::to_value(&n).map_err(|e| e.to_string())?;
+        v["soundings"] = serde_json::to_value(bathy::share::file_info(&p).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        Ok(v)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// The effort map of the tracks `ids` (library/density.rs): [lon, lat, minutes] per cell.
@@ -1525,29 +1541,60 @@ fn library_undo_import(app: tauri::AppHandle, id: i64) -> Result<library::Counts
     library_changed(&app);
     Ok(n)
 }
-/// The chosen marks, routes and tracks as a library file of their own.
+/// The chosen marks, routes, tracks and logs as a library file of their own, with whole
+/// categories of trips, routings and barriers, and the own soundings, as asked.
 #[tauri::command]
-async fn library_export(path: String, marks: Vec<String>, routes: Vec<String>, tracks: Vec<String>, events: Option<Vec<String>>, notes: Option<bool>, passphrase: Option<String>) -> Result<library::Counts, String> {
+#[allow(clippy::too_many_arguments)]
+async fn library_export(
+    app: tauri::AppHandle,
+    path: String,
+    marks: Vec<String>,
+    routes: Vec<String>,
+    tracks: Vec<String>,
+    events: Option<Vec<String>>,
+    notes: Option<bool>,
+    passphrase: Option<String>,
+    trips: Option<bool>,
+    routings: Option<bool>,
+    barriers: Option<bool>,
+    soundings: Option<bool>,
+    job: Option<String>,
+) -> Result<serde_json::Value, String> {
     let events = events.unwrap_or_default();
+    let also = library::Also { trips: trips.unwrap_or(false), routings: routings.unwrap_or(false), barriers: barriers.unwrap_or(false) };
+    let want_soundings = soundings.unwrap_or(false);
+    let job = job.unwrap_or_default();
+    let cancel = job_begin(&job);
+    let job_id = job.clone();
     let l = lib()?;
-    tauri::async_runtime::spawn_blocking(move || {
+    let r = tauri::async_runtime::spawn_blocking(move || {
+        let mut progress = job_progress(&app, &job);
         let to = PathBuf::from(&path);
         let keep_notes = notes.unwrap_or(true);
-        match passphrase.filter(|p| !p.is_empty()) {
-            None => l.export_library(&to, &marks, &routes, &tracks, &events, keep_notes).map_err(es),
-            Some(pass) => {
-                // written plain beside it first, then locked; the plain copy goes
-                let plain = to.with_extension("gpkg.plain");
-                let n = l.export_library(&plain, &marks, &routes, &tracks, &events, keep_notes).map_err(es);
-                let r = n.and_then(|n| library::protect::protect_file(&plain, &to, &pass).map(|_| n).map_err(es));
-                let _ = std::fs::remove_file(&plain);
-                r
+        let pass = passphrase.filter(|p| !p.is_empty());
+        // a protected file is written plain beside it first, then locked; the plain copy goes
+        let target = if pass.is_some() { to.with_extension("gpkg.plain") } else { to.clone() };
+        let r = (|| -> Result<serde_json::Value, String> {
+            let n = l.export_library(&target, &marks, &routes, &tracks, &events, also, keep_notes).map_err(es)?;
+            let cells = if want_soundings { pbathy::export_into(&target, &mut progress, &cancel).inspect_err(|_| { let _ = std::fs::remove_file(&target); })? } else { 0 };
+            if let Some(pass) = &pass {
+                library::protect::protect_file(&target, &to, pass).map_err(es)?;
             }
+            let mut v = serde_json::to_value(&n).map_err(|e| e.to_string())?;
+            v["soundings"] = cells.into();
+            Ok(v)
+        })();
+        if pass.is_some() {
+            let _ = std::fs::remove_file(&target);
         }
+        r
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string());
+    job_end(&job_id);
+    r?
 }
+
 
 /// Unlock a protected library (.tplib) with its passphrase, as a plain library file:
 /// `keep` puts it beside the protected one (to open as a library), else in the app's own
@@ -3711,6 +3758,10 @@ pub fn run() {
             library_use,
             library_save_copy,
             library_merge,
+            library_file_contents,
+            pbathy::pbathy_pick_xyz_save,
+            pbathy::pbathy_export_xyz,
+            pbathy::pbathy_import_from_library,
             library_backups,
             library_use_backup,
             marks_update,

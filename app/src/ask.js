@@ -1,7 +1,7 @@
 // A small question box in the middle of the screen: a passphrase, or a few choices before
 // a job (what to put in a library file). Enter answers, Esc cancels. Never used for alerts.
 //
-//   const v = await ask({ title, note, fields: [{ key, label, type: "password" | "text" | "checkbox", value }], ok: "Unlock", check: (v) => "error" | "" });
+//   const v = await ask({ title, note, fields: [{ key, label, type: "password" | "text" | "checkbox" | "select", value, options: [[value, label]], disabled }], ok: "Unlock", check: (v) => "error" | "" });
 //   // v: { key: value } or null (cancelled)
 
 export function ask({ title, note = "", fields = [], ok = "OK", cancel = "Cancel", check = () => "" }) {
@@ -22,9 +22,15 @@ export function ask({ title, note = "", fields = [], ok = "OK", cancel = "Cancel
     for (const f of fields) {
       const row = document.createElement("label");
       row.className = f.type === "checkbox" ? "ask-check" : "ask-field";
-      const inp = document.createElement("input");
-      inp.type = f.type ?? "text";
-      if (f.type === "checkbox") inp.checked = !!f.value; else inp.value = f.value ?? "";
+      const inp = f.type === "select" ? document.createElement("select") : document.createElement("input");
+      if (f.type === "select") {
+        for (const [value, label] of f.options ?? []) inp.append(new Option(label, value));
+        inp.value = f.value ?? f.options?.[0]?.[0] ?? "";
+      } else {
+        inp.type = f.type ?? "text";
+        if (f.type === "checkbox") inp.checked = !!f.value; else inp.value = f.value ?? "";
+      }
+      if (f.disabled) inp.disabled = true;
       if (f.placeholder) inp.placeholder = f.placeholder;
       const span = document.createElement("span");
       span.textContent = f.label;

@@ -285,6 +285,76 @@ pub fn pbathy_clear() -> Result<(), String> {
     need()?.clear().map_err(|e| e.to_string())
 }
 
+/// Write the own soundings into the library file at `path` (see `bathy::share`): the
+/// lossless way to give them with the rest of a library. Returns the cells written.
+pub fn export_into(path: &std::path::Path, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<i64, String> {
+    need()?.export_into(path, progress, cancel).map_err(|e| e.to_string())
+}
+
+/// Where to write an XYZ text file of the own soundings.
+#[tauri::command]
+pub async fn pbathy_pick_xyz_save(app: tauri::AppHandle, suggest: Option<String>) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let mut d = app.dialog().file().set_title("Write own soundings as XYZ").add_filter("XYZ text (longitude, latitude, height)", &["xyz"]);
+    if let Some(s) = suggest {
+        d = d.set_file_name(&s);
+    }
+    let Some(p) = d.blocking_save_file() else { return Ok(None) };
+    let mut p = p.into_path().map_err(|e| e.to_string())?;
+    if p.extension().is_none_or(|x| !x.eq_ignore_ascii_case("xyz")) {
+        p.set_extension("xyz");
+    }
+    Ok(Some(p.to_string_lossy().into_owned()))
+}
+
+/// Write the own soundings as an XYZ text file (longitude, latitude, height in metres,
+/// negative down; each cell's centre). Returns the lines written.
+#[tauri::command]
+pub async fn pbathy_export_xyz(app: tauri::AppHandle, path: String, job: Option<String>) -> Result<i64, String> {
+    let s = need()?;
+    let job = job.unwrap_or_default();
+    let cancel = crate::job_begin(&job);
+    let j = job.clone();
+    let r = tauri::async_runtime::spawn_blocking(move || {
+        let mut prog = crate::job_progress(&app, &j);
+        s.export_xyz(std::path::Path::new(&path), &mut prog, &cancel).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string());
+    crate::job_end(&job);
+    r?
+}
+
+/// Bring in the own soundings of a library file (written with them). `again`: even if
+/// that file came in before, or from these soundings (they'd count twice).
+#[tauri::command]
+pub async fn pbathy_import_from_library(app: tauri::AppHandle, path: String, again: Option<bool>, job: Option<String>) -> Result<serde_json::Value, String> {
+    let s = need()?;
+    let _b = busy()?;
+    let job = job.unwrap_or_default();
+    let cancel = crate::job_begin(&job);
+    let j = job.clone();
+    let h = app.clone();
+    let r = tauri::async_runtime::spawn_blocking(move || -> Result<serde_json::Value, String> {
+        let p = PathBuf::from(&path);
+        let again = again.unwrap_or(false);
+        let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let bytes = std::fs::metadata(&p).map_err(|e| e.to_string())?.len() as i64;
+        if !again && s.has_source("Library file", &name, bytes) {
+            return Ok(serde_json::json!({ "already": true, "name": name }));
+        }
+        let mut prog = crate::job_progress(&h, &j);
+        let (added, left_out) = s.import_from(&p, again, &mut prog, &cancel).map_err(|e| e.to_string())?;
+        Ok(serde_json::json!({ "added": added, "left_out": left_out, "name": name }))
+    })
+    .await
+    .map_err(|e| e.to_string());
+    crate::job_end(&job);
+    let r = r??;
+    let _ = app.emit("pbathy-live", ());
+    Ok(r)
+}
+
 // ---------- live soundings ----------------------------------------------------------------
 
 /// Live soundings: on or off, the speed above which none are taken (0: no limit; a hull

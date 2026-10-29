@@ -14,6 +14,7 @@ import { featureImage } from "./chartfeatures.js";
 import { libList, monthTest, dateTest } from "./liblist.js";
 import { markInTrip, onTrips } from "./tripstore.js";
 import { sharedTest, sharedActive, sharedState, viewMoved, mountShared } from "./libfilter.js";
+import { exportDialog, chooseFromLibraryFile, importSoundings } from "./libshare.js";
 import { addKindOptions, symImage, SYMBOL_KINDS } from "./marksymbols.js";
 
 const KEY = "racenav.library";
@@ -829,10 +830,11 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     item("New library…", "Start an empty library (another boat, another fishery): the one in use stays as it is", newLibrary);
     item("Open library…", "Use another TweedPlot library (.gpkg): one shared from another boat, or for another fishery", openLibrary);
     for (const r of current?.recent ?? []) item(`   ${r.name}`, r.path, () => useLibrary(r.path, false));
-    item("Save a copy as…", "A copy of the whole library (to share, or keep): the one in use stays in use", saveCopy);
-    item("Merge from another library…", "Bring another library's marks, routes, tracks, routings and barriers into this one (matched as imports are)", mergeLibrary);
+    item("Save a copy as…", "A copy of the whole library as it is (to keep): the one in use stays in use. To give only some of it, use Export…", saveCopy);
+    item("Merge from another library…", "Look into another library file and bring in what you choose of its marks, routes, tracks, trips, logs, routings, barriers and own soundings (matched as imports are)", mergeLibrary);
     line();
     item("Import…", "Marks, routes and tracks from GPX, TimeZero (.tzd, .TzBackup), Google Earth (KML, KMZ) or a spreadsheet (CSV)", importFile);
+    item("Export…", "Choose what to write (marks, routes, tracks, trips, logs, routings, barriers, own soundings) into one library file, or the own soundings as XYZ", () => exportDialog(current));
     item("Export everything as GPX", "Every mark and route in one GPX file in the export folder", () => exportGpx("racenav library", [], [], "The library"));
     line();
     item("Libraries alongside…", "Show another library on the chart with this one, read-only (a mate's marks, another season's)", () => { showSub("overlays"); window.dispatchEvent(new Event("racenav-overlays-open")); });
@@ -898,13 +900,18 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     let p = await invoke("library_pick_db", { save: false, title: "Merge from another library", suggest: null }).catch(() => null);
     if (p) p = await plainLibrary(p, false);
     if (!p) return;
-    const name = p.split(/[\\/]/).pop();
-    const job = activity.start(`Merging ${name} into this library`, { params: p, cancel: (id) => invoke("job_cancel", { job: id }) });
-    try {
-      const rep = await invoke("library_merge", { path: p, job: job.id });
-      reportImport(job, rep);
-      await refresh();
-    } catch (e) { job.fail(`Merging failed: ${e}`); }
+    const pick = await chooseFromLibraryFile(p);
+    if (!pick) return;
+    if (pick.any) {
+      const name = p.split(/[\\/]/).pop();
+      const job = activity.start(`Merging ${name} into this library`, { params: p, cancel: (id) => invoke("job_cancel", { job: id }) });
+      try {
+        const rep = await invoke("library_merge", { path: p, job: job.id, what: pick.scope });
+        reportImport(job, rep);
+        await refresh();
+      } catch (e) { job.fail(`Merging failed: ${e}`); }
+    }
+    if (pick.soundings) await importSoundings(p);
   }
   async function showBackups() {
     let list = [];
@@ -951,6 +958,10 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       rep.marks_matched && `${n(rep.marks_matched, "mark")} already here`,
       rep.routes_added.length && n(rep.routes_added.length, "new route"),
       rep.tracks_added?.length && n(rep.tracks_added.length, "new track"),
+      rep.trips_added && n(rep.trips_added, "new trip"),
+      rep.events_added && n(rep.events_added, "new log entry", "new log entries"),
+      rep.routings_added && n(rep.routings_added, "new routing"),
+      rep.barriers_added && n(rep.barriers_added, "new barrier"),
     ].filter(Boolean);
     const details = [
       ...(rep.routes_matched ? [`${n(rep.routes_matched, "route")} already here`] : []),
