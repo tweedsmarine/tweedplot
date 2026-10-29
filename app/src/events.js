@@ -329,14 +329,41 @@ export function setupEvents(map, { ui, getBoat }) {
         try { const p = await invoke("events_csv", { name: "fishing log", ids: es.map((e) => e.id) }); activity.note(`${es.length} event${es.length === 1 ? "" : "s"} written as CSV`, { details: [`Written to ${p}`, "Times are UTC."] }); } catch (e) { activity.start("Writing CSV").fail(String(e)); }
       } },
       { label: "Library file…", title: "Write the selected events as a library file of their own", run: (es) => exportLibraryFile({ events: es.map((e) => e.id) }, `${es.length} log event${es.length === 1 ? "" : "s"}`, "fishing log") },
-      { label: "Delete", danger: true, confirm: (es) => `Delete ${es.length} event${es.length === 1 ? "" : "s"}? (The Trash keeps them 30 days.)`, run: async (es) => {
-        try { const n = await invoke("events_delete", { ids: es.map((e) => e.id) }); activity.note(`Deleted ${n} event${n === 1 ? "" : "s"}`); } catch (e) { activity.start("Deleting events").fail(String(e)); }
+      { label: "Delete", danger: true, confirm: (es) => { const f = floatsOf(es.map((e) => e.id)).length; return `Delete ${es.length} event${es.length === 1 ? "" : "s"}${f ? ` and the ${f} float${f === 1 ? "" : "s"} of their sets` : ""}? (The Trash keeps them 30 days.)`; }, run: async (es) => {
+        try { const n = await invoke("events_delete", { ids: withFloats(es.map((e) => e.id)) }); activity.note(`Deleted ${n} event${n === 1 ? "" : "s"}`); } catch (e) { activity.start("Deleting events").fail(String(e)); }
         refresh();
       } },
     ],
-    empty: () => "Nothing logged yet. Press a button above when the gear goes in, comes up, or something's caught.",
+    empty: () => (events.some((e) => e.kind === "float") && !prefs.floats ? "No events listed (the floats are on the chart: see above)." : "Nothing logged yet. Press a button above when the gear goes in, comes up, or something's caught."),
     changed: () => draw(),
   });
+
+  // a set's floats go with it: those logged while setting, by the shot's id
+  const floatsOf = (ids) => { const set = new Set(ids); return events.filter((e) => e.kind === "float" && set.has(e.data?.set) && !set.has(e.id)); };
+  const withFloats = (ids) => [...new Set([...ids, ...floatsOf(ids).map((e) => e.id)])];
+
+  // floats on the chart that the list doesn't show (Floats unticked): say so, and offer to list or delete them
+  const floatNote = $("evt-float-note");
+  let floatDelArmed = null;
+  function renderFloatNote() {
+    const fl = prefs.floats ? [] : events.filter((e) => e.kind === "float" && e.lat != null && sharedTest(e, SHARED));
+    floatNote.hidden = !fl.length || !prefs.show;
+    if (floatNote.hidden) return;
+    const orphans = fl.filter((e) => !e.data?.set || !byId(e.data.set)).length;
+    floatNote.querySelector("span").textContent = `${fl.length} float${fl.length === 1 ? "" : "s"} from line sets on the chart, not listed${orphans ? ` (${orphans} from sets no longer in the log)` : ""}.`;
+    const del = floatNote.querySelector('[data-act="del"]');
+    del.onclick = async () => {
+      if (!floatDelArmed) {
+        del.textContent = `Delete ${fl.length}? Click again`;
+        floatDelArmed = setTimeout(() => { floatDelArmed = null; del.textContent = "Delete them"; }, 4000);
+        return;
+      }
+      clearTimeout(floatDelArmed); floatDelArmed = null; del.textContent = "Delete them";
+      try { const n = await invoke("events_delete", { ids: fl.map((e) => e.id) }); activity.note(`Deleted ${n} float${n === 1 ? "" : "s"}`, { details: ["Library > Trash brings them back. Their marks (one a float, grouped by set) are in the Marks tab."] }); } catch (e) { activity.start("Deleting floats").fail(String(e)); }
+      refresh();
+    };
+    floatNote.querySelector('[data-act="list"]').onclick = () => { prefs.floats = true; $("evt-floats").checked = true; save(); refresh(); };
+  }
 
   // ---------- editing one ----------
   const form = $("evt-edit");
@@ -352,8 +379,9 @@ export function setupEvents(map, { ui, getBoat }) {
   form.querySelector('[data-act="cancel"]').onclick = () => { form.hidden = true; editing = null; };
   form.querySelector('[data-act="delete"]').onclick = async () => {
     if (!editing) return;
-    await invoke("events_delete", { ids: [editing.id] }).catch(() => {});
-    activity.note(`Deleted ${editing.name} ${clock(editing.at)}`, { details: ["Library > Trash brings it back."] });
+    const f = floatsOf([editing.id]).length;
+    await invoke("events_delete", { ids: withFloats([editing.id]) }).catch(() => {});
+    activity.note(`Deleted ${editing.name} ${clock(editing.at)}${f ? ` and its ${f} float${f === 1 ? "" : "s"}` : ""}`, { details: ["Library > Trash brings it back."] });
     form.hidden = true; editing = null; refresh();
   };
   form.onsubmit = async (ev) => {
@@ -388,7 +416,7 @@ export function setupEvents(map, { ui, getBoat }) {
   $("evt-floats").checked = prefs.floats;
   $("evt-floats").onchange = (e) => { prefs.floats = e.target.checked; save(); refresh(); };
   $("evt-show").checked = prefs.show;
-  $("evt-show").onchange = (e) => { prefs.show = e.target.checked; save(); draw(); };
+  $("evt-show").onchange = (e) => { prefs.show = e.target.checked; save(); draw(); renderFloatNote(); };
   map.on("click", "evt-icons", (e) => {
     if (document.querySelector(".armed")) return;
     const ev = byId(e.features[0].properties.id);
@@ -398,12 +426,13 @@ export function setupEvents(map, { ui, getBoat }) {
   });
   map.on("mouseenter", "evt-icons", () => { map.getCanvas().style.cursor = "pointer"; });
   map.on("mouseleave", "evt-icons", () => { map.getCanvas().style.cursor = ""; });
-  onShared(() => draw());
+  onShared(() => { draw(); renderFloatNote(); });
 
   async function refresh() {
     try { events = await invoke("events_list"); } catch { events = []; }
     // a set's floats (dozens a set) are listed only when asked for; they're always on the chart
     list.setItems(prefs.floats ? events : events.filter((e) => e.kind !== "float"));
+    renderFloatNote();
     renderHaul();
     renderOpen();
   }
