@@ -40,6 +40,10 @@ import { setupFleet } from "./fleet.js";
 import { setupGribDownload } from "./gribdl.js";
 import { setupRail } from "./ui.js";
 import { setupViews } from "./views.js";
+import { setupDetail } from "./detail.js";
+import { setupCards } from "./cards.js";
+import { setupHints } from "./hints.js";
+import { setupWelcome } from "./welcome.js";
 import { setupMonitors } from "./monitors.js";
 import { setupWindowState } from "./windowstate.js";
 import { setupUiPrefs } from "./uiprefs.js";
@@ -251,6 +255,8 @@ let routing = null;
 let library = null;
 const ui = setupRail(map);
 const views = setupViews(map);
+setupCards();
+const detail = setupDetail(views);
 
 // The user manual (bundled with the app): rail button, F1, ? in each drawer.
 const manual = setupManual({
@@ -266,6 +272,8 @@ document.getElementById("manual-btn").onclick = () => manual.toggle();
 manual.onToggle((on) => document.getElementById("manual-btn").classList.toggle("on", on));
 document.getElementById("drawer-help").onclick = () => manual.help(ui.current());
 const inst = setupInstruments();
+setupHints();
+setupWelcome({ detail, inst, views });
 window.addEventListener("racenav-mob", (e) => { inst.update({ mob: e.detail }); });
 const boat = setupBoat();
 setupSettings({ boat, ui, onReferencePosition: useReferencePosition });
@@ -658,8 +666,13 @@ function setCursor(c) {
     inst.update({ cursor: cursorNext });
   }, wait);
 }
+function cursorText(lngLat) {
+  const where = `${ddm(lngLat.lat, "N", "S")}  ${ddm(lngLat.lng, "E", "W")}`;
+  const leg = inst.legTo([lngLat.lng, lngLat.lat]);
+  return leg ? `${where}  ·  ${leg}` : where;
+}
 map.on("mousemove", (e) => {
-  const where = `${ddm(e.lngLat.lat, "N", "S")}  ${ddm(e.lngLat.lng, "E", "W")}`;
+  const where = cursorText(e.lngLat);
   document.getElementById("cursor").textContent = where;
   // with own soundings shown: the sounding under the cursor
   pbathyAt(e.lngLat.lng, e.lngLat.lat, (t, s) => { document.getElementById("cursor").textContent = t ? `${where}  ·  ${t}` : where; inst.update({ sounding: s }); });

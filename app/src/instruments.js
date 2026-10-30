@@ -499,14 +499,15 @@ const DEFAULT_LAYOUT = {
   v: 1,
   locked: false,
   panels: [
-    { id: "p1", x: 0.3, y: 0.86, dir: "row", size: "m", tiles: ["SOG", "COG", "HDG", "DPT", "TWS", "TWA"] },
+    // Navigation: course, speed, depth, position and time at least; Planning is left to the user
+    { id: "p1", x: 0.3, y: 0.86, dir: "row", size: "m", views: ["nav"], tiles: ["SOG", "COG", "DPT", "POS", "UTC"] },
     { id: "p2", x: 0.86, y: 0.12, dir: "column", size: "s", tiles: ["NEXT", "BTW", "DTW", "TTG", "XTE"] },
-    CURSOR_PANEL,
     GRIB_PANEL,
     SEA_PANEL,
     MOB_PANEL,
     HIGHWAY_PANEL,
   ],
+  // the cursor's bearing and range live in the status bar now; the panel is still in the Instrument list
   added: ["cursor", "grib", "sea", "mob", "highway"],
 };
 
@@ -1007,6 +1008,33 @@ export function setupInstruments() {
   build();
 
   return {
+    /** Add a panel (once, by id) to the layout, e.g. from the welcome screen's choice. */
+    ensurePanel(p) {
+      if (layout.panels.some((x) => x.id === p.id)) return;
+      layout.panels.push(structuredClone(p));
+      save();
+      build();
+    },
+    /** Remove a panel by id (the panels a "Use" choice added). */
+    removePanel(id) {
+      const i = layout.panels.findIndex((x) => x.id === id);
+      if (i < 0) return;
+      layout.panels.splice(i, 1);
+      save();
+      build();
+    },
+    /** Replace the Instruments screen's tiles with a preset: [{k, c, r, w, h}] on the 12 x 8 grid. */
+    setScreen(list) {
+      layout.tiles = list.filter((t) => ITEMS[t.k]).map((t, i) => ({ id: `t${i + 1}`, ...t }));
+      save();
+      build();
+    },
+    /** "042°T · 3.2 NM" from the boat to a chart point (the cursor read-out), or "" without a boat position. */
+    legTo(pt) {
+      const l = pt ? cursorLeg({ cursor: pt, v: ctx.v }) : null;
+      if (!l) return "";
+      return `${deg3(l.brg)}°T · ${l.nm < 10 ? l.nm.toFixed(2) : l.nm.toFixed(1)} NM`;
+    },
     /** New data: vessel state, route/waypoint and routing targets. */
     update(next) {
       // a new man overboard: its panel comes up even if it was folded or hidden

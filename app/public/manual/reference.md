@@ -1005,6 +1005,14 @@ Positions may be delayed by the race organiser.
 
 {icon:settings} **Settings** holds what is set once for the vessel and the PC, in four tabs.
 
+**How much is shown (Simple, Standard, Expert).** Move the pointer to the top of the screen and a bar slides down with the **View** (Navigation, Planning, Instruments) and the **Detail** level; **Settings › Display › How much to show** has the same choice. Nothing is removed at a lower level, the less-used controls are only tucked away: **Simple** keeps the everyday controls, **Standard** (the usual) adds planning, routing, tides and the chart tools, and **Expert** shows everything, including S-63 charts, the routing limits, damping and the diagnostics tests. On a touch screen, tap the small grip at the top edge. The pin in the bar (or a click on the bar's own background) keeps it open until you unpin it. TweedPlot always starts in Navigation, and each view remembers whether its panels (the rail and drawers) are shown.
+
+Drawers are grouped into **cards**: click a card's heading to open it (one is open at a time). The card's one-line summary shows the current state, for example the heading and COG line lengths under Own ship. The grey explanatory notes are shown in full in Simple, where help matters most. In Standard and Expert they become tooltips for a clean layout: hover the **ⓘ** on a card, or click it to show that card's notes. The **?** button and this manual are always there. Safety items (all alarms, safety depth and contour, the display category, the ruler, the own-ship lines) are never hidden at any level.
+
+**Use (Navigate, Fishing, Racing).** The top bar and **Settings › Display › Use** choose what you mostly do. Fishing shows the shoot and haul buttons and the own-soundings button in the toolbar (they are hidden for every other Use, at every detail level). Choosing a Use also sets up the Instruments screen: Navigate has the highway, wind dial, COG, SOG and depth; Fishing has depth, wind dial, COG and SOG; Racing has the highway, wind dial, COG and SOG, and adds a sailing-instruments panel to the chart. The first Use you choose sets up the Instruments screen to match; after that, changing Use never touches the Instruments screen, so your own arrangement is kept. Changing Use only swaps the Racing sailing panel on the chart. Your other panels are never touched. The Sounder history graph is available from the instrument menu but is not on by default.
+
+**Welcome screen.** A new install asks what you mostly do (Navigate, Go fishing, Race) and how much to show; it adds a Sounder or sailing instrument panel to match. Reopen it from **Settings › Display › Show the welcome screen**. The default Navigation panel shows SOG, COG, depth, position and UTC, and the bottom-left cursor read-out gives the bearing and distance from the boat to the pointer.
+
 **Vessel**
 
 | Section | Settings | Used for |

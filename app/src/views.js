@@ -14,7 +14,7 @@ const KEY = own("racenav.views");
 
 export const VIEWS = [
   {
-    id: "nav", name: "Navigation", tools: false, map: true,
+    id: "nav", name: "Navigation", tools: true, map: true,
     icon: '<circle cx="12" cy="12" r="8.5"/><path d="M15.5 8.5l-2 5-5 2 2-5z" class="fill"/>',
   },
   {
@@ -30,10 +30,11 @@ export const VIEWS = [
 const $ = (id) => document.getElementById(id);
 
 export function setupViews(map) {
-  // Planning is the layout the app always had, so it is where existing users land.
-  let s = { current: "plan", tools: {}, map: {} };
+  // The program always opens in Navigation; each view remembers for itself whether its panels
+  // (the rail and drawers) are shown, and Navigation starts with them shown.
+  let s = { current: "nav", tools: {}, map: {} };
   try { Object.assign(s, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* storage unavailable */ }
-  if (!VIEWS.some((v) => v.id === s.current)) s.current = "plan";
+  s.current = "nav";
   if (!PRIMARY && VIEWS.some((v) => v.id === startView)) s.current = startView;
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* ignore */ } };
   const def = (id) => VIEWS.find((v) => v.id === id);
