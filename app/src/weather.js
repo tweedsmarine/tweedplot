@@ -173,7 +173,9 @@ const WX_DEFAULTS = { density: 5, size: 1.0, shading: "2", opacity: 0.45, land: 
   // which loaded GRIB feeds each layer or overlay when the choice is not the shown one: { key: path }
   src: {},
   // highlight sea temperature fronts (where the temperature changes fastest)
-  breaks: false };
+  breaks: false,
+  // all weather layers hidden from the chart (the toolbar button)
+  hidden: false };
 const DENSITY_POINTS = [80, 150, 300, 500, 900, 1400, 2200, 3500, 6000, 1e9];
 function loadWx() {
   try { return { ...WX_DEFAULTS, ...JSON.parse(localStorage.getItem("racenav.wx") || "{}") }; } catch { return { ...WX_DEFAULTS }; }
@@ -450,7 +452,7 @@ export function setupWeather(map, layers) {
   const keyOf = (l) => Object.keys(LAYERS).find((k) => LAYERS[k] === l);
   /** The file an ocean layer comes from: the one chosen, else the shown GRIB if it has it, else the newest loaded one that does. */
   function oceanPath(l) {
-    const has = (p) => p && paramsOf(loaded.get(p)).has(l.params[0]);
+    const has = (p) => p && loaded.has(p) && paramsOf(loaded.get(p)).has(l.params[0]);
     if (has(wx.src[keyOf(l)])) return wx.src[keyOf(l)];
     if (has(display)) return display;
     return [...loaded.keys()].reverse().find(has) ?? null;
@@ -670,7 +672,7 @@ export function setupWeather(map, layers) {
     pending = true;
     requestAnimationFrame(async () => {
       pending = false;
-      if (!display || !times.length) {
+      if (!display || !times.length || wx.hidden) {
         map.getSource("wx-cells").setData(fc([]));
         map.getSource("wx-barbs").setData(fc([]));
         map.getSource("wx-wavedir").setData(fc([]));
@@ -1189,6 +1191,9 @@ export function setupWeather(map, layers) {
     verifyTarget: () => verifyTarget,
     /** Put a GRIB chooser and time slider into `el`, working the same state as the Weather drawer. */
     mountControls,
+    /** Show or hide every weather layer on the chart (shading, barbs, arrows, isobars, contours); the data stays loaded. */
+    setVisible(on) { wx.hidden = !on; saveWx(); draw(); changed(); },
+    visible: () => !wx.hidden,
     mountFilter,
     /** Names of every parameter in the loaded GRIBs. */
     loadedParams: () => new Set([...loaded.values()].flatMap((s) => [...paramsOf(s)])),

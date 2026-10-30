@@ -74,14 +74,17 @@ export function setupWeatherPanel(map, weather) {
     win.classList.toggle("folded", st.collapsed);
     $("wxp-fold").textContent = st.collapsed ? "▾" : "▴";
   }
-  function show(on) {
+  function show(on, withLayers = false) {
     st.open = on;
     win.hidden = !on;
     $("wx-pop-btn")?.classList.toggle("on", on);
     save();
+    if (withLayers) weather.setVisible(on);
     if (on) { place(); fold(); refresh(); }
   }
-  $("wx-pop-btn").onclick = () => show(win.hidden);
+  // the toolbar button switches the panel and every weather layer on or off together
+  $("wx-pop-btn").title = "Weather: show or hide the weather panel and all the weather layers on the chart";
+  $("wx-pop-btn").onclick = () => show(win.hidden, true);
   $("wxp-x").onclick = () => show(false);
   $("wxp-fold").onclick = () => { st.collapsed = !st.collapsed; save(); fold(); };
   win.querySelector("header").addEventListener("pointerdown", (e) => {
