@@ -18,6 +18,11 @@
       "file": "weather-routing.md"
     },
     {
+      "id": "fishing",
+      "title": "Fishing tools",
+      "file": "fishing.md"
+    },
+    {
       "id": "ais",
       "title": "AIS",
       "file": "ais.md"

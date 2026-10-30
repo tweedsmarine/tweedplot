@@ -33,7 +33,7 @@ export function setupTiles({ host, menu, items, getLayout, save, paint }) {
     for (const t of tiles()) {
       const it = items[t.k];
       const el = document.createElement("div");
-      el.className = `tile itile${it?.graphic ? " graphic" : ""}${it?.highway ? " highway-card" : ""}`;
+      el.className = `tile itile${it?.graphic ? " graphic" : ""}${it?.highway ? " highway-card" : ""}${it?.sounder ? " sounder-card" : ""}`;
       el.dataset.id = t.id;
       el.innerHTML = `<div class="lbl"><span>${it ? it.label : t.k}</span><span class="sd"></span></div><div class="v">—</div>`;
       place(el, t);

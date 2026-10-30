@@ -191,6 +191,66 @@ export async function readLog(lines = 200) {
   try { return await invoke("activity_log_read", { n: lines }); } catch { return { path: "", lines: [] }; }
 }
 
+let sysInfo = null;
+
+function sysText() {
+  if (!sysInfo) return "";
+  const h = sysInfo.hardware || {};
+  return [
+    "System",
+    `  TweedPlot ${sysInfo.version} (build ${BUILD}), ${sysInfo.arch}`,
+    `  OS: ${h.os || sysInfo.os_family}`,
+    `  Computer: ${h.model || "unknown"}`,
+    `  CPU: ${h.cpu || "unknown"} (${sysInfo.cpu_threads} threads)`,
+    `  RAM: ${h.ram ?? "?"} GB`,
+    `  Graphics: ${h.gpu || "unknown"}`,
+    `  WebView2: ${sysInfo.webview || "unknown"}`,
+    "Data folders",
+    ...(sysInfo.folders || []).map((f) => `  ${f.name}: ${f.path}`),
+    "",
+  ].join("\n");
+}
+
+/** Settings > Diagnostics > About this system. */
+export async function setupSystemInfo() {
+  const $ = (id) => document.getElementById(id);
+  const dl = $("sys-info"), list = $("sys-folders");
+  if (!dl) return;
+  try { sysInfo = await invoke("system_info"); } catch (e) { dl.textContent = `Not available: ${e}`; return; }
+  const h = sysInfo.hardware || {};
+  const rows = [
+    ["Version", `${sysInfo.version} (build ${BUILD})`],
+    ["Operating system", `${h.os || sysInfo.os_family} (${sysInfo.arch})`],
+    ["Computer", h.model || "unknown"],
+    ["Processor", `${h.cpu || "unknown"}, ${sysInfo.cpu_threads} threads`],
+    ["Memory", h.ram ? `${h.ram} GB` : "unknown"],
+    ["Graphics", h.gpu || "unknown"],
+    ["WebView2", sysInfo.webview || "unknown"],
+  ];
+  dl.replaceChildren(...rows.flatMap(([k, v]) => {
+    const dt = document.createElement("dt"), dd = document.createElement("dd");
+    dt.textContent = k; dd.textContent = v;
+    return [dt, dd];
+  }));
+  list.replaceChildren(...(sysInfo.folders || []).map((f) => {
+    const row = document.createElement("div");
+    row.className = "sys-folder";
+    const text = document.createElement("div");
+    text.className = "grow";
+    const name = document.createElement("b"); name.textContent = f.name;
+    const path = document.createElement("div"); path.className = "mono wx-note"; path.textContent = f.path;
+    const note = document.createElement("div"); note.className = "wx-note"; note.textContent = f.note;
+    text.append(name, path, note);
+    const btn = document.createElement("button");
+    btn.textContent = "Open";
+    btn.title = "Open this folder (it is created if it doesn't exist yet)";
+    btn.onclick = () => invoke("open_folder", { path: f.path }).catch((e) => { note.textContent = `Could not open: ${e}`; });
+    row.append(text, btn);
+    return row;
+  }));
+  $("sys-copy").onclick = () => copy(`${supportText(recent.slice(-20))}\n\n${sysText()}`, $("sys-copy"));
+}
+
 /** Settings > Diagnostics > Activity log. */
 export function setupActivityLog() {
   const $ = (id) => document.getElementById(id);
@@ -204,7 +264,7 @@ export function setupActivityLog() {
     pre.textContent = fileLines.length ? [...fileLines].reverse().join("\n") : "Nothing yet.";
   }
   $("act-log-refresh").onclick = show;
-  $("act-log-copy").onclick = () => copy(`${supportText(recent.slice(-20))}\n\nActivity log (${$("act-log-path").textContent}):\n${fileLines.slice(-60).join("\n")}`, $("act-log-copy"));
+  $("act-log-copy").onclick = () => copy(`${supportText(recent.slice(-20))}\n\n${sysText()}\nActivity log (${$("act-log-path").textContent}):\n${fileLines.slice(-60).join("\n")}`, $("act-log-copy"));
   window.addEventListener("racenav-activity", () => { if (!pre.closest(".tab")?.hidden) show(); });
   new MutationObserver(() => { if (!pre.closest(".tab")?.hidden) show(); }).observe(pre.closest(".tab") ?? document.body, { attributes: true, attributeFilter: ["hidden"] });
   show();

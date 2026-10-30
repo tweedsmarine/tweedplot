@@ -152,6 +152,137 @@ ITEMS.HIGHWAY = {
   get: highwayData, fmt: highwayMarkup, render: renderHighway,
 };
 
+// ---------- depth history (a fish-finder style sounder) ------------------------------------
+const SND_KEY = "racenav.sounder";
+const SND_WINDOWS = [5, 15, 30, 60, 120]; // minutes across the screen
+const SND_RANGES = [0, 10, 20, 50, 100, 200, 500]; // metres to the bottom of the screen; 0 = auto
+const SND_KEEP_MS = 2 * 3600e3;
+const sndHist = []; // { t (ms), d (m below the surface or transducer, as the Depth reading), w (water °C) }
+const sndPrefs = { win: 15, range: 0 };
+try { Object.assign(sndPrefs, JSON.parse(localStorage.getItem(SND_KEY) || "{}")); } catch { /* ignore */ }
+
+/** One sample a second while the depth is live; a gap in the data leaves a gap in the trace. */
+function sampleDepth(c) {
+  const d = c.v?.depth ?? c.v?.depth_surface;
+  const now = Date.now();
+  if (d == null || !Number.isFinite(d) || c.age > STALE_S) return;
+  const last = sndHist[sndHist.length - 1];
+  if (last && now - last.t < 1000) return;
+  sndHist.push({ t: now, d, w: c.v?.water_temp ?? null });
+  while (sndHist.length && now - sndHist[0].t > SND_KEEP_MS) sndHist.shift();
+}
+
+const niceStep = (span) => {
+  const raw = span / 5, p = 10 ** Math.floor(Math.log10(raw));
+  return [1, 2, 5, 10].map((m) => m * p).find((s) => s >= raw) ?? raw;
+};
+
+function drawSounder(cv, c) {
+  const dpr = window.devicePixelRatio || 1;
+  const W = Math.max(1, Math.round(cv.clientWidth * dpr)), H = Math.max(1, Math.round(cv.clientHeight * dpr));
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  const g = cv.getContext("2d");
+  const font = (px, bold) => `${bold ? "bold " : ""}${Math.round(px * dpr)}px system-ui, sans-serif`;
+  const now = Date.now(), winMs = sndPrefs.win * 60e3, t0 = now - winMs;
+  const pts = sndHist.filter((s) => s.t >= t0 - 5000);
+  const maxD = pts.reduce((m, s) => Math.max(m, s.d), 0);
+  const want = Math.max(5, maxD * 1.4), ast = niceStep(want);
+  const range = sndPrefs.range || Math.ceil(want / ast) * ast;
+  const X = (t) => ((t - t0) / winMs) * W, Y = (d) => (d / range) * H;
+
+  const bg = g.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, "#0b4f86"); bg.addColorStop(0.5, "#06305a"); bg.addColorStop(1, "#031a33");
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+
+  // depth lines and time ticks
+  const step = niceStep(range);
+  g.lineWidth = Math.max(1, dpr * 0.6); g.font = font(10); g.textBaseline = "bottom";
+  for (let d = step; d < range; d += step) {
+    g.strokeStyle = "rgba(255,255,255,.18)"; g.beginPath(); g.moveTo(0, Y(d)); g.lineTo(W, Y(d)); g.stroke();
+    g.fillStyle = "rgba(255,255,255,.75)"; g.textAlign = "right"; g.fillText(`${d} m`, W - 3 * dpr, Y(d) - 1 * dpr);
+  }
+  const tick = winMs / 60e3 <= 15 ? 60e3 : winMs / 60e3 <= 60 ? 5 * 60e3 : 15 * 60e3;
+  g.textBaseline = "top";
+  for (let t = Math.ceil(t0 / tick) * tick; t < now; t += tick) {
+    const x = X(t);
+    g.strokeStyle = "rgba(255,255,255,.12)"; g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
+    g.fillStyle = "rgba(255,255,255,.6)"; g.textAlign = "center";
+    g.fillText(`−${Math.round((now - t) / 60e3)}m`, Math.min(W - 14 * dpr, Math.max(14 * dpr, x)), 2 * dpr);
+  }
+
+  // the bottom: brown body under a hard orange and yellow return, like a sounder's bottom line
+  const segs = [];
+  for (const s of pts) {
+    const cur = segs[segs.length - 1];
+    if (cur && s.t - cur[cur.length - 1].t < 6000) cur.push(s); else segs.push([s]);
+  }
+  const band = (off, colour) => {
+    g.fillStyle = colour;
+    for (const sg of segs) {
+      if (sg.length < 2) continue;
+      g.beginPath();
+      sg.forEach((s, i) => (i ? g.lineTo(X(s.t), Y(s.d)) : g.moveTo(X(s.t), Y(s.d))));
+      for (let i = sg.length - 1; i >= 0; i--) g.lineTo(X(sg[i].t), Math.min(H, Y(sg[i].d) + off));
+      g.closePath(); g.fill();
+    }
+  };
+  band(H, "#5a2d0c"); band(20 * dpr, "#a8481a"); band(12 * dpr, "#e0701c"); band(6 * dpr, "#f5b52e"); band(2.5 * dpr, "#fff2a0");
+
+  // the safety depth
+  const safe = c.safetyDepth;
+  if (safe > 0 && safe < range) {
+    g.setLineDash([6 * dpr, 4 * dpr]); g.strokeStyle = "rgba(255,90,90,.85)"; g.lineWidth = dpr;
+    g.beginPath(); g.moveTo(0, Y(safe)); g.lineTo(W, Y(safe)); g.stroke(); g.setLineDash([]);
+  }
+
+  // the readout
+  const last = sndHist[sndHist.length - 1];
+  const live = last && now - last.t < STALE_S * 1000;
+  g.textAlign = "left"; g.textBaseline = "top";
+  g.shadowColor = "rgba(0,0,0,.8)"; g.shadowBlur = 4 * dpr;
+  g.fillStyle = "#fff"; g.font = font(Math.max(16, Math.min(40, cv.clientHeight / 4)), true);
+  const big = live ? last.d.toFixed(1) : "—";
+  g.fillText(`${big}`, 6 * dpr, 16 * dpr);
+  const bw = g.measureText(big).width;
+  g.font = font(11); g.fillStyle = "rgba(255,255,255,.8)"; g.fillText("m", 6 * dpr + bw + 3 * dpr, 20 * dpr + 14 * dpr);
+  if (live && last.w != null) { g.font = font(13, true); g.fillStyle = "#7fe0ff"; g.fillText(`${last.w.toFixed(1)} °C`, 6 * dpr, (22 + Math.max(16, Math.min(40, cv.clientHeight / 4))) * dpr); }
+  g.shadowBlur = 0;
+  if (!pts.length) {
+    g.textAlign = "center"; g.textBaseline = "middle"; g.font = font(13); g.fillStyle = "rgba(255,255,255,.7)";
+    g.fillText("Waiting for depth data", W / 2, H / 2);
+  }
+}
+
+function renderSounder(host, _raw, ctx) {
+  if (host.dataset.ready !== "true") {
+    host.classList.add("snd-host");
+    host.innerHTML = `<canvas class="snd-cv"></canvas><div class="snd-ctl"><button class="snd-win" title="How much history fits across the screen"></button><button class="snd-rng" title="How deep the screen goes (Auto follows the bottom)"></button></div>`;
+    const win = host.querySelector(".snd-win"), rng = host.querySelector(".snd-rng");
+    const labels = () => {
+      win.textContent = sndPrefs.win >= 60 ? `${sndPrefs.win / 60} h` : `${sndPrefs.win} min`;
+      rng.textContent = sndPrefs.range ? `0–${sndPrefs.range} m` : "Auto";
+    };
+    const cycle = (list, key) => (e) => {
+      e.stopPropagation();
+      sndPrefs[key] = list[(list.indexOf(sndPrefs[key]) + 1) % list.length] ?? list[0];
+      try { localStorage.setItem(SND_KEY, JSON.stringify(sndPrefs)); } catch { /* ignore */ }
+      labels();
+      host._ctx && drawSounder(host.querySelector("canvas"), host._ctx);
+    };
+    win.onclick = cycle(SND_WINDOWS, "win");
+    rng.onclick = cycle(SND_RANGES, "range");
+    labels();
+    host.dataset.ready = "true";
+  }
+  host._ctx = ctx;
+  drawSounder(host.querySelector("canvas"), ctx);
+}
+
+ITEMS.SOUNDER = {
+  label: "Sounder history", unit: "m", group: "Graphic", live: true, graphic: true, wide: true, sounder: true,
+  get: () => true, fmt: () => "", render: renderSounder,
+};
+
 function highwayData(c) {
   let range = null, bearingToTarget = null, track = null, cts = null, xte = null;
   if (c.mob && c.v.lat != null && c.v.lon != null) {
@@ -414,7 +545,7 @@ export function setupInstruments() {
       const el = document.createElement("div");
       const g = geo(p);
       // a panel holding the highway is always a free grid: its fixed size would be far too big
-      const hasHw = p.tiles.some((k) => ITEMS[k]?.highway);
+      const hasHw = p.tiles.some((k) => ITEMS[k]?.highway || ITEMS[k]?.sounder);
       const avail = Math.max(120, window.innerHeight - (parseInt(getComputedStyle(document.documentElement).getPropertyValue("--dock-h")) || 0) - 8);
       const gw = g.w > 0 ? g.w : hasHw ? 420 : 0;
       const free = !p.collapsed && gw > 0;
@@ -425,7 +556,7 @@ export function setupInstruments() {
         const cols = columns(w, p.size);
         const base = ROW[p.size] ?? ROW.m;
         // default spans: the highway fills the panel's width, three rows tall
-        p.span = p.tiles.map((k, i) => p.span?.[i] ?? (ITEMS[k]?.highway ? [cols, 3] : null));
+        p.span = p.tiles.map((k, i) => p.span?.[i] ?? (ITEMS[k]?.highway ? [cols, 3] : ITEMS[k]?.sounder ? [cols, 2] : null));
         const area = p.tiles.reduce((n, _, i) => { const [c, r] = cleanSpan(p.span[i]); return n + Math.min(c, cols) * r; }, 0);
         const rows = Math.max(1, Math.ceil(area / cols));
         // too many rows for the screen: make the rows shorter, never taller than the screen
@@ -454,7 +585,7 @@ export function setupInstruments() {
       if (!p.collapsed) p.tiles.forEach((key, i) => {
         const it = ITEMS[key];
         const t = document.createElement("div");
-        t.className = `tile ${p.size}${it?.wide ? " wide" : ""}${it?.graphic ? " graphic" : ""}${it?.highway ? " highway-card" : ""}`;
+        t.className = `tile ${p.size}${it?.wide ? " wide" : ""}${it?.graphic ? " graphic" : ""}${it?.highway ? " highway-card" : ""}${it?.sounder ? " sounder-card" : ""}`;
         t.dataset.i = i;
         t.innerHTML = `<div class="lbl"><span>${it ? it.label : key}</span><span class="sd"></span></div><div class="v">—</div>`;
         const sp = cleanSpan(p.span?.[i]);
@@ -752,7 +883,7 @@ export function setupInstruments() {
     const k = Math.min(v.clientWidth / 680, v.clientHeight / 470);
     d.style.transform = `translate(${((v.clientWidth - 680 * k) / 2).toFixed(1)}px, ${((v.clientHeight - 470 * k) / 2).toFixed(1)}px) scale(${k.toFixed(4)})`;
   }
-  setInterval(() => { ctx.age = (Date.now() - (ctx.dataAt ?? 0)) / 1000; render(); }, 250);
+  setInterval(() => { ctx.age = (Date.now() - (ctx.dataAt ?? 0)) / 1000; sampleDepth(ctx); render(); }, 250);
 
   // ---------- tile menu ----------------------------------------------------------
   root.addEventListener("click", (e) => {

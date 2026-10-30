@@ -3293,6 +3293,76 @@ fn app_info(app: tauri::AppHandle) -> serde_json::Value {
     })
 }
 
+#[cfg(windows)]
+fn powershell_text(script: &str) -> String {
+    use std::os::windows::process::CommandExt;
+    std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .creation_flags(0x0800_0000)
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default()
+}
+
+#[cfg(not(windows))]
+fn powershell_text(_script: &str) -> String {
+    String::new()
+}
+
+/// Version, operating system, hardware and the folders the user puts data in, for
+/// Settings > Diagnostics and Copy for support. Async: the hardware query takes a moment.
+#[tauri::command]
+async fn system_info(app: tauri::AppHandle) -> serde_json::Value {
+    let hw = tauri::async_runtime::spawn_blocking(|| {
+        powershell_text(
+            "$o=Get-CimInstance Win32_OperatingSystem;$c=Get-CimInstance Win32_Processor|Select -First 1;\
+             $g=(Get-CimInstance Win32_VideoController|%{$_.Name}) -join '; ';\
+             $m=Get-CimInstance Win32_ComputerSystem;\
+             @{os=\"$($o.Caption) $($o.Version)\";cpu=$c.Name;ram=[math]::Round($m.TotalPhysicalMemory/1GB,1);gpu=$g;model=\"$($m.Manufacturer) $($m.Model)\"}|ConvertTo-Json -Compress",
+        )
+    })
+    .await
+    .unwrap_or_default();
+    let hw: serde_json::Value = serde_json::from_str(&hw).unwrap_or(serde_json::Value::Null);
+    let dir = |p: PathBuf| p.to_string_lossy().to_string();
+    let enc = s63_cmd::enc_home(&app);
+    let folders = serde_json::json!([
+        { "name": "S-63 / ENC charts", "path": dir(enc), "note": "Exchange sets and permits (PERMIT.TXT) for S-63 charts; or use Settings > Chart > S-63" },
+        { "name": "LINZ charts (NZ)", "path": dir(chart_dir(&app)), "note": "LINZ chart data (.gpkg) for New Zealand" },
+        { "name": "High-resolution depths", "path": dir(hires_dir(&app)), "note": "LINZ coastal elevation GeoTIFFs" },
+        { "name": "Coastline", "path": dir(coast_dir(&app)), "note": "GSHHG coastline zip or GSHHS_shp folder" },
+        { "name": "Bathymetry", "path": dir(bathy_dir(&app)), "note": "Downloaded ETOPO areas" },
+        { "name": "Marine boundaries", "path": dir(marine_dir(&app)), "note": "Maritime boundaries and fishing rules" },
+        { "name": "GRIB weather files", "path": dir(download_dir(&app)), "note": "Downloaded and manually added GRIB files" },
+        { "name": "Polars", "path": dir(user_polar_dir(&app)), "note": "Your own polar files" },
+        { "name": "Tides", "path": dir(tide_dir(&app)), "note": "Tide station data" },
+        { "name": "Library", "path": dir(library_dir(&app)), "note": "Marks, routes, tracks and soundings" },
+        { "name": "Tracking", "path": dir(tracking_dir(&app)), "note": "Recorded tracks" },
+        { "name": "Logs", "path": dir(activity_log_path(&app).parent().map(|p| p.to_path_buf()).unwrap_or_default()), "note": "Activity log" },
+    ]);
+    serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "arch": std::env::consts::ARCH,
+        "os_family": std::env::consts::OS,
+        "cpu_threads": std::thread::available_parallelism().map(|n| n.get()).unwrap_or(0),
+        "webview": tauri::webview_version().unwrap_or_default(),
+        "hardware": hw,
+        "folders": folders,
+    })
+}
+
+/// Open a data folder in the file manager, creating it first if it doesn't exist yet.
+#[tauri::command]
+fn open_folder(path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    std::fs::create_dir_all(&p).map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    let prog = "explorer";
+    #[cfg(not(windows))]
+    let prog = "xdg-open";
+    std::process::Command::new(prog).arg(&p).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
 /// All attributes of a chart feature (table index and fid from the tiles), in words.
 #[tauri::command]
 fn chart_feature(t: usize, fid: i64) -> Option<serde_json::Value> {
@@ -3659,6 +3729,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_info,
+            system_info,
+            open_folder,
             chart_info,
             chart_feature,
             chart_clearances,

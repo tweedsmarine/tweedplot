@@ -394,6 +394,7 @@ map.on("load", () => {
   });
   setupMonitors(toast);
   activity.setupActivityLog();
+  activity.setupSystemInfo().catch(() => {});
   setupWindowState();
   setupAis(map, { alarms, ui, getOwnMmsi: () => boat.get().mmsi, getOwn: () => ({ pos: lastBoat, cog: live ? vessel?.cog : null, sog: live ? vessel?.sog : 0, live: live && signalKActive() }) });
   setupReplay({ onState: (on) => {
