@@ -606,11 +606,13 @@ export function setupWeather(map, layers) {
     el.querySelector(".when").textContent = times.length ? (el.dataset.compact ? fmt(t, true) : fmt(t)) : "—";
     el.querySelector('[data-act="play"]').textContent = playing ? "❚❚" : "▶";
   }
+  let floatReady = false;
   function syncMirrors(timeOnly) {
     for (const el of mirrors) {
       if (!el.isConnected) { mirrors.delete(el); continue; }
       syncMirror(el, !timeOnly);
     }
+    if (floatReady && float.hidden === (fl.on && loaded.size > 0)) showFloat();
   }
 
   // ---------- the floating time slider (drawers can stay closed) ----------
@@ -631,11 +633,12 @@ export function setupWeather(map, layers) {
     float.style.top = `${Math.max(0, Math.min(H - dockH - float.offsetHeight, fl.y * H))}px`;
   }
   function showFloat() {
-    float.hidden = !fl.on;
+    float.hidden = !fl.on || !loaded.size; // nothing to scrub without a GRIB
     const cb = document.getElementById("inst-slider");
     if (cb) cb.checked = fl.on;
     if (fl.on) placeFloat();
   }
+  floatReady = true;
   float.querySelector(".x").onclick = () => { fl.on = false; saveFl(); showFloat(); };
   {
     const grip = float.querySelector(".grip");

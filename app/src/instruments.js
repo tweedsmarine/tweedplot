@@ -824,7 +824,11 @@ export function setupInstruments() {
       const p = panel(el.dataset.id);
       if (!p) continue;
       // the sea panel: only while an ocean file is loaded; the MOB panel: only during a MOB
-      const off = (!!p.sea && !ctx.seaLoaded) || (!!p.mob && !ctx.mob);
+      // a panel that has never had a reading (no route, no GRIB, no data input yet) stays out of the way;
+      // once it has, it stays and shows dashes if the data stops
+      if (!seen.has(p) && p.tiles.some((i) => ITEMS[i] && hasValue(ITEMS[i]))) seen.add(p);
+      const idle = !seen.has(p);
+      const off = (!!p.sea && !ctx.seaLoaded) || (!!p.mob && !ctx.mob) || idle;
       if ((el.style.display === "none") !== off) {
         el.style.display = off ? "none" : "";
         if (!off) place(el, p);
@@ -835,6 +839,13 @@ export function setupInstruments() {
       }
     }
     tiles.render();
+  }
+  const seen = new WeakSet(); // panels that have had a reading this session (not saved)
+  function hasValue(it) {
+    try {
+      const v = it.get(ctx);
+      return v !== null && v !== undefined && !(typeof v === "number" && !Number.isFinite(v));
+    } catch { return false; }
   }
   /** Show one reading in its tile; `fit` scales the text (or the highway) to fill the tile. */
   function paintTile(t, it, fit) {

@@ -157,12 +157,13 @@ export function setupPbathy(map, { ui } = {}) {
   if (!Object.keys(perView).length && localStorage.getItem(SHOW) === "1") perView.plan = true; // the old single setting
   const viewNow = () => document.documentElement.dataset.view || "plan";
   const shownIn = (v) => perView[v] ?? VIEW_DEFAULT[v] ?? false;
+  let hasData = false; // the depth card is only useful once there are soundings to colour
   const applyShow = () => {
     const on = shownIn(viewNow());
     $("pb-show").checked = on;
     $("pb-tb")?.classList.toggle("on", on);
     if (map.getLayer("pbathy")) map.setLayoutProperty("pbathy", "visibility", on ? "visible" : "none");
-    card.show(on);
+    card.show(on && hasData);
   };
   const setShow = (on) => {
     perView[viewNow()] = on;
@@ -177,6 +178,8 @@ export function setupPbathy(map, { ui } = {}) {
     let st = null;
     try { st = await invoke("pbathy_status"); } catch (e) { $("pb-state").textContent = String(e); return; }
     const i = st.info;
+    hasData = i.cells > 0;
+    applyShow();
     $("pb-dot").className = `dot ${i.cells > 0 ? "ok" : ""}`;
     $("pb-state").textContent = i.cells > 0 ? `${fmt(i.cells)} cells (about 2 m), ${fmtMB(i.bytes)}${i.rejected ? `, ${fmt(i.rejected)} soundings left out` : ""}` : "empty";
     $("pb-zoom").hidden = !i.bounds;

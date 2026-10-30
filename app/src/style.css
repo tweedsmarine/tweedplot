@@ -90,11 +90,11 @@ input[type="text"], input[type="search"] { padding: 5px 7px; font-size: 14px; bo
 #drawer header { display: flex; align-items: center; padding: 8px 10px 6px 14px; border-bottom: 1px solid var(--line); }
 #drawer h2 { flex: 1; margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--quiet); }
 #drawer header button { flex: none; border: none; background: none; font-size: 16px; padding: 4px 8px; }
-.pane { overflow: auto; padding: 8px 12px 16px; flex: 1; }
+.pane { overflow: auto; overflow-x: hidden; padding: 8px 12px 16px; flex: 1; }
 .pane[hidden] { display: none; }
 .pane h3 { margin: 12px 0 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--quiet); border-top: 1px solid var(--line); padding-top: 8px; }
 
-.wx-row { display: flex; gap: 6px; align-items: center; margin: 5px 0; }
+.wx-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 5px 0; }
 .wx-row select { flex: 1; min-width: 0; padding: 6px; font-size: 13px; border-radius: 6px; border: 1px solid #b8c4cc; }
 .wx-row button { flex: none; padding: 6px 10px; }
 .wx-row .grow { flex: 1; min-width: 0; }
@@ -1218,7 +1218,7 @@ button.on.warn { background: #b03a2e; color: #fff; border-color: #b03a2e; }
 .haul-list { list-style: none; margin: 0; padding: 0; font-size: 12px; color: var(--quiet); max-height: 120px; overflow: auto; }
 
 /* own soundings: the card over the chart with the depth range (pbathy.js) */
-.pb-card { position: absolute; right: 10px; bottom: 120px; z-index: 4; width: 330px; padding: 6px 8px 4px; border-radius: 6px;
+.pb-card { position: absolute; right: 10px; bottom: 120px; z-index: 4; width: 330px; max-width: calc(100vw - 40px); box-sizing: border-box; padding: 6px 8px 4px; border-radius: 6px;
   background: var(--panel, #fff); color: var(--ink, #1d2a33); box-shadow: 0 2px 8px rgba(0, 0, 0, .25); font-size: 12px; }
 .pb-card[hidden] { display: none; }
 .pb-card .pb-head { display: flex; align-items: center; gap: 4px; cursor: move; margin-bottom: 2px; }
