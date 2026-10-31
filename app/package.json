@@ -1,6 +1,7 @@
 {
   "name": "racenav-ui",
   "private": true,
+  "license": "GPL-3.0-or-later",
   "version": "1.0.0-alpha",
   "type": "module",
   "scripts": {

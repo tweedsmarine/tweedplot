@@ -6,7 +6,7 @@ default-members = ["crates/nav-core", "crates/polar", "crates/signalk", "crates/
 
 [workspace.package]
 edition = "2021"
-license = "UNLICENSED"
+license = "GPL-3.0-or-later"
 authors = ["Chris Harris <chris@tweedsmarine.nz>"]
 
 [workspace.dependencies]

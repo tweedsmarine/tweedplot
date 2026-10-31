@@ -257,6 +257,10 @@ The text is written as a Claude Doc ("TweedPlot User Manual") and bundled from `
 - Floating instrument panels (`instruments.js`) keep clear of the dock.
 - Statistics (`stats.js`): `STATS` lists the compare columns; adding one there makes it available in the table and its ⚙ menu.
 
+## Licence and contributing
+
+The code is GPL-3.0-or-later and the manual CC BY-SA 4.0: see [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE). The name and logos are not licensed for modified versions ([TRADEMARKS.md](TRADEMARKS.md)). Third-party data and libraries: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). To contribute, read [CONTRIBUTING.md](CONTRIBUTING.md). A build from this source uses the IHO test credentials for S-63; official installers use TweedsMarine's own.
+
 ## Conventions
 
 - WGS84 decimal degrees, south and west negative.

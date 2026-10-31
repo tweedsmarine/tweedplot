@@ -4,3 +4,11 @@ dist/
 *.log
 .DS_Store
 .tweedplot-oem/
+oem.txt
+signing.key
+signing.pub
+register.csv
+.env
+.env.*
+*.pem
+*.pfx
