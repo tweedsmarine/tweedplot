@@ -43,7 +43,7 @@ export function iconSelect(select, iconFor) {
   function refresh() {
     const o = select.selectedOptions[0];
     btn.innerHTML = o ? `${pic(o.value)}<span class="isel-label">${esc(o.textContent)}</span><span class="isel-caret">▾</span>` : "—";
-    btn.title = select.title || "";
+    btn.title = select.title || select.dataset.tip || "";
   }
   function build() {
     list.innerHTML = "";

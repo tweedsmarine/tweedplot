@@ -25,7 +25,12 @@ const FILL_STEPS = [0, 2, 4, 8, 15, 25, 50, 100, 150, 250];
 const STOPS = {
   rainbow: [[0, [196, 32, 38]], [0.14, [236, 112, 36]], [0.28, [244, 206, 52]], [0.42, [120, 200, 80]], [0.56, [40, 186, 170]], [0.70, [40, 130, 216]], [0.84, [70, 62, 196]], [1, [92, 28, 128]]],
   blues: [[0, [205, 240, 236]], [0.2, [150, 210, 234]], [0.45, [96, 164, 220]], [0.7, [58, 110, 184]], [1, [26, 52, 120]]],
+  mono: [[0, [20, 20, 20]], [1, [235, 235, 235]]],
+  bands: [[0, [20, 20, 20]], [0.1666, [20, 20, 20]], [0.1667, [65, 65, 65]], [0.3333, [65, 65, 65]], [0.3334, [110, 110, 110]], [0.5, [110, 110, 110]], [0.5001, [150, 150, 150]], [0.6666, [150, 150, 150]], [0.6667, [190, 190, 190]], [0.8333, [190, 190, 190]], [0.8334, [235, 235, 235]], [1, [235, 235, 235]]],
 };
+const NIGHT_PALETTES = ["mono", "bands"];
+const PALETTE_OPTIONS = `<option value="rainbow">Rainbow</option><option value="blues">Blues</option><option value="mono">Night mono</option><option value="bands">Night bands</option>`;
+const PALETTE_HELP = "Rainbow: red shallow to violet deep. Blues: as charts. Night mono and Night bands: grey ramps for the night colours (shallow brightest). Tracks coloured by Depth (own soundings colours) use these colours too";
 /** The target depth in use, if it lies between the shallow and deep limits. */
 const targetOf = (s) => (s.target != null && s.target > s.shallow && s.target < s.deep ? +s.target : null);
 /** The own soundings colours as a scale over depth (m, positive down): { lo, hi, tg, stops: [[depth, css], …] }.
@@ -33,7 +38,8 @@ const targetOf = (s) => (s.target != null && s.target > s.shallow && s.target < 
 export function ownSoundingsScale() {
   const lo = +current.shallow || 0, hi = Math.max(lo + 1, +current.deep || lo + 1);
   const tg = targetOf({ ...current, shallow: lo, deep: hi });
-  const st = STOPS[current.palette] || STOPS.rainbow;
+  const base = STOPS[current.palette] || STOPS.rainbow;
+  const st = current.reverse ? base.map(([t, c]) => [1 - t, c]).reverse() : base;
   const at = (t) => (tg == null ? lo + t * (hi - lo) : t <= 0.5 ? lo + (t / 0.5) * (tg - lo) : tg + ((t - 0.5) / 0.5) * (hi - tg));
   // with a target the halves need a stop at 0.5 exactly
   const pts = tg == null ? st : [...st.filter(([t]) => t < 0.5), [0.5, colourAt(st, 0.5)], ...st.filter(([t]) => t > 0.5)];
@@ -100,7 +106,7 @@ export function setupPbathy(map, { ui } = {}) {
   const fmtMB = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(0.1, b / 1e6).toFixed(b >= 1e8 ? 0 : 1)} MB`);
   const note = (t, kind = "") => { const el = $("pb-note"); el.textContent = t; el.className = `grow wx-note ${kind}`; };
 
-  let style = { palette: "rainbow", shallow: 0, deep: 500, target: null, contours: true, shade: true, fill: true, fill_m: 4, rejected: false };
+  let style = { palette: "rainbow", shallow: 0, deep: 500, target: null, contours: true, shade: true, fill: true, fill_m: 4, rejected: false, reverse: false };
   try { Object.assign(style, JSON.parse(localStorage.getItem(STYLE) || "{}")); } catch { /* defaults */ }
   current = style;
   window.dispatchEvent(new CustomEvent("own-soundings-colours"));
@@ -111,6 +117,7 @@ export function setupPbathy(map, { ui } = {}) {
   };
   const showForm = () => {
     $("pb-palette").value = style.palette;
+    $("pb-reverse").checked = !!style.reverse;
     $("pb-shallow").value = Math.round(style.shallow);
     $("pb-deep").value = Math.round(style.deep);
     $("pb-contours").checked = style.contours;
@@ -136,13 +143,13 @@ export function setupPbathy(map, { ui } = {}) {
     const dp = Math.max(sh + 1, +$("pb-deep").value || sh + 1);
     const tv = $("pb-target").value.trim();
     const tg = tv === "" ? null : Math.min(dp - 0.5, Math.max(sh + 0.5, +tv));
-    style = { palette: $("pb-palette").value, shallow: sh, deep: dp, target: tg, contours: $("pb-contours").checked, shade: $("pb-shade").checked, fill: $("pb-fill").checked, fill_m: FILL_STEPS[+$("pb-fill-m").value] ?? 4, rejected: $("pb-rejected").checked };
+    style = { ...style, palette: $("pb-palette").value, reverse: $("pb-reverse").checked, shallow: sh, deep: dp, target: tg, contours: $("pb-contours").checked, shade: $("pb-shade").checked, fill: $("pb-fill").checked, fill_m: FILL_STEPS[+$("pb-fill-m").value] ?? 4, rejected: $("pb-rejected").checked };
     card.draw();
     $("pb-fill-v").textContent = `${style.fill_m} m`;
     $("pb-fill-m").disabled = !style.fill;
     applyStyle();
   };
-  for (const id of ["pb-palette", "pb-shallow", "pb-deep", "pb-target", "pb-contours", "pb-shade", "pb-fill", "pb-fill-m", "pb-rejected"]) $(id).onchange = readForm;
+  for (const id of ["pb-palette", "pb-reverse", "pb-shallow", "pb-deep", "pb-target", "pb-contours", "pb-shade", "pb-fill", "pb-fill-m", "pb-rejected"]) $(id).onchange = readForm;
   // check soundings against the chart's depth areas (on unless turned off)
   const CHECK = "racenav.pbathy.check";
   $("pb-check").checked = localStorage.getItem(CHECK) !== "0";
@@ -318,6 +325,20 @@ export function setupPbathy(map, { ui } = {}) {
   });
   applyShow();
 
+  // Night colours switch to a night palette; going back to day or dusk restores the one in use before.
+  const syncNight = () => {
+    const night = (document.documentElement.dataset.palette || "").startsWith("night");
+    if (night && !NIGHT_PALETTES.includes(style.palette)) {
+      style = { ...style, dayPalette: style.palette, palette: "mono" };
+    } else if (!night && style.dayPalette) {
+      const { dayPalette, ...rest } = style;
+      style = { ...rest, palette: dayPalette };
+    } else return;
+    showForm(); applyStyle();
+  };
+  new MutationObserver(syncNight).observe(document.documentElement, { attributes: true, attributeFilter: ["data-palette"] });
+  syncNight();
+
   // ---------- live soundings ----------
   async function liveRefresh() {
     let st = null;
@@ -354,7 +375,8 @@ function makeCard(opts) {
   el.id = "pb-card";
   el.className = "pb-card";
   el.hidden = true;
-  el.innerHTML = `<div class="pb-head"><b>Own soundings</b><select class="pal" title="Colours: Rainbow (red shallow to violet deep) or Blues (as charts)"><option value="rainbow">Rainbow</option><option value="blues">Blues</option></select>
+  el.innerHTML = `<div class="pb-head"><b>Own soundings</b><select class="pal" title="${PALETTE_HELP}">${PALETTE_OPTIONS}</select>
+      <label class="rev" title="Reverse the colours: deep takes the shallow end of the palette"><input type="checkbox" class="rev-cb"> ⇅</label>
       <button class="fit" title="Fit the depth range to the soundings in the chart view">Fit</button>
       <button class="more" title="All the own soundings settings (Chart › Chart data)">⚙</button>
       <button class="close" title="Hide own soundings in this view">✕</button></div>
@@ -374,6 +396,7 @@ function makeCard(opts) {
     const s = { ...opts.get(), ...(live || {}) };
     if (!max || s.deep > max) fitScale();
     el.querySelector(".pal").value = s.palette;
+    el.querySelector(".rev-cb").checked = !!s.reverse;
     const pc = (v) => `${Math.min(100, Math.max(0, (v / max) * 100))}%`;
     const tg = s.target != null && s.target > s.shallow && s.target < s.deep ? s.target : null;
     const sc = scaleFor(s);
@@ -435,6 +458,7 @@ function makeCard(opts) {
     if (opts.get().target != null && Math.abs(e.clientX - (r.left + r.width / 2)) <= Math.max(14, r.width)) opts.set({ target: null });
   });
   el.querySelector(".pal").onchange = (e) => opts.set({ palette: e.target.value });
+  el.querySelector(".rev-cb").onchange = (e) => opts.set({ reverse: e.target.checked });
   el.querySelector(".fit").onclick = () => opts.fit();
   el.querySelector(".close").onclick = () => opts.hide();
   el.querySelector(".more").onclick = () => opts.settings();

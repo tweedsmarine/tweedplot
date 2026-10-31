@@ -16,7 +16,7 @@ export function setupHints() {
       byCard.get(card).push(text);
     } else {
       const prev = n.previousElementSibling;
-      if (prev && !prev.title) prev.title = text;
+      if (prev && !prev.title && !prev.dataset.tip) prev.title = text;
     }
   }
   for (const [card, texts] of byCard) {

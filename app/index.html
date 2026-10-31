@@ -563,7 +563,8 @@
             <button id="pb-again" hidden title="Import the same file again: its soundings will count twice">Import again</button>
             <span class="grow"></span><button id="pb-del" hidden title="Delete all the own soundings (the tracks and files stay)">✕ All</button></div>
           <div class="wx-row"><label for="pb-palette">Colours</label>
-            <select id="pb-palette" style="min-width:6.5em" title="Rainbow: red shallow to violet deep. Blues: as charts. Tracks coloured by Depth (own soundings colours) use these colours too"><option value="rainbow">Rainbow</option><option value="blues">Blues</option></select>
+            <select id="pb-palette" style="min-width:6.5em" title="Rainbow: red shallow to violet deep. Blues: as charts. Night mono and Night bands: grey ramps for the night colours (shallow brightest). Tracks coloured by Depth (own soundings colours) use these colours too"><option value="rainbow">Rainbow</option><option value="blues">Blues</option><option value="mono">Night mono</option><option value="bands">Night bands</option></select>
+            <label title="Reverse the colours: deep takes the shallow end of the palette"><input id="pb-reverse" type="checkbox" /> Reverse</label>
             <input id="pb-shallow" type="number" min="0" step="1" style="width:5em" title="Shallowest depth of the colour range (m)" /> to
             <input id="pb-deep" type="number" min="1" step="1" style="width:5em" title="Deepest depth of the colour range (m)" /> m
             <button id="pb-fit" title="Fit the colour range to the soundings in the chart view">Fit to view</button></div>

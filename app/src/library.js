@@ -617,7 +617,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       }
       const old = li.querySelector("select");
       const sel = kindSelect();
-      sel.title = old.title;
+      sel.title = old.title || old.dataset.tip || "";
       sel.prepend(new Option("— not set —", ""));
       old.replaceWith(sel);
       sel.value = sy.kind;

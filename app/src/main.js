@@ -50,6 +50,7 @@ import { setupMonitors } from "./monitors.js";
 import { setupWindowState } from "./windowstate.js";
 import { setupUiPrefs } from "./uiprefs.js";
 import { setupTooltips } from "./tooltips.js";
+import { setupSelectPop } from "./selectpop.js";
 import { setupManual } from "./manual.js";
 import { setupData } from "./data.js";
 import { setupPbathy, pbathyAt } from "./pbathy.js";
@@ -221,6 +222,7 @@ window.__map = map; // handy for debugging in devtools
 map.addControl(new maplibregl.ScaleControl({ unit: "nautical" }), "bottom-right");
 setupUiPrefs();
 setupTooltips();
+setupSelectPop();
 document.getElementById("zoom-in").onclick = () => map.zoomIn();
 document.getElementById("zoom-out").onclick = () => map.zoomOut();
 const northNeedle = document.getElementById("north-needle");

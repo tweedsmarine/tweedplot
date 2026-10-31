@@ -16,9 +16,12 @@ pub enum Palette {
     Rainbow,
     /// Pale (shallow) to dark blue (deep), as charts.
     Blues,
+    /// Night: one grey ramp, a smooth fade. The night colours invert the page, so dark (shallow)
+    /// shows brightest and deep fades to black.
+    Mono,
+    /// Night: as Mono in six bands, which stay apart at low brightness.
+    Bands,
 }
-
-/// How the bathymetry is drawn.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Style {
@@ -39,6 +42,8 @@ pub struct Style {
     /// it over the first half of the palette and from it to `deep` over the second, so ground
     /// near it stands out, and it gets a bold contour (the three pointers, as the sea layers).
     pub target: Option<f32>,
+    /// Run the palette the other way (deep to shallow).
+    pub reverse: bool,
 }
 
 /// The largest fill (cells of the level drawn): beyond it the filled ring would cost more
@@ -47,7 +52,7 @@ pub const MAX_FILL_CELLS: i64 = 192;
 
 impl Default for Style {
     fn default() -> Self {
-        Style { palette: Palette::Rainbow, shallow: 0.0, deep: 500.0, contours: true, shade: true, fill: true, fill_m: 4.0, rejected: false, target: None }
+        Style { palette: Palette::Rainbow, shallow: 0.0, deep: 500.0, contours: true, shade: true, fill: true, fill_m: 4.0, rejected: false, target: None, reverse: false }
     }
 }
 
@@ -81,12 +86,29 @@ const BLUES: &[(f32, [f32; 3])] = &[
     (0.7, [58.0, 110.0, 184.0]),
     (1.0, [26.0, 52.0, 120.0]),
 ];
+const MONO: &[(f32, [f32; 3])] = &[(0.0, [20.0, 20.0, 20.0]), (1.0, [235.0, 235.0, 235.0])];
+const BANDS: &[(f32, [f32; 3])] = &[
+    (0.0, [20.0, 20.0, 20.0]),
+    (0.1666, [20.0, 20.0, 20.0]),
+    (0.1667, [65.0, 65.0, 65.0]),
+    (0.3333, [65.0, 65.0, 65.0]),
+    (0.3334, [110.0, 110.0, 110.0]),
+    (0.5, [110.0, 110.0, 110.0]),
+    (0.5001, [150.0, 150.0, 150.0]),
+    (0.6666, [150.0, 150.0, 150.0]),
+    (0.6667, [190.0, 190.0, 190.0]),
+    (0.8333, [190.0, 190.0, 190.0]),
+    (0.8334, [235.0, 235.0, 235.0]),
+    (1.0, [235.0, 235.0, 235.0]),
+];
 
 /// Colour of a depth (m, positive down) in a style.
 pub fn colour(depth: f32, s: &Style) -> [f32; 3] {
     let stops = match s.palette {
         Palette::Rainbow => RAINBOW,
         Palette::Blues => BLUES,
+        Palette::Mono => MONO,
+        Palette::Bands => BANDS,
     };
     let span = (s.deep - s.shallow).max(0.1);
     let t = match s.target.filter(|tg| *tg > s.shallow && *tg < s.deep) {
@@ -94,6 +116,7 @@ pub fn colour(depth: f32, s: &Style) -> [f32; 3] {
         Some(tg) => 0.5 + 0.5 * ((depth - tg) / (s.deep - tg)).clamp(0.0, 1.0),
         None => ((depth - s.shallow) / span).clamp(0.0, 1.0),
     };
+    let t = if s.reverse { 1.0 - t } else { t };
     for w in stops.windows(2) {
         if t <= w[1].0 {
             let f = (t - w[0].0) / (w[1].0 - w[0].0);
