@@ -182,17 +182,32 @@ export function setupWeatherPanel(map, weather) {
   // ---------- header: time, run and how old the data is ----------
   function renderHead() {
     const cur = weather.current();
-    const s = weather.sources().find((x) => x.path === cur.path);
+    const info = weather.layerInfo();
+    const s = weather.sources().find((x) => x.path === (info.path ?? cur.path));
     $("wxp-when").textContent = cur.path ? fmt(cur.t) : "";
     const run = $("wxp-run");
     run.className = "wxp-run";
     if (!s) { run.textContent = "No GRIB loaded"; return; }
     const now = Date.now() / 1000;
     const ageH = s.ref ? (now - s.ref) / 3600 : null;
-    const info = weather.layerInfo();
-    const over = info.max != null && now > info.max;
-    run.textContent = `${s.name}${s.ref ? ` · run ${fmt(s.ref, true)} (${ageH < 48 ? `${Math.round(ageH)} h` : `${Math.round(ageH / 24)} d`} old)` : ""}`;
-    if (over) { run.classList.add("stale"); run.textContent += " · the forecast has ended: it is past the last time"; }
+    const [lo, hi] = [info.srcMin ?? info.min, info.srcMax ?? info.max];
+    const over = hi != null && now > hi;
+    const outside = hi != null && (cur.t > hi || cur.t < lo);
+    // satellite products are analyses of the past, not forecast runs
+    const analysis = /VIIRS|MUR SST|Himawari/i.test(s.model ?? s.name ?? "");
+    const age = (h) => (h < 48 ? `${Math.round(h)} h` : `${Math.round(h / 24)} d`);
+    if (analysis) {
+      run.textContent = `${s.name} · analysis, ${fmt(lo)} to ${fmt(hi)}`;
+      const lastH = (now - hi) / 3600;
+      // how late each product normally is when published: VIIRS a couple of days, MUR a day or two, Himawari hours
+      const slackH = /VIIRS/i.test(s.model ?? s.name ?? "") ? 96 : /MUR/i.test(s.model ?? s.name ?? "") ? 72 : 12;
+      if (outside) { run.classList.add("stale"); run.textContent += " · no data at this time"; }
+      else if (lastH > slackH) { run.classList.add("stale"); run.textContent += ` · latest data is ${age(lastH)} old: download a newer analysis`; }
+      return;
+    }
+    run.textContent = `${s.name}${s.ref ? ` · run ${fmt(s.ref, true)} (${age(ageH)} old)` : ""}`;
+    if (outside) { run.classList.add("stale"); run.textContent += ` · no data at this time: it covers ${fmt(lo)} to ${fmt(hi)}`; }
+    else if (over) { run.classList.add("stale"); run.textContent += ` · the data ends ${fmt(hi)}, before now`; }
     else if (ageH > 24) { run.classList.add("stale"); run.textContent += " · old: download a fresh run"; }
   }
 

@@ -79,8 +79,11 @@ export function autoScale(lo, hi) {
 /** The colours for a sea filter: lo..target over the cool half of TURBO, target..hi over the warm half. */
 export function seaScale(f) {
   const half = TURBO.length / 2;
-  const lo = f.lo, hi = Math.max(f.hi, f.lo + 1e-3), tg = Math.min(Math.max(f.tg, lo + 1e-4), hi - 1e-4);
+  const lo = f.lo, hi = Math.max(f.hi, f.lo + 1e-3);
   const out = [];
+  // no target: the whole palette runs evenly from lo to hi
+  if (!Number.isFinite(f.tg)) return TURBO.map((c, i) => [lo + ((hi - lo) * i) / (TURBO.length - 1), c]);
+  const tg = Math.min(Math.max(f.tg, lo + 1e-4), hi - 1e-4);
   for (let i = 0; i < half; i++) out.push([lo + ((tg - lo) * i) / half, TURBO[i]]);
   for (let i = 0; i < half; i++) out.push([tg + ((hi - tg) * i) / (half - 1), TURBO[half + i]]);
   return out;
@@ -492,12 +495,23 @@ export function setupWeather(map, layers) {
     $("wx-isobars-row").hidden = !hasOv("isobars");
     $("wx-isotherms-row").hidden = !(LAYERS[wx.layer]?.contour);
   }
+  /** First and last time any parameter of a GRIB has data. */
+  function spanOf(path) {
+    const ts = (loaded.get(path)?.params ?? []).flatMap((p) => p.times ?? []);
+    return ts.length ? [Math.min(...ts), Math.max(...ts)] : null;
+  }
   function setTimes() {
-    const s = display && loaded.get(display);
-    // the shown layer's times, else the wind's, else whatever the file has
-    const want = [...(LAYERS[wx.layer]?.params ?? []), "WindU", "WindSpeed"];
-    const series = s && (want.map((w) => s.params.find((p) => p.param === w)).find(Boolean) ?? s.params.find((p) => p.times?.length));
-    times = series ? series.times : [];
+    // the slider covers every loaded GRIB; what each has at the slider time is shown as it is found there
+    const all = new Set();
+    let step = Infinity;
+    for (const s of loaded.values()) {
+      for (const p of s.params) {
+        const ts = p.times ?? [];
+        for (const v of ts) all.add(v);
+        for (let i = 1; i < ts.length; i++) step = Math.min(step, ts[i] - ts[i - 1]);
+      }
+    }
+    times = [...all].sort((a, b) => a - b);
     renderLayers();
     const slider = $("wx-slider");
     if (!times.length) {
@@ -506,7 +520,7 @@ export function setupWeather(map, layers) {
       draw();
       return;
     }
-    const step = times.length > 1 ? Math.min(...times.slice(1).map((v, i) => v - times[i])) : 3600;
+    if (!Number.isFinite(step)) step = 3600;
     slider.min = times[0];
     slider.max = times.at(-1);
     slider.step = Math.max(900, Math.min(step, 3600));
@@ -739,7 +753,7 @@ export function setupWeather(map, layers) {
         const r = seaRange[wx.layer];
         if (!f || !r || r.path !== shadePath(layer)) ensureSeaRange(wx.layer, layer);
         // a layer without the sea colours: only the target's own line, once the filter has been set
-        if (!layer.auto && f?.set) {
+        if (!layer.auto && f?.set && f.tg != null) {
           contours.push(...isobars(gs, 0, [f.tg]).map((x) => ({ ...x, properties: { hpa: +f.tg.toFixed(2), target: 1 } })));
         }
       }
@@ -750,7 +764,7 @@ export function setupWeather(map, layers) {
           const lv = CHL_LEVELS.filter((x) => Math.log10(x) >= f.lo - 1e-9 && Math.log10(x) <= f.hi + 1e-9);
           const pick = lv.length > 9 ? lv.filter((_, i) => i % 2 === 0) : lv;
           for (const x of pick) contours.push(...isobars(gs, 0, [Math.log10(x)]).map((c) => ({ ...c, properties: { hpa: fmtChl(x) } })));
-          contours.push(...isobars(gs, 0, [f.tg]).map((c) => ({ ...c, properties: { hpa: fmtChl(10 ** f.tg), target: 1 } })));
+          if (f.tg != null) contours.push(...isobars(gs, 0, [f.tg]).map((c) => ({ ...c, properties: { hpa: fmtChl(10 ** f.tg), target: 1 } })));
         } else if (f && layer.contour && wx.isotherms) {
           const step = niceStep(f.lo, f.hi);
           const dp = step < 0.1 ? 2 : step < 1 ? 1 : 0;
@@ -758,7 +772,7 @@ export function setupWeather(map, layers) {
             .map((x) => ({ ...x, properties: { hpa: +(Math.round(x.properties.hpa / step) * step).toFixed(dp) } }))
             .filter((x) => x.properties.hpa >= f.lo - 1e-9 && x.properties.hpa <= f.hi + 1e-9);
           // the target's own line
-          contours.push(...isobars(gs, 0, [f.tg]).map((x) => ({ ...x, properties: { hpa: +f.tg.toFixed(dp + 1), target: 1 } })));
+          if (f.tg != null) contours.push(...isobars(gs, 0, [f.tg]).map((x) => ({ ...x, properties: { hpa: +f.tg.toFixed(dp + 1), target: 1 } })));
         }
       }
       map.getSource("wx-isotherms").setData(fc(contours));
@@ -857,10 +871,11 @@ export function setupWeather(map, layers) {
       const body = document.querySelector("#wx-point tbody");
       if (!cursor || !loaded.size || !times.length) { body.innerHTML = ""; for (const fn of pointListeners) fn(null, cursor); return; }
       const at = cursor, tt = t;
-      const rows = await invoke("grib_point", { lat: at[1], lon: at[0], t: tt }).catch(() => []);
+      const rows = await invoke("grib_point", { lat: at[1], lon: at[0], t: tt }).catch(() => []) || [];
       let shown = (rows || []).find((r) => r.path === display) ?? null;
       // sea readings from whichever loaded file has them (MUR, HYCOM), under the shown GRIB's weather
       // the shown GRIB's values, with anything it lacks (sea data, or weather when an ocean file is shown) from the other loaded files
+      // (a file only gives values for times it covers, so only what exists at the slider time is shown)
       if (shown) {
         const extra = {};
         for (const k of ["tws", "twd", "gust", "mslp", "wave", "period", "wavedir", "temp", "rain", ...SEA_KEYS]) {
@@ -946,7 +961,7 @@ export function setupWeather(map, layers) {
     const f = wx.seaFilter[key];
     // first time, or a file whose values lie outside the saved filter: start from the whole range
     if (!f || f.hi < r.min || f.lo > r.max) {
-      wx.seaFilter[key] = { lo: r.min, hi: r.max, tg: +roundTo((r.min + r.max) / 2, q).toFixed(6) };
+      wx.seaFilter[key] = { lo: r.min, hi: r.max, tg: null };
       saveWx();
     }
     applyLayer();
@@ -981,12 +996,15 @@ export function setupWeather(map, layers) {
         const stops = [[f.lo, paletteAt(f.lo, layer.scale)], ...sc, [f.hi, paletteAt(f.hi, layer.scale)]];
         grad.style.background = `linear-gradient(to right, ${stops.map(([v, c]) => `${c} ${((v - f.lo) / w) * 100}%`).join(", ")})`;
       }
-      for (const k of ["lo", "tg", "hi"]) box.querySelector(`.h.${k}`).style.left = pc(f[k]);
+      for (const k of ["lo", "hi"]) box.querySelector(`.h.${k}`).style.left = pc(f[k]);
+      const th = box.querySelector(".h.tg");
+      th.style.left = pc(f.tg ?? (f.lo + f.hi) / 2);
+      th.classList.toggle("off", f.tg == null);
       const q = seaQuantum(r.min, r.max);
       const dp = Math.max(0, -Math.round(Math.log10(q)));
       const fmtv = (v) => (layer.log ? fmtChl(10 ** v) : `${v.toFixed(dp)}${layer.unit === "°C" ? "°" : ""}`);
       box.querySelector(".v.lo").textContent = fmtv(f.lo);
-      box.querySelector(".v.tg").textContent = `target ${fmtv(f.tg)}`;
+      box.querySelector(".v.tg").textContent = f.tg == null ? "no target" : `target ${fmtv(f.tg)}`;
       box.querySelector(".v.hi").textContent = fmtv(f.hi);
       box.querySelector(".v.min").textContent = fmtv(r.min);
       box.querySelector(".v.max").textContent = fmtv(r.max);
@@ -1004,8 +1022,9 @@ export function setupWeather(map, layers) {
       const rect = track.getBoundingClientRect();
       const v = r.min + ((e.clientX - rect.left) / rect.width) * (r.max - r.min);
       // the pointer clicked, else the nearest one (the target wins a tie)
+      // with no target set, only the target pointer itself can set one
       const k = e.target.classList.contains("h") ? [...e.target.classList].find((c) => ["lo", "tg", "hi"].includes(c))
-        : ["tg", "lo", "hi"].reduce((a, b) => (Math.abs(f[b] - v) < Math.abs(f[a] - v) ? b : a));
+        : (f.tg == null ? ["lo", "hi"] : ["tg", "lo", "hi"]).reduce((a, b) => (Math.abs(f[b] - v) < Math.abs(f[a] - v) ? b : a));
       drag = { k, rect };
       track.setPointerCapture(e.pointerId);
       move(e);
@@ -1014,10 +1033,14 @@ export function setupWeather(map, layers) {
       const f = wx.seaFilter[wx.layer], r = seaRange[wx.layer];
       const q = seaQuantum(r.min, r.max);
       v = Math.min(r.max, Math.max(r.min, roundTo(v, q)));
-      if (k === "lo") f.lo = Math.min(v, f.tg - q);
-      else if (k === "hi") f.hi = Math.max(v, f.tg + q);
+      if (k === "lo") f.lo = Math.min(v, f.tg == null ? f.hi - q : f.tg - q);
+      else if (k === "hi") f.hi = Math.max(v, f.tg == null ? f.lo + q : f.tg + q);
       else f.tg = Math.min(Math.max(v, f.lo + q), f.hi - q);
-      f.lo = +f.lo.toFixed(6); f.hi = +f.hi.toFixed(6); f.tg = +f.tg.toFixed(6);
+      f.lo = +f.lo.toFixed(6); f.hi = +f.hi.toFixed(6);
+      if (f.tg != null) {
+        f.tg = Math.min(Math.max(f.tg, f.lo), f.hi);
+        f.tg = +f.tg.toFixed(6);
+      }
       f.set = true;
       applyLayer();
     };
@@ -1028,6 +1051,15 @@ export function setupWeather(map, layers) {
     };
     track.addEventListener("pointermove", move);
     track.addEventListener("pointerup", () => { if (drag) { drag = null; saveWx(); draw(); } });
+    // double-click the target pointer to clear the target (the track captures the pointer, so the event arrives at the track)
+    track.addEventListener("dblclick", (e) => {
+      const f = wx.seaFilter[wx.layer];
+      if (!f || f.tg == null) return;
+      const h = box.querySelector(".h.tg").getBoundingClientRect();
+      if (Math.abs(e.clientX - (h.left + h.width / 2)) > Math.max(14, h.width)) return;
+      f.tg = null;
+      saveWx(); applyLayer(); draw();
+    });
     // typing a value: click the number, Enter to set (a chlorophyll value is typed in mg/m³)
     for (const k of ["lo", "tg", "hi"]) {
       const span = box.querySelector(`.v.${k}`);
@@ -1038,7 +1070,8 @@ export function setupWeather(map, layers) {
         const input = document.createElement("input");
         input.type = "number";
         input.step = "any";
-        input.value = String(+(layer.log ? 10 ** f[k] : f[k]).toPrecision(4));
+        const cur = f[k] ?? (f.lo + f.hi) / 2;
+        input.value = String(+(layer.log ? 10 ** cur : cur).toPrecision(4));
         input.style.width = "64px";
         span.textContent = "";
         span.append(input);
@@ -1058,7 +1091,7 @@ export function setupWeather(map, layers) {
     box.querySelector(".fit").onclick = () => {
       const r = seaRange[wx.layer];
       if (!r) return;
-      wx.seaFilter[wx.layer] = { lo: r.min, hi: r.max, tg: +roundTo((r.min + r.max) / 2, seaQuantum(r.min, r.max)).toFixed(6) };
+      wx.seaFilter[wx.layer] = { lo: r.min, hi: r.max, tg: null };
       saveWx(); applyLayer(); draw();
     };
   }
@@ -1209,7 +1242,11 @@ export function setupWeather(map, layers) {
     mountLegend(el) { legends.add(el); drawLegend(); },
     onChange: (fn) => { changeListeners.push(fn); },
     /** The shown layer's definition, key and the slider's range. */
-    layerInfo: () => ({ key: wx.layer, layer: LAYERS[wx.layer] ?? LAYERS.wind, off: wx.shading === "off", min: times[0], max: times.at(-1), t, filter: wx.seaFilter[wx.layer] ?? null }),
+    layerInfo: () => {
+      const path = LAYERS[wx.layer]?.ocean ? oceanPath(LAYERS[wx.layer]) : null;
+      const [srcMin, srcMax] = spanOf(path ?? display) ?? [undefined, undefined];
+      return { key: wx.layer, layer: LAYERS[wx.layer] ?? LAYERS.wind, off: wx.shading === "off", min: times[0], max: times.at(-1), srcMin, srcMax, t, filter: wx.seaFilter[wx.layer] ?? null, path };
+    },
     /** Loaded GRIBs: { path, name, model, ref }. */
     sources: () => [...loaded].map(([path, s]) => ({ path, name: s.name, model: s.model, ref: s.ref_time, shown: path === display })),
     /** Shadable layers with the files that have them: [{ key, label, unit, paths, path }]. */
