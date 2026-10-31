@@ -13,6 +13,8 @@ import * as activity from "./activity.js";
 import { setupWeather, barbImage } from "./weather.js";
 import { setupWeatherPanel } from "./wxpanel.js";
 import { setupBrand } from "./brand.js";
+import { setupWebMap } from "./webmap.js";
+import { setupLayerVisibility } from "./layervis.js";
 import { setupChartFeatures, featureImage } from "./chartfeatures.js";
 import { setupTides, tideImage } from "./tides.js";
 import { tidalImage } from "./tidalstreams.js";
@@ -122,6 +124,9 @@ const map = new maplibregl.Map({
       hires: { type: "raster", tiles: [TILE_URL.replace("{z}/{x}/{y}.pbf", "hires/{z}/{x}/{y}.png")], tileSize: 256, minzoom: 10, maxzoom: 18 },
       // own soundings (from tracks, TimeZero PBG and XYZ imports), drawn in Rust as images
       pbathy: { type: "raster", tiles: [TILE_URL.replace("{z}/{x}/{y}.pbf", "pbathy/{z}/{x}/{y}.png")], tileSize: 256, minzoom: 3, maxzoom: 20 },
+      // online maps: off unless turned on in Chart › Layers (webmap.js). Fetched by Rust, which sends nothing while off
+      osm: { type: "raster", tiles: [TILE_URL.replace("{z}/{x}/{y}.pbf", "osm/{z}/{x}/{y}.png")], tileSize: 256, maxzoom: 19 },
+      osea: { type: "raster", tiles: [TILE_URL.replace("{z}/{x}/{y}.pbf", "osea/{z}/{x}/{y}.png")], tileSize: 256, maxzoom: 18 },
     },
     layers: [
       { id: "sea", type: "background", paint: { "background-color": css("--sea") } },
@@ -144,6 +149,8 @@ const map = new maplibregl.Map({
       // over the charted depths too: it's what the skipper surveyed (not for navigation)
       { id: "pbathy", type: "raster", source: "pbathy", minzoom: 3, layout: { visibility: "none" }, // per view: pbathy.js
         paint: { "raster-opacity": 0.95, "raster-resampling": "nearest" } },
+      // OpenStreetMap (optional): its sea is made transparent in Rust, so it draws only land over the depth colours
+      { id: "osm", type: "raster", source: "osm", layout: { visibility: "none" } },
       { id: "depcnt", type: "line", source: "chart", "source-layer": "depcnt", layout: { visibility: "none" },
         paint: { "line-color": "#7d97a6", "line-width": 0.6 } },
       { id: "safety-contour", type: "line", source: "chart", "source-layer": "depcnt",
@@ -171,6 +178,7 @@ const map = new maplibregl.Map({
         paint: { "line-color": css("--coast"), "line-width": 0.9 } },
       { id: "soundg", type: "symbol", source: "chart", "source-layer": "soundg", layout: { visibility: "none", "icon-image": soundingImage(), "icon-allow-overlap": false, "icon-padding": 1 },
       },
+      { id: "osea", type: "raster", source: "osea", layout: { visibility: "none" } },
       { id: "track", type: "line", source: "track",
         paint: { "line-color": "#d35400", "line-width": 2 } },
       { id: "hdgline", type: "line", source: "hdgline",
@@ -361,6 +369,8 @@ map.on("load", () => {
   setupS63(map, { toast });
   setupPalette();
   setupBrand();
+  setupWebMap(map);
+  layerVis = setupLayerVisibility(map, { ready: () => chartMapLoaded && chartStoreReady });
   alarms = setupAlarms(map, {
     getBoat: () => ({ pos: lastBoat, v: vessel, live: live && signalKActive(), connected: liveDataConnected(), fresh: Date.now() - lastFeed < 5000 }),
     getSafetyDepth: () => settings.safetyDepth,
@@ -504,7 +514,7 @@ setInterval(feed, 1000);
 // The bundled land and coast show while the chart tiles load (and when there are no
 // charts). Once tiles arrive they are hidden: the tiles have their own world land, with
 // the lakes and charted water cut out, and the bundled land would cover those.
-let chartMapLoaded = false, pendingChartInfo = null;
+let chartMapLoaded = false, pendingChartInfo = null, layerVis = null;
 const FALLBACK_LAND = ["land-world", "coast-world", "land-nz", "coast-nz"];
 let chartWorldLand = false; // the chart store has GSHHG world land (chart_info)
 function setChartFallbackRange(loading) {
@@ -542,6 +552,7 @@ function enableChartLayers() {
     if (layer.source === "chart" && !layer.id.startsWith("mar-")) map.setLayoutProperty(layer.id, "visibility", "visible");
   }
   features?.setEnabled(true);
+  layerVis?.apply();
 }
 // A failed chart tile isn't automatically requested again by the map. Retry at a
 // bounded rate so transient failures and tiles drawn before chart startup recover.
@@ -687,6 +698,55 @@ let follow = true;
 const followBtn = document.getElementById("follow");
 followBtn.onclick = () => { follow = !follow; followBtn.classList.toggle("on", follow); };
 map.on("dragstart", () => { follow = false; followBtn.classList.remove("on"); });
+
+// The boat's place on the screen while following, as a fraction of the map's width and height from its
+// centre. Drag the boat to set it (to see more chart ahead); double-click the boat to centre it again.
+const FOLLOW_KEY = "tweedplot.followOffset";
+let followFrac = (() => {
+  try { const o = JSON.parse(localStorage.getItem(FOLLOW_KEY) || "null"); if (Array.isArray(o) && o.every(Number.isFinite)) return o; } catch { /* ignore */ }
+  return [0, 0];
+})();
+const followOffset = () => {
+  const c = map.getCanvas();
+  return [followFrac[0] * c.clientWidth, followFrac[1] * c.clientHeight];
+};
+const saveFollowFrac = () => { try { localStorage.setItem(FOLLOW_KEY, JSON.stringify(followFrac)); } catch { /* ignore */ } };
+let boatDrag = false;
+const onBoat = (point) => !!lastBoat && map.getLayer("boat") && map.queryRenderedFeatures(point, { layers: ["boat", "boat-hull"].filter((l) => map.getLayer(l)) }).length > 0;
+function startBoatDrag(e) {
+  if (!follow || !onBoat(e.point)) return;
+  e.preventDefault(); // not a chart pan
+  map.stop();
+  boatDrag = true;
+  map.getCanvas().style.cursor = "grabbing";
+}
+function moveBoatDrag(e) {
+  if (!boatDrag || !lastBoat) return;
+  const c = map.getCanvas();
+  const clamp = (v) => Math.min(0.45, Math.max(-0.45, v));
+  followFrac = [clamp(e.point.x / c.clientWidth - 0.5), clamp(e.point.y / c.clientHeight - 0.5)];
+  map.jumpTo({ center: lastBoat, offset: followOffset() });
+}
+function endBoatDrag() {
+  if (!boatDrag) return;
+  boatDrag = false;
+  map.getCanvas().style.cursor = "";
+  saveFollowFrac();
+}
+map.on("mousedown", startBoatDrag);
+map.on("touchstart", startBoatDrag);
+map.on("mousemove", moveBoatDrag);
+map.on("touchmove", moveBoatDrag);
+map.on("mouseup", endBoatDrag);
+map.on("touchend", endBoatDrag);
+window.addEventListener("blur", endBoatDrag);
+map.on("dblclick", (e) => {
+  if (!follow || !onBoat(e.point)) return;
+  e.preventDefault(); // not a zoom
+  followFrac = [0, 0];
+  saveFollowFrac();
+  if (lastBoat) map.easeTo({ center: lastBoat, offset: [0, 0], duration: 300 });
+});
 
 const TRACK_MAX = 20000;
 let track = [];
@@ -1021,7 +1081,7 @@ listen("vessel", ({ payload }) => {
     if (track.length > TRACK_MAX) track.shift();
     setData("track", line(track));
   }
-  if (follow && ctx.hidden) map.easeTo({ center: pos, duration: 200 }); // the menu stays where it was opened
+  if (follow && ctx.hidden && !boatDrag) map.easeTo({ center: pos, offset: followOffset(), duration: 200 }); // the menu stays where it was opened
   arrows?.live(pos, v);
   route?.boatAt(pos);
   feed();

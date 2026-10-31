@@ -27,6 +27,7 @@ polar.workspace = true
 nav-core.workspace = true
 chart.workspace = true
 png = "0.17"
+reqwest = { version = "0.13", default-features = false, features = ["native-tls", "blocking"] }
 grib.workspace = true
 routing.workspace = true
 library.workspace = true

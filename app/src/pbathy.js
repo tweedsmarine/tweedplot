@@ -429,7 +429,11 @@ function makeCard(opts) {
     // the deep pointer pushed to the end: room to go deeper
     if (atEnd) { max = nice(max * 1.6); draw(); }
   });
-  el.querySelector(".h.tg").addEventListener("dblclick", (e) => { e.stopPropagation(); opts.set({ target: null }); });
+  // the track captures the pointer while dragging, so a double-click arrives at the track, not at the pointer
+  track.addEventListener("dblclick", (e) => {
+    const r = el.querySelector(".h.tg").getBoundingClientRect();
+    if (opts.get().target != null && Math.abs(e.clientX - (r.left + r.width / 2)) <= Math.max(14, r.width)) opts.set({ target: null });
+  });
   el.querySelector(".pal").onchange = (e) => opts.set({ palette: e.target.value });
   el.querySelector(".fit").onclick = () => opts.fit();
   el.querySelector(".close").onclick = () => opts.hide();

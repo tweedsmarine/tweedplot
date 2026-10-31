@@ -3223,6 +3223,7 @@ dependencies = [
  "nav-core",
  "png 0.17.16",
  "polar",
+ "reqwest",
  "routing",
  "serde",
  "serde_json",

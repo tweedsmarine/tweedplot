@@ -218,7 +218,11 @@ function shadingExpression(mode, layer = LAYERS.wind) {
  */
 export function setupWeather(map, layers) {
   const beforeTop = layers.top;
-  const shadingBefore = () => (wx.land === "coast" ? layers.coastTop : layers.landTop);
+  const shadingBefore = () => {
+    // the online base map's land stands in for the bundled land, so the shading goes under it
+    if (map.getLayer("osm") && map.getLayoutProperty("osm", "visibility") === "visible") return "osm";
+    return wx.land === "coast" ? layers.coastTop : layers.landTop;
+  };
   const $ = (id) => document.getElementById(id);
   const loaded = new Map(); // path -> summary
   let display = null; // path shown on the chart
@@ -242,6 +246,7 @@ export function setupWeather(map, layers) {
     paint: { "fill-color": shadingExpression(wx.shading === "off" ? "2" : wx.shading, LAYERS[wx.layer] ?? LAYERS.wind), "fill-opacity": wx.opacity, "fill-antialias": false },
     layout: { visibility: wx.shading === "off" ? "none" : "visible" },
   }, shadingBefore());
+  window.addEventListener("webmap-changed", () => map.moveLayer("wx-cells", shadingBefore()));
   // isobars and wave-direction arrows
   map.addSource("wx-isobars", { type: "geojson", data: fc([]) });
   map.addSource("wx-wavedir", { type: "geojson", data: fc([]) });

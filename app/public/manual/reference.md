@@ -116,7 +116,7 @@ Drawers slide out from the rail; instrument panels, the time slider and the dock
 | {icon:north} | **North up** | The needle shows which way north is; click to turn the chart north up again |
 | {icon:sk} {icon:sk-off} | **Live data** | Green: data arriving. Amber: connected but nothing for 10 s. Red with a slash: not connected. Hover for details, click for **Settings › Connections** |
 | {icon:live} {icon:paused} | **Live / Paused** | Live: the boat follows the instruments. Paused: planning, the boat stays where you put it (right-click › **Move boat here**) |
-| {icon:follow} | **Follow** | Keeps the boat centred; dragging the chart turns it off |
+| {icon:follow} | **Follow** | Keeps the boat in the same place on the screen (centred to begin with); dragging the chart turns it off. Drag the boat to put it anywhere you like, to see more chart ahead; double-click the boat to centre it again |
 | {icon:ruler} | **Ruler** | Measure: click points on the chart, double-click to finish, Esc to stop (see Measuring) |
 | {icon:targets} | **Target list** | Opens the AIS target list over the chart (also **T**) |
 | {icon:view-nav} {icon:view-plan} {icon:view-inst} | **View** | Steps through Navigation, Planning and Instruments; the icon shows the view you are in. Right-click (or hold) to choose a view, or to show or hide the chart in this view |
@@ -187,7 +187,7 @@ Wharves, breakwaters, jetties, pontoons, floating docks and causeways are drawn 
 | --- | --- |
 | **Safety** | **Safety depth** and **safety contour** (below), with the draft from **Settings › Vessel** beside them and how much water the safety depth leaves under the keel |
 | **Chart display** | **Display**: Base, Standard or All (below); **Standard display**; **Light sectors**, **Names and labels**, **Soundings**; **Chart symbol size** |
-| **Layers** | **High-resolution depths**, **Own soundings**, and the boundaries and fishing rules (see *Boundaries and fishing rules*) |
+| **Layers** | **Chart layers** (**High-resolution depths**, **Detailed depths (ETOPO)**, **World depths**, **World coastline**), **Own soundings**, **Online maps**, and the boundaries and fishing rules (see *Boundaries and fishing rules*). Layers can overlap: the world depths are coarse, so with **OpenStreetMap** on they show as pale water that doesn't match its coastline. Switch off any layer you don't want |
 | **Own ship** | **Heading line**, **COG line** and **Wind arrows** (see Your boat) |
 | **Chart data** | Every download and import: world coastline, detailed depths, high-resolution depths, boundaries, fishing rules, the LINZ charts, and **Encrypted charts (S-63)** |
 
@@ -268,7 +268,7 @@ The heights are above NZVD2016, about mean sea level, not chart datum: the depth
 
 - **Add my tracks** adds the depth logged along every track in the library that has depth (the recorder logs it from the sounder; TimeZero track imports keep it too), whatever is ticked or selected in the Tracks tab. Tracks added before are skipped, so press it again after a trip. Spikes are left out: a short excursion (up to five fixes) that starts and ends with a jump in depth steeper than a seabed could be over the distance run (about 63°, plus 10 m and 10 %), the depths either side agreeing: the sounder losing the bottom, seeing fish or a wake. Crossing a narrow channel or a bank goes down and up at a believable slope and stays.
 - **Import PBG / XYZ…** reads a TimeZero PBG file, or XYZ text with longitude, latitude and height on each line (negative down, as TimeZero exports). A file imported before is not added again unless you press **Import again** (its soundings would count twice). A large file takes a minute or two.
-- **Own soundings** on the toolbar (the seabed button), or **Own soundings (this view)** in **Layers**, shows them in the view you're in, from zoom 3 in, over the chart's depth areas. Each view keeps its own choice: on in Planning and off in Navigation to begin with. With them shown, a card over the chart holds the depth range: drag the pointers under its colour bar. The outer two set the shallowest and deepest depths coloured; the red middle one sets a **target depth**: the colours run from shallow to the target over the first half of the palette and from the target to deep over the second, so ground near it stands out, and it gets a bold dark contour. Double-click the red pointer to clear the target. The card also has the palette, **Fit** (to the depths in the chart view), ⚙ (these settings) and ✕ (hide them in this view); drag it by its title, double-click the title to put it back. Pushing the deep pointer to the end of the bar makes room to go deeper. **Show** (beside the count) turns them on and zooms to where nearly all of them are. Moving the cursor over them (from zoom 7 in) shows the nearest sounding within about 8 pixels of it: its depth, the spread (±) where there are several soundings, the source, how many soundings, the newest date and how far from the cursor it is, on the position line at the bottom and in the Own sounding instruments. Zoomed out, a cell there merges the soundings in it.
+- **Own soundings** on the toolbar (the seabed button), or **Show own soundings** in **Layers**, shows them in the view you're in, from zoom 3 in, over the chart's depth areas. Each view keeps its own choice: on in Planning and off in Navigation to begin with. With them shown, a card over the chart holds the depth range: drag the pointers under its colour bar. The outer two set the shallowest and deepest depths coloured; the red middle one sets a **target depth**: the colours run from shallow to the target over the first half of the palette and from the target to deep over the second, so ground near it stands out, and it gets a bold dark contour. Double-click the red pointer to clear the target. The card also has the palette, **Fit** (to the depths in the chart view), ⚙ (these settings) and ✕ (hide them in this view); drag it by its title, double-click the title to put it back. Pushing the deep pointer to the end of the bar makes room to go deeper. **Show** (beside the count) turns them on and zooms to where nearly all of them are. Moving the cursor over them (from zoom 7 in) shows the nearest sounding within about 8 pixels of it: its depth, the spread (±) where there are several soundings, the source, how many soundings, the newest date and how far from the cursor it is, on the position line at the bottom and in the Own sounding instruments. Zoomed out, a cell there merges the soundings in it.
 - **Colours**: **Rainbow** (red shallow to violet deep) or **Blues** (as charts), over a depth range. **Fit to view** sets the range to the depths in the chart view, so the ground you're working stands out. **Contours** (from 100 m apart when zoomed out to 1 m close in) and **Shading** (lit from the north-west).
 - **Fill gaps** and **Fill up to** (0 to 250 m): gaps between soundings are filled from the nearest soundings around them, up to that distance. A few metres shows what was actually sounded; 25 to 100 m joins neighbouring tracks into a surface, which helps read the ground when zoomed in. Filled areas are an estimate between soundings, not soundings: the cursor readout shows real soundings only.
 - **Add soundings live** adds depths as they come in from the depth source selected in Settings (Signal K, NMEA 0183, or NMEA 2000 through Signal K): about one a second, checked as tracks are (spikes, second echoes, the chart) and added a minute at a time, so the seabed builds up as you go. They are the depth below the transducer plus the **Transducer depth** set in Settings › Vessel (a warning shows until it's set, and if no depth below the transducer arrives the depth below the surface is used). **Up to … kn** leaves out soundings above that speed (aerated water, planing); 0 for no limit. Each day's live soundings are one line in the list of sources, and the card over the chart shows today's count. A track recorded with live soundings on is left out of **Add my tracks** (its soundings are in already).
@@ -342,7 +342,7 @@ TweedPlot logs every Signal K session, AIS targets included, while it runs. **Se
 | Live | {icon:live} **Live** | Follows Signal K (or NMEA) | Now (GPS time) |
 | Planning | {icon:paused} **Paused** | Stays where you put it: right-click > **Move boat here** | The weather slider time |
 
-{icon:follow} **Follow** keeps the chart centred on the boat (dragging the chart turns it off); right-click › **Centre chart here** centres it on a place once; {icon:clear-track} **Clear track** clears the short trail behind the boat.
+{icon:follow} **Follow** keeps the boat in the same place on the screen, and the chart moves with it (dragging the chart turns it off). It starts centred. To see more chart ahead, drag the boat towards the opposite side of the screen: with a north-west course, drag it towards the bottom right. The boat then stays where you put it, whatever the course, zoom or rotation, until you drag it again; double-click the boat to centre it. Follow must be on to move the boat this way. Right-click › **Centre chart here** centres the chart on a place once; {icon:clear-track} **Clear track** clears the short trail behind the boat.
 
 **Size and GPS antenna**
 
@@ -1059,6 +1059,46 @@ With dusk and night colours the window's title bar turns dark as well. To get ri
 **Diagnostics**
 
 **Radar overlay test**: a simulated radar scanner, there to prove that this PC can draw a real radar overlay smoothly before radar support is built. It makes echoes in the app's core at a real scanner's rate (24 or 48 rpm, up to 4096 spokes of 1024 samples), sends them to the chart as raw bytes and draws them with the graphics card round the boat (or the chart centre): two islands, a coast to the south, a rain cell, eight moving ships and sea clutter. The numbers underneath show frames per second, data rate, how long the chart spends taking the data in, and any backlog. Smooth means 50–60 frames a second while you pan and zoom, with no backlog building up.
+
+## Data sources and credits
+
+TweedPlot downloads open data from the organisations below. They did not make TweedPlot and do not endorse it. Where a licence asks for credit, this is the credit. Every source is free to use, but check the provider's current terms before you pass its data on. **Not for navigation:** forecasts and models are wrong in places, and the charts here are not a replacement for official charts.
+
+| Data | Provider and licence |
+| --- | --- |
+| Charts, depths, tide predictions, tidal diamonds, coastal elevation, maritime boundaries | © Toitū Te Whenua Land Information New Zealand (LINZ), CC BY 4.0 (maritime boundaries: sourced from Land Information New Zealand data, Crown Copyright Reserved). Tide predictions are LINZ's, calculated for chart datum |
+| Fishing rules | Ministry for Primary Industries (MPI), CC BY 4.0. A guide to the regulations, not the regulations |
+| World depths (bundled) | Natural Earth, public domain (naturalearthdata.com) |
+| World coastline | GSHHG 2.3.7: Wessel and Smith, University of Hawaiʻi and NOAA, LGPL 3 |
+| Deep-sea depths | ETOPO 2022, NOAA National Centers for Environmental Information (doi:10.25921/fd45-gt74), free to use and redistribute |
+| Wind, pressure, waves (GFS, GFS-Wave) | NOAA National Centers for Environmental Prediction (NOMADS). US Government data, free to use. Contains NOAA model output |
+| Wind, pressure, waves, currents (IFS, AIFS) | ECMWF open data, CC BY 4.0, © ECMWF. Downloaded from data.ecmwf.int or its AWS mirror and cropped to your area. TweedPlot changes the file format and the area only |
+| Sea temperature (MUR) | NASA JPL MUR SST, via NOAA CoastWatch (ERDDAP). Free to use and share: please acknowledge NASA JPL / PO.DAAC |
+| Sea temperature (Himawari-9) | Japan Meteorological Agency Himawari-9 AHI, processed by NOAA STAR (ACSPO L3C, GHRSST), via NOAA CoastWatch |
+| Chlorophyll-a | NOAA CoastWatch, VIIRS (S-NPP, NOAA-20), DINEOF gap-filled. Free to use and share |
+| Ocean model (HYCOM) | HYCOM ESPC global ocean model, US Navy / HYCOM Consortium (hycom.org), public release. A demonstration service without guarantee |
+| Weather stations | MetService (New Zealand, WIS2 open data); NOAA Aviation Weather Center (METAR); NOAA National Data Buoy Center (NDBC buoys) |
+| Online AIS | aisstream.io, from volunteer shore stations. Needs your own free key. Not for navigation |
+| Race tracking | YB Tracking (yb.tl) and the race organiser. Positions may be delayed |
+| Saildocs | Saildocs (saildocs.com) forecasts by email, from NOAA and other sources |
+| Font | Atkinson Hyperlegible Next, Braille Institute of America, SIL Open Font License 1.1 |
+| Map display | MapLibre GL JS, BSD-3-Clause |
+| Land outlines (bundled) | © OpenStreetMap contributors, ODbL |
+| Online maps (optional) | OpenStreetMap tiles and OpenSeaMap seamarks, © OpenStreetMap contributors, ODbL. OpenSeaMap is not for navigation |
+
+### Online maps
+
+Chart › Layers › Online maps. **Off by default: while it is off, TweedPlot makes no map requests at all.** Tick **Allow online maps** to use the internet for map tiles, then choose:
+
+- **OpenStreetMap** replaces the bundled land outline with OpenStreetMap's map.
+- **OpenSeaMap seamarks** draws volunteer-mapped buoys, lights and marks over the charts. They are not official and not for navigation.
+- **Saved tiles only** shows tiles already stored on this computer and sends nothing.
+
+Tiles are saved on this computer (up to 500 MB) and reused. The tile servers see your IP address and the area you view, as with any web map. OpenStreetMap's servers are for light use: under **Tile servers and saved tiles** you can enter another tile server (a URL with `{z}`, `{x}` and `{y}`) and the credit to show for it, and clear the saved tiles.
+
+OpenStreetMap is there for completeness, to look at an area you have no charts for. It is drawn over the depth layers with its sea made transparent, so layers underneath can conflict with it. The **World depths** shading is coarse, so in the water it can show as pale areas and lines that don't follow OpenStreetMap's coastline, which is confusing. Where you have no charts, switch **World depths** (and **Detailed depths (ETOPO)** or **World coastline** if they get in the way) off under **Chart layers**. TweedPlot does not switch any of them off for you.
+
+TweedPlot is free software, licensed GPL-3.0-or-later. The licence, the full list of third-party notices and the source are in the project's repository. TweedPlot's name and logos belong to TweedsMarine.
 
 ## Troubleshooting
 

@@ -15,6 +15,7 @@ mod radar_sim;
 mod s63_cmd;
 mod settings;
 mod stations_cmd;
+mod webmap;
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::PathBuf;
@@ -3746,6 +3747,9 @@ pub fn run() {
             hires_status,
             hires_delete,
             hires_height,
+            webmap::webmap_set,
+            webmap::webmap_status,
+            webmap::webmap_clear_cache,
             pbathy::pbathy_status,
             pbathy::pbathy_pick_file,
             pbathy::pbathy_import,
@@ -3912,6 +3916,11 @@ pub fn run() {
         ])
         .register_asynchronous_uri_scheme_protocol("chart", |_ctx, request, responder| {
             let path = request.uri().path().to_string();
+            // online maps have their own workers, so a slow server can't hold up chart tiles
+            if webmap::is_web_path(&path) {
+                webmap::serve(path, responder);
+                return;
+            }
             queue_tile(path, responder);
         })
         .setup(|app| {
@@ -3930,6 +3939,9 @@ pub fn run() {
                     Err(e) => eprintln!("chart tile log directory {}: {e}", dir.display()),
                 },
                 Err(e) => eprintln!("chart tile log directory: {e}"),
+            }
+            if let Ok(dir) = app.path().app_data_dir() {
+                webmap::init(dir.join("webmap-cache"));
             }
             let dd = download_dir(app.handle());
             let _ = std::fs::create_dir_all(&dd);

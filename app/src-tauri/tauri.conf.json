@@ -20,7 +20,8 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost chart: http://chart.localhost; img-src 'self' data: blob: chart: http://chart.localhost; worker-src 'self' blob:; child-src blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:",
+      "devCsp": "default-src 'self' http://localhost:1420; connect-src 'self' ipc: http://ipc.localhost chart: http://chart.localhost http://localhost:1420 ws://localhost:1420; img-src 'self' data: blob: chart: http://chart.localhost; worker-src 'self' blob:; child-src blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
     }
   },
   "bundle": {

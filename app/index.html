@@ -488,8 +488,33 @@
         <div class="wx-row"><label class="grow" for="set-symsize" title="Size of buoys, beacons, lights, dangers and other chart symbols. Labels grow at half the rate">Chart symbol size</label><input id="set-symsize" type="range" min="0.75" max="2" step="0.05" /><span id="set-symsize-v" class="val"></span></div>
         <div class="wx-note">From the LINZ hydrographic layers in the linz folder (any scale band). Click a light, mark or area for its details. Not for navigation.</div>
                 <h3 data-lv="std">Layers</h3>
-        <div class="wx-row checks"><label title="Show the high-resolution depths on the chart (from about 2 NM range in)"><input id="data-hr-show" type="checkbox" /> High-resolution depths</label>
-          <label title="Show your own soundings (from your tracks, and TimeZero PBG or XYZ files imported in Chart data) as a depth image, in this view (each view keeps its own choice: on in Planning, off in Navigation to begin with; the toolbar button does the same). Not for navigation"><input id="pb-show" type="checkbox" /> Own soundings (this view)</label></div>
+        <h4>Chart layers</h4>
+        <div class="wx-row checks"><label title="The high-resolution depths you downloaded in Chart data, shown from about 2 NM range in"><input id="data-hr-show" type="checkbox" /> High-resolution depths</label>
+          <label title="The finer ETOPO depth shading and contours, where downloaded (Chart data)"><input id="lv-etopo" type="checkbox" checked /> Detailed depths (ETOPO)</label></div>
+        <div class="wx-row checks"><label title="The coarse Natural Earth depth shading drawn under the charts"><input id="lv-wdepth" type="checkbox" checked /> World depths</label>
+          <label title="The GSHHG world coastline, where downloaded (Chart data)"><input id="lv-wcoast" type="checkbox" checked /> World coastline</label></div>
+        <div class="wx-note">Layers can overlap: with OpenStreetMap on, the coarse world depths show as pale water that doesn't match its coastline. Switch off any layer you don't want.</div>
+        <h4>Own soundings</h4>
+        <div class="wx-row checks"><label title="Your own soundings (from your tracks, and TimeZero PBG or XYZ files imported in Chart data) as a depth image. Planning and Navigation each remember their own choice: on in Planning, off in Navigation to begin with. The toolbar button does the same. Not for navigation"><input id="pb-show" type="checkbox" /> Show own soundings</label></div>
+        <div class="wx-note">Planning and Navigation keep separate choices, so this applies to the view you are in now.</div>
+        <h4 data-lv="std">Online maps</h4>
+        <div id="wm-box">
+          <div class="wx-row checks"><label title="Off (the default): TweedPlot sends no map requests at all. On: OpenStreetMap and OpenSeaMap tiles are fetched from their servers as you pan and zoom, and kept on this computer"><input id="wm-on" type="checkbox" /> Allow online maps (uses the internet)</label></div>
+          <div class="wx-row checks"><label title="OpenStreetMap as the base map, in place of the bundled land. Its servers are for light use: for heavy use, give your own tile server below"><input id="wm-osm" type="checkbox" /> OpenStreetMap (replaces the bundled land)</label>
+            <label title="OpenSeaMap seamarks (buoys, lights, marks) drawn over the charts. Volunteer data: not for navigation"><input id="wm-sea" type="checkbox" /> OpenSeaMap seamarks</label></div>
+          <div class="wx-row checks"><label title="Show only the map tiles already saved on this computer, and send nothing"><input id="wm-cached" type="checkbox" /> Saved tiles only (no internet)</label></div>
+          <details>
+            <summary>Tile servers and saved tiles</summary>
+            <div class="wx-row"><label class="grow" for="wm-osm-url">Base map server</label></div>
+            <div class="wx-row"><input id="wm-osm-url" class="grow" type="text" spellcheck="false" placeholder="https://tile.openstreetmap.org/{z}/{x}/{y}.png" /></div>
+            <div class="wx-row"><label class="grow" for="wm-sea-url">Seamark server</label></div>
+            <div class="wx-row"><input id="wm-sea-url" class="grow" type="text" spellcheck="false" placeholder="https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png" /></div>
+            <div class="wx-row"><label class="grow" for="wm-credit">Credit for your own server (shown on the chart)</label></div>
+            <div class="wx-row"><input id="wm-credit" class="grow" type="text" placeholder="© your provider" /></div>
+            <div class="wx-row"><span id="wm-cache" class="grow wx-note"></span><button id="wm-clear" title="Delete the map tiles saved on this computer">Clear saved tiles</button></div>
+          </details>
+          <div id="wm-note" class="wx-note"></div>
+        </div>
         <h4 data-lv="std">Boundaries and fishing rules</h4>
         <div id="mar-box">
           <div class="wx-row checks"><label title="Territorial sea (12 NM), contiguous zone (24 NM), EEZ (200 NM) and the boundaries agreed with Australia (LINZ)"><input id="mar-bounds" type="checkbox" /> Maritime boundaries</label>
@@ -667,7 +692,7 @@
         <svg viewBox="0 0 24 24"><circle cx="12" cy="14" r="2" class="fill"/><path d="M8.5 10.5a5 5 0 0 1 7 0M5.6 7.6a9 9 0 0 1 12.8 0"/><path class="slash" d="M5 19L19 5"/></svg></button>
       <button id="sk-live" class="on" aria-label="Live or paused" title="Live: the boat follows Signal K. Click to pause and plan (right-click the chart to move the boat).">
         <svg viewBox="0 0 24 24"><path class="play fill" d="M8 5.5v13l10-6.5z"/><path class="pause" d="M9 6v12M15 6v12"/></svg></button>
-      <button id="follow" class="on" aria-label="Follow the boat" title="Follow: keep the boat centred (dragging the chart turns it off)">
+      <button id="follow" class="on" aria-label="Follow the boat" title="Follow: keep the boat in the same place on the screen (dragging the chart turns it off). Drag the boat to see more chart ahead; double-click the boat to centre it again">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="1.6" class="fill"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
       <button id="ruler-btn" aria-label="Ruler" title="Ruler: click points on the chart, double-click to finish (Esc stops)">
         <svg viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg></button>
@@ -896,14 +921,29 @@
       </section>
 
     <div id="cursor" class="cursor">—</div>
-    <div class="attribution">Charts: LINZ, CC BY 4.0. Land: © OpenStreetMap contributors. Not for navigation.</div>
+    <div class="attribution" id="map-attribution">Charts: LINZ, CC BY 4.0. Land: © OpenStreetMap contributors (ODbL). Not for navigation.</div>
 
     <script type="module" src="/src/main.js"></script>
     <div id="about" class="about" hidden role="dialog" aria-label="About TweedPlot">
       <div class="head"><img src="/logo-sails.svg" alt=""><div><h2>Tweed<b>Plot</b></h2><div class="tag">Professional Marine Chart Plotter</div></div></div>
       <p>From TweedsMarine, Nelson: marine electronics design, installation and servicing for commercial fishing and leisure vessels. <a href="#" id="about-site">tweedsmarine.nz</a></p>
       <p id="about-version"></p>
-      <p>Charts from LINZ (CC BY 4.0) and other open data: see the manual's data sources. Not for navigation: always keep official charts and a proper lookout.</p>
+      <p>Free software, GPL-3.0-or-later. The TweedPlot and TweedsMarine names and logos belong to TweedsMarine.</p>
+      <details class="credits">
+        <summary>Data sources and credits</summary>
+        <ul>
+          <li>Charts, depths, tides, coastal elevation, boundaries: © Toitū Te Whenua LINZ, CC BY 4.0 (boundaries: Crown Copyright Reserved).</li>
+          <li>Fishing rules: Ministry for Primary Industries, CC BY 4.0.</li>
+          <li>Weather: NOAA NCEP (GFS, GFS-Wave); ECMWF open data, CC BY 4.0, © ECMWF.</li>
+          <li>Ocean: NASA JPL MUR SST; JMA Himawari-9 via NOAA STAR; NOAA CoastWatch VIIRS chlorophyll; HYCOM (US Navy / HYCOM Consortium).</li>
+          <li>Observations: MetService (NZ), NOAA Aviation Weather Center, NOAA National Data Buoy Center. AIS: aisstream.io. Race tracking: YB Tracking.</li>
+          <li>Coastline: GSHHG (Wessel and Smith, University of Hawaiʻi and NOAA, LGPL 3). Depths: ETOPO 2022 (NOAA NCEI); Natural Earth (public domain).</li>
+          <li>Land: © OpenStreetMap contributors (ODbL), bundled. Optional online maps (off by default): OpenStreetMap tiles and OpenSeaMap seamarks, © OpenStreetMap contributors; OpenSeaMap is not for navigation.</li>
+          <li>Font: Atkinson Hyperlegible Next (SIL OFL 1.1). Maps: MapLibre GL JS (BSD-3-Clause).</li>
+        </ul>
+        <p>Providers do not endorse TweedPlot. Full credits: Manual › Reference › Data sources and credits.</p>
+      </details>
+      <p>Not for navigation: always keep official charts and a proper lookout.</p>
       <div class="wx-row"><button id="about-close">Close</button></div>
     </div>
   </body>

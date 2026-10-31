@@ -80,6 +80,10 @@ input[type="text"], input[type="search"] { padding: 5px 7px; font-size: 14px; bo
 .about .tag { margin: 2px 0 0; color: var(--brand-sky); font-size: 13px; }
 .about p { font-size: 13px; line-height: 1.45; color: #e1f7ff; }
 .about a { color: var(--brand-amber); }
+.about { max-height: calc(100vh - 20px); overflow-y: auto; }
+.about summary { cursor: pointer; font-size: 13px; color: var(--brand-amber); margin: 6px 0; }
+.about .credits ul { margin: 6px 0; padding-left: 18px; font-size: 12px; line-height: 1.4; color: #e1f7ff; }
+.about .credits p { font-size: 12px; }
 .about button { background: var(--brand-amber); border-color: var(--brand-amber); color: var(--brand-ink); font-weight: 600; }
 
 #drawer {
