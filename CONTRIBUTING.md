@@ -6,7 +6,7 @@ Open an issue before starting anything large.
 ## Making a change
 
 1. Fork, then branch from `main`.
-2. Build and test as in [README.md](README.md) (`cargo test`; `npm test` in `app/`).
+2. Build and test as in [DEVELOPING.md](DEVELOPING.md) (`cargo test`; `npm test` in `app/`).
 3. Open a pull request that says what changed and why. Keep it to one subject.
 4. Every pull request is reviewed by the maintainer before it is merged.
 
