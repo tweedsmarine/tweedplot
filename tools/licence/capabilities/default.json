@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The Licence Manager window: its own commands and file dialogs",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:default"]
+}

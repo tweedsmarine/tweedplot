@@ -65,6 +65,27 @@ export function setupS63(map, { toast } = {}) {
       : "Test build: the IHO test permit is used (for the S-64 test data)";
     $("s63-act-note").className = `grow wx-note ${act && !act.ok ? "bad" : !act && status.real_credentials ? "warn" : ""}`;
     $("s63-deact").hidden = !act;
+    if (status.device_error) {
+      $("s63-act-note").textContent = status.device_error;
+      $("s63-act-note").className = "grow wx-note bad";
+    }
+
+    // who the licence is for: one vessel per licence, up to three computers on board
+    const licRow = $("s63-lic-row"), lic = $("s63-lic");
+    licRow.hidden = !act?.ok;
+    if (act?.ok) {
+      const own = (status.own_mmsi || "").trim();
+      const differs = act.mmsi && own && own !== act.mmsi;
+      lic.textContent = `Licensed to ${act.vessel || "(no vessel name)"}${act.mmsi ? `, MMSI ${act.mmsi}` : ""} · licence ${act.licence}, seat ${act.seat}`
+        + (differs ? `. This boat's MMSI in Settings is ${own}: the licence is for one vessel, so if TweedPlot has moved to another boat, please ask Tweedsmarine for a licence for it.` : "");
+      lic.className = `grow wx-note ${differs ? "warn" : ""}`;
+    }
+    const rel = status.released;
+    $("s63-rel-box").hidden = !rel || !!act;
+    if (rel && !act) {
+      $("s63-rel").value = rel.code;
+      $("s63-rel-note").textContent = `Seat ${rel.seat} of licence ${rel.licence}${rel.vessel ? ` (${rel.vessel})` : ""} given back ${fmtDate(rel.date)}. Send the release code to Tweedsmarine to use the seat on another computer.`;
+    }
 
     const k = status.key, key = $("s63-key");
     key.textContent = !k ? "none installed (SSE 05)" : `${k.sa ? "IHO Scheme Administrator" : `${k.name}, not the IHO's (SSE 26)`}${k.not_after ? `, valid to ${fmtDate(k.not_after)}` : ""}`;
@@ -154,9 +175,17 @@ export function setupS63(map, { toast } = {}) {
   };
 
   $("s63-deact").onclick = () => twice($("s63-deact"), "Sure? Remove", async () => {
-    try { await invoke("s63_deactivate"); report("Activation removed."); } catch (e) { report([{ cell: "", level: "error", text: String(e) }]); }
+    try {
+      const code = await invoke("s63_deactivate");
+      report(code ? "Activation removed, and the charts decrypted with it deleted. Send the release code below to Tweedsmarine to free the seat."
+        : "Activation removed.");
+    } catch (e) { report([{ cell: "", level: "error", text: String(e) }]); }
     refresh();
   });
+
+  $("s63-rel-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText($("s63-rel").value.trim()); report("Release code copied: send it to Tweedsmarine."); } catch { $("s63-rel").select(); }
+  };
 
   $("s63-key-btn").onclick = () => $("s63-key-file").click();
   $("s63-key-file").onchange = async (ev) => {

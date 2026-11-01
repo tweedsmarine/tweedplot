@@ -314,7 +314,7 @@ fn main() {
     let base = PathBuf::from(args.first().expect("the S-64_ENC_Encrypted_TDS folder"));
     let only: Vec<&str> = args[1..].iter().map(String::as_str).collect();
     let store = std::env::temp_dir().join(format!("s64_{}", std::process::id()));
-    chart::enc::set_protection(chart::enc::TEST_USER_PERMIT, chart::enc::TEST_M_KEY);
+    chart::enc::set_test_protection();
     let at = |p: &str| -> PathBuf {
         // the folders' names vary in case between tests
         let mut cur = base.clone();

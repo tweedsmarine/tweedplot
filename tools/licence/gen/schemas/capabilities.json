@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"The Licence Manager window: its own commands and file dialogs","local":true,"windows":["main"],"permissions":["core:default","dialog:default"]}}

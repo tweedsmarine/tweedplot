@@ -16,6 +16,7 @@ use blowfish::Blowfish;
 use num_bigint::BigUint;
 use sha1::{Digest, Sha1};
 use std::io::Read;
+use zeroize::{Zeroize, Zeroizing};
 
 /// S-63 errors, with the scheme's error codes (S-63 section 11).
 #[derive(Debug, thiserror::Error, PartialEq, Clone)]
@@ -63,10 +64,11 @@ fn cipher(key: &[u8]) -> Blowfish {
     Blowfish::new_from_slice(key).expect("blowfish key 4-56 bytes")
 }
 
-/// Blowfish ECB over whole 8-byte blocks.
-fn decrypt_ecb(key: &[u8], data: &[u8]) -> Vec<u8> {
+/// Blowfish ECB over whole 8-byte blocks. The result is wiped from memory when dropped
+/// (it is a key, a HW_ID or a decrypted cell).
+fn decrypt_ecb(key: &[u8], data: &[u8]) -> Zeroizing<Vec<u8>> {
     let c = cipher(key);
-    let mut out = data[..data.len() / 8 * 8].to_vec();
+    let mut out = Zeroizing::new(data[..data.len() / 8 * 8].to_vec());
     for block in out.chunks_mut(8) {
         c.decrypt_block(GenericArray::from_mut_slice(block));
     }
@@ -102,25 +104,78 @@ pub fn hw_id_from_user_permit(permit: &str, m_key: &str) -> Result<[u8; 5], S63E
     Ok(hw)
 }
 
-/// A checked cell permit.
+/// A cell permit's two decrypted cell keys. S-63 allows them only while the cells are
+/// being decrypted: they are never written anywhere, never printed (Debug shows
+/// "[keys]"), and wiped from memory when dropped.
+#[derive(Clone, PartialEq)]
+pub struct CellKeys([[u8; 5]; 2]);
+
+impl CellKeys {
+    pub fn new(k1: [u8; 5], k2: [u8; 5]) -> CellKeys {
+        CellKeys([k1, k2])
+    }
+
+    pub(crate) fn get(&self) -> &[[u8; 5]; 2] {
+        &self.0
+    }
+}
+
+impl Drop for CellKeys {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl std::fmt::Debug for CellKeys {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("[keys]")
+    }
+}
+
+/// A checked cell permit with its cell keys, for decrypting cells.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CellPermit {
     pub cell: String,
     /// YYYYMMDD
     pub expiry: String,
-    pub keys: [[u8; 5]; 2],
+    pub keys: CellKeys,
     /// 0 subscription, 1 single purchase
     pub service: u8,
     pub edition: String,
     pub data_server: String,
 }
 
-fn hw_id6(hw: &[u8; 5]) -> [u8; 6] {
-    [hw[0], hw[1], hw[2], hw[3], hw[4], hw[0]]
+/// What a checked cell permit says, without its cell keys (for lists and expiry checks).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PermitInfo {
+    pub cell: String,
+    /// YYYYMMDD
+    pub expiry: String,
+    /// 0 subscription, 1 single purchase
+    pub service: u8,
+    pub edition: String,
+    pub data_server: String,
 }
 
-/// Check one 64-character cell permit string and take out its cell keys.
-pub fn cell_permit(s: &str, hw: &[u8; 5]) -> Result<([u8; 5], [u8; 5]), S63Error> {
+impl CellPermit {
+    pub fn info(&self) -> PermitInfo {
+        PermitInfo {
+            cell: self.cell.clone(),
+            expiry: self.expiry.clone(),
+            service: self.service,
+            edition: self.edition.clone(),
+            data_server: self.data_server.clone(),
+        }
+    }
+}
+
+fn hw_id6(hw: &[u8; 5]) -> Zeroizing<[u8; 6]> {
+    Zeroizing::new([hw[0], hw[1], hw[2], hw[3], hw[4], hw[0]])
+}
+
+/// Check one 64-character cell permit string against the HW_ID (its encrypted check
+/// sum), without decrypting the cell keys.
+pub fn check_cell_permit(s: &str, hw: &[u8; 5]) -> Result<(), S63Error> {
     let s = s.trim();
     if s.len() != 64 || !s.is_ascii() {
         return Err(S63Error::PermitFormat);
@@ -128,21 +183,34 @@ pub fn cell_permit(s: &str, hw: &[u8; 5]) -> Result<([u8; 5], [u8; 5]), S63Error
     let key = hw_id6(hw);
     let crc = crc32fast::hash(&s.as_bytes()[..48]);
     let want = hex(&s[48..]).ok_or(S63Error::PermitFormat)?;
-    if encrypt_padded(&key, &crc.to_be_bytes()).as_slice() != want.as_slice() {
+    if encrypt_padded(&key[..], &crc.to_be_bytes()).as_slice() != want.as_slice() {
         return Err(S63Error::PermitChecksum);
     }
+    Ok(())
+}
+
+/// Check one 64-character cell permit string and take out its cell keys.
+pub fn cell_permit(s: &str, hw: &[u8; 5]) -> Result<CellKeys, S63Error> {
+    check_cell_permit(s, hw)?;
+    let s = s.trim();
+    let key = hw_id6(hw);
     let ck = |h: &str| -> Result<[u8; 5], S63Error> {
-        let b = decrypt_ecb(&key, &hex(h).ok_or(S63Error::PermitFormat)?);
+        let b = decrypt_ecb(&key[..], &hex(h).ok_or(S63Error::PermitFormat)?);
         let mut k = [0u8; 5];
         k.copy_from_slice(&b[..5]);
         Ok(k)
     };
-    Ok((ck(&s[16..32])?, ck(&s[32..48])?))
+    let mut k1 = ck(&s[16..32])?;
+    let mut k2 = ck(&s[32..48])?;
+    let keys = CellKeys::new(k1, k2);
+    k1.zeroize();
+    k2.zeroize();
+    Ok(keys)
 }
 
-/// Every record of a PERMIT.TXT file (under :ENC and :ECS), each checked against the HW_ID:
-/// the cell name with its permit, or with why it can't be used.
-pub fn read_permits(text: &str, hw: &[u8; 5]) -> Result<Vec<(String, Result<CellPermit, S63Error>)>, S63Error> {
+/// The records of a PERMIT.TXT file (under :ENC and :ECS): the permit line and its
+/// fields (service, edition, data server).
+fn permit_records(text: &str) -> Result<Vec<(String, &str, Vec<&str>)>, S63Error> {
     let mut lines = text.lines().map(str::trim).filter(|l| !l.is_empty());
     let first = lines.next().ok_or(S63Error::PermitFormat)?;
     if !first.starts_with(":DATE") {
@@ -156,33 +224,64 @@ pub fn read_permits(text: &str, hw: &[u8; 5]) -> Result<Vec<(String, Result<Cell
         let f: Vec<&str> = l.split(',').collect();
         let p = f[0].trim();
         let cell = p.get(..8).unwrap_or(p).to_string();
-        let r = cell_permit(p, hw).map(|(k1, k2)| CellPermit {
-            cell: cell.clone(),
-            expiry: p[8..16].to_string(),
-            keys: [k1, k2],
-            service: f.get(1).and_then(|v| v.trim().parse().ok()).unwrap_or(0),
-            edition: f.get(2).map(|v| v.trim().to_string()).unwrap_or_default(),
-            data_server: f.get(3).map(|v| v.trim().to_string()).unwrap_or_default(),
-        });
-        out.push((cell, r));
+        out.push((cell, p, f));
     }
     Ok(out)
 }
 
+fn info_of(cell: &str, p: &str, f: &[&str]) -> PermitInfo {
+    PermitInfo {
+        cell: cell.to_string(),
+        expiry: p.get(8..16).unwrap_or("").to_string(),
+        service: f.get(1).and_then(|v| v.trim().parse().ok()).unwrap_or(0),
+        edition: f.get(2).map(|v| v.trim().to_string()).unwrap_or_default(),
+        data_server: f.get(3).map(|v| v.trim().to_string()).unwrap_or_default(),
+    }
+}
+
+/// Every record of a PERMIT.TXT file, each checked against the HW_ID, without
+/// decrypting any cell keys: the cell name with what its permit says, or with why it
+/// can't be used.
+pub fn read_permit_info(text: &str, hw: &[u8; 5]) -> Result<Vec<(String, Result<PermitInfo, S63Error>)>, S63Error> {
+    Ok(permit_records(text)?
+        .into_iter()
+        .map(|(cell, p, f)| {
+            let r = check_cell_permit(p, hw).map(|_| info_of(&cell, p, &f));
+            (cell, r)
+        })
+        .collect())
+}
+
+/// Every record of a PERMIT.TXT file, each checked against the HW_ID, with its cell
+/// keys decrypted: only for decrypting cells (see [`read_permit_info`] otherwise).
+pub fn read_permits(text: &str, hw: &[u8; 5]) -> Result<Vec<(String, Result<CellPermit, S63Error>)>, S63Error> {
+    Ok(permit_records(text)?
+        .into_iter()
+        .map(|(cell, p, f)| {
+            let r = cell_permit(p, hw).map(|keys| {
+                let i = info_of(&cell, p, &f);
+                CellPermit { cell: i.cell, expiry: i.expiry, keys, service: i.service, edition: i.edition, data_server: i.data_server }
+            });
+            (cell, r)
+        })
+        .collect())
+}
+
 /// Decrypt and unzip an encrypted cell (base or update) with the permit's keys, trying
 /// cell key 1 then cell key 2.
-pub fn decrypt_cell(data: &[u8], permit: &CellPermit) -> Result<Vec<u8>, S63Error> {
-    for key in &permit.keys {
+/// The result is wiped from memory when dropped.
+pub fn decrypt_cell(data: &[u8], permit: &CellPermit) -> Result<Zeroizing<Vec<u8>>, S63Error> {
+    for key in permit.keys.get() {
         let plain = decrypt_ecb(key, data);
         if !plain.starts_with(b"PK\x03\x04") {
             continue;
         }
-        let Ok(mut z) = zip::ZipArchive::new(std::io::Cursor::new(plain)) else { continue };
+        let Ok(mut z) = zip::ZipArchive::new(std::io::Cursor::new(&plain[..])) else { continue };
         if z.is_empty() {
             continue;
         }
         let Ok(mut f) = z.by_index(0) else { continue };
-        let mut out = Vec::new();
+        let mut out = Zeroizing::new(Vec::with_capacity(f.size() as usize));
         if f.read_to_end(&mut out).is_ok() {
             return Ok(out);
         }
@@ -430,9 +529,11 @@ mod tests {
         assert_eq!(make_user_permit(b"12348", "98765", "3031"), "73871727080876A07E450C043031");
         assert_eq!(hw_id_from_user_permit("73871727080876A07E450C043031", "98765").unwrap(), *b"12348");
         // 10.5.4 and 10.7.2: cell permit check sum and cell keys
-        let (k1, k2) = cell_permit("NO4D061320000830BEB9BFE3C7C6CE68B16411FD09F96982795C77B204F54D48", b"12348").unwrap();
-        assert_eq!(to_hex(&k1), "C1CB518E9C");
-        assert_eq!(to_hex(&k2), "421571CC66");
+        let keys = cell_permit("NO4D061320000830BEB9BFE3C7C6CE68B16411FD09F96982795C77B204F54D48", b"12348").unwrap();
+        assert_eq!(to_hex(&keys.get()[0]), "C1CB518E9C");
+        assert_eq!(to_hex(&keys.get()[1]), "421571CC66");
+        assert_eq!(format!("{keys:?}"), "[keys]");
+        assert_eq!(check_cell_permit("NO4D061320000830BEB9BFE3C7C6CE68B16411FD09F96982795C77B204F54D48", b"12348"), Ok(()));
         assert_eq!(cell_permit("NO4D061320000830BEB9BFE3C7C6CE68B16411FD09F96982795C77B204F54D48", b"12345"), Err(S63Error::PermitChecksum));
         // the IHO's generic S-64 credentials
         assert_eq!(hw_id_from_user_permit("66B5CBFDF7E4139D5B6086C23130", "10121").unwrap(), *b"12345");

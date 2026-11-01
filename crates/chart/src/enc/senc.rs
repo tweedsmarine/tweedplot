@@ -21,7 +21,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::iso8211::Module;
-use super::s63::{self, CellPermit, PublicKey};
+use super::s63::{self, CellPermit, PermitInfo, PublicKey};
+use zeroize::Zeroizing;
 
 /// The IHO Scheme Administrator's certificate (valid to 2033), installed to begin with.
 pub const IHO_CRT: &[u8] = include_bytes!("IHO.CRT");
@@ -398,23 +399,44 @@ impl Senc {
         self.root.join("permits").join(format!("{ds}.TXT"))
     }
 
-    /// The installed permits: data server and its permits (each checked against the HW_ID).
-    pub fn permits(&self) -> Vec<(String, Vec<(String, Result<CellPermit, s63::S63Error>)>)> {
+    /// The installed permits: data server and what each permit says (checked against the
+    /// HW_ID; the cell keys are not decrypted).
+    pub fn permits(&self) -> Vec<(String, Vec<(String, Result<PermitInfo, s63::S63Error>)>)> {
         let Some(hw) = super::hw_id() else { return vec![] };
-        let mut out = Vec::new();
-        for e in std::fs::read_dir(self.root.join("permits")).into_iter().flatten().flatten() {
-            let p = e.path();
-            let Some(ds) = p.file_stem().map(|s| s.to_string_lossy().to_string()) else { continue };
-            let text = std::fs::read_to_string(&p).unwrap_or_default();
-            out.push((ds, s63::read_permits(&text, &hw).unwrap_or_default()));
-        }
+        let mut out: Vec<_> = self.permit_texts().into_iter().map(|(ds, text)| (ds, s63::read_permit_info(&text, &hw).unwrap_or_default())).collect();
         out.sort_by(|a, b| a.0.cmp(&b.0));
         out
     }
 
-    /// Each cell's permits from every data server (for decrypting what is installed).
+    fn permit_texts(&self) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        for e in std::fs::read_dir(self.root.join("permits")).into_iter().flatten().flatten() {
+            let p = e.path();
+            let Some(ds) = p.file_stem().map(|s| s.to_string_lossy().to_string()) else { continue };
+            out.push((ds, std::fs::read_to_string(&p).unwrap_or_default()));
+        }
+        out.sort();
+        out
+    }
+
+    /// Each cell's permits from every data server, with their cell keys: only for
+    /// decrypting cells (the keys are wiped when the permits are dropped).
     pub fn cell_permits(&self) -> HashMap<String, Vec<CellPermit>> {
+        let Some(hw) = super::hw_id() else { return HashMap::new() };
         let mut out: HashMap<String, Vec<CellPermit>> = HashMap::new();
+        for (_, text) in self.permit_texts() {
+            for (cell, p) in s63::read_permits(&text, &hw).unwrap_or_default() {
+                if let Ok(p) = p {
+                    out.entry(cell).or_default().push(p);
+                }
+            }
+        }
+        out
+    }
+
+    /// Each cell's permits from every data server, without their keys.
+    pub fn permit_info(&self) -> HashMap<String, Vec<PermitInfo>> {
+        let mut out: HashMap<String, Vec<PermitInfo>> = HashMap::new();
         for (_, v) in self.permits() {
             for (cell, p) in v {
                 if let Ok(p) = p {
@@ -435,14 +457,14 @@ impl Senc {
     /// replacing an older permit for the same cell.
     pub fn install_permits(&mut self, text: &str) -> Vec<Msg> {
         let Some(hw) = super::hw_id() else {
-            let text = if super::protection().0.is_empty() {
+            let text = if super::user_permit().is_empty() {
                 "TweedPlot isn't activated for encrypted charts yet: send this computer's installation code to Tweedsmarine for an activation code".to_string()
             } else {
                 s63::S63Error::UserPermit.to_string()
             };
             return vec![msg("", Level::Error, text)];
         };
-        let found = match s63::read_permits(text, &hw) {
+        let found = match s63::read_permit_info(text, &hw) {
             Ok(v) if !v.is_empty() => v,
             _ => return vec![msg("", Level::Error, format!("No cell permits in the file. {SSE11}"))],
         };
@@ -527,7 +549,7 @@ impl Senc {
     /// cells behind their data server's product listing (SSE 27).
     pub fn display_notes(&self) -> Vec<(String, String)> {
         let today = super::today();
-        let permits = self.cell_permits();
+        let permits = self.permit_info();
         let mut out = Vec::new();
         for (cell, c) in &self.state.cells {
             if c.encrypted {
@@ -741,11 +763,12 @@ impl Senc {
     }
 
     /// Check one file: its signature (encrypted files), decryption and CRC. Returns the plain data.
-    fn check(&self, e: &Entry, permits: &[CellPermit], key: Option<&PublicKey>) -> Result<Vec<u8>, String> {
+    /// The plain data is wiped from memory when dropped.
+    fn check(&self, e: &Entry, permits: &[CellPermit], key: Option<&PublicKey>) -> Result<Zeroizing<Vec<u8>>, String> {
         let name = e.path.file_name().map(|n| n.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
         let data = std::fs::read(&e.path).map_err(|err| format!("{name} can't be read: {err}"))?;
         let plain = if is_plain(&data) {
-            data
+            Zeroizing::new(data)
         } else {
             let sig_name = s63::signature_name(&name).unwrap_or_default();
             let sig = std::fs::read_dir(e.path.parent().unwrap_or(Path::new(".")))

@@ -9,6 +9,7 @@
 
 pub mod catalogue;
 pub mod cell;
+pub mod device;
 pub mod iso8211;
 pub mod machine;
 pub mod oem;
@@ -19,6 +20,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
+use zeroize::Zeroizing;
 
 use cell::{Cell, Shape};
 
@@ -244,40 +246,45 @@ fn load_sealed(db: &mut Connection, schema: &str, path: &Path) -> Result<(), rus
     let sealed = std::fs::read(path).map_err(io_err)?;
     let plain = protect::unseal(&sealed).ok_or_else(|| io_err(std::io::Error::other(format!("{} can't be unsealed on this computer", path.display()))))?;
     let n = plain.len();
-    db.deserialize_read_exact(schema, std::io::Cursor::new(plain), n, true)
+    db.deserialize_read_exact(schema, std::io::Cursor::new(&plain[..]), n, true)
 }
 
 /// Sealing the chart data made from encrypted (S-63) cells: S-63's licence holds for the
 /// decrypted data too, so it is kept on disk encrypted with a key that only this
-/// installation has (from the computer's fingerprint, the HW_ID and the M_KEY), and
-/// only unsealed into memory.
+/// installation has (from the computer's fingerprint, the HW_ID and the installation's
+/// device key), and only unsealed into memory, which is wiped after use.
 pub mod protect {
     use chacha20poly1305::aead::{Aead, KeyInit};
     use chacha20poly1305::{ChaCha20Poly1305, Nonce};
     use sha2::{Digest, Sha256};
+    use zeroize::Zeroizing;
 
     const MAGIC: &[u8; 4] = b"TPX1";
 
-    fn key() -> [u8; 32] {
+    fn key() -> Zeroizing<[u8; 32]> {
         let mut h = Sha256::new();
-        h.update(b"TweedPlot SENC 1");
+        h.update(b"TweedPlot SENC 2");
         h.update(super::machine::fingerprint());
-        h.update(super::hw_id().unwrap_or([0; 5]));
-        h.update(super::protection().1.as_bytes());
-        h.finalize().into()
+        if let Some(hw) = super::hw_id() {
+            h.update(&hw[..]);
+        }
+        if let Some(d) = super::DEVICE.read().unwrap().as_ref() {
+            h.update(&d[..]);
+        }
+        Zeroizing::new(h.finalize().into())
     }
 
     /// A short tag for the key in use, put in sealed files' names: files sealed with
     /// another key (another computer or HW_ID) are made again rather than opened.
     pub fn tag() -> String {
-        let d = Sha256::digest(key());
+        let d = Sha256::digest(&key()[..]);
         d[..4].iter().map(|b| format!("{b:02x}")).collect()
     }
 
     pub fn seal(plain: &[u8]) -> Vec<u8> {
         let mut nonce = [0u8; 12];
         getrandom::fill(&mut nonce).expect("random numbers");
-        let c = ChaCha20Poly1305::new(&key().into());
+        let c = ChaCha20Poly1305::new(key()[..].into());
         let body = c.encrypt(Nonce::from_slice(&nonce), plain).expect("encrypt");
         let mut out = Vec::with_capacity(16 + body.len());
         out.extend_from_slice(MAGIC);
@@ -286,12 +293,13 @@ pub mod protect {
         out
     }
 
-    pub fn unseal(data: &[u8]) -> Option<Vec<u8>> {
+    /// The plain data, wiped from memory when dropped.
+    pub fn unseal(data: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
         if data.len() < 16 || &data[..4] != MAGIC {
             return None;
         }
-        let c = ChaCha20Poly1305::new(&key().into());
-        c.decrypt(Nonce::from_slice(&data[4..16]), &data[16..]).ok()
+        let c = ChaCha20Poly1305::new(key()[..].into());
+        c.decrypt(Nonce::from_slice(&data[4..16]), &data[16..]).ok().map(Zeroizing::new)
     }
 }
 
@@ -591,6 +599,19 @@ pub fn ensure_gpkgs_sets(dir: &Path, off: &[PathBuf], progress: &mut dyn FnMut(u
         let mut b = [0u8; 8];
         std::fs::File::open(p).and_then(|mut f| std::io::Read::read_exact(&mut f, &mut b)).is_ok() && !(b[..5].iter().all(u8::is_ascii_digit) && b[6] == b'L')
     };
+    // encrypted cells are only taken from the ENC store, where Import checked them
+    let cells: Vec<CellFiles> = cells
+        .into_iter()
+        .filter(|c| {
+            let installed = c.base.components().any(|p| p.as_os_str() == ".senc");
+            if !installed && encrypted(&c.base) {
+                let name = c.base.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                note(&c.base, format!("{name} {NOT_IMPORTED}"));
+                return false;
+            }
+            true
+        })
+        .collect();
     // each cell's own conversion: "<CELL>-<folder hash>-b<band>-v<version>.gpkg" (or .tpx)
     let plan: Vec<(CellFiles, String, Option<PathBuf>)> = cells
         .into_iter()
@@ -613,7 +634,8 @@ pub fn ensure_gpkgs_sets(dir: &Path, off: &[PathBuf], progress: &mut dyn FnMut(u
         })
         .collect();
     let todo = plan.iter().filter(|p| p.2.is_none()).count();
-    // S-63 cell permits from any PERMIT.TXT in the folder (only read when a cell needs converting)
+    // the installed S-63 permits with their cell keys, only when a cell needs converting
+    // (dropped, and the keys wiped, when this function ends)
     let permits = if todo > 0 { s63_permits(dir) } else { Default::default() };
     let mut done = 0;
     let mut by_band: BTreeMap<(String, u8, bool), Vec<PathBuf>> = BTreeMap::new();
@@ -705,17 +727,33 @@ pub fn ensure_gpkgs_sets(dir: &Path, off: &[PathBuf], progress: &mut dyn FnMut(u
     out
 }
 
-/// The S-63 credentials in use: the system's user permit and the manufacturer key. Until
-/// TweedPlot has its own from the IHO, the IHO's generic S-64 test credentials.
-static PROTECTION: std::sync::RwLock<Option<(String, String)>> = std::sync::RwLock::new(None);
+/// The S-63 identity in use: this system's user permit and its HW_ID (from the
+/// activation code; never shown, wiped from memory when replaced). The M_KEY is not in
+/// TweedPlot at all.
+struct Protection {
+    user_permit: String,
+    hw_id: Zeroizing<[u8; 5]>,
+}
+
+static PROTECTION: std::sync::RwLock<Option<Protection>> = std::sync::RwLock::new(None);
+
+/// This installation's device secret, part of the key that seals the decrypted chart data.
+static DEVICE: std::sync::RwLock<Option<Zeroizing<[u8; 32]>>> = std::sync::RwLock::new(None);
 
 /// The IHO's generic S-64 test credentials: user permit and manufacturer key (M_KEY).
+/// These are public, for testing; a build with TweedPlot's own M_ID never uses them.
 pub const TEST_USER_PERMIT: &str = "66B5CBFDF7E4139D5B6086C23130";
 pub const TEST_M_KEY: &str = "10121";
 
-/// Set the user permit and manufacturer key (M_KEY) for decrypting S-63 cells.
-pub fn set_protection(user_permit: &str, m_key: &str) {
-    *PROTECTION.write().unwrap() = Some((user_permit.trim().to_ascii_uppercase(), m_key.to_string()));
+/// Use this user permit and HW_ID for decrypting S-63 cells.
+pub fn set_protection(user_permit: &str, hw_id: &[u8; 5]) {
+    *PROTECTION.write().unwrap() = Some(Protection { user_permit: user_permit.trim().to_ascii_uppercase(), hw_id: Zeroizing::new(*hw_id) });
+}
+
+/// Use the IHO's generic test user permit (for the S-64 tests).
+pub fn set_test_protection() {
+    let hw = s63::hw_id_from_user_permit(TEST_USER_PERMIT, TEST_M_KEY).expect("the IHO test permit");
+    set_protection(TEST_USER_PERMIT, &hw);
 }
 
 /// Forget the user permit set (back to the default: the IHO test permit in a test build,
@@ -724,19 +762,27 @@ pub fn clear_protection() {
     *PROTECTION.write().unwrap() = None;
 }
 
-/// The user permit and M_KEY in use.
-pub fn protection() -> (String, String) {
-    PROTECTION
-        .read()
-        .unwrap()
-        .clone()
-        .unwrap_or_else(|| if oem::is_real() { (String::new(), oem::m_key()) } else { (TEST_USER_PERMIT.into(), TEST_M_KEY.into()) })
+/// Use this installation's device key for sealing the decrypted chart data.
+pub fn set_device(d: &device::Device) {
+    *DEVICE.write().unwrap() = Some(Zeroizing::new(*d.secret()));
 }
 
-/// The HW_ID from the user permit in use.
-pub fn hw_id() -> Option<[u8; 5]> {
-    let p = protection();
-    s63::hw_id_from_user_permit(&p.0, &p.1).ok()
+/// The user permit in use ("" when there is none: a real build not yet activated).
+pub fn user_permit() -> String {
+    match PROTECTION.read().unwrap().as_ref() {
+        Some(p) => p.user_permit.clone(),
+        None if oem::is_real() => String::new(),
+        None => TEST_USER_PERMIT.into(),
+    }
+}
+
+/// The HW_ID in use, wiped from memory when dropped.
+pub fn hw_id() -> Option<Zeroizing<[u8; 5]>> {
+    match PROTECTION.read().unwrap().as_ref() {
+        Some(p) => Some(p.hw_id.clone()),
+        None if oem::is_real() => None,
+        None => s63::hw_id_from_user_permit(TEST_USER_PERMIT, TEST_M_KEY).ok().map(Zeroizing::new),
+    }
 }
 
 /// What happened to a cell that could not be opened, or opens with a warning (S-63 codes).
@@ -779,68 +825,21 @@ FCA6 82CE 8E12 CABA 26EF CCF7 110E 526D B078 B05E DECB CD1E B4A2 08F3 AE16 17AE 
 963F 14E3 2BA5 3729 28F2 4F15 B073 0C49 D31B 28E5 C764 1002 564D B959 95B1 5CF8 800E D54E 3548 67B8 2BB9 597B 1582 69E0 79F0 C4F4 926B 1776 1CC8 9EB7 7C9B 7EF8.
 ";
 
-/// One permit as found: where, its file's date, and the permit or why it can't be used.
-#[derive(Debug, Clone)]
-pub struct FoundPermit {
-    pub file: PathBuf,
-    /// the PERMIT.TXT :DATE, "YYYYMMDD HH:MM"
-    pub date: String,
-    pub cell: String,
-    pub permit: Result<s63::CellPermit, s63::S63Error>,
-}
-
-fn permit_date(text: &str) -> String {
-    text.lines().find_map(|l| l.trim().strip_prefix(":DATE").map(|d| d.trim().to_string())).unwrap_or_default()
-}
-
-/// Every cell permit in the PERMIT.TXT files under `dir` (those that came with exchange
-/// sets put in the folder as they are), checked against the HW_ID.
-pub fn find_permits(dir: &Path) -> Vec<FoundPermit> {
-    let mut out = Vec::new();
-    let Some(hw) = hw_id() else { return out };
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(d) = stack.pop() {
-        for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
-            let p = e.path();
-            let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-            if p.is_dir() {
-                // hidden folders are TweedPlot's own (".enc", ".senc")
-                if !name.starts_with('.') {
-                    stack.push(p);
-                }
-            } else if name.eq_ignore_ascii_case("PERMIT.TXT") {
-                let text = std::fs::read_to_string(&p).unwrap_or_default();
-                let date = permit_date(&text);
-                match s63::read_permits(&text, &hw) {
-                    Ok(v) => out.extend(v.into_iter().map(|(cell, permit)| FoundPermit { file: p.clone(), date: date.clone(), cell, permit })),
-                    Err(e) => note(&p, e.to_string()),
-                }
-            }
-        }
-    }
-    out
-}
-
 type Permits = std::collections::HashMap<String, Vec<s63::CellPermit>>;
 
-/// The permits for each cell, newest permit file first: those in the folder's PERMIT.TXT
-/// files, then those installed with the exchange sets.
+/// The permits installed with the exchange sets (Chart › Encrypted charts), with their
+/// cell keys: only while cells are being converted.
 fn s63_permits(dir: &Path) -> Permits {
-    let mut all = find_permits(dir);
-    all.sort_by(|a, b| b.date.cmp(&a.date));
-    let mut out: Permits = std::collections::HashMap::new();
-    for f in all {
-        if let Ok(p) = f.permit {
-            out.entry(f.cell).or_default().push(p);
-        }
-    }
     if senc::Senc::exists(dir) {
-        for (c, v) in senc::Senc::open_bare(dir).cell_permits() {
-            out.entry(c).or_default().extend(v);
-        }
+        senc::Senc::open_bare(dir).cell_permits()
+    } else {
+        Default::default()
     }
-    out
 }
+
+/// What an encrypted cell found loose in a chart folder (not imported) is told.
+pub const NOT_IMPORTED: &str =
+    "is an encrypted (S-63) cell that hasn't been imported. Import its exchange set with Chart › Encrypted charts › Import exchange set";
 
 fn days(d: &str) -> i64 {
     let (y, m, dd): (i64, i64, i64) = (
@@ -859,43 +858,26 @@ pub fn days_between(a: &str, b: &str) -> i64 {
     days(b) - days(a)
 }
 
-/// Read a cell's file, decrypting it when it is S-63: its signature is checked against
-/// the IHO key (an unauthenticated cell is not decrypted), then it is decrypted with
-/// the cell's permits. Installed cells (in `.senc`) were checked when they were imported.
-fn read_cell_file(path: &Path, permits: &Permits) -> Result<Vec<u8>, cell::CellError> {
+/// Read a cell's file, decrypting it when it is S-63. Encrypted cells are only read from
+/// the ENC store (`.senc`), where they were checked (signature, CRC, permits) when they
+/// were imported; one found anywhere else is left alone. The result is wiped from memory
+/// when dropped.
+fn read_cell_file(path: &Path, permits: &Permits) -> Result<Zeroizing<Vec<u8>>, cell::CellError> {
     let data = std::fs::read(path)?;
     // an ISO 8211 file starts with its record length (five digits) and the leader
     if data.len() > 24 && data[..5].iter().all(u8::is_ascii_digit) && data[6] == b'L' {
-        return Ok(data);
+        return Ok(Zeroizing::new(data));
     }
     let name = path.file_name().map(|n| n.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
     let other = |m: String| cell::CellError::Other(m);
+    if !path.components().any(|c| c.as_os_str() == ".senc") {
+        return Err(other(format!("{name} {NOT_IMPORTED}")));
+    }
     let list = permits
         .get(name.get(..8).unwrap_or(""))
         .filter(|v| !v.is_empty())
         .ok_or_else(|| other("SSE 11 - Cell permit not found. Load the permit file provided by the data supplier".into()))?;
-    if path.components().any(|c| c.as_os_str() == ".senc") {
-        return list.iter().find_map(|p| s63::decrypt_cell(&data, p).ok()).ok_or_else(|| other(s63::S63Error::Decrypt.to_string()));
-    }
-    let permit = &list[0];
-    let sig = s63::signature_name(&name)
-        .map(|s| path.with_file_name(s))
-        .ok_or_else(|| other("SSE 26 - This ENC is not authenticated by the IHO acting as the Scheme Administrator (no signature file)".into()))?;
-    let sig = std::fs::read(&sig)
-        .map_err(|_| other("SSE 26 - This ENC is not authenticated by the IHO acting as the Scheme Administrator (no signature file)".into()))?;
-    let sa = s63::parse_public_key(SA_PUBLIC_KEY.as_bytes()).map_err(|e| other(e.to_string()))?;
-    s63::verify_cell(&sig, &data, &sa).map_err(|e| other(e.to_string()))?;
-    if permit.expiry.as_str() < today().as_str() {
-        note(
-            path,
-            format!(
-                "SSE 25 - The permit for ENC {} has expired ({}). This cell may be out of date and MUST NOT be used for primary navigation",
-                &name[..8],
-                permit.expiry
-            ),
-        );
-    }
-    s63::decrypt_cell(&data, permit).map_err(|e| other(e.to_string()))
+    list.iter().find_map(|p| s63::decrypt_cell(&data, p).ok()).ok_or_else(|| other(s63::S63Error::Decrypt.to_string()))
 }
 
 static TODAY: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
@@ -951,7 +933,7 @@ fn open_cell(c: &CellFiles, permits: &Permits) -> Result<Cell, cell::CellError> 
         }
         next += 1;
     }
-    let refs: Vec<&[u8]> = ups.iter().map(Vec::as_slice).collect();
+    let refs: Vec<&[u8]> = ups.iter().map(|u| &u[..]).collect();
     Cell::from_bytes(&base, &refs)
 }
 
@@ -1147,7 +1129,7 @@ mod tests {
     /// An S-63 cell from the IHO's S-64 test data (test 6a): its signature is checked,
     /// it is decrypted with the generic test credentials, and its update applied.
     #[test]
-    fn decrypts_s63_cells() {
+    fn loose_encrypted_cells_are_not_decrypted() {
         let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/s63");
         let dir = std::env::temp_dir().join(format!("enc_s63_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -1166,9 +1148,11 @@ mod tests {
         let cells = find_cells(&dir);
         assert_eq!(cells.len(), 1, "signature files are not cells");
         assert_eq!(cells[0].updates.len(), 1);
-        let c = open_cell(&cells[0], &s63_permits(&dir)).unwrap();
-        assert_eq!((c.name.as_str(), c.update.as_str()), ("GB61021B.000", "1"));
-        assert!(c.features.len() > 200);
+        // the cell's PERMIT.TXT is beside it, but it wasn't imported: not decrypted
+        let e = open_cell(&cells[0], &s63_permits(&dir)).unwrap_err().to_string();
+        assert!(e.contains("hasn't been imported"), "{e}");
+        assert!(ensure_gpkgs(&dir).is_empty());
+        assert!(notes().iter().any(|n| n.text.contains("hasn't been imported")));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

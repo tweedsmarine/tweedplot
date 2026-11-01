@@ -603,10 +603,17 @@
           <div class="wx-row"><label class="grow" for="s63-inst" title="This computer's installation code: send it to Tweedsmarine for an activation code">Installation code</label>
             <button id="s63-inst-copy" title="Copy the installation code, to send to Tweedsmarine">Copy</button></div>
           <div class="wx-row"><input id="s63-inst" class="mono grow" readonly spellcheck="false" /></div>
-          <div class="wx-row"><label for="s63-act" title="The activation code from Tweedsmarine (starts TPA1-)">Activation code</label>
-            <input id="s63-act" class="mono grow" spellcheck="false" autocomplete="off" placeholder="TPA1-…" />
+          <div class="wx-row"><label for="s63-act" title="The activation code from Tweedsmarine (starts TPA2-)">Activation code</label>
+            <input id="s63-act" class="mono grow" spellcheck="false" autocomplete="off" placeholder="TPA2-…" />
             <button id="s63-act-btn" title="Activate TweedPlot for encrypted charts on this computer">Activate</button></div>
-          <div class="wx-row"><span id="s63-act-note" class="grow wx-note"></span><button id="s63-deact" title="Remove this computer's activation" hidden>Remove</button></div>
+          <div class="wx-row"><span id="s63-act-note" class="grow wx-note"></span><button id="s63-deact" title="Remove this computer's activation and give the seat back (you get a release code for Tweedsmarine)" hidden>Remove</button></div>
+          <div class="wx-row" id="s63-lic-row" hidden><span id="s63-lic" class="grow wx-note"></span></div>
+          <div id="s63-rel-box" hidden>
+            <div class="wx-row"><label class="grow" for="s63-rel" title="Send this to Tweedsmarine so the seat can be used on another computer">Release code</label>
+              <button id="s63-rel-copy" title="Copy the release code, to send to Tweedsmarine">Copy</button></div>
+            <div class="wx-row"><input id="s63-rel" class="mono grow" readonly spellcheck="false" /></div>
+            <div class="wx-row"><span id="s63-rel-note" class="grow wx-note"></span></div>
+          </div>
           <div class="wx-row"><label for="s63-up" title="This computer's user permit: give it to your chart supplier when ordering cell permits">User permit</label>
             <input id="s63-up" class="mono grow" readonly spellcheck="false" />
             <button id="s63-up-copy" title="Copy the user permit, to send to your chart supplier">Copy</button></div>
