@@ -426,7 +426,7 @@ map.on("load", () => {
     if (on && !live) liveBtn.click(); // a replay plays live
     if (!on) { lastFeed = 0; }
   } });
-  library = setupLibrary(map, { ui, toast });
+  library = setupLibrary(map, { ui, toast, getBoat: () => lastBoat });
   route = setupRoute(map, { library, getBoat: () => lastBoat, getArrivalNm: () => Number(document.getElementById("rt-radius").value) || 0.1 });
   routing = setupRouting(map, { weather, course: route, library, dock, ui, getBoat: () => lastBoat,
     getSafetyDepth: () => settings.safetyDepth, getAvoid: () => features.avoid(), getBoatSettings: boat.get });

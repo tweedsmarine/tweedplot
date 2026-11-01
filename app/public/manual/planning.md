@@ -191,7 +191,7 @@ On the day, look again: the latest forecast, a fresh GRIB, the actual conditions
 
 *A 6 m trailer boat runs from the ramp to a favourite spot 15 NM offshore, fishes for four hours, and comes home.*
 
-1. **Save the spot.** Right-click it on the chart > New library mark here, type **Fishing spot**, group "Fishing", and notes (depth, best tide, what bites there).
+1. **Save the spot.** Right-click it on the chart > New library mark here (or Library › Marks › **Add mark** and type the position), type **Fishing spot**, group "Fishing", and notes (depth, best tide, what bites there), then **Add mark**.
 2. **Set your limits first.** For this boat: no more than 15 kn of wind and 1.2 m of sea for a comfortable, safe run; less if the wind is against the tide off the point.
 3. **Check the window.** Download GFS with GFS-Wave (or ECMWF with ECMWF wave) for the area. Close the drawers. At the spot, right-click > Meteogram here: the window is the stretch when wind stays under 15 kn, from launch until you are back on the trailer, with an hour's margin. Scrub the time slider to see if the sea at the exposed point on the way out is worse than at the spot.
 4. **Plan fuel.** Distance out 15 NM, back 15 NM, plus moving around on the spot. At the boat's cruising speed and fuel burn, does the rule of thirds hold with the tank you have? If the return is into the wind, allow more.

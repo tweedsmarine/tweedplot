@@ -1311,3 +1311,6 @@ kbd { display: inline-block; min-width: 1.4em; padding: 0 5px; border: 1px solid
    for Chromium to swap for the white system cursor */
 html.cur-edge:not(#n1):not(#n2):not(#n3), html.cur-edge:not(#n1):not(#n2):not(#n3) * { cursor: none !important; }
 #night-cursor { position: fixed; left: 0; top: 0; z-index: 2147483647; pointer-events: none; }
+/* mark editor title and position buttons (library.js) */
+.edit .edit-title { display: block; margin: 2px 0 4px; font-size: 13px; }
+.edit .mark-pos button { padding: 2px 8px; }

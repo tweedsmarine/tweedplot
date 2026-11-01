@@ -334,7 +334,7 @@
           <button data-tab="barriers">Barriers</button>
         </div>
         <div class="tab" data-tab="marks">
-          <div class="wx-row"><label class="grow" title="Draw only the marks the search and filters list (else every mark)"><input id="lib-f-chart" type="checkbox" /> Chart shows only the marks listed</label><button id="lib-box" title="Drag a box on the chart to select the marks in it (Esc stops)">Select on chart</button></div>
+          <div class="wx-row"><button id="lib-add" class="on" title="Add a mark: type its position, or take the boat's, the chart centre's or a click on the chart">Add mark</button><label class="grow" title="Draw only the marks the search and filters list (else every mark)"><input id="lib-f-chart" type="checkbox" /> Chart shows only the marks listed</label><button id="lib-box" title="Drag a box on the chart to select the marks in it (Esc stops)">Select on chart</button></div>
           <details id="lib-groups" class="sub" title="Each group (a TimeZero layer, a season, a mate's marks) shown or hidden on the chart, and locked so it can't be deleted or moved by accident">
             <summary>Groups</summary>
             <div class="wx-note">Untick a group to hide its marks on the chart. A locked group's marks can't be deleted or moved (on the chart or to another group) until it's unlocked.</div>
@@ -346,15 +346,20 @@
             <ul id="lib-sym-list" class="list sym-list"></ul>
           </details>
           <form id="mark-edit" class="edit" hidden>
+            <b id="mark-edit-title" class="edit-title">Mark</b>
             <div class="wx-row"><label class="grow">Name</label><input name="name" type="text" /></div>
             <div class="wx-row"><label class="grow">Type</label>
               <select name="kind"><option value="mark">Racing mark</option><option value="waypoint">Waypoint</option><option value="start">Start line end</option><option value="finish">Finish line end</option><option value="danger">Danger</option>
                 <optgroup label="Buoy symbol (IALA A)"><option value="port">Port lateral (red can)</option><option value="starboard">Starboard lateral (green cone)</option>
                 <option value="north">North cardinal</option><option value="east">East cardinal</option><option value="south">South cardinal</option><option value="west">West cardinal</option>
                 <option value="isolated">Isolated danger</option><option value="safewater">Safe water</option><option value="special">Special (yellow)</option></optgroup></select></div>
-            <div class="wx-row"><label class="grow">Group</label><input name="group" type="text" placeholder="e.g. RNZYS 2026" /></div>
+            <div class="wx-row"><label class="grow">Group</label><input name="group" type="text" placeholder="e.g. RNZYS 2026" list="lib-group-names" /><datalist id="lib-group-names"></datalist></div>
             <div class="wx-row"><label class="grow">Latitude</label><input name="lat" type="text" placeholder="36 50.120 S" /></div>
             <div class="wx-row"><label class="grow">Longitude</label><input name="lon" type="text" placeholder="174 49.800 E" /></div>
+            <div class="wx-row mark-pos"><span class="grow wx-note">Position from</span>
+              <button type="button" data-act="pos-boat" title="The boat's position now">Boat</button>
+              <button type="button" data-act="pos-centre" title="The middle of the chart on screen">Chart centre</button>
+              <button type="button" data-act="pos-pick" title="Click the chart where the mark goes (Esc stops); click again to put it somewhere else">Pick on chart</button></div>
             <div class="wx-row"><label class="grow">Notes</label><input name="notes" type="text" /></div>
             <div class="wx-row"><label class="grow" title="Routings keep at least this far off the mark (NM), unless it is on their course. Empty or 0: not a barrier.">Barrier radius (NM)</label><input name="barrier" type="number" min="0" max="50" step="0.05" placeholder="none" /></div>
             <div id="mark-made" class="wx-note"></div>

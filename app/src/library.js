@@ -57,7 +57,7 @@ export function addMarkLayers(map, p, before) {
   return { isIcon };
 }
 
-export function setupLibrary(map, { ui, toast = () => {} }) {
+export function setupLibrary(map, { ui, toast = () => {}, getBoat = () => null }) {
   const $ = (id) => document.getElementById(id);
   let marks = [];
   let boxIds = null; // the marks in the box last drawn on the chart (Select on chart)
@@ -398,7 +398,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
           refresh();
         } },
     ],
-    empty: () => "No marks yet. Right-click the chart: New library mark here, or import a GPX or TimeZero file (Library menu).",
+    empty: () => "No marks yet. Press Add mark (or right-click the chart: New library mark here), or import a GPX or TimeZero file (Library menu).",
     changed: () => draw(),
   });
   if (markList.filters.box) markList.setFilter("box", null); // a box isn't kept from one session to the next
@@ -428,13 +428,85 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
   addKindOptions(form.kind, POI_KINDS); // every type: course marks, buoys, points of interest, shapes, seabed, fish
   /** A copy of the full type list, for the selection's Type… and the TimeZero symbols. */
   const kindSelect = () => { const s = form.kind.cloneNode(true); s.removeAttribute("name"); return s; };
+  // where the mark will go while it is edited (a ring on the chart that follows the typed position)
+  map.addSource("lib-edit-pos", { type: "geojson", data: empty });
+  map.addLayer({ id: "lib-edit-pos", type: "circle", source: "lib-edit-pos",
+    paint: { "circle-radius": 13, "circle-color": "rgba(0,0,0,0)", "circle-stroke-width": 3, "circle-stroke-color": "#1e88e5" } }, "lib-marks");
+  function formPos() {
+    const lat = parseCoord(form.lat.value, "NS"), lon = parseCoord(form.lon.value, "EW");
+    return lat !== null && lon !== null && Math.abs(lat) <= 90 && Math.abs(lon) <= 180 ? [lon, lat] : null;
+  }
+  function drawEditPos() {
+    const p = form.hidden ? null : formPos();
+    map.getSource("lib-edit-pos")?.setData(p ? { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: p } } : empty);
+  }
+  function setFormPos(p, show = false) {
+    form.lat.value = ddm(p[1], "N", "S");
+    form.lon.value = ddm(p[0], "E", "W");
+    drawEditPos();
+    if (show && !map.getBounds().contains(p)) map.easeTo({ center: p });
+  }
+  form.lat.addEventListener("input", drawEditPos);
+  form.lon.addEventListener("input", drawEditPos);
+  // Pick on chart: the next click on the chart is the mark's position
+  const pickBtn = form.querySelector('[data-act="pos-pick"]');
+  let picking = false;
+  function pick(on) {
+    picking = on;
+    pickBtn.classList.toggle("armed", on);
+    pickBtn.classList.toggle("on", on);
+    map.getContainer().classList.toggle("drawing", on);
+    map.getCanvas().style.cursor = on ? "crosshair" : "";
+    if (on) toast("Click the chart where the mark goes (Esc stops).");
+    else toast("");
+  }
+  pickBtn.onclick = () => pick(!picking);
+  map.on("click", (e) => {
+    if (!picking) return;
+    setFormPos([e.lngLat.lng, e.lngLat.lat]);
+    pick(false);
+    form.name.focus();
+  });
+  window.addEventListener("keydown", (e) => { if (picking && e.key === "Escape") { e.preventDefault(); pick(false); } });
+  form.querySelector('[data-act="pos-boat"]').onclick = () => {
+    const b = getBoat();
+    if (!b) { toast("No boat position yet.", 3000); return; }
+    setFormPos(b, true);
+  };
+  form.querySelector('[data-act="pos-centre"]').onclick = () => { const c = map.getCenter(); setFormPos([c.lng, c.lat]); };
+
   function closeForm() {
+    if (picking) pick(false);
     form.hidden = true;
     editing = null;
+    drawEditPos();
     markList.redraw();
   }
+  /** The groups in the library, offered as you type a group name. */
+  function fillGroupNames() {
+    const names = [...new Set(marks.map((m) => m.group).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    $("lib-group-names").replaceChildren(...names.map((n) => new Option(n)));
+  }
+  /**
+   * A new mark: the editor, not saved until Add mark, at `p` ([lon, lat]) or else the boat
+   * or else the middle of the chart. Cancel leaves nothing behind.
+   */
+  function newMark(p) {
+    const c = map.getCenter();
+    const at = p ?? getBoat() ?? [c.lng, c.lat];
+    ui.openTab("library", "marks");
+    editMark({ name: "", kind: prefs.lastKind || "mark", group: prefs.lastGroup || "", notes: "", lat: at[1], lon: at[0] });
+  }
+  $("lib-add").onclick = () => newMark();
   function editMark(m) {
     editing = { ...m };
+    if (picking) pick(false);
+    const isNew = !m.id;
+    $("mark-edit-title").textContent = isNew ? "New mark" : `Edit ${m.name || "mark"}`;
+    form.querySelector('button[type="submit"]').textContent = isNew ? "Add mark" : "Save mark";
+    form.querySelector('[data-act="delete"]').hidden = isNew;
+    form.querySelector('[data-act="start"]').hidden = isNew;
+    fillGroupNames();
     form.hidden = false;
     form.name.value = m.name;
     form.kind.value = m.kind || "mark";
@@ -450,6 +522,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       m.symbol ? (m.symbol.startsWith("tz:") ? `TimeZero symbol ${m.symbol.slice(3)}` : `symbol ${m.symbol}`) : "",
       tagsOf(m).length ? `tags: ${tagsOf(m).map((t) => TAG_LABEL[t] || t).join(", ")}` : ""].filter(Boolean).join(" · ");
     markList.redraw();
+    drawEditPos();
     form.scrollIntoView({ block: "nearest", behavior: "smooth" });
     form.name.focus();
   }
@@ -461,12 +534,15 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     const bn = Number(form.barrier.value);
     const m = { ...editing, name: form.name.value.trim(), kind: form.kind.value, group: form.group.value.trim(), notes: form.notes.value.trim(), lat, lon,
       barrier_nm: Number.isFinite(bn) && bn > 0 ? bn : 0 };
+    const isNew = !m.id;
     try {
       const saved = await invoke("mark_save", { mark: m });
+      if (isNew) { prefs.lastGroup = saved.group || ""; prefs.lastKind = saved.kind; savePrefs(); }
       closeForm();
-      status(`Saved ${saved.name}.`);
+      status(`${isNew ? "Added" : "Saved"} ${saved.name || "the mark"}.`);
       route?.libraryMarkChanged(saved);
       await refresh();
+      if (isNew) markList.highlight?.(saved.id);
     } catch (err) { status(String(err)); }
   };
   form.querySelector('[data-act="cancel"]').onclick = () => closeForm();
@@ -1038,15 +1114,10 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       const f = map.queryRenderedFeatures([[point.x - 6, point.y - 6], [point.x + 6, point.y + 6]], { layers: ["lib-marks"] })[0];
       return f ? byId(f.properties.id) : null;
     },
-    /** New library mark at a position (right-click menu). */
-    async newMarkAt(p) {
-      try {
-        const m = await invoke("mark_save", { mark: { name: "", lat: p[1], lon: p[0], kind: "mark", group: "", notes: "" } });
-        await refresh();
-        ui.openTab("library", "marks");
-        editMark(m);
-      } catch (e) { status(String(e)); }
-    },
+    /** New library mark at a position (right-click menu), or at the boat or chart centre: the editor, saved on Add mark. */
+    newMarkAt(p) { newMark(p); },
+    /** The Add mark dialogue. */
+    newMark: () => newMark(),
   };
 }
 
