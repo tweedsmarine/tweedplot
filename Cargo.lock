@@ -4534,6 +4534,7 @@ dependencies = [
  "chrono",
  "reqwest",
  "thiserror 1.0.69",
+ "zip",
 ]
 
 [[package]]

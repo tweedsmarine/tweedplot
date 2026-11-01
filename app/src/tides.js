@@ -59,10 +59,11 @@ export function setupTides(map, { before, getTime, onTime }) {
   // tide tables don't cover it (a GRIB from another year): then for now, and the line
   // under Tide stations says so.
   let years = [];
+  let gauges = 0; // LINZ harmonic constituents: tides for any year at the ports that have them
   function tideTime() {
     const t = Math.floor(getTime());
     const y = new Date(t * 1000).getUTCFullYear(), now = Math.floor(Date.now() / 1000);
-    if (years.length && !years.includes(y) && years.includes(new Date().getUTCFullYear())) {
+    if (!gauges && years.length && !years.includes(y) && years.includes(new Date().getUTCFullYear())) {
       $("tide-time-note").textContent = `The planning time (${dateLabel(t, "Pacific/Auckland")}) is outside the tide tables (${years.join(", ")}): the gauges and tidal streams show now.`;
       return now;
     }
@@ -101,8 +102,9 @@ export function setupTides(map, { before, getTime, onTime }) {
   }
   function showInfo(info) {
     years = info?.years || [];
+    gauges = info?.gauges || 0;
     $("tide-status").textContent = info?.stations
-      ? `${info.stations} stations (${info.daily} with LINZ daily tables), ${info.years.join(", ") || "no years"}`
+      ? `${info.stations} stations (${info.daily} with LINZ daily tables), ${info.years.join(", ") || "no years"}${gauges ? `; harmonic constituents for ${gauges} gauges (any year)` : ""}`
       : "No tide data yet: download the LINZ tables.";
   }
 
@@ -173,7 +175,7 @@ export function setupTides(map, { before, getTime, onTime }) {
         const y = new Date(d0 * 1000).getUTCFullYear();
         // the planning time (the GRIB's, say) is outside the tables: show today instead
         const nowY = new Date().getFullYear();
-        if (!note && !r.years?.includes(y) && r.years?.includes(nowY) && !r.method?.startsWith("Reference port")) {
+        if (!note && !gauges && !r.years?.includes(y) && r.years?.includes(nowY) && !r.method?.startsWith("Reference port")) {
           show(id, lngLat, dayStart(Date.now() / 1000, tz), `The planning time (${dateLabel(t, tz)}) is outside the downloaded tables (${r.years.join(", ")}): showing today`);
           return;
         }

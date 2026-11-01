@@ -17,6 +17,8 @@
 //! LINZ predictions are Crown copyright; they are not official tide tables under
 //! Maritime Rules Part 25. Not for navigation.
 
+pub mod foreman;
+pub mod harmonic;
 pub mod reduce;
 
 use std::collections::HashMap;
@@ -73,6 +75,8 @@ pub enum Kind {
     },
     /// Listed by LINZ but without time differences: levels only.
     LevelsOnly { reference: String },
+    /// A LINZ tide gauge with harmonic constituents but no daily table or secondary-port entry.
+    Gauge,
 }
 
 #[derive(Debug, Clone)]
@@ -295,6 +299,17 @@ pub fn parse_secondary(text: &str) -> Vec<SecondaryRow> {
 
 // ---------- the database ----------------------------------------------------------
 
+/// "PORT TARANAKI" → "Port Taranaki".
+fn title_case(s: &str) -> String {
+    s.split_whitespace()
+        .map(|w| {
+            let mut c = w.chars();
+            c.next().map(|f| f.to_uppercase().chain(c.flat_map(char::to_lowercase)).collect::<String>()).unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn key(name: &str) -> String {
     name.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
 }
@@ -315,7 +330,16 @@ pub struct TideDb {
     ref_msl: HashMap<String, f64>,
     /// Years with daily tables.
     pub years: Vec<i32>,
+    /// LINZ's harmonic constituents, one per gauge (see [`harmonic`]): predictions for any year.
+    pub harmonics: Vec<harmonic::Harmonics>,
+    /// The constituents of a station, by station id.
+    harm_of: HashMap<String, usize>,
+    /// The constituents of a standard port, by name key (for the secondary ports referred to it).
+    harm_by_key: HashMap<String, usize>,
 }
+
+/// Folder (in the tide folder) of LINZ's harmonic constituents files.
+pub const CONSTITUENTS_DIR: &str = "constituents";
 
 /// File name of the secondary ports table in the tide folder.
 pub const SECONDARY_FILE: &str = "secondary-ports.csv";
@@ -351,7 +375,58 @@ impl TideDb {
         db.years.sort();
         let rows = std::fs::read_to_string(dir.join(SECONDARY_FILE)).map(|t| parse_secondary(&t)).unwrap_or_default();
         db.build(headers, rows);
+        let mut harms = Vec::new();
+        if let Ok(rd) = std::fs::read_dir(dir.join(CONSTITUENTS_DIR)) {
+            let mut files: Vec<PathBuf> =
+                rd.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("txt"))).collect();
+            files.sort();
+            harms.extend(files.iter().filter_map(|p| std::fs::read_to_string(p).ok()).filter_map(|t| harmonic::parse(&t)));
+        }
+        db.add_harmonics(harms);
         db
+    }
+
+    /// Match each gauge's constituents to a station (by name, else within 3 km), taking the
+    /// station's position (LINZ's Nelson file has 14°16'S for 41°16'S); a gauge without a
+    /// station becomes one of its own ([`Kind::Gauge`]).
+    pub fn add_harmonics(&mut self, harms: Vec<harmonic::Harmonics>) {
+        for mut h in harms {
+            let k = key(&h.name);
+            let by_name = self.stations.iter().position(|s| key(&s.name) == k);
+            let near = || {
+                self.stations
+                    .iter()
+                    .enumerate()
+                    .map(|(i, s)| (i, dist_km((s.lat, s.lon), (h.lat, h.lon))))
+                    .filter(|x| x.1 < 3.0)
+                    .min_by(|a, b| a.1.total_cmp(&b.1))
+                    .map(|x| x.0)
+            };
+            let i = self.harmonics.len();
+            match by_name.or_else(near) {
+                Some(si) => {
+                    let s = &self.stations[si];
+                    (h.lat, h.lon) = (s.lat, s.lon);
+                    self.harm_of.insert(s.id.clone(), i);
+                    self.harm_by_key.insert(key(&s.name), i);
+                }
+                None => {
+                    let id = format!("g:{}", h.number);
+                    let name = title_case(&h.name);
+                    self.harm_of.insert(id.clone(), i);
+                    self.harm_by_key.insert(key(&name), i);
+                    let levels = Levels { msl: Some(h.z0), ..Default::default() };
+                    self.stations.push(Station { id, name, lat: h.lat, lon: h.lon, kind: Kind::Gauge, levels, approx: false });
+                }
+            }
+            self.harm_by_key.entry(k).or_insert(i);
+            self.harmonics.push(h);
+        }
+    }
+
+    /// The constituents of a station, if LINZ publishes them for it.
+    pub fn harmonics_of(&self, id: &str) -> Option<&harmonic::Harmonics> {
+        self.harm_of.get(id).map(|&i| &self.harmonics[i])
     }
 
     fn build(&mut self, headers: HashMap<String, DailyHeader>, rows: Vec<SecondaryRow>) {
@@ -400,21 +475,47 @@ impl TideDb {
         self.stations.iter().find(|s| s.id == id)
     }
 
-    /// High and low waters at a station between `t0` and `t1` (plus one either side, for curves).
-    pub fn extremes(&self, id: &str, t0: i64, t1: i64) -> Option<Vec<Extreme>> {
-        let s = self.station(id)?;
-        let window = |v: &[Extreme], shift: i64| -> Vec<Extreme> {
-            let i0 = v.partition_point(|e| e.t + shift < t0).saturating_sub(1);
-            let i1 = (v.partition_point(|e| e.t + shift <= t1) + 1).min(v.len());
+    /// A standard port's high and low waters from `t0` to `t1` (plus one either side): its
+    /// LINZ daily table where that covers the whole time, else its harmonic constituents.
+    fn port_extremes(&self, name_key: &str, t0: i64, t1: i64) -> Option<Vec<Extreme>> {
+        let window = |v: &[Extreme]| -> Vec<Extreme> {
+            let i0 = v.partition_point(|e| e.t < t0).saturating_sub(1);
+            let i1 = (v.partition_point(|e| e.t <= t1) + 1).min(v.len());
             v[i0..i1].to_vec()
         };
+        let table = self.series.get(name_key);
+        let covers = table.is_some_and(|v| v.first().is_some_and(|e| e.t <= t0) && v.last().is_some_and(|e| e.t >= t1));
+        if covers {
+            return table.map(|v| window(v));
+        }
+        match self.harm_by_key.get(name_key) {
+            Some(&i) => Some(window(&self.harmonics[i].extremes(t0 - 14 * 3600, t1 + 14 * 3600))),
+            None => table.map(|v| window(v)),
+        }
+    }
+
+    /// High and low waters at a station between `t0` and `t1` (plus one either side, for curves).
+    /// A daily port's table where it covers the time; else LINZ's harmonic constituents for the
+    /// place (any year); else, for a secondary port, its reference port's tides with LINZ's
+    /// time and height differences.
+    pub fn extremes(&self, id: &str, t0: i64, t1: i64) -> Option<Vec<Extreme>> {
+        let s = self.station(id)?;
+        if let Kind::Daily = s.kind {
+            return self.port_extremes(&key(&s.name), t0, t1);
+        }
+        if let Some(h) = self.harmonics_of(id) {
+            let v = h.extremes(t0 - 14 * 3600, t1 + 14 * 3600);
+            let i0 = v.partition_point(|e| e.t < t0).saturating_sub(1);
+            let i1 = (v.partition_point(|e| e.t <= t1) + 1).min(v.len());
+            return Some(v[i0..i1].to_vec());
+        }
         match &s.kind {
-            Kind::Daily => Some(window(self.series.get(&key(&s.name))?, 0)),
             Kind::Secondary { reference, hw_min, lw_min, ratio } => {
-                let base = self.series.get(&key(reference))?;
                 let msl_ref = self.ref_msl.get(&key(reference)).copied();
-                let shift = (*hw_min).min(*lw_min) as i64 * 60;
-                let mut out: Vec<Extreme> = window(base, shift.min(0))
+                // the reference port's tides that land in the window once shifted
+                let (lo, hi) = ((*hw_min).min(*lw_min) as i64 * 60, (*hw_min).max(*lw_min) as i64 * 60);
+                let base = self.port_extremes(&key(reference), t0 - hi, t1 - lo)?;
+                let mut out: Vec<Extreme> = base
                     .into_iter()
                     .map(|e| {
                         let dt = if e.high { *hw_min } else { *lw_min } as i64 * 60;
@@ -428,7 +529,7 @@ impl TideDb {
                 out.sort_by_key(|e| e.t);
                 Some(out)
             }
-            Kind::LevelsOnly { .. } => None,
+            Kind::Daily | Kind::LevelsOnly { .. } | Kind::Gauge => None,
         }
     }
 
@@ -509,6 +610,52 @@ impl TideDb {
 
 const LIST_PAGE: &str = "https://www.linz.govt.nz/products-services/tides-and-tidal-streams/tide-predictions/tide-predictions-list-view";
 const MAIN_PAGE: &str = "https://www.linz.govt.nz/products-services/tides-and-tidal-streams/tide-predictions";
+const CONSTITUENTS_PAGE: &str = "https://www.linz.govt.nz/products-services/data/types-linz-data/sea-level-data/tide-constituents";
+
+/// The constituents zip's link on LINZ's page (the file name changes each year).
+pub fn constituents_link(html: &str) -> Option<String> {
+    let h = hrefs(html).into_iter().find(|h| {
+        let l = h.to_ascii_lowercase();
+        l.ends_with(".zip") && l.contains("constituent")
+    })?;
+    Some(if h.starts_with("http") { h } else { format!("https://www.linz.govt.nz{h}") })
+}
+
+/// Write the constituents files of LINZ's zip into `dir`/[`CONSTITUENTS_DIR`] (replacing what
+/// was there). Returns the gauges written.
+pub fn unpack_constituents(dir: &Path, zip_bytes: &[u8]) -> Result<usize, Error> {
+    let mut z = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).map_err(|e| Error::Format(format!("constituents zip: {e}")))?;
+    let mut files = Vec::new();
+    for i in 0..z.len() {
+        let mut f = z.by_index(i).map_err(|e| Error::Format(format!("constituents zip: {e}")))?;
+        let Some(name) = f.enclosed_name().and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())) else { continue };
+        if !name.to_ascii_lowercase().ends_with(".txt") {
+            continue;
+        }
+        let mut text = String::new();
+        if std::io::Read::read_to_string(&mut f, &mut text).is_err() {
+            let mut raw = Vec::new();
+            std::io::Read::read_to_end(&mut f, &mut raw)?;
+            text = String::from_utf8_lossy(&raw).into_owned();
+        }
+        if harmonic::parse(&text).is_some() {
+            files.push((name, text));
+        }
+    }
+    if files.is_empty() {
+        return Err(Error::Format("no constituents in LINZ's zip".into()));
+    }
+    let out = dir.join(CONSTITUENTS_DIR);
+    let tmp = dir.join(format!("{CONSTITUENTS_DIR}.part"));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp)?;
+    for (name, text) in &files {
+        std::fs::write(tmp.join(name), text)?;
+    }
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::rename(&tmp, &out)?;
+    Ok(files.len())
+}
 
 /// Progress of a download: what is happening, files done, files in all.
 #[derive(Debug, Clone)]
@@ -627,6 +774,19 @@ pub fn download(dir: &Path, years: &[i32], cancel: &AtomicBool, mut progress: im
         write(&file, &body)?;
         written += 1;
         std::thread::sleep(std::time::Duration::from_millis(150));
+    }
+    // LINZ's harmonic constituents: tides for any year (older tracks) at the gauges. Not fatal:
+    // the tables are what LINZ publishes for planning.
+    if !cancel.load(Ordering::Relaxed) {
+        progress(Progress { stage: "LINZ tide constituents".into(), done: total, total });
+        let got = get_text(&c, CONSTITUENTS_PAGE)
+            .ok()
+            .and_then(|html| constituents_link(&html))
+            .and_then(|url| c.get(&url).send().ok().filter(|r| r.status().is_success()).and_then(|r| r.bytes().ok()))
+            .map(|b| unpack_constituents(dir, &b));
+        if let Some(Ok(_)) = got {
+            written += 1;
+        }
     }
     progress(Progress { stage: "done".into(), done: total, total });
     Ok(written)
@@ -774,5 +934,73 @@ mod tests {
         assert_eq!(l.len(), 2);
         assert_eq!((l[0].0.as_str(), l[0].1), ("Nelson", 2026));
         assert_eq!((l[1].0.as_str(), l[1].1), ("Waitangi - Chatham Island", 2027));
+    }
+}
+
+#[cfg(test)]
+mod harmonic_db_tests {
+    use super::*;
+
+    fn fixture(n: &str) -> String {
+        std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join(n)).unwrap()
+    }
+
+    /// The daily table where it covers the time, the constituents for any other year; a gauge
+    /// without a station becomes one.
+    #[test]
+    fn unpacks_the_zip_and_finds_its_link() {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        {
+            let mut z = zip::ZipWriter::new(&mut buf);
+            let o = zip::write::SimpleFileOptions::default();
+            z.start_file("077NELSON_Harm_2005-2025.txt", o).unwrap();
+            std::io::Write::write_all(&mut z, fixture("077NELSON_Harm_2005-2025.txt").as_bytes()).unwrap();
+            z.start_file("readme.pdf", o).unwrap();
+            z.finish().unwrap();
+        }
+        let dir = std::env::temp_dir().join(format!("tides-zip-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(unpack_constituents(&dir, buf.get_ref()).unwrap(), 1);
+        assert!(dir.join(CONSTITUENTS_DIR).join("077NELSON_Harm_2005-2025.txt").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+        let html = r#"<a href="/sites/default/files/2026-08/NZ_Tide_Constituents_2025.zip">NZ Tide Constituents 2025</a>"#;
+        assert_eq!(constituents_link(html).unwrap(), "https://www.linz.govt.nz/sites/default/files/2026-08/NZ_Tide_Constituents_2025.zip");
+    }
+
+    #[test]
+    fn tables_then_constituents() {
+        let dir = std::env::temp_dir().join(format!("tides-harm-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(CONSTITUENTS_DIR)).unwrap();
+        std::fs::write(dir.join("Nelson 2026.csv"), fixture("Nelson 2026.csv")).unwrap();
+        std::fs::write(dir.join(CONSTITUENTS_DIR).join("077NELSON_Harm_2005-2025.txt"), fixture("077NELSON_Harm_2005-2025.txt")).unwrap();
+        let mut lyt = fixture("107LYTTELTON_Harm_2006-2025.txt");
+        lyt = lyt.replacen("LYTTELTON", "SOMEWHERE", 1);
+        std::fs::write(dir.join(CONSTITUENTS_DIR).join("107.txt"), lyt).unwrap();
+        let db = TideDb::open(&dir);
+        assert_eq!(db.harmonics.len(), 2);
+        let nelson = db.daily_by_name("Nelson").unwrap();
+        assert!(db.harmonics_of(&nelson.id).is_some());
+        // Nelson's own position, not the file's 14°16'S
+        assert!((db.harmonics[0].lat + 41.2667).abs() < 0.01);
+        // in the table: the table's own tides
+        let (_, table) = parse_daily(&fixture("Nelson 2026.csv")).unwrap();
+        let e = db.extremes(&nelson.id, table[2].t, table[4].t).unwrap();
+        assert!(e.iter().any(|x| *x == table[2]));
+        // 2019: no table, so from the constituents (about two highs and two lows a day)
+        let t2019 = 1_560_000_000; // June 2019
+        let e = db.extremes(&nelson.id, t2019, t2019 + 86_400).unwrap();
+        assert!((4..=7).contains(&e.len()), "{}", e.len());
+        assert!(e.iter().all(|x| x.h.is_some_and(|h| (-0.5..5.5).contains(&h))));
+        // the unmatched gauge is a station of its own, with tides
+        let g = db.stations.iter().find(|s| s.kind == Kind::Gauge).unwrap();
+        assert_eq!(g.name, "Somewhere");
+        assert!(db.extremes(&g.id, t2019, t2019 + 86_400).is_some_and(|v| v.len() >= 4));
+        // and the reducer gives a height at Nelson in 2019
+        let mut r = reduce::Reducer::new(&db, reduce::DEFAULT_MAX_KM);
+        let h = r.at(nelson.lat, nelson.lon, t2019 + 3600).unwrap();
+        assert!((-0.5..5.5).contains(&h.h));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

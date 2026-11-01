@@ -492,6 +492,7 @@ fn tides_info() -> serde_json::Value {
         "stations": db.stations.len(),
         "daily": db.stations.iter().filter(|s| s.kind == tides::Kind::Daily).count(),
         "years": db.years,
+        "gauges": db.harmonics.len(),
         "dir": TIDE_DIR.get(),
     })
 }
@@ -508,6 +509,7 @@ fn tides_stations() -> serde_json::Value {
                 tides::Kind::Daily => ("daily", None),
                 tides::Kind::Secondary { reference, .. } => ("secondary", Some(reference.clone())),
                 tides::Kind::LevelsOnly { reference } => ("levels", Some(reference.clone())),
+                tides::Kind::Gauge => ("gauge", None),
             };
             serde_json::json!({ "type": "Feature",
                 "properties": { "id": s.id, "name": s.name, "kind": kind, "ref": reference, "approx": s.approx },
@@ -526,8 +528,12 @@ fn tides_curve(id: String, t0: i64, t1: i64) -> Result<serde_json::Value, String
     let ext = db.extremes(&id, t0, t1).unwrap_or_default();
     let curve = db.curve(&id, t0, t1, 600);
     let lv = s.levels;
+    let harm = db.harmonics_of(&id).is_some();
     let method = match &s.kind {
+        tides::Kind::Daily if harm => "LINZ daily table; other years from LINZ's harmonic constituents".to_string(),
         tides::Kind::Daily => "LINZ daily table".to_string(),
+        tides::Kind::Gauge => "LINZ harmonic constituents for this gauge".to_string(),
+        _ if harm => "LINZ harmonic constituents for this place".to_string(),
         tides::Kind::Secondary { reference, hw_min, lw_min, ratio } => format!(
             "Secondary to {reference}: HW {:+} min, LW {:+} min{}",
             hw_min,

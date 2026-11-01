@@ -5,11 +5,13 @@
 //! - Within [`ONE_PORT_KM`] of a port, that port alone.
 //! - Else up to [`MAX_PORTS`] ports within `max_km`, weighted by the inverse square of the
 //!   distance (so the nearest dominates, and the blend changes smoothly between ports).
-//! - A port without a table for the time is left out of the blend; with none left, or no port
-//!   within `max_km`, there is no height (the sounding is kept as logged).
+//! - A port's tides come from its LINZ daily table, or LINZ's harmonic constituents for any
+//!   year (see [`TideDb::extremes`]). A port with neither for the time is left out of the
+//!   blend; with none left, or no port within `max_km`, there is no height (the sounding is
+//!   kept as logged).
 //!
-//! Built for millions of soundings: each port's high and low waters are read once, and the
-//! ports for a place are found once per ~1 km square.
+//! Built for millions of soundings: each port's high and low waters are worked out once per
+//! 30 days used, and the ports for a place are found once per ~1 km square.
 
 use std::collections::HashMap;
 
@@ -35,11 +37,15 @@ pub struct TideAt {
 pub struct Reducer<'a> {
     db: &'a TideDb,
     max_km: f64,
-    /// Each usable station's high and low waters (with heights), by station index.
-    series: HashMap<usize, Vec<Extreme>>,
+    /// The stations that can give heights.
+    ports: Vec<usize>,
+    /// Each station's high and low waters by 30-day block (None: none for that time).
+    blocks: HashMap<(usize, i64), Option<Vec<Extreme>>>,
     /// The stations near each ~1 km square (by 0.01° lat/lon), with their distance weights.
     near: HashMap<(i32, i32), Vec<(usize, f64)>>,
 }
+
+const BLOCK_S: i64 = 30 * 86_400;
 
 fn dist_km(lat0: f64, lon0: f64, lat1: f64, lon1: f64) -> f64 {
     let dy = (lat0 - lat1) * 111.2;
@@ -50,36 +56,27 @@ fn dist_km(lat0: f64, lon0: f64, lat1: f64, lon1: f64) -> f64 {
 impl<'a> Reducer<'a> {
     /// `max_km`: how far a port reaches (see [`DEFAULT_MAX_KM`]).
     pub fn new(db: &'a TideDb, max_km: f64) -> Self {
-        let mut series = HashMap::new();
-        for (i, s) in db.stations.iter().enumerate() {
-            // daily ports, and secondary ports whose heights LINZ gives (a range ratio and levels)
-            let usable = match &s.kind {
-                Kind::Daily => true,
-                Kind::Secondary { ratio, .. } => ratio.is_some() && s.levels.msl.is_some(),
-                Kind::LevelsOnly { .. } => false,
-            };
-            if !usable {
-                continue;
-            }
-            if let Some(ext) = db.extremes(&s.id, i64::MIN / 4, i64::MAX / 4) {
-                if ext.iter().any(|e| e.h.is_some()) {
-                    series.insert(i, ext);
-                }
-            }
-        }
-        Reducer { db, max_km, series, near: HashMap::new() }
+        let ports = db
+            .stations
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| {
+                // daily ports, gauges with constituents, and secondary ports whose heights LINZ gives
+                db.harmonics_of(&s.id).is_some()
+                    || match &s.kind {
+                        Kind::Daily | Kind::Gauge => true,
+                        Kind::Secondary { ratio, .. } => ratio.is_some() && s.levels.msl.is_some(),
+                        Kind::LevelsOnly { .. } => false,
+                    }
+            })
+            .map(|(i, _)| i)
+            .collect();
+        Reducer { db, max_km, ports, blocks: HashMap::new(), near: HashMap::new() }
     }
 
-    /// Whether any port has heights (no tide tables: nothing can be reduced).
+    /// Whether any port can give heights (no tide data: nothing can be reduced).
     pub fn has_ports(&self) -> bool {
-        !self.series.is_empty()
-    }
-
-    /// The first and last time any port has a table for.
-    pub fn span(&self) -> Option<(i64, i64)> {
-        let first = self.series.values().filter_map(|v| v.first().map(|e| e.t)).min()?;
-        let last = self.series.values().filter_map(|v| v.last().map(|e| e.t)).max()?;
-        Some((first, last))
+        !self.ports.is_empty()
     }
 
     fn ports_near(&mut self, lat: f64, lon: f64) -> &[(usize, f64)] {
@@ -88,8 +85,8 @@ impl<'a> Reducer<'a> {
             // the centre of the square: close enough for choosing ports and weights
             let (clat, clon) = ((k.0 as f64 + 0.5) / 100.0, (k.1 as f64 + 0.5) / 100.0);
             let mut d: Vec<(usize, f64)> = self
-                .series
-                .keys()
+                .ports
+                .iter()
                 .map(|&i| {
                     let s = &self.db.stations[i];
                     (i, dist_km(clat, clon, s.lat, s.lon))
@@ -106,6 +103,16 @@ impl<'a> Reducer<'a> {
         &self.near[&k]
     }
 
+    fn height_at(&mut self, i: usize, t: i64) -> Option<f64> {
+        let b = t.div_euclid(BLOCK_S);
+        let db = self.db;
+        let ext = self
+            .blocks
+            .entry((i, b))
+            .or_insert_with(|| db.extremes(&db.stations[i].id, b * BLOCK_S, (b + 1) * BLOCK_S).filter(|v| v.iter().any(|e| e.h.is_some())));
+        TideDb::height_at(ext.as_deref()?, t)
+    }
+
     /// The height of tide above chart datum at a place and time (Unix seconds, UTC).
     pub fn at(&mut self, lat: f64, lon: f64, t: i64) -> Option<TideAt> {
         let ports: Vec<(usize, f64)> = self.ports_near(lat, lon).to_vec();
@@ -113,7 +120,7 @@ impl<'a> Reducer<'a> {
         let mut wsum = 0.0;
         let mut used = Vec::with_capacity(ports.len());
         for (i, w) in ports {
-            if let Some(h) = TideDb::height_at(&self.series[&i], t) {
+            if let Some(h) = self.height_at(i, t) {
                 sum += w * h;
                 wsum += w;
                 used.push((i, w));
