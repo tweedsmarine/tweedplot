@@ -220,6 +220,8 @@ impl Library {
     /// how many of each category, for previewing before a merge.
     pub fn peek(path: &Path) -> Result<Counts> {
         let c = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        // not a database at all (a protected .tplib, another kind of file): an error, not "empty"
+        c.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))?;
         // a library made before a table existed (the log, trips) simply has none
         let count =
             |t: &str| c.query_row(&format!("SELECT count(*) FROM {t} WHERE deleted_at IS NULL"), [], |r| r.get::<_, i64>(0)).map(|n| n as usize).unwrap_or(0);
@@ -376,6 +378,11 @@ mod tests {
         let ev: Vec<String> = lib.events().unwrap().into_iter().map(|e| e.id).collect();
         lib.export_library(&all, &[], &[], &[], &ev, Also { trips: true, barriers: true, routings: false }, true).unwrap();
         let c = Library::peek(&all).unwrap();
+        // locked with a passphrase it can't be looked into until it's unlocked
+        let locked = dir.join("all.tplib");
+        crate::protect::protect_file(&all, &locked, "secret passphrase").unwrap();
+        assert!(Library::peek(&locked).is_err());
+        assert!(Library::peek(&dir.join("missing.gpkg")).is_err());
         assert_eq!((c.marks, c.events, c.trips, c.barriers, c.routings), (0, 1, 1, 1, 0));
         let fresh = Library::open_file(dir.join("fresh.gpkg")).unwrap();
         let only = Scope { marks: false, routes: false, tracks: false, events: true, trips: false, routings: false, barriers: false };
