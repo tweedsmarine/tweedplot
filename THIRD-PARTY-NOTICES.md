@@ -8,6 +8,7 @@ TweedPlot includes or uses the following. Each keeps its own licence and copyrig
 | --- | --- | --- |
 | `app/src-tauri/resources/world_depth.gpkg`: world bathymetry bands | Natural Earth 10 m bathymetry (https://www.naturalearthdata.com, nvkelso/natural-earth-vector) | Public domain |
 | `app/src-tauri/resources/polars/*`: example polar tables | TweedsMarine and the boats named in the files | Same as the code |
+| `app/public/data/land-*.geojson`: land outlines | Derived from OpenStreetMap data via simonepri/geo-maps; © OpenStreetMap contributors (https://www.openstreetmap.org/copyright) | ODbL 1.0: distributed with TweedPlot, so the credit is shown on the chart and in About |
 | Atkinson Hyperlegible Next font (`@fontsource/atkinson-hyperlegible-next`) | Braille Institute of America | SIL Open Font License 1.1 |
 
 ## Data downloaded by the user at run time (not distributed with TweedPlot)
@@ -15,7 +16,6 @@ TweedPlot includes or uses the following. Each keeps its own licence and copyrig
 | Data | Source | Terms |
 | --- | --- | --- |
 | LINZ charts, Topo50, tide predictions | Toitū Te Whenua Land Information New Zealand | CC BY 4.0: © LINZ. Attribute LINZ when you share anything made from it. |
-| Bundled land outlines (`app/public/data/land-*.geojson`), derived from OpenStreetMap via simonepri/geo-maps | © OpenStreetMap contributors (https://www.openstreetmap.org/copyright) | ODbL 1.0 |
 | OpenStreetMap tiles (optional, off by default, fetched at run time, not bundled) | © OpenStreetMap contributors; subject to https://operations.osmfoundation.org/policies/tiles/ | ODbL 1.0 (data) |
 | OpenSeaMap seamarks (optional, off by default, fetched at run time, not bundled) | OpenSeaMap contributors (https://www.openseamap.org); not for navigation | ODbL 1.0 (data) |
 | GSHHG coastline 2.3.7 | Wessel and Smith, University of Hawaiʻi and NOAA (https://www.soest.hawaii.edu/pwessel/gshhg) | LGPL 3 |

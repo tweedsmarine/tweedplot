@@ -10,13 +10,15 @@ const SEEDED = "racenav.use.seeded";
 const existingUser = (() => { try { return localStorage.getItem("racenav.views") !== null; } catch { return true; } })();
 
 const T = (k, c, r, w, h) => ({ k, c, r, w, h });
+// the depth history panel the Navigate and Go fishing choices add (Navigation view)
+const SOUNDER_PANEL = { id: "psounder", x: 0.3, y: 0.6, dir: "row", size: "m", views: ["nav"], name: "Sounder", tiles: ["SOUNDER"] };
 const TASKS = {
   cruise: {
-    name: "Navigate", icon: "⛵", note: "chart, position, depth history, wind", level: "standard", panels: [],
+    name: "Navigate", icon: "⛵", note: "chart, position, depth history, wind", level: "standard", panels: [SOUNDER_PANEL],
     screen: [T("HIGHWAY", 1, 1, 8, 4), T("WDIAL", 9, 1, 4, 4), T("COG", 1, 5, 4, 4), T("SOG", 5, 5, 4, 4), T("DPT", 9, 5, 4, 4)],
   },
   fish: {
-    name: "Go fishing", icon: "🎣", note: "shoot and haul, sea temperature, currents", level: "standard", panels: [],
+    name: "Go fishing", icon: "🎣", note: "shoot and haul, depth history, sea temperature, currents", level: "standard", panels: [SOUNDER_PANEL],
     screen: [T("DPT", 1, 1, 8, 4), T("WDIAL", 9, 1, 4, 4), T("COG", 1, 5, 6, 4), T("SOG", 7, 5, 6, 4)],
   },
   race: {
@@ -74,11 +76,17 @@ export function setupWelcome({ detail, inst }) {
   });
   window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !el.hidden) { done(); el.hidden = true; } });
 
-  // a Use choice adds its instrument panel and takes away the other uses' panels (and the earlier "pfish")
+  // a Use choice adds its instrument panels and takes away the other uses' ones, but only while they
+  // are as the choice made them: a panel the user has changed (tiles added or taken out) is theirs now
   const addPanels = (u) => {
-    for (const k of Object.keys(TASKS)) if (k !== u) for (const p of TASKS[k].panels) inst.removePanel(p.id);
-    inst.removePanel("pfish");
-    inst.removePanel("pdepth");
+    const keep = new Set((TASKS[u]?.panels || []).map((p) => p.id));
+    for (const k of Object.keys(TASKS)) {
+      if (k === u) continue;
+      for (const p of TASKS[k].panels) if (!keep.has(p.id)) inst.removePanel(p.id, p.tiles);
+    }
+    // the panels of earlier test versions
+    inst.removePanel("pfish", null);
+    inst.removePanel("pdepth", null);
     // the Instruments screen is seeded once, by the first choice; later changes never touch it
     try {
       if (localStorage.getItem(SEEDED) !== "1") {

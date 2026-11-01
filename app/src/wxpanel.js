@@ -2,6 +2,7 @@
 // the low / target / high filter, a cursor readout and presets, and a snapshot.
 import { invoke } from "@tauri-apps/api/core";
 import { fmt } from "./weather.js";
+import * as activity from "./activity.js";
 
 const KEY = "racenav.wxpanel";
 const PRESETS = {
@@ -34,7 +35,10 @@ const ROWS = [
 
 export function setupWeatherPanel(map, weather) {
   const $ = (id) => document.getElementById(id);
-  const st = { open: false, x: null, y: null, collapsed: false, sec: { show: true, over: true }, presets: {}, ...JSON.parse(localStorage.getItem(KEY) || "{}") };
+  const st = { open: false, x: null, y: null, collapsed: false, sec: { show: true, over: true }, presets: {} };
+  try { Object.assign(st, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* storage unavailable or damaged: defaults */ }
+  if (!st.sec || typeof st.sec !== "object") st.sec = { show: true, over: true };
+  if (!st.presets || typeof st.presets !== "object") st.presets = {};
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch { /* ignore */ } };
 
   const win = document.createElement("div");
@@ -213,12 +217,14 @@ export function setupWeatherPanel(map, weather) {
 
   // ---------- cursor readout ----------
   let lastPoint = null, trend = null, trendKey = "";
-  weather.onPoint((row, at) => { lastPoint = row; renderPoint(); if (row) fetchTrend(row, at); });
+  weather.onPoint((row, at) => { lastPoint = row; if (row) fetchTrend(row, at); renderPoint(); });
   async function fetchTrend(row, at) {
     const key = `${at[0].toFixed(3)},${at[1].toFixed(3)},${row.t}`;
     if (key === trendKey || row.mslp == null) return;
     trendKey = key;
+    trend = null; // not the last point's trend while this one is fetched
     const rows = await invoke("grib_point", { lat: at[1], lon: at[0], t: row.t - 10800 }).catch(() => []);
+    if (key !== trendKey) return; // the cursor has moved on: a newer request will answer
     const was = (rows || []).find((r) => r.path === weather.current().path)?.mslp;
     trend = was != null ? row.mslp - was : null;
     renderPoint();
@@ -242,12 +248,34 @@ export function setupWeatherPanel(map, weather) {
 
   // ---------- snapshot ----------
   $("wxp-snap").onclick = () => {
+    // drawn in the frame just rendered (the WebGL buffer is only readable then), with the
+    // credits and "not for navigation" along the bottom, as the licences of the map data ask
     map.once("render", () => {
-      map.getCanvas().toBlob(async (blob) => {
-        if (!blob) return;
-        const data = Array.from(new Uint8Array(await blob.arrayBuffer()));
+      const src = map.getCanvas();
+      const credit = ($("map-attribution")?.textContent || "Not for navigation.").replace(/\s+/g, " ").trim();
+      const px = Math.max(11, Math.round(12 * (window.devicePixelRatio || 1)));
+      const strip = Math.round(px * 1.8);
+      const out = document.createElement("canvas");
+      out.width = src.width;
+      out.height = src.height + strip;
+      const g = out.getContext("2d");
+      g.drawImage(src, 0, 0);
+      g.fillStyle = "#fff";
+      g.fillRect(0, src.height, out.width, strip);
+      g.fillStyle = "#333";
+      g.font = `${px}px system-ui, sans-serif`;
+      g.textBaseline = "middle";
+      const when = weather.current().path ? `Weather ${fmt(weather.current().t)}. ` : "";
+      g.fillText(`${when}${credit}`, Math.round(px / 2), src.height + strip / 2, out.width - px);
+      out.toBlob(async (blob) => {
+        if (!blob) { activity.start("Saving the weather picture").fail("The chart could not be read as a picture."); return; }
+        const data = new Uint8Array(await blob.arrayBuffer());
         const stamp = new Date(weather.current().t * 1000).toISOString().slice(0, 16).replace(/[-:T]/g, "");
-        invoke("weather_save_png", { data, suggest: `weather-${stamp}.png` }).catch(() => {});
+        try {
+          // the picture goes as raw bytes, not as a list of numbers
+          const path = await invoke("weather_save_png", data, { headers: { "x-suggest": `weather-${stamp}.png` } });
+          if (path) activity.note("Weather picture saved", { details: [path] });
+        } catch (e) { activity.start("Saving the weather picture").fail(String(e)); }
       }, "image/png");
     });
     map.triggerRepaint();

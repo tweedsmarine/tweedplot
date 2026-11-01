@@ -257,6 +257,9 @@ impl Library {
             tx.execute("UPDATE events SET import_id = NULL", [])?;
             if !keep_notes {
                 tx.execute("UPDATE events SET notes = ''", [])?;
+                // the catch itself (what and how many) lives in the data too; the links between
+                // shots, hauls and catches stay
+                tx.execute("UPDATE events SET data = json_remove(data, '$.what', '$.n', '$.catches') WHERE json_valid(data)", [])?;
                 tx.execute("UPDATE trips SET notes = ''", [])?;
                 tx.execute("UPDATE barriers SET notes = ''", [])?;
             }
@@ -347,6 +350,26 @@ mod tests {
         let rep = fresh.merge_from(&all, &mut |_, _, _| {}, &std::sync::atomic::AtomicBool::new(false)).unwrap();
         assert_eq!((rep.events_added, rep.trips_added), (0, 1));
         assert_eq!((fresh.trips().unwrap().len(), fresh.barriers().unwrap().len()), (1, 1));
+
+        // a merged barrier goes again with Undo an import, and one deleted here stays deleted
+        let b = fresh.barriers().unwrap()[0].id.clone();
+        let imp = fresh.imports().unwrap().iter().map(|i| i.id).max().unwrap();
+        assert_eq!(fresh.undo_import(imp).unwrap().barriers, 1);
+        assert!(fresh.barriers().unwrap().is_empty());
+        fresh.merge_from(&all, &mut |_, _, _| {}, &std::sync::atomic::AtomicBool::new(false)).unwrap();
+        assert!(fresh.barriers().unwrap().iter().all(|x| x.id != b), "a deleted barrier doesn't come back");
+
+        // without notes, the catch (what and how many) is left out but the links stay
+        let haul = lib.save_event(crate::Event { kind: "line-haul".into(), name: "Haul".into(), at: 1600, ..Default::default() }).unwrap();
+        lib.save_event(crate::Event { kind: "catch".into(), name: "Catch".into(), at: 1700, notes: "3 × snapper".into(),
+            data: serde_json::json!({ "haul": haul.id, "n": 3, "what": "snapper" }), ..Default::default() }).unwrap();
+        let ev: Vec<String> = lib.events().unwrap().into_iter().map(|e| e.id).collect();
+        let quiet = dir.join("quiet.gpkg");
+        lib.export_library(&quiet, &[], &[], &[], &ev, Also::default(), false).unwrap();
+        let q = Library::open_file(&quiet).unwrap();
+        let c = q.events().unwrap().into_iter().find(|e| e.kind == "catch").unwrap();
+        assert_eq!(c.notes, "");
+        assert_eq!(c.data, serde_json::json!({ "haul": haul.id }));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -655,20 +655,34 @@ impl Library {
             tx.commit()?;
         }
         // routings and barriers: by id
+        // ids in the Trash count as here: a routing or barrier deleted here stays deleted
+        let ids_here = |table: &str| -> Result<std::collections::HashSet<String>> {
+            let c = self.db();
+            let mut q = c.prepare(&format!("SELECT id FROM {table}"))?;
+            let v = q.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+            Ok(v)
+        };
         if scope.routings {
-            let have_x: std::collections::HashSet<String> = self.routings()?.into_iter().map(|r| r.id).collect();
+            let have_x = ids_here("routings")?;
             for s in o.routings()? {
                 if !have_x.contains(&s.id) {
                     write_routing(&self.db(), &o.routing(&s.id)?)?;
                     rep.routings_added += 1;
                 }
             }
+            if rep.routings_added > 0 {
+                rep.notes.push("Routings can't be taken out again by Undo an import: delete them from the Routings list".into());
+            }
         }
         if scope.barriers {
-            let have_b: std::collections::HashSet<String> = self.barriers()?.into_iter().map(|b| b.id).collect();
+            let have_b = ids_here("barriers")?;
             for b in o.barriers()? {
                 if !have_b.contains(&b.id) {
-                    self.save_barrier(b)?;
+                    // with the import's id, so Undo an import takes them out again
+                    self.db().execute(
+                        "INSERT INTO barriers (id, name, kind, points, active, notes, modified, import_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                        params![b.id, b.name, b.kind, serde_json::to_string(&b.points)?, b.active as i64, b.notes, b.modified, id],
+                    )?;
                     rep.barriers_added += 1;
                 }
             }
@@ -705,7 +719,8 @@ impl Library {
                 }
                 c.execute(
                     "INSERT INTO trips (name, number, fishery, crew, notes, started, ended) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                    params![t.name, t.number, t.fishery, t.crew, t.notes, t.started, t.ended.or(t.started)],
+                    // ended: never left on (only this library's trip can be); with no times at all, ended at the merge
+                    params![t.name, t.number, t.fishery, t.crew, t.notes, t.started, t.ended.or(t.started).or(Some(now()))],
                 )?;
                 rep.trips_added += 1;
             }

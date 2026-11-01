@@ -1015,10 +1015,12 @@ export function setupInstruments() {
       save();
       build();
     },
-    /** Remove a panel by id (the panels a "Use" choice added). */
-    removePanel(id) {
+    /** Remove a panel by id (the panels a "Use" choice added). With `ifTiles`, only while it
+     *  still holds exactly those tiles (not one the user has changed). */
+    removePanel(id, ifTiles = null) {
       const i = layout.panels.findIndex((x) => x.id === id);
       if (i < 0) return;
+      if (ifTiles && layout.panels[i].tiles.join() !== ifTiles.join()) return;
       layout.panels.splice(i, 1);
       save();
       build();

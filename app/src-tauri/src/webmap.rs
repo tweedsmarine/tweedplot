@@ -21,12 +21,15 @@ const SEA_URL: &str = "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png";
 const FRESH: Duration = Duration::from_secs(14 * 24 * 3600);
 const MAX_CACHE_BYTES: u64 = 500_000_000;
 const WORKERS: usize = 4;
+/// Tiles waiting for a worker: beyond this the oldest (long off the screen while panning) are dropped.
+const MAX_QUEUE: usize = 192;
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static CACHED_ONLY: AtomicBool = AtomicBool::new(false);
 static CACHE_DIR: OnceLock<PathBuf> = OnceLock::new();
 static CONFIG: RwLock<Urls> = RwLock::new(Urls { osm: String::new(), sea: String::new() });
-static BACKOFF_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
+/// Per server (OpenStreetMap, OpenSeaMap): one refusing doesn't stop the other.
+static BACKOFF_UNTIL: Mutex<[Option<Instant>; 2]> = Mutex::new([None, None]);
 /// Requests made to a tile server since the program started (tests check it stays 0 while off).
 static FETCHES: AtomicUsize = AtomicUsize::new(0);
 static WRITES: AtomicUsize = AtomicUsize::new(0);
@@ -44,10 +47,18 @@ enum Kind {
 }
 
 impl Kind {
+    /// The cache folder's prefix. OpenStreetMap tiles are kept with their sea already made
+    /// transparent ("osmk"), so a cached tile is served as it is.
     fn tag(self) -> &'static str {
         match self {
-            Kind::Osm => "osm",
+            Kind::Osm => "osmk",
             Kind::Sea => "osea",
+        }
+    }
+    fn slot(self) -> usize {
+        match self {
+            Kind::Osm => 0,
+            Kind::Sea => 1,
         }
     }
     fn max_zoom(self) -> u8 {
@@ -167,16 +178,16 @@ fn client() -> Option<&'static reqwest::blocking::Client> {
     .as_ref()
 }
 
-fn back_off(secs: u64) {
-    *BACKOFF_UNTIL.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now() + Duration::from_secs(secs));
+fn back_off(kind: Kind, secs: u64) {
+    BACKOFF_UNTIL.lock().unwrap_or_else(|e| e.into_inner())[kind.slot()] = Some(Instant::now() + Duration::from_secs(secs));
 }
 
-fn backing_off() -> bool {
-    BACKOFF_UNTIL.lock().unwrap_or_else(|e| e.into_inner()).is_some_and(|t| Instant::now() < t)
+fn backing_off(kind: Kind) -> bool {
+    BACKOFF_UNTIL.lock().unwrap_or_else(|e| e.into_inner())[kind.slot()].is_some_and(|t| Instant::now() < t)
 }
 
 /// The one place that talks to a tile server. Ok(None): the server has no tile there.
-fn fetch(url: &str) -> Result<Option<Vec<u8>>, String> {
+fn fetch(kind: Kind, url: &str) -> Result<Option<Vec<u8>>, String> {
     if !ENABLED.load(Ordering::SeqCst) || CACHED_ONLY.load(Ordering::SeqCst) {
         return Err("online maps are off".into());
     }
@@ -189,7 +200,7 @@ fn fetch(url: &str) -> Result<Option<Vec<u8>>, String> {
     }
     if !status.is_success() {
         // blocked or overloaded (403, 429, 5xx): leave the server alone for a while
-        back_off(if status.as_u16() == 403 || status.as_u16() == 429 { 600 } else { 60 });
+        back_off(kind, if status.as_u16() == 403 || status.as_u16() == 429 { 600 } else { 60 });
         return Err(format!("tile server answered {status}"));
     }
     let bytes = r.bytes().map_err(|e| e.to_string())?;
@@ -210,8 +221,9 @@ fn save(path: &Path, bytes: &[u8]) {
         let _ = std::fs::remove_file(&tmp);
     }
     if WRITES.fetch_add(1, Ordering::Relaxed) % 2000 == 1999 {
-        if let Some(dir) = CACHE_DIR.get() {
-            prune(dir);
+        // walking the whole cache takes a while: not on a tile worker
+        if let Some(dir) = CACHE_DIR.get().cloned() {
+            std::thread::spawn(move || prune(&dir));
         }
     }
 }
@@ -300,14 +312,15 @@ fn key_water(bytes: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
-fn load(kind: Kind, z: u8, x: u32, y: u32) -> Tile {
-    match (load_raw(kind, z, x, y), kind) {
-        (Tile::Image(b), Kind::Osm) => Tile::Image(key_water(&b).unwrap_or(b)),
-        (t, _) => t,
+/// A tile as it is served and cached: OpenStreetMap's with the sea made transparent.
+fn prepare(kind: Kind, bytes: Vec<u8>) -> Vec<u8> {
+    match kind {
+        Kind::Osm => key_water(&bytes).unwrap_or(bytes),
+        Kind::Sea => bytes,
     }
 }
 
-fn load_raw(kind: Kind, z: u8, x: u32, y: u32) -> Tile {
+fn load(kind: Kind, z: u8, x: u32, y: u32) -> Tile {
     if !ENABLED.load(Ordering::SeqCst) {
         return Tile::Blank;
     }
@@ -327,11 +340,12 @@ fn load_raw(kind: Kind, z: u8, x: u32, y: u32) -> Tile {
     if CACHED_ONLY.load(Ordering::SeqCst) {
         return cached.map_or(Tile::Blank, |(b, _)| tile_of(b));
     }
-    if backing_off() {
+    if backing_off(kind) {
         return stale();
     }
-    match fetch(&fill(&template, z, x, y)) {
+    match fetch(kind, &fill(&template, z, x, y)) {
         Ok(Some(bytes)) => {
+            let bytes = prepare(kind, bytes);
             if let Some(f) = &file {
                 save(f, &bytes);
             }
@@ -345,8 +359,8 @@ fn load_raw(kind: Kind, z: u8, x: u32, y: u32) -> Tile {
             Tile::Blank
         }
         Err(e) => {
-            if !backing_off() {
-                back_off(20);
+            if !backing_off(kind) {
+                back_off(kind, 20);
             }
             eprintln!("web map tile: {e}");
             stale()
@@ -409,8 +423,17 @@ pub fn serve(path: String, responder: tauri::UriSchemeResponder) {
         }
         (Mutex::new(VecDeque::new()), Condvar::new())
     });
-    q.0.lock().unwrap_or_else(|e| e.into_inner()).push_back((path, responder));
+    let dropped = {
+        let mut jobs = q.0.lock().unwrap_or_else(|e| e.into_inner());
+        jobs.push_back((path, responder));
+        let over = jobs.len().saturating_sub(MAX_QUEUE);
+        jobs.drain(..over).collect::<Vec<_>>()
+    };
     q.1.notify_one();
+    // answered "not now" (not cached as blank), so the map asks again if they come back into view
+    for (_, r) in dropped {
+        r.respond(response(Tile::Failed));
+    }
 }
 
 /// Turn online maps on or off and set the tile servers ("" = the standard one).
@@ -482,13 +505,22 @@ mod tests {
         assert_eq!(fill(OSM_URL, 5, 3, 2), "https://tile.openstreetmap.org/5/3/2.png");
     }
 
+    /// A server that refuses is left alone for a while; the other one isn't.
+    #[test]
+    fn back_off_is_per_server() {
+        back_off(Kind::Osm, 600);
+        assert!(backing_off(Kind::Osm));
+        assert!(!backing_off(Kind::Sea));
+        BACKOFF_UNTIL.lock().unwrap()[Kind::Osm.slot()] = None;
+    }
+
     /// Off sends no request, and with "cached only" a cached tile is served without one.
     #[test]
     fn off_makes_no_requests() {
         ENABLED.store(false, Ordering::SeqCst);
         let before = FETCHES.load(Ordering::SeqCst);
         assert!(matches!(load(Kind::Osm, 5, 3, 2), Tile::Blank));
-        assert!(fetch("https://tile.openstreetmap.org/5/3/2.png").is_err());
+        assert!(fetch(Kind::Osm, "https://tile.openstreetmap.org/5/3/2.png").is_err());
         assert_eq!(FETCHES.load(Ordering::SeqCst), before);
 
         let dir = std::env::temp_dir().join(format!("tweedplot-webmap-test-{}", std::process::id()));

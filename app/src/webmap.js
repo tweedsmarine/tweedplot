@@ -24,15 +24,17 @@ export function setupWebMap(map) {
   const osmOn = () => prefs.on && prefs.osm;
   const seaOn = () => prefs.on && prefs.sea;
 
-  // A tile the server could not supply comes back as an error; ask again after a pause so no holes stay
+  // A tile the server could not supply comes back as an error; ask again after a pause so no holes stay.
+  // setTiles (public API) reloads the source in place: tiles already shown stay up while they're asked
+  // for again, and those come from the disk cache in Rust, so only the missing ones go to the server.
   const retry = {};
   map.on("error", (e) => {
     const id = e.sourceId;
     if ((id !== "osm" && id !== "osea") || retry[id] || !prefs.on || prefs.cachedOnly) return;
     retry[id] = setTimeout(() => {
       retry[id] = null;
-      const tm = map.style?.tileManagers?.[id];
-      if (tm?.clearTiles) { tm.clearTiles(); if (map._update) map._update(true); else map.triggerRepaint(); }
+      const src = map.getSource(id);
+      if (src?.setTiles && prefs.on && !prefs.cachedOnly) src.setTiles([...src.tiles]);
     }, 25000);
   });
   function credit() {

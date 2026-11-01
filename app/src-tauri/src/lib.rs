@@ -869,12 +869,20 @@ async fn grib_along(first: Option<String>, pts: Vec<(f64, f64, i64)>) -> Vec<ser
 }
 
 /// Ask where to save a weather snapshot (PNG) and write it; returns the path, or None if cancelled.
+/// The picture comes as the raw request body (not a JSON list of numbers), the suggested file
+/// name in the `x-suggest` header.
 #[tauri::command]
-async fn weather_save_png(app: tauri::AppHandle, data: Vec<u8>, suggest: Option<String>) -> Result<Option<String>, String> {
+async fn weather_save_png(app: tauri::AppHandle, request: tauri::ipc::Request<'_>) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
+    let tauri::ipc::InvokeBody::Raw(data) = request.body() else {
+        return Err("expected the picture as raw bytes".into());
+    };
+    if !data.starts_with(&[0x89, b'P', b'N', b'G']) {
+        return Err("not a PNG picture".into());
+    }
     let mut d = app.dialog().file().set_title("Save the weather view").add_filter("PNG image", &["png"]);
-    if let Some(s) = suggest {
-        d = d.set_file_name(&s);
+    if let Some(s) = request.headers().get("x-suggest").and_then(|v| v.to_str().ok()) {
+        d = d.set_file_name(s);
     }
     let Some(p) = d.blocking_save_file() else { return Ok(None) };
     let mut p = p.into_path().map_err(|e| e.to_string())?;
@@ -3310,6 +3318,26 @@ fn powershell_text(_script: &str) -> String {
     String::new()
 }
 
+/// The folders the user puts data in, as (name, path, what goes there): Settings > Diagnostics.
+fn data_folders(app: &tauri::AppHandle) -> Vec<(&'static str, String, &'static str)> {
+    let dir = |p: PathBuf| p.to_string_lossy().to_string();
+    let enc = s63_cmd::enc_home(app);
+    vec![
+        ("S-63 / ENC charts", dir(enc), "Exchange sets and permits (PERMIT.TXT) for S-63 charts; or use Settings > Chart > S-63"),
+        ("LINZ charts (NZ)", dir(chart_dir(app)), "LINZ chart data (.gpkg) for New Zealand"),
+        ("High-resolution depths", dir(hires_dir(app)), "LINZ coastal elevation GeoTIFFs"),
+        ("Coastline", dir(coast_dir(app)), "GSHHG coastline zip or GSHHS_shp folder"),
+        ("Bathymetry", dir(bathy_dir(app)), "Downloaded ETOPO areas"),
+        ("Marine boundaries", dir(marine_dir(app)), "Maritime boundaries and fishing rules"),
+        ("GRIB weather files", dir(download_dir(app)), "Downloaded and manually added GRIB files"),
+        ("Polars", dir(user_polar_dir(app)), "Your own polar files"),
+        ("Tides", dir(tide_dir(app)), "Tide station data"),
+        ("Library", dir(library_dir(app)), "Marks, routes, tracks and soundings"),
+        ("Tracking", dir(tracking_dir(app)), "Recorded tracks"),
+        ("Logs", dir(activity_log_path(app).parent().map(|p| p.to_path_buf()).unwrap_or_default()), "Activity log"),
+    ]
+}
+
 /// Version, operating system, hardware and the folders the user puts data in, for
 /// Settings > Diagnostics and Copy for support. Async: the hardware query takes a moment.
 #[tauri::command]
@@ -3325,22 +3353,7 @@ async fn system_info(app: tauri::AppHandle) -> serde_json::Value {
     .await
     .unwrap_or_default();
     let hw: serde_json::Value = serde_json::from_str(&hw).unwrap_or(serde_json::Value::Null);
-    let dir = |p: PathBuf| p.to_string_lossy().to_string();
-    let enc = s63_cmd::enc_home(&app);
-    let folders = serde_json::json!([
-        { "name": "S-63 / ENC charts", "path": dir(enc), "note": "Exchange sets and permits (PERMIT.TXT) for S-63 charts; or use Settings > Chart > S-63" },
-        { "name": "LINZ charts (NZ)", "path": dir(chart_dir(&app)), "note": "LINZ chart data (.gpkg) for New Zealand" },
-        { "name": "High-resolution depths", "path": dir(hires_dir(&app)), "note": "LINZ coastal elevation GeoTIFFs" },
-        { "name": "Coastline", "path": dir(coast_dir(&app)), "note": "GSHHG coastline zip or GSHHS_shp folder" },
-        { "name": "Bathymetry", "path": dir(bathy_dir(&app)), "note": "Downloaded ETOPO areas" },
-        { "name": "Marine boundaries", "path": dir(marine_dir(&app)), "note": "Maritime boundaries and fishing rules" },
-        { "name": "GRIB weather files", "path": dir(download_dir(&app)), "note": "Downloaded and manually added GRIB files" },
-        { "name": "Polars", "path": dir(user_polar_dir(&app)), "note": "Your own polar files" },
-        { "name": "Tides", "path": dir(tide_dir(&app)), "note": "Tide station data" },
-        { "name": "Library", "path": dir(library_dir(&app)), "note": "Marks, routes, tracks and soundings" },
-        { "name": "Tracking", "path": dir(tracking_dir(&app)), "note": "Recorded tracks" },
-        { "name": "Logs", "path": dir(activity_log_path(&app).parent().map(|p| p.to_path_buf()).unwrap_or_default()), "note": "Activity log" },
-    ]);
+    let folders = serde_json::Value::Array(data_folders(&app).into_iter().map(|(name, path, note)| serde_json::json!({ "name": name, "path": path, "note": note })).collect());
     serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
         "arch": std::env::consts::ARCH,
@@ -3352,9 +3365,13 @@ async fn system_info(app: tauri::AppHandle) -> serde_json::Value {
     })
 }
 
-/// Open a data folder in the file manager, creating it first if it doesn't exist yet.
+/// Open one of the data folders in the file manager, creating it first if it doesn't exist
+/// yet. Only the folders of [`data_folders`]: the page can't open or create anything else.
 #[tauri::command]
-fn open_folder(path: String) -> Result<(), String> {
+fn open_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    if !data_folders(&app).iter().any(|(_, p, _)| *p == path) {
+        return Err("not one of TweedPlot's data folders".into());
+    }
     let p = PathBuf::from(&path);
     std::fs::create_dir_all(&p).map_err(|e| e.to_string())?;
     #[cfg(windows)]

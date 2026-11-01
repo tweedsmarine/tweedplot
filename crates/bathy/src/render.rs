@@ -22,6 +22,8 @@ pub enum Palette {
     /// Night: as Mono in six bands, which stay apart at low brightness.
     Bands,
 }
+
+/// How the bathymetry is drawn.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Style {
