@@ -14,6 +14,7 @@ import { trackInTrip, onTrips } from "./tripstore.js";
 import { floatDrag } from "./floatdrag.js";
 import { sharedTest, sharedActive, onShared } from "./libfilter.js";
 import { listen } from "@tauri-apps/api/event";
+import { askDepthRef, setDepthRef, DEPTH_REF } from "./depthref.js";
 
 const KEY = "racenav.tracks";
 const PALETTE = ["#d35400", "#8e44ad", "#16a085", "#c0392b", "#2c3e50", "#27ae60", "#2980b9", "#b7950b"];
@@ -369,7 +370,7 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
         el.innerHTML = `<button class="ll-show" title="Show on the chart, or hide"></button><div class="main" title="Zoom to this track"><b></b><small></small></div><button data-act="edit" title="Name, colour, notes">Edit</button>`;
         el.querySelector("b").textContent = `${recording ? "● " : ""}${t.name}`;
         el.querySelector("small").textContent = [fmtTime(st.start), fmtDur(st.end - st.start), `${(st.distance_nm ?? 0).toFixed(1)} NM`,
-          st.max_sog ? `max ${st.max_sog.toFixed(1)} kn` : "", t.has_temp ? "°C" : "", t.has_depth ? "depth" : "",
+          st.max_sog ? `max ${st.max_sog.toFixed(1)} kn` : "", t.has_temp ? "°C" : "", t.has_depth ? `depth ${DEPTH_REF[t.depth_ref || ""] ?? ""}` : "",
           t.source === "gpx" ? "GPX" : t.source === "timezero" ? "TimeZero" : recording ? "recording" : "log"].filter(Boolean).join(" · ");
         el.querySelector(".ll-show").onclick = (e) => { e.stopPropagation(); setShown([t.id], !isShown(t)); };
         el.querySelector('[data-act="edit"]').onclick = () => edit(t);
@@ -392,6 +393,17 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
         try { const p = await invoke("tracks_export", { name: ts.length === 1 ? ts[0].name : "tracks", ids: ts.map((t) => t.id) }); job.done("Done.", { details: [`Written to ${p}`] }); } catch (e) { job.fail(String(e)); }
       } },
       { label: "Library file…", title: "Write the selected tracks as a library file of their own", run: (ts) => exportLibraryFile({ tracks: ts.map((t) => t.id) }, `${ts.length.toLocaleString()} track${ts.length === 1 ? "" : "s"}`, ts.length === 1 ? ts[0].name : "tracks") },
+      { label: "Depth reference…", title: "What the selected tracks' depths are measured below (for own soundings)", run: async (ts) => {
+        const withDepth = ts.filter((t) => t.has_depth);
+        if (!withDepth.length) { activity.note("None of the selected tracks has depths"); return; }
+        const r = await askDepthRef({ title: `Depths in ${withDepth.length.toLocaleString()} track${withDepth.length === 1 ? "" : "s"}`, current: { kind: withDepth[0].depth_ref, offset: withDepth[0].depth_offset } });
+        if (!r) return;
+        try {
+          const n = await setDepthRef(withDepth.map((t) => t.id), r);
+          activity.note(`Depths of ${n.toLocaleString()} track${n === 1 ? "" : "s"}: ${DEPTH_REF[r.kind]}`, { details: ["Own soundings already built from these tracks change only when they are built again (Clear, then Add my tracks)."] });
+        } catch (e) { activity.start("Setting the depth reference").fail(String(e)); }
+        refresh();
+      } },
       { label: "Colour…", title: "Give the selected tracks a colour", input: { type: "colour", label: "Colour", value: (ts) => colourOf(ts[0]) }, run: async (ts, v) => {
         for (const t of ts) { try { await invoke("track_update", { id: t.id, name: t.name, notes: t.notes || "", colour: v }); cache.delete(t.id); } catch { /* reported by the count */ } }
         activity.note(`${ts.length.toLocaleString()} track${ts.length === 1 ? "" : "s"} coloured ${v}`);

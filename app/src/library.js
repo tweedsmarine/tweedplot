@@ -15,6 +15,7 @@ import { libList, monthTest, dateTest } from "./liblist.js";
 import { markInTrip, onTrips } from "./tripstore.js";
 import { sharedTest, sharedActive, sharedState, viewMoved, mountShared } from "./libfilter.js";
 import { exportDialog, chooseFromLibraryFile, importSoundings } from "./libshare.js";
+import { askAfterImport } from "./depthref.js";
 import { addKindOptions, symImage, SYMBOL_KINDS } from "./marksymbols.js";
 
 const KEY = "racenav.library";
@@ -907,7 +908,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
       const job = activity.start(`Merging ${name} into this library`, { params: p, cancel: (id) => invoke("job_cancel", { job: id }) });
       try {
         const rep = await invoke("library_merge", { path: p, job: job.id, what: pick.scope });
-        reportImport(job, rep);
+        reportImport(job, rep); askAfterImport();
         await refresh();
       } catch (e) { job.fail(`Merging failed: ${e}`); }
     }
@@ -979,7 +980,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     const job = activity.start(`Importing ${name}`, { params: path, cancel: (id) => invoke("job_cancel", { job: id }) });
     try {
       const rep = await invoke("library_import_path", { path, job: job.id });
-      reportImport(job, rep);
+      reportImport(job, rep); askAfterImport();
       await refresh();
     } catch (err) { job.fail(`Import failed: ${err}`); }
   }

@@ -278,7 +278,14 @@ The heights are above NZVD2016, about mean sea level, not chart datum: the depth
 
 To compare tracks with the seabed, or one trip with another, colour the tracks by **Depth (own soundings colours)** in Library › Tracks: they take the same colours and depth range, and follow when you change them here.
 
-The depths are as the sounder gave them, below the surface or the transducer, not reduced to chart datum: they differ from charted depths by up to half the tidal range, and by the transducer depth. Use them for the shape of the bottom and to find ground again, not for clearance. Not for navigation.
+The depths are **reduced to chart datum**, as charted depths are:
+
+- **What they are measured below.** Each track with depths says what they are measured below: the transducer (plus its depth, from Settings › Vessel or a figure for the track), the surface, or the keel (plus the draft). Tracks TweedPlot records note it from the data (Signal K's below-transducer or below-surface depth). When an imported file doesn't say (a spreadsheet, say), TweedPlot asks after the import, and again before **Add my tracks** if any track still doesn't say. Change it any time in **Library › Tracks › Depth reference…**; soundings already built change only when they are built again (Clear, then Add my tracks).
+- **The tide.** The height of tide above chart datum at the sounding's place and time comes from the LINZ ports near it: one port within 2 km, else up to three within 30 km, the nearest counting most. A port's tides come from its LINZ daily table, or from LINZ's harmonic constituents for any other year (Weather and tides › Tides › Download fetches both). Further than 30 km from a port, or with no tide data, a sounding stays below the surface, and the report says how many.
+- **TimeZero.** Depths from TimeZero (PBG files and its tracks) are already reduced, and go in as they are. So do XYZ files.
+- **Live soundings** are reduced as they arrive.
+
+Use them for the shape of the bottom and to find ground again, not for clearance. Not for navigation.
 
 World depths and ETOPO depths are for orientation only. They are coarse, or interpolated near the coast, and routing does not use them: the routing safety depth works only on LINZ depth areas. Not for navigation.
 

@@ -14,6 +14,7 @@
 //! 30 days used, and the ports for a place are found once per ~1 km square.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::{Extreme, Kind, TideDb};
 
@@ -34,8 +35,8 @@ pub struct TideAt {
 }
 
 /// Heights of tide from one [`TideDb`], with its caches.
-pub struct Reducer<'a> {
-    db: &'a TideDb,
+pub struct Reducer {
+    db: Arc<TideDb>,
     max_km: f64,
     /// The stations that can give heights.
     ports: Vec<usize>,
@@ -53,9 +54,9 @@ fn dist_km(lat0: f64, lon0: f64, lat1: f64, lon1: f64) -> f64 {
     (dx * dx + dy * dy).sqrt()
 }
 
-impl<'a> Reducer<'a> {
+impl Reducer {
     /// `max_km`: how far a port reaches (see [`DEFAULT_MAX_KM`]).
-    pub fn new(db: &'a TideDb, max_km: f64) -> Self {
+    pub fn new(db: Arc<TideDb>, max_km: f64) -> Self {
         let ports = db
             .stations
             .iter()
@@ -105,7 +106,7 @@ impl<'a> Reducer<'a> {
 
     fn height_at(&mut self, i: usize, t: i64) -> Option<f64> {
         let b = t.div_euclid(BLOCK_S);
-        let db = self.db;
+        let db = &self.db;
         let ext = self
             .blocks
             .entry((i, b))
@@ -162,7 +163,7 @@ mod tests {
         let mut db = TideDb::default();
         port(&mut db, "A", -41.0, 173.0, tide(t0, 0.5, 3.5));
         port(&mut db, "B", -41.0, 173.2, tide(t0, 1.0, 2.0));
-        let mut r = Reducer::new(&db, DEFAULT_MAX_KM);
+        let mut r = Reducer::new(Arc::new(db), DEFAULT_MAX_KM);
         assert!(r.has_ports());
         // at low water, next to A: A alone
         let a = r.at(-41.0, 173.001, t0).unwrap();
@@ -187,7 +188,7 @@ mod tests {
         port(&mut db, "A", -41.0, 173.0, tide(t0, 0.5, 3.5));
         // B's table is for another time
         port(&mut db, "B", -41.0, 173.2, tide(t0 + 10 * 86_400, 1.0, 2.0));
-        let mut r = Reducer::new(&db, DEFAULT_MAX_KM);
+        let mut r = Reducer::new(Arc::new(db), DEFAULT_MAX_KM);
         let m = r.at(-41.0, 173.1, t0).unwrap();
         assert_eq!(m.ports.len(), 1);
         assert!((m.h - 0.5).abs() < 1e-9);

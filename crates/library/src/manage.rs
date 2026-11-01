@@ -419,6 +419,25 @@ mod tests {
         let c = q.events().unwrap().into_iter().find(|e| e.kind == "catch").unwrap();
         assert_eq!(c.notes, "");
         assert_eq!(c.data, serde_json::json!({ "haul": haul.id }));
+
+        // what a track's depths are measured below: kept, set, and found when not known
+        let t = crate::Track {
+            name: "Sounded".into(),
+            segments: vec![vec![crate::TrackPoint { t: Some(1), lat: -41.0, lon: 173.0, depth: Some(12.0), ..Default::default() }]],
+            ..Default::default()
+        };
+        let s = lib.save_track(t).unwrap();
+        assert_eq!(lib.depth_unknown(false).unwrap(), vec![s.id.clone()]);
+        assert_eq!(lib.set_depth_ref(std::slice::from_ref(&s.id), "transducer", Some(1.1)).unwrap(), 1);
+        assert!(lib.set_depth_ref(std::slice::from_ref(&s.id), "under", None).is_err());
+        let back = lib.track(&s.id).unwrap();
+        assert_eq!((back.depth_ref.as_str(), back.depth_offset), ("transducer", Some(1.1)));
+        let listed = lib.tracks().unwrap().into_iter().find(|x| x.id == s.id).unwrap();
+        assert_eq!((listed.depth_ref.as_str(), listed.depth_offset), ("transducer", Some(1.1)));
+        assert!(lib.depth_unknown(false).unwrap().is_empty());
+        // the surface needs no offset
+        lib.set_depth_ref(std::slice::from_ref(&s.id), "surface", Some(2.0)).unwrap();
+        assert_eq!(lib.track(&s.id).unwrap().depth_offset, None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

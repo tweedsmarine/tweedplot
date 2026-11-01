@@ -343,7 +343,22 @@ pub(crate) fn rec_vessel(app: &tauri::AppHandle, v: &signalk::VesselState) {
     let (kept, due, stats) = {
         let mut g = REC.lock().unwrap();
         let Some(r) = g.as_mut() else { return };
-        let kept = r.push(library::TrackPoint { t: Some(t), lat, lon, sog: v.sog, cog: v.cog, depth: v.depth_surface.or(v.depth), temp: v.water_temp });
+        // the track says what its depths are measured below: the transducer when the source
+        // gives that (with the transducer's depth from Settings › Vessel), else the surface
+        if r.track.depth_ref.is_empty() {
+            if v.depth.is_some() {
+                r.track.depth_ref = "transducer".into();
+                r.track.depth_offset = crate::settings::settings_get(app.clone()).ok().and_then(|s| s.vessel.transducer_depth_m);
+            } else if v.depth_surface.is_some() {
+                r.track.depth_ref = "surface".into();
+            }
+        }
+        let depth = match r.track.depth_ref.as_str() {
+            "transducer" => v.depth,
+            "surface" => v.depth_surface,
+            _ => None,
+        };
+        let kept = r.push(library::TrackPoint { t: Some(t), lat, lon, sog: v.sog, cog: v.cog, depth, temp: v.water_temp });
         (kept, r.due_save(now, 30), r.track.stats.clone())
     };
     if kept {
@@ -475,7 +490,7 @@ fn tide_dir(app: &tauri::AppHandle) -> PathBuf {
     app.path().app_data_dir().map(|p| p.join("tides")).unwrap_or_else(|_| PathBuf::from("tides"))
 }
 
-fn tide_db() -> Arc<tides::TideDb> {
+pub(crate) fn tide_db() -> Arc<tides::TideDb> {
     let mut g = TIDES.lock().unwrap();
     if g.is_none() {
         let dir = TIDE_DIR.get().cloned().unwrap_or_else(|| PathBuf::from("tides"));
@@ -1832,6 +1847,8 @@ pub fn run() {
             library_use_backup,
             marks_update,
             tracks_export,
+            tracks_set_depth_ref,
+            tracks_depth_unknown,
             job_cancel,
             activity_log,
             activity_log_read,

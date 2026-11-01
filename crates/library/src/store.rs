@@ -88,6 +88,18 @@ fn migrate(c: &Connection) -> Result<()> {
         // an event's own details (a line set's radio buoys, baskets and spacing), as JSON
         c.execute_batch("BEGIN; ALTER TABLE events ADD COLUMN data TEXT NOT NULL DEFAULT '{}'; UPDATE meta SET value = '6' WHERE key = 'schema'; COMMIT;")?;
     }
+    if v < 7 {
+        // what a track's depths are measured from (see Track::depth_ref); TimeZero's are
+        // already reduced to chart datum
+        c.execute_batch(
+            "BEGIN;
+             ALTER TABLE tracks ADD COLUMN depth_ref TEXT NOT NULL DEFAULT '';
+             ALTER TABLE tracks ADD COLUMN depth_offset REAL;
+             UPDATE tracks SET depth_ref = 'datum' WHERE source = 'timezero' AND has_depth = 1;
+             UPDATE meta SET value = '7' WHERE key = 'schema';
+             COMMIT;",
+        )?;
+    }
     Ok(())
 }
 

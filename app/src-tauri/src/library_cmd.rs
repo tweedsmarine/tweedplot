@@ -621,6 +621,21 @@ pub(crate) fn tracks_export(name: String, ids: Vec<String>) -> Result<String, St
     Ok(l.write_export(&name, &text).map_err(es)?.to_string_lossy().into_owned())
 }
 
+/// Say what the depths of tracks are measured below: "surface", "transducer" (offset: the
+/// transducer's depth), "keel" (offset: the draft), "datum" (already reduced to chart datum).
+#[tauri::command]
+pub(crate) fn tracks_set_depth_ref(app: tauri::AppHandle, ids: Vec<String>, kind: String, offset: Option<f64>) -> Result<usize, String> {
+    let n = lib()?.set_depth_ref(&ids, &kind, offset.filter(|o| o.is_finite())).map_err(es)?;
+    library_changed(&app);
+    Ok(n)
+}
+
+/// Tracks with depths that don't say what they're measured below: of the newest import, or all.
+#[tauri::command]
+pub(crate) fn tracks_depth_unknown(newest_import: bool) -> Result<Vec<String>, String> {
+    lib()?.depth_unknown(newest_import).map_err(es)
+}
+
 pub(crate) fn es(e: library::Error) -> String {
     e.to_string()
 }

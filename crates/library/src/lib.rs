@@ -302,7 +302,19 @@ fn track_summary_row(r: &rusqlite::Row) -> rusqlite::Result<TrackSummary> {
         stats: TrackStats { points: r.get::<_, i64>(6)? as usize, start: r.get(7)?, end: r.get(8)?, distance_nm: r.get(9)?, max_sog: r.get(10)?, bbox },
         has_depth: r.get::<_, i64>(15)? != 0,
         has_temp: r.get::<_, i64>(16)? != 0,
+        // filled in from their own columns (a library file from before them has none)
+        depth_ref: String::new(),
+        depth_offset: None,
     })
+}
+
+/// What each track's depths are measured from (tracks with depth), by id. Empty for a library
+/// file made before the columns (an overlay, read-only).
+fn depth_refs(c: &Connection) -> std::collections::HashMap<String, (String, Option<f64>)> {
+    let Ok(mut q) = c.prepare_cached("SELECT id, depth_ref, depth_offset FROM tracks WHERE has_depth = 1") else { return std::collections::HashMap::new() };
+    q.query_map([], |r| Ok((r.get::<_, String>(0)?, (r.get::<_, String>(1)?, r.get::<_, Option<f64>>(2)?))))
+        .map(|rows| rows.flatten().collect())
+        .unwrap_or_default()
 }
 
 fn insert_mark(c: &Connection, m: &Mark, import_id: Option<i64>) -> Result<()> {
@@ -362,12 +374,13 @@ fn write_track(c: &Connection, t: &Track, import_id: Option<i64>) -> Result<()> 
     };
     let has = |f: fn(&TrackPoint) -> bool| t.segments.iter().flatten().any(f) as i64;
     c.prepare_cached(
-        "INSERT INTO tracks (id, name, notes, colour, source, modified, points, start, \"end\", distance_nm, max_sog, west, south, east, north, has_depth, has_temp, import_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+        "INSERT INTO tracks (id, name, notes, colour, source, modified, points, start, \"end\", distance_nm, max_sog, west, south, east, north, has_depth, has_temp, import_id, depth_ref, depth_offset)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
          ON CONFLICT(id) DO UPDATE SET name = excluded.name, notes = excluded.notes, colour = excluded.colour, source = excluded.source,
            modified = excluded.modified, points = excluded.points, start = excluded.start, \"end\" = excluded.\"end\",
            distance_nm = excluded.distance_nm, max_sog = excluded.max_sog, west = excluded.west, south = excluded.south,
-           east = excluded.east, north = excluded.north, has_depth = excluded.has_depth, has_temp = excluded.has_temp, deleted_at = NULL",
+           east = excluded.east, north = excluded.north, has_depth = excluded.has_depth, has_temp = excluded.has_temp,
+           depth_ref = excluded.depth_ref, depth_offset = excluded.depth_offset, deleted_at = NULL",
     )?
     .execute(params![
         t.id,
@@ -387,7 +400,9 @@ fn write_track(c: &Connection, t: &Track, import_id: Option<i64>) -> Result<()> 
         n,
         has(|p| p.depth.is_some()),
         has(|p| p.temp.is_some()),
-        import_id
+        import_id,
+        t.depth_ref,
+        t.depth_offset
     ])?;
     c.prepare_cached("INSERT INTO track_data (track_id, data) VALUES (?1, ?2) ON CONFLICT(track_id) DO UPDATE SET data = excluded.data")?
         .execute(params![t.id, store::encode_segments(&t.segments)])?;
@@ -1292,7 +1307,7 @@ impl Library {
                     }
                 }
             }
-            let mut rec = Recorder::new(Track { source: "timezero".into(), colour: t.colour.clone(), ..Default::default() });
+            let mut rec = Recorder::new(Track { source: "timezero".into(), colour: t.colour.clone(), depth_ref: "datum".into(), ..Default::default() });
             for p in &t.points {
                 rec.push(TrackPoint {
                     t: Some(p.t),
@@ -1541,7 +1556,46 @@ impl Library {
     pub fn tracks(&self) -> Result<Vec<TrackSummary>> {
         let c = self.db();
         let mut q = c.prepare_cached(&format!("SELECT {TRACK_COLS} FROM tracks WHERE deleted_at IS NULL ORDER BY coalesce(start, modified) DESC"))?;
-        let v = q.query_map([], track_summary_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut v = q.query_map([], track_summary_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
+        let refs = depth_refs(&c);
+        for t in &mut v {
+            if let Some((r, o)) = refs.get(&t.id) {
+                (t.depth_ref, t.depth_offset) = (r.clone(), *o);
+            }
+        }
+        Ok(v)
+    }
+
+    /// Say what the depths of tracks `ids` are measured from (see [`Track::depth_ref`]).
+    /// Their modified time moves on, so soundings already built from them show as changed.
+    pub fn set_depth_ref(&self, ids: &[String], kind: &str, offset: Option<f64>) -> Result<usize> {
+        if !["", "surface", "transducer", "keel", "datum"].contains(&kind) {
+            return Err(Error::Store(format!("unknown depth reference {kind:?}")));
+        }
+        let offset = if matches!(kind, "transducer" | "keel") { offset } else { None };
+        let mut c = self.db();
+        let tx = c.transaction()?;
+        let mut n = 0;
+        {
+            let mut q = tx.prepare_cached("UPDATE tracks SET depth_ref = ?2, depth_offset = ?3, modified = ?4 WHERE id = ?1 AND deleted_at IS NULL")?;
+            for id in ids {
+                n += q.execute(params![id, kind, offset, now()])?;
+            }
+        }
+        tx.commit()?;
+        Ok(n)
+    }
+
+    /// Tracks with depths whose reference isn't known (of the newest import only, or all).
+    pub fn depth_unknown(&self, newest_import_only: bool) -> Result<Vec<String>> {
+        let c = self.db();
+        let sql = if newest_import_only {
+            "SELECT id FROM tracks WHERE has_depth = 1 AND depth_ref = '' AND deleted_at IS NULL AND import_id = (SELECT max(id) FROM imports)"
+        } else {
+            "SELECT id FROM tracks WHERE has_depth = 1 AND depth_ref = '' AND deleted_at IS NULL"
+        };
+        let mut q = c.prepare(sql)?;
+        let v = q.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>()?;
         Ok(v)
     }
 
@@ -1553,7 +1607,21 @@ impl Library {
             .ok_or_else(|| Error::NotFound(id.into()))?;
         let data: Vec<u8> = c.query_row("SELECT data FROM track_data WHERE track_id = ?1", [id], |r| r.get(0)).optional()?.unwrap_or_default();
         let segments = if data.is_empty() { Vec::new() } else { store::decode_segments(&data)? };
-        Ok(Track { id: s.id, name: s.name, notes: s.notes, colour: s.colour, source: s.source, modified: s.modified, stats: s.stats, segments })
+        let (depth_ref, depth_offset) = c
+            .query_row("SELECT depth_ref, depth_offset FROM tracks WHERE id = ?1", [id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<f64>>(1)?)))
+            .unwrap_or_default();
+        Ok(Track {
+            id: s.id,
+            name: s.name,
+            notes: s.notes,
+            colour: s.colour,
+            source: s.source,
+            modified: s.modified,
+            stats: s.stats,
+            segments,
+            depth_ref,
+            depth_offset,
+        })
     }
 
     /// Save a track (new id if it has none); its totals are worked out again.

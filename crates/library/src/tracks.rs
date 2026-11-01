@@ -16,7 +16,7 @@ pub struct TrackPoint {
     pub lon: f64,
     pub sog: Option<f64>,
     pub cog: Option<f64>,
-    /// Depth of water (m, below the surface or transducer), when logged.
+    /// Depth of water (m) as logged: below what is the track's `depth_ref`.
     pub depth: Option<f64>,
     /// Sea temperature (°C), when logged.
     pub temp: Option<f64>,
@@ -91,6 +91,12 @@ pub struct Track {
     pub stats: TrackStats,
     /// Pieces of the track: a new segment starts after a gap in recording.
     pub segments: Vec<Vec<TrackPoint>>,
+    /// What the depths are measured from: "surface", "transducer" (plus `depth_offset`, the
+    /// transducer's depth below the surface), "keel" (plus `depth_offset`, the draft), "datum"
+    /// (already reduced to chart datum, as TimeZero's), or "" (not known).
+    pub depth_ref: String,
+    /// The transducer's depth or the draft (m), for "transducer" and "keel".
+    pub depth_offset: Option<f64>,
 }
 
 /// A track without its points, for lists.
@@ -108,6 +114,11 @@ pub struct TrackSummary {
     pub has_depth: bool,
     #[serde(default)]
     pub has_temp: bool,
+    /// See [`Track::depth_ref`].
+    #[serde(default)]
+    pub depth_ref: String,
+    #[serde(default)]
+    pub depth_offset: Option<f64>,
 }
 
 impl Track {
@@ -122,6 +133,8 @@ impl Track {
             stats: self.stats.clone(),
             has_depth: self.segments.iter().flatten().any(|p| p.depth.is_some()),
             has_temp: self.segments.iter().flatten().any(|p| p.temp.is_some()),
+            depth_ref: self.depth_ref.clone(),
+            depth_offset: self.depth_offset,
         }
     }
 

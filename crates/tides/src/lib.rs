@@ -998,8 +998,9 @@ mod harmonic_db_tests {
         assert_eq!(g.name, "Somewhere");
         assert!(db.extremes(&g.id, t2019, t2019 + 86_400).is_some_and(|v| v.len() >= 4));
         // and the reducer gives a height at Nelson in 2019
-        let mut r = reduce::Reducer::new(&db, reduce::DEFAULT_MAX_KM);
-        let h = r.at(nelson.lat, nelson.lon, t2019 + 3600).unwrap();
+        let (nlat, nlon) = (nelson.lat, nelson.lon);
+        let mut r = reduce::Reducer::new(std::sync::Arc::new(db), reduce::DEFAULT_MAX_KM);
+        let h = r.at(nlat, nlon, t2019 + 3600).unwrap();
         assert!((-0.5..5.5).contains(&h.h));
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -13,6 +13,71 @@ use std::sync::{Arc, RwLock};
 use tauri::{Emitter, Manager};
 
 static STORE: RwLock<Option<Arc<bathy::Store>>> = RwLock::new(None);
+
+// ---------- reducing soundings to chart datum ----------------------------------------------
+
+/// Turns a depth as logged into a depth below chart datum: first below the surface (from what
+/// it was measured below: the surface, the transducer plus its depth, the keel plus the draft),
+/// then less the height of tide above chart datum there and then (LINZ's tables and harmonic
+/// constituents, see `tides::reduce`). Depths already reduced (TimeZero's) are left alone;
+/// where there is no tide (no port within reach), the depth below the surface is kept and counted.
+pub(crate) struct Datum {
+    tides: Option<tides::reduce::Reducer>,
+    transducer_m: Option<f64>,
+    draft_m: Option<f64>,
+    /// Soundings reduced, and kept below the surface for want of a tide.
+    pub reduced: i64,
+    pub no_tide: i64,
+}
+
+impl Datum {
+    pub(crate) fn new(app: &tauri::AppHandle) -> Self {
+        let v = crate::settings::settings_get(app.clone()).ok().map(|s| s.vessel);
+        Self::with(crate::tide_db(), v.as_ref().and_then(|v| v.transducer_depth_m), v.as_ref().and_then(|v| v.draft_m))
+    }
+
+    fn with(db: Arc<tides::TideDb>, transducer_m: Option<f64>, draft_m: Option<f64>) -> Self {
+        let r = tides::reduce::Reducer::new(db, tides::reduce::DEFAULT_MAX_KM);
+        Datum { tides: r.has_ports().then_some(r), transducer_m, draft_m, reduced: 0, no_tide: 0 }
+    }
+
+    /// Whether there is any tide data to reduce with.
+    pub(crate) fn has_tides(&self) -> bool {
+        self.tides.is_some()
+    }
+
+    /// Depth below the surface from a depth measured below `kind` ("" = not known: taken as
+    /// below the transducer, as most sounders give it).
+    fn below_surface(&self, d: f64, kind: &str, offset: Option<f64>) -> f64 {
+        match kind {
+            "surface" | "datum" => d,
+            "keel" => d + offset.or(self.draft_m).unwrap_or(0.0),
+            _ => d + offset.or(self.transducer_m).unwrap_or(0.0),
+        }
+    }
+
+    /// Depth below chart datum (m, positive down).
+    pub(crate) fn reduce(&mut self, lat: f64, lon: f64, t: Option<i64>, d: f64, kind: &str, offset: Option<f64>) -> f64 {
+        if kind == "datum" {
+            return d;
+        }
+        let s = self.below_surface(d, kind, offset);
+        let tide = match (t, self.tides.as_mut()) {
+            (Some(t), Some(r)) => r.at(lat, lon, t),
+            _ => None,
+        };
+        match tide {
+            Some(tide) => {
+                self.reduced += 1;
+                s - tide.h
+            }
+            None => {
+                self.no_tide += 1;
+                s
+            }
+        }
+    }
+}
 static BUSY: AtomicBool = AtomicBool::new(false);
 static CANCEL: AtomicBool = AtomicBool::new(false);
 
@@ -158,8 +223,8 @@ fn chart_reference() -> Option<bathy::check::Reference> {
 }
 
 /// Add the depths logged along the library's tracks (those not added before, or changed
-/// since), spikes dropped. Heights are as logged: below the surface or transducer, not
-/// reduced to chart datum.
+/// since), spikes dropped, each reduced to chart datum (see [`Datum`]): from what the track
+/// says its depths are measured below, and the tide.
 #[tauri::command]
 pub async fn pbathy_from_tracks(app: tauri::AppHandle, check: Option<bool>) -> Result<serde_json::Value, String> {
     let s = need()?;
@@ -182,6 +247,9 @@ pub async fn pbathy_from_tracks(app: tauri::AppHandle, check: Option<bool>) -> R
             return Ok(serde_json::json!({ "added": back, "back": back, "tracks": 0, "with_depth": with_depth.len(), "changed": changed }));
         }
         let modified: std::collections::HashMap<&str, i64> = tracks.iter().map(|t| (t.id.as_str(), t.modified)).collect();
+        let refs: std::collections::HashMap<&str, (&str, Option<f64>)> = tracks.iter().map(|t| (t.id.as_str(), (t.depth_ref.as_str(), t.depth_offset))).collect();
+        let mut datum = Datum::new(&app);
+        let unknown = todo.iter().filter(|id| refs.get(id.as_str()).is_some_and(|r| r.0.is_empty())).count();
         let mut w = s.writer("Own tracks", &format!("{} tracks from {}", todo.len(), lib.name()), 0).map_err(|e| e.to_string())?;
         let mut err: Option<String> = None;
         let reference = if check.unwrap_or(true) { chart_reference() } else { None };
@@ -198,13 +266,16 @@ pub async fn pbathy_from_tracks(app: tauri::AppHandle, check: Option<bool>) -> R
                 if err.is_some() {
                     return;
                 }
+                let (kind, offset) = refs.get(id).copied().unwrap_or(("", None));
                 for seg in segs {
-                    let fixes: Vec<(f64, f64, Option<f64>)> = seg.iter().map(|p| (p.lon, p.lat, p.depth)).collect();
+                    // reduced to chart datum first: the checks compare with the chart's depths
+                    let fixes: Vec<(f64, f64, Option<f64>)> =
+                        seg.iter().map(|p| (p.lon, p.lat, p.depth.map(|d| datum.reduce(p.lat, p.lon, p.t, d, kind, offset)))).collect();
                     let (verdicts, runs, unchecked) = bathy::check::check_segment(&fixes, chart);
                     counts.add(&verdicts, runs);
                     counts.unchecked += unchecked;
-                    for (p, v) in seg.iter().zip(verdicts) {
-                        let Some(d) = p.depth else { continue };
+                    for ((p, f), v) in seg.iter().zip(&fixes).zip(verdicts) {
+                        let Some(d) = f.2 else { continue };
                         let h = bathy::hours(p.t.unwrap_or(0));
                         if v == bathy::check::Verdict::Keep {
                             if let Err(e) = w.add(p.lon, p.lat, -(d as f32), h, bathy::SRC_OWN) {
@@ -236,7 +307,8 @@ pub async fn pbathy_from_tracks(app: tauri::AppHandle, check: Option<bool>) -> R
         // left-out soundings the soundings beside them agree with go back in
         let back = if reference.is_some() { s.second_opinion(reference.as_ref(), &mut prog, &CANCEL).map_err(|e| e.to_string())? } else { 0 };
         s.changed();
-        Ok(serde_json::json!({ "added": n + back, "back": back, "tracks": todo.len(), "with_depth": with_depth.len(), "kept": counts.kept, "dropped": counts.spikes, "counts": counts, "checked": reference.is_some(), "changed": changed }))
+        Ok(serde_json::json!({ "added": n + back, "back": back, "tracks": todo.len(), "with_depth": with_depth.len(), "kept": counts.kept, "dropped": counts.spikes, "counts": counts, "checked": reference.is_some(), "changed": changed,
+            "reduced": datum.reduced, "no_tide": datum.no_tide, "tides": datum.has_tides(), "unknown_ref": unknown }))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -374,6 +446,10 @@ struct Live {
     /// When the settings (transducer depth) were last read.
     settings_at: f64,
     flushing: bool,
+    /// Reducing to chart datum (made when the first depth arrives; again with the settings).
+    datum: Option<Datum>,
+    /// The last sounding was reduced (a tide was found).
+    tide_ok: bool,
 }
 
 static LIVE: std::sync::Mutex<Option<Live>> = std::sync::Mutex::new(None);
@@ -406,6 +482,8 @@ fn live_state() -> std::sync::MutexGuard<'static, Option<Live>> {
             transducer_m: None,
             settings_at: 0.0,
             flushing: false,
+            datum: None,
+            tide_ok: false,
         });
     }
     g
@@ -424,17 +502,24 @@ pub fn live_vessel(app: &tauri::AppHandle, v: &signalk::VesselState) {
     if now - l.settings_at > 60.0 {
         l.settings_at = now;
         l.transducer_m = crate::settings::settings_get(app.clone()).ok().and_then(|s| s.vessel.transducer_depth_m);
+        // the settings and the tide data may have changed (a tide download)
+        l.datum = Some(Datum::new(app));
     }
-    let depth = if let Some(d) = v.depth {
+    let raw = if let Some(d) = v.depth {
         l.kind = "transducer";
-        Some(d + l.transducer_m.unwrap_or(0.0))
+        Some(d)
     } else if let Some(d) = v.depth_surface {
         l.kind = "surface";
         Some(d)
     } else {
         None
     };
-    let (Some(d), Some(lat), Some(lon)) = (depth, v.lat, v.lon) else { return };
+    let (Some(raw), Some(lat), Some(lon)) = (raw, v.lat, v.lon) else { return };
+    let (kind, transducer) = (l.kind, l.transducer_m);
+    let Some(datum) = l.datum.as_mut() else { return };
+    let before = datum.reduced;
+    let d = datum.reduce(lat, lon, Some(now as i64), raw, kind, transducer);
+    l.tide_ok = datum.reduced > before;
     if l.max_sog > 0.0 && v.sog.is_some_and(|s| s > l.max_sog) {
         return;
     }
@@ -513,12 +598,15 @@ pub fn pbathy_live_status(app: tauri::AppHandle) -> serde_json::Value {
         } else if l.kind == "surface" {
             warn.push("No depth below the transducer arriving: using the depth below the surface the source gives.");
         }
+        if l.last_depth > 0.0 && !l.tide_ok {
+            warn.push("Not reduced to chart datum: no tide here (no LINZ port within 30 km, or no tide data: Weather and tides › Tides › Download).");
+        }
     } else if transducer.is_none() {
         warn.push("Set the transducer depth in Settings › Vessel before turning this on: soundings are taken below the transducer.");
     }
     serde_json::json!({
         "on": l.on, "max_sog": l.max_sog, "added": l.added, "left": l.left,
-        "last": l.last_depth, "kind": l.kind, "transducer_m": transducer, "warnings": warn,
+        "last": l.last_depth, "kind": l.kind, "transducer_m": transducer, "warnings": warn, "tide": l.tide_ok,
     })
 }
 
@@ -539,4 +627,44 @@ pub fn pbathy_live_set(on: bool, max_sog: Option<f64>) -> Result<(), String> {
     s.set_meta("live_on", if on { "1" } else { "0" }).map_err(|e| e.to_string())?;
     s.set_meta("live_max_sog", &l.max_sog.to_string()).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// From what the depth was measured below, then less the tide; TimeZero's left alone;
+    /// no tide data: below the surface, counted.
+    #[test]
+    fn depths_to_chart_datum() {
+        let mut none = Datum::with(Arc::new(tides::TideDb::default()), Some(1.2), Some(2.0));
+        assert!(!none.has_tides());
+        assert_eq!(none.reduce(-41.0, 173.0, Some(0), 10.0, "transducer", None), 11.2);
+        assert_eq!(none.reduce(-41.0, 173.0, Some(0), 10.0, "transducer", Some(0.5)), 10.5);
+        assert_eq!(none.reduce(-41.0, 173.0, Some(0), 10.0, "", None), 11.2, "not known: as below the transducer");
+        assert_eq!(none.reduce(-41.0, 173.0, Some(0), 10.0, "keel", None), 12.0);
+        assert_eq!(none.reduce(-41.0, 173.0, Some(0), 10.0, "surface", None), 10.0);
+        assert_eq!(none.reduce(-41.0, 173.0, Some(0), 10.0, "datum", None), 10.0);
+        assert_eq!((none.reduced, none.no_tide), (0, 5));
+
+        // a port with the tide 3 m above chart datum all day
+        let dir = std::env::temp_dir().join(format!("pbathy-datum-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(tides::CONSTITUENTS_DIR)).unwrap();
+        std::fs::write(
+            dir.join(tides::CONSTITUENTS_DIR).join("1.txt"),
+            " PORT        Units in CM\n STATION 001 TIME ZONE = 180, LATITUDE = 4100, LONGITUDE = 17300\n   1 Z0      .00000000   001 0105/1225 300.0000   0.00\n   2 M2      .08051140   001 0105/1225   0.0001 0.00\n",
+        )
+        .unwrap();
+        let db = tides::TideDb::open(&dir);
+        let mut d = Datum::with(Arc::new(db), Some(1.0), None);
+        assert!(d.has_tides());
+        let z = d.reduce(-41.0, 173.0, Some(1_700_000_000), 10.0, "transducer", None);
+        assert!((z - 8.0).abs() < 0.01, "{z}");
+        assert_eq!(d.reduce(-41.0, 173.0, Some(1_700_000_000), 10.0, "datum", None), 10.0);
+        // far from the port: below the surface
+        assert_eq!(d.reduce(-45.0, 170.0, Some(1_700_000_000), 10.0, "surface", None), 10.0);
+        assert_eq!((d.reduced, d.no_tide), (1, 1));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

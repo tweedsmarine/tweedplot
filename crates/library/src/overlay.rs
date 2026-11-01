@@ -67,7 +67,17 @@ impl Overlay {
             .ok_or_else(|| Error::NotFound(id.into()))?;
         let data: Vec<u8> = c.query_row("SELECT data FROM track_data WHERE track_id = ?1", [id], |r| r.get(0)).optional()?.unwrap_or_default();
         let segments = if data.is_empty() { Vec::new() } else { store::decode_segments(&data)? };
-        Ok(Track { id: s.id, name: s.name, notes: s.notes, colour: s.colour, source: s.source, modified: s.modified, stats: s.stats, segments })
+        Ok(Track {
+            id: s.id,
+            name: s.name,
+            notes: s.notes,
+            colour: s.colour,
+            source: s.source,
+            modified: s.modified,
+            stats: s.stats,
+            segments,
+            ..Default::default()
+        })
     }
 }
 

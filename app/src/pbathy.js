@@ -1,12 +1,13 @@
 // Chart › Chart data › Own soundings: the boat's own soundings gridded into a seabed,
 // drawn in Rust as depth images (/pbathy/z/x/y.png).
 // Built from the library's tracks with depth, and from TimeZero PBG and XYZ files.
-// Not for navigation: depths as logged, not reduced to chart datum.
+// Not for navigation. Depths reduced to chart datum (pbathy.rs, Datum): the tracks' depth reference and LINZ tides.
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import * as activity from "./activity.js";
 import { floatDrag } from "./floatdrag.js";
+import { askDepthRef, setDepthRef } from "./depthref.js";
 
 const $ = (id) => document.getElementById(id);
 const SHOW = "racenav.pbathy.show"; // before 30 Oct 2026: one setting for every view
@@ -254,6 +255,16 @@ export function setupPbathy(map, { ui } = {}) {
   };
 
   $("pb-tracks").onclick = async () => {
+    // tracks whose depths don't say what they're measured below: ask first
+    const unknown = await invoke("tracks_depth_unknown", { newestImport: false }).catch(() => []);
+    if (unknown.length) {
+      const r = await askDepthRef({
+        title: "Depths in your tracks",
+        note: `${fmt(unknown.length)} track${unknown.length === 1 ? " has" : "s have"} depths that don't say what they are measured from (recorded before TweedPlot noted it, or imported from a file that doesn't say).`,
+      });
+      if (!r) return;
+      await setDepthRef(unknown, r).catch((e) => note(String(e), "bad"));
+    }
     startJob("Own soundings from my tracks");
     try {
       const r = await invoke("pbathy_from_tracks", { check: check() });
@@ -267,6 +278,11 @@ export function setupPbathy(map, { ui } = {}) {
           + (r.back ? ` ${fmt(r.back)} of those left out were put back: the soundings beside them agree (the chart's bands were too coarse there).` : "")
           + (c.unchecked ? ` ${fmt(c.unchecked)} had no chart depth to check against.` : "")
           : check() ? ". Not checked against the chart: no chart depth areas are open." : ".";
+      }
+      if (r.tracks) {
+        t += r.reduced
+          ? ` Reduced to chart datum with the tide: ${fmt(r.reduced)}${r.no_tide ? `; ${fmt(r.no_tide)} kept below the surface, with no LINZ port within 30 km or no tide data for the time` : ""}.`
+          : r.tides ? " None could be reduced to chart datum: no LINZ port within 30 km of them." : " Not reduced to chart datum: no tide data (Weather and tides › Tides › Download).";
       }
       if (r.changed) t += ` ${r.changed} track${r.changed === 1 ? " has" : "s have"} changed since being added (not added again; delete all and rebuild to take the changes).`;
       job.done(t, { keep: !!r.changed }); note(t, r.tracks ? "good" : "");
