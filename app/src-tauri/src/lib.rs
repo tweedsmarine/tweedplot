@@ -1406,6 +1406,17 @@ fn chart_depth_at(lon: f64, lat: f64) -> Option<serde_json::Value> {
         }
     };
     let mut attrs: Vec<(String, String)> = Vec::new();
+    if table.is_empty() {
+        // inside the chart's coverage, but it charts no depth here (its coastline and the Topo50
+        // land drawn instead differ): shown as very shallow
+        attrs.push(("Depth".into(), "not charted here".into()));
+        attrs.push(("Chart".into(), scale));
+        attrs.push((
+            "Note".into(),
+            "Between the chart's coastline and the Topo50 coastline drawn: the chart has land or nothing here. Treat as very shallow.".into(),
+        ));
+        return Some(serde_json::json!({ "code": "", "name": "No charted depth", "band": band, "attrs": attrs }));
+    }
     if dredged {
         if let Some(v) = d1 {
             attrs.push(("Dredged to".into(), m(v)));

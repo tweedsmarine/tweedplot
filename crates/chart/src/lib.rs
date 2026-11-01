@@ -464,6 +464,23 @@ impl ChartStore {
                 }
             });
         }
+        // Inside a chart's coverage, under its own depth areas but over the coarser charts': a
+        // "gap" fill. Where the chart charts nothing (its land, which the Topo50 land drawn
+        // instead doesn't cover, where the two coastlines differ), that shows rather than a
+        // coarser chart's depth for the place (a drying bank from a 1:1.35M chart in a
+        // channel). Drawn as very shallow: no depth is charted there.
+        let mut gap_bands: Vec<u8> = bands.iter().filter(|t| t.kind == Kind::DepthArea && t.band >= 2).map(|t| t.band).collect();
+        gap_bands.sort();
+        gap_bands.dedup();
+        for b in gap_bands {
+            let Some(mp) = self.cover_in(&[b], bbox) else { continue };
+            let ring = |l: &geo::LineString<f64>| -> geom::Ring { l.coords().map(|c| [c.x, c.y]).collect() };
+            let polys: Vec<Vec<geom::Ring>> =
+                mp.0.iter().map(|p| std::iter::once(ring(p.exterior())).chain(p.interiors().iter().map(ring)).collect()).collect();
+            if let Some(tg) = tp.polygons(&Geom::Polygons(polys)) {
+                depare.add(&tg, &[("band", Value::UInt(b as u64)), ("gap", Value::UInt(1)), ("sk", Value::F64(b as f64 - 0.5))]);
+            }
+        }
         // ENC lakes and wide rivers (LAKARE, RIVERS areas): water too, often how small-scale
         // cells chart the Great Lakes; drawn as deep water, and the world land gives way
         for t in bands.iter().filter(|t| t.kind == Kind::Lake && t.table.contains("_enc_b")) {
@@ -777,11 +794,25 @@ impl ChartStore {
 
     /// The depth area at a place, from the largest-scale chart that has one there: (band,
     /// table, DRVAL1, DRVAL2, dredged). For the chart's report on a click on open water.
+    /// Inside a chart's coverage where it has no depth area (its land, between coastlines), the
+    /// table is "" and the depths None: no depth is charted there (not a coarser chart's).
     pub fn depth_area_at(&self, lon: f64, lat: f64) -> Option<(u8, String, Option<f64>, Option<f64>, bool)> {
         let mut tables: Vec<&TableInfo> = self.tables.iter().filter(|t| t.kind == Kind::DepthArea).collect();
         tables.sort_by_key(|t| std::cmp::Reverse(t.band));
         let e = 1e-7;
+        let covered = |band: u8| {
+            use geo::Contains;
+            self.coverage().intersecting([lon - e, lat - e, lon + e, lat + e]).any(|(b, _, p)| *b == band && p.contains(&geo::Point::new(lon, lat)))
+        };
+        let mut last_band = None;
         for t in tables {
+            // a finer chart covers the place but charts no depth there: say so, not a coarser chart's depth
+            if let Some(fb) = last_band {
+                if fb > t.band && fb >= 2 && covered(fb) {
+                    return Some((fb, String::new(), None, None, false));
+                }
+            }
+            last_band = Some(t.band);
             let mut found = None;
             self.query(t, [lon - e, lat - e, lon + e, lat + e], &["drval1", "drval2"], |vals, g| {
                 if found.is_some() {
@@ -798,7 +829,10 @@ impl ChartStore {
                 return Some((t.band, t.table.clone(), d1, d2, dredged));
             }
         }
-        None
+        match last_band {
+            Some(fb) if fb >= 2 && covered(fb) => Some((fb, String::new(), None, None, false)),
+            _ => None,
+        }
     }
 
     /// Every lake polygon touching `bbox` (inland water), and the rivers too if `rivers`.

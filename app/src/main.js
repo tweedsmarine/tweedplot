@@ -92,6 +92,8 @@ function depareColour() {
   const d1 = ["coalesce", ["get", "drval1"], 0];
   return ["case",
     ["has", "lake"], DEPTH.deep,
+    // inside a chart's coverage where it charts no depth (chart.rs: "gap")
+    ["has", "gap"], DEPTH.vshallow,
     ["<", d1, 0], DEPTH.drying,
     ["<", d1, settings.shallow], DEPTH.vshallow,
     ["<", d1, settings.safetyContour], DEPTH.mshallow,
@@ -142,7 +144,7 @@ const map = new maplibregl.Map({
         paint: { "line-color": "#8fa9b8", "line-width": 0.6, "line-opacity": 0.8 } },
       // LINZ hydrographic chart data (not for navigation)
       { id: "depare", type: "fill", source: "chart", "source-layer": "depare",
-        layout: { visibility: "none", "fill-sort-key": ["get", "band"] },
+        layout: { visibility: "none", "fill-sort-key": ["coalesce", ["get", "sk"], ["get", "band"]] },
         paint: { "fill-color": depareColour(), "fill-antialias": false } },
       // over the charted depth areas, under the chart's contours (the safety contour stays on top)
       { id: "hires", type: "raster", source: "hires", minzoom: 10, layout: { visibility: localStorage.getItem("racenav.hires.show") === "0" ? "none" : "visible" },
