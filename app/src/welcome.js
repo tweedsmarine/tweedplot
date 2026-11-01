@@ -10,16 +10,15 @@ const SEEDED = "racenav.use.seeded";
 const existingUser = (() => { try { return localStorage.getItem("racenav.views") !== null; } catch { return true; } })();
 
 const T = (k, c, r, w, h) => ({ k, c, r, w, h });
-// the depth history panel the Navigate and Go fishing choices add (Navigation view)
-const SOUNDER_PANEL = { id: "psounder", x: 0.3, y: 0.6, dir: "row", size: "m", views: ["nav"], name: "Sounder", tiles: ["SOUNDER"] };
 const TASKS = {
   cruise: {
-    name: "Navigate", icon: "⛵", note: "chart, position, depth history, wind", level: "standard", panels: [SOUNDER_PANEL],
+    name: "Navigate", icon: "⛵", note: "chart, position, depth, wind", level: "standard", panels: [],
     screen: [T("HIGHWAY", 1, 1, 8, 4), T("WDIAL", 9, 1, 4, 4), T("COG", 1, 5, 4, 4), T("SOG", 5, 5, 4, 4), T("DPT", 9, 5, 4, 4)],
   },
   fish: {
-    name: "Go fishing", icon: "🎣", note: "shoot and haul, depth history, sea temperature, currents", level: "standard", panels: [SOUNDER_PANEL],
-    screen: [T("DPT", 1, 1, 8, 4), T("WDIAL", 9, 1, 4, 4), T("COG", 1, 5, 6, 4), T("SOG", 7, 5, 6, 4)],
+    name: "Go fishing", icon: "🎣", note: "shoot and haul, depth history, sea temperature, currents", level: "standard", panels: [],
+    // the sounder (depth history) only here, on the Instruments screen: never in Navigation or Planning by default
+    screen: [T("SOUNDER", 1, 1, 8, 4), T("WDIAL", 9, 1, 4, 4), T("DPT", 1, 5, 4, 4), T("COG", 5, 5, 4, 4), T("SOG", 9, 5, 4, 4)],
   },
   race: {
     name: "Race", icon: "🏁", note: "wind instruments, polars, routing", level: "expert",
@@ -87,6 +86,7 @@ export function setupWelcome({ detail, inst }) {
     // the panels of earlier test versions
     inst.removePanel("pfish", null);
     inst.removePanel("pdepth", null);
+    inst.removePanel("psounder", ["SOUNDER"]); // from a test build that put the sounder in Navigation
     // the Instruments screen is seeded once, by the first choice; later changes never touch it
     try {
       if (localStorage.getItem(SEEDED) !== "1") {
