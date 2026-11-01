@@ -1307,7 +1307,7 @@ fn data_folders(app: &tauri::AppHandle) -> Vec<(&'static str, String, &'static s
     let dir = |p: PathBuf| p.to_string_lossy().to_string();
     let enc = s63_cmd::enc_home(app);
     vec![
-        ("S-63 / ENC charts", dir(enc), "Exchange sets and permits (PERMIT.TXT) for S-63 charts; or use Settings > Chart > S-63"),
+        ("S-63 / ENC charts", dir(enc), "Exchange sets and permits (PERMIT.TXT) for S-63 charts; or use Chart › Encrypted charts (S-63)"),
         ("LINZ charts (NZ)", dir(chart_dir(app)), "LINZ chart data (.gpkg) for New Zealand"),
         ("High-resolution depths", dir(hires_dir(app)), "LINZ coastal elevation GeoTIFFs"),
         ("Coastline", dir(coast_dir(app)), "GSHHG coastline zip or GSHHS_shp folder"),

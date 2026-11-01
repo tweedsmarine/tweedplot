@@ -152,7 +152,7 @@ TweedPlot also reads official electronic navigational charts in the IHO S-57 for
 
 Updates are applied in order. The cells of each scale band are merged into one file in `.enc`, so even thousands of cells (all of NOAA's charts, say) draw quickly.
 
-**Encrypted ENCs (S-63).** Most official ENCs are sold encrypted under the IHO S-63 scheme. You buy permits for the cells you want, made for your system, and the charts come as exchange sets (a folder with `ENC_ROOT` in it, on a CD, DVD or download). Everything is done in **Chart › Chart data › Encrypted charts**:
+**Encrypted ENCs (S-63).** Most official ENCs are sold encrypted under the IHO S-63 scheme. You buy permits for the cells you want, made for your system, and the charts come as exchange sets (a folder with `ENC_ROOT` in it, on a CD, DVD or download). Everything is done in **Chart › Encrypted charts (S-63)** card:
 
 - **Activation**: encrypted charts are licensed to one computer. **Copy** the **Installation code** (it starts TP1-, made from this computer's main board) and send it to Tweedsmarine; paste the **Activation code** that comes back (it starts TPA1-) and press **Activate**. It works only on this computer: a second PC on the same boat gets its own activation code, with the same user permit, so the same chart permits work on both. A new main board needs a new activation code.
 - **User permit**: this computer's identity for the chart suppliers, shown once activated. **Copy** it and give it to your chart supplier when ordering permits.
@@ -189,7 +189,8 @@ Wharves, breakwaters, jetties, pontoons, floating docks and causeways are drawn 
 | **Chart display** | **Display**: Base, Standard or All (below); **Standard display**; **Light sectors**, **Names and labels**, **Soundings**; **Chart symbol size** |
 | **Layers** | **Chart layers** (**High-resolution depths**, **Detailed depths (ETOPO)**, **World depths**, **World coastline**), **Own soundings**, **Online maps**, and the boundaries and fishing rules (see *Boundaries and fishing rules*). Layers can overlap: the world depths are coarse, so with **OpenStreetMap** on they show as pale water that doesn't match its coastline. Switch off any layer you don't want |
 | **Own ship** | **Heading line**, **COG line** and **Wind arrows** (see Your boat) |
-| **Chart data** | Every download and import: world coastline, detailed depths, high-resolution depths, boundaries, fishing rules, the LINZ charts, and **Encrypted charts (S-63)** |
+| **Chart data** | Every download and import: world coastline, detailed depths, high-resolution depths, boundaries, fishing rules, and the LINZ charts |
+| **Encrypted charts (S-63)** | The installation code, activation, and installing S-63 exchange sets and permits (see Encrypted ENCs) |
 
 | Setting | What it does |
 | --- | --- |
@@ -1008,8 +1009,6 @@ Positions may be delayed by the race organiser.
 **Views.** The view button in the toolbar switches between **Navigation**, **Planning** and **Instruments** (right-click it for the chart and the other views). TweedPlot always starts in Navigation, and each view remembers whether its panels (the rail and drawers) are shown.
 
 Drawers are grouped into **cards**: click a card's heading to open it (one is open at a time). The card's one-line summary shows the current state, for example the heading and COG line lengths under Own ship. The grey explanatory notes are tucked away for a clean layout: hover the **ⓘ** on a card for them, or click it to open the card with its notes showing. The **?** button and this manual are always there.
-
-**Advanced.** The less-used settings of a card are in an **Advanced** fold at the end of the card: click it to open. A whole card of them (Replay a log, Damping, the radar test) comes last in its drawer, tagged **Advanced**. Nothing is ever hidden for good.
 
 **Use (Cruising, Fishing, Racing).** **Settings › Display › Use** says what the boat is mostly for. Fishing shows the shoot and haul buttons and the own-soundings button in the toolbar (they are hidden for the other uses). Choosing a Use also sets up the Instruments screen: Cruising has the highway, wind dial, COG, SOG and depth; Fishing has the **Sounder history** (depth history), wind dial, depth, COG and SOG; Racing has the highway, wind dial, COG and SOG, and adds a sailing-instruments panel to the chart. The first Use you choose sets up the Instruments screen to match; after that, changing Use never touches the Instruments screen, so your own arrangement is kept. Changing Use only swaps the Racing sailing panel on the chart (and only while you haven't changed it). Your other panels are never touched. The Sounder history is only ever put on the Instruments screen, and only for Fishing; anywhere else, add it yourself from the instrument menu.
 

@@ -44,7 +44,7 @@ export function setupWelcome({ use, inst }) {
     <h1>Welcome to TweedPlot</h1>
     <p class="wl-lead">What is the boat mostly for? This only sets a starting point; everything stays available, and you can change it at any time in Settings › Display.</p>
     <div class="wl-tasks">${Object.entries(TASKS).map(([k, t]) => `<button data-task="${k}"><span class="wl-ic">${t.icon}</span><b>${t.name}</b><small>${t.note}</small></button>`).join("")}</div>
-    <p class="wl-note">Navigation, Planning and Instruments are on the view button in the toolbar. In the drawers, the less-used settings are in each card's Advanced fold.</p>
+    <p class="wl-note">Navigation, Planning and Instruments are on the view button in the toolbar.</p>
     <div class="wl-go"><button class="wl-skip" data-act="skip">Not now</button><button class="wl-start" data-act="start">Start</button></div>
   </div>`;
   document.body.append(el);

@@ -902,7 +902,7 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
    the map or a layer under the pointer would show */
 .maplibregl-map.drawing .maplibregl-canvas-container, .maplibregl-map.drawing .maplibregl-canvas { cursor: crosshair !important; }
 /* AIS target list over the chart (later also MARPA) */
-.pane h3 .h3-btn { float: right; padding: 1px 8px; font-size: 11px; font-weight: normal; text-transform: none; letter-spacing: 0; }
+.pane h3 .h3-btn, .dcard > summary .h3-btn { float: right; padding: 1px 8px; font-size: 11px; font-weight: normal; text-transform: none; letter-spacing: 0; }
 .float-win { position: absolute; z-index: 8; top: 70px; right: 70px; width: 560px; height: 300px; min-width: 300px; min-height: 140px; max-width: calc(100vw - 80px);
   display: flex; flex-direction: column; background: #fff; color: var(--ink); border: 1px solid #b8c4cc; border-radius: 8px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22); resize: both; overflow: hidden; font-size: 12px; }
@@ -1272,11 +1272,7 @@ html:not([data-use="fish"]) .tb-fish { display: none; }
 .dcard.hints-on .hint { display: block; }
 .dcard > summary .dc-info { flex: none; border: 0; background: none; padding: 0 4px; font-size: 14px; color: var(--quiet); cursor: pointer; line-height: 1; }
 .dcard > summary .dc-info:hover { color: var(--accent); }
-/* Advanced: the less-used settings of a card, folded at its end; a whole advanced card is tagged (cards.js) */
-.dcard details.adv, details.adv { margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 4px; }
-details.adv > summary { cursor: pointer; font-size: 11px; color: var(--quiet); text-transform: uppercase; letter-spacing: .05em; padding: 4px 0; }
-details.adv[open] > summary { margin-bottom: 4px; }
-.dcard > summary .dc-adv { flex: none; font-size: 10px; color: var(--quiet); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; text-transform: uppercase; letter-spacing: .04em; }
+.dcard > summary .h3-btn { float: none; flex: none; align-self: center; }
 
 /* welcome screen (welcome.js) */
 #welcome { position: fixed; inset: 0; z-index: 9000; display: flex; align-items: center; justify-content: center; background: rgba(0, 20, 40, .72); }
