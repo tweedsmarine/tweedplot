@@ -132,7 +132,8 @@ pub fn him_stride(area: [f64; 4]) -> usize {
 /// The NCSS request for one hourly Himawari file, cut to the area.
 pub fn himawari_url(file: &str, area: [f64; 4]) -> Result<String> {
     let [w, s, e, n] = area_ok(area)?;
-    let t = chrono::NaiveDateTime::parse_from_str(file.get(..14).unwrap_or(""), "%Y%m%d%H%M%S").map_err(|_| Error::Bad(format!("not a Himawari file: {file}")))?;
+    let t =
+        chrono::NaiveDateTime::parse_from_str(file.get(..14).unwrap_or(""), "%Y%m%d%H%M%S").map_err(|_| Error::Bad(format!("not a Himawari file: {file}")))?;
     Ok(format!(
         "{COASTWATCH}/thredds/ncss/grid/{HIMAWARI_DS}/{}/{file}?var=sea_surface_temperature&var=quality_level&north={n:.3}&west={w:.3}&east={e:.3}&south={s:.3}&horizStride={}&accept=netcdf",
         t.format("%Y/%j"),
@@ -572,7 +573,10 @@ mod tests {
         assert_eq!(himawari_catalog_url(1_792_368_000), "https://coastwatch.noaa.gov/thredds/catalog/gridH09AHINRTL3CWW00/2026/292/catalog.xml");
         let u = himawari_url(&f[0].1, [172.5, -41.5, 174.5, -40.5]).unwrap();
         assert!(u.starts_with("https://coastwatch.noaa.gov/thredds/ncss/grid/gridH09AHINRTL3CWW00/2026/292/20261019000000-"), "{u}");
-        assert!(u.ends_with("?var=sea_surface_temperature&var=quality_level&north=-40.500&west=172.500&east=174.500&south=-41.500&horizStride=1&accept=netcdf"), "{u}");
+        assert!(
+            u.ends_with("?var=sea_surface_temperature&var=quality_level&north=-40.500&west=172.500&east=174.500&south=-41.500&horizStride=1&accept=netcdf"),
+            "{u}"
+        );
         let c = chl_url([172.5, -41.5, 174.5, -40.5], 3).unwrap();
         assert_eq!(c, "https://coastwatch.noaa.gov/erddap/griddap/noaacwNPPN20VIIRSDINEOFDaily.nc?chlor_a%5Blast-2:1:last%5D%5B0%5D%5B(-40.500):1:(-41.500)%5D%5B(172.500):1:(174.500)%5D");
     }

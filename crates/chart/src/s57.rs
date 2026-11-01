@@ -111,8 +111,8 @@ pub fn class_for(table: &str) -> Option<&'static FeatureClass> {
 
 /// Attribute columns read for the tiles (whichever a table has).
 pub const TILE_COLS: &[&str] = &[
-    "objnam", "colour", "colpat", "boyshp", "bcnshp", "catlam", "catcam", "watlev", "catwrk", "valsou", "litchr",
-    "siggrp", "sigper", "valnmr", "height", "sectr1", "sectr2", "orient", "scamin", "catlit", "status", "catspm", "catobs",
+    "objnam", "colour", "colpat", "boyshp", "bcnshp", "catlam", "catcam", "watlev", "catwrk", "valsou", "litchr", "siggrp", "sigper", "valnmr", "height",
+    "sectr1", "sectr2", "orient", "scamin", "catlit", "status", "catspm", "catobs",
 ];
 
 /// One feature's attributes, indexed like [`TILE_COLS`].
@@ -313,9 +313,8 @@ pub fn light_label(lights: &[Light]) -> String {
             continue;
         }
         let l = &lights[i];
-        let js: Vec<usize> = (i..lights.len())
-            .filter(|&j| !done[j] && lights[j].litchr == l.litchr && lights[j].siggrp == l.siggrp && lights[j].sigper == l.sigper)
-            .collect();
+        let js: Vec<usize> =
+            (i..lights.len()).filter(|&j| !done[j] && lights[j].litchr == l.litchr && lights[j].siggrp == l.siggrp && lights[j].sigper == l.sigper).collect();
         for &j in &js {
             done[j] = true;
         }

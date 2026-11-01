@@ -7,7 +7,17 @@ fn main() {
             Ok(c) => {
                 let with = c.features.values().filter(|f| c.shape(f).is_some()).count();
                 let geo = c.features.values().filter(|f| f.prim != 255).count();
-                println!("OK   {rel}  +{} upd  ed {} upd {} usage {} 1:{}  {} features ({}/{} geometry)", cf.updates.len(), c.edition, c.update, c.intu, c.cscl, c.features.len(), with, geo);
+                println!(
+                    "OK   {rel}  +{} upd  ed {} upd {} usage {} 1:{}  {} features ({}/{} geometry)",
+                    cf.updates.len(),
+                    c.edition,
+                    c.update,
+                    c.intu,
+                    c.cscl,
+                    c.features.len(),
+                    with,
+                    geo
+                );
             }
             Err(e) => println!("FAIL {rel}: {e}"),
         }

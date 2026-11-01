@@ -65,10 +65,7 @@ pub fn migrate_from_racenav() {
         let Ok(base) = std::env::var(var) else {
             continue;
         };
-        let (old, new) = (
-            PathBuf::from(&base).join("nz.tweedsmarine.racenav"),
-            PathBuf::from(&base).join("nz.tweedsmarine.tweedplot"),
-        );
+        let (old, new) = (PathBuf::from(&base).join("nz.tweedsmarine.racenav"), PathBuf::from(&base).join("nz.tweedsmarine.tweedplot"));
         if old.is_dir() && !new.exists() {
             let _ = copy_dir(&old, &new);
         }
@@ -102,10 +99,7 @@ fn hires_dir(app: &tauri::AppHandle) -> PathBuf {
     if dev.is_dir() {
         return dev.join("hires");
     }
-    app.path()
-        .app_data_dir()
-        .map(|p| p.join("hires"))
-        .unwrap_or_else(|_| PathBuf::from("hires"))
+    app.path().app_data_dir().map(|p| p.join("hires")).unwrap_or_else(|_| PathBuf::from("hires"))
 }
 
 /// A clear 256-pixel PNG, for map tiles without high-resolution depths.
@@ -176,10 +170,7 @@ fn download_dir(app: &tauri::AppHandle) -> PathBuf {
     if dev.is_dir() {
         return dev.join("grib");
     }
-    app.path()
-        .app_data_dir()
-        .map(|p| p.join("grib"))
-        .unwrap_or_else(|_| PathBuf::from("grib"))
+    app.path().app_data_dir().map(|p| p.join("grib")).unwrap_or_else(|_| PathBuf::from("grib"))
 }
 
 #[tauri::command]
@@ -196,19 +187,13 @@ fn gribdl_estimate(req: gribdl::Request) -> serde_json::Value {
 /// Find the newest complete run and download it, cut to the area. Progress
 /// comes as `gribdl-progress` events; returns the file written.
 #[tauri::command]
-async fn gribdl_start(
-    app: tauri::AppHandle,
-    req: gribdl::Request,
-) -> Result<serde_json::Value, String> {
+async fn gribdl_start(app: tauri::AppHandle, req: gribdl::Request) -> Result<serde_json::Value, String> {
     use std::sync::atomic::Ordering;
     if DL_BUSY.swap(true, Ordering::SeqCst) {
         return Err("A download is already running.".into());
     }
     DL_CANCEL.store(false, Ordering::SeqCst);
-    let dir = DOWNLOAD_DIR
-        .get()
-        .cloned()
-        .unwrap_or_else(|| PathBuf::from("grib"));
+    let dir = DOWNLOAD_DIR.get().cloned().unwrap_or_else(|| PathBuf::from("grib"));
     let res = tauri::async_runtime::spawn_blocking(move || {
         let last = *req.model.hours(req.hours, req.every).last().unwrap_or(&0);
         let _ = app.emit("gribdl-progress", serde_json::json!({ "stage": "Finding the latest run", "done": 0, "total": 0, "bytes": 0 }));
@@ -231,9 +216,7 @@ async fn gribdl_start(
 #[tauri::command]
 async fn grib_combine(a: String, b: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        grib::combine::combine(std::path::Path::new(&a), std::path::Path::new(&b))
-            .map(|p| p.to_string_lossy().into_owned())
-            .map_err(|e| e.to_string())
+        grib::combine::combine(std::path::Path::new(&a), std::path::Path::new(&b)).map(|p| p.to_string_lossy().into_owned()).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -243,19 +226,12 @@ async fn grib_combine(a: String, b: String) -> Result<String, String> {
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
     // mail (Saildocs requests) and web links from the manual; nothing that could run a program
-    let ok =
-        url.starts_with("mailto:") || url.starts_with("https://") || url.starts_with("http://");
-    if !ok
-        || url.chars().any(|c| {
-            c.is_control() || (c.is_whitespace() && !url.starts_with("mailto:")) || c == '"'
-        })
-    {
+    let ok = url.starts_with("mailto:") || url.starts_with("https://") || url.starts_with("http://");
+    if !ok || url.chars().any(|c| c.is_control() || (c.is_whitespace() && !url.starts_with("mailto:")) || c == '"') {
         return Err("only mailto: and web links".into());
     }
     #[cfg(windows)]
-    let r = std::process::Command::new("rundll32")
-        .args(["url.dll,FileProtocolHandler", &url])
-        .spawn();
+    let r = std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", &url]).spawn();
     #[cfg(target_os = "macos")]
     let r = std::process::Command::new("open").arg(&url).spawn();
     #[cfg(all(unix, not(target_os = "macos")))]
@@ -269,17 +245,12 @@ fn gribdl_cancel() {
 }
 
 fn chrono_now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
 #[tauri::command]
 async fn grib_files() -> Vec<serde_json::Value> {
-    tauri::async_runtime::spawn_blocking(grib_files_blocking)
-        .await
-        .unwrap_or_default()
+    tauri::async_runtime::spawn_blocking(grib_files_blocking).await.unwrap_or_default()
 }
 
 fn grib_files_blocking() -> Vec<serde_json::Value> {
@@ -291,21 +262,13 @@ fn grib_files_blocking() -> Vec<serde_json::Value> {
         };
         for e in rd.flatten() {
             let p = e.path();
-            let ext = p
-                .extension()
-                .and_then(|x| x.to_str())
-                .unwrap_or("")
-                .to_ascii_lowercase();
+            let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
             if !matches!(ext.as_str(), "grb" | "grb2" | "grib" | "grib2") {
                 continue;
             }
             let md = e.metadata().ok();
             let md2 = md.clone();
-            let mtime = md
-                .as_ref()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs());
+            let mtime = md.as_ref().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs());
             let key = p.to_string_lossy().into_owned();
             let size = md.as_ref().map(|m| m.len()).unwrap_or(0);
             let info = scan_cached(&p, mtime.unwrap_or(0), size);
@@ -323,17 +286,14 @@ fn grib_files_blocking() -> Vec<serde_json::Value> {
     // newest model run first, then newest download
     out.sort_by(|a, b| {
         let run = |x: &serde_json::Value| x["info"]["runs"][0]["ref_time"].as_i64().unwrap_or(0);
-        run(b)
-            .cmp(&run(a))
-            .then(b["mtime"].as_u64().cmp(&a["mtime"].as_u64()))
+        run(b).cmp(&run(a)).then(b["mtime"].as_u64().cmp(&a["mtime"].as_u64()))
     });
     out
 }
 
 /// Header scans are cached by path, modification time and size.
 fn scan_cached(p: &std::path::Path, mtime: u64, size: u64) -> Option<grib::FileInfo> {
-    static CACHE: Mutex<BTreeMap<String, (u64, u64, Option<grib::FileInfo>)>> =
-        Mutex::new(BTreeMap::new());
+    static CACHE: Mutex<BTreeMap<String, (u64, u64, Option<grib::FileInfo>)>> = Mutex::new(BTreeMap::new());
     let key = p.to_string_lossy().into_owned();
     if let Some((m, s, info)) = CACHE.lock().unwrap().get(&key) {
         if *m == mtime && *s == size {
@@ -341,10 +301,7 @@ fn scan_cached(p: &std::path::Path, mtime: u64, size: u64) -> Option<grib::FileI
         }
     }
     let info = grib::scan(p).ok();
-    CACHE
-        .lock()
-        .unwrap()
-        .insert(key, (mtime, size, info.clone()));
+    CACHE.lock().unwrap().insert(key, (mtime, size, info.clone()));
     info
 }
 
@@ -359,10 +316,7 @@ async fn grib_load(app: tauri::AppHandle, path: String) -> Result<grib::Summary,
             let prev = last.load(std::sync::atomic::Ordering::Relaxed);
             if pc >= prev + 2 || pc == 0 || pc >= 97 {
                 last.store(pc, std::sync::atomic::Ordering::Relaxed);
-                let _ = app.emit(
-                    "grib-progress",
-                    serde_json::json!({ "path": p, "percent": pc, "stage": stage }),
-                );
+                let _ = app.emit("grib-progress", serde_json::json!({ "path": p, "percent": pc, "stage": stage }));
             }
         };
         grib::GribFile::open_with_progress(&p, &progress)
@@ -397,20 +351,13 @@ fn grib_loaded() -> Vec<grib::Summary> {
 
 /// Wind on a thinned grid inside `bbox` [w, s, e, n] at time `t`, at most about `max_points` points.
 #[tauri::command]
-fn grib_wind_grid(
-    path: String,
-    t: i64,
-    bbox: [f64; 4],
-    max_points: usize,
-) -> Option<serde_json::Value> {
+fn grib_wind_grid(path: String, t: i64, bbox: [f64; 4], max_points: usize) -> Option<serde_json::Value> {
     let f = GRIBS.lock().unwrap().get(&path)?.clone();
     let (g, u) = f.grid_at(grib::Param::WindU, t)?;
     let (_, v) = f.grid_at(grib::Param::WindV, t)?;
     // Grids may run 0..360 (GFS) while the chart asks in -180..180: shift the
     // view by whole turns so it lines up with the grid, and back for the output.
-    let turn = ((g.lon0 + g.dlon * (g.ni as f64 - 1.0) / 2.0 - (bbox[0] + bbox[2]) / 2.0) / 360.0)
-        .round()
-        * 360.0;
+    let turn = ((g.lon0 + g.dlon * (g.ni as f64 - 1.0) / 2.0 - (bbox[0] + bbox[2]) / 2.0) / 360.0).round() * 360.0;
     let bbox = [bbox[0] + turn, bbox[1], bbox[2] + turn, bbox[3]];
     // grid index window covering the bbox
     let i_lo = (((bbox[0] - g.lon0) / g.dlon).floor().max(0.0) as usize).min(g.ni - 1);
@@ -452,13 +399,7 @@ fn grib_wind_grid(
 /// contours: "wind" and "gust" (kn), "waves", "swell", "windwaves" (m),
 /// "period" (s), "wavedir" (deg from), "rain" (mm/h), "cape" (J/kg), "mslp" (hPa), "temp" (°C).
 #[tauri::command]
-fn grib_grid(
-    path: String,
-    layer: String,
-    t: i64,
-    bbox: [f64; 4],
-    max_points: usize,
-) -> Option<serde_json::Value> {
+fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max_points: usize) -> Option<serde_json::Value> {
     use grib::Param as P;
     let f = GRIBS.lock().unwrap().get(&path)?.clone();
     const KN: f32 = 3600.0 / 1852.0;
@@ -466,13 +407,7 @@ fn grib_grid(
     let (g, vals): (grib::Grid, Vec<f32>) = match layer.as_str() {
         "wind" => {
             if let (Some((g, u)), Some((_, v))) = (f.grid_at(P::WindU, t), f.grid_at(P::WindV, t)) {
-                (
-                    g,
-                    u.iter()
-                        .zip(&v)
-                        .map(|(a, b)| (a * a + b * b).sqrt() * KN)
-                        .collect(),
-                )
+                (g, u.iter().zip(&v).map(|(a, b)| (a * a + b * b).sqrt() * KN).collect())
             } else {
                 let (g, w) = f.grid_at(P::WindSpeed, t)?;
                 (g, w.iter().map(|x| x * KN).collect())
@@ -518,40 +453,21 @@ fn grib_grid(
         // chlorophyll as log10 mg/m³: shaded, filtered and contoured on a log scale
         "chl" => {
             let (g, v) = f.grid_at(P::Chlorophyll, t)?;
-            (
-                g,
-                v.iter()
-                    .map(|x| if *x > 0.0 { x.log10() } else { f32::NAN })
-                    .collect(),
-            )
+            (g, v.iter().map(|x| if *x > 0.0 { x.log10() } else { f32::NAN }).collect())
         }
         "current" => {
             let ((g, u), (_, v)) = (f.grid_at(P::CurrentU, t)?, f.grid_at(P::CurrentV, t)?);
-            (
-                g,
-                u.iter()
-                    .zip(&v)
-                    .map(|(a, b)| (a * a + b * b).sqrt() * KN)
-                    .collect(),
-            )
+            (g, u.iter().zip(&v).map(|(a, b)| (a * a + b * b).sqrt() * KN).collect())
         }
         "ssh" => f.grid_at(P::SeaLevel, t)?,
         // the way the water flows, degrees true
         "currentdir" => {
             let ((g, u), (_, v)) = (f.grid_at(P::CurrentU, t)?, f.grid_at(P::CurrentV, t)?);
-            (
-                g,
-                u.iter()
-                    .zip(&v)
-                    .map(|(a, b)| (a.atan2(*b).to_degrees() + 360.0) % 360.0)
-                    .collect(),
-            )
+            (g, u.iter().zip(&v).map(|(a, b)| (a.atan2(*b).to_degrees() + 360.0) % 360.0).collect())
         }
         _ => return None,
     };
-    let turn =  ((g.lon0 + g.dlon * (g.ni as f64 - 1.0) / 2.0 - (bbox[0] + bbox[2]) / 2.0) / 360.0)
-        .round()
-        * 360.0;
+    let turn = ((g.lon0 + g.dlon * (g.ni as f64 - 1.0) / 2.0 - (bbox[0] + bbox[2]) / 2.0) / 360.0).round() * 360.0;
     let bbox = [bbox[0] + turn, bbox[1], bbox[2] + turn, bbox[3]];
     let i_lo = (((bbox[0] - g.lon0) / g.dlon).floor().max(0.0) as usize).min(g.ni - 1);
     let i_hi = (((bbox[2] - g.lon0) / g.dlon).ceil().max(0.0) as usize).min(g.ni - 1);
@@ -589,29 +505,18 @@ fn grib_grid(
 /// How much the loaded GRIBs in `paths` disagree at time `t` over `bbox` (see
 /// `grib::compare`): `metric` is vector, speed, direction, pressure or trend.
 #[tauri::command]
-fn grib_compare(
-    paths: Vec<String>,
-    metric: String,
-    t: i64,
-    bbox: [f64; 4],
-    max_points: usize,
-) -> Result<serde_json::Value, String> {
+fn grib_compare(paths: Vec<String>, metric: String, t: i64, bbox: [f64; 4], max_points: usize) -> Result<serde_json::Value, String> {
     let m = grib::compare::Metric::parse(&metric).ok_or("unknown comparison")?;
     let files: Vec<(String, Arc<grib::GribFile>)> = {
         let g = GRIBS.lock().unwrap();
-        paths
-            .iter()
-            .filter_map(|p| g.get(p).map(|f| (p.clone(), f.clone())))
-            .collect()
+        paths.iter().filter_map(|p| g.get(p).map(|f| (p.clone(), f.clone()))).collect()
     };
     let refs: Vec<&grib::GribFile> = files.iter().map(|(_, f)| f.as_ref()).collect();
-    let r = grib::compare::agreement(&refs, m, t, bbox, max_points.clamp(100, 40_000)).ok_or(
-        if m == grib::compare::Metric::Trend {
-            "Needs two or more runs covering this time."
-        } else {
-            "Needs two or more GRIBs covering this time and area."
-        },
-    )?;
+    let r = grib::compare::agreement(&refs, m, t, bbox, max_points.clamp(100, 40_000)).ok_or(if m == grib::compare::Metric::Trend {
+        "Needs two or more runs covering this time."
+    } else {
+        "Needs two or more GRIBs covering this time and area."
+    })?;
     let used: Vec<serde_json::Value> = r
         .used
         .iter()
@@ -633,10 +538,7 @@ fn loaded(paths: &[String]) -> Vec<(String, Arc<grib::GribFile>)> {
         v.sort_by(|a, b| a.0.cmp(&b.0));
         v
     } else {
-        paths
-            .iter()
-            .filter_map(|p| g.get(p).map(|f| (p.clone(), f.clone())))
-            .collect()
+        paths.iter().filter_map(|p| g.get(p).map(|f| (p.clone(), f.clone()))).collect()
     }
 }
 
@@ -677,10 +579,7 @@ async fn grib_meteogram(paths: Vec<String>, lat: f64, lon: f64) -> Vec<serde_jso
     .unwrap_or_default()
 }
 
-fn score_json(
-    files: &[(String, Arc<grib::GribFile>)],
-    s: &grib::verify::Score,
-) -> serde_json::Value {
+fn score_json(files: &[(String, Arc<grib::GribFile>)], s: &grib::verify::Score) -> serde_json::Value {
     let mut j = file_json(files, s.file);
     j["lead_h"] = s.lead_h.into();
     j["n"] = s.n.into();
@@ -711,22 +610,12 @@ fn grib_verify_times(paths: Vec<String>) -> Vec<serde_json::Value> {
 
 /// Scores of every earlier forecast against the hour-0 reference at verify time `t`.
 #[tauri::command]
-async fn grib_verify_scores(
-    paths: Vec<String>,
-    t: i64,
-    bbox: [f64; 4],
-) -> Result<Vec<serde_json::Value>, String> {
+async fn grib_verify_scores(paths: Vec<String>, t: i64, bbox: [f64; 4]) -> Result<Vec<serde_json::Value>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let files = loaded(&paths);
         let refs: Vec<&grib::GribFile> = files.iter().map(|(_, f)| f.as_ref()).collect();
-        let vt = grib::verify::verify_times(&refs)
-            .into_iter()
-            .find(|v| v.t == t)
-            .ok_or("No GRIB has this time as hour 0.")?;
-        Ok(grib::verify::scores(&refs, &vt, bbox, 6000)
-            .iter()
-            .map(|s| score_json(&files, s))
-            .collect())
+        let vt = grib::verify::verify_times(&refs).into_iter().find(|v| v.t == t).ok_or("No GRIB has this time as hour 0.")?;
+        Ok(grib::verify::scores(&refs, &vt, bbox, 6000).iter().map(|s| score_json(&files, s)).collect())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -768,31 +657,18 @@ fn grib_verify_grid(
         "direction" => grib::verify::ErrorKind::Direction,
         _ => grib::verify::ErrorKind::Vector,
     };
-    let fi = files
-        .iter()
-        .position(|(p, _)| *p == forecast)
-        .ok_or("That GRIB is not loaded.")?;
-    let vt = grib::verify::verify_times(&refs)
-        .into_iter()
-        .find(|v| v.t == t)
-        .ok_or("No GRIB has this time as hour 0.")?;
+    let fi = files.iter().position(|(p, _)| *p == forecast).ok_or("That GRIB is not loaded.")?;
+    let vt = grib::verify::verify_times(&refs).into_iter().find(|v| v.t == t).ok_or("No GRIB has this time as hour 0.")?;
     let r = grib::verify::error_grid(&refs, &vt, fi, k, at, bbox, max_points.clamp(100, 40_000))
         .ok_or("Nothing to compare at this time: the forecast and the later run must both cover it (the later run starts at the verify time).")?;
-    Ok(
-        serde_json::json!({ "lon0": r.lon0, "lat0": r.lat0, "dlon": r.dlon, "dlat": r.dlat, "ni": r.ni, "nj": r.nj, "values": r.values,
-        "used": r.used.iter().map(|&i| file_json(&files, i)).collect::<Vec<_>>() }),
-    )
+    Ok(serde_json::json!({ "lon0": r.lon0, "lat0": r.lat0, "dlon": r.dlon, "dlat": r.dlat, "ni": r.ni, "nj": r.nj, "values": r.values,
+        "used": r.used.iter().map(|&i| file_json(&files, i)).collect::<Vec<_>>() }))
 }
 
 /// Every loaded GRIB at one point and time: the quick agreement check.
 #[tauri::command]
 fn grib_point(lat: f64, lon: f64, t: i64) -> Vec<serde_json::Value> {
-    let files: Vec<(String, Arc<grib::GribFile>)> = GRIBS
-        .lock()
-        .unwrap()
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
+    let files: Vec<(String, Arc<grib::GribFile>)> = GRIBS.lock().unwrap().iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     files
         .into_iter()
         .map(|(k, f)| {
@@ -839,12 +715,7 @@ fn point_values(f: &grib::GribFile, lat: f64, lon: f64, t: i64) -> serde_json::V
 #[tauri::command]
 async fn grib_along(first: Option<String>, pts: Vec<(f64, f64, i64)>) -> Vec<serde_json::Value> {
     tauri::async_runtime::spawn_blocking(move || {
-        let mut files: Vec<(String, Arc<grib::GribFile>)> = GRIBS
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let mut files: Vec<(String, Arc<grib::GribFile>)> = GRIBS.lock().unwrap().iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         if let Some(p) = &first {
             files.sort_by_key(|(k, _)| k != p);
         }
@@ -905,14 +776,7 @@ fn user_polar_dir(app: &tauri::AppHandle) -> PathBuf {
         return PathBuf::from(d);
     }
     let dev = dev_root();
-    let d = if dev.is_dir() {
-        dev.join("polars")
-    } else {
-        app.path()
-            .app_data_dir()
-            .map(|p| p.join("polars"))
-            .unwrap_or_else(|_| PathBuf::from("polars"))
-    };
+    let d = if dev.is_dir() { dev.join("polars") } else { app.path().app_data_dir().map(|p| p.join("polars")).unwrap_or_else(|_| PathBuf::from("polars")) };
     let _ = std::fs::create_dir_all(&d);
     d
 }
@@ -920,16 +784,9 @@ fn user_polar_dir(app: &tauri::AppHandle) -> PathBuf {
 /// The polars shipped with TweedPlot (read only).
 fn bundled_polar_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
     let candidates = [
-        app.path()
-            .resource_dir()
-            .ok()
-            .map(|d| d.join("resources").join("polars")),
+        app.path().resource_dir().ok().map(|d| d.join("resources").join("polars")),
         app.path().resource_dir().ok().map(|d| d.join("polars")),
-        Some(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("resources")
-                .join("polars"),
-        ),
+        Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources").join("polars")),
     ];
     candidates.into_iter().flatten().find(|d| d.is_dir())
 }
@@ -966,11 +823,7 @@ fn polar_files(app: tauri::AppHandle) -> Vec<serde_json::Value> {
         };
         for e in rd.flatten() {
             let p = e.path();
-            let ext = p
-                .extension()
-                .and_then(|x| x.to_str())
-                .unwrap_or("")
-                .to_ascii_lowercase();
+            let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("").to_ascii_lowercase();
             if !matches!(ext.as_str(), "csv" | "pol" | "txt") {
                 continue;
             }
@@ -978,14 +831,8 @@ fn polar_files(app: tauri::AppHandle) -> Vec<serde_json::Value> {
             if polar::Polar::from_path(&p).is_err() {
                 continue;
             }
-            let name = p
-                .file_stem()
-                .map(|f| f.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            if out
-                .iter()
-                .any(|o| o["name"].as_str() == Some(name.as_str()))
-            {
+            let name = p.file_stem().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+            if out.iter().any(|o| o["name"].as_str() == Some(name.as_str())) {
                 continue;
             }
             out.push(serde_json::json!({ "path": p.to_string_lossy(), "name": name, "dir": dir, "source": source }));
@@ -1003,33 +850,15 @@ fn polar_import(app: tauri::AppHandle, name: String, text: String) -> Result<Str
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default()
         .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || " ._-".contains(c) {
-                c
-            } else {
-                '_'
-            }
-        })
+        .map(|c| if c.is_alphanumeric() || " ._-".contains(c) { c } else { '_' })
         .collect();
     let stem = stem.trim().to_string();
     if stem.is_empty() {
         return Err("The file has no usable name.".into());
     }
-    polar::Polar::parse(&stem, &text).map_err(|e| {
-        format!(
-            "Not a polar TweedPlot can read ({e}). See Manual > Reference > Polars for the format."
-        )
-    })?;
-    let ext = std::path::Path::new(&name)
-        .extension()
-        .and_then(|x| x.to_str())
-        .unwrap_or("pol")
-        .to_ascii_lowercase();
-    let ext = if matches!(ext.as_str(), "csv" | "pol" | "txt") {
-        ext
-    } else {
-        "pol".into()
-    };
+    polar::Polar::parse(&stem, &text).map_err(|e| format!("Not a polar TweedPlot can read ({e}). See Manual > Reference > Polars for the format."))?;
+    let ext = std::path::Path::new(&name).extension().and_then(|x| x.to_str()).unwrap_or("pol").to_ascii_lowercase();
+    let ext = if matches!(ext.as_str(), "csv" | "pol" | "txt") { ext } else { "pol".into() };
     let dest = user_polar_dir(&app).join(format!("{stem}.{ext}"));
     std::fs::write(&dest, text).map_err(|e| format!("Could not save {}: {e}", dest.display()))?;
     Ok(dest.to_string_lossy().into_owned())
@@ -1040,20 +869,11 @@ fn polar_import(app: tauri::AppHandle, name: String, text: String) -> Result<Str
 fn polar_open_folder(app: tauri::AppHandle) -> Result<String, String> {
     let d = user_polar_dir(&app);
     #[cfg(windows)]
-    std::process::Command::new("explorer")
-        .arg(&d)
-        .spawn()
-        .map_err(|e| e.to_string())?;
+    std::process::Command::new("explorer").arg(&d).spawn().map_err(|e| e.to_string())?;
     #[cfg(target_os = "macos")]
-    std::process::Command::new("open")
-        .arg(&d)
-        .spawn()
-        .map_err(|e| e.to_string())?;
+    std::process::Command::new("open").arg(&d).spawn().map_err(|e| e.to_string())?;
     #[cfg(all(unix, not(target_os = "macos")))]
-    std::process::Command::new("xdg-open")
-        .arg(&d)
-        .spawn()
-        .map_err(|e| e.to_string())?;
+    std::process::Command::new("xdg-open").arg(&d).spawn().map_err(|e| e.to_string())?;
     Ok(d.to_string_lossy().into_owned())
 }
 
@@ -1094,20 +914,11 @@ struct MarkOpt {
 /// Route from start through the marks with one loaded GRIB, a polar and the chart.
 #[tauri::command]
 async fn route_compute(req: RouteRequest) -> Result<serde_json::Value, String> {
-    let grib = GRIBS
-        .lock()
-        .unwrap()
-        .get(&req.grib_path)
-        .cloned()
-        .ok_or("Load the GRIB first (Weather panel).")?;
+    let grib = GRIBS.lock().unwrap().get(&req.grib_path).cloned().ok_or("Load the GRIB first (Weather panel).")?;
     tauri::async_runtime::spawn_blocking(move || {
         let polar = polar::Polar::from_path(&req.polar_path).map_err(|e| format!("Polar: {e}"))?;
         let start = nav_core::LatLon::new(req.start[1], req.start[0]);
-        let marks: Vec<nav_core::LatLon> = req
-            .marks
-            .iter()
-            .map(|m| nav_core::LatLon::new(m[1], m[0]))
-            .collect();
+        let marks: Vec<nav_core::LatLon> = req.marks.iter().map(|m| nav_core::LatLon::new(m[1], m[0])).collect();
         if marks.is_empty() {
             return Err("Add at least one mark.".to_string());
         }
@@ -1116,11 +927,7 @@ async fn route_compute(req: RouteRequest) -> Result<serde_json::Value, String> {
             .enumerate()
             .map(|(i, m)| {
                 let o = req.mark_opts.get(i).cloned().unwrap_or_default();
-                routing::MarkSpec {
-                    pos: *m,
-                    rounding: routing::Rounding::parse(&o.rounding),
-                    radius_nm: (o.radius_nm > 0.0).then_some(o.radius_nm),
-                }
+                routing::MarkSpec { pos: *m, rounding: routing::Rounding::parse(&o.rounding), radius_nm: (o.radius_nm > 0.0).then_some(o.radius_nm) }
             })
             .collect();
         // barriers: active lines and zones, and barrier marks that aren't on this course
@@ -1128,12 +935,7 @@ async fn route_compute(req: RouteRequest) -> Result<serde_json::Value, String> {
         let mut barrier_count = 0;
         if req.use_barriers {
             if let Ok(l) = lib() {
-                for b in l
-                    .barriers()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|b| b.active && b.points.len() >= 2)
-                {
+                for b in l.barriers().unwrap_or_default().into_iter().filter(|b| b.active && b.points.len() >= 2) {
                     barrier_count += 1;
                     if b.kind == "zone" && b.points.len() >= 3 {
                         barriers.zones.push(b.points)
@@ -1143,101 +945,51 @@ async fn route_compute(req: RouteRequest) -> Result<serde_json::Value, String> {
                 }
                 let on_course = |m: &library::Mark| {
                     let p = nav_core::LatLon::new(m.lat, m.lon);
-                    marks
-                        .iter()
-                        .chain(std::iter::once(&start))
-                        .any(|c| c.distance_to(&p) < 0.01)
+                    marks.iter().chain(std::iter::once(&start)).any(|c| c.distance_to(&p) < 0.01)
                 };
-                for m in l
-                    .marks()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|m| m.barrier_nm > 0.0 && !on_course(m))
-                {
+                for m in l.marks().unwrap_or_default().into_iter().filter(|m| m.barrier_nm > 0.0 && !on_course(m)) {
                     barrier_count += 1;
                     barriers.discs.push(([m.lon, m.lat], m.barrier_nm));
                 }
             }
         }
         // waves for the wave-height limit: this GRIB, else a loaded wave GRIB covering the start
-        let wave_grib: Option<Arc<grib::GribFile>> =
-            if req.params.max_hs > 0.0 && grib.times(grib::Param::WaveHeight).is_empty() {
-                let g = GRIBS.lock().unwrap();
-                g.values()
-                    .filter(|f| {
-                        f.times(grib::Param::WaveHeight)
-                            .first()
-                            .is_some_and(|&a| a <= req.t0)
-                            && f.times(grib::Param::WaveHeight)
-                                .last()
-                                .is_some_and(|&b| b >= req.t0)
-                    })
-                    .max_by_key(|f| f.model().1)
-                    .cloned()
-            } else {
-                None
-            };
+        let wave_grib: Option<Arc<grib::GribFile>> = if req.params.max_hs > 0.0 && grib.times(grib::Param::WaveHeight).is_empty() {
+            let g = GRIBS.lock().unwrap();
+            g.values()
+                .filter(|f| {
+                    f.times(grib::Param::WaveHeight).first().is_some_and(|&a| a <= req.t0)
+                        && f.times(grib::Param::WaveHeight).last().is_some_and(|&b| b >= req.t0)
+                })
+                .max_by_key(|f| f.model().1)
+                .cloned()
+        } else {
+            None
+        };
         let clock = std::time::Instant::now();
         let raster = charts().map(|store| {
             let mut b = [start.lon, start.lat, start.lon, start.lat];
             for m in &marks {
-                b = [
-                    b[0].min(m.lon),
-                    b[1].min(m.lat),
-                    b[2].max(m.lon),
-                    b[3].max(m.lat),
-                ];
+                b = [b[0].min(m.lon), b[1].min(m.lat), b[2].max(m.lon), b[3].max(m.lat)];
             }
             // room to go round headlands: a quarter of the span, at least 0.1 degree
             let pad = ((b[2] - b[0]).max(b[3] - b[1]) * 0.25).clamp(0.1, 2.0);
-            routing::Raster::from_chart_with(
-                &store,
-                [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad],
-                req.safety_depth,
-                50.0,
-                16_000_000,
-                req.avoid,
-            )
+            routing::Raster::from_chart_with(&store, [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad], req.safety_depth, 50.0, 16_000_000, req.avoid)
         });
         let raster_ms = clock.elapsed().as_millis();
         let r = match &wave_grib {
             Some(w) => {
-                let src = routing::WithWaves {
-                    wind: grib.as_ref(),
-                    waves: w.as_ref(),
-                };
-                routing::route_marks(
-                    start,
-                    req.t0,
-                    &specs,
-                    &polar,
-                    &src,
-                    raster.as_ref(),
-                    &barriers,
-                    &req.params,
-                )
+                let src = routing::WithWaves { wind: grib.as_ref(), waves: w.as_ref() };
+                routing::route_marks(start, req.t0, &specs, &polar, &src, raster.as_ref(), &barriers, &req.params)
             }
-            None => routing::route_marks(
-                start,
-                req.t0,
-                &specs,
-                &polar,
-                grib.as_ref(),
-                raster.as_ref(),
-                &barriers,
-                &req.params,
-            ),
+            None => routing::route_marks(start, req.t0, &specs, &polar, grib.as_ref(), raster.as_ref(), &barriers, &req.params),
         };
         let mut v = serde_json::to_value(&r).map_err(|e| e.to_string())?;
         v["barriers"] = barrier_count.into();
         v["waves_from"] = match (&wave_grib, req.params.max_hs > 0.0) {
             (Some(w), _) => w.model().0.into(),
-            (None, true) if !grib.times(grib::Param::WaveHeight).is_empty() => {
-                "the same GRIB".into()
-            }
-            (None, true) => serde_json::Value::String(
-                "none: no wave GRIB loaded, the wave limit was not applied".into(),
-            ),
+            (None, true) if !grib.times(grib::Param::WaveHeight).is_empty() => "the same GRIB".into(),
+            (None, true) => serde_json::Value::String("none: no wave GRIB loaded, the wave limit was not applied".into()),
             _ => serde_json::Value::Null,
         };
         v["obstacles"] = serde_json::json!({
@@ -1263,18 +1015,11 @@ fn library_dir(app: &tauri::AppHandle) -> PathBuf {
     if dev.is_dir() {
         return dev.join("library");
     }
-    app.path()
-        .app_data_dir()
-        .map(|p| p.join("library"))
-        .unwrap_or_else(|_| PathBuf::from("library"))
+    app.path().app_data_dir().map(|p| p.join("library")).unwrap_or_else(|_| PathBuf::from("library"))
 }
 
 fn lib() -> Result<Arc<library::Library>, String> {
-    LIBRARY
-        .read()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone()
-        .ok_or_else(|| "The mark library could not be opened.".to_string())
+    LIBRARY.read().unwrap_or_else(|e| e.into_inner()).clone().ok_or_else(|| "The mark library could not be opened.".to_string())
 }
 
 // ---------- which library: New, Open, Recent, Save a copy, Merge ----------
@@ -1616,7 +1361,13 @@ async fn library_export(
         let target = if pass.is_some() { to.with_extension("gpkg.plain") } else { to.clone() };
         let r = (|| -> Result<serde_json::Value, String> {
             let n = l.export_library(&target, &marks, &routes, &tracks, &events, also, keep_notes).map_err(es)?;
-            let cells = if want_soundings { pbathy::export_into(&target, &mut progress, &cancel).inspect_err(|_| { let _ = std::fs::remove_file(&target); })? } else { 0 };
+            let cells = if want_soundings {
+                pbathy::export_into(&target, &mut progress, &cancel).inspect_err(|_| {
+                    let _ = std::fs::remove_file(&target);
+                })?
+            } else {
+                0
+            };
             if let Some(pass) = &pass {
                 library::protect::protect_file(&target, &to, pass).map_err(es)?;
             }
@@ -1634,7 +1385,6 @@ async fn library_export(
     job_end(&job_id);
     r?
 }
-
 
 /// Unlock a protected library (.tplib) with its passphrase, as a plain library file:
 /// `keep` puts it beside the protected one (to open as a library), else in the app's own
@@ -1656,9 +1406,7 @@ async fn library_unlock(app: tauri::AppHandle, path: String, passphrase: String,
         k += 1;
     }
     let t = to.clone();
-    tauri::async_runtime::spawn_blocking(move || library::protect::unprotect_file(&src, &t, &passphrase).map_err(es))
-        .await
-        .map_err(|e| e.to_string())??;
+    tauri::async_runtime::spawn_blocking(move || library::protect::unprotect_file(&src, &t, &passphrase).map_err(es)).await.map_err(|e| e.to_string())??;
     Ok(to.to_string_lossy().into_owned())
 }
 
@@ -1711,7 +1459,8 @@ async fn overlay_tracks(path: String) -> Result<Vec<library::TrackSummary>, Stri
 async fn overlay_track(path: String, id: String) -> Result<serde_json::Value, String> {
     let o = overlay(&path)?;
     let t = tauri::async_runtime::spawn_blocking(move || o.track(&id).map_err(es)).await.map_err(|e| e.to_string())??;
-    let segs: Vec<Vec<serde_json::Value>> = t.segments.iter().map(|s| s.iter().map(|p| serde_json::json!([p.lon, p.lat, p.t, p.sog, p.cog, p.depth, p.temp])).collect()).collect();
+    let segs: Vec<Vec<serde_json::Value>> =
+        t.segments.iter().map(|s| s.iter().map(|p| serde_json::json!([p.lon, p.lat, p.t, p.sog, p.cog, p.depth, p.temp])).collect()).collect();
     Ok(serde_json::json!({ "id": t.id, "name": t.name, "colour": t.colour, "stats": t.stats, "segments": segs }))
 }
 
@@ -1948,10 +1697,7 @@ fn routing_get(id: String) -> Result<library::Routing, String> {
     lib()?.routing(&id).map_err(es)
 }
 #[tauri::command]
-fn routing_save(
-    app: tauri::AppHandle,
-    routing: library::Routing,
-) -> Result<library::RoutingSummary, String> {
+fn routing_save(app: tauri::AppHandle, routing: library::Routing) -> Result<library::RoutingSummary, String> {
     let r = lib()?.save_routing(routing).map_err(es)?;
     library_changed(&app);
     Ok(r)
@@ -1964,33 +1710,18 @@ fn routing_delete(app: tauri::AppHandle, id: String) -> Result<(), String> {
 }
 /// GPX of marks and routes (empty lists = everything) written to the export folder.
 #[tauri::command]
-fn gpx_export(
-    name: String,
-    mark_ids: Vec<String>,
-    route_ids: Vec<String>,
-) -> Result<String, String> {
+fn gpx_export(name: String, mark_ids: Vec<String>, route_ids: Vec<String>) -> Result<String, String> {
     let l = lib()?;
     let text = l.export_gpx(&mark_ids, &route_ids).map_err(es)?;
-    Ok(l.write_export(&name, &text)
-        .map_err(es)?
-        .to_string_lossy()
-        .into_owned())
+    Ok(l.write_export(&name, &text).map_err(es)?.to_string_lossy().into_owned())
 }
 /// Any GPX text the page made (e.g. a routing with times) written to the export folder.
 #[tauri::command]
 fn gpx_write(name: String, text: String) -> Result<String, String> {
-    Ok(lib()?
-        .write_export(&name, &text)
-        .map_err(es)?
-        .to_string_lossy()
-        .into_owned())
+    Ok(lib()?.write_export(&name, &text).map_err(es)?.to_string_lossy().into_owned())
 }
 #[tauri::command]
-fn gpx_import(
-    app: tauri::AppHandle,
-    text: String,
-    group: String,
-) -> Result<library::ImportReport, String> {
+fn gpx_import(app: tauri::AppHandle, text: String, group: String) -> Result<library::ImportReport, String> {
     let r = lib()?.import_gpx(&text, &group).map_err(es)?;
     library_changed(&app);
     Ok(r)
@@ -2138,22 +1869,12 @@ const REC_FILE: &str = "recorder.json";
 
 fn rec_settings_save(on: bool, id: &str) {
     if let Ok(l) = lib() {
-        let _ = std::fs::write(
-            l.dir().join(REC_FILE),
-            serde_json::json!({ "on": on, "track": id }).to_string(),
-        );
+        let _ = std::fs::write(l.dir().join(REC_FILE), serde_json::json!({ "on": on, "track": id }).to_string());
     }
 }
 
 fn new_log_track() -> library::Track {
-    library::Track {
-        id: String::new(),
-        name: chrono::Local::now()
-            .format("Log %d %b %Y %H:%M")
-            .to_string(),
-        source: "log".into(),
-        ..Default::default()
-    }
+    library::Track { id: String::new(), name: chrono::Local::now().format("Log %d %b %Y %H:%M").to_string(), source: "log".into(), ..Default::default() }
 }
 
 /// Start recording: carry on with `resume` if given (and it exists), else a new track.
@@ -2162,10 +1883,7 @@ fn rec_begin(resume: Option<&str>) -> Result<library::TrackSummary, String> {
     let mut t = match resume.and_then(|id| l.track(id).ok()) {
         Some(t) => t,
         // a new track is written with its first fix, so a session without Signal K leaves no empty track
-        None => library::Track {
-            id: l.new_track_id(),
-            ..new_log_track()
-        },
+        None => library::Track { id: l.new_track_id(), ..new_log_track() },
     };
     t.source = "log".into();
     let sum = t.summary();
@@ -2202,11 +1920,7 @@ fn rec_resume() {
         return;
     }
     let id = v["track"].as_str().unwrap_or("").to_string();
-    let recent = lib()
-        .ok()
-        .and_then(|l| l.track(&id).ok())
-        .and_then(|t| t.stats.end)
-        .is_some_and(|e| chrono_now() - e < 2 * 3600);
+    let recent = lib().ok().and_then(|l| l.track(&id).ok()).and_then(|t| t.stats.end).is_some_and(|e| chrono_now() - e < 2 * 3600);
     if let Err(e) = rec_begin(recent.then_some(id.as_str())) {
         eprintln!("recorder: {e}");
     }
@@ -2225,30 +1939,15 @@ pub(crate) fn rec_vessel(app: &tauri::AppHandle, v: &signalk::VesselState) {
         return;
     };
     let now = chrono_now();
-    let t = v
-        .datetime
-        .as_deref()
-        .and_then(library::tracks::parse_iso)
-        .unwrap_or(now);
+    let t = v.datetime.as_deref().and_then(library::tracks::parse_iso).unwrap_or(now);
     let (kept, due, stats) = {
         let mut g = REC.lock().unwrap();
         let Some(r) = g.as_mut() else { return };
-        let kept = r.push(library::TrackPoint {
-            t: Some(t),
-            lat,
-            lon,
-            sog: v.sog,
-            cog: v.cog,
-            depth: v.depth_surface.or(v.depth),
-            temp: v.water_temp,
-        });
+        let kept = r.push(library::TrackPoint { t: Some(t), lat, lon, sog: v.sog, cog: v.cog, depth: v.depth_surface.or(v.depth), temp: v.water_temp });
         (kept, r.due_save(now, 30), r.track.stats.clone())
     };
     if kept {
-        let _ = app.emit(
-            "rec-point",
-            serde_json::json!({ "lon": lon, "lat": lat, "t": t, "stats": stats }),
-        );
+        let _ = app.emit("rec-point", serde_json::json!({ "lon": lon, "lat": lat, "t": t, "stats": stats }));
     }
     if due {
         std::thread::spawn(rec_flush);
@@ -2285,12 +1984,7 @@ fn rec_start(fresh: bool) -> Result<serde_json::Value, String> {
 #[tauri::command]
 fn rec_stop() -> serde_json::Value {
     rec_flush();
-    let id = REC
-        .lock()
-        .unwrap()
-        .take()
-        .map(|r| r.track.id)
-        .unwrap_or_default();
+    let id = REC.lock().unwrap().take().map(|r| r.track.id).unwrap_or_default();
     rec_settings_save(false, &id);
     rec_status()
 }
@@ -2314,31 +2008,15 @@ fn track_get(id: String) -> Result<serde_json::Value, String> {
             }
         }
     };
-    let segs: Vec<Vec<serde_json::Value>> = t
-        .segments
-        .iter()
-        .map(|s| {
-            s.iter()
-                .map(|p| serde_json::json!([p.lon, p.lat, p.t, p.sog, p.cog, p.depth, p.temp]))
-                .collect()
-        })
-        .collect();
-    Ok(
-        serde_json::json!({ "id": t.id, "name": t.name, "colour": t.colour, "stats": t.stats, "segments": segs }),
-    )
+    let segs: Vec<Vec<serde_json::Value>> =
+        t.segments.iter().map(|s| s.iter().map(|p| serde_json::json!([p.lon, p.lat, p.t, p.sog, p.cog, p.depth, p.temp])).collect()).collect();
+    Ok(serde_json::json!({ "id": t.id, "name": t.name, "colour": t.colour, "stats": t.stats, "segments": segs }))
 }
 
 #[tauri::command]
-fn track_update(
-    id: String,
-    name: String,
-    notes: String,
-    colour: String,
-) -> Result<library::TrackSummary, String> {
+fn track_update(id: String, name: String, notes: String, colour: String) -> Result<library::TrackSummary, String> {
     rec_flush();
-    let s = lib()?
-        .update_track_info(&id, &name, &notes, &colour)
-        .map_err(es)?;
+    let s = lib()?.update_track_info(&id, &name, &notes, &colour).map_err(es)?;
     if let Some(r) = REC.lock().unwrap().as_mut().filter(|r| r.track.id == id) {
         r.track.name = s.name.clone();
         r.track.notes = s.notes.clone();
@@ -2349,12 +2027,7 @@ fn track_update(
 
 #[tauri::command]
 fn track_delete(id: String) -> Result<(), String> {
-    if REC
-        .lock()
-        .unwrap()
-        .as_ref()
-        .is_some_and(|r| r.track.id == id)
-    {
+    if REC.lock().unwrap().as_ref().is_some_and(|r| r.track.id == id) {
         return Err("This track is being recorded: stop recording first.".into());
     }
     lib()?.delete_track(&id).map_err(es)
@@ -2380,10 +2053,7 @@ fn track_export(id: String) -> Result<String, String> {
     rec_flush();
     let l = lib()?;
     let t = l.track(&id).map_err(es)?;
-    Ok(l.write_export(&t.name, &t.to_gpx())
-        .map_err(es)?
-        .to_string_lossy()
-        .into_owned())
+    Ok(l.write_export(&t.name, &t.to_gpx()).map_err(es)?.to_string_lossy().into_owned())
 }
 
 // ---------- tides (LINZ) ----------
@@ -2402,19 +2072,13 @@ fn tide_dir(app: &tauri::AppHandle) -> PathBuf {
     if dev.is_dir() {
         return dev.join("tides");
     }
-    app.path()
-        .app_data_dir()
-        .map(|p| p.join("tides"))
-        .unwrap_or_else(|_| PathBuf::from("tides"))
+    app.path().app_data_dir().map(|p| p.join("tides")).unwrap_or_else(|_| PathBuf::from("tides"))
 }
 
 fn tide_db() -> Arc<tides::TideDb> {
     let mut g = TIDES.lock().unwrap();
     if g.is_none() {
-        let dir = TIDE_DIR
-            .get()
-            .cloned()
-            .unwrap_or_else(|| PathBuf::from("tides"));
+        let dir = TIDE_DIR.get().cloned().unwrap_or_else(|| PathBuf::from("tides"));
         *g = Some(Arc::new(tides::TideDb::open(&dir)));
     }
     g.as_ref().unwrap().clone()
@@ -2464,12 +2128,7 @@ fn tides_curve(id: String, t0: i64, t1: i64) -> Result<serde_json::Value, String
     let lv = s.levels;
     let method = match &s.kind {
         tides::Kind::Daily => "LINZ daily table".to_string(),
-        tides::Kind::Secondary {
-            reference,
-            hw_min,
-            lw_min,
-            ratio,
-        } => format!(
+        tides::Kind::Secondary { reference, hw_min, lw_min, ratio } => format!(
             "Secondary to {reference}: HW {:+} min, LW {:+} min{}",
             hw_min,
             lw_min,
@@ -2560,18 +2219,12 @@ async fn tidal_streams(bbox: [f64; 4], t: i64) -> Result<serde_json::Value, Stri
 
 /// Download the LINZ secondary ports file and daily tables for `years` (emits "tides-progress").
 #[tauri::command]
-async fn tides_download(
-    app: tauri::AppHandle,
-    years: Vec<i32>,
-) -> Result<serde_json::Value, String> {
+async fn tides_download(app: tauri::AppHandle, years: Vec<i32>) -> Result<serde_json::Value, String> {
     TIDE_CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
     let dir = TIDE_DIR.get().cloned().ok_or("no tide folder")?;
     let n = tauri::async_runtime::spawn_blocking(move || {
         tides::download(&dir, &years, &TIDE_CANCEL, |p| {
-            let _ = app.emit(
-                "tides-progress",
-                serde_json::json!({ "stage": p.stage, "done": p.done, "total": p.total }),
-            );
+            let _ = app.emit("tides-progress", serde_json::json!({ "stage": p.stage, "done": p.done, "total": p.total }));
         })
     })
     .await
@@ -2601,24 +2254,15 @@ fn tracking_dir(app: &tauri::AppHandle) -> PathBuf {
     if dev.is_dir() {
         return dev.join("tracking");
     }
-    app.path()
-        .app_data_dir()
-        .map(|p| p.join("tracking"))
-        .unwrap_or_else(|_| PathBuf::from("tracking"))
+    app.path().app_data_dir().map(|p| p.join("tracking")).unwrap_or_else(|_| PathBuf::from("tracking"))
 }
 
-fn with_race<T>(
-    key: &str,
-    f: impl FnOnce(&mut tracking::Race) -> Result<T, String>,
-) -> Result<T, String> {
+fn with_race<T>(key: &str, f: impl FnOnce(&mut tracking::Race) -> Result<T, String>) -> Result<T, String> {
     let key = tracking::clean_key(key).map_err(|e| e.to_string())?;
     let mut races = RACES.lock().unwrap();
     if !races.contains_key(&key) {
         let dir = TRACKING_DIR.get().ok_or("no tracking folder")?;
-        races.insert(
-            key.clone(),
-            tracking::Race::open(dir, &key).map_err(|e| e.to_string())?,
-        );
+        races.insert(key.clone(), tracking::Race::open(dir, &key).map_err(|e| e.to_string())?);
     }
     f(races.get_mut(&key).unwrap())
 }
@@ -2643,9 +2287,7 @@ async fn yb_open(race: String) -> Result<serde_json::Value, String> {
                 Err(e) => error = Some(if setup.is_some() { format!("Using the saved race setup ({e})") } else { e.to_string() }),
             }
         }
-        with_race(&key, |r| {
-            Ok(serde_json::json!({ "key": key, "setup": setup, "fixes": r.fixes, "meta": r.meta, "error": error }))
-        })
+        with_race(&key, |r| Ok(serde_json::json!({ "key": key, "setup": setup, "fixes": r.fixes, "meta": r.meta, "error": error })))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -2706,23 +2348,11 @@ fn yb_races() -> Vec<serde_json::Value> {
         .filter(|e| e.path().is_dir())
         .map(|e| {
             let key = e.file_name().to_string_lossy().into_owned();
-            let m = std::fs::metadata(e.path().join("fixes.json"))
-                .or_else(|_| std::fs::metadata(e.path()));
-            let t = m
-                .ok()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            let title = std::fs::read_to_string(e.path().join("setup.json"))
-                .ok()
-                .and_then(|s| tracking::parse_setup(&s).ok())
-                .map(|s| s.title)
-                .unwrap_or_default();
-            (
-                t,
-                serde_json::json!({ "key": key, "title": title, "modified": t }),
-            )
+            let m = std::fs::metadata(e.path().join("fixes.json")).or_else(|_| std::fs::metadata(e.path()));
+            let t = m.ok().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
+            let title =
+                std::fs::read_to_string(e.path().join("setup.json")).ok().and_then(|s| tracking::parse_setup(&s).ok()).map(|s| s.title).unwrap_or_default();
+            (t, serde_json::json!({ "key": key, "title": title, "modified": t }))
         })
         .collect();
     v.sort_by_key(|x| std::cmp::Reverse(x.0));
@@ -2739,10 +2369,7 @@ fn chart_dir(app: &tauri::AppHandle) -> PathBuf {
     if dev.is_dir() {
         return dev;
     }
-    app.path()
-        .app_data_dir()
-        .map(|p| p.join("charts"))
-        .unwrap_or_else(|_| PathBuf::from("charts"))
+    app.path().app_data_dir().map(|p| p.join("charts")).unwrap_or_else(|_| PathBuf::from("charts"))
 }
 
 /// World coastline folder (GSHHG zip or GSHHS_shp): `RACENAV_COAST_DIR`, else
@@ -2755,10 +2382,7 @@ fn coast_dir(app: &tauri::AppHandle) -> PathBuf {
     if dev.is_dir() {
         return dev.join("coastline");
     }
-    app.path()
-        .app_data_dir()
-        .map(|p| p.join("coastline"))
-        .unwrap_or_else(|_| PathBuf::from("coastline"))
+    app.path().app_data_dir().map(|p| p.join("coastline")).unwrap_or_else(|_| PathBuf::from("coastline"))
 }
 
 /// Downloaded ETOPO areas: `RACENAV_BATHY_DIR`, else `C:\dev\racenav-data\bathy` when
@@ -2771,10 +2395,7 @@ fn bathy_dir(app: &tauri::AppHandle) -> PathBuf {
     if dev.is_dir() {
         return dev.join("bathy");
     }
-    app.path()
-        .app_data_dir()
-        .map(|p| p.join("bathy"))
-        .unwrap_or_else(|_| PathBuf::from("bathy"))
+    app.path().app_data_dir().map(|p| p.join("bathy")).unwrap_or_else(|_| PathBuf::from("bathy"))
 }
 
 /// Maritime boundaries and fishing rules (downloads in `boundaries` and `mpi`):
@@ -2788,10 +2409,7 @@ fn marine_dir(app: &tauri::AppHandle) -> PathBuf {
     if dev.is_dir() {
         return dev.join("marine");
     }
-    app.path()
-        .app_data_dir()
-        .map(|p| p.join("marine"))
-        .unwrap_or_else(|_| PathBuf::from("marine"))
+    app.path().app_data_dir().map(|p| p.join("marine")).unwrap_or_else(|_| PathBuf::from("marine"))
 }
 
 /// The folder holding the bundled world depths (`world_depth.gpkg`).
@@ -2801,10 +2419,7 @@ fn world_depth_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
         app.path().resource_dir().ok(),
         Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources")),
     ];
-    candidates
-        .into_iter()
-        .flatten()
-        .find(|d| d.join("world_depth.gpkg").is_file())
+    candidates.into_iter().flatten().find(|d| d.join("world_depth.gpkg").is_file())
 }
 
 /// (Re)open the chart store in the background: LINZ charts, GSHHG coastline,
@@ -2824,10 +2439,7 @@ fn open_charts_started(handle: tauri::AppHandle) {
     // S-57 ENC cells (and the IHO S-63/S-64 test data): enc and s63 in the data folders
     let enc_dirs = s63_cmd::enc_dirs(&handle);
     // the first run with a GSHHG download builds the world coastline file (a minute or two)
-    let _ = handle.emit(
-        "chart-status",
-        serde_json::json!({ "detail": "preparing charts: finding chart files" }),
-    );
+    let _ = handle.emit("chart-status", serde_json::json!({ "detail": "preparing charts: finding chart files" }));
     log_chart_tile("charts: opening started");
     let sets_off = chart_sets_off(&handle);
     if !sets_off.is_empty() {
@@ -2839,20 +2451,13 @@ fn open_charts_started(handle: tauri::AppHandle) {
         let t_enc = std::time::Instant::now();
         chart::enc::clear_notes();
         let mut prepared_enc_gpkgs = Vec::new();
-        for d in enc_dirs
-            .iter()
-            .filter(|d| d.ends_with("enc") || d.ends_with("s63"))
-        {
+        for d in enc_dirs.iter().filter(|d| d.ends_with("enc") || d.ends_with("s63")) {
             let h = handle.clone();
             let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
             prepared_enc_gpkgs.extend(chart::enc::ensure_gpkgs_sets(d, &sets_off, &mut |done, todo, name| {
                 if last.elapsed().as_millis() >= 500 || done == todo || todo == 0 {
                     last = std::time::Instant::now();
-                    let detail = if todo == 0 {
-                        format!("converting ENC cells: {name}")
-                    } else {
-                        format!("converting ENC cells: {done} of {todo} {name}")
-                    };
+                    let detail = if todo == 0 { format!("converting ENC cells: {name}") } else { format!("converting ENC cells: {done} of {todo} {name}") };
                     let _ = h.emit("chart-status", serde_json::json!({ "detail": detail }));
                 }
             }));
@@ -2862,26 +2467,20 @@ fn open_charts_started(handle: tauri::AppHandle) {
     });
 }
 
-fn open_store(
-    handle: tauri::AppHandle,
-    dirs: Vec<PathBuf>,
-    dir: PathBuf,
-    prepared_enc_gpkgs: Vec<PathBuf>,
-) {
+fn open_store(handle: tauri::AppHandle, dirs: Vec<PathBuf>, dir: PathBuf, prepared_enc_gpkgs: Vec<PathBuf>) {
     let h = handle.clone();
     let t0 = std::time::Instant::now();
-    let opened =
-        chart::ChartStore::open_dirs_with_extra_gpkgs(&dirs, &prepared_enc_gpkgs, &mut |k, n| {
-            // only worth saying when there are a lot (thousands of ENC cells)
-            if t0.elapsed().as_secs() >= 1 {
-                let _ = h.emit(
-                    "chart-status",
-                    serde_json::json!({
-                        "detail": format!("preparing charts: opening {k} of {n} files")
-                    }),
-                );
-            }
-        });
+    let opened = chart::ChartStore::open_dirs_with_extra_gpkgs(&dirs, &prepared_enc_gpkgs, &mut |k, n| {
+        // only worth saying when there are a lot (thousands of ENC cells)
+        if t0.elapsed().as_secs() >= 1 {
+            let _ = h.emit(
+                "chart-status",
+                serde_json::json!({
+                    "detail": format!("preparing charts: opening {k} of {n} files")
+                }),
+            );
+        }
+    });
     match opened {
         Ok(store) => {
             let t0 = std::time::Instant::now();
@@ -2899,26 +2498,17 @@ fn open_store(
                     );
                 }
             });
-            log_chart_tile(&format!(
-                "charts: render indexes prepared in {:.1} s",
-                t0.elapsed().as_secs_f64()
-            ));
+            log_chart_tile(&format!("charts: render indexes prepared in {:.1} s", t0.elapsed().as_secs_f64()));
             let n = store.tables.len();
             let world = store.has_world_land();
             *CHARTS.write().unwrap() = Some(Arc::new(store));
             CHARTS_READY.store(true, std::sync::atomic::Ordering::Release);
-            let _ = handle.emit(
-                "chart-ready",
-                serde_json::json!({ "ready": true, "tables": n, "dir": dir, "world_land": world }),
-            );
+            let _ = handle.emit("chart-ready", serde_json::json!({ "ready": true, "tables": n, "dir": dir, "world_land": world }));
         }
         Err(e) => {
             *CHART_ERROR.lock().unwrap() = Some(e.to_string());
             CHARTS_READY.store(true, std::sync::atomic::Ordering::Release);
-            let _ = handle.emit(
-                "chart-ready",
-                serde_json::json!({ "ready": true, "tables": 0, "dir": dir, "error": e.to_string() }),
-            );
+            let _ = handle.emit("chart-ready", serde_json::json!({ "ready": true, "tables": 0, "dir": dir, "error": e.to_string() }));
         }
     }
 }
@@ -2995,22 +2585,11 @@ fn data_status(app: tauri::AppHandle) -> serde_json::Value {
     let store = charts();
     let linz = store
         .as_ref()
-        .map(|s| {
-            s.tables
-                .iter()
-                .filter(|t| {
-                    matches!(
-                        t.kind,
-                        chart::Kind::DepthArea | chart::Kind::Land | chart::Kind::Contour
-                    )
-                })
-                .count()
-        })
+        .map(|s| s.tables.iter().filter(|t| matches!(t.kind, chart::Kind::DepthArea | chart::Kind::Land | chart::Kind::Contour)).count())
         .unwrap_or(0);
     let mdir = marine_dir(&app);
-    let boundary_zips = std::fs::read_dir(mdir.join("boundaries"))
-        .map(|rd| rd.flatten().filter(|e| e.path().extension().is_some_and(|x| x == "zip")).count())
-        .unwrap_or(0);
+    let boundary_zips =
+        std::fs::read_dir(mdir.join("boundaries")).map(|rd| rd.flatten().filter(|e| e.path().extension().is_some_and(|x| x == "zip")).count()).unwrap_or(0);
     let mut mpi = Vec::new();
     if let Ok(rd) = std::fs::read_dir(mdir.join("mpi")) {
         for e in rd.flatten() {
@@ -3091,7 +2670,10 @@ async fn data_boundaries(app: tauri::AppHandle) -> Result<serde_json::Value, Str
     let h = app.clone();
     let r = tauri::async_runtime::spawn_blocking(move || {
         let progress = |done: u64, total: u64| {
-            let _ = h.emit("data-progress", serde_json::json!({ "stage": format!("Maritime boundaries (LINZ): file {} of {total}", (done + 1).min(total)), "done": 0, "total": 0 }));
+            let _ = h.emit(
+                "data-progress",
+                serde_json::json!({ "stage": format!("Maritime boundaries (LINZ): file {} of {total}", (done + 1).min(total)), "done": 0, "total": 0 }),
+            );
         };
         gribdl::marine::boundaries(&dir, &progress, &DATA_CANCEL).map_err(|e| e.to_string())
     })
@@ -3164,12 +2746,16 @@ async fn hires_download(app: tauri::AppHandle, area: [f64; 4]) -> Result<usize, 
     let r = tauri::async_runtime::spawn_blocking(move || {
         let names = chart::hires::file_names(area);
         let av = gribdl::coastal::available(&dir).map_err(|e| e.to_string())?;
-        let want: Vec<(String, String)> = names.into_iter().filter_map(|n| av.get(&n).map(|p| (n, p.clone()))).filter(|(n, _)| !dir.join(format!("{n}.tiff")).exists()).collect();
+        let want: Vec<(String, String)> =
+            names.into_iter().filter_map(|n| av.get(&n).map(|p| (n, p.clone()))).filter(|(n, _)| !dir.join(format!("{n}.tiff")).exists()).collect();
         if want.len() > 60 {
             return Err(format!("{} tiles: zoom in to a smaller area (60 at a time)", want.len()));
         }
         let progress = |i: usize, n: usize, bytes: u64| {
-            let _ = h.emit("data-progress", serde_json::json!({ "stage": format!("High-resolution depths (LINZ): tile {} of {n}", (i + 1).min(n)), "done": bytes, "total": 0 }));
+            let _ = h.emit(
+                "data-progress",
+                serde_json::json!({ "stage": format!("High-resolution depths (LINZ): tile {} of {n}", (i + 1).min(n)), "done": bytes, "total": 0 }),
+            );
         };
         gribdl::coastal::download(&want, &dir, &progress, &DATA_CANCEL).map_err(|e| e.to_string())
     })
@@ -3262,9 +2848,7 @@ async fn data_etopo(app: tauri::AppHandle, area: [f64; 4], arcsec: u32) -> Resul
 fn data_etopo_delete(app: tauri::AppHandle, file: String) -> Result<(), String> {
     let p = PathBuf::from(&file);
     let dir = bathy_dir(&app);
-    if p.parent().map(|d| d.canonicalize().ok()) != Some(dir.canonicalize().ok())
-        || p.extension().is_none_or(|x| x != "gpkg")
-    {
+    if p.parent().map(|d| d.canonicalize().ok()) != Some(dir.canonicalize().ok()) || p.extension().is_none_or(|x| x != "gpkg") {
         return Err("not a downloaded depth area".into());
     }
     // the store has the file open: reopen without it first, then delete
@@ -3353,7 +2937,9 @@ async fn system_info(app: tauri::AppHandle) -> serde_json::Value {
     .await
     .unwrap_or_default();
     let hw: serde_json::Value = serde_json::from_str(&hw).unwrap_or(serde_json::Value::Null);
-    let folders = serde_json::Value::Array(data_folders(&app).into_iter().map(|(name, path, note)| serde_json::json!({ "name": name, "path": path, "note": note })).collect());
+    let folders = serde_json::Value::Array(
+        data_folders(&app).into_iter().map(|(name, path, note)| serde_json::json!({ "name": name, "path": path, "note": note })).collect(),
+    );
     serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
         "arch": std::env::consts::ARCH,
@@ -3395,11 +2981,7 @@ fn chart_feature(t: usize, fid: i64) -> Option<serde_json::Value> {
 /// for instruments now, radar or sounder views later. Returns the new window's label.
 /// Async: on Windows a window made from a synchronous command deadlocks and stays blank.
 #[tauri::command]
-async fn monitor_open(
-    app: tauri::AppHandle,
-    view: String,
-    label: Option<String>,
-) -> Result<String, String> {
+async fn monitor_open(app: tauri::AppHandle, view: String, label: Option<String>) -> Result<String, String> {
     if !view.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') || view.is_empty() {
         return Err("unknown view".into());
     }
@@ -3407,23 +2989,15 @@ async fn monitor_open(
     let wanted = label
         .and_then(|l| l.strip_prefix("monitor-").and_then(|n| n.parse::<u32>().ok()))
         .filter(|n| *n > 0 && app.get_webview_window(&format!("monitor-{n}")).is_none());
-    let n = wanted.unwrap_or_else(|| {
-        (1u32..)
-            .find(|n| app.get_webview_window(&format!("monitor-{n}")).is_none())
-            .unwrap_or(1)
-    });
+    let n = wanted.unwrap_or_else(|| (1u32..).find(|n| app.get_webview_window(&format!("monitor-{n}")).is_none()).unwrap_or(1));
     let label = format!("monitor-{n}");
-    tauri::WebviewWindowBuilder::new(
-        &app,
-        &label,
-        tauri::WebviewUrl::App(format!("index.html?view={view}").into()),
-    )
-    .title(format!("TweedPlot monitor {n}"))
-    .inner_size(1024.0, 640.0)
-    .min_inner_size(320.0, 240.0)
-    .build()
-    .map(|_| label)
-    .map_err(|e| e.to_string())
+    tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App(format!("index.html?view={view}").into()))
+        .title(format!("TweedPlot monitor {n}"))
+        .inner_size(1024.0, 640.0)
+        .min_inner_size(320.0, 240.0)
+        .build()
+        .map(|_| label)
+        .map_err(|e| e.to_string())
 }
 
 /// The line-setting window (setter.html): the snood and float beeper, always on top, movable
@@ -3449,11 +3023,7 @@ async fn setter_open(app: tauri::AppHandle) -> Result<(), String> {
 /// The monitor windows that are open, by label, in number order.
 #[tauri::command]
 fn monitor_list(app: tauri::AppHandle) -> Vec<String> {
-    let mut labels: Vec<String> = app
-        .webview_windows()
-        .into_keys()
-        .filter(|l| l.starts_with("monitor-"))
-        .collect();
+    let mut labels: Vec<String> = app.webview_windows().into_keys().filter(|l| l.starts_with("monitor-")).collect();
     labels.sort_by_key(|l| l[8..].parse::<u32>().unwrap_or(u32::MAX));
     labels
 }
@@ -3461,10 +3031,7 @@ fn monitor_list(app: tauri::AppHandle) -> Vec<String> {
 /// Bring a monitor window forward.
 #[tauri::command]
 async fn monitor_focus(app: tauri::AppHandle, label: String) -> Result<(), String> {
-    let w = app
-        .get_webview_window(&label)
-        .filter(|_| label.starts_with("monitor-"))
-        .ok_or("no such window")?;
+    let w = app.get_webview_window(&label).filter(|_| label.starts_with("monitor-")).ok_or("no such window")?;
     let _ = w.unminimize();
     w.set_focus().map_err(|e| e.to_string())
 }
@@ -3472,19 +3039,14 @@ async fn monitor_focus(app: tauri::AppHandle, label: String) -> Result<(), Strin
 /// Close a monitor window.
 #[tauri::command]
 async fn monitor_close(app: tauri::AppHandle, label: String) -> Result<(), String> {
-    let w = app
-        .get_webview_window(&label)
-        .filter(|_| label.starts_with("monitor-"))
-        .ok_or("no such window")?;
+    let w = app.get_webview_window(&label).filter(|_| label.starts_with("monitor-")).ok_or("no such window")?;
     w.close().map_err(|e| e.to_string())
 }
 
 /// Charted vertical clearances (bridges, overhead cables) within `radius_m` of a point, nearest first.
 #[tauri::command]
 fn chart_clearances(lat: f64, lon: f64, radius_m: f64) -> Vec<chart::Clearance> {
-    charts()
-        .map(|s| s.clearances([lon, lat], radius_m.min(20_000.0)))
-        .unwrap_or_default()
+    charts().map(|s| s.clearances([lon, lat], radius_m.min(20_000.0))).unwrap_or_default()
 }
 
 /// How far ahead (metres) along `cog` (°T), within `dist_m`, the water first gets
@@ -3566,38 +3128,22 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
             .body(png.unwrap_or_else(|| clear_png().to_vec()))
             .expect("valid response");
     }
-    let parts: Vec<&str> = path
-        .trim_start_matches('/')
-        .trim_end_matches(".pbf")
-        .split('/')
-        .collect();
+    let parts: Vec<&str> = path.trim_start_matches('/').trim_end_matches(".pbf").split('/').collect();
     let parsed = match parts.as_slice() {
-        [z, x, y] => z
-            .parse::<u8>()
-            .ok()
-            .zip(x.parse::<u32>().ok())
-            .zip(y.parse::<u32>().ok()),
+        [z, x, y] => z.parse::<u8>().ok().zip(x.parse::<u32>().ok()).zip(y.parse::<u32>().ok()),
         _ => None,
     };
     // never cached by the WebView: a tile drawn by an older build or from older data
     // would otherwise stay on screen (the chart store keeps its own cache in memory)
-    let builder = Response::builder()
-        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-        .header(header::CACHE_CONTROL, "no-store");
+    let builder = Response::builder().header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*").header(header::CACHE_CONTROL, "no-store");
     match parsed {
         Some(((z, x), y)) => match charts() {
             Some(store) => match store.try_tile(z, x, y) {
-                Some(t) => builder
-                    .header(header::CONTENT_TYPE, "application/x-protobuf")
-                    .body(t.as_ref().clone()),
+                Some(t) => builder.header(header::CONTENT_TYPE, "application/x-protobuf").body(t.as_ref().clone()),
                 // drawing it failed (reported on the terminal): the chart asks again later
-                None => builder
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Vec::new()),
+                None => builder.status(StatusCode::INTERNAL_SERVER_ERROR).body(Vec::new()),
             },
-            None => builder
-                .status(StatusCode::SERVICE_UNAVAILABLE)
-                .body(Vec::new()),
+            None => builder.status(StatusCode::SERVICE_UNAVAILABLE).body(Vec::new()),
         },
         None => builder.status(StatusCode::NOT_FOUND).body(Vec::new()),
     }
@@ -3625,19 +3171,9 @@ fn log_chart_tile(message: &str) {
     let Some(path) = TILE_LOG_PATH.get() else {
         return;
     };
-    let _guard = TILE_LOG_LOCK
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _guard = TILE_LOG_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|e| e.into_inner());
     let reset = std::fs::metadata(path).is_ok_and(|m| m.len() > 1_000_000);
-    let file = if reset {
-        std::fs::File::create(path)
-    } else {
-        std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)
-    };
+    let file = if reset { std::fs::File::create(path) } else { std::fs::OpenOptions::new().create(true).append(true).open(path) };
     let mut file = match file {
         Ok(file) => file,
         Err(e) => {
@@ -3729,8 +3265,7 @@ fn queue_tile(path: String, responder: tauri::UriSchemeResponder) {
         return;
     }
     jobs.queued.push_back(path.clone());
-    jobs.queued_at
-        .insert(path.clone(), std::time::Instant::now());
+    jobs.queued_at.insert(path.clone(), std::time::Instant::now());
     jobs.responders.insert(path, vec![responder]);
     drop(jobs);
     q.1.notify_one();
@@ -3754,9 +3289,9 @@ pub fn run() {
             chart_clearances,
             chart_shallow_ahead,
             monitor_open,
-        monitor_list,
-        monitor_focus,
-        monitor_close,
+            monitor_list,
+            monitor_focus,
+            monitor_close,
             data_boundaries,
             data_mpi,
             hires_plan,

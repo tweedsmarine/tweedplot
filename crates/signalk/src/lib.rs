@@ -110,8 +110,7 @@ impl VesselState {
                 continue;
             };
             for v in values {
-                let (Some(path), Some(val)) = (v.get("path").and_then(Value::as_str), v.get("value"))
-                else {
+                let (Some(path), Some(val)) = (v.get("path").and_then(Value::as_str), v.get("value")) else {
                     continue;
                 };
                 self.apply_value(path, val);
@@ -130,21 +129,14 @@ impl VesselState {
         let num = || val.as_f64();
         match path {
             "navigation.position" => {
-                if let (Some(lat), Some(lon)) = (
-                    val.get("latitude").and_then(Value::as_f64),
-                    val.get("longitude").and_then(Value::as_f64),
-                ) {
+                if let (Some(lat), Some(lon)) = (val.get("latitude").and_then(Value::as_f64), val.get("longitude").and_then(Value::as_f64)) {
                     self.lat = Some(lat);
                     self.lon = Some(lon);
                 }
             }
-            "navigation.courseOverGroundTrue" => {
-                self.cog = num().map(|r| nav_core::norm360(r.to_degrees()))
-            }
+            "navigation.courseOverGroundTrue" => self.cog = num().map(|r| nav_core::norm360(r.to_degrees())),
             "navigation.speedOverGround" => self.sog = num().map(|ms| ms * MS_TO_KN),
-            "navigation.headingTrue" => {
-                self.heading = num().map(|r| nav_core::norm360(r.to_degrees()))
-            }
+            "navigation.headingTrue" => self.heading = num().map(|r| nav_core::norm360(r.to_degrees())),
             "navigation.headingMagnetic" => self.heading_mag = num().map(|r| nav_core::norm360(r.to_degrees())),
             "navigation.magneticVariation" => self.variation = num().map(f64::to_degrees),
             "navigation.speedThroughWater" => self.stw = num().map(|ms| ms * MS_TO_KN),
@@ -235,11 +227,7 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Self {
-        Self {
-            url: DEFAULT_URL.to_string(),
-            log_dir: None,
-            min_interval: Duration::from_millis(250),
-        }
+        Self { url: DEFAULT_URL.to_string(), log_dir: None, min_interval: Duration::from_millis(250) }
     }
 }
 

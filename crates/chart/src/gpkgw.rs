@@ -25,12 +25,7 @@ pub fn create(path: &std::path::Path) -> Result<Connection, ChartError> {
 }
 
 /// A feature table `table` (fid, geom, then `cols` as "name TYPE") with its R-tree.
-pub fn feature_table(
-    db: &Connection,
-    table: &str,
-    geom_type: &str,
-    cols: &[&str],
-) -> Result<(), ChartError> {
+pub fn feature_table(db: &Connection, table: &str, geom_type: &str, cols: &[&str]) -> Result<(), ChartError> {
     let extra: String = cols.iter().map(|c| format!(", {c}")).collect();
     db.execute_batch(&format!(
         "CREATE TABLE \"{table}\" (fid INTEGER PRIMARY KEY, geom BLOB{extra});
@@ -45,12 +40,7 @@ pub fn feature_table(
 pub fn bounds<'a>(pts: impl IntoIterator<Item = &'a Pt>) -> [f64; 4] {
     let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
     for p in pts {
-        b = [
-            b[0].min(p[0]),
-            b[1].min(p[1]),
-            b[2].max(p[0]),
-            b[3].max(p[1]),
-        ];
+        b = [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])];
     }
     b
 }
@@ -112,19 +102,10 @@ mod tests {
 
     #[test]
     fn blobs_read_back() {
-        let rings = vec![
-            vec![[0.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0], [0.0, 0.0]],
-            vec![[1.0, 1.0], [1.0, 2.0], [2.0, 2.0], [1.0, 1.0]],
-        ];
-        assert_eq!(
-            crate::geom::parse_gpkg(&polygon(&rings)),
-            Some(crate::geom::Geom::Polygons(vec![rings]))
-        );
+        let rings = vec![vec![[0.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0], [0.0, 0.0]], vec![[1.0, 1.0], [1.0, 2.0], [2.0, 2.0], [1.0, 1.0]]];
+        assert_eq!(crate::geom::parse_gpkg(&polygon(&rings)), Some(crate::geom::Geom::Polygons(vec![rings])));
         let l = vec![[1.0, 2.0], [3.0, 4.0]];
-        assert_eq!(
-            crate::geom::parse_gpkg(&line(&l)),
-            Some(crate::geom::Geom::Lines(vec![l]))
-        );
+        assert_eq!(crate::geom::parse_gpkg(&line(&l)), Some(crate::geom::Geom::Lines(vec![l])));
         let long: Vec<Pt> = (0..10).map(|i| [i as f64, 0.0]).collect();
         let c = chunks(&long, 4);
         assert_eq!(c.iter().map(|c| c.len()).collect::<Vec<_>>(), vec![5, 5, 2]);

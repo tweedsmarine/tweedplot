@@ -308,7 +308,14 @@ fn trace(i0: usize, i1: usize, j0: usize, j1: usize, inside: &dyn Fn(usize, usiz
             rings.push(kept.into_iter().map(|(i, j)| (i + i0 as i64, j + j0 as i64)).collect());
         }
     }
-    let area2 = |r: &[Corner]| -> i64 { (0..r.len()).map(|k| { let (a, b) = (r[k], r[(k + 1) % r.len()]); a.0 * b.1 - b.0 * a.1 }).sum() };
+    let area2 = |r: &[Corner]| -> i64 {
+        (0..r.len())
+            .map(|k| {
+                let (a, b) = (r[k], r[(k + 1) % r.len()]);
+                a.0 * b.1 - b.0 * a.1
+            })
+            .sum()
+    };
     let contains = |r: &[Corner], x: f64, y: f64| {
         let mut c = false;
         for k in 0..r.len() {
@@ -327,12 +334,7 @@ fn trace(i0: usize, i1: usize, j0: usize, j1: usize, inside: &dyn Fn(usize, usiz
         let (a, b) = (hole[0], hole[1]);
         let (dx, dy) = ((b.0 - a.0).signum() as f64, (b.1 - a.1).signum() as f64);
         let (x, y) = (a.0 as f64 + dx * 0.5 + dy * 0.25, a.1 as f64 + dy * 0.5 - dx * 0.25);
-        let owner = outers
-            .iter()
-            .enumerate()
-            .filter(|(_, (_, r))| contains(r, x, y))
-            .min_by_key(|(_, (ar, _))| *ar)
-            .map(|(k, _)| k);
+        let owner = outers.iter().enumerate().filter(|(_, (_, r))| contains(r, x, y)).min_by_key(|(_, (ar, _))| *ar).map(|(k, _)| k);
         if let Some(k) = owner {
             polys[k].push(hole);
         }
@@ -483,7 +485,13 @@ mod tests {
     }
 
     fn ring_area(r: &[[f64; 2]]) -> f64 {
-        (0..r.len() - 1).map(|k| { let (a, b) = (r[k], r[k + 1]); a[0] * b[1] - b[0] * a[1] }).sum::<f64>() / 2.0
+        (0..r.len() - 1)
+            .map(|k| {
+                let (a, b) = (r[k], r[k + 1]);
+                a[0] * b[1] - b[0] * a[1]
+            })
+            .sum::<f64>()
+            / 2.0
     }
 
     #[test]
@@ -494,9 +502,11 @@ mod tests {
         for (k, &level) in ETOPO_LEVELS.iter().enumerate() {
             let want = (0..g.ny).flat_map(|j| (0..g.nx).map(move |i| (i, j))).filter(|&(i, j)| band(g.depth(i, j)).is_some_and(|x| x >= k)).count();
             // outer rings minus holes = the cells deeper than the level
-            let got: f64 = b.iter().filter(|(_, d)| *d == level).map(|(rings, _)| {
-                ring_area(&rings[0]).abs() - rings[1..].iter().map(|h| ring_area(h).abs()).sum::<f64>()
-            }).sum();
+            let got: f64 = b
+                .iter()
+                .filter(|(_, d)| *d == level)
+                .map(|(rings, _)| ring_area(&rings[0]).abs() - rings[1..].iter().map(|h| ring_area(h).abs()).sum::<f64>())
+                .sum();
             assert!((got / cell - want as f64).abs() < 0.01, "level {level}: {} v {want}", got / cell);
         }
         // the bowl is one round area per level: one polygon each, no slivers

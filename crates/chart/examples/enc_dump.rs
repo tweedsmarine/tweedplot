@@ -7,7 +7,17 @@ fn main() {
     let cells = chart::enc::find_cells(&dir);
     let cf = cells.iter().find(|c| c.base == base).expect("cell");
     let c = chart::enc::cell::Cell::open(&cf.base, &cf.updates).expect("read");
-    println!("{} edition {} update {} usage {} scale 1:{} comf {} somf {} ({} updates)", c.name, c.edition, c.update, c.intu, c.cscl, c.comf, c.somf, cf.updates.len());
+    println!(
+        "{} edition {} update {} usage {} scale 1:{} comf {} somf {} ({} updates)",
+        c.name,
+        c.edition,
+        c.update,
+        c.intu,
+        c.cscl,
+        c.comf,
+        c.somf,
+        cf.updates.len()
+    );
     println!("{} vector records, {} features", c.vectors.len(), c.features.len());
     let mut counts: std::collections::BTreeMap<(String, u8), (usize, usize)> = Default::default();
     for f in c.features.values() {

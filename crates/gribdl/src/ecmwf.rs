@@ -17,8 +17,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
-use std::time::SystemTime;
 use std::time::Duration;
+use std::time::SystemTime;
 
 use crate::{client, Error, Model, Progress, Request, Result, Run};
 
@@ -114,9 +114,7 @@ fn ranges(index: &str, wanted: &[Vec<&str>]) -> Result<Vec<(u64, u64)>> {
     let lines: Vec<serde_json::Value> = index.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
     let mut picks: Vec<(u64, u64)> = Vec::new();
     for alts in wanted {
-        let hit = alts.iter().find_map(|name| {
-            lines.iter().find(|v| v["param"].as_str() == Some(name) && v["levtype"].as_str().is_none_or(|l| l == "sfc"))
-        });
+        let hit = alts.iter().find_map(|name| lines.iter().find(|v| v["param"].as_str() == Some(name) && v["levtype"].as_str().is_none_or(|l| l == "sfc")));
         if let Some(v) = hit {
             let (Some(o), Some(n)) = (v["_offset"].as_u64(), v["_length"].as_u64()) else { continue };
             picks.push((o, n));
@@ -157,9 +155,7 @@ fn get(c: &reqwest::blocking::Client, url: &str, range: Option<(u64, u64)>, canc
 }
 
 fn cache_path(cache_dir: &Path, url: &str, range: (u64, u64)) -> PathBuf {
-    let path = url
-        .split_once("://")
-        .map(|(_, rest)| rest.split_once('/').map_or(rest, |(_, path)| path));
+    let path = url.split_once("://").map(|(_, rest)| rest.split_once('/').map_or(rest, |(_, path)| path));
     let mut hash = 0xcbf29ce484222325u64;
     for byte in path.unwrap_or(url).bytes().chain(range.0.to_le_bytes()).chain(range.1.to_le_bytes()) {
         hash = (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3);
@@ -209,11 +205,7 @@ fn cache_range(cache_dir: &Path, path: &Path, data: &[u8]) -> Result<()> {
         used = used.saturating_sub(len);
     }
 
-    let temp = cache_dir.join(format!(
-        ".{}.{}.part",
-        std::process::id(),
-        CACHE_TEMP_ID.fetch_add(1, Ordering::Relaxed)
-    ));
+    let temp = cache_dir.join(format!(".{}.{}.part", std::process::id(), CACHE_TEMP_ID.fetch_add(1, Ordering::Relaxed)));
     std::fs::write(&temp, data)?;
     std::fs::rename(temp, path)?;
     Ok(())
@@ -349,8 +341,7 @@ pub fn download(req: &Request, run: &Run, dir: &Path, progress: Progress, cancel
     let path = dir.join(crate::file_name(req, run, *hours.last().unwrap()));
     let c = client()?;
     let process = process(req.model);
-    let cache_dir = matches!(req.model, Model::EcmwfIfs0p1 | Model::EcmwfWave0p1)
-        .then(|| dir.join(".ecmwf-cache"));
+    let cache_dir = matches!(req.model, Model::EcmwfIfs0p1 | Model::EcmwfWave0p1).then(|| dir.join(".ecmwf-cache"));
     let source = AtomicUsize::new(0);
     let next = AtomicUsize::new(0);
     let done = AtomicUsize::new(0);
@@ -418,15 +409,39 @@ mod tests {
     #[test]
     fn urls_and_streams() {
         let run = Run { date: "20261017".into(), hh: "00".into(), t: 0 };
-        assert_eq!(url(Model::EcmwfIfs0p25, &run, 24, "index", 0), "https://data.ecmwf.int/forecasts/20261017/00z/ifs/0p25/oper/20261017000000-24h-oper-fc.index");
-        assert_eq!(url(Model::EcmwfWave0p25, &run, 0, "grib2", 1), "https://ecmwf-forecasts.s3.eu-central-1.amazonaws.com/20261017/00z/ifs/0p25/wave/20261017000000-0h-wave-fc.grib2");
+        assert_eq!(
+            url(Model::EcmwfIfs0p25, &run, 24, "index", 0),
+            "https://data.ecmwf.int/forecasts/20261017/00z/ifs/0p25/oper/20261017000000-24h-oper-fc.index"
+        );
+        assert_eq!(
+            url(Model::EcmwfWave0p25, &run, 0, "grib2", 1),
+            "https://ecmwf-forecasts.s3.eu-central-1.amazonaws.com/20261017/00z/ifs/0p25/wave/20261017000000-0h-wave-fc.grib2"
+        );
         let r18 = Run { date: "20261017".into(), hh: "18".into(), t: 0 };
-        assert_eq!(url(Model::EcmwfIfs0p25, &r18, 6, "grib2", 0), "https://data.ecmwf.int/forecasts/20261017/18z/ifs/0p25/oper/20261017180000-6h-oper-fc.grib2");
-        assert_eq!(url(Model::EcmwfWave0p25, &r18, 6, "grib2", 0), "https://data.ecmwf.int/forecasts/20261017/18z/ifs/0p25/wave/20261017180000-6h-wave-fc.grib2");
-        assert_eq!(url(Model::EcmwfAifs0p25, &r18, 6, "grib2", 0), "https://data.ecmwf.int/forecasts/20261017/18z/aifs-single/0p25/oper/20261017180000-6h-oper-fc.grib2");
-        assert_eq!(url(Model::EcmwfIfs0p1, &run, 24, "index", 0), "https://data.ecmwf.int/forecasts/20261017/00z/ifs/0p1/oper/20261017000000-24h-oper-fc-sfc.index");
-        assert_eq!(url(Model::EcmwfWave0p1, &run, 24, "grib2", 0), "https://data.ecmwf.int/forecasts/20261017/00z/ifs/0p1/wave/20261017000000-24h-wave-fc-sfc.grib2");
-        assert_eq!(url(Model::EcmwfIfs0p1, &r18, 6, "grib2", 0), "https://data.ecmwf.int/forecasts/20261017/18z/ifs/0p1/oper/20261017180000-6h-oper-fc-sfc.grib2");
+        assert_eq!(
+            url(Model::EcmwfIfs0p25, &r18, 6, "grib2", 0),
+            "https://data.ecmwf.int/forecasts/20261017/18z/ifs/0p25/oper/20261017180000-6h-oper-fc.grib2"
+        );
+        assert_eq!(
+            url(Model::EcmwfWave0p25, &r18, 6, "grib2", 0),
+            "https://data.ecmwf.int/forecasts/20261017/18z/ifs/0p25/wave/20261017180000-6h-wave-fc.grib2"
+        );
+        assert_eq!(
+            url(Model::EcmwfAifs0p25, &r18, 6, "grib2", 0),
+            "https://data.ecmwf.int/forecasts/20261017/18z/aifs-single/0p25/oper/20261017180000-6h-oper-fc.grib2"
+        );
+        assert_eq!(
+            url(Model::EcmwfIfs0p1, &run, 24, "index", 0),
+            "https://data.ecmwf.int/forecasts/20261017/00z/ifs/0p1/oper/20261017000000-24h-oper-fc-sfc.index"
+        );
+        assert_eq!(
+            url(Model::EcmwfWave0p1, &run, 24, "grib2", 0),
+            "https://data.ecmwf.int/forecasts/20261017/00z/ifs/0p1/wave/20261017000000-24h-wave-fc-sfc.grib2"
+        );
+        assert_eq!(
+            url(Model::EcmwfIfs0p1, &r18, 6, "grib2", 0),
+            "https://data.ecmwf.int/forecasts/20261017/18z/ifs/0p1/oper/20261017180000-6h-oper-fc-sfc.grib2"
+        );
         assert_eq!(cycle_hours(Model::EcmwfIfs0p25, "18"), 144);
     }
 
@@ -472,19 +487,8 @@ mod tests {
     fn global_range_cache_round_trips() {
         let root = std::env::temp_dir().join(format!("racenav-ecmwf-cache-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        let path = cache_path(
-            &root,
-            "https://data.ecmwf.int/forecasts/20261023/00z/ifs/0p1/oper/20261023000000-24h-oper-fc-sfc.grib2",
-            (123, 4),
-        );
-        assert_ne!(
-            path,
-            cache_path(
-                &root,
-                "https://data.ecmwf.int/forecasts/20261023/00z/ifs/0p1/oper/20261023000000-24h-oper-fc-sfc.grib2",
-                (124, 4),
-            )
-        );
+        let path = cache_path(&root, "https://data.ecmwf.int/forecasts/20261023/00z/ifs/0p1/oper/20261023000000-24h-oper-fc-sfc.grib2", (123, 4));
+        assert_ne!(path, cache_path(&root, "https://data.ecmwf.int/forecasts/20261023/00z/ifs/0p1/oper/20261023000000-24h-oper-fc-sfc.grib2", (124, 4),));
         assert_eq!(read_cached_range(&path, 4).unwrap(), None);
         cache_range(&root, &path, b"data").unwrap();
         assert_eq!(read_cached_range(&path, 4).unwrap(), Some(b"data".to_vec()));

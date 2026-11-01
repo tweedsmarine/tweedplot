@@ -80,7 +80,10 @@ impl Library {
 
     /// The trip on now (started, not ended), if any.
     pub fn current_trip(&self) -> Result<Option<Trip>> {
-        let id: Option<i64> = self.db().query_row("SELECT id FROM trips WHERE deleted_at IS NULL AND ended IS NULL ORDER BY started DESC LIMIT 1", [], |r| r.get(0)).optional()?;
+        let id: Option<i64> = self
+            .db()
+            .query_row("SELECT id FROM trips WHERE deleted_at IS NULL AND ended IS NULL ORDER BY started DESC LIMIT 1", [], |r| r.get(0))
+            .optional()?;
         id.map(|id| self.trip(id)).transpose()
     }
 
@@ -173,7 +176,9 @@ mod tests {
         m.created = 1_000_500;
         lib.save_mark(m).unwrap();
         // a past trip, from its dates
-        let t = lib.save_trip(Trip { number: "12".into(), fishery: "Tuna".into(), started: Some(1_000_000), ended: Some(1_001_000), ..Default::default() }).unwrap();
+        let t = lib
+            .save_trip(Trip { number: "12".into(), fishery: "Tuna".into(), started: Some(1_000_000), ended: Some(1_001_000), ..Default::default() })
+            .unwrap();
         assert_eq!(t.name, "Trip 12");
         assert_eq!(t.marks, 1);
         assert_eq!(lib.trip_contents(t.id).unwrap().0.len(), 1);

@@ -56,21 +56,12 @@ pub fn tile_names(area: [f64; 4]) -> Vec<String> {
     let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
     for i in 0..=4 {
         for j in 0..=4 {
-            let p = lonlat_to_nztm([
-                area[0] + (area[2] - area[0]) * i as f64 / 4.0,
-                area[1] + (area[3] - area[1]) * j as f64 / 4.0,
-            ]);
-            b = [
-                b[0].min(p[0]),
-                b[1].min(p[1]),
-                b[2].max(p[0]),
-                b[3].max(p[1]),
-            ];
+            let p = lonlat_to_nztm([area[0] + (area[2] - area[0]) * i as f64 / 4.0, area[1] + (area[3] - area[1]) * j as f64 / 4.0]);
+            b = [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])];
         }
     }
     let mut out = Vec::new();
-    let first = LETTERS.iter().position(|&l| l == b'A').unwrap() * LETTERS.len()
-        + LETTERS.iter().position(|&l| l == b'S').unwrap();
+    let first = LETTERS.iter().position(|&l| l == b'A').unwrap() * LETTERS.len() + LETTERS.iter().position(|&l| l == b'S').unwrap();
     let c0 = ((b[0] - ORIGIN_LEFT) / TILE_W).floor().max(0.0) as i64;
     let c1 = ((b[2] - ORIGIN_LEFT) / TILE_W).floor() as i64;
     let r0 = ((ORIGIN_TOP - b[3]) / TILE_H).floor().max(0.0) as i64;
@@ -127,11 +118,7 @@ impl Hires {
             let mut paths: Vec<_> = rd
                 .flatten()
                 .map(|e| e.path())
-                .filter(|p| {
-                    p.extension().is_some_and(|x| {
-                        x.eq_ignore_ascii_case("tiff") || x.eq_ignore_ascii_case("tif")
-                    })
-                })
+                .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("tiff") || x.eq_ignore_ascii_case("tif")))
                 .collect();
             paths.sort();
             for p in paths {
@@ -164,49 +151,25 @@ impl Hires {
                 let ne = nztm_to_lonlat([b[2], b[3]]);
                 let nw = nztm_to_lonlat([b[0], b[3]]);
                 let se = nztm_to_lonlat([b[2], b[1]]);
-                let name = c
-                    .path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                (
-                    name,
-                    [
-                        sw[0].min(nw[0]),
-                        sw[1].min(se[1]),
-                        ne[0].max(se[0]),
-                        ne[1].max(nw[1]),
-                    ],
-                )
+                let name = c.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                (name, [sw[0].min(nw[0]), sw[1].min(se[1]), ne[0].max(se[0]), ne[1].max(nw[1])])
             })
             .collect()
     }
 
     fn block(&self, key: BlockKey) -> Option<Arc<Raster>> {
-        if let Some(b) = self
-            .blocks
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(&key)
-        {
+        if let Some(b) = self.blocks.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
             return Some(b.clone());
         }
         let r = Arc::new(self.cogs[key.0].tile(key.1, key.2, key.3).ok()?);
-        self.blocks
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .put(key, r.clone());
+        self.blocks.lock().unwrap_or_else(|e| e.into_inner()).put(key, r.clone());
         Some(r)
     }
 
     /// Height (above NZVD2016) at a place, from the finest data.
     pub fn height_at(&self, lon: f64, lat: f64) -> Option<f32> {
         let p = lonlat_to_nztm([lon, lat]);
-        self.cogs
-            .iter()
-            .zip(&self.bounds)
-            .find(|(_, b)| p[0] >= b[0] && p[0] < b[2] && p[1] >= b[1] && p[1] < b[3])
-            .and_then(|(c, _)| c.value_at(p[0], p[1]))
+        self.cogs.iter().zip(&self.bounds).find(|(_, b)| p[0] >= b[0] && p[0] < b[2] && p[1] >= b[1] && p[1] < b[3]).and_then(|(c, _)| c.value_at(p[0], p[1]))
     }
 
     /// The image for map tile `z/x/y` (256 pixels, PNG), or None where there is no data.
@@ -214,19 +177,11 @@ impl Hires {
         if z < MIN_ZOOM || self.cogs.is_empty() {
             return None;
         }
-        if let Some(t) = self
-            .images
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(&(z, x, y))
-        {
+        if let Some(t) = self.images.lock().unwrap_or_else(|e| e.into_inner()).get(&(z, x, y)) {
             return Some(t.clone());
         }
         let png = Arc::new(self.render(z, x, y)?);
-        self.images
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .put((z, x, y), png.clone());
+        self.images.lock().unwrap_or_else(|e| e.into_inner()).put((z, x, y), png.clone());
         Some(png)
     }
 
@@ -240,31 +195,17 @@ impl Hires {
             t.sinh().atan().to_degrees()
         };
         // which files reach this tile
-        let corners = [
-            (0.0, 0.0),
-            (N as f64, 0.0),
-            (0.0, N as f64),
-            (N as f64, N as f64),
-            (N as f64 / 2.0, N as f64 / 2.0),
-        ];
+        let corners = [(0.0, 0.0), (N as f64, 0.0), (0.0, N as f64), (N as f64, N as f64), (N as f64 / 2.0, N as f64 / 2.0)];
         let mut tb = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
         for (px, py) in corners {
             let p = lonlat_to_nztm([lon_at(px), lat_at(py)]);
-            tb = [
-                tb[0].min(p[0]),
-                tb[1].min(p[1]),
-                tb[2].max(p[0]),
-                tb[3].max(p[1]),
-            ];
+            tb = [tb[0].min(p[0]), tb[1].min(p[1]), tb[2].max(p[0]), tb[3].max(p[1])];
         }
         let pad = 20.0;
         let files: Vec<usize> = (0..self.cogs.len())
             .filter(|&i| {
                 let b = self.bounds[i];
-                b[0] <= tb[2] + pad
-                    && b[2] >= tb[0] - pad
-                    && b[1] <= tb[3] + pad
-                    && b[3] >= tb[1] - pad
+                b[0] <= tb[2] + pad && b[2] >= tb[0] - pad && b[1] <= tb[3] + pad && b[3] >= tb[1] - pad
             })
             .collect();
         if files.is_empty() {
@@ -285,11 +226,7 @@ impl Hires {
                         continue;
                     }
                     let c = &self.cogs[fi];
-                    let li = c
-                        .levels
-                        .iter()
-                        .rposition(|l| l.pixel.0 <= res * 1.01)
-                        .unwrap_or(0);
+                    let li = c.levels.iter().rposition(|l| l.pixel.0 <= res * 1.01).unwrap_or(0);
                     if let Some(h) = self.sample(&mut local, fi, li, p) {
                         heights[gy * G + gx] = h;
                         break;
@@ -305,13 +242,7 @@ impl Hires {
 
     /// Bilinear height at NZTM point `p` from level `li` of file `fi` (nearest where a
     /// neighbour is missing).
-    fn sample(
-        &self,
-        local: &mut HashMap<BlockKey, Option<Arc<Raster>>>,
-        fi: usize,
-        li: usize,
-        p: [f64; 2],
-    ) -> Option<f32> {
+    fn sample(&self, local: &mut HashMap<BlockKey, Option<Arc<Raster>>>, fi: usize, li: usize, p: [f64; 2]) -> Option<f32> {
         let c = &self.cogs[fi];
         let l = &c.levels[li];
         let fx = (p[0] - c.origin.0) / l.pixel.0 - 0.5;
@@ -324,22 +255,12 @@ impl Hires {
             }
             let (ix, iy) = (ix as usize, iy as usize);
             let key = (fi, li, ix / l.tile_w, iy / l.tile_h);
-            let b = local
-                .entry(key)
-                .or_insert_with(|| self.block(key))
-                .as_ref()?;
+            let b = local.entry(key).or_insert_with(|| self.block(key)).as_ref()?;
             b.get(ix % l.tile_w, iy % l.tile_h)
         };
-        let v = [
-            get(x0, y0),
-            get(x0 + 1.0, y0),
-            get(x0, y0 + 1.0),
-            get(x0 + 1.0, y0 + 1.0),
-        ];
+        let v = [get(x0, y0), get(x0 + 1.0, y0), get(x0, y0 + 1.0), get(x0 + 1.0, y0 + 1.0)];
         match v {
-            [Some(a), Some(b), Some(c2), Some(d)] => {
-                Some((a * (1.0 - ax) + b * ax) * (1.0 - ay) + (c2 * (1.0 - ax) + d * ax) * ay)
-            }
+            [Some(a), Some(b), Some(c2), Some(d)] => Some((a * (1.0 - ax) + b * ax) * (1.0 - ay) + (c2 * (1.0 - ax) + d * ax) * ay),
             _ => {
                 let near = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)];
                 let k = near.iter().enumerate().min_by(|a, b| {
@@ -418,11 +339,7 @@ fn shade(h: &[f32], g: usize, res: f64, step: f32) -> Vec<u8> {
             let band = |v: f32| (v / step).floor();
             let (r, d) = (pick(x + 2, y + 1), pick(x + 1, y + 2));
             if band(c) != band(r) || band(c) != band(d) {
-                col = [
-                    col[0] * 0.45 + 30.0 * 0.55,
-                    col[1] * 0.45 + 70.0 * 0.55,
-                    col[2] * 0.45 + 105.0 * 0.55,
-                ];
+                col = [col[0] * 0.45 + 30.0 * 0.55, col[1] * 0.45 + 70.0 * 0.55, col[2] * 0.45 + 105.0 * 0.55];
             }
             let o = (y * n + x) * 4;
             rgba[o..o + 4].copy_from_slice(&[col[0] as u8, col[1] as u8, col[2] as u8, 235]);
@@ -454,10 +371,7 @@ mod tests {
         assert!(tile_bounds("BH31_10000_0603").is_none());
         // the tile's centre names it back
         let c = nztm_to_lonlat([(b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0]);
-        assert_eq!(
-            tile_names([c[0], c[1], c[0], c[1]]),
-            vec!["BH31_10000_0403".to_string()]
-        );
+        assert_eq!(tile_names([c[0], c[1], c[0], c[1]]), vec!["BH31_10000_0403".to_string()]);
         // an area a few km across: a handful of tiles, all with good bounds
         let names = tile_names([173.25, -41.3, 173.32, -41.24]);
         assert!((2..=12).contains(&names.len()), "{names:?}");
@@ -472,11 +386,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("tp_hires_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::copy(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/coastal_dem.tiff"),
-            dir.join("BH31_10000_0403.tiff"),
-        )
-        .unwrap();
+        std::fs::copy(Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/coastal_dem.tiff"), dir.join("BH31_10000_0403.tiff")).unwrap();
         let h = Hires::open(&dir);
         assert!(!h.is_empty());
         let cov = h.coverage();
@@ -484,24 +394,12 @@ mod tests {
         // a point in the tile: the height there
         let p = nztm_to_lonlat([1741600.0 + 10.5, 5672400.0 - 3.2]);
         let v = h.height_at(p[0], p[1]).unwrap();
-        assert!(
-            (v - (-20.0
-                + 0.12 * 10.0
-                + 0.03 * 3.0
-                + 1.5 * (10f32 / 9.0).sin() * (3f32 / 13.0).cos()))
-            .abs()
-                < 0.002,
-            "{v}"
-        );
+        assert!((v - (-20.0 + 0.12 * 10.0 + 0.03 * 3.0 + 1.5 * (10f32 / 9.0).sin() * (3f32 / 13.0).cos())).abs() < 0.002, "{v}");
         // the map tile over it at zoom 17 draws; one far away doesn't
         let n = (1u64 << 17) as f64;
         let c = nztm_to_lonlat([1741700.0, 5672300.0]);
         let tx = ((c[0] + 180.0) / 360.0 * n) as u32;
-        let ty = ((1.0
-            - (c[1].to_radians().tan() + 1.0 / c[1].to_radians().cos()).ln()
-                / std::f64::consts::PI)
-            / 2.0
-            * n) as u32;
+        let ty = ((1.0 - (c[1].to_radians().tan() + 1.0 / c[1].to_radians().cos()).ln() / std::f64::consts::PI) / 2.0 * n) as u32;
         let png = h.tile_png(17, tx, ty).expect("an image");
         assert_eq!(&png[1..4], b"PNG");
         let d = png::Decoder::new(std::io::Cursor::new(png.as_ref().clone()));

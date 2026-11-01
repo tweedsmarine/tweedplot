@@ -14,18 +14,18 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+mod density;
+mod events;
+pub mod formats;
 mod gpx;
 mod manage;
 mod trips;
-mod events;
-mod density;
-pub mod formats;
 pub use events::Event;
-pub mod protect;
 mod overlay;
+pub mod protect;
+pub use manage::{Also, Counts, ImportInfo, Scope, TrashItem};
 pub use overlay::Overlay;
 pub use trips::Trip;
-pub use manage::{Also, Counts, ImportInfo, Scope, TrashItem};
 pub mod store;
 pub mod tracks;
 pub mod tzd;
@@ -107,7 +107,25 @@ fn is_zero(v: &i64) -> bool {
 
 impl Default for Mark {
     fn default() -> Self {
-        Mark { id: String::new(), name: String::new(), lat: 0.0, lon: 0.0, kind: "mark".into(), notes: String::new(), group: String::new(), barrier_nm: 0.0, modified: 0, created: 0, date_unknown: false, colour: String::new(), symbol: String::new(), depth: None, temp: None, sog: None, tags: String::new() }
+        Mark {
+            id: String::new(),
+            name: String::new(),
+            lat: 0.0,
+            lon: 0.0,
+            kind: "mark".into(),
+            notes: String::new(),
+            group: String::new(),
+            barrier_nm: 0.0,
+            modified: 0,
+            created: 0,
+            date_unknown: false,
+            colour: String::new(),
+            symbol: String::new(),
+            depth: None,
+            temp: None,
+            sog: None,
+            tags: String::new(),
+        }
     }
 }
 
@@ -244,7 +262,8 @@ const SAME_UNNAMED_NM: f64 = 0.002;
 const BULK_SAME_SECOND: usize = 20;
 
 const MARK_COLS: &str = "id, name, lat, lon, kind, notes, grp, barrier_nm, modified, created, date_unknown, colour, symbol, depth, temp, sog, tags";
-const TRACK_COLS: &str = "id, name, notes, colour, source, modified, points, start, \"end\", distance_nm, max_sog, west, south, east, north, has_depth, has_temp";
+const TRACK_COLS: &str =
+    "id, name, notes, colour, source, modified, points, start, \"end\", distance_nm, max_sog, west, south, east, north, has_depth, has_temp";
 
 fn mark_row(r: &rusqlite::Row) -> rusqlite::Result<Mark> {
     Ok(Mark {
@@ -542,7 +561,8 @@ impl Library {
 
     /// Several tracks in one GPX file.
     pub fn export_tracks_gpx(&self, ids: &[String]) -> Result<String> {
-        let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\" creator=\"racenav\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n");
+        let mut out =
+            String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\" creator=\"racenav\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n");
         for id in ids {
             out.push_str(&self.track(id)?.trk_xml());
         }
@@ -573,7 +593,8 @@ impl Library {
         let mut theirs = o.marks()?;
         let their_routes = if scope.routes { o.routes()? } else { Vec::new() };
         if !scope.marks {
-            let used: std::collections::HashSet<&str> = their_routes.iter().flat_map(|r| r.marks.iter().map(|m| m.mark.as_str()).chain(r.start_mark.as_deref())).collect();
+            let used: std::collections::HashSet<&str> =
+                their_routes.iter().flat_map(|r| r.marks.iter().map(|m| m.mark.as_str()).chain(r.start_mark.as_deref())).collect();
             theirs.retain(|m| used.contains(m.id.as_str()));
         }
         let mut ours = self.marks()?;
@@ -781,9 +802,13 @@ impl Library {
              WHERE m.deleted_at IS NULL AND m.symbol LIKE 'tz:%' GROUP BY m.symbol ORDER BY count(*) DESC",
         )?;
         let mut v = q
-            .query_map([], |r| Ok(SymbolUse { symbol: r.get(0)?, count: r.get::<_, i64>(1)? as usize, kind: r.get(2)?, label: r.get(3)?, colours: Vec::new() }))?
+            .query_map([], |r| {
+                Ok(SymbolUse { symbol: r.get(0)?, count: r.get::<_, i64>(1)? as usize, kind: r.get(2)?, label: r.get(3)?, colours: Vec::new() })
+            })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        let mut q = c.prepare("SELECT symbol, colour, count(*) FROM marks WHERE deleted_at IS NULL AND symbol LIKE 'tz:%' GROUP BY symbol, colour ORDER BY count(*) DESC")?;
+        let mut q = c.prepare(
+            "SELECT symbol, colour, count(*) FROM marks WHERE deleted_at IS NULL AND symbol LIKE 'tz:%' GROUP BY symbol, colour ORDER BY count(*) DESC",
+        )?;
         let mut rows = q.query([])?;
         let at: std::collections::HashMap<String, usize> = v.iter().enumerate().map(|(i, s)| (s.symbol.clone(), i)).collect();
         while let Some(r) = rows.next()? {
@@ -951,21 +976,17 @@ impl Library {
 
     pub fn routing(&self, id: &str) -> Result<Routing> {
         let c = self.db();
-        c.query_row(
-            "SELECT id, name, created, route_id, route_name, request, result FROM routings WHERE id = ?1 AND deleted_at IS NULL",
-            [id],
-            |r| {
-                Ok(Routing {
-                    id: r.get(0)?,
-                    name: r.get(1)?,
-                    created: r.get(2)?,
-                    route_id: r.get(3)?,
-                    route_name: r.get(4)?,
-                    request: serde_json::from_str(&r.get::<_, String>(5)?).unwrap_or(Value::Null),
-                    result: serde_json::from_str(&r.get::<_, String>(6)?).unwrap_or(Value::Null),
-                })
-            },
-        )
+        c.query_row("SELECT id, name, created, route_id, route_name, request, result FROM routings WHERE id = ?1 AND deleted_at IS NULL", [id], |r| {
+            Ok(Routing {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                created: r.get(2)?,
+                route_id: r.get(3)?,
+                route_name: r.get(4)?,
+                request: serde_json::from_str(&r.get::<_, String>(5)?).unwrap_or(Value::Null),
+                result: serde_json::from_str(&r.get::<_, String>(6)?).unwrap_or(Value::Null),
+            })
+        })
         .optional()?
         .ok_or_else(|| Error::NotFound(id.into()))
     }
@@ -1007,7 +1028,8 @@ impl Library {
             }
             marks.iter().filter(|m| want.contains(m.id.as_str())).collect()
         };
-        let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\" creator=\"racenav\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n");
+        let mut out =
+            String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\" creator=\"racenav\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n");
         for m in &wpts {
             out.push_str(&gpx::wpt("wpt", m, "  "));
         }
@@ -1056,7 +1078,13 @@ impl Library {
 
     /// [`import_tzd`](Self::import_tzd), telling `progress(step, done, total)` as it goes; when
     /// `cancel` is set it stops after the tracks read so far (what's in stays in).
-    pub fn import_tzd_with(&self, path: &std::path::Path, group: &str, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<ImportReport> {
+    pub fn import_tzd_with(
+        &self,
+        path: &std::path::Path,
+        group: &str,
+        progress: &mut dyn FnMut(&str, usize, usize),
+        cancel: &AtomicBool,
+    ) -> Result<ImportReport> {
         progress("Reading marks and routes", 0, 0);
         let d = tzd::read_tzd(path)?;
         progress("Matching marks with the library", 0, 0);
@@ -1068,7 +1096,9 @@ impl Library {
             let what = format!("{}, {} and {}", n(d.lines, "line", "lines"), n(d.areas, "area", "areas"), n(d.circles, "circle", "circles"));
             if added > 0 {
                 let again = if matched > 0 { format!(", {matched} already here") } else { String::new() };
-                rep.notes.push(format!("{what} came in as barriers ({added} new{again}), switched off: shown on the chart, not used for routing until ticked (Library > Barriers)"));
+                rep.notes.push(format!(
+                    "{what} came in as barriers ({added} new{again}), switched off: shown on the chart, not used for routing until ticked (Library > Barriers)"
+                ));
             } else if matched > 0 {
                 rep.notes.push(format!("{what}: already here as barriers"));
             }
@@ -1108,17 +1138,37 @@ impl Library {
                     let [lon, lat] = sh.points[0];
                     let r = sh.radius_m.unwrap_or(1852.0) / 1852.0 / 60.0; // degrees of latitude
                     let k = lat.to_radians().cos().max(0.01);
-                    ("zone", (0..48).map(|i| { let a = i as f64 * std::f64::consts::TAU / 48.0; [lon + r * a.sin() / k, lat + r * a.cos()] }).collect::<Vec<_>>())
+                    (
+                        "zone",
+                        (0..48)
+                            .map(|i| {
+                                let a = i as f64 * std::f64::consts::TAU / 48.0;
+                                [lon + r * a.sin() / k, lat + r * a.cos()]
+                            })
+                            .collect::<Vec<_>>(),
+                    )
                 }
                 "area" => ("zone", sh.points.clone()),
                 _ => ("line", sh.points.clone()),
             };
-            let label = match sh.kind.as_str() { "circle" => "circle", "area" => "area", _ => "line" };
+            let label = match sh.kind.as_str() {
+                "circle" => "circle",
+                "area" => "area",
+                _ => "line",
+            };
             let from = if kml { "KML" } else { "TimeZero" };
-            let base = if sh.name.trim().is_empty() { format!("{} {label}", if sh.layer.is_empty() { from } else { sh.layer.as_str() }) } else { sh.name.trim().to_string() };
+            let base = if sh.name.trim().is_empty() {
+                format!("{} {label}", if sh.layer.is_empty() { from } else { sh.layer.as_str() })
+            } else {
+                sh.name.trim().to_string()
+            };
             let name = if names.contains(&base) { (2..).map(|k| format!("{base} {k}")).find(|n| !names.contains(n)).unwrap() } else { base };
             names.insert(name.clone());
-            let mut notes = format!("From {from} ({label}{}{})", if sh.layer.is_empty() { String::new() } else { format!(", layer {}", sh.layer) }, if sh.colour.is_empty() { String::new() } else { format!(", colour {}", sh.colour) });
+            let mut notes = format!(
+                "From {from} ({label}{}{})",
+                if sh.layer.is_empty() { String::new() } else { format!(", layer {}", sh.layer) },
+                if sh.colour.is_empty() { String::new() } else { format!(", colour {}", sh.colour) }
+            );
             if let Some(r) = sh.radius_m.filter(|_| sh.kind == "circle") {
                 notes.push_str(&format!(", radius {:.0} m", r));
             }
@@ -1144,7 +1194,11 @@ impl Library {
         if !shapes.is_empty() {
             let (added, matched) = self.import_tz_shapes(&shapes, id)?;
             let n = shapes.len();
-            rep.notes.push(format!("{n} area{} came in as barriers ({added} new{}), switched off: shown on the chart, not used for routing until ticked (Library > Barriers)", if n == 1 { "" } else { "s" }, if matched > 0 { format!(", {matched} already here") } else { String::new() }));
+            rep.notes.push(format!(
+                "{n} area{} came in as barriers ({added} new{}), switched off: shown on the chart, not used for routing until ticked (Library > Barriers)",
+                if n == 1 { "" } else { "s" },
+                if matched > 0 { format!(", {matched} already here") } else { String::new() }
+            ));
         }
         self.finish_import(id, &rep)?;
         Ok(rep)
@@ -1196,7 +1250,8 @@ impl Library {
         // marks made at the boat (within 2 s and 30 m of a fix) take its depth, sea
         // temperature and SOG: years of fishing marks with the conditions they were made in
         let mut by_second: std::collections::HashMap<i64, Vec<(usize, f64, f64)>> = std::collections::HashMap::new();
-        let marks: Vec<Mark> = self.marks()?.into_iter().filter(|m| m.created > 0 && !m.date_unknown && (m.depth.is_none() || m.temp.is_none() || m.sog.is_none())).collect();
+        let marks: Vec<Mark> =
+            self.marks()?.into_iter().filter(|m| m.created > 0 && !m.date_unknown && (m.depth.is_none() || m.temp.is_none() || m.sog.is_none())).collect();
         for (i, m) in marks.iter().enumerate() {
             by_second.entry(m.created).or_default().push((i, m.lat, m.lon));
         }
@@ -1296,7 +1351,12 @@ impl Library {
                 })
                 .collect();
             let (added, matched) = self.import_tz_shapes(&shapes, import_id)?;
-            rep.notes.push(format!("{} line{} from the track file (brought in from MaxSea) came in as barriers ({added} new{}), switched off", shapes.len(), if shapes.len() == 1 { "" } else { "s" }, if matched > 0 { format!(", {matched} already here") } else { String::new() }));
+            rep.notes.push(format!(
+                "{} line{} from the track file (brought in from MaxSea) came in as barriers ({added} new{}), switched off",
+                shapes.len(),
+                if shapes.len() == 1 { "" } else { "s" },
+                if matched > 0 { format!(", {matched} already here") } else { String::new() }
+            ));
         }
         if let Some((n, of)) = stopped_at {
             rep.not_imported.push(format!("tracks from {n} of {of} on (stopped part way: import the file again to bring in the rest)"));
@@ -1328,7 +1388,10 @@ impl Library {
             rep.not_imported.push(format!("from the track file: {} (not yet)", o.join(", ")));
         }
         if r.is_some() && fixes > 0 {
-            rep.notes.push(format!("tracks: kept {kept} of {fixes} fixes (a fix every 10 s, sooner in turns){}", if same > 0 { format!("; {same} already here") } else { String::new() }));
+            rep.notes.push(format!(
+                "tracks: kept {kept} of {fixes} fixes (a fix every 10 s, sooner in turns){}",
+                if same > 0 { format!("; {same} already here") } else { String::new() }
+            ));
         }
         Ok(())
     }
@@ -1442,7 +1505,11 @@ impl Library {
         let mut new_tracks = Vec::new();
         for (k, t) in data.tracks.into_iter().enumerate() {
             let name = if t.name.trim().is_empty() {
-                if group.is_empty() { format!("Imported track {}", k + 1) } else { format!("{group} {}", k + 1) }
+                if group.is_empty() {
+                    format!("Imported track {}", k + 1)
+                } else {
+                    format!("{group} {}", k + 1)
+                }
             } else {
                 t.name.trim().to_string()
             };
@@ -1584,8 +1651,15 @@ impl Library {
         };
         // thin the old ones
         let prefix = format!("{stem}-");
-        let day = |name: &str| name.strip_prefix(prefix.as_str()).and_then(|n| n.strip_suffix(".gpkg")).filter(|d| d.len() == 10).and_then(|d| tracks::parse_iso(&format!("{d}T00:00:00Z"))).map(|t| t / 86_400);
-        let mut all: Vec<(i64, PathBuf)> = std::fs::read_dir(&dir)?.flatten().filter_map(|e| day(&e.file_name().to_string_lossy()).map(|d| (d, e.path()))).collect();
+        let day = |name: &str| {
+            name.strip_prefix(prefix.as_str())
+                .and_then(|n| n.strip_suffix(".gpkg"))
+                .filter(|d| d.len() == 10)
+                .and_then(|d| tracks::parse_iso(&format!("{d}T00:00:00Z")))
+                .map(|t| t / 86_400)
+        };
+        let mut all: Vec<(i64, PathBuf)> =
+            std::fs::read_dir(&dir)?.flatten().filter_map(|e| day(&e.file_name().to_string_lossy()).map(|d| (d, e.path()))).collect();
         all.sort();
         let now_day = tracks::parse_iso(&format!("{today}T00:00:00Z")).map(|t| t / 86_400).unwrap_or(now() / 86_400);
         let mut weeks = std::collections::HashSet::new();
@@ -1607,7 +1681,8 @@ impl Library {
             return false; // only the library in the app's own folder came from JSON files
         }
         let d = &self.dir;
-        let any_json = |sub: &str| std::fs::read_dir(d.join(sub)).map(|r| r.flatten().any(|e| e.path().extension().is_some_and(|x| x == "json"))).unwrap_or(false);
+        let any_json =
+            |sub: &str| std::fs::read_dir(d.join(sub)).map(|r| r.flatten().any(|e| e.path().extension().is_some_and(|x| x == "json"))).unwrap_or(false);
         d.join("marks.json").exists() || d.join("barriers.json").exists() || any_json("routes") || any_json("routings") || any_json("tracks")
     }
 
@@ -1628,7 +1703,9 @@ impl Library {
         let d = self.dir.clone();
         let read = |p: &Path| -> Option<Vec<u8>> { std::fs::read(p).ok() };
         let files = |sub: &str| -> Vec<PathBuf> {
-            let mut v: Vec<PathBuf> = std::fs::read_dir(d.join(sub)).map(|r| r.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "json")).collect()).unwrap_or_default();
+            let mut v: Vec<PathBuf> = std::fs::read_dir(d.join(sub))
+                .map(|r| r.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "json")).collect())
+                .unwrap_or_default();
             v.sort();
             v
         };
@@ -1807,7 +1884,18 @@ fn read_name(name: &str) -> NameInfo {
         tag("wreck", &mut out);
         out.kind = Some("sym-wreck");
     }
-    for (w, t) in [("hard", "hard"), ("rough", "rough"), ("rolly", "rough"), ("soft", "soft"), ("mud", "mud"), ("sand", "sand"), ("shell", "shell"), ("gravel", "gravel"), ("weed", "weed"), ("tow", "tow")] {
+    for (w, t) in [
+        ("hard", "hard"),
+        ("rough", "rough"),
+        ("rolly", "rough"),
+        ("soft", "soft"),
+        ("mud", "mud"),
+        ("sand", "sand"),
+        ("shell", "shell"),
+        ("gravel", "gravel"),
+        ("weed", "weed"),
+        ("tow", "tow"),
+    ] {
         if words.contains(&w) {
             tag(t, &mut out);
         }
@@ -1856,7 +1944,8 @@ fn routes_where(c: &Connection, cond: &str) -> Result<Vec<Route>> {
 }
 
 fn write_routing(c: &Connection, r: &Routing) -> Result<()> {
-    let polar = r.request["polar_path"].as_str().map(|p| Path::new(&p.replace('\\', "/")).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
+    let polar =
+        r.request["polar_path"].as_str().map(|p| Path::new(&p.replace('\\', "/")).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
     c.execute(
         "INSERT INTO routings (id, name, created, route_id, route_name, t0, status, arrival, distance_nm, grib_name, polar, request, result)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
@@ -1938,7 +2027,9 @@ mod tests {
         let lib = temp_lib("sym");
         let mut g = String::from(r#"<?xml version="1.0"?><gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">"#);
         for k in 0..5 {
-            g.push_str(&format!(r#"<wpt lat="-41.{k}" lon="173.2"><extensions><MxTimeZeroSymbol>63</MxTimeZeroSymbol><color>-65536</color></extensions></wpt>"#));
+            g.push_str(&format!(
+                r#"<wpt lat="-41.{k}" lon="173.2"><extensions><MxTimeZeroSymbol>63</MxTimeZeroSymbol><color>-65536</color></extensions></wpt>"#
+            ));
         }
         g.push_str(r#"<wpt lat="-41.9" lon="173.9"><name>FOUL</name><extensions><MxTimeZeroSymbol>63</MxTimeZeroSymbol></extensions></wpt>"#);
         g.push_str(r#"<wpt lat="-42" lon="174"><extensions><MxTimeZeroSymbol>2</MxTimeZeroSymbol></extensions></wpt></gpx>"#);
@@ -1984,7 +2075,12 @@ mod tests {
         a.save_mark(Mark { name: "Bean Rock".into(), lat: -36.8317, lon: 174.8303, ..Default::default() }).unwrap();
         let br = b.save_mark(Mark { name: "Bean Rock".into(), lat: -36.83171, lon: 174.83031, ..Default::default() }).unwrap();
         let hole = b.save_mark(Mark { name: "The Hole".into(), lat: -36.9, lon: 174.9, colour: "#ff0000".into(), ..Default::default() }).unwrap();
-        b.save_route(Route { name: "Out and back".into(), marks: vec![RouteMark { mark: br.id.clone(), ..Default::default() }, RouteMark { mark: hole.id.clone(), ..Default::default() }], ..Default::default() }).unwrap();
+        b.save_route(Route {
+            name: "Out and back".into(),
+            marks: vec![RouteMark { mark: br.id.clone(), ..Default::default() }, RouteMark { mark: hole.id.clone(), ..Default::default() }],
+            ..Default::default()
+        })
+        .unwrap();
         let p = |t: i64| TrackPoint { t: Some(t), lat: -36.8, lon: 174.8 + t as f64 * 1e-6, sog: Some(6.0), ..Default::default() };
         b.save_track(Track { name: "Trip".into(), segments: vec![vec![p(1000), p(1010), p(1020)]], ..Default::default() }).unwrap();
         let stop = AtomicBool::new(false);
@@ -2010,7 +2106,11 @@ mod tests {
     #[test]
     fn changing_many_marks_at_once() {
         let lib = temp_lib("bulk-edit");
-        let ids: Vec<String> = (0..3).map(|k| lib.save_mark(Mark { name: format!("M{k}"), lat: -36.0 - k as f64 * 0.1, lon: 174.0, group: "old".into(), ..Default::default() }).unwrap().id).collect();
+        let ids: Vec<String> = (0..3)
+            .map(|k| {
+                lib.save_mark(Mark { name: format!("M{k}"), lat: -36.0 - k as f64 * 0.1, lon: 174.0, group: "old".into(), ..Default::default() }).unwrap().id
+            })
+            .collect();
         assert_eq!(lib.update_marks(&ids[..2], Some("Tuna 2024"), Some("fishing"), None).unwrap(), 2);
         let m = lib.marks().unwrap();
         assert_eq!(m.iter().filter(|x| x.group == "Tuna 2024" && x.kind == "fishing").count(), 2);
@@ -2027,7 +2127,11 @@ mod tests {
         std::fs::create_dir_all(d.join("routings")).unwrap();
         std::fs::write(d.join("marks.json"), r##"[{"id":"m1","name":"Bean Rock","lat":-36.83,"lon":174.83,"kind":"mark","notes":"","group":"RNZYS","barrier_nm":0,"modified":5},
             {"id":"m2","name":"","lat":-36.9,"lon":174.9,"kind":"waypoint","notes":"","group":"","barrier_nm":0,"modified":6,"colour":"#ff0000","symbol":"tz:14"}]"##).unwrap();
-        std::fs::write(d.join("barriers.json"), r#"[{"id":"b1","name":"Reef","kind":"zone","points":[[174,-36],[174.1,-36],[174.1,-35.9]],"active":true,"notes":"","modified":1}]"#).unwrap();
+        std::fs::write(
+            d.join("barriers.json"),
+            r#"[{"id":"b1","name":"Reef","kind":"zone","points":[[174,-36],[174.1,-36],[174.1,-35.9]],"active":true,"notes":"","modified":1}]"#,
+        )
+        .unwrap();
         std::fs::write(d.join("routes").join("r1.json"), r#"{"id":"r1","name":"Round","notes":"","start":[174.8,-36.8],"start_mark":null,"marks":[{"mark":"m1","rounding":"port","radius_nm":0.1},{"mark":"m2","rounding":"","radius_nm":0}],"modified":7}"#).unwrap();
         std::fs::write(d.join("routings").join("x1.json"), r#"{"id":"x1","name":"Run","created":9,"route_id":"r1","route_name":"Round","request":{"t0":100,"polar_path":"C:\\p\\boat.pol"},"result":{"status":"ok","distance_nm":12.5}}"#).unwrap();
         std::fs::write(d.join("tracks").join("t1.json"), r#"{"id":"t1","name":"Trip","notes":"","colour":"","source":"log","modified":3,
@@ -2071,7 +2175,14 @@ mod tests {
         let a = lib.save_mark(Mark { name: "A".into(), lat: -36.0, lon: 174.0, ..Default::default() }).unwrap();
         let b = lib.save_mark(Mark { name: "B".into(), lat: -36.1, lon: 174.1, ..Default::default() }).unwrap();
         let c = lib.save_mark(Mark { name: "C".into(), lat: -36.2, lon: 174.2, ..Default::default() }).unwrap();
-        let r = lib.save_route(Route { name: "R".into(), start_mark: Some(a.id.clone()), marks: [&a, &b, &c].iter().map(|m| RouteMark { mark: m.id.clone(), ..Default::default() }).collect(), ..Default::default() }).unwrap();
+        let r = lib
+            .save_route(Route {
+                name: "R".into(),
+                start_mark: Some(a.id.clone()),
+                marks: [&a, &b, &c].iter().map(|m| RouteMark { mark: m.id.clone(), ..Default::default() }).collect(),
+                ..Default::default()
+            })
+            .unwrap();
         assert_eq!(lib.delete_marks(&[a.id.clone(), b.id.clone()], true).unwrap(), 2);
         assert_eq!(lib.marks().unwrap().len(), 1);
         let r2 = lib.route(&r.id).unwrap();
@@ -2130,12 +2241,23 @@ mod tests {
         let b = lib.save_mark(Mark { lat: -35.252, lon: 174.10, ..Default::default() }).unwrap();
         assert_eq!(b.name, "WP 1");
         let r = lib
-            .save_route(Route { name: "Coastal Classic".into(), marks: vec![RouteMark { mark: a.id.clone(), ..Default::default() }, RouteMark { mark: b.id.clone(), ..Default::default() }], ..Default::default() })
+            .save_route(Route {
+                name: "Coastal Classic".into(),
+                marks: vec![RouteMark { mark: a.id.clone(), ..Default::default() }, RouteMark { mark: b.id.clone(), ..Default::default() }],
+                ..Default::default()
+            })
             .unwrap();
         assert_eq!(lib.routes().unwrap().len(), 1);
         // a route that starts at a library mark
         let s = lib.save_mark(Mark { name: "Bean Rock".into(), lat: -36.83, lon: 174.83, ..Default::default() }).unwrap();
-        lib.save_route(Route { name: "From Bean Rock".into(), start: Some([174.83, -36.83]), start_mark: Some(s.id.clone()), marks: vec![RouteMark { mark: b.id.clone(), ..Default::default() }], ..Default::default() }).unwrap();
+        lib.save_route(Route {
+            name: "From Bean Rock".into(),
+            start: Some([174.83, -36.83]),
+            start_mark: Some(s.id.clone()),
+            marks: vec![RouteMark { mark: b.id.clone(), ..Default::default() }],
+            ..Default::default()
+        })
+        .unwrap();
         assert!(lib.export_gpx(&[], &[]).unwrap().contains("<rtept lat=\"-36.830000\" lon=\"174.830000\">\n      <name>Bean Rock</name>"));
         assert!(matches!(lib.delete_mark(&s.id, false), Err(Error::InUse(_))));
         lib.delete_mark(&s.id, true).unwrap();
@@ -2205,7 +2327,16 @@ mod tests {
         let lib = temp_lib("c");
         let a = lib.save_mark(Mark { name: "Bean Rock".into(), lat: -36.8317, lon: 174.8303, ..Default::default() }).unwrap();
         let b = lib.save_mark(Mark { name: "Tiri & Channel <N>".into(), lat: -36.60, lon: 174.90, ..Default::default() }).unwrap();
-        lib.save_route(Route { name: "Round the Bay".into(), marks: vec![RouteMark { mark: a.id.clone(), ..Default::default() }, RouteMark { mark: b.id, ..Default::default() }, RouteMark { mark: a.id, ..Default::default() }], ..Default::default() }).unwrap();
+        lib.save_route(Route {
+            name: "Round the Bay".into(),
+            marks: vec![
+                RouteMark { mark: a.id.clone(), ..Default::default() },
+                RouteMark { mark: b.id, ..Default::default() },
+                RouteMark { mark: a.id, ..Default::default() },
+            ],
+            ..Default::default()
+        })
+        .unwrap();
         let gpx = lib.export_gpx(&[], &[]).unwrap();
         assert!(gpx.contains("Tiri &amp; Channel &lt;N&gt;"));
 
@@ -2276,7 +2407,11 @@ mod big_gpx {
         let (a, b) = (&d.waypoints[0], &back.waypoints[0]);
         println!("round trip: {:?} {:?} {} / {:?} {:?} {}", a.time, a.tz_symbol, a.colour, b.time, b.tz_symbol, b.colour);
         assert_eq!((a.time, a.tz_symbol, &a.colour), (b.time, b.tz_symbol, &b.colour));
-        if std::env::var("RACENAV_KEEP").is_err() { let _ = std::fs::remove_dir_all(&dir); } else { println!("kept {}", dir.display()); }
+        if std::env::var("RACENAV_KEEP").is_err() {
+            let _ = std::fs::remove_dir_all(&dir);
+        } else {
+            println!("kept {}", dir.display());
+        }
     }
 }
 
@@ -2292,21 +2427,50 @@ mod big_tzd {
         let lib = super::Library::open(&dir).unwrap();
         let t = std::time::Instant::now();
         let d = super::tzd::read_tzd(std::path::Path::new(&f)).unwrap();
-        println!("read: {} marks ({} labels), {} routes, {} lines, {} areas, {} circles in {:?}",
-            d.gpx.waypoints.len(), d.labels, d.gpx.routes.len(), d.lines, d.areas, d.circles, t.elapsed());
+        println!(
+            "read: {} marks ({} labels), {} routes, {} lines, {} areas, {} circles in {:?}",
+            d.gpx.waypoints.len(),
+            d.labels,
+            d.gpx.routes.len(),
+            d.lines,
+            d.areas,
+            d.circles,
+            t.elapsed()
+        );
         let t = std::time::Instant::now();
         let r = lib.import_tzd(std::path::Path::new(&f), "TimeZero").unwrap();
-        println!("import: added {} matched {}, {} routes, {} tracks, {:?} {:?} in {:?}", r.marks_added, r.marks_matched, r.routes_added.len(), r.tracks_added.len(), r.not_imported, r.notes, t.elapsed());
+        println!(
+            "import: added {} matched {}, {} routes, {} tracks, {:?} {:?} in {:?}",
+            r.marks_added,
+            r.marks_matched,
+            r.routes_added.len(),
+            r.tracks_added.len(),
+            r.not_imported,
+            r.notes,
+            t.elapsed()
+        );
         let r = lib.import_tzd(std::path::Path::new(&f), "TimeZero").unwrap();
         println!("tracks: {} added, {:?}", r.tracks_added.len(), r.notes);
         let t = std::time::Instant::now();
         let n = lib.tracks().unwrap().len();
         println!("tracks list: {n} in {:?}", t.elapsed());
         let r = lib.import_tzd(std::path::Path::new(&f), "TimeZero").unwrap();
-        println!("again: added {} matched {}, routes {} matched {}, tracks {} {:?}", r.marks_added, r.marks_matched, r.routes_added.len(), r.routes_matched, r.tracks_added.len(), r.notes);
+        println!(
+            "again: added {} matched {}, routes {} matched {}, tracks {} {:?}",
+            r.marks_added,
+            r.marks_matched,
+            r.routes_added.len(),
+            r.routes_matched,
+            r.tracks_added.len(),
+            r.notes
+        );
         let groups: std::collections::BTreeSet<String> = lib.marks().unwrap().into_iter().map(|m| m.group).collect();
         println!("{} groups", groups.len());
-        if std::env::var("RACENAV_KEEP").is_err() { let _ = std::fs::remove_dir_all(&dir); } else { println!("kept {}", dir.display()); }
+        if std::env::var("RACENAV_KEEP").is_err() {
+            let _ = std::fs::remove_dir_all(&dir);
+        } else {
+            println!("kept {}", dir.display());
+        }
     }
 }
 
@@ -2420,16 +2584,30 @@ mod reimport {
         }
         let m = lib.marks().unwrap();
         let n = |f: &dyn Fn(&super::Mark) -> bool| m.iter().filter(|x| f(x)).count();
-        println!("marks {}: depth {} temp {} sog {} at-boat {} date-unknown {}", m.len(), n(&|x| x.depth.is_some()), n(&|x| x.temp.is_some()), n(&|x| x.sog.is_some()), n(&|x| x.tags.contains("at-boat")), n(&|x| x.date_unknown));
+        println!(
+            "marks {}: depth {} temp {} sog {} at-boat {} date-unknown {}",
+            m.len(),
+            n(&|x| x.depth.is_some()),
+            n(&|x| x.temp.is_some()),
+            n(&|x| x.sog.is_some()),
+            n(&|x| x.tags.contains("at-boat")),
+            n(&|x| x.date_unknown)
+        );
         let mut tags = std::collections::BTreeMap::new();
-        for x in &m { for t in x.tags.split(',').filter(|t| !t.is_empty()) { *tags.entry(t.to_string()).or_insert(0) += 1; } }
+        for x in &m {
+            for t in x.tags.split(',').filter(|t| !t.is_empty()) {
+                *tags.entry(t.to_string()).or_insert(0) += 1;
+            }
+        }
         println!("tags {tags:?}");
         let t = std::time::Instant::now();
         let v = lib.marks_in(172.5, -42.0, 174.5, -40.0).unwrap();
         println!("marks in a 2° box: {} in {:?}", v.len(), t.elapsed());
         let v = lib.marks_in(179.0, -45.0, -179.0, -43.0).unwrap();
         println!("marks across 180°: {}", v.len());
-        if let Some(x) = m.iter().find(|x| x.tags.contains("at-boat") && x.temp.is_some()) { println!("e.g. {:?}", x); }
+        if let Some(x) = m.iter().find(|x| x.tags.contains("at-boat") && x.temp.is_some()) {
+            println!("e.g. {:?}", x);
+        }
     }
 }
 
@@ -2445,12 +2623,17 @@ mod cancel_check {
         let stop = std::sync::atomic::AtomicBool::new(false);
         let mut steps = std::collections::BTreeSet::new();
         let r = lib
-            .import_tzd_with(std::path::Path::new(&f), "t", &mut |s, d, _| {
-                steps.insert(s.to_string());
-                if s == "Tracks" && d >= 100 {
-                    stop.store(true, std::sync::atomic::Ordering::Relaxed);
-                }
-            }, &stop)
+            .import_tzd_with(
+                std::path::Path::new(&f),
+                "t",
+                &mut |s, d, _| {
+                    steps.insert(s.to_string());
+                    if s == "Tracks" && d >= 100 {
+                        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
+                },
+                &stop,
+            )
             .unwrap();
         println!("steps {steps:?}\ntracks {} not imported {:?}", r.tracks_added.len(), r.not_imported);
         let _ = std::fs::remove_dir_all(&dir);

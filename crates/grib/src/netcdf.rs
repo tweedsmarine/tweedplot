@@ -330,112 +330,111 @@ fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
 /// For tests (here and in other crates).
 #[doc(hidden)]
 pub mod testdata {
-/// A NetCDF-3 classic file: time (record, 2) × lat (3) × lon (2), `sst`
-/// packed as shorts with scale/offset and a fill value, plus `u` as floats.
-pub fn sample() -> Vec<u8> {
-    let mut h: Vec<u8> = b"CDF\x01".to_vec();
-    let be = |v: u32| v.to_be_bytes();
-    let name = |s: &str| {
-        let mut b = be(s.len() as u32).to_vec();
-        b.extend(s.as_bytes());
-        while b.len() % 4 != 0 {
-            b.push(0);
+    /// A NetCDF-3 classic file: time (record, 2) × lat (3) × lon (2), `sst`
+    /// packed as shorts with scale/offset and a fill value, plus `u` as floats.
+    pub fn sample() -> Vec<u8> {
+        let mut h: Vec<u8> = b"CDF\x01".to_vec();
+        let be = |v: u32| v.to_be_bytes();
+        let name = |s: &str| {
+            let mut b = be(s.len() as u32).to_vec();
+            b.extend(s.as_bytes());
+            while b.len() % 4 != 0 {
+                b.push(0);
+            }
+            b
+        };
+        h.extend(be(2)); // numrecs
+        h.extend(be(0x0A));
+        h.extend(be(3));
+        for (n, l) in [("time", 0u32), ("lat", 3), ("lon", 2)] {
+            h.extend(name(n));
+            h.extend(be(l));
         }
-        b
-    };
-    h.extend(be(2)); // numrecs
-    h.extend(be(0x0A));
-    h.extend(be(3));
-    for (n, l) in [("time", 0u32), ("lat", 3), ("lon", 2)] {
-        h.extend(name(n));
-        h.extend(be(l));
-    }
-    h.extend([0u8; 8]); // no global attributes
-    h.extend(be(0x0B));
-    h.extend(be(4));
-    // the variable entries; offsets filled in after
-    let text_attr = |k: &str, v: &str| {
-        let mut b = name(k);
-        b.extend(be(2));
-        b.extend(be(v.len() as u32));
-        b.extend(v.as_bytes());
-        while b.len() % 4 != 0 {
-            b.push(0);
+        h.extend([0u8; 8]); // no global attributes
+        h.extend(be(0x0B));
+        h.extend(be(4));
+        // the variable entries; offsets filled in after
+        let text_attr = |k: &str, v: &str| {
+            let mut b = name(k);
+            b.extend(be(2));
+            b.extend(be(v.len() as u32));
+            b.extend(v.as_bytes());
+            while b.len() % 4 != 0 {
+                b.push(0);
+            }
+            b
+        };
+        let mut entries: Vec<(Vec<u8>, usize)> = Vec::new(); // entry, where its begin goes
+        let mut push_var = |n: &str, dims: &[u32], atts: Vec<Vec<u8>>, t: u32, vsize: u32| {
+            let mut b = name(n);
+            b.extend(be(dims.len() as u32));
+            for d in dims {
+                b.extend(be(*d));
+            }
+            if atts.is_empty() {
+                b.extend([0u8; 8]);
+            } else {
+                b.extend(be(0x0C));
+                b.extend(be(atts.len() as u32));
+                for a in atts {
+                    b.extend(a);
+                }
+            }
+            b.extend(be(t));
+            b.extend(be(vsize));
+            let at = b.len();
+            b.extend(be(0));
+            entries.push((b, at));
+        };
+        push_var("time", &[0], vec![text_attr("units", "hours since 2026-10-18 00:00:00")], 6, 8);
+        push_var("lat", &[1], vec![], 5, 12);
+        push_var("lon", &[2], vec![], 5, 8);
+        let mut sst_atts = vec![text_attr("units", "degC")];
+        for (k, t, v) in [("scale_factor", 5u32, 0.01f32.to_be_bytes().to_vec()), ("add_offset", 5, 15.0f32.to_be_bytes().to_vec())] {
+            let mut b = name(k);
+            b.extend(be(t));
+            b.extend(be(1));
+            b.extend(v);
+            sst_atts.push(b);
         }
-        b
-    };
-    let mut entries: Vec<(Vec<u8>, usize)> = Vec::new(); // entry, where its begin goes
-    let mut push_var = |n: &str, dims: &[u32], atts: Vec<Vec<u8>>, t: u32, vsize: u32| {
-        let mut b = name(n);
-        b.extend(be(dims.len() as u32));
-        for d in dims {
-            b.extend(be(*d));
+        let mut f = name("_FillValue");
+        f.extend(be(3));
+        f.extend(be(1));
+        f.extend((-30000i16).to_be_bytes());
+        f.extend([0, 0]);
+        sst_atts.push(f);
+        push_var("sst", &[0, 1, 2], sst_atts, 3, 12);
+        let header_len = h.len() + entries.iter().map(|e| e.0.len()).sum::<usize>();
+        // fixed variables: lat then lon, then records of [time, sst]
+        let lat_at = header_len;
+        let lon_at = lat_at + 12;
+        let rec_at = lon_at + 8;
+        let begins = [rec_at, lat_at, lon_at, rec_at + 8];
+        for (k, (mut e, at)) in entries.into_iter().enumerate() {
+            e[at..at + 4].copy_from_slice(&be(begins[k] as u32));
+            h.extend(e);
         }
-        if atts.is_empty() {
-            b.extend([0u8; 8]);
-        } else {
-            b.extend(be(0x0C));
-            b.extend(be(atts.len() as u32));
-            for a in atts {
-                b.extend(a);
+        for v in [-41.0f32, -40.9, -40.8] {
+            h.extend(v.to_be_bytes());
+        }
+        for v in [173.0f32, 173.1] {
+            h.extend(v.to_be_bytes());
+        }
+        for rec in 0..2 {
+            h.extend((rec as f64 * 3.0).to_be_bytes());
+            for k in 0..6i16 {
+                let raw: i16 = if rec == 1 && k == 5 { -30000 } else { k * 10 + rec * 100 };
+                h.extend(raw.to_be_bytes());
             }
         }
-        b.extend(be(t));
-        b.extend(be(vsize));
-        let at = b.len();
-        b.extend(be(0));
-        entries.push((b, at));
-    };
-    push_var("time", &[0], vec![text_attr("units", "hours since 2026-10-18 00:00:00")], 6, 8);
-    push_var("lat", &[1], vec![], 5, 12);
-    push_var("lon", &[2], vec![], 5, 8);
-    let mut sst_atts = vec![text_attr("units", "degC")];
-    for (k, t, v) in [("scale_factor", 5u32, 0.01f32.to_be_bytes().to_vec()), ("add_offset", 5, 15.0f32.to_be_bytes().to_vec())] {
-        let mut b = name(k);
-        b.extend(be(t));
-        b.extend(be(1));
-        b.extend(v);
-        sst_atts.push(b);
+        h
     }
-    let mut f = name("_FillValue");
-    f.extend(be(3));
-    f.extend(be(1));
-    f.extend((-30000i16).to_be_bytes());
-    f.extend([0, 0]);
-    sst_atts.push(f);
-    push_var("sst", &[0, 1, 2], sst_atts, 3, 12);
-    let header_len = h.len() + entries.iter().map(|e| e.0.len()).sum::<usize>();
-    // fixed variables: lat then lon, then records of [time, sst]
-    let lat_at = header_len;
-    let lon_at = lat_at + 12;
-    let rec_at = lon_at + 8;
-    let begins = [rec_at, lat_at, lon_at, rec_at + 8];
-    for (k, (mut e, at)) in entries.into_iter().enumerate() {
-        e[at..at + 4].copy_from_slice(&be(begins[k] as u32));
-        h.extend(e);
-    }
-    for v in [-41.0f32, -40.9, -40.8] {
-        h.extend(v.to_be_bytes());
-    }
-    for v in [173.0f32, 173.1] {
-        h.extend(v.to_be_bytes());
-    }
-    for rec in 0..2 {
-        h.extend((rec as f64 * 3.0).to_be_bytes());
-        for k in 0..6i16 {
-            let raw: i16 = if rec == 1 && k == 5 { -30000 } else { k * 10 + rec * 100 };
-            h.extend(raw.to_be_bytes());
-        }
-    }
-    h
-}
-
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::testdata::sample;
+    use super::*;
 
     #[test]
     fn reads_records_packing_and_fill() {

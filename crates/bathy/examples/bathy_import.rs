@@ -13,6 +13,11 @@ fn main() {
             last = k;
         }
     };
-    let n = if p.extension().is_some_and(|x| x == "xyz") { s.import_xyz(p, &mut prog, &Default::default()) } else { s.import_pbg(p, &mut prog, &Default::default()) }.unwrap();
+    let n = if p.extension().is_some_and(|x| x == "xyz") {
+        s.import_xyz(p, &mut prog, &Default::default())
+    } else {
+        s.import_pbg(p, &mut prog, &Default::default())
+    }
+    .unwrap();
     println!("{:>7.1} s  done: {n} cells", t.elapsed().as_secs_f64());
 }

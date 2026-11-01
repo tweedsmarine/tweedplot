@@ -106,7 +106,13 @@ impl Library {
         for (kind, t, detail) in KINDS {
             let mut q = c.prepare(&format!("SELECT CAST(id AS TEXT), name, CAST({detail} AS TEXT), deleted_at FROM {t} WHERE deleted_at IS NOT NULL"))?;
             let rows = q.query_map([], |r| {
-                Ok(TrashItem { kind: kind.into(), id: r.get(0)?, name: r.get(1)?, detail: r.get::<_, Option<String>>(2)?.unwrap_or_default(), deleted_at: r.get(3)? })
+                Ok(TrashItem {
+                    kind: kind.into(),
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    detail: r.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                    deleted_at: r.get(3)?,
+                })
             })?;
             for x in rows {
                 v.push(x?);
@@ -215,14 +221,32 @@ impl Library {
     pub fn peek(path: &Path) -> Result<Counts> {
         let c = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         // a library made before a table existed (the log, trips) simply has none
-        let count = |t: &str| c.query_row(&format!("SELECT count(*) FROM {t} WHERE deleted_at IS NULL"), [], |r| r.get::<_, i64>(0)).map(|n| n as usize).unwrap_or(0);
-        Ok(Counts { marks: count("marks"), routes: count("routes"), tracks: count("tracks"), routings: count("routings"), barriers: count("barriers"), events: count("events"), trips: count("trips") })
+        let count =
+            |t: &str| c.query_row(&format!("SELECT count(*) FROM {t} WHERE deleted_at IS NULL"), [], |r| r.get::<_, i64>(0)).map(|n| n as usize).unwrap_or(0);
+        Ok(Counts {
+            marks: count("marks"),
+            routes: count("routes"),
+            tracks: count("tracks"),
+            routings: count("routings"),
+            barriers: count("barriers"),
+            events: count("events"),
+            trips: count("trips"),
+        })
     }
 
     /// Write the chosen marks, routes (with their marks), tracks and logs, and whole
     /// categories of trips, routings and barriers (`also`), as a library file of their own
     /// at `to`, e.g. to give another boat. The library in use is unchanged.
-    pub fn export_library(&self, to: &Path, marks: &[String], routes: &[String], tracks: &[String], events: &[String], also: Also, keep_notes: bool) -> Result<Counts> {
+    pub fn export_library(
+        &self,
+        to: &Path,
+        marks: &[String],
+        routes: &[String],
+        tracks: &[String],
+        events: &[String],
+        also: Also,
+        keep_notes: bool,
+    ) -> Result<Counts> {
         if to.canonicalize().ok().is_some_and(|p| Some(p) == self.path().canonicalize().ok()) {
             return Err(crate::Error::Store("that's the library in use: choose another file".into()));
         }
@@ -273,7 +297,15 @@ impl Library {
                 }
             }
             let count = |t: &str| tx.query_row(&format!("SELECT count(*) FROM {t}"), [], |r| r.get::<_, i64>(0)).map(|n| n as usize);
-            let n = Counts { marks: count("marks")?, routes: count("routes")?, tracks: count("tracks")?, routings: count("routings")?, barriers: count("barriers")?, events: count("events")?, trips: count("trips")? };
+            let n = Counts {
+                marks: count("marks")?,
+                routes: count("routes")?,
+                tracks: count("tracks")?,
+                routings: count("routings")?,
+                barriers: count("barriers")?,
+                events: count("events")?,
+                trips: count("trips")?,
+            };
             tx.commit()?;
             c.execute_batch("VACUUM")?;
             Ok(n)
@@ -364,8 +396,15 @@ mod tests {
 
         // without notes, the catch (what and how many) is left out but the links stay
         let haul = lib.save_event(crate::Event { kind: "line-haul".into(), name: "Haul".into(), at: 1600, ..Default::default() }).unwrap();
-        lib.save_event(crate::Event { kind: "catch".into(), name: "Catch".into(), at: 1700, notes: "3 × snapper".into(),
-            data: serde_json::json!({ "haul": haul.id, "n": 3, "what": "snapper" }), ..Default::default() }).unwrap();
+        lib.save_event(crate::Event {
+            kind: "catch".into(),
+            name: "Catch".into(),
+            at: 1700,
+            notes: "3 × snapper".into(),
+            data: serde_json::json!({ "haul": haul.id, "n": 3, "what": "snapper" }),
+            ..Default::default()
+        })
+        .unwrap();
         let ev: Vec<String> = lib.events().unwrap().into_iter().map(|e| e.id).collect();
         let quiet = dir.join("quiet.gpkg");
         lib.export_library(&quiet, &[], &[], &[], &ev, Also::default(), false).unwrap();

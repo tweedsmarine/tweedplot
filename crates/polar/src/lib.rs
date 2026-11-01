@@ -47,27 +47,17 @@ impl Polar {
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self, PolarError> {
         let path = path.as_ref();
         let text = std::fs::read_to_string(path)?;
-        let name = path
-            .file_stem()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         Self::parse(&name, &text)
     }
 
     /// Parse a polar table; the separator (';', tab, ',' or spaces) is detected per file.
     pub fn parse(name: &str, text: &str) -> Result<Self, PolarError> {
-        let mut lines = text
-            .lines()
-            .enumerate()
-            .map(|(i, l)| (i + 1, l.trim()))
-            .filter(|(_, l)| !l.is_empty() && !l.starts_with('#'));
+        let mut lines = text.lines().enumerate().map(|(i, l)| (i + 1, l.trim())).filter(|(_, l)| !l.is_empty() && !l.starts_with('#'));
 
         let (hline, header) = lines.next().ok_or(PolarError::Empty)?;
         let sep = detect_sep(header);
-        let tws: Vec<f64> = split(header, sep)
-            .skip(1)
-            .map(|s| num(s, hline))
-            .collect::<Result<_, _>>()?;
+        let tws: Vec<f64> = split(header, sep).skip(1).map(|s| num(s, hline)).collect::<Result<_, _>>()?;
         if tws.is_empty() {
             return Err(PolarError::Empty);
         }
@@ -81,10 +71,7 @@ impl Polar {
             let a = num(it.next().unwrap_or(""), ln)?;
             let v: Vec<f64> = it.map(|s| num(s, ln)).collect::<Result<_, _>>()?;
             if v.len() != tws.len() {
-                return Err(PolarError::Parse {
-                    line: ln,
-                    msg: format!("expected {} speeds, found {}", tws.len(), v.len()),
-                });
+                return Err(PolarError::Parse { line: ln, msg: format!("expected {} speeds, found {}", tws.len(), v.len()) });
             }
             rows.push((a, v));
         }
@@ -173,10 +160,7 @@ fn split(l: &str, sep: Option<char>) -> Box<dyn Iterator<Item = &str> + '_> {
 }
 
 fn num(s: &str, line: usize) -> Result<f64, PolarError> {
-    s.replace(',', ".").parse::<f64>().map_err(|_| PolarError::Parse {
-        line,
-        msg: format!("not a number: {s:?}"),
-    })
+    s.replace(',', ".").parse::<f64>().map_err(|_| PolarError::Parse { line, msg: format!("not a number: {s:?}") })
 }
 
 /// Indices either side of x in an ascending vector and the fraction between them.
@@ -203,7 +187,11 @@ mod tests {
 
     #[test]
     fn power_polar_moves_in_a_calm() {
-        let p = Polar::parse("power", "TWA\\TWS;0;10;15;20;25;30\n0;22;22;18;12;8;5\n45;22;22;19;14;9;6\n90;22;22;21;17;12;8\n135;22;22;22;19;15;10\n180;22;22;22;20;16;12\n").unwrap();
+        let p = Polar::parse(
+            "power",
+            "TWA\\TWS;0;10;15;20;25;30\n0;22;22;18;12;8;5\n45;22;22;19;14;9;6\n90;22;22;21;17;12;8\n135;22;22;22;19;15;10\n180;22;22;22;20;16;12\n",
+        )
+        .unwrap();
         assert_eq!(p.bsp(30.0, 0.0), 22.0);
         assert_eq!(p.bsp(0.0, 20.0), 12.0);
         assert!((p.bsp(90.0, 22.5) - 14.5).abs() < 1e-9);

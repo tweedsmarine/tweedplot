@@ -18,28 +18,20 @@ pub const NATIONAL: &str = "new-zealand/new-zealand/dem_1m/2193";
 const INDEX_DAYS: i64 = 7;
 
 fn base() -> String {
-    std::env::var("RACENAV_COASTAL_URL")
-        .unwrap_or_else(|_| "https://nz-coastal.s3-ap-southeast-2.amazonaws.com".into())
+    std::env::var("RACENAV_COASTAL_URL").unwrap_or_else(|_| "https://nz-coastal.s3-ap-southeast-2.amazonaws.com".into())
 }
 
 fn get_json(c: &reqwest::blocking::Client, url: &str) -> Result<Value> {
     let r = c.get(url).send().map_err(|e| Error::Http(crate::marine::why(&e)))?;
     if !r.status().is_success() {
-        return Err(Error::Http(format!(
-            "HTTP {} from {url}",
-            r.status().as_u16()
-        )));
+        return Err(Error::Http(format!("HTTP {} from {url}", r.status().as_u16())));
     }
     let b = r.bytes().map_err(|e| Error::Http(crate::marine::why(&e)))?;
     serde_json::from_slice(&b).map_err(|e| Error::Http(format!("{url}: {e}")))
 }
 
 /// Tile names → their GeoTIFF's path in the bucket, from a STAC collection.
-fn collection_items(
-    c: &reqwest::blocking::Client,
-    path: &str,
-    out: &mut BTreeMap<String, String>,
-) -> Result<()> {
+fn collection_items(c: &reqwest::blocking::Client, path: &str, out: &mut BTreeMap<String, String>) -> Result<()> {
     let v = get_json(c, &format!("{}/{path}/collection.json", base()))?;
     for l in v["links"].as_array().into_iter().flatten() {
         if l["rel"] != "item" {
@@ -64,14 +56,9 @@ pub fn available(dir: &Path) -> Result<BTreeMap<String, String>> {
     let cache = dir.join("index.json");
     if let Ok(b) = std::fs::read(&cache) {
         if let Ok(v) = serde_json::from_slice::<Value>(&b) {
-            let fresh = v["fetched"]
-                .as_i64()
-                .is_some_and(|t| chrono::Utc::now().timestamp() - t < INDEX_DAYS * 86_400);
+            let fresh = v["fetched"].as_i64().is_some_and(|t| chrono::Utc::now().timestamp() - t < INDEX_DAYS * 86_400);
             if let (true, Some(m)) = (fresh, v["tiles"].as_object()) {
-                return Ok(m
-                    .iter()
-                    .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string())))
-                    .collect());
+                return Ok(m.iter().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string()))).collect());
             }
         }
     }
@@ -86,11 +73,7 @@ pub fn available(dir: &Path) -> Result<BTreeMap<String, String>> {
             .filter(|l| l["rel"] == "child")
             .filter_map(|l| l["href"].as_str())
             .filter(|h| h.contains("/dem_1m/"))
-            .map(|h| {
-                h.trim_start_matches("./")
-                    .trim_end_matches("/collection.json")
-                    .to_string()
-            })
+            .map(|h| h.trim_start_matches("./").trim_end_matches("/collection.json").to_string())
             .collect();
         paths.sort(); // survey names end in their years: later ones last, and win
         for p in paths {
@@ -108,12 +91,7 @@ pub fn available(dir: &Path) -> Result<BTreeMap<String, String>> {
 
 /// Download `paths` (name → path in the bucket) into `dir` as `<name>.tiff`, skipping
 /// ones already there. `progress(tile, of, bytes so far)`.
-pub fn download(
-    paths: &[(String, String)],
-    dir: &Path,
-    progress: &(dyn Fn(usize, usize, u64) + Sync),
-    cancel: &AtomicBool,
-) -> Result<usize> {
+pub fn download(paths: &[(String, String)], dir: &Path, progress: &(dyn Fn(usize, usize, u64) + Sync), cancel: &AtomicBool) -> Result<usize> {
     std::fs::create_dir_all(dir)?;
     let c = reqwest::blocking::Client::builder()
         .user_agent(concat!("TweedPlot/", env!("CARGO_PKG_VERSION")))
@@ -132,10 +110,7 @@ pub fn download(
         let url = format!("{}/{path}", base());
         let mut r = c.get(&url).send().map_err(|e| Error::Http(crate::marine::why(&e)))?;
         if !r.status().is_success() {
-            return Err(Error::Http(format!(
-                "HTTP {} from {url}",
-                r.status().as_u16()
-            )));
+            return Err(Error::Http(format!("HTTP {} from {url}", r.status().as_u16())));
         }
         let part = out.with_extension("part");
         let mut f = std::fs::File::create(&part)?;
@@ -190,18 +165,11 @@ mod tests {
                     }
                 }
                 let path = line.split_whitespace().nth(1).unwrap_or("").to_string();
-                let body = routes
-                    .iter()
-                    .find(|(k, _)| path.ends_with(k))
-                    .map(|(_, b)| b.clone());
+                let body = routes.iter().find(|(k, _)| path.ends_with(k)).map(|(_, b)| b.clone());
                 let mut s = s;
                 match body {
                     Some(b) => {
-                        let _ = write!(
-                            s,
-                            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                            b.len()
-                        );
+                        let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", b.len());
                         let _ = s.write_all(&b);
                     }
                     None => {
@@ -220,31 +188,19 @@ mod tests {
             {"rel": "item", "href": "./BQ31_10000_0401.json"},
             {"rel": "item", "href": "./BQ31_10000_0402.json"}
         ]});
-        let base = serve(vec![
-            ("dem_1m/2193/collection.json", col.to_string().into_bytes()),
-            ("BQ31_10000_0401.tiff", b"II*\0fake tiff".to_vec()),
-        ]);
+        let base = serve(vec![("dem_1m/2193/collection.json", col.to_string().into_bytes()), ("BQ31_10000_0401.tiff", b"II*\0fake tiff".to_vec())]);
         std::env::set_var("RACENAV_COASTAL_URL", &base);
         let dir = std::env::temp_dir().join(format!("tp_coastal_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let av = available(&dir).unwrap();
         assert_eq!(av.len(), 2);
-        assert_eq!(
-            av["BQ31_10000_0401"],
-            format!("{NATIONAL}/BQ31_10000_0401.tiff")
-        );
+        assert_eq!(av["BQ31_10000_0401"], format!("{NATIONAL}/BQ31_10000_0401.tiff"));
         assert!(dir.join("index.json").exists());
         let want = vec![("BQ31_10000_0401".to_string(), av["BQ31_10000_0401"].clone())];
-        assert_eq!(
-            download(&want, &dir, &|_, _, _| {}, &AtomicBool::new(false)).unwrap(),
-            1
-        );
+        assert_eq!(download(&want, &dir, &|_, _, _| {}, &AtomicBool::new(false)).unwrap(), 1);
         assert!(dir.join("BQ31_10000_0401.tiff").exists());
         // already there: nothing to do; a missing one is an error
-        assert_eq!(
-            download(&want, &dir, &|_, _, _| {}, &AtomicBool::new(false)).unwrap(),
-            0
-        );
+        assert_eq!(download(&want, &dir, &|_, _, _| {}, &AtomicBool::new(false)).unwrap(), 0);
         let missing = vec![("BQ31_10000_0402".to_string(), av["BQ31_10000_0402"].clone())];
         assert!(download(&missing, &dir, &|_, _, _| {}, &AtomicBool::new(false)).is_err());
         let _ = std::fs::remove_dir_all(&dir);

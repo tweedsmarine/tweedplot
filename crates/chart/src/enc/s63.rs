@@ -30,7 +30,9 @@ pub enum S63Error {
     UserPermit,
     #[error("SSE 21 - Decryption failed, no valid cell permit found. Permits may be for another system or new permits may be required: contact your supplier to obtain a new licence")]
     Decrypt,
-    #[error("SSE 06 - The SA signed data server certificate is invalid. The SA may have issued a new public key or the ENC may originate from another service")]
+    #[error(
+        "SSE 06 - The SA signed data server certificate is invalid. The SA may have issued a new public key or the ENC may originate from another service"
+    )]
     Certificate,
     #[error("SSE 09 - ENC signature is invalid")]
     Signature,

@@ -16,10 +16,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::{client, Error, Result};
 
 pub const GSHHG_FILE: &str = "gshhg-shp-2.3.7.zip";
-const GSHHG_URLS: [&str; 2] = [
-    "https://www.soest.hawaii.edu/pwessel/gshhg/gshhg-shp-2.3.7.zip",
-    "https://www.ngdc.noaa.gov/mgg/shorelines/data/gshhg/latest/gshhg-shp-2.3.7.zip",
-];
+const GSHHG_URLS: [&str; 2] =
+    ["https://www.soest.hawaii.edu/pwessel/gshhg/gshhg-shp-2.3.7.zip", "https://www.ngdc.noaa.gov/mgg/shorelines/data/gshhg/latest/gshhg-shp-2.3.7.zip"];
 /// Rough size, for the dialog.
 pub const GSHHG_BYTES: u64 = 150_000_000;
 

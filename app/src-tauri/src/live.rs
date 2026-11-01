@@ -9,8 +9,7 @@ use tauri::{Emitter, Manager};
 
 static TARGETS: Mutex<Option<ais::Targets>> = Mutex::new(None);
 static REPLAY: Mutex<Option<(Arc<signalk::replay::Control>, String)>> = Mutex::new(None);
-static AIS_REQ: std::sync::OnceLock<tokio::sync::watch::Sender<ais::stream::Request>> =
-    std::sync::OnceLock::new();
+static AIS_REQ: std::sync::OnceLock<tokio::sync::watch::Sender<ais::stream::Request>> = std::sync::OnceLock::new();
 static AIS_STATUS: Mutex<(bool, String)> = Mutex::new((false, String::new()));
 
 fn now_s() -> i64 {
@@ -43,10 +42,7 @@ fn on_event(app: &tauri::AppHandle, ev: signalk::Event, replayed: bool) {
     match ev {
         signalk::Event::Status { connected, detail } => {
             *crate::SK_STATUS.lock().unwrap() = Some((connected, detail.clone()));
-            let _ = app.emit(
-                "sk-status",
-                serde_json::json!({ "connected": connected, "detail": detail }),
-            );
+            let _ = app.emit("sk-status", serde_json::json!({ "connected": connected, "detail": detail }));
         }
         signalk::Event::Vessel(v) => {
             if replayed != is_replaying() {
@@ -74,11 +70,7 @@ fn on_event(app: &tauri::AppHandle, ev: signalk::Event, replayed: bool) {
 pub fn start(app: &tauri::AppHandle) {
     // Signal K
     let handle = app.clone();
-    let opts = signalk::Options {
-        url: crate::sk_url(),
-        log_dir: log_dir(app),
-        min_interval: Duration::from_millis(250),
-    };
+    let opts = signalk::Options { url: crate::sk_url(), log_dir: log_dir(app), min_interval: Duration::from_millis(250) };
     let (tx, mut rx) = tokio::sync::mpsc::channel(512);
     tauri::async_runtime::spawn(signalk::run(opts, tx));
     tauri::async_runtime::spawn(async move {
@@ -98,10 +90,7 @@ pub fn start(app: &tauri::AppHandle) {
             match ev {
                 ais::stream::Event::Status { connected, detail } => {
                     *AIS_STATUS.lock().unwrap() = (connected, detail.clone());
-                    let _ = h2.emit(
-                        "ais-status",
-                        serde_json::json!({ "connected": connected, "detail": detail }),
-                    );
+                    let _ = h2.emit("ais-status", serde_json::json!({ "connected": connected, "detail": detail }));
                 }
                 ais::stream::Event::Update(u) => {
                     if !is_replaying() {
@@ -119,19 +108,19 @@ pub fn start(app: &tauri::AppHandle) {
             tokio::time::sleep(Duration::from_secs(2)).await;
             let (changed, gone) = with_targets(|t| t.take_changes(now_s()));
             if !changed.is_empty() || !gone.is_empty() {
-                let _ = h3.emit(
-                    "ais",
-                    serde_json::json!({ "targets": changed, "gone": gone }),
-                );
+                let _ = h3.emit("ais", serde_json::json!({ "targets": changed, "gone": gone }));
             }
             // replay progress
             let r = REPLAY.lock().unwrap().clone();
             if let Some((c, name)) = r {
                 let (s, e) = *c.span.lock().unwrap();
-                let _ = h3.emit("replay", serde_json::json!({
-                    "name": name, "at": c.at.load(Ordering::Relaxed), "start": s, "end": e,
-                    "paused": c.paused.load(Ordering::Relaxed), "speed": c.speed.load(Ordering::Relaxed) as f64 / 100.0,
-                }));
+                let _ = h3.emit(
+                    "replay",
+                    serde_json::json!({
+                        "name": name, "at": c.at.load(Ordering::Relaxed), "start": s, "end": e,
+                        "paused": c.paused.load(Ordering::Relaxed), "speed": c.speed.load(Ordering::Relaxed) as f64 / 100.0,
+                    }),
+                );
             }
         }
     });
@@ -165,12 +154,7 @@ pub fn ais_set_own(mmsi: Option<u32>) {
 /// Recent tracks of the given targets: MMSI → [[t, lon, lat], …].
 #[tauri::command]
 pub fn ais_tracks(mmsis: Vec<u32>) -> std::collections::HashMap<u32, Vec<[f64; 3]>> {
-    with_targets(|t| {
-        mmsis
-            .iter()
-            .filter_map(|m| t.tracks.get(m).map(|tr| (*m, tr.clone())))
-            .collect()
-    })
+    with_targets(|t| mmsis.iter().filter_map(|m| t.tracks.get(m).map(|tr| (*m, tr.clone()))).collect())
 }
 
 #[tauri::command]
@@ -185,10 +169,7 @@ pub fn ais_status() -> serde_json::Value {
 #[tauri::command]
 pub fn replay_logs(app: tauri::AppHandle) -> serde_json::Value {
     let dir = log_dir(&app);
-    let logs = dir
-        .as_deref()
-        .map(signalk::replay::list)
-        .unwrap_or_default();
+    let logs = dir.as_deref().map(signalk::replay::list).unwrap_or_default();
     serde_json::json!({ "dir": dir, "logs": logs })
 }
 
@@ -201,20 +182,11 @@ pub fn replay_start(app: tauri::AppHandle, path: String, speed: Option<f64>) -> 
         return Err(format!("{path}: not found"));
     }
     let ctl = Arc::new(signalk::replay::Control::default());
-    ctl.speed.store(
-        (speed.unwrap_or(1.0).clamp(0.1, 1000.0) * 100.0) as u32,
-        Ordering::Relaxed,
-    );
-    let name = p
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    ctl.speed.store((speed.unwrap_or(1.0).clamp(0.1, 1000.0) * 100.0) as u32, Ordering::Relaxed);
+    let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     *REPLAY.lock().unwrap() = Some((ctl.clone(), name));
     with_targets(|t| t.clear());
-    let _ = app.emit(
-        "ais",
-        serde_json::json!({ "reset": true, "targets": [], "gone": [] }),
-    );
+    let _ = app.emit("ais", serde_json::json!({ "reset": true, "targets": [], "gone": [] }));
     let (tx, mut rx) = tokio::sync::mpsc::channel(512);
     let h = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -231,14 +203,8 @@ pub fn replay_start(app: tauri::AppHandle, path: String, speed: Option<f64>) -> 
             *g = None;
             drop(g);
             with_targets(|t| t.clear());
-            let _ = h2.emit(
-                "ais",
-                serde_json::json!({ "reset": true, "targets": [], "gone": [] }),
-            );
-            let _ = h2.emit(
-                "replay-end",
-                serde_json::json!({ "error": r.err().map(|e| e.to_string()) }),
-            );
+            let _ = h2.emit("ais", serde_json::json!({ "reset": true, "targets": [], "gone": [] }));
+            let _ = h2.emit("replay-end", serde_json::json!({ "error": r.err().map(|e| e.to_string()) }));
         }
     });
     Ok(())
@@ -252,8 +218,7 @@ pub fn replay_control(paused: Option<bool>, speed: Option<f64>, seek: Option<i64
             c.paused.store(p, Ordering::Relaxed);
         }
         if let Some(s) = speed {
-            c.speed
-                .store((s.clamp(0.1, 1000.0) * 100.0) as u32, Ordering::Relaxed);
+            c.speed.store((s.clamp(0.1, 1000.0) * 100.0) as u32, Ordering::Relaxed);
         }
         if let Some(t) = seek {
             c.seek.store(t, Ordering::Relaxed);
@@ -268,10 +233,7 @@ pub fn replay_stop(app: tauri::AppHandle) {
     if let Some((c, _)) = r {
         c.stop.store(true, Ordering::Relaxed);
         with_targets(|t| t.clear());
-        let _ = app.emit(
-            "ais",
-            serde_json::json!({ "reset": true, "targets": [], "gone": [] }),
-        );
+        let _ = app.emit("ais", serde_json::json!({ "reset": true, "targets": [], "gone": [] }));
         let _ = app.emit("replay-end", serde_json::json!({ "error": null }));
     }
 }

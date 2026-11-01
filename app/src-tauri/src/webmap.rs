@@ -98,10 +98,7 @@ fn valid_template(t: &str) -> bool {
 }
 
 fn fill(template: &str, z: u8, x: u32, y: u32) -> String {
-    template
-        .replace("{z}", &z.to_string())
-        .replace("{x}", &x.to_string())
-        .replace("{y}", &y.to_string())
+    template.replace("{z}", &z.to_string()).replace("{x}", &x.to_string()).replace("{y}", &y.to_string())
 }
 
 /// `/osm/<z>/<x>/<y>.png` or `/osea/<z>/<x>/<y>.png`, with a tile that exists at that zoom.
@@ -136,7 +133,11 @@ fn template(kind: Kind) -> String {
         Kind::Osm => (&c.osm, OSM_URL),
         Kind::Sea => (&c.sea, SEA_URL),
     };
-    if custom.is_empty() { default.to_string() } else { custom.clone() }
+    if custom.is_empty() {
+        default.to_string()
+    } else {
+        custom.clone()
+    }
 }
 
 /// FNV-1a: a stable short name for a tile server address, so that changing the address
@@ -275,10 +276,7 @@ fn key_water(bytes: &[u8]) -> Option<Vec<u8>> {
         _ => return None,
     };
     let (w, h) = (info.width as usize, info.height as usize);
-    let water: Vec<bool> = buf[..info.buffer_size()]
-        .chunks_exact(step)
-        .map(|px| (0..3).all(|i| (px[i] as i32 - WATER[i]).abs() <= 10))
-        .collect();
+    let water: Vec<bool> = buf[..info.buffer_size()].chunks_exact(step).map(|px| (0..3).all(|i| (px[i] as i32 - WATER[i]).abs() <= 10)).collect();
     // Water reaching the tile edge is taken to be sea and made transparent. Enclosed water (lakes, ponds,
     // wide rivers) stays opaque: it is OSM's own and must not expose the depth shading under the land.
     let mut sea = vec![false; w * h];
@@ -295,14 +293,28 @@ fn key_water(bytes: &[u8]) -> Option<Vec<u8>> {
         }
         sea[i] = true;
         let (x, y) = (i % w, i / w);
-        if x > 0 { stack.push(i - 1); }
-        if x + 1 < w { stack.push(i + 1); }
-        if y > 0 { stack.push(i - w); }
-        if y + 1 < h { stack.push(i + w); }
+        if x > 0 {
+            stack.push(i - 1);
+        }
+        if x + 1 < w {
+            stack.push(i + 1);
+        }
+        if y > 0 {
+            stack.push(i - w);
+        }
+        if y + 1 < h {
+            stack.push(i + w);
+        }
     }
     let mut rgba = Vec::with_capacity(w * h * 4);
     for (i, px) in buf[..info.buffer_size()].chunks_exact(step).enumerate() {
-        let a = if sea[i] { 0 } else if step == 4 { px[3] } else { 255 };
+        let a = if sea[i] {
+            0
+        } else if step == 4 {
+            px[3]
+        } else {
+            255
+        };
         rgba.extend_from_slice(&[px[0], px[1], px[2], a]);
     }
     let mut out = Vec::new();

@@ -17,7 +17,9 @@ fn placeholder(v: &str) -> bool {
         || digits.chars().all(|c| c == '0')
         || digits.chars().all(|c| c == 'f')
         || t == "03000200-0400-0500-0006-000700080009"
-        || ["to be filled", "default string", "not applicable", "not specified", "none", "system serial", "base board serial", "0123456789", "n/a", "oem"].iter().any(|p| t.contains(p))
+        || ["to be filled", "default string", "not applicable", "not specified", "none", "system serial", "base board serial", "0123456789", "n/a", "oem"]
+            .iter()
+            .any(|p| t.contains(p))
 }
 
 #[cfg(windows)]
@@ -42,7 +44,12 @@ fn sources() -> (Vec<(&'static str, String)>, Option<String>) {
     let mut board = Vec::new();
     let ps = run(
         "powershell",
-        &["-NoProfile", "-NonInteractive", "-Command", "(Get-CimInstance -ClassName Win32_ComputerSystemProduct).UUID; '|'; (Get-CimInstance -ClassName Win32_BaseBoard).SerialNumber"],
+        &[
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "(Get-CimInstance -ClassName Win32_ComputerSystemProduct).UUID; '|'; (Get-CimInstance -ClassName Win32_BaseBoard).SerialNumber",
+        ],
     );
     if let Some(t) = ps {
         let mut parts = t.split('|');

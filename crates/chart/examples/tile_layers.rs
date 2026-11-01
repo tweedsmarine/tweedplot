@@ -5,7 +5,9 @@ fn main() {
     let dirs: Vec<std::path::PathBuf> = a[..k].iter().map(Into::into).collect();
     let (z, x, y): (u8, u32, u32) = (a[k + 1].parse().unwrap(), a[k + 2].parse().unwrap(), a[k + 3].parse().unwrap());
     let s = chart::ChartStore::open_dirs(&dirs).unwrap();
-    if let Ok(d) = std::env::var("LAND_DETAIL") { chart::coast::LAND_DETAIL.store(d.parse().unwrap(), std::sync::atomic::Ordering::Relaxed); }
+    if let Ok(d) = std::env::var("LAND_DETAIL") {
+        chart::coast::LAND_DETAIL.store(d.parse().unwrap(), std::sync::atomic::Ordering::Relaxed);
+    }
     let t = s.tile(z, x, y);
     for l in ["wdepth", "depare", "depcnt", "far", "land", "wcoast", "fln", "soundg", "fpt"] {
         let v = chart::mvt::debug_points(&t, l);

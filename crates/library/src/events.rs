@@ -163,7 +163,9 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lib-events-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let lib = Library::open(&dir).unwrap();
-        let shot = lib.save_event(Event { kind: "net-shot".into(), name: "Net shot".into(), at: 1000, lat: Some(-41.0), lon: Some(174.0), ..Default::default() }).unwrap();
+        let shot = lib
+            .save_event(Event { kind: "net-shot".into(), name: "Net shot".into(), at: 1000, lat: Some(-41.0), lon: Some(174.0), ..Default::default() })
+            .unwrap();
         let haul = lib.save_event(Event { kind: "net-haul".into(), name: "Net hauled".into(), at: 5000, ..Default::default() }).unwrap();
         assert_eq!(haul.pair, shot.id);
         // a second haul has no open shot

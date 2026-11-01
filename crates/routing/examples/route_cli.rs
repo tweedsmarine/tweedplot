@@ -21,8 +21,12 @@ fn main() {
     let t0: i64 = get("--time").map(|s| s.parse().unwrap()).unwrap_or_else(|| grib.times(grib::Param::WindU)[0]);
     let safety: f64 = get("--safety").map(|s| s.parse().unwrap()).unwrap_or(3.0);
     let mut p = Params::default();
-    if let Some(s) = get("--step") { p.step_s = s.parse().unwrap(); }
-    if let Some(s) = get("--eff") { p.efficiency = s.parse().unwrap(); }
+    if let Some(s) = get("--step") {
+        p.step_s = s.parse().unwrap();
+    }
+    if let Some(s) = get("--eff") {
+        p.efficiency = s.parse().unwrap();
+    }
 
     let raster = get("--chart").map(|dir| {
         let store = chart::ChartStore::open_dir(dir).expect("open charts");

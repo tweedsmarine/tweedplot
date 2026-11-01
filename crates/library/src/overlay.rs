@@ -20,10 +20,15 @@ impl Overlay {
     pub fn open(path: &Path) -> Result<Self> {
         let c = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
         c.busy_timeout(std::time::Duration::from_secs(10))?;
-        let v: Option<String> = c.query_row("SELECT value FROM meta WHERE key = 'schema'", [], |r| r.get(0)).optional().map_err(|_| Error::Store("that isn't a TweedPlot library".into()))?;
+        let v: Option<String> = c
+            .query_row("SELECT value FROM meta WHERE key = 'schema'", [], |r| r.get(0))
+            .optional()
+            .map_err(|_| Error::Store("that isn't a TweedPlot library".into()))?;
         let v: i64 = v.and_then(|s| s.parse().ok()).unwrap_or(1);
         if v < 2 {
-            return Err(Error::Store("that library is from an older TweedPlot: open it once (Library menu > Open library) to update it, then show it alongside".into()));
+            return Err(Error::Store(
+                "that library is from an older TweedPlot: open it once (Library menu > Open library) to update it, then show it alongside".into(),
+            ));
         }
         Ok(Overlay { path: path.to_path_buf(), db: Mutex::new(c) })
     }

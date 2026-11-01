@@ -112,9 +112,7 @@ impl TableInfo {
     /// Whether the table may have rows in `b` (or its copy shifted by 360°).
     pub(crate) fn touches(&self, b: [f64; 4]) -> bool {
         let t = self.bounds;
-        wrap_shifts(b)
-            .iter()
-            .any(|s| t[0] <= b[2] + s && t[2] >= b[0] + s && t[1] <= b[3] && t[3] >= b[1])
+        wrap_shifts(b).iter().any(|s| t[0] <= b[2] + s && t[2] >= b[0] + s && t[1] <= b[3] && t[3] >= b[1])
     }
 }
 
@@ -189,19 +187,12 @@ impl ChartStore {
     }
 
     /// [`open_dirs`](Self::open_dirs), telling `progress(files opened, files)` as it goes.
-    pub fn open_dirs_with(
-        dirs: &[PathBuf],
-        progress: &mut (dyn FnMut(usize, usize) + Send),
-    ) -> Result<Self, ChartError> {
+    pub fn open_dirs_with(dirs: &[PathBuf], progress: &mut (dyn FnMut(usize, usize) + Send)) -> Result<Self, ChartError> {
         Self::open_dirs_with_extra_gpkgs(dirs, &[], progress)
     }
 
     /// Open chart directories plus GeoPackages already prepared by another caller.
-    pub fn open_dirs_with_extra_gpkgs(
-        dirs: &[PathBuf],
-        extra_gpkgs: &[PathBuf],
-        progress: &mut (dyn FnMut(usize, usize) + Send),
-    ) -> Result<Self, ChartError> {
+    pub fn open_dirs_with_extra_gpkgs(dirs: &[PathBuf], extra_gpkgs: &[PathBuf], progress: &mut (dyn FnMut(usize, usize) + Send)) -> Result<Self, ChartError> {
         let t0 = std::time::Instant::now();
         let mut gpkgs: Vec<PathBuf> = Vec::new();
         for dir in dirs.iter().filter(|d| d.is_dir()) {
@@ -216,20 +207,10 @@ impl ChartStore {
             let unz = dir.join(".unzipped");
             for e in std::fs::read_dir(dir)? {
                 let p = e?.path();
-                let name = p
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_ascii_lowercase())
-                    .unwrap_or_default();
-                match p
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .map(str::to_ascii_lowercase)
-                    .as_deref()
-                {
+                let name = p.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+                match p.extension().and_then(|s| s.to_str()).map(str::to_ascii_lowercase).as_deref() {
                     Some("gpkg") => gpkgs.push(p),
-                    Some("zip") if !name.starts_with("gshhg") => {
-                        gpkgs.extend(unzip_gpkgs(&p, &unz)?)
-                    }
+                    Some("zip") if !name.starts_with("gshhg") => gpkgs.extend(unzip_gpkgs(&p, &unz)?),
                     _ => {}
                 }
             }
@@ -319,12 +300,7 @@ impl ChartStore {
     /// [`tile`](Self::tile), or None if drawing it failed (a bug: the panic is reported
     /// on the terminal with the tile, and nothing is cached, so it is tried again).
     pub fn try_tile(&self, z: u8, x: u32, y: u32) -> Option<Arc<Vec<u8>>> {
-        if let Some(t) = self
-            .cache
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(&(z, x, y))
-        {
+        if let Some(t) = self.cache.lock().unwrap_or_else(|e| e.into_inner()).get(&(z, x, y)) {
             return Some(t.clone());
         }
         // TWEEDPLOT_TILE_LOG=1: each tile as it starts and how long it took (finding a tile
@@ -338,29 +314,15 @@ impl ChartStore {
         let t = match drawn {
             Ok(t) => Arc::new(t),
             Err(e) => {
-                let why = e
-                    .downcast_ref::<String>()
-                    .cloned()
-                    .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()))
-                    .unwrap_or_default();
-                eprintln!(
-                    "charts: tile {z}/{x}/{y} failed after {:.0} ms: {why}",
-                    t0.elapsed().as_secs_f64() * 1000.0
-                );
+                let why = e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default();
+                eprintln!("charts: tile {z}/{x}/{y} failed after {:.0} ms: {why}", t0.elapsed().as_secs_f64() * 1000.0);
                 return None;
             }
         };
         if log {
-            eprintln!(
-                "tile {z}/{x}/{y} {} bytes {:.0} ms",
-                t.len(),
-                t0.elapsed().as_secs_f64() * 1000.0
-            );
+            eprintln!("tile {z}/{x}/{y} {} bytes {:.0} ms", t.len(), t0.elapsed().as_secs_f64() * 1000.0);
         }
-        self.cache
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .put((z, x, y), t.clone());
+        self.cache.lock().unwrap_or_else(|e| e.into_inner()).put((z, x, y), t.clone());
         Some(t)
     }
 
@@ -384,10 +346,7 @@ impl ChartStore {
     pub(crate) fn band_starts(&self, bbox: [f64; 4]) -> [u8; 8] {
         let mut out = [0u8; 8];
         let cov = self.coverage();
-        let tile_rect = geo::Rect::new(
-            geo::coord! { x: bbox[0], y: bbox[1] },
-            geo::coord! { x: bbox[2], y: bbox[3] },
-        );
+        let tile_rect = geo::Rect::new(geo::coord! { x: bbox[0], y: bbox[1] }, geo::coord! { x: bbox[2], y: bbox[3] });
         for (band, o) in out.iter_mut().enumerate() {
             let m = band_minzoom(band as u8);
             // a smaller-scale chart whose coverage takes in the whole tile: then this band
@@ -397,13 +356,7 @@ impl ChartStore {
             let coarser = band <= 1
                 || cov.intersecting(bbox).any(|(b, bb, poly)| {
                     use geo::Contains;
-                    (*b as usize) < band
-                        && *b >= 1
-                        && bb[0] <= bbox[0]
-                        && bb[2] >= bbox[2]
-                        && bb[1] <= bbox[1]
-                        && bb[3] >= bbox[3]
-                        && poly.contains(&tile_rect)
+                    (*b as usize) < band && *b >= 1 && bb[0] <= bbox[0] && bb[2] >= bbox[2] && bb[1] <= bbox[1] && bb[3] >= bbox[3] && poly.contains(&tile_rect)
                 });
             *o = if band <= 1 {
                 m
@@ -429,10 +382,7 @@ impl ChartStore {
 
         // World depths (under the charts): Natural Earth everywhere (a lighter copy below
         // zoom 4), ETOPO areas from zoom 4.
-        let has_lo = self
-            .tables
-            .iter()
-            .any(|t| t.kind == Kind::WorldDepth && t.band == 0);
+        let has_lo = self.tables.iter().any(|t| t.kind == Kind::WorldDepth && t.band == 0);
         let mut wd: Vec<&TableInfo> = self
             .tables
             .iter()
@@ -451,13 +401,7 @@ impl ChartStore {
         for t in wd {
             self.query(t, bbox, &["depth"], |vals, g| {
                 if let Some(tg) = tp.polygons(&g) {
-                    wdepth.add(
-                        &tg,
-                        &[
-                            ("d", Value::F64(vals[0].unwrap_or(0.0))),
-                            ("src", Value::UInt(t.band as u64)),
-                        ],
-                    );
+                    wdepth.add(&tg, &[("d", Value::F64(vals[0].unwrap_or(0.0))), ("src", Value::UInt(t.band as u64))]);
                 }
             });
         }
@@ -492,11 +436,7 @@ impl ChartStore {
                 }
             })
         };
-        let mut bands: Vec<&TableInfo> = self
-            .tables
-            .iter()
-            .filter(|t| band_visible(z, t.band, start(t.band), skin(t)))
-            .collect();
+        let mut bands: Vec<&TableInfo> = self.tables.iter().filter(|t| band_visible(z, t.band, start(t.band), skin(t))).collect();
         bands.sort_by_key(|t| t.band);
 
         // chart water that world land gives way to (from WORLD_CUT_ZOOM)
@@ -523,10 +463,7 @@ impl ChartStore {
         }
         // ENC lakes and wide rivers (LAKARE, RIVERS areas): water too, often how small-scale
         // cells chart the Great Lakes; drawn as deep water, and the world land gives way
-        for t in bands
-            .iter()
-            .filter(|t| t.kind == Kind::Lake && t.table.contains("_enc_b"))
-        {
+        for t in bands.iter().filter(|t| t.kind == Kind::Lake && t.table.contains("_enc_b")) {
             self.query(t, bbox, &[], |_, g| {
                 if let Some(tg) = tp.polygons(&g) {
                     if want_water {
@@ -534,13 +471,7 @@ impl ChartStore {
                             chart_water.extend(r.iter().cloned());
                         }
                     }
-                    depare.add(
-                        &tg,
-                        &[
-                            ("band", Value::UInt(t.band as u64)),
-                            ("lake", Value::UInt(1)),
-                        ],
-                    );
+                    depare.add(&tg, &[("band", Value::UInt(t.band as u64)), ("lake", Value::UInt(1))]);
                 }
             });
         }
@@ -550,37 +481,18 @@ impl ChartStore {
         for kind in [Kind::Contour, Kind::Sounding] {
             let extra = if kind == Kind::Sounding { 1 } else { 0 };
             let mut drawn: Vec<u8> = Vec::new();
-            for t in bands
-                .iter()
-                .rev()
-                .filter(|t| t.kind == kind && z >= start(t.band) + extra)
-            {
+            for t in bands.iter().rev().filter(|t| t.kind == kind && z >= start(t.band) + extra) {
                 if drawn.contains(&t.band) {
                     continue;
                 }
                 // a finer band without coverage polygons: no telling where it stops
-                if drawn
-                    .iter()
-                    .any(|b| !self.coverage().polygons.iter().any(|(cb, _, _)| cb == b))
-                {
+                if drawn.iter().any(|b| !self.coverage().polygons.iter().any(|(cb, _, _)| cb == b)) {
                     break;
                 }
-                let cover = if drawn.is_empty() {
-                    None
-                } else {
-                    self.cover_in(&drawn, bbox)
-                };
-                let layer = if kind == Kind::Contour {
-                    &mut depcnt
-                } else {
-                    &mut soundg
-                };
+                let cover = if drawn.is_empty() { None } else { self.cover_in(&drawn, bbox) };
+                let layer = if kind == Kind::Contour { &mut depcnt } else { &mut soundg };
                 let before = layer.len();
-                let col = if kind == Kind::Contour {
-                    "valdco"
-                } else {
-                    "depth"
-                };
+                let col = if kind == Kind::Contour { "valdco" } else { "depth" };
                 self.query(t, bbox, &[col], |vals, g| {
                     let g = match &cover {
                         None => g,
@@ -603,11 +515,7 @@ impl ChartStore {
                             Geom::Points(pts)
                         }
                     };
-                    let tg = if kind == Kind::Contour {
-                        tp.lines(&drop_cell_edges(g))
-                    } else {
-                        tp.points(&g)
-                    };
+                    let tg = if kind == Kind::Contour { tp.lines(&drop_cell_edges(g)) } else { tp.points(&g) };
                     if let Some(tg) = tg {
                         let mut props = vec![("band", Value::UInt(t.band as u64))];
                         if let Some(v) = vals[0] {
@@ -623,19 +531,12 @@ impl ChartStore {
         }
         // World land at the resolution for this zoom, except inside NZ where Topo50 is drawn.
         let topo = z >= band_minzoom(0) && self.has_topo50();
-        let res = coast::res_for_zoom(
-            z,
-            coast::LAND_DETAIL.load(std::sync::atomic::Ordering::Relaxed),
-        );
+        let res = coast::res_for_zoom(z, coast::LAND_DETAIL.load(std::sync::atomic::Ordering::Relaxed));
         let mut wcoast = Layer::new("wcoast");
         let mut world_land: Vec<Vec<[i32; 2]>> = Vec::new();
         let mut lakes: Vec<Vec<[i32; 2]>> = Vec::new();
         let mut lake_islands: Vec<Vec<[i32; 2]>> = Vec::new();
-        for t in self
-            .tables
-            .iter()
-            .filter(|t| matches!(t.kind, Kind::WorldLand | Kind::WorldCoast))
-        {
+        for t in self.tables.iter().filter(|t| matches!(t.kind, Kind::WorldLand | Kind::WorldCoast)) {
             if coast::RESOLUTIONS[(t.band as usize).clamp(1, 5) - 1] != res {
                 continue;
             }
@@ -672,28 +573,17 @@ impl ChartStore {
         // charts' coverage (a small-scale cell's land can take in a lake or river that the
         // larger-scale cell charts as water, Oneida Lake for one)
         {
-            let mut enc: Vec<&&TableInfo> = bands
-                .iter()
-                .filter(|t| t.kind == Kind::Land && t.band > 0)
-                .collect();
+            let mut enc: Vec<&&TableInfo> = bands.iter().filter(|t| t.kind == Kind::Land && t.band > 0).collect();
             enc.sort_by_key(|t| std::cmp::Reverse(t.band));
             let finer: Vec<u8> = {
-                let mut v: Vec<u8> = bands
-                    .iter()
-                    .filter(|t| t.kind == Kind::DepthArea && t.band > 0)
-                    .map(|t| t.band)
-                    .collect();
+                let mut v: Vec<u8> = bands.iter().filter(|t| t.kind == Kind::DepthArea && t.band > 0).map(|t| t.band).collect();
                 v.sort();
                 v.dedup();
                 v
             };
             for t in enc {
                 let above: Vec<u8> = finer.iter().copied().filter(|b| *b > t.band).collect();
-                let cover = if above.is_empty() {
-                    None
-                } else {
-                    self.cover_in(&above, bbox)
-                };
+                let cover = if above.is_empty() { None } else { self.cover_in(&above, bbox) };
                 self.query(t, bbox, &[], |_, g| {
                     let g = match &cover {
                         None => g,
@@ -718,11 +608,7 @@ impl ChartStore {
                 });
             }
             if !topo_land.is_empty() {
-                let rings = if water.is_empty() {
-                    topo_land
-                } else {
-                    cut_water(topo_land, water.clone())
-                };
+                let rings = if water.is_empty() { topo_land } else { cut_water(topo_land, water.clone()) };
                 if !rings.is_empty() {
                     land.add(&TileGeom::Rings(rings), &[]);
                 }
@@ -758,10 +644,7 @@ impl ChartStore {
         }
         let [far, fln, fpt, lsec] = self.render_features(&tp, z, &starts);
         let [mbound, rules, rules_ln, fareas] = self.render_marine(&tp, z, bbox);
-        mvt::encode_tile(&[
-            wland, wdepth, wdcnt, depare, depcnt, far, land, wcoast, fln, soundg, lsec, fpt,
-            mbound, rules, rules_ln, fareas,
-        ])
+        mvt::encode_tile(&[wland, wdepth, wdcnt, depare, depcnt, far, land, wcoast, fln, soundg, lsec, fpt, mbound, rules, rules_ln, fareas])
     }
 
     /// Maritime boundaries ("mbound": `kind`, `name`), fishing rule areas ("rules") and
@@ -776,8 +659,7 @@ impl ChartStore {
             match t.kind {
                 Kind::Boundary => self.query_text(t, bbox, &["kind", "name"], |row| {
                     if let Some(tg) = tp.lines(&row.geom) {
-                        let mut props =
-                            vec![("kind", Value::Str(row.vals[0].clone().unwrap_or_default()))];
+                        let mut props = vec![("kind", Value::Str(row.vals[0].clone().unwrap_or_default()))];
                         if let Some(n) = row.vals[1].clone().filter(|n| !n.is_empty()) {
                             props.push(("name", Value::Str(n)));
                         }
@@ -787,14 +669,8 @@ impl ChartStore {
                 Kind::Rule | Kind::RuleLine if z >= 4 => {
                     let cols = marine::rule_cols();
                     self.query(t, bbox, cols, |vals, g| {
-                        let props: Vec<(&str, Value)> = cols
-                            .iter()
-                            .zip(vals)
-                            .filter_map(|(c, v)| {
-                                v.filter(|v| *v != 0.0 || *c == "rid")
-                                    .map(|v| (*c, Value::UInt(v as u64)))
-                            })
-                            .collect();
+                        let props: Vec<(&str, Value)> =
+                            cols.iter().zip(vals).filter_map(|(c, v)| v.filter(|v| *v != 0.0 || *c == "rid").map(|v| (*c, Value::UInt(v as u64)))).collect();
                         if t.kind == Kind::Rule {
                             if let Some(tg) = tp.polygons(&g) {
                                 rules.add(&tg, &props);
@@ -808,10 +684,7 @@ impl ChartStore {
                     if let Some(tg) = tp.lines(&row.geom) {
                         fareas.add(
                             &tg,
-                            &[
-                                ("kind", Value::Str(row.vals[0].clone().unwrap_or_default())),
-                                ("code", Value::Str(row.vals[1].clone().unwrap_or_default())),
-                            ],
+                            &[("kind", Value::Str(row.vals[0].clone().unwrap_or_default())), ("code", Value::Str(row.vals[1].clone().unwrap_or_default()))],
                         );
                     }
                 }),
@@ -821,21 +694,12 @@ impl ChartStore {
         [mbound, rules, rules_ln, fareas]
     }
 
-    fn query(
-        &self,
-        t: &TableInfo,
-        b: [f64; 4],
-        cols: &[&str],
-        mut f: impl FnMut(&[Option<f64>], Geom),
-    ) {
+    fn query(&self, t: &TableInfo, b: [f64; 4], cols: &[&str], mut f: impl FnMut(&[Option<f64>], Geom)) {
         if !t.touches(b) {
             return;
         }
         let conn = self.dbs[t.db].lock().unwrap_or_else(|e| e.into_inner());
-        let gcol = t
-            .rtree
-            .trim_start_matches(&format!("rtree_{}_", t.table))
-            .to_string();
+        let gcol = t.rtree.trim_start_matches(&format!("rtree_{}_", t.table)).to_string();
         let sel: String = cols.iter().map(|c| format!("t.\"{c}\", ")).collect();
         let sql = format!(
             "SELECT {sel}t.\"{gcol}\" FROM \"{tbl}\" t JOIN \"{rt}\" r ON t.\"{pk}\" = r.id
@@ -852,19 +716,12 @@ impl ChartStore {
                 return;
             };
             for shift in wrap_shifts(b) {
-                let Ok(mut rows) =
-                    st.query(rusqlite::params![b[0] + shift, b[2] + shift, b[1], b[3]])
-                else {
+                let Ok(mut rows) = st.query(rusqlite::params![b[0] + shift, b[2] + shift, b[1], b[3]]) else {
                     continue;
                 };
                 while let Ok(Some(r)) = rows.next() {
-                    let vals: Vec<Option<f64>> = (0..cols.len())
-                        .map(|i| r.get::<_, Option<f64>>(i).ok().flatten())
-                        .collect();
-                    let Ok(blob) = r
-                        .get_ref(cols.len())
-                        .and_then(|v| v.as_blob().map_err(Into::into))
-                    else {
+                    let vals: Vec<Option<f64>> = (0..cols.len()).map(|i| r.get::<_, Option<f64>>(i).ok().flatten()).collect();
+                    let Ok(blob) = r.get_ref(cols.len()).and_then(|v| v.as_blob().map_err(Into::into)) else {
                         continue;
                     };
                     got.push((vals, blob.to_vec(), shift));
@@ -885,16 +742,8 @@ impl ChartStore {
 
     /// Every depth-area polygon touching `bbox` [w, s, e, n], coarse bands first:
     /// `f(band, drval1, rings)`. For building routing obstacle maps.
-    pub fn for_each_depth_area(
-        &self,
-        bbox: [f64; 4],
-        mut f: impl FnMut(u8, Option<f64>, &[geom::Ring]),
-    ) {
-        let mut tables: Vec<&TableInfo> = self
-            .tables
-            .iter()
-            .filter(|t| t.kind == Kind::DepthArea)
-            .collect();
+    pub fn for_each_depth_area(&self, bbox: [f64; 4], mut f: impl FnMut(u8, Option<f64>, &[geom::Ring])) {
+        let mut tables: Vec<&TableInfo> = self.tables.iter().filter(|t| t.kind == Kind::DepthArea).collect();
         tables.sort_by_key(|t| t.band);
         for t in tables {
             self.query(t, bbox, &["drval1"], |vals, g| {
@@ -925,9 +774,7 @@ impl ChartStore {
 
     /// Every lake polygon touching `bbox` (inland water), and the rivers too if `rivers`.
     pub fn for_each_lake(&self, bbox: [f64; 4], rivers: bool, mut f: impl FnMut(&[geom::Ring])) {
-        for t in self.tables.iter().filter(|t| {
-            t.kind == Kind::Lake && (rivers || !t.table.to_ascii_lowercase().contains("river"))
-        }) {
+        for t in self.tables.iter().filter(|t| t.kind == Kind::Lake && (rivers || !t.table.to_ascii_lowercase().contains("river"))) {
             self.query(t, bbox, &[], |_, g| {
                 if let Geom::Polygons(polys) = g {
                     for p in &polys {
@@ -952,9 +799,7 @@ impl ChartStore {
     }
 
     fn has_topo50(&self) -> bool {
-        self.tables
-            .iter()
-            .any(|t| t.kind == Kind::Land && t.band == 0)
+        self.tables.iter().any(|t| t.kind == Kind::Land && t.band == 0)
     }
 
     /// True if GSHHG world land is available.
@@ -964,20 +809,11 @@ impl ChartStore {
 
     /// GSHHG land polygons touching `bbox`, at a resolution to suit raster cells
     /// of `cell_m` metres; NZ polygons are left to Topo50 when it is present.
-    pub fn for_each_world_land(
-        &self,
-        bbox: [f64; 4],
-        cell_m: f64,
-        mut f: impl FnMut(&[geom::Ring]),
-    ) {
+    pub fn for_each_world_land(&self, bbox: [f64; 4], cell_m: f64, mut f: impl FnMut(&[geom::Ring])) {
         let res = coast::res_for_cell(cell_m);
         let band = coast::RESOLUTIONS.iter().position(|&r| r == res).unwrap() as u8 + 1;
         let topo = self.has_topo50();
-        for t in self
-            .tables
-            .iter()
-            .filter(|t| t.kind == Kind::WorldLand && t.band == band)
-        {
+        for t in self.tables.iter().filter(|t| t.kind == Kind::WorldLand && t.band == band) {
             self.query(t, bbox, &["level"], |vals, g| {
                 if topo && inside(geom_bounds(&g), TOPO50_AREA) {
                     return;
@@ -1000,11 +836,7 @@ impl ChartStore {
     /// in lon/lat, from the finest band covering each area. For routing.
     pub fn shallow_areas(&self, bbox: [f64; 4], depth: f64, band: u8) -> Vec<Vec<geom::Ring>> {
         let mut out = Vec::new();
-        for t in self
-            .tables
-            .iter()
-            .filter(|t| t.kind == Kind::DepthArea && t.band == band)
-        {
+        for t in self.tables.iter().filter(|t| t.kind == Kind::DepthArea && t.band == band) {
             self.query(t, bbox, &["drval1"], |vals, g| {
                 if vals[0].is_some_and(|d| d < depth) {
                     if let Geom::Polygons(p) = g {
@@ -1047,14 +879,7 @@ pub(crate) fn shift_geom(g: &mut Geom, dlon: f64) {
 
 pub(crate) fn geom_bounds(g: &Geom) -> [f64; 4] {
     let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
-    let mut add = |p: &[f64; 2]| {
-        b = [
-            b[0].min(p[0]),
-            b[1].min(p[1]),
-            b[2].max(p[0]),
-            b[3].max(p[1]),
-        ]
-    };
+    let mut add = |p: &[f64; 2]| b = [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])];
     match g {
         Geom::Points(v) => v.iter().for_each(&mut add),
         Geom::Lines(v) => v.iter().flatten().for_each(&mut add),
@@ -1088,9 +913,7 @@ pub fn drop_cell_edges(g: Geom) -> Geom {
                     j += 1;
                 }
                 if j > i {
-                    let (lo, hi) = l[i..=j].iter().fold((f64::MAX, f64::MIN), |(lo, hi), p| {
-                        (lo.min(p[axis]), hi.max(p[axis]))
-                    });
+                    let (lo, hi) = l[i..=j].iter().fold((f64::MAX, f64::MIN), |(lo, hi), p| (lo.min(p[axis]), hi.max(p[axis])));
                     if hi - lo > 0.02 {
                         for e in edge.iter_mut().take(j).skip(i) {
                             *e = true;
@@ -1104,11 +927,7 @@ pub fn drop_cell_edges(g: Geom) -> Geom {
         }
         // and any single segment over a degree long (no contour runs 60 NM straight)
         for k in 0..n - 1 {
-            if (l[k + 1][0] - l[k][0])
-                .abs()
-                .max((l[k + 1][1] - l[k][1]).abs())
-                > 1.0
-            {
+            if (l[k + 1][0] - l[k][0]).abs().max((l[k + 1][1] - l[k][1]).abs()) > 1.0 {
                 edge[k] = true;
             }
         }
@@ -1180,10 +999,7 @@ pub(crate) fn drop_seam_strips(g: &mut geom::Geom) -> bool {
 pub fn cut_water(land: Vec<Vec<[i32; 2]>>, water: Vec<Vec<[i32; 2]>>) -> Vec<Vec<[i32; 2]>> {
     // Clipper2 (a pure Rust port), in tile units: i_overlay ran away on some tiles,
     // asking for tens of gigabytes
-    use clipper2_rust::{
-        boolean_op_tree_64, poly_tree_to_faces64, ClipType, FillRule, Path64, Paths64, Point64,
-        PolyTree64,
-    };
+    use clipper2_rust::{boolean_op_tree_64, poly_tree_to_faces64, ClipType, FillRule, Path64, Paths64, Point64, PolyTree64};
     let paths = |v: Vec<Vec<[i32; 2]>>| -> Paths64 {
         v.into_iter()
             .filter_map(|mut r| {
@@ -1191,23 +1007,13 @@ pub fn cut_water(land: Vec<Vec<[i32; 2]>>, water: Vec<Vec<[i32; 2]>>) -> Vec<Vec
                 while r.len() > 1 && r.first() == r.last() {
                     r.pop();
                 }
-                (r.len() >= 3 && signed_area(&r) != 0).then(|| {
-                    r.into_iter()
-                        .map(|p| Point64::new(p[0] as i64, p[1] as i64))
-                        .collect::<Path64>()
-                })
+                (r.len() >= 3 && signed_area(&r) != 0).then(|| r.into_iter().map(|p| Point64::new(p[0] as i64, p[1] as i64)).collect::<Path64>())
             })
             .collect()
     };
     let (subj, clip) = (paths(land), paths(water));
     let mut tree = PolyTree64::new();
-    boolean_op_tree_64(
-        ClipType::Difference,
-        FillRule::NonZero,
-        &subj,
-        &clip,
-        &mut tree,
-    );
+    boolean_op_tree_64(ClipType::Difference, FillRule::NonZero, &subj, &clip, &mut tree);
     let mut out = Vec::new();
     let mut push = |ring: &Path64, outer: bool| {
         let mut q: Vec<[i32; 2]> = ring.iter().map(|p| [p.x as i32, p.y as i32]).collect();
@@ -1255,10 +1061,7 @@ pub fn log(msg: &str) {
 /// else in a `.notes` folder beside the file. Scanning a big GeoPackage (counting its rows,
 /// reading its whole spatial index) takes seconds, so it's done once, not at every start.
 fn tables_note(path: &Path) -> PathBuf {
-    let ours = path
-        .parent()
-        .and_then(|p| p.file_name())
-        .is_some_and(|n| n.to_string_lossy().starts_with('.'));
+    let ours = path.parent().and_then(|p| p.file_name()).is_some_and(|n| n.to_string_lossy().starts_with('.'));
     if ours {
         return PathBuf::from(format!("{}.tables", path.display()));
     }
@@ -1271,9 +1074,7 @@ fn open_gpkg(path: &Path) -> Result<Option<(Connection, Vec<TableInfo>)>, ChartE
     let note = tables_note(path);
     // the note also records which layers TweedPlot reads (the class list), so a new
     // version that reads more of them (tidal streams, say) looks at every file again
-    let stamp = std::fs::metadata(path)
-        .ok()
-        .map(|m| format!("{} {:?} c{}", m.len(), m.modified().ok(), s57::CLASSES.len()));
+    let stamp = std::fs::metadata(path).ok().map(|m| format!("{} {:?} c{}", m.len(), m.modified().ok(), s57::CLASSES.len()));
     if let (Some(stamp), Ok(text)) = (&stamp, std::fs::read_to_string(&note)) {
         let mut lines = text.lines();
         if lines.next() == Some(stamp.as_str()) {
@@ -1284,28 +1085,15 @@ fn open_gpkg(path: &Path) -> Result<Option<(Connection, Vec<TableInfo>)>, ChartE
                 let parsed = (|| {
                     let table = f.first()?.to_string();
                     let (kind, band) = classify(&table)?;
-                    let b: Vec<f64> = f
-                        .get(4)?
-                        .split(',')
-                        .filter_map(|v| v.parse().ok())
-                        .collect();
+                    let b: Vec<f64> = f.get(4)?.split(',').filter_map(|v| v.parse().ok()).collect();
                     Some(TableInfo {
                         file: path.to_path_buf(),
-                        class: if kind == Kind::Feature {
-                            s57::class_for(&table)
-                        } else {
-                            None
-                        },
+                        class: if kind == Kind::Feature { s57::class_for(&table) } else { None },
                         rows: f.get(1)?.parse().ok()?,
                         pk: f.get(2)?.to_string(),
                         rtree: f.get(3)?.to_string(),
                         bounds: [*b.first()?, *b.get(1)?, *b.get(2)?, *b.get(3)?],
-                        cols: f
-                            .get(5)?
-                            .split(',')
-                            .filter(|c| !c.is_empty())
-                            .map(str::to_string)
-                            .collect(),
+                        cols: f.get(5)?.split(',').filter(|c| !c.is_empty()).map(str::to_string).collect(),
                         table,
                         kind,
                         band,
@@ -1334,18 +1122,7 @@ fn open_gpkg(path: &Path) -> Result<Option<(Connection, Vec<TableInfo>)>, ChartE
         let mut text = format!("{stamp}\n");
         for t in got.iter().flat_map(|g| &g.1) {
             let b = t.bounds;
-            text.push_str(&format!(
-                "{}\t{}\t{}\t{}\t{},{},{},{}\t{}\n",
-                t.table,
-                t.rows,
-                t.pk,
-                t.rtree,
-                b[0],
-                b[1],
-                b[2],
-                b[3],
-                t.cols.join(",")
-            ));
+            text.push_str(&format!("{}\t{}\t{}\t{}\t{},{},{},{}\t{}\n", t.table, t.rows, t.pk, t.rtree, b[0], b[1], b[2], b[3], t.cols.join(",")));
         }
         let _ = std::fs::write(&note, text);
     }
@@ -1371,65 +1148,26 @@ fn open_gpkg_scan(path: &Path) -> Result<Option<(Connection, Vec<TableInfo>)>, C
             continue;
         };
         let rtree = format!("rtree_{table}_{gcol}");
-        let has_rtree: bool = conn
-            .query_row(
-                "SELECT count(*) FROM sqlite_master WHERE name = ?1",
-                [&rtree],
-                |r| r.get::<_, i64>(0),
-            )
-            .map(|n| n > 0)?;
+        let has_rtree: bool = conn.query_row("SELECT count(*) FROM sqlite_master WHERE name = ?1", [&rtree], |r| r.get::<_, i64>(0)).map(|n| n > 0)?;
         if !has_rtree {
             continue;
         }
-        let pk: String = conn
-            .query_row(
-                &format!("SELECT name FROM pragma_table_info('{table}') WHERE pk = 1"),
-                [],
-                |r| r.get(0),
-            )
-            .unwrap_or_else(|_| "fid".into());
-        let rows: i64 = conn.query_row(&format!("SELECT count(*) FROM \"{table}\""), [], |r| {
-            r.get(0)
-        })?;
+        let pk: String =
+            conn.query_row(&format!("SELECT name FROM pragma_table_info('{table}') WHERE pk = 1"), [], |r| r.get(0)).unwrap_or_else(|_| "fid".into());
+        let rows: i64 = conn.query_row(&format!("SELECT count(*) FROM \"{table}\""), [], |r| r.get(0))?;
         let cols: Vec<String> = {
             let mut st = conn.prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))?;
             let r = st.query_map([], |r| r.get::<_, String>(0))?;
-            r.filter_map(Result::ok)
-                .map(|c| c.to_ascii_lowercase())
-                .collect()
+            r.filter_map(Result::ok).map(|c| c.to_ascii_lowercase()).collect()
         };
-        let class = if kind == Kind::Feature {
-            s57::class_for(&table)
-        } else {
-            None
-        };
+        let class = if kind == Kind::Feature { s57::class_for(&table) } else { None };
         let bounds: [f64; 4] = conn
-            .query_row(
-                &format!("SELECT min(minx), min(miny), max(maxx), max(maxy) FROM \"{rtree}\""),
-                [],
-                |r| Ok([r.get::<_, Option<f64>>(0)?, r.get(1)?, r.get(2)?, r.get(3)?]),
-            )
-            .map(|v| {
-                if v.iter().all(Option::is_some) {
-                    [v[0].unwrap(), v[1].unwrap(), v[2].unwrap(), v[3].unwrap()]
-                } else {
-                    [0.0, 0.0, -1.0, -1.0]
-                }
+            .query_row(&format!("SELECT min(minx), min(miny), max(maxx), max(maxy) FROM \"{rtree}\""), [], |r| {
+                Ok([r.get::<_, Option<f64>>(0)?, r.get(1)?, r.get(2)?, r.get(3)?])
             })
+            .map(|v| if v.iter().all(Option::is_some) { [v[0].unwrap(), v[1].unwrap(), v[2].unwrap(), v[3].unwrap()] } else { [0.0, 0.0, -1.0, -1.0] })
             .unwrap_or([-360.0, -90.0, 360.0, 90.0]);
-        tables.push(TableInfo {
-            file: path.to_path_buf(),
-            table,
-            kind,
-            band,
-            rows,
-            class,
-            cols,
-            db,
-            rtree,
-            pk,
-            bounds,
-        });
+        tables.push(TableInfo { file: path.to_path_buf(), table, kind, band, rows, class, cols, db, rtree, pk, bounds });
         any = true;
     }
     Ok(any.then_some((conn, tables)))
@@ -1456,9 +1194,7 @@ fn classify(table: &str) -> Option<(Kind, u8)> {
             Some(x) => (x, Kind::WorldCoast),
             None => (r, Kind::WorldLand),
         };
-        let i = coast::RESOLUTIONS
-            .iter()
-            .position(|c| res.starts_with(*c) && res.len() == 1)?;
+        let i = coast::RESOLUTIONS.iter().position(|c| res.starts_with(*c) && res.len() == 1)?;
         return Some((kind, i as u8 + 1));
     }
     // S-57 ENC cells converted by `enc`: "<layer>_enc_b<band>"
@@ -1526,26 +1262,16 @@ fn unzip_gpkgs(zip_path: &Path, out_dir: &Path) -> Result<Vec<PathBuf>, ChartErr
     let mut out = Vec::new();
     for i in 0..za.len() {
         let mut f = za.by_index(i)?;
-        let Some(name) = f
-            .enclosed_name()
-            .and_then(|p| p.file_name().map(|n| n.to_owned()))
-        else {
+        let Some(name) = f.enclosed_name().and_then(|p| p.file_name().map(|n| n.to_owned())) else {
             continue;
         };
-        if !name
-            .to_string_lossy()
-            .to_ascii_lowercase()
-            .ends_with(".gpkg")
-        {
+        if !name.to_string_lossy().to_ascii_lowercase().ends_with(".gpkg") {
             continue;
         }
         let dest = out_dir.join(&name);
         // Which zip each unpacked file came from: a sidecar "<name>.src".
         let src_file = out_dir.join(format!("{}.src", name.to_string_lossy()));
-        let zip_name = zip_path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
+        let zip_name = zip_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         let from = std::fs::read_to_string(&src_file).ok();
         // Unpack when missing; when this same zip is newer than the copy (a fresh download of
         // it); or when another zip holds the same layer with more in it. LINZ exports of
@@ -1554,12 +1280,10 @@ fn unzip_gpkgs(zip_path: &Path, out_dir: &Path) -> Result<Vec<PathBuf>, ChartErr
         let zip_time = std::fs::metadata(zip_path).and_then(|m| m.modified()).ok();
         let stale = match std::fs::metadata(&dest) {
             Err(_) => true,
-            Ok(m) if from.as_deref() == Some(zip_name.as_str()) => {
-                match (zip_time, m.modified().ok()) {
-                    (Some(z), Some(d)) => z > d,
-                    _ => m.len() != f.size(),
-                }
-            }
+            Ok(m) if from.as_deref() == Some(zip_name.as_str()) => match (zip_time, m.modified().ok()) {
+                (Some(z), Some(d)) => z > d,
+                _ => m.len() != f.size(),
+            },
             // unknown origin (unpacked before the sidecar) or another zip: the bigger wins
             Ok(m) => f.size() > m.len(),
         };
@@ -1597,12 +1321,7 @@ impl TileProj {
             n: 2f64.powi(z as i32),
             x: x as f64,
             y: y as f64,
-            rect: Rect {
-                x0: -BUFFER,
-                y0: -BUFFER,
-                x1: e + BUFFER,
-                y1: e + BUFFER,
-            },
+            rect: Rect { x0: -BUFFER, y0: -BUFFER, x1: e + BUFFER, y1: e + BUFFER },
         }
     }
 
@@ -1622,12 +1341,7 @@ impl TileProj {
             let k = std::f64::consts::PI * (1.0 - 2.0 * ty / self.n);
             k.sinh().atan().to_degrees()
         };
-        [
-            lon(self.x - f),
-            lat(self.y + 1.0 + f),
-            lon(self.x + 1.0 + f),
-            lat(self.y - f),
-        ]
+        [lon(self.x - f), lat(self.y + 1.0 + f), lon(self.x + 1.0 + f), lat(self.y - f)]
     }
 
     fn polygons(&self, g: &Geom) -> Option<TileGeom> {
@@ -1705,24 +1419,12 @@ mod edge_tests {
     #[test]
     fn drops_contour_pieces_along_cell_edges() {
         let g = Geom::Lines(vec![
-            vec![
-                [172.9, -36.2365],
-                [172.91, -36.2365],
-                [172.92, -36.2365],
-                [174.4, -36.2365],
-            ], // all edge, in short steps: gone
-            vec![
-                [174.0, -36.0],
-                [174.01, -36.1],
-                [174.01, -36.3],
-                [174.02, -36.31],
-            ], // a north–south edge in the middle: split
-            vec![[174.0, -36.0], [174.01, -36.0], [174.05, -36.02]], // short flat piece: kept
-            vec![[180.0, -36.2367198], [158.6, -36.2364045]],        // the real one: gone
+            vec![[172.9, -36.2365], [172.91, -36.2365], [172.92, -36.2365], [174.4, -36.2365]], // all edge, in short steps: gone
+            vec![[174.0, -36.0], [174.01, -36.1], [174.01, -36.3], [174.02, -36.31]],           // a north–south edge in the middle: split
+            vec![[174.0, -36.0], [174.01, -36.0], [174.05, -36.02]],                            // short flat piece: kept
+            vec![[180.0, -36.2367198], [158.6, -36.2364045]],                                   // the real one: gone
         ]);
-        let Geom::Lines(out) = drop_cell_edges(g) else {
-            panic!()
-        };
+        let Geom::Lines(out) = drop_cell_edges(g) else { panic!() };
         assert_eq!(out.len(), 3, "{out:?}");
         assert_eq!(out[0], vec![[174.0, -36.0], [174.01, -36.1]]);
         assert_eq!(out[1], vec![[174.01, -36.3], [174.02, -36.31]]);
@@ -1735,28 +1437,9 @@ mod tests {
     #[test]
     fn drops_seam_strips_only() {
         use geom::Geom;
-        let strip = vec![vec![
-            [162.074, -36.2],
-            [180.0, -36.2],
-            [180.0, -35.4],
-            [162.074, -35.4],
-            [162.074, -36.2],
-        ]];
-        let real = vec![vec![
-            [178.0, -40.0],
-            [180.0, -40.0],
-            [180.0, -38.0],
-            [179.0, -37.5],
-            [178.0, -38.0],
-            [178.0, -40.0],
-        ]];
-        let small = vec![vec![
-            [179.0, -30.0],
-            [180.0, -30.0],
-            [180.0, -29.0],
-            [179.0, -29.0],
-            [179.0, -30.0],
-        ]];
+        let strip = vec![vec![[162.074, -36.2], [180.0, -36.2], [180.0, -35.4], [162.074, -35.4], [162.074, -36.2]]];
+        let real = vec![vec![[178.0, -40.0], [180.0, -40.0], [180.0, -38.0], [179.0, -37.5], [178.0, -38.0], [178.0, -40.0]]];
+        let small = vec![vec![[179.0, -30.0], [180.0, -30.0], [180.0, -29.0], [179.0, -29.0], [179.0, -30.0]]];
         let mut g = Geom::Polygons(vec![strip.clone(), real.clone(), small.clone()]);
         assert!(!drop_seam_strips(&mut g));
         assert_eq!(g, Geom::Polygons(vec![real, small]));
@@ -1775,21 +1458,13 @@ mod tests {
         let mk = |name: &str, bytes: usize| {
             let p = dir.join(name);
             let mut z = zip::ZipWriter::new(std::fs::File::create(&p).unwrap());
-            z.start_file(
-                "light-points-hydro-122k-190k.gpkg",
-                zip::write::SimpleFileOptions::default(),
-            )
-            .unwrap();
+            z.start_file("light-points-hydro-122k-190k.gpkg", zip::write::SimpleFileOptions::default()).unwrap();
             z.write_all(&vec![7u8; bytes]).unwrap();
             z.finish().unwrap();
             p
         };
         let out = dir.join(".unzipped");
-        let size = || {
-            std::fs::metadata(out.join("light-points-hydro-122k-190k.gpkg"))
-                .unwrap()
-                .len()
-        };
+        let size = || std::fs::metadata(out.join("light-points-hydro-122k-190k.gpkg")).unwrap().len();
         let big = mk("lds-oceania-279layers-GPKG.zip", 5000);
         unzip_gpkgs(&big, &out).unwrap();
         // a later, smaller export holding the same layer: kept out, in either order
@@ -1801,11 +1476,7 @@ mod tests {
         assert_eq!(size(), 5000);
         // a copy unpacked by an older build (no record of its zip) gives way to a bigger one
         std::fs::remove_file(out.join("light-points-hydro-122k-190k.gpkg.src")).unwrap();
-        std::fs::write(
-            out.join("light-points-hydro-122k-190k.gpkg"),
-            vec![1u8; 300],
-        )
-        .unwrap();
+        std::fs::write(out.join("light-points-hydro-122k-190k.gpkg"), vec![1u8; 300]).unwrap();
         unzip_gpkgs(&big, &out).unwrap();
         assert_eq!(size(), 5000);
         // a fresh download of the same zip replaces its own copy, even if smaller
@@ -1829,11 +1500,7 @@ mod tests {
         // two overlapping lakes (Topo50 and a chart's) and an island in the first
         let mut island = pos(sq(300, 300, 350, 350));
         island.reverse();
-        let water = vec![
-            pos(sq(200, 200, 600, 600)),
-            island,
-            pos(sq(500, 500, 700, 700)),
-        ];
+        let water = vec![pos(sq(200, 200, 600, 600)), island, pos(sq(500, 500, 700, 700))];
         let out = cut_water(land, water);
         let area: i64 = out.iter().map(|r| signed_area(r)).sum::<i64>() / 2;
         // land 1e6 − (160000 + 40000 − 10000 overlap) + island 2500
@@ -1854,53 +1521,23 @@ mod tests {
 
     #[test]
     fn classifies_linz_tables() {
-        assert_eq!(
-            classify("depth_area_polygon_hydro_14k_122k"),
-            Some((Kind::DepthArea, 5))
-        );
-        assert_eq!(
-            classify("depth_contour_polyline_hydro_1350k_11500k"),
-            Some((Kind::Contour, 2))
-        );
-        assert_eq!(
-            classify("sounding_points_hydro_115mil_and_smaller"),
-            Some((Kind::Sounding, 1))
-        );
-        assert_eq!(
-            classify("nz_coastlines_and_islands_polygons_topo_150k"),
-            Some((Kind::Land, 0))
-        );
-        assert_eq!(
-            classify("nz_lake_polygons_topo_150k"),
-            Some((Kind::Lake, 0))
-        );
-        assert_eq!(
-            classify("nz_river_polygons_topo_150k"),
-            Some((Kind::Lake, 0))
-        );
-        assert_eq!(
-            classify("lake_polygon_hydro_14k_122k"),
-            Some((Kind::Lake, 5))
-        );
-        assert_eq!(
-            classify("river_polygon_hydro_190k_1350k"),
-            Some((Kind::Lake, 3))
-        );
+        assert_eq!(classify("depth_area_polygon_hydro_14k_122k"), Some((Kind::DepthArea, 5)));
+        assert_eq!(classify("depth_contour_polyline_hydro_1350k_11500k"), Some((Kind::Contour, 2)));
+        assert_eq!(classify("sounding_points_hydro_115mil_and_smaller"), Some((Kind::Sounding, 1)));
+        assert_eq!(classify("nz_coastlines_and_islands_polygons_topo_150k"), Some((Kind::Land, 0)));
+        assert_eq!(classify("nz_lake_polygons_topo_150k"), Some((Kind::Lake, 0)));
+        assert_eq!(classify("nz_river_polygons_topo_150k"), Some((Kind::Lake, 0)));
+        assert_eq!(classify("lake_polygon_hydro_14k_122k"), Some((Kind::Lake, 5)));
+        assert_eq!(classify("river_polygon_hydro_190k_1350k"), Some((Kind::Lake, 3)));
         assert_eq!(classify("something_else"), None);
-        assert_eq!(
-            classify("light_points_hydro_190k_1350k"),
-            Some((Kind::Feature, 3))
-        );
+        assert_eq!(classify("light_points_hydro_190k_1350k"), Some((Kind::Feature, 3)));
         assert_eq!(classify("building_single_points_hydro_190k_1350k"), None);
     }
 
     #[test]
     fn date_line_shifts() {
         assert_eq!(wrap_shifts([170.0, -45.0, 175.0, -40.0]), vec![0.0]);
-        assert_eq!(
-            wrap_shifts([-177.0, -45.0, -175.0, -43.0]),
-            vec![0.0, 360.0]
-        );
+        assert_eq!(wrap_shifts([-177.0, -45.0, -175.0, -43.0]), vec![0.0, 360.0]);
         assert_eq!(wrap_shifts([179.0, -45.0, 180.1, -43.0]), vec![0.0, -360.0]);
         let mut g = Geom::Points(vec![[183.5, -44.0]]);
         shift_geom(&mut g, -360.0);

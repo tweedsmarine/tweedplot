@@ -40,7 +40,7 @@ struct Ship {
 fn echo(r: f32, (sb, cb): (f32, f32), t: f32, ships: &[Ship], rng: &mut Rng) -> f32 {
     let (x, y) = (r * sb, r * cb); // east, north
     let mut v = rng.next() * 0.12; // receiver noise
-    // sea clutter close in, patchy
+                                   // sea clutter close in, patchy
     v += (0.55 * (-r * 9.0).exp()) * (0.6 + 0.4 * rng.next());
     // two islands and a stretch of coast (fixed on the chart)
     for &(cx, cy, rad) in &[(0.45f32, 0.35f32, 0.10f32), (-0.30, 0.55, 0.07)] {

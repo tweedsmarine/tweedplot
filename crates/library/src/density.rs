@@ -17,7 +17,15 @@ impl Library {
     /// The effort map of the tracks `ids`: cells of `cell` degrees, with the minutes spent in
     /// each at speeds from `sog_min` to `sog_max` knots (a fix with no speed logged counts
     /// at the speed worked out from the next fix). [lon, lat, minutes] at each cell's centre.
-    pub fn track_density(&self, ids: &[String], cell: f64, sog_min: f64, sog_max: f64, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<Vec<[f64; 3]>> {
+    pub fn track_density(
+        &self,
+        ids: &[String],
+        cell: f64,
+        sog_min: f64,
+        sog_max: f64,
+        progress: &mut dyn FnMut(&str, usize, usize),
+        cancel: &AtomicBool,
+    ) -> Result<Vec<[f64; 3]>> {
         let cell = cell.clamp(0.001, 1.0);
         let mut grid: HashMap<(i64, i64), f64> = HashMap::new();
         for (k, id) in ids.iter().enumerate() {
@@ -36,7 +44,8 @@ impl Library {
                         (Some(a), Some(b)) if b > a => (b - a).min(MAX_GAP),
                         _ => continue,
                     };
-                    let sog = p.sog.unwrap_or_else(|| nav_core::LatLon::new(p.lat, p.lon).distance_to(&nav_core::LatLon::new(q.lat, q.lon)) / (dt as f64 / 3600.0));
+                    let sog =
+                        p.sog.unwrap_or_else(|| nav_core::LatLon::new(p.lat, p.lon).distance_to(&nav_core::LatLon::new(q.lat, q.lon)) / (dt as f64 / 3600.0));
                     if sog < sog_min || sog > sog_max {
                         continue;
                     }
@@ -53,7 +62,13 @@ impl Library {
 impl Library {
     /// Each track's segments in turn (for building the personal bathymetry from logged depths):
     /// `f(id, segments)`. Tracks with no points are skipped.
-    pub fn for_each_track(&self, ids: &[String], f: &mut dyn FnMut(&str, &[Vec<crate::TrackPoint>]), progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<()> {
+    pub fn for_each_track(
+        &self,
+        ids: &[String],
+        f: &mut dyn FnMut(&str, &[Vec<crate::TrackPoint>]),
+        progress: &mut dyn FnMut(&str, usize, usize),
+        cancel: &AtomicBool,
+    ) -> Result<()> {
         for (k, id) in ids.iter().enumerate() {
             if cancel.load(Ordering::Relaxed) {
                 return Err(Error::Cancelled);

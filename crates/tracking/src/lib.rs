@@ -118,7 +118,11 @@ pub fn parse_setup(text: &str) -> Result<Setup> {
                         skipper: [s(t, "captain"), s(t, "owner")].into_iter().find(|x| !x.is_empty()).unwrap_or_default(),
                         country: s(t, "country"),
                         status: s(t, "status"),
-                        tags: t.get("tags").and_then(Value::as_array).map(|x| x.iter().filter_map(|y| y.as_u64().map(|n| n as u32)).collect()).unwrap_or_default(),
+                        tags: t
+                            .get("tags")
+                            .and_then(Value::as_array)
+                            .map(|x| x.iter().filter_map(|y| y.as_u64().map(|n| n as u32)).collect())
+                            .unwrap_or_default(),
                     })
                 })
                 .collect()
@@ -127,11 +131,7 @@ pub fn parse_setup(text: &str) -> Result<Setup> {
     let tags = v
         .get("tags")
         .and_then(Value::as_array)
-        .map(|a| {
-            a.iter()
-                .filter_map(|t| Some(Tag { id: num(t, "id")? as u32, name: s(t, "name"), sort: num(t, "sort").unwrap_or(0.0) as i64 }))
-                .collect()
-        })
+        .map(|a| a.iter().filter_map(|t| Some(Tag { id: num(t, "id")? as u32, name: s(t, "name"), sort: num(t, "sort").unwrap_or(0.0) as i64 })).collect())
         .unwrap_or_default();
     let course_v = v.get("course");
     let course = course_v
@@ -219,26 +219,38 @@ pub fn parse_all_positions(b: &[u8]) -> Result<BTreeMap<u32, Vec<Fix>>> {
                 la += i16_(o + 2).ok_or_else(|| bad("cut short"))? as i64;
                 lo += i16_(o + 4).ok_or_else(|| bad("cut short"))? as i64;
                 o += 6;
-                if alt { o += 2; }
+                if alt {
+                    o += 2;
+                }
                 if dtf {
                     d += i16_(o).ok_or_else(|| bad("cut short"))? as i64;
                     o += 2;
-                    if laps { o += 1; }
+                    if laps {
+                        o += 1;
+                    }
                 }
-                if pc { o += 2; }
+                if pc {
+                    o += 2;
+                }
                 t -= w;
             } else {
                 t = base + u32_(o).ok_or_else(|| bad("cut short"))? as i64;
                 la = i32_(o + 4).ok_or_else(|| bad("cut short"))? as i64;
                 lo = i32_(o + 8).ok_or_else(|| bad("cut short"))? as i64;
                 o += 12;
-                if alt { o += 2; }
+                if alt {
+                    o += 2;
+                }
                 if dtf {
                     d = i32_(o).ok_or_else(|| bad("cut short"))? as i64;
                     o += 4;
-                    if laps { o += 1; }
+                    if laps {
+                        o += 1;
+                    }
                 }
-                if pc { o += 4; }
+                if pc {
+                    o += 4;
+                }
             }
             let (lat, lon) = (la as f64 / 1e5, lo as f64 / 1e5);
             if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
@@ -349,11 +361,8 @@ impl Race {
             }
         }
         self.meta.positions_fetched = Some(now);
-        let out: BTreeMap<String, Vec<[f64; 4]>> = self
-            .fixes
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.iter().map(|f| [f.t as f64, f.lat, f.lon, f.dtf.unwrap_or(-1.0)]).collect()))
-            .collect();
+        let out: BTreeMap<String, Vec<[f64; 4]>> =
+            self.fixes.iter().map(|(k, v)| (k.to_string(), v.iter().map(|f| [f.t as f64, f.lat, f.lon, f.dtf.unwrap_or(-1.0)]).collect())).collect();
         write_atomic(&self.dir.join("fixes.json"), &serde_json::to_vec(&out)?)?;
         self.save_meta()?;
         Ok(added)
@@ -361,11 +370,7 @@ impl Race {
 
     /// Fixes newer than `since` (unix s), per boat.
     pub fn fixes_since(&self, since: i64) -> BTreeMap<u32, Vec<Fix>> {
-        self.fixes
-            .iter()
-            .map(|(k, v)| (*k, v.iter().filter(|f| f.t > since).copied().collect::<Vec<_>>()))
-            .filter(|(_, v)| !v.is_empty())
-            .collect()
+        self.fixes.iter().map(|(k, v)| (*k, v.iter().filter(|f| f.t > since).copied().collect::<Vec<_>>())).filter(|(_, v)| !v.is_empty()).collect()
     }
 
     /// Merge a whole history download.

@@ -279,7 +279,15 @@ pub fn check_segment(fixes: &[(f64, f64, Option<f64>)], chart: &dyn Fn(f64, f64)
     for i in 0..fixes.len() {
         if v[i] == Verdict::Keep {
             let dd = d[i].unwrap_or(0.0);
-            off[i] = chart(fixes[i].0, fixes[i].1).map(|r| if !off_chart(dd, r) { 0 } else if dd < r.0 as f64 { -1 } else { 1 });
+            off[i] = chart(fixes[i].0, fixes[i].1).map(|r| {
+                if !off_chart(dd, r) {
+                    0
+                } else if dd < r.0 as f64 {
+                    -1
+                } else {
+                    1
+                }
+            });
             if off[i].is_none() {
                 unchecked += 1;
             }
@@ -423,7 +431,7 @@ mod tests {
     fn deep_water_further_away_counts_for_too_deep_only() {
         let mut g = grid();
         g.widen(1, 10); // shallow ±0.01°, deep ±0.1°
-        // on the bank, 0.08° from its edge: shallowest still the bank's, deepest the plain's
+                        // on the bank, 0.08° from its edge: shallowest still the bank's, deepest the plain's
         assert_eq!(g.at(170.42, -41.5), Some((200.0, 1000.0)));
         assert!(!off_chart(700.0, g.at(170.42, -41.5).unwrap())); // a canyon head
         let mut g = grid();
@@ -468,7 +476,9 @@ mod tests {
     fn a_second_echo_run_goes() {
         let none = |_: f64, _: f64| None;
         // 120 m, then 20 fixes locked on the second echo at ~240 m, then 120 m again
-        let f: Vec<_> = (0..60).map(|i| (170.0 + i as f64 * 0.0002, -41.5, Some(if (20..40).contains(&i) { 241.0 + (i % 2) as f64 } else { 120.0 + (i % 3) as f64 }))).collect();
+        let f: Vec<_> = (0..60)
+            .map(|i| (170.0 + i as f64 * 0.0002, -41.5, Some(if (20..40).contains(&i) { 241.0 + (i % 2) as f64 } else { 120.0 + (i % 3) as f64 })))
+            .collect();
         let (v, _, _) = check_segment(&f, &none);
         assert!(v[20..40].iter().all(|x| *x == Verdict::Echo), "{:?}", &v[18..42]);
         assert!(v[..20].iter().chain(&v[40..]).all(|x| *x == Verdict::Keep));

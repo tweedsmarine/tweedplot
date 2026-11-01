@@ -183,10 +183,10 @@ pub fn parse_tzd_xml(text: &str) -> Result<TzdData> {
         let mut pts = rel.get(&m.id).cloned().unwrap_or_default();
         pts.sort_by(|a, b| a.0.total_cmp(&b.0));
         match m.kind {
-            0 if pts.len() >= 2 => out.gpx.routes.push(GpxRoute {
-                name: m.name.clone(),
-                points: pts.iter().filter_map(|(_, i)| by_id.get(i.as_str()).map(|p| with_group(p))).collect(),
-            }),
+            0 if pts.len() >= 2 => out
+                .gpx
+                .routes
+                .push(GpxRoute { name: m.name.clone(), points: pts.iter().filter_map(|(_, i)| by_id.get(i.as_str()).map(|p| with_group(p))).collect() }),
             0 => {} // an empty or one-point route
             2 | 3 => {
                 let points: Vec<[f64; 2]> = pts.iter().filter_map(|(_, i)| by_id.get(i.as_str()).map(|p| [p.w.lon, p.w.lat])).collect();
@@ -195,7 +195,13 @@ pub fn parse_tzd_xml(text: &str) -> Result<TzdData> {
                     (_, true) => "area",
                     _ => "line",
                 };
-                let enough = if kind == "circle" { !points.is_empty() } else if kind == "area" { points.len() >= 3 } else { points.len() >= 2 };
+                let enough = if kind == "circle" {
+                    !points.is_empty()
+                } else if kind == "area" {
+                    points.len() >= 3
+                } else {
+                    points.len() >= 2
+                };
                 match kind {
                     "circle" => out.circles += 1,
                     "area" => out.areas += 1,
@@ -528,7 +534,8 @@ mod track_tests {
         let (lat, lon) = mercator_to_latlon(18_970_678.0, -4_637_761.5);
         assert!((lon - 170.416_498).abs() < 2e-6, "{lon}");
         assert!((lat - -38.599_202).abs() < 2e-6, "{lat}");
-        assert_eq!(dotnet_time(0x48d8_cdfe_1a46_6715u64 as i64), 1_612_987_051); // 2021-02-10T19:57:31Z
+        assert_eq!(dotnet_time(0x48d8_cdfe_1a46_6715u64 as i64), 1_612_987_051);
+        // 2021-02-10T19:57:31Z
     }
 
     #[test]

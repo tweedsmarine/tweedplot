@@ -59,9 +59,7 @@ impl LatLon {
         if dl.abs() > std::f64::consts::PI {
             dl -= dl.signum() * 2.0 * std::f64::consts::PI;
         }
-        let dpsi = ((std::f64::consts::FRAC_PI_4 + p2 / 2.0).tan()
-            / (std::f64::consts::FRAC_PI_4 + p1 / 2.0).tan())
-        .ln();
+        let dpsi = ((std::f64::consts::FRAC_PI_4 + p2 / 2.0).tan() / (std::f64::consts::FRAC_PI_4 + p1 / 2.0).tan()).ln();
         let q = if dpsi.abs() > 1e-12 { dp / dpsi } else { p1.cos() };
         let dist = (dp * dp + q * q * dl * dl).sqrt() * EARTH_RADIUS_NM;
         let brg = norm360(dl.atan2(dpsi).to_degrees());
@@ -72,13 +70,21 @@ impl LatLon {
 /// Normalise an angle to 0..360.
 pub fn norm360(a: f64) -> f64 {
     let r = a % 360.0;
-    if r < 0.0 { r + 360.0 } else { r }
+    if r < 0.0 {
+        r + 360.0
+    } else {
+        r
+    }
 }
 
 /// Normalise an angle to -180..180.
 pub fn norm180(a: f64) -> f64 {
     let r = norm360(a);
-    if r > 180.0 { r - 360.0 } else { r }
+    if r > 180.0 {
+        r - 360.0
+    } else {
+        r
+    }
 }
 
 /// Wrap longitude into -180..180.

@@ -105,9 +105,7 @@ pub fn ensure_gpkg(dir: &Path, out_dir: &Path) -> Result<Option<PathBuf>, ChartE
     };
     if out.exists() {
         if let Ok(c) = Connection::open(&out) {
-            let ok: Option<(i64, i64)> = c
-                .query_row("SELECT version, source_size FROM racenav_build", [], |r| Ok((r.get(0)?, r.get(1)?)))
-                .ok();
+            let ok: Option<(i64, i64)> = c.query_row("SELECT version, source_size FROM racenav_build", [], |r| Ok((r.get(0)?, r.get(1)?))).ok();
             if ok == Some((BUILD_VERSION, stamp)) {
                 return Ok(Some(out));
             }
@@ -212,8 +210,7 @@ pub fn shp_rings(b: &[u8]) -> Vec<Vec<[f64; 2]>> {
             let pts0 = content + 44 + np * 4;
             for (k, &s) in parts.iter().enumerate() {
                 let e = parts.get(k + 1).copied().unwrap_or(npt).min(npt);
-                let ring: Vec<[f64; 2]> =
-                    (s..e).filter_map(|i| Some([le_f64(pts0 + i * 16)?, le_f64(pts0 + i * 16 + 8)?])).collect();
+                let ring: Vec<[f64; 2]> = (s..e).filter_map(|i| Some([le_f64(pts0 + i * 16)?, le_f64(pts0 + i * 16 + 8)?])).collect();
                 if ring.len() >= 4 {
                     out.push(ring);
                 }
@@ -324,11 +321,13 @@ mod tests {
     fn splits_big_rings_into_pieces_of_the_same_area() {
         // a jagged circle of 20 000 points
         let n = 20_000;
-        let ring: Vec<[f64; 2]> = (0..=n).map(|i| {
-            let a = i as f64 / n as f64 * std::f64::consts::TAU;
-            let r = 1.0 + 0.05 * (a * 40.0).sin();
-            [r * a.cos(), r * a.sin()]
-        }).collect();
+        let ring: Vec<[f64; 2]> = (0..=n)
+            .map(|i| {
+                let a = i as f64 / n as f64 * std::f64::consts::TAU;
+                let r = 1.0 + 0.05 * (a * 40.0).sin();
+                [r * a.cos(), r * a.sin()]
+            })
+            .collect();
         let area = |r: &[[f64; 2]]| (0..r.len() - 1).map(|k| r[k][0] * r[k + 1][1] - r[k + 1][0] * r[k][1]).sum::<f64>().abs() / 2.0;
         let whole = area(&ring);
         let pieces = super::split_ring(ring.clone(), super::bounds(&ring));

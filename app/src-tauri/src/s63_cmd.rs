@@ -88,10 +88,11 @@ pub async fn s63_status(app: tauri::AppHandle) -> serde_json::Value {
 fn status(app: &tauri::AppHandle) -> serde_json::Value {
     let app = app.clone();
     let (up, _) = chart::enc::protection();
-    let activation = saved_activation(&app).map(|code| match oem::read_activation(&code).and_then(|a| oem::check_activation(&a, &machine::fingerprint()).map(|_| a)) {
-        Ok(a) => serde_json::json!({ "ok": true, "issued": a.issued }),
-        Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
-    });
+    let activation =
+        saved_activation(&app).map(|code| match oem::read_activation(&code).and_then(|a| oem::check_activation(&a, &machine::fingerprint()).map(|_| a)) {
+            Ok(a) => serde_json::json!({ "ok": true, "issued": a.issued }),
+            Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
+        });
     let s = senc(&app);
     let today = chart::enc::today();
     let mut permits = Vec::new();
@@ -119,7 +120,8 @@ fn status(app: &tauri::AppHandle) -> serde_json::Value {
         .iter()
         .map(|(c, i)| serde_json::json!({ "cell": c, "ds": i.ds, "edition": i.edition, "update": i.update, "encrypted": i.encrypted, "warn": shown.get(c), "bbox": s.product(c).and_then(|p| p.bbox) }))
         .collect();
-    let notes: Vec<serde_json::Value> = chart::enc::notes().into_iter().map(|n| serde_json::json!({ "cell": n.cell, "file": n.file, "text": n.text })).collect();
+    let notes: Vec<serde_json::Value> =
+        chart::enc::notes().into_iter().map(|n| serde_json::json!({ "cell": n.cell, "file": n.file, "text": n.text })).collect();
     serde_json::json!({
         "user_permit": up,
         "test": up == chart::enc::TEST_USER_PERMIT,
@@ -188,9 +190,11 @@ pub async fn s63_import_exchange_set(app: tauri::AppHandle) -> Result<serde_json
     use tauri::Emitter;
     use tauri_plugin_dialog::DialogExt;
     let a = app.clone();
-    let picked = tauri::async_runtime::spawn_blocking(move || a.dialog().file().set_title("Choose the exchange set (the folder with ENC_ROOT in it, or the medium)").blocking_pick_folder())
-        .await
-        .map_err(|e| e.to_string())?;
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        a.dialog().file().set_title("Choose the exchange set (the folder with ENC_ROOT in it, or the medium)").blocking_pick_folder()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
     let Some(picked) = picked else { return Ok(serde_json::json!({ "cancelled": true })) };
     let from = picked.into_path().map_err(|e| e.to_string())?;
     let a = app.clone();

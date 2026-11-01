@@ -382,7 +382,15 @@ impl TideDb {
                 Some(hw) => Kind::Secondary { reference: r.reference.clone(), hw_min: hw, lw_min: r.lw_min.unwrap_or(hw), ratio: r.ratio },
                 None => Kind::LevelsOnly { reference: r.reference.clone() },
             };
-            self.stations.push(Station { id: format!("s:{}", r.number), name: r.name.clone(), lat: r.lat, lon: r.lon, kind, levels: r.levels, approx: r.approx });
+            self.stations.push(Station {
+                id: format!("s:{}", r.number),
+                name: r.name.clone(),
+                lat: r.lat,
+                lon: r.lon,
+                kind,
+                levels: r.levels,
+                approx: r.approx,
+            });
         }
     }
 
@@ -451,12 +459,8 @@ impl TideDb {
         if (e.t - t).abs() > 7 * 3600 {
             return None;
         }
-        let other: Vec<f64> = [i.checked_sub(1).and_then(|j| ext.get(j)), ext.get(i + 1)]
-            .into_iter()
-            .flatten()
-            .filter(|x| x.high != high)
-            .filter_map(|x| x.h)
-            .collect();
+        let other: Vec<f64> =
+            [i.checked_sub(1).and_then(|j| ext.get(j)), ext.get(i + 1)].into_iter().flatten().filter(|x| x.high != high).filter_map(|x| x.h).collect();
         let spring = match (s.levels.mhws, s.levels.mlws) {
             (Some(a), Some(b)) if a > b => Some(a - b),
             _ => None,
@@ -638,8 +642,15 @@ mod tests {
             Extreme { t: hw + 6 * 3600 + 1200, h: Some(0.7), high: false },
         ];
         db.series.insert(key("Nelson"), ext);
-        db.stations.push(Station { id: "d:Nelson".into(), name: "Nelson".into(), lat: -41.26, lon: 173.28, kind: Kind::Daily,
-            levels: Levels { mhws: Some(4.0), mlws: Some(0.4), ..Default::default() }, approx: false });
+        db.stations.push(Station {
+            id: "d:Nelson".into(),
+            name: "Nelson".into(),
+            lat: -41.26,
+            lon: 173.28,
+            kind: Kind::Daily,
+            levels: Levels { mhws: Some(4.0), mlws: Some(0.4), ..Default::default() },
+            approx: false,
+        });
         assert_eq!(db.daily_by_name("NELSON").unwrap().id, "d:Nelson");
         let (f, up) = db.phase_at("d:Nelson", hw - 3 * 3600 - 600).unwrap();
         assert!(up && (f - 0.5).abs() < 0.02, "{f}");

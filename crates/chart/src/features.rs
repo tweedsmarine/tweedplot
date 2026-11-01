@@ -46,14 +46,7 @@ type CoveragePolygon = (u8, [f64; 4], geo::Polygon<f64>);
 type FeatureBoundsTree = RTree<GeomWithData<Rectangle<(f64, f64)>, (u8, f64)>>;
 
 fn bounds_tree(entries: impl IntoIterator<Item = ([f64; 4], (u8, f64))>) -> FeatureBoundsTree {
-    RTree::bulk_load(
-        entries
-            .into_iter()
-            .map(|(b, data)| {
-                GeomWithData::new(Rectangle::from_corners((b[0], b[1]), (b[2], b[3])), data)
-            })
-            .collect(),
-    )
+    RTree::bulk_load(entries.into_iter().map(|(b, data)| GeomWithData::new(Rectangle::from_corners((b[0], b[1]), (b[2], b[3])), data)).collect())
 }
 
 fn bounds_envelope(b: [f64; 4]) -> AABB<(f64, f64)> {
@@ -68,40 +61,20 @@ pub(crate) struct CoverageIndex {
 impl CoverageIndex {
     fn new(polygons: Vec<CoveragePolygon>) -> Self {
         let tree = RTree::bulk_load(
-            polygons
-                .iter()
-                .enumerate()
-                .map(|(i, (_, b, _))| {
-                    GeomWithData::new(Rectangle::from_corners((b[0], b[1]), (b[2], b[3])), i)
-                })
-                .collect(),
+            polygons.iter().enumerate().map(|(i, (_, b, _))| GeomWithData::new(Rectangle::from_corners((b[0], b[1]), (b[2], b[3])), i)).collect(),
         );
         Self { polygons, tree }
     }
 
     pub(crate) fn intersecting(&self, b: [f64; 4]) -> impl Iterator<Item = &CoveragePolygon> {
         let envelope = AABB::from_corners((b[0], b[1]), (b[2], b[3]));
-        self.tree
-            .locate_in_envelope_intersecting(&envelope)
-            .map(|entry| &self.polygons[entry.data])
+        self.tree.locate_in_envelope_intersecting(&envelope).map(|entry| &self.polygons[entry.data])
     }
 }
 
 /// Hazards to the vessel: shown at every zoom (see the module notes).
 pub fn is_hazard(code: &str) -> bool {
-    matches!(
-        code,
-        "UWTROC"
-            | "WRECKS"
-            | "OBSTRN"
-            | "PILPNT"
-            | "OFSPLF"
-            | "MARCUL"
-            | "HULKES"
-            | "BRIDGE"
-            | "CBLOHD"
-            | "PIPOHD"
-    )
+    matches!(code, "UWTROC" | "WRECKS" | "OBSTRN" | "PILPNT" | "OFSPLF" | "MARCUL" | "HULKES" | "BRIDGE" | "CBLOHD" | "PIPOHD")
 }
 
 /// Information a stranger entering port needs to find early (pilot boarding, radio
@@ -121,9 +94,7 @@ fn clip_coverage_for(hazard: bool, z: u8) -> bool {
 /// the ones a coarser chart already shows (its copy can be cut off at its cell's edge):
 /// see `shown_from`.
 fn early_band(z: u8, t: &TableInfo) -> bool {
-    z < band_minzoom(t.band)
-        && z + 2 >= band_minzoom(t.band)
-        && t.class.is_some_and(|c| c.geo != Geo::Point)
+    z < band_minzoom(t.band) && z + 2 >= band_minzoom(t.band) && t.class.is_some_and(|c| c.geo != Geo::Point)
 }
 
 /// How dangerous a hazard point is, lower first: drying or awash, then of unknown
@@ -144,15 +115,7 @@ fn hazard_rank(code: &str, a: &Attrs) -> f64 {
 const SCALE: f64 = 1e7;
 
 fn to_path(r: &[[f64; 2]], outer: bool) -> clipper2_rust::Path64 {
-    let mut p: clipper2_rust::Path64 = r
-        .iter()
-        .map(|q| {
-            clipper2_rust::Point64::new(
-                (q[0] * SCALE).round() as i64,
-                (q[1] * SCALE).round() as i64,
-            )
-        })
-        .collect();
+    let mut p: clipper2_rust::Path64 = r.iter().map(|q| clipper2_rust::Point64::new((q[0] * SCALE).round() as i64, (q[1] * SCALE).round() as i64)).collect();
     p.dedup();
     while p.len() > 1 && p.first() == p.last() {
         p.pop();
@@ -195,10 +158,7 @@ fn cover_paths(cover: &geo::MultiPolygon<f64>) -> clipper2_rust::Paths64 {
 }
 
 fn from_path(p: &clipper2_rust::Path64) -> Ring {
-    let mut r: Ring = p
-        .iter()
-        .map(|q| [q.x as f64 / SCALE, q.y as f64 / SCALE])
-        .collect();
+    let mut r: Ring = p.iter().map(|q| [q.x as f64 / SCALE, q.y as f64 / SCALE]).collect();
     if let Some(f) = r.first().copied() {
         r.push(f);
     }
@@ -210,11 +170,7 @@ fn tree_polys(tree: &clipper2_rust::PolyTree64) -> Vec<Vec<Ring>> {
     clipper2_rust::poly_tree_to_faces64(tree)
         .into_iter()
         .filter(|f| f.outer.len() >= 3)
-        .map(|f| {
-            std::iter::once(from_path(&f.outer))
-                .chain(f.holes.iter().filter(|h| h.len() >= 3).map(from_path))
-                .collect()
-        })
+        .map(|f| std::iter::once(from_path(&f.outer)).chain(f.holes.iter().filter(|h| h.len() >= 3).map(from_path)).collect())
         .collect()
 }
 
@@ -224,21 +180,11 @@ fn clip_geom(g: &Geom, cover: &geo::MultiPolygon<f64>, outside: bool) -> Option<
 
 fn clip_geom_paths(g: &Geom, clip: &clipper2_rust::Paths64, outside: bool) -> Option<Geom> {
     use clipper2_rust::{ClipType, Clipper64, FillRule, Paths64, PolyTree64};
-    let ct = if outside {
-        ClipType::Difference
-    } else {
-        ClipType::Intersection
-    };
+    let ct = if outside { ClipType::Difference } else { ClipType::Intersection };
     match g {
         Geom::Polygons(polys) => {
             let mut tree = PolyTree64::new();
-            clipper2_rust::boolean_op_tree_64(
-                ct,
-                FillRule::NonZero,
-                &polys_to_paths(polys),
-                clip,
-                &mut tree,
-            );
+            clipper2_rust::boolean_op_tree_64(ct, FillRule::NonZero, &polys_to_paths(polys), clip, &mut tree);
             let out: Vec<Vec<Ring>> = tree_polys(&tree)
                 .into_iter()
                 .filter(|p| {
@@ -252,16 +198,7 @@ fn clip_geom_paths(g: &Geom, clip: &clipper2_rust::Paths64, outside: bool) -> Op
             let open: Paths64 = lines
                 .iter()
                 .filter(|l| l.len() >= 2)
-                .map(|l| {
-                    l.iter()
-                        .map(|q| {
-                            clipper2_rust::Point64::new(
-                                (q[0] * SCALE).round() as i64,
-                                (q[1] * SCALE).round() as i64,
-                            )
-                        })
-                        .collect()
-                })
+                .map(|l| l.iter().map(|q| clipper2_rust::Point64::new((q[0] * SCALE).round() as i64, (q[1] * SCALE).round() as i64)).collect())
                 .collect();
             let mut c = Clipper64::new();
             c.add_open_subject(&open);
@@ -269,15 +206,7 @@ fn clip_geom_paths(g: &Geom, clip: &clipper2_rust::Paths64, outside: bool) -> Op
             let mut closed = Paths64::new();
             let mut res = Paths64::new();
             c.execute(ct, FillRule::NonZero, &mut closed, Some(&mut res));
-            let out: Vec<Ring> = res
-                .iter()
-                .filter(|p| p.len() >= 2)
-                .map(|p| {
-                    p.iter()
-                        .map(|q| [q.x as f64 / SCALE, q.y as f64 / SCALE])
-                        .collect()
-                })
-                .collect();
+            let out: Vec<Ring> = res.iter().filter(|p| p.len() >= 2).map(|p| p.iter().map(|q| [q.x as f64 / SCALE, q.y as f64 / SCALE]).collect()).collect();
             (!out.is_empty()).then_some(Geom::Lines(out))
         }
         Geom::Points(_) => None,
@@ -292,13 +221,8 @@ pub(crate) struct CoverageClip {
 impl CoverageClip {
     pub(crate) fn new(cover: &geo::MultiPolygon<f64>) -> Self {
         use geo::BoundingRect;
-        let bounds = cover
-            .bounding_rect()
-            .map(|r| [r.min().x, r.min().y, r.max().x, r.max().y]);
-        Self {
-            bounds,
-            paths: cover_paths(cover),
-        }
+        let bounds = cover.bounding_rect().map(|r| [r.min().x, r.min().y, r.max().x, r.max().y]);
+        Self { bounds, paths: cover_paths(cover) }
     }
 
     fn reaches(&self, g: &Geom) -> bool {
@@ -335,9 +259,7 @@ pub(crate) fn cut_outside(g: &Geom, cover: &geo::MultiPolygon<f64>) -> Option<Ge
 fn reaches(g: &Geom, cover: &geo::MultiPolygon<f64>) -> bool {
     use geo::BoundingRect;
     let b = geom_bounds(g);
-    cover.bounding_rect().is_some_and(|r| {
-        r.min().x <= b[2] && r.max().x >= b[0] && r.min().y <= b[3] && r.max().y >= b[1]
-    })
+    cover.bounding_rect().is_some_and(|r| r.min().x <= b[2] && r.max().x >= b[0] && r.min().y <= b[3] && r.max().y >= b[1])
 }
 
 /// Light sector radius and limit-line length in tile units (4096 per tile, 8 per pixel).
@@ -376,11 +298,7 @@ fn text(v: rusqlite::types::ValueRef) -> Option<String> {
     match v {
         Null => None,
         Integer(i) => Some(i.to_string()),
-        Real(f) => Some(if f.fract() == 0.0 && f.abs() < 1e15 {
-            format!("{}", f as i64)
-        } else {
-            format!("{f}")
-        }),
+        Real(f) => Some(if f.fract() == 0.0 && f.abs() < 1e15 { format!("{}", f as i64) } else { format!("{f}") }),
         Text(t) => Some(String::from_utf8_lossy(t).into_owned()),
         Blob(_) => None,
     }
@@ -389,33 +307,14 @@ fn text(v: rusqlite::types::ValueRef) -> Option<String> {
 impl ChartStore {
     /// Rows of a feature table in `b` [w, s, e, n], with the columns asked for
     /// (None where the table hasn't that column).
-    pub(crate) fn query_text(
-        &self,
-        t: &TableInfo,
-        b: [f64; 4],
-        cols: &[&str],
-        mut f: impl FnMut(Row),
-    ) {
+    pub(crate) fn query_text(&self, t: &TableInfo, b: [f64; 4], cols: &[&str], mut f: impl FnMut(Row)) {
         if !t.touches(b) {
             return;
         }
         let conn = self.dbs[t.db].lock().unwrap_or_else(|e| e.into_inner());
-        let gcol = t
-            .rtree
-            .trim_start_matches(&format!("rtree_{}_", t.table))
-            .to_string();
+        let gcol = t.rtree.trim_start_matches(&format!("rtree_{}_", t.table)).to_string();
         let have: Vec<bool> = cols.iter().map(|c| t.cols.iter().any(|x| x == c)).collect();
-        let sel: String = cols
-            .iter()
-            .zip(&have)
-            .map(|(c, h)| {
-                if *h {
-                    format!("t.\"{c}\", ")
-                } else {
-                    "NULL, ".into()
-                }
-            })
-            .collect();
+        let sel: String = cols.iter().zip(&have).map(|(c, h)| if *h { format!("t.\"{c}\", ") } else { "NULL, ".into() }).collect();
         let sql = format!(
             "SELECT t.\"{pk}\", {sel}t.\"{gcol}\" FROM \"{tbl}\" t JOIN \"{rt}\" r ON t.\"{pk}\" = r.id
              WHERE r.maxx >= ?1 AND r.minx <= ?2 AND r.maxy >= ?3 AND r.miny <= ?4",
@@ -428,19 +327,13 @@ impl ChartStore {
         };
         // data east of 180° may be stored as 180..190: look there too (see crate::wrap_shifts)
         for shift in crate::wrap_shifts(b) {
-            let Ok(mut rows) = st.query(rusqlite::params![b[0] + shift, b[2] + shift, b[1], b[3]])
-            else {
+            let Ok(mut rows) = st.query(rusqlite::params![b[0] + shift, b[2] + shift, b[1], b[3]]) else {
                 continue;
             };
             while let Ok(Some(r)) = rows.next() {
                 let fid: i64 = r.get(0).unwrap_or(0);
-                let vals: Vec<Option<String>> = (0..cols.len())
-                    .map(|i| r.get_ref(i + 1).ok().and_then(text))
-                    .collect();
-                let Ok(blob) = r
-                    .get_ref(cols.len() + 1)
-                    .and_then(|v| v.as_blob().map_err(Into::into))
-                else {
+                let vals: Vec<Option<String>> = (0..cols.len()).map(|i| r.get_ref(i + 1).ok().and_then(text)).collect();
+                let Ok(blob) = r.get_ref(cols.len() + 1).and_then(|v| v.as_blob().map_err(Into::into)) else {
                     continue;
                 };
                 if let Some(mut geom) = parse_gpkg(blob) {
@@ -454,13 +347,7 @@ impl ChartStore {
     /// The zoom from which a table's features usually show at latitude `lat`: from its
     /// median SCAMIN, else its band's.
     fn takeover_zoom(&self, ti: usize, t: &TableInfo, lat: f64) -> f64 {
-        let median = self
-            .scamin_median
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .entry(ti)
-            .or_insert_with(|| Arc::new(OnceLock::new()))
-            .clone();
+        let median = self.scamin_median.lock().unwrap_or_else(|e| e.into_inner()).entry(ti).or_insert_with(|| Arc::new(OnceLock::new())).clone();
         let med = *median.get_or_init(|| {
             if !t.cols.iter().any(|c| c == "scamin") {
                 return None;
@@ -470,7 +357,10 @@ impl ChartStore {
             if n == 0 {
                 return None;
             }
-            conn.query_row(&format!("SELECT scamin FROM \"{}\" WHERE scamin IS NOT NULL ORDER BY scamin LIMIT 1 OFFSET {}", t.table, n / 2), [], |r| r.get::<_, f64>(0)).ok()
+            conn.query_row(&format!("SELECT scamin FROM \"{}\" WHERE scamin IS NOT NULL ORDER BY scamin LIMIT 1 OFFSET {}", t.table, n / 2), [], |r| {
+                r.get::<_, f64>(0)
+            })
+            .ok()
         });
         med.map_or(band_minzoom(t.band) as f64, |s| s57::scamin_zoom(s, lat))
     }
@@ -484,9 +374,7 @@ impl ChartStore {
                     && t.touches(bbox)
                     && (z >= starts[(t.band as usize).min(7)]
                         || early_band(z, t)
-                        || t.class.is_some_and(|c| {
-                            is_hazard(c.code) || (is_info(c.code) && z as f64 >= INFO_ZOOM)
-                        }))
+                        || t.class.is_some_and(|c| is_hazard(c.code) || (is_info(c.code) && z as f64 >= INFO_ZOOM)))
             })
             .collect()
     }
@@ -496,16 +384,9 @@ impl ChartStore {
         self.coverage_with_progress(&mut |_, _| {})
     }
 
-    pub(crate) fn coverage_with_progress(
-        &self,
-        progress: &mut dyn FnMut(usize, usize),
-    ) -> &CoverageIndex {
+    pub(crate) fn coverage_with_progress(&self, progress: &mut dyn FnMut(usize, usize)) -> &CoverageIndex {
         self.coverage.get_or_init(|| {
-            let tables: Vec<_> = self
-                .tables
-                .iter()
-                .filter(|t| t.kind == Kind::Coverage)
-                .collect();
+            let tables: Vec<_> = self.tables.iter().filter(|t| t.kind == Kind::Coverage).collect();
             let total = tables.len();
             progress(0, total);
             let mut out = Vec::new();
@@ -517,13 +398,8 @@ impl ChartStore {
                     if let Geom::Polygons(polys) = &row.geom {
                         for rings in polys {
                             let Some(outer) = rings.first() else { continue };
-                            let ls = |r: &Ring| {
-                                geo::LineString::from(
-                                    r.iter().map(|p| (p[0], p[1])).collect::<Vec<_>>(),
-                                )
-                            };
-                            let poly =
-                                geo::Polygon::new(ls(outer), rings[1..].iter().map(ls).collect());
+                            let ls = |r: &Ring| geo::LineString::from(r.iter().map(|p| (p[0], p[1])).collect::<Vec<_>>());
+                            let poly = geo::Polygon::new(ls(outer), rings[1..].iter().map(ls).collect());
                             let b = geom_bounds(&Geom::Polygons(vec![vec![outer.clone()]]));
                             out.push((t.band, b, poly));
                         }
@@ -540,13 +416,7 @@ impl ChartStore {
         let polys: Vec<&geo::Polygon<f64>> = self
             .coverage()
             .intersecting(b)
-            .filter(|(band, cb, _)| {
-                bands.contains(band)
-                    && cb[2] >= b[0]
-                    && cb[0] <= b[2]
-                    && cb[3] >= b[1]
-                    && cb[1] <= b[3]
-            })
+            .filter(|(band, cb, _)| bands.contains(band) && cb[2] >= b[0] && cb[0] <= b[2] && cb[3] >= b[1] && cb[1] <= b[3])
             .map(|(_, _, p)| p)
             .collect();
         if polys.is_empty() {
@@ -554,14 +424,7 @@ impl ChartStore {
         }
         // merged with Clipper2 (see clip_geom)
         let r = |l: &geo::LineString<f64>| -> Ring { l.coords().map(|c| [c.x, c.y]).collect() };
-        let subj: Vec<Vec<Ring>> = polys
-            .iter()
-            .map(|p| {
-                std::iter::once(r(p.exterior()))
-                    .chain(p.interiors().iter().map(r))
-                    .collect()
-            })
-            .collect();
+        let subj: Vec<Vec<Ring>> = polys.iter().map(|p| std::iter::once(r(p.exterior())).chain(p.interiors().iter().map(r)).collect()).collect();
         let mut tree = clipper2_rust::PolyTree64::new();
         clipper2_rust::boolean_op_tree_64(
             clipper2_rust::ClipType::Union,
@@ -570,14 +433,8 @@ impl ChartStore {
             &clipper2_rust::Paths64::new(),
             &mut tree,
         );
-        let ls =
-            |r: &Ring| geo::LineString::from(r.iter().map(|p| (p[0], p[1])).collect::<Vec<_>>());
-        let m = geo::MultiPolygon::new(
-            tree_polys(&tree)
-                .iter()
-                .map(|rings| geo::Polygon::new(ls(&rings[0]), rings[1..].iter().map(ls).collect()))
-                .collect(),
-        );
+        let ls = |r: &Ring| geo::LineString::from(r.iter().map(|p| (p[0], p[1])).collect::<Vec<_>>());
+        let m = geo::MultiPolygon::new(tree_polys(&tree).iter().map(|rings| geo::Polygon::new(ls(&rings[0]), rings[1..].iter().map(ls).collect())).collect());
         Some(m)
     }
 
@@ -587,14 +444,7 @@ impl ChartStore {
         let pt = geo::Point::new(p[0], p[1]);
         self.coverage()
             .intersecting([p[0], p[1], p[0], p[1]])
-            .any(|(band, b, poly)| {
-                bands.contains(band)
-                    && p[0] >= b[0]
-                    && p[0] <= b[2]
-                    && p[1] >= b[1]
-                    && p[1] <= b[3]
-                    && poly.contains(&pt)
-            })
+            .any(|(band, b, poly)| bands.contains(band) && p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3] && poly.contains(&pt))
     }
 
     /// The four feature layers of one tile: [areas, lines, points, light sectors].
@@ -623,19 +473,10 @@ impl ChartStore {
         let mut coverage_clips = HashMap::new();
         for (_, tables) in &groups {
             for (k, (_, table)) in tables.iter().enumerate() {
-                let mut finer_bands: Vec<u8> = tables[..k]
-                    .iter()
-                    .map(|(_, finer)| finer.band)
-                    .filter(|band| *band > table.band)
-                    .collect();
+                let mut finer_bands: Vec<u8> = tables[..k].iter().map(|(_, finer)| finer.band).filter(|band| *band > table.band).collect();
                 finer_bands.dedup();
                 if !finer_bands.is_empty() {
-                    coverage_clips
-                        .entry(finer_bands.clone())
-                        .or_insert_with(|| {
-                            self.cover_in(&finer_bands, bbox)
-                                .map(|cover| CoverageClip::new(&cover))
-                        });
+                    coverage_clips.entry(finer_bands.clone()).or_insert_with(|| self.cover_in(&finer_bands, bbox).map(|cover| CoverageClip::new(&cover)));
                 }
             }
         }
@@ -674,11 +515,7 @@ impl ChartStore {
                     // finer-band copies in this tile: (position, band, minz)
                     let mut taken: Vec<([f64; 2], u8, f64)> = Vec::new();
                     for (k, (ti, t)) in tables.iter().enumerate() {
-                        let mut finer_bands: Vec<u8> = tables[..k]
-                            .iter()
-                            .map(|(_, ft)| ft.band)
-                            .filter(|b| *b > t.band)
-                            .collect();
+                        let mut finer_bands: Vec<u8> = tables[..k].iter().map(|(_, ft)| ft.band).filter(|b| *b > t.band).collect();
                         finer_bands.dedup();
                         let mut mine = Vec::new();
                         self.query_text(t, bbox, TILE_COLS, |row| {
@@ -687,11 +524,7 @@ impl ChartStore {
                             for &p in pts {
                                 // a finer chart's copy of this mark: it stands from its own zoom; this
                                 // coarser copy fills in until then (maxz), so the mark never goes missing
-                                let finer = taken
-                                    .iter()
-                                    .filter(|(q, b, _)| *b > t.band && metres(p, *q) < SAME_M)
-                                    .map(|(_, _, m)| *m)
-                                    .fold(f64::MAX, f64::min);
+                                let finer = taken.iter().filter(|(q, b, _)| *b > t.band && metres(p, *q) < SAME_M).map(|(_, _, m)| *m).fold(f64::MAX, f64::min);
                                 if finer <= z as f64 {
                                     continue;
                                 }
@@ -700,14 +533,10 @@ impl ChartStore {
                                 // smaller-scale chart was drawn. (Other marks keep the coarser copy
                                 // until the finer one shows, as lights do, so a buoy and its light
                                 // always come together.)
-                                if (is_hazard(class.code) || is_info(class.code))
-                                    && !finer_bands.is_empty()
-                                    && self.covered(&finer_bands, p)
-                                {
+                                if (is_hazard(class.code) || is_info(class.code)) && !finer_bands.is_empty() && self.covered(&finer_bands, p) {
                                     continue;
                                 }
-                                let mut minz =
-                                    a.num("scamin").map_or(0.0, |s| s57::scamin_zoom(s, p[1]));
+                                let mut minz = a.num("scamin").map_or(0.0, |s| s57::scamin_zoom(s, p[1]));
                                 if is_info(class.code) {
                                     minz = minz.min(INFO_ZOOM);
                                 }
@@ -743,9 +572,7 @@ impl ChartStore {
                                 }
                                 // depth over a rock, wreck or obstruction, so the chart can leave
                                 // the danger symbol off those deeper than the safety contour
-                                if matches!(class.code, "UWTROC" | "WRECKS" | "OBSTRN")
-                                    && matches!(a.first("watlev"), None | Some(3))
-                                {
+                                if matches!(class.code, "UWTROC" | "WRECKS" | "OBSTRN") && matches!(a.first("watlev"), None | Some(3)) {
                                     if let Some(d) = a.num("valsou") {
                                         props.push(("dep", Value::F64(d)));
                                     }
@@ -757,13 +584,7 @@ impl ChartStore {
                                     props.push(("hz", Value::UInt(1)));
                                     put_hazard(px, hazard_rank(class.code, &a), props, &mut fpt);
                                 } else {
-                                    fpt.add(
-                                        &TileGeom::Points(vec![[
-                                            px[0].round() as i32,
-                                            px[1].round() as i32,
-                                        ]]),
-                                        &props,
-                                    );
+                                    fpt.add(&TileGeom::Points(vec![[px[0].round() as i32, px[1].round() as i32]]), &props);
                                 }
                             }
                         });
@@ -772,11 +593,7 @@ impl ChartStore {
                 }
                 Geo::Line | Geo::Area => {
                     let hazard = is_hazard(class.code);
-                    let layer = if class.geo == Geo::Line {
-                        &mut fln
-                    } else {
-                        &mut far
-                    };
+                    let layer = if class.geo == Geo::Line { &mut fln } else { &mut far };
                     // every copy of this class met so far (finer bands first): bounds, minz
                     let mut seen: Vec<([f64; 4], f64)> = Vec::new();
                     // every copy's bounds and SCAMIN zoom, by band: a finer copy of a feature a
@@ -788,28 +605,16 @@ impl ChartStore {
                         .iter()
                         .map(|(_, t)| {
                             let mut rows = Vec::new();
-                            self.query_text(
-                                t,
-                                bbox,
-                                &[
-                                    "objnam", "scamin", "catrea", "restrn", "catmfa", "orient",
-                                    "watlev",
-                                ],
-                                |row| rows.push(row),
-                            );
+                            self.query_text(t, bbox, &["objnam", "scamin", "catrea", "restrn", "catmfa", "orient", "watlev"], |row| rows.push(row));
                             rows
                         })
                         .collect();
-                    let all_copies =
-                        bounds_tree(tables.iter().enumerate().flat_map(|(k, (_, t))| {
-                            rows_by_table[k].iter().map(move |row| {
-                                let minz = row.vals[1]
-                                    .as_deref()
-                                    .and_then(|s| s.parse().ok())
-                                    .map_or(0.0, |s| s57::scamin_zoom(s, lat_m));
-                                (geom_bounds(&row.geom), (t.band, minz))
-                            })
-                        }));
+                    let all_copies = bounds_tree(tables.iter().enumerate().flat_map(|(k, (_, t))| {
+                        rows_by_table[k].iter().map(move |row| {
+                            let minz = row.vals[1].as_deref().and_then(|s| s.parse().ok()).map_or(0.0, |s| s57::scamin_zoom(s, lat_m));
+                            (geom_bounds(&row.geom), (t.band, minz))
+                        })
+                    }));
                     let shown_from = |band: u8, gb: &[f64; 4], minz: f64| {
                         all_copies
                             .locate_in_envelope_intersecting(&bounds_envelope(*gb))
@@ -819,11 +624,7 @@ impl ChartStore {
                     };
                     for (k, (ti, t)) in tables.iter().enumerate() {
                         // the finer bands drawn here: those of this class's tables (finest first)
-                        let mut finer_bands: Vec<u8> = tables[..k]
-                            .iter()
-                            .map(|(_, ft)| ft.band)
-                            .filter(|b| *b > t.band)
-                            .collect();
+                        let mut finer_bands: Vec<u8> = tables[..k].iter().map(|(_, ft)| ft.band).filter(|b| *b > t.band).collect();
                         finer_bands.dedup();
                         let cover = coverage_clips.get(&finer_bands).and_then(Option::as_ref);
                         // At small scales, per-feature hazard clipping against chart coverage
@@ -832,17 +633,10 @@ impl ChartStore {
                         // when the finer bands' copies of this class start to show here: until
                         // then this band's copy stands inside their coverage too (maxz)
                         let lat_c = (bbox[1] + bbox[3]) / 2.0;
-                        let general = tables[..k]
-                            .iter()
-                            .filter(|(_, ft)| ft.band > t.band)
-                            .map(|(fi, ft)| self.takeover_zoom(*fi, ft, lat_c))
-                            .fold(f64::MAX, f64::min);
+                        let general =
+                            tables[..k].iter().filter(|(_, ft)| ft.band > t.band).map(|(fi, ft)| self.takeover_zoom(*fi, ft, lat_c)).fold(f64::MAX, f64::min);
                         let finer_seen: Vec<([f64; 4], f64)> = std::mem::take(&mut seen);
-                        let finer_index = bounds_tree(
-                            finer_seen
-                                .iter()
-                                .map(|(bounds, minz)| (*bounds, (0, *minz))),
-                        );
+                        let finer_index = bounds_tree(finer_seen.iter().map(|(bounds, minz)| (*bounds, (0, *minz))));
                         let mut mine_seen: Vec<([f64; 4], f64)> = Vec::new();
                         for row in &rows_by_table[k] {
                             // Inside a finer band's coverage that band's features are the ones
@@ -855,18 +649,11 @@ impl ChartStore {
                                 .as_deref()
                                 .and_then(|s| s.parse().ok())
                                 .map_or(0.0, |s| s57::scamin_zoom(s, lat0))
-                                .min(if is_info(class.code) {
-                                    INFO_ZOOM
-                                } else {
-                                    f64::MAX
-                                });
+                                .min(if is_info(class.code) { INFO_ZOOM } else { f64::MAX });
                             mine_seen.push((gb, shown_from(t.band, &gb, own)));
                             // the finer copies of this feature (those overlapping it) show from the
                             // latest of their zooms; with none here, from when that band's usually do
-                            let local = finer_index
-                                .locate_in_envelope_intersecting(&bounds_envelope(gb))
-                                .map(|copy| copy.data.1)
-                                .fold(f64::MIN, f64::max);
+                            let local = finer_index.locate_in_envelope_intersecting(&bounds_envelope(gb)).map(|copy| copy.data.1).fold(f64::MIN, f64::max);
                             let takeover = if local > f64::MIN { local } else { general };
                             let mut geom_cut = None;
                             let mut inside_part = None;
@@ -881,16 +668,9 @@ impl ChartStore {
                                 }
                             }
                             let geom = geom_cut.as_ref().unwrap_or(&row.geom);
-                            let tg = if class.geo == Geo::Line {
-                                tp.lines(geom)
-                            } else {
-                                tp.polygons(geom)
-                            };
+                            let tg = if class.geo == Geo::Line { tp.lines(geom) } else { tp.polygons(geom) };
                             let lat = (bbox[1] + bbox[3]) / 2.0;
-                            let mut minz = row.vals[1]
-                                .as_deref()
-                                .and_then(|s| s.parse().ok())
-                                .map_or(0.0, |s| s57::scamin_zoom(s, lat));
+                            let mut minz = row.vals[1].as_deref().and_then(|s| s.parse().ok()).map_or(0.0, |s| s57::scamin_zoom(s, lat));
                             if is_info(class.code) {
                                 minz = minz.min(INFO_ZOOM);
                             }
@@ -900,10 +680,7 @@ impl ChartStore {
                                 continue;
                             }
                             // a chart read early: only its copies of what a coarser chart shows
-                            if early_band(z, t)
-                                && z < starts[(t.band as usize).min(7)]
-                                && minz >= own_minz
-                            {
+                            if early_band(z, t) && z < starts[(t.band as usize).min(7)] && minz >= own_minz {
                                 continue;
                             }
                             let mut props = vec![
@@ -916,8 +693,7 @@ impl ChartStore {
                             if hazard {
                                 props.push(("hz", Value::UInt(1)));
                             }
-                            if let Some(n) = row.vals[0].as_deref().filter(|s| !s.trim().is_empty())
-                            {
+                            if let Some(n) = row.vals[0].as_deref().filter(|s| !s.trim().is_empty()) {
                                 props.push(("name", Value::Str(n.trim().into())));
                             }
                             // restrictions that matter to a yacht: entry prohibited / restricted, area to be avoided
@@ -936,15 +712,7 @@ impl ChartStore {
                                         "MARCUL" => Some("mf".to_string()),
                                         "OBSTRN" => Some(format!(
                                             "o|{}",
-                                            row.vals[6]
-                                                .as_deref()
-                                                .and_then(|v| v
-                                                    .split(',')
-                                                    .next()?
-                                                    .trim()
-                                                    .parse::<u32>()
-                                                    .ok())
-                                                .unwrap_or(3)
+                                            row.vals[6].as_deref().and_then(|v| v.split(',').next()?.trim().parse::<u32>().ok()).unwrap_or(3)
                                         )),
                                         _ => None,
                                     };
@@ -960,17 +728,10 @@ impl ChartStore {
                             }
                             // the part a finer chart covers, until its copy shows
                             if let Some(ig) = inside_part {
-                                let itg = if class.geo == Geo::Line {
-                                    tp.lines(&ig)
-                                } else {
-                                    tp.polygons(&ig)
-                                };
+                                let itg = if class.geo == Geo::Line { tp.lines(&ig) } else { tp.polygons(&ig) };
                                 if let Some(itg) = itg {
                                     let mut pp = props.clone();
-                                    pp.push((
-                                        "maxz",
-                                        Value::F64((takeover.min(30.0) * 10.0).round() / 10.0),
-                                    ));
+                                    pp.push(("maxz", Value::F64((takeover.min(30.0) * 10.0).round() / 10.0)));
                                     layer.add(&itg, &pp);
                                 }
                             }
@@ -994,15 +755,7 @@ impl ChartStore {
     /// a finer chart (which may not carry the light itself: LINZ's layers are not always
     /// complete in every band) shows from the same zoom as that mark, so a light's flare
     /// never stands on the chart without its buoy or beacon.
-    fn render_lights(
-        &self,
-        tp: &TileProj,
-        z: u8,
-        tables: &[(usize, &TableInfo)],
-        marks: &[([f64; 2], u8, f64)],
-        fpt: &mut Layer,
-        lsec: &mut Layer,
-    ) {
+    fn render_lights(&self, tp: &TileProj, z: u8, tables: &[(usize, &TableInfo)], marks: &[([f64; 2], u8, f64)], fpt: &mut Layer, lsec: &mut Layer) {
         // lights a little outside the tile still throw sectors into it
         let bbox = tp.lonlat_bbox(LEG_R + 16.0);
         struct Rec {
@@ -1020,28 +773,14 @@ impl ChartStore {
                 let a = Attrs(&row.vals);
                 for &p in pts {
                     let minz = a.num("scamin").map_or(0.0, |s| s57::scamin_zoom(s, p[1]));
-                    recs.push(Rec {
-                        p,
-                        band: t.band,
-                        t: *ti,
-                        fid: row.fid,
-                        light: Light::from_attrs(&a),
-                        minz,
-                    });
+                    recs.push(Rec { p, band: t.band, t: *ti, fid: row.fid, light: Light::from_attrs(&a), minz });
                 }
             });
         }
         // group the records at one spot (sector lights are one record per sector)
         let mut groups: HashMap<(i64, i64, u8), Vec<usize>> = HashMap::new();
         for (i, r) in recs.iter().enumerate() {
-            groups
-                .entry((
-                    (r.p[0] * 1e5).round() as i64,
-                    (r.p[1] * 1e5).round() as i64,
-                    r.band,
-                ))
-                .or_default()
-                .push(i);
+            groups.entry(((r.p[0] * 1e5).round() as i64, (r.p[1] * 1e5).round() as i64, r.band)).or_default().push(i);
         }
         let mut keys: Vec<_> = groups.keys().copied().collect();
         keys.sort_by_key(|k| (std::cmp::Reverse(k.2), k.0, k.1));
@@ -1052,22 +791,14 @@ impl ChartStore {
             let idx = &groups[&k];
             let first = &recs[idx[0]];
             // a finer chart's copy stands from its own zoom; this one until then
-            let finer = kept
-                .iter()
-                .filter(|(q, b, _)| *b > first.band && metres(first.p, *q) < SAME_M)
-                .map(|(_, _, m)| *m)
-                .fold(f64::MAX, f64::min);
+            let finer = kept.iter().filter(|(q, b, _)| *b > first.band && metres(first.p, *q) < SAME_M).map(|(_, _, m)| *m).fold(f64::MAX, f64::min);
             if finer <= z as f64 {
                 continue;
             }
             let mut minz = idx.iter().map(|&i| recs[i].minz).fold(f64::MAX, f64::min);
             // on a mark: appear no sooner than the first copy of the mark drawn here (a finer
             // chart may carry the buoy but not its light)
-            let mark = marks
-                .iter()
-                .filter(|(q, _, _)| metres(first.p, *q) < SAME_M)
-                .map(|(_, _, m)| *m)
-                .fold(f64::MAX, f64::min);
+            let mark = marks.iter().filter(|(q, _, _)| metres(first.p, *q) < SAME_M).map(|(_, _, m)| *m).fold(f64::MAX, f64::min);
             if mark < f64::MAX {
                 minz = minz.max(mark);
             }
@@ -1077,15 +808,8 @@ impl ChartStore {
             kept.push((first.p, first.band, minz));
             let c = tp.px(&first.p);
             let lights: Vec<Light> = idx.iter().map(|&i| recs[i].light.clone()).collect();
-            let cols: Vec<&str> = lights
-                .iter()
-                .map(|l| s57::light_colour(&l.colours))
-                .collect();
-            let col = if cols.iter().all(|x| *x == cols[0]) {
-                cols[0]
-            } else {
-                "m"
-            };
+            let cols: Vec<&str> = lights.iter().map(|l| s57::light_colour(&l.colours)).collect();
+            let col = if cols.iter().all(|x| *x == cols[0]) { cols[0] } else { "m" };
             if c[0] >= 0.0 && c[0] < e && c[1] >= 0.0 && c[1] < e {
                 let mut props = vec![
                     ("cls", Value::Str("LIGHTS".into())),
@@ -1102,10 +826,7 @@ impl ChartStore {
                 if !lbl.is_empty() {
                     props.push(("lbl", Value::Str(lbl)));
                 }
-                fpt.add(
-                    &TileGeom::Points(vec![[c[0].round() as i32, c[1].round() as i32]]),
-                    &props,
-                );
+                fpt.add(&TileGeom::Points(vec![[c[0].round() as i32, c[1].round() as i32]]), &props);
             }
             // sectors: limits are bearings from seaward, so the light shines the opposite way
             for l in &lights {
@@ -1122,39 +843,18 @@ impl ChartStore {
                     [c[0] + r * br.sin(), c[1] - r * br.cos()]
                 };
                 let n = ((a1 - a0) / 3.0).ceil().max(2.0) as usize;
-                let arc: Vec<[f64; 2]> = (0..=n)
-                    .map(|i| at(a0 + (a1 - a0) * i as f64 / n as f64, ARC_R))
-                    .collect();
+                let arc: Vec<[f64; 2]> = (0..=n).map(|i| at(a0 + (a1 - a0) * i as f64 / n as f64, ARC_R)).collect();
                 let col = s57::light_colour(&l.colours);
                 let mz = Value::F64((minz * 10.0).round() / 10.0);
                 // no finer copy: shown at every zoom from minz
-                let mx = Value::F64(if finer < f64::MAX {
-                    (finer * 10.0).round() / 10.0
-                } else {
-                    99.0
-                });
-                add_line(
-                    lsec,
-                    tp,
-                    &arc,
-                    &[
-                        ("col", Value::Str(col.into())),
-                        ("k", Value::Str("arc".into())),
-                        ("minz", mz.clone()),
-                        ("maxz", mx.clone()),
-                    ],
-                );
+                let mx = Value::F64(if finer < f64::MAX { (finer * 10.0).round() / 10.0 } else { 99.0 });
+                add_line(lsec, tp, &arc, &[("col", Value::Str(col.into())), ("k", Value::Str("arc".into())), ("minz", mz.clone()), ("maxz", mx.clone())]);
                 for b in [a0, a1] {
                     add_line(
                         lsec,
                         tp,
                         &[c, at(b, LEG_R)],
-                        &[
-                            ("col", Value::Str(col.into())),
-                            ("k", Value::Str("leg".into())),
-                            ("minz", mz.clone()),
-                            ("maxz", mx.clone()),
-                        ],
+                        &[("col", Value::Str(col.into())), ("k", Value::Str("leg".into())), ("minz", mz.clone()), ("maxz", mx.clone())],
                     );
                 }
             }
@@ -1170,19 +870,10 @@ impl ChartStore {
         let dlon = dlat / at[1].to_radians().cos().max(0.05);
         let bbox = [at[0] - dlon, at[1] - dlat, at[0] + dlon, at[1] + dlat];
         let mut out: Vec<Clearance> = Vec::new();
-        for t in self.tables.iter().filter(|t| {
-            t.kind == Kind::Feature
-                && t.class
-                    .is_some_and(|c| matches!(c.code, "BRIDGE" | "CBLOHD" | "PIPOHD"))
-        }) {
+        for t in self.tables.iter().filter(|t| t.kind == Kind::Feature && t.class.is_some_and(|c| matches!(c.code, "BRIDGE" | "CBLOHD" | "PIPOHD"))) {
             let class = t.class.unwrap();
             self.query_text(t, bbox, &["objnam", "verclr", "vercsa"], |row| {
-                let num = |i: usize| {
-                    row.vals[i]
-                        .as_deref()
-                        .and_then(|s| s.trim().parse::<f64>().ok())
-                        .filter(|v| *v > 0.0)
-                };
+                let num = |i: usize| row.vals[i].as_deref().and_then(|s| s.trim().parse::<f64>().ok()).filter(|v| *v > 0.0);
                 let Some(clear) = [num(1), num(2)].into_iter().flatten().reduce(f64::min) else {
                     return;
                 };
@@ -1196,27 +887,15 @@ impl ChartStore {
                 let xy = |p: [f64; 2]| [(p[0] - at[0]) * 111_320.0 * k, (p[1] - at[1]) * 111_320.0];
                 let mut best = (f64::INFINITY, [0.0, 0.0]);
                 let segs: Vec<([f64; 2], [f64; 2])> = match &row.geom {
-                    Geom::Lines(ls) => ls
-                        .iter()
-                        .flat_map(|l| l.windows(2).map(|w| (w[0], w[1])))
-                        .collect(),
-                    Geom::Polygons(ps) => ps
-                        .iter()
-                        .flatten()
-                        .flat_map(|r| r.windows(2).map(|w| (w[0], w[1])))
-                        .collect(),
+                    Geom::Lines(ls) => ls.iter().flat_map(|l| l.windows(2).map(|w| (w[0], w[1]))).collect(),
+                    Geom::Polygons(ps) => ps.iter().flatten().flat_map(|r| r.windows(2).map(|w| (w[0], w[1]))).collect(),
                     Geom::Points(_) => pts.iter().map(|p| (*p, *p)).collect(),
                 };
                 for (a, b) in segs {
                     let (a, b) = (xy(a), xy(b));
                     let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
                     let l2 = dx * dx + dy * dy;
-                    let u = if l2 > 0.0 {
-                        ((-a[0]) * dx + (-a[1]) * dy) / l2
-                    } else {
-                        0.0
-                    }
-                    .clamp(0.0, 1.0);
+                    let u = if l2 > 0.0 { ((-a[0]) * dx + (-a[1]) * dy) / l2 } else { 0.0 }.clamp(0.0, 1.0);
                     let q = [a[0] + u * dx, a[1] + u * dy];
                     let d = q[0].hypot(q[1]);
                     if d < best.0 {
@@ -1246,22 +925,10 @@ impl ChartStore {
         let t = self.tables.get(table)?;
         let class = t.class?;
         let conn = self.dbs[t.db].lock().unwrap_or_else(|e| e.into_inner());
-        let gcol = t
-            .rtree
-            .trim_start_matches(&format!("rtree_{}_", t.table))
-            .to_string();
-        let cols: Vec<&String> = t
-            .cols
-            .iter()
-            .filter(|c| {
-                **c != gcol.to_ascii_lowercase() && *c != "fid" && *c != "fidn" && **c != t.pk
-            })
-            .collect();
+        let gcol = t.rtree.trim_start_matches(&format!("rtree_{}_", t.table)).to_string();
+        let cols: Vec<&String> = t.cols.iter().filter(|c| **c != gcol.to_ascii_lowercase() && *c != "fid" && *c != "fidn" && **c != t.pk).collect();
         let sel: String = cols.iter().map(|c| format!("\"{c}\", ")).collect();
-        let sql = format!(
-            "SELECT {sel}\"{gcol}\" FROM \"{}\" WHERE \"{}\" = ?1",
-            t.table, t.pk
-        );
+        let sql = format!("SELECT {sel}\"{gcol}\" FROM \"{}\" WHERE \"{}\" = ?1", t.table, t.pk);
         let mut st = conn.prepare(&sql).ok()?;
         let mut rows = st.query([fid]).ok()?;
         let r = rows.next().ok()??;
@@ -1279,10 +946,7 @@ impl ChartStore {
         }
         // a light: its chart characteristic first ("Fl(4) W 30s 29m 14M")
         if class.code == "LIGHTS" {
-            let vals: Vec<Option<String>> = s57::TILE_COLS
-                .iter()
-                .map(|n| raw.iter().find(|(k, _)| k == n).map(|(_, v)| v.clone()))
-                .collect();
+            let vals: Vec<Option<String>> = s57::TILE_COLS.iter().map(|n| raw.iter().find(|(k, _)| k == n).map(|(_, v)| v.clone())).collect();
             let lbl = s57::light_label(&[s57::Light::from_attrs(&s57::Attrs(&vals))]);
             if !lbl.is_empty() {
                 attrs.insert(0, ("Characteristic".to_string(), lbl));
@@ -1292,39 +956,18 @@ impl ChartStore {
             let n = attrs.remove(i);
             attrs.insert(0, n);
         }
-        let position = r
-            .get_ref(cols.len())
-            .ok()
-            .and_then(|v| v.as_blob().ok())
-            .and_then(parse_gpkg)
-            .and_then(|g| match g {
-                Geom::Points(p) => p.first().copied(),
-                Geom::Lines(l) => l.first().and_then(|x| x.first().copied()),
-                Geom::Polygons(p) => p
-                    .first()
-                    .and_then(|x| x.first())
-                    .and_then(|x| x.first().copied()),
-            });
-        Some(FeatureInfo {
-            code: class.code,
-            class_name: class.name,
-            band: t.band,
-            position,
-            attrs,
-        })
+        let position = r.get_ref(cols.len()).ok().and_then(|v| v.as_blob().ok()).and_then(parse_gpkg).and_then(|g| match g {
+            Geom::Points(p) => p.first().copied(),
+            Geom::Lines(l) => l.first().and_then(|x| x.first().copied()),
+            Geom::Polygons(p) => p.first().and_then(|x| x.first()).and_then(|x| x.first().copied()),
+        });
+        Some(FeatureInfo { code: class.code, class_name: class.name, band: t.band, position, attrs })
     }
 
     /// Charted dangers in `bbox` a boat drawing `safety_depth` must keep off:
     /// rocks, wrecks and obstructions that dry, are awash, or have less water
     /// (or an unknown depth); and, if `farms`, marine farms. Points and polygons.
-    pub fn for_each_danger(
-        &self,
-        bbox: [f64; 4],
-        safety_depth: f64,
-        dangers: bool,
-        farms: bool,
-        mut f: impl FnMut(&Geom),
-    ) {
+    pub fn for_each_danger(&self, bbox: [f64; 4], safety_depth: f64, dangers: bool, farms: bool, mut f: impl FnMut(&Geom)) {
         for t in self.tables.iter().filter(|t| t.kind == Kind::Feature) {
             let code = t.class.unwrap().code;
             let want = match code {
@@ -1356,12 +999,7 @@ pub fn is_danger(code: &str, a: &Attrs, safety_depth: f64) -> bool {
     match code {
         "WRECKS" => !matches!(a.first("catwrk"), Some(1 | 3)),
         // foul ground and fish havens are not a danger to surface navigation
-        "OBSTRN" => !matches!(
-            a.get("catobs")
-                .and_then(|s| s.split(',').next())
-                .and_then(|s| s.trim().parse::<u32>().ok()),
-            Some(5..=7)
-        ),
+        "OBSTRN" => !matches!(a.get("catobs").and_then(|s| s.split(',').next()).and_then(|s| s.trim().parse::<u32>().ok()), Some(5..=7)),
         _ => true,
     }
 }
@@ -1400,43 +1038,21 @@ mod tests {
 
     #[test]
     fn coverage_index_returns_only_intersecting_bounds() {
-        let polygon = geo::Polygon::new(
-            geo::LineString::from(vec![
-                (0.0, 0.0),
-                (1.0, 0.0),
-                (1.0, 1.0),
-                (0.0, 1.0),
-                (0.0, 0.0),
-            ]),
-            vec![],
-        );
+        let polygon = geo::Polygon::new(geo::LineString::from(vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)]), vec![]);
         let index = CoverageIndex::new(vec![
             (2, [0.0, 0.0, 1.0, 1.0], polygon.clone()),
             (3, [10.0, 10.0, 11.0, 11.0], polygon.clone()),
             (4, [1.5, 1.5, 2.5, 2.5], polygon),
         ]);
-        let mut found: Vec<(u8, [f64; 4])> = index
-            .intersecting([0.5, 0.5, 2.0, 2.0])
-            .map(|(band, bounds, _)| (*band, *bounds))
-            .collect();
+        let mut found: Vec<(u8, [f64; 4])> = index.intersecting([0.5, 0.5, 2.0, 2.0]).map(|(band, bounds, _)| (*band, *bounds)).collect();
         found.sort_by_key(|(band, _)| *band);
-        assert_eq!(
-            found,
-            vec![(2, [0.0, 0.0, 1.0, 1.0]), (4, [1.5, 1.5, 2.5, 2.5])]
-        );
+        assert_eq!(found, vec![(2, [0.0, 0.0, 1.0, 1.0]), (4, [1.5, 1.5, 2.5, 2.5])]);
     }
 
     #[test]
     fn feature_bounds_tree_returns_only_intersecting_copies() {
-        let index = bounds_tree([
-            ([0.0, 0.0, 1.0, 1.0], (2, 4.0)),
-            ([10.0, 10.0, 11.0, 11.0], (3, 5.0)),
-            ([1.5, 1.5, 2.5, 2.5], (4, 6.0)),
-        ]);
-        let mut found: Vec<(u8, f64)> = index
-            .locate_in_envelope_intersecting(&bounds_envelope([0.5, 0.5, 2.0, 2.0]))
-            .map(|copy| copy.data)
-            .collect();
+        let index = bounds_tree([([0.0, 0.0, 1.0, 1.0], (2, 4.0)), ([10.0, 10.0, 11.0, 11.0], (3, 5.0)), ([1.5, 1.5, 2.5, 2.5], (4, 6.0))]);
+        let mut found: Vec<(u8, f64)> = index.locate_in_envelope_intersecting(&bounds_envelope([0.5, 0.5, 2.0, 2.0])).map(|copy| copy.data).collect();
         found.sort_by_key(|a| a.0);
         assert_eq!(found, vec![(2, 4.0), (4, 6.0)]);
     }
@@ -1444,32 +1060,15 @@ mod tests {
     #[test]
     fn cached_coverage_clip_matches_uncached_clip() {
         let ring = |x0, y0, x1, y1| vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]];
-        let cover = geo::MultiPolygon::new(vec![geo::Polygon::new(
-            geo::LineString::from(ring(0.0, 0.0, 1.0, 1.0)),
-            vec![],
-        )]);
+        let cover = geo::MultiPolygon::new(vec![geo::Polygon::new(geo::LineString::from(ring(0.0, 0.0, 1.0, 1.0)), vec![])]);
         let geom = Geom::Polygons(vec![vec![ring(-0.5, -0.5, 1.5, 1.5)]]);
         let cached = CoverageClip::new(&cover);
-        assert_eq!(
-            cut_inside_cached(&geom, &cached),
-            clip_geom(&geom, &cover, false)
-        );
-        assert_eq!(
-            cut_outside_cached(&geom, &cached),
-            cut_outside(&geom, &cover)
-        );
+        assert_eq!(cut_inside_cached(&geom, &cached), clip_geom(&geom, &cover, false));
+        assert_eq!(cut_outside_cached(&geom, &cached), cut_outside(&geom, &cover));
     }
 
     fn attrs(pairs: &[(&str, &str)]) -> Vec<Option<String>> {
-        TILE_COLS
-            .iter()
-            .map(|c| {
-                pairs
-                    .iter()
-                    .find(|(k, _)| k == c)
-                    .map(|(_, v)| v.to_string())
-            })
-            .collect()
+        TILE_COLS.iter().map(|c| pairs.iter().find(|(k, _)| k == c).map(|(_, v)| v.to_string())).collect()
     }
 
     #[test]

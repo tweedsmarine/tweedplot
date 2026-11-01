@@ -142,11 +142,7 @@ fn encode_paths(paths: &[Vec<[i32; 2]>], closed: bool) -> Vec<u32> {
     let (mut cx, mut cy) = (0, 0);
     for path in paths {
         // A closed ring repeats its first point; MVT closes with ClosePath instead.
-        let pts: &[[i32; 2]] = if closed && path.len() > 1 && path.first() == path.last() {
-            &path[..path.len() - 1]
-        } else {
-            path
-        };
+        let pts: &[[i32; 2]] = if closed && path.len() > 1 && path.first() == path.last() { &path[..path.len() - 1] } else { path };
         let min = if closed { 3 } else { 2 };
         if pts.len() < min {
             continue;
@@ -226,33 +222,60 @@ pub fn debug_points(tile: &[u8], layer: &str) -> Vec<(String, u64, f64, f64, i64
             let (f, w) = (k >> 3, k & 7);
             match w {
                 0 => out.push((f, w, &b[0..0], varint(b, &mut i))),
-                1 => { out.push((f, w, &b[i..i + 8], 0)); i += 8; }
-                2 => { let n = varint(b, &mut i) as usize; out.push((f, w, &b[i..i + n], 0)); i += n; }
-                5 => { out.push((f, w, &b[i..i + 4], 0)); i += 4; }
+                1 => {
+                    out.push((f, w, &b[i..i + 8], 0));
+                    i += 8;
+                }
+                2 => {
+                    let n = varint(b, &mut i) as usize;
+                    out.push((f, w, &b[i..i + n], 0));
+                    i += n;
+                }
+                5 => {
+                    out.push((f, w, &b[i..i + 4], 0));
+                    i += 4;
+                }
                 _ => break,
             }
         }
         out
     }
-    let packed = |b: &[u8]| { let mut v = Vec::new(); let mut i = 0; while i < b.len() { v.push(varint(b, &mut i)); } v };
+    let packed = |b: &[u8]| {
+        let mut v = Vec::new();
+        let mut i = 0;
+        while i < b.len() {
+            v.push(varint(b, &mut i));
+        }
+        v
+    };
     let mut out = Vec::new();
     for (f, _, lb, _) in fields(tile) {
-        if f != 3 { continue; }
+        if f != 3 {
+            continue;
+        }
         let lf = fields(lb);
         let name = lf.iter().find(|x| x.0 == 1).map(|x| String::from_utf8_lossy(x.2).to_string()).unwrap_or_default();
-        if name != layer { continue; }
+        if name != layer {
+            continue;
+        }
         let keys: Vec<String> = lf.iter().filter(|x| x.0 == 3).map(|x| String::from_utf8_lossy(x.2).to_string()).collect();
-        let vals: Vec<Value> = lf.iter().filter(|x| x.0 == 4).map(|x| {
-            let vf = fields(x.2);
-            match vf.first() {
-                Some((1, _, s, _)) => Value::Str(String::from_utf8_lossy(s).to_string()),
-                Some((3, _, d, _)) => Value::F64(f64::from_le_bytes(d[..8].try_into().unwrap())),
-                Some((5, _, _, u)) => Value::UInt(*u),
-                _ => Value::UInt(0),
-            }
-        }).collect();
+        let vals: Vec<Value> = lf
+            .iter()
+            .filter(|x| x.0 == 4)
+            .map(|x| {
+                let vf = fields(x.2);
+                match vf.first() {
+                    Some((1, _, s, _)) => Value::Str(String::from_utf8_lossy(s).to_string()),
+                    Some((3, _, d, _)) => Value::F64(f64::from_le_bytes(d[..8].try_into().unwrap())),
+                    Some((5, _, _, u)) => Value::UInt(*u),
+                    _ => Value::UInt(0),
+                }
+            })
+            .collect();
         for (ff, _, fb, _) in lf.iter() {
-            if *ff != 2 { continue; }
+            if *ff != 2 {
+                continue;
+            }
             let feat = fields(fb);
             let tags = feat.iter().find(|x| x.0 == 2).map(|x| packed(x.2)).unwrap_or_default();
             let geom = feat.iter().find(|x| x.0 == 4).map(|x| packed(x.2)).unwrap_or_default();

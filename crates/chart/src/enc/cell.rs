@@ -125,10 +125,7 @@ fn attrs(f: &Field) -> Vec<(u16, String)> {
 }
 
 fn coords(f: &Field, three: bool) -> Vec<[i64; 3]> {
-    f.rows
-        .iter()
-        .filter_map(|r| Some([int(f, r, "YCOO")?, int(f, r, "XCOO")?, if three { int(f, r, "VE3D").unwrap_or(0) } else { 0 }]))
-        .collect()
+    f.rows.iter().filter_map(|r| Some([int(f, r, "YCOO")?, int(f, r, "XCOO")?, if three { int(f, r, "VE3D").unwrap_or(0) } else { 0 }])).collect()
 }
 
 /// An update's attribute values: "\x7f" (DEL) removes the attribute.
@@ -277,18 +274,21 @@ impl Cell {
                     .field("FOID")
                     .map(|o| (o.int("AGEN").unwrap_or(0) as u16, o.int("FIDN").unwrap_or(0) as u32, o.int("FIDS").unwrap_or(0) as u16))
                     .unwrap_or_default();
-                self.features.insert(rcid, Feature {
+                self.features.insert(
                     rcid,
-                    objl: f.int("OBJL").unwrap_or(0) as u16,
-                    prim: f.int("PRIM").unwrap_or(255) as u8,
-                    grup: f.int("GRUP").unwrap_or(0) as u8,
-                    rver,
-                    foid,
-                    attf,
-                    natf,
-                    fspt,
-                    ffpt,
-                });
+                    Feature {
+                        rcid,
+                        objl: f.int("OBJL").unwrap_or(0) as u16,
+                        prim: f.int("PRIM").unwrap_or(255) as u8,
+                        grup: f.int("GRUP").unwrap_or(0) as u8,
+                        rver,
+                        foid,
+                        attf,
+                        natf,
+                        fspt,
+                        ffpt,
+                    },
+                );
             }
         }
     }

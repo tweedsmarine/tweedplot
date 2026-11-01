@@ -141,11 +141,7 @@ pub fn decode(blob: &[u8]) -> Result<Raster, Error> {
     }
     let height = r.i32()?.max(0) as usize;
     let width = r.i32()?.max(0) as usize;
-    let depth = if version >= 4 {
-        r.i32()?.max(1) as usize
-    } else {
-        1
-    };
+    let depth = if version >= 4 { r.i32()?.max(1) as usize } else { 1 };
     let num_valid = r.i32()?.max(0) as usize;
     let mb = r.i32()?.max(1) as usize;
     let _blob_size = r.i32()?;
@@ -190,21 +186,11 @@ pub fn decode(blob: &[u8]) -> Result<Raster, Error> {
                 }
             }
         }
-        valid = Some(
-            (0..n)
-                .map(|k| bits[k >> 3] & (0x80 >> (k & 7)) != 0)
-                .collect(),
-        );
+        valid = Some((0..n).map(|k| bits[k >> 3] & (0x80 >> (k & 7)) != 0).collect());
     }
 
     let mut data = vec![0f32; n * depth];
-    let mut out = Raster {
-        width,
-        height,
-        depth,
-        data: Vec::new(),
-        valid,
-    };
+    let mut out = Raster { width, height, depth, data: Vec::new(), valid };
     if num_valid == 0 {
         out.data = data;
         return Ok(out);
@@ -263,17 +249,9 @@ pub fn decode(blob: &[u8]) -> Result<Raster, Error> {
     let blocks_y = height.div_ceil(mb);
     let mut buf: Vec<u32> = Vec::with_capacity(mb * mb);
     for by in 0..blocks_y {
-        let bh = if by + 1 == blocks_y {
-            height - by * mb
-        } else {
-            mb
-        };
+        let bh = if by + 1 == blocks_y { height - by * mb } else { mb };
         for bx in 0..blocks_x {
-            let bw = if bx + 1 == blocks_x {
-                width - bx * mb
-            } else {
-                mb
-            };
+            let bw = if bx + 1 == blocks_x { width - bx * mb } else { mb };
             for d in 0..depth {
                 let z_max = z_maxes[d];
                 let head = r.u8()?;
@@ -286,9 +264,7 @@ pub fn decode(blob: &[u8]) -> Result<Raster, Error> {
                 }
                 let bits67 = (head >> 6) as i32;
                 let enc = head & 3;
-                let pixels = (0..bh).flat_map(|row| {
-                    (0..bw).map(move |col| (by * mb + row) * width + bx * mb + col)
-                });
+                let pixels = (0..bh).flat_map(|row| (0..bw).map(move |col| (by * mb + row) * width + bx * mb + col));
                 match enc {
                     2 => {} // all zero
                     0 => {
@@ -316,9 +292,7 @@ pub fn decode(blob: &[u8]) -> Result<Raster, Error> {
                         }
                         for k in pixels {
                             if out.valid.as_ref().is_none_or(|m| m[k]) {
-                                let q = *buf
-                                    .get(i)
-                                    .ok_or(Error::Format("block has too few values"))?;
+                                let q = *buf.get(i).ok_or(Error::Format("block has too few values"))?;
                                 let v = if vals.is_empty() {
                                     let x = off + q as f64 * scale;
                                     if x > z_max {
@@ -327,9 +301,7 @@ pub fn decode(blob: &[u8]) -> Result<Raster, Error> {
                                         x
                                     }
                                 } else {
-                                    *vals
-                                        .get(q as usize)
-                                        .ok_or(Error::Format("bad table index"))?
+                                    *vals.get(q as usize).ok_or(Error::Format("bad table index"))?
                                 };
                                 data[d * n + k] = v as f32;
                                 i += 1;
@@ -346,14 +318,7 @@ pub fn decode(blob: &[u8]) -> Result<Raster, Error> {
 
 /// Read a bit-stuffed array into `buf` (the integers). With a look-up table, returns the
 /// table's values (offset first), which the integers index; else None.
-fn unstuff(
-    r: &mut Rd,
-    version: i32,
-    buf: &mut Vec<u32>,
-    off: f64,
-    scale: f64,
-    z_max: f64,
-) -> Result<Option<Vec<f64>>, Error> {
+fn unstuff(r: &mut Rd, version: i32, buf: &mut Vec<u32>, off: f64, scale: f64, z_max: f64) -> Result<Option<Vec<f64>>, Error> {
     let head = r.u8()?;
     let bits67 = head >> 6;
     let num = match bits67 {
@@ -384,13 +349,7 @@ fn unstuff(
     read_bits(r, version, &mut table, lut_len - 1, nbits)?;
     let nmax = ((z_max - off) / scale).ceil();
     let mut vals = vec![off];
-    vals.extend(table.iter().map(|&q| {
-        if (q as f64) < nmax {
-            off + q as f64 * scale
-        } else {
-            z_max
-        }
-    }));
+    vals.extend(table.iter().map(|&q| if (q as f64) < nmax { off + q as f64 * scale } else { z_max }));
     let mut idx_bits = 0;
     while ((lut_len - 1) >> idx_bits) != 0 {
         idx_bits += 1;
@@ -401,20 +360,10 @@ fn unstuff(
 
 /// `num` integers of `nbits` bits, packed in little-endian 32-bit words: from the low bits
 /// up from version 3, from the high bits down before it.
-fn read_bits(
-    r: &mut Rd,
-    version: i32,
-    out: &mut Vec<u32>,
-    num: usize,
-    nbits: u32,
-) -> Result<(), Error> {
+fn read_bits(r: &mut Rd, version: i32, out: &mut Vec<u32>, num: usize, nbits: u32) -> Result<(), Error> {
     if nbits == 0 || nbits > 32 {
         out.resize(out.len() + num, 0);
-        return if nbits == 0 {
-            Ok(())
-        } else {
-            Err(Error::Format("bad bit count"))
-        };
+        return if nbits == 0 { Ok(()) } else { Err(Error::Format("bad bit count")) };
     }
     let nbytes = (num * nbits as usize).div_ceil(8);
     let src = r.take(nbytes)?;
@@ -433,11 +382,7 @@ fn read_bits(
             let w = bitpos / 32;
             let b = bitpos % 32;
             let lo = words[w] as u64 >> b;
-            let v = if b + nbits as usize > 32 {
-                lo | ((*words.get(w + 1).unwrap_or(&0) as u64) << (32 - b))
-            } else {
-                lo
-            };
+            let v = if b + nbits as usize > 32 { lo | ((*words.get(w + 1).unwrap_or(&0) as u64) << (32 - b)) } else { lo };
             out.push((v & mask) as u32);
             bitpos += nbits as usize;
         }
@@ -467,12 +412,7 @@ mod tests {
 
     /// Fixtures made with Esri's LERC library (imagecodecs.lerc_encode), see testdata/README.
     fn fixture(name: &str) -> Vec<u8> {
-        std::fs::read(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("testdata")
-                .join(name),
-        )
-        .unwrap()
+        std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata").join(name)).unwrap()
     }
 
     /// The test surface the fixtures were made from (64 × 48, with a hole and an edge of
@@ -495,15 +435,8 @@ mod tests {
                 match r.get(x, y) {
                     None => assert!(with_mask && masked(x, y), "{name}: {x},{y} invalid"),
                     Some(v) => {
-                        assert!(
-                            !(with_mask && masked(x, y)),
-                            "{name}: {x},{y} should be invalid"
-                        );
-                        assert!(
-                            (v - surface(x, y)).abs() <= tol,
-                            "{name}: {x},{y} {v} v {}",
-                            surface(x, y)
-                        );
+                        assert!(!(with_mask && masked(x, y)), "{name}: {x},{y} should be invalid");
+                        assert!((v - surface(x, y)).abs() <= tol, "{name}: {x},{y} {v} v {}", surface(x, y));
                     }
                 }
             }

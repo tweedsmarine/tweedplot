@@ -7,7 +7,7 @@
 //! GRIB1 messages go to `grib1`. Fields in other representations (JPEG 2000, PNG) are skipped and
 //! reported, not fatal.
 
-use crate::{Field, Grid, GribError, Param};
+use crate::{Field, GribError, Grid, Param};
 
 pub struct Decoded {
     pub fields: Vec<Field>,
@@ -215,9 +215,7 @@ fn field(st: &State, s7: &[u8]) -> Result<Option<Field>, GribError> {
     let raw: Vec<f32> = match &st.bitmap {
         Some(bm) => {
             let mut it = packed.into_iter();
-            (0..n)
-                .map(|i| if bm[i / 8] & (0x80 >> (i % 8)) != 0 { it.next().unwrap_or(f32::NAN) } else { f32::NAN })
-                .collect()
+            (0..n).map(|i| if bm[i / 8] & (0x80 >> (i % 8)) != 0 { it.next().unwrap_or(f32::NAN) } else { f32::NAN }).collect()
         }
         None => {
             if packed.len() != n {
@@ -253,11 +251,7 @@ fn grid_latlon(s: &[u8]) -> Result<Grid, GribError> {
     let nj = u32be(&s[34..]) as usize;
     let basic = u32be(&s[38..]);
     let subdiv = u32be(&s[42..]);
-    let unit = if basic == 0 || basic == u32::MAX || subdiv == 0 || subdiv == u32::MAX {
-        1e-6
-    } else {
-        basic as f64 / subdiv as f64
-    };
+    let unit = if basic == 0 || basic == u32::MAX || subdiv == 0 || subdiv == u32::MAX { 1e-6 } else { basic as f64 / subdiv as f64 };
     let la1 = sm32(&s[46..]) as f64 * unit;
     let lo1 = sm32(&s[50..]) as f64 * unit;
     let la2 = sm32(&s[55..]) as f64 * unit;
@@ -377,15 +371,10 @@ fn unpack_complex(s5: &[u8], data: &[u8], n: usize, spatial: bool) -> Result<Vec
     }
     let refs: Vec<u64> = (0..ng).map(|_| br.take(sc.bits)).collect::<Option<_>>().ok_or_else(|| err("group refs"))?;
     br.align();
-    let widths: Vec<usize> = (0..ng)
-        .map(|_| br.take(width_bits).map(|w| (w + ref_width) as usize))
-        .collect::<Option<_>>()
-        .ok_or_else(|| err("group widths"))?;
+    let widths: Vec<usize> =
+        (0..ng).map(|_| br.take(width_bits).map(|w| (w + ref_width) as usize)).collect::<Option<_>>().ok_or_else(|| err("group widths"))?;
     br.align();
-    let mut lens: Vec<u64> = (0..ng)
-        .map(|_| br.take(len_bits).map(|l| ref_len + l * len_inc))
-        .collect::<Option<_>>()
-        .ok_or_else(|| err("group lengths"))?;
+    let mut lens: Vec<u64> = (0..ng).map(|_| br.take(len_bits).map(|l| ref_len + l * len_inc)).collect::<Option<_>>().ok_or_else(|| err("group lengths"))?;
     br.align();
     if let Some(l) = lens.last_mut() {
         *l = last_len;
@@ -468,11 +457,19 @@ fn u64be(b: &[u8]) -> u64 {
 /// Sign-magnitude 16-bit (GRIB's signed integers).
 fn sm16(b: &[u8]) -> i16 {
     let v = u16be(b);
-    if v & 0x8000 != 0 { -((v & 0x7fff) as i16) } else { v as i16 }
+    if v & 0x8000 != 0 {
+        -((v & 0x7fff) as i16)
+    } else {
+        v as i16
+    }
 }
 fn sm32(b: &[u8]) -> i32 {
     let v = u32be(b);
-    if v & 0x8000_0000 != 0 { -((v & 0x7fff_ffff) as i32) } else { v as i32 }
+    if v & 0x8000_0000 != 0 {
+        -((v & 0x7fff_ffff) as i32)
+    } else {
+        v as i32
+    }
 }
 
 /// Seconds since 1970-01-01 UTC.
@@ -537,7 +534,15 @@ pub fn scan_file(path: &std::path::Path) -> Result<Vec<FieldMeta>, GribError> {
                 f.seek(SeekFrom::Start(pos))?;
                 f.read_exact(&mut m)?;
                 if let Ok(Some(fl)) = crate::grib1::message(&m, false) {
-                    out.push(FieldMeta { param: fl.param, centre: fl.centre, ref_time: fl.ref_time, valid_time: fl.valid_time, member: None, grid: fl.grid, local: None });
+                    out.push(FieldMeta {
+                        param: fl.param,
+                        centre: fl.centre,
+                        ref_time: fl.ref_time,
+                        valid_time: fl.valid_time,
+                        member: None,
+                        grid: fl.grid,
+                        local: None,
+                    });
                 }
             }
             pos += len;

@@ -29,8 +29,8 @@ use std::sync::{Arc, Mutex, RwLock};
 use rusqlite::{params, Connection, OptionalExtension};
 
 pub mod check;
-pub mod live;
 mod import;
+pub mod live;
 mod render;
 pub mod share;
 pub use import::{clean_depths, decode_pbg_blob, pbg_level16, pbg_made, PbgTile};
@@ -553,11 +553,14 @@ impl Store {
 
     pub fn info(&self) -> Result<Info> {
         let db = self.db();
-        let (cells, tiles): (i64, i64) = db.query_row("SELECT coalesce(sum(n), 0), count(*) FROM tiles WHERE l = ?1", [MAX_LEVEL], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        let (cells, tiles): (i64, i64) =
+            db.query_row("SELECT coalesce(sum(n), 0), count(*) FROM tiles WHERE l = ?1", [MAX_LEVEL], |r| Ok((r.get(0)?, r.get(1)?)))?;
         let bounds = main_area(&db)?;
         let mut q = db.prepare("SELECT kind, name, bytes, added, soundings, rejected FROM sources ORDER BY id")?;
         let sources = q
-            .query_map([], |r| Ok(SourceInfo { kind: r.get(0)?, name: r.get(1)?, bytes: r.get(2)?, added: r.get(3)?, soundings: r.get(4)?, rejected: r.get(5)? }))?
+            .query_map([], |r| {
+                Ok(SourceInfo { kind: r.get(0)?, name: r.get(1)?, bytes: r.get(2)?, added: r.get(3)?, soundings: r.get(4)?, rejected: r.get(5)? })
+            })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         let rejected: i64 = db.query_row("SELECT coalesce(sum(n), 0) FROM left_out WHERE l = ?1", [MAX_LEVEL], |r| r.get(0))?;
         let bytes = ["", "-wal"].iter().filter_map(|s| std::fs::metadata(format!("{}{s}", self.path.display())).ok()).map(|m| m.len()).sum();
@@ -783,7 +786,10 @@ impl Store {
             params![kind, name, soundings, rejected, now_s()],
         )?;
         if n == 0 {
-            db.execute("INSERT INTO sources (kind, name, bytes, added, soundings, rejected) VALUES (?1, ?2, 0, ?3, ?4, ?5)", params![kind, name, now_s(), soundings, rejected])?;
+            db.execute(
+                "INSERT INTO sources (kind, name, bytes, added, soundings, rejected) VALUES (?1, ?2, 0, ?3, ?4, ?5)",
+                params![kind, name, now_s(), soundings, rejected],
+            )?;
         }
         Ok(())
     }
@@ -875,7 +881,22 @@ impl Store {
         let conn = Connection::open(&self.path)?;
         schema(&conn)?;
         conn.execute_batch("BEGIN")?;
-        Ok(Writer { conn, kind: kind.into(), name: name.into(), bytes, dirty: HashSet::new(), pending: HashMap::new(), pending_n: 0, soundings: 0, seeded: Vec::new(), since_commit: 0, acc: Acc::new(), rejected: HashMap::new(), rejected_n: 0, left_dirty: HashSet::new() })
+        Ok(Writer {
+            conn,
+            kind: kind.into(),
+            name: name.into(),
+            bytes,
+            dirty: HashSet::new(),
+            pending: HashMap::new(),
+            pending_n: 0,
+            soundings: 0,
+            seeded: Vec::new(),
+            since_commit: 0,
+            acc: Acc::new(),
+            rejected: HashMap::new(),
+            rejected_n: 0,
+            left_dirty: HashSet::new(),
+        })
     }
 }
 
@@ -972,7 +993,8 @@ impl Writer {
         if n == 0 {
             self.conn.execute(&format!("DELETE FROM {table} WHERE l = ?1 AND ty = ?2 AND tx = ?3"), params![k.0, k.1, k.2])?;
         } else {
-            self.conn.execute(&format!("INSERT OR REPLACE INTO {table} (l, ty, tx, n, data) VALUES (?1, ?2, ?3, ?4, ?5)"), params![k.0, k.1, k.2, n as i64, blob])?;
+            self.conn
+                .execute(&format!("INSERT OR REPLACE INTO {table} (l, ty, tx, n, data) VALUES (?1, ?2, ?3, ?4, ?5)"), params![k.0, k.1, k.2, n as i64, blob])?;
         }
         self.since_commit += 1;
         if self.since_commit >= 4000 {
@@ -1138,7 +1160,14 @@ impl Writer {
         self.build_levels_in(SEABED, from, dirty, progress, cancel)
     }
 
-    fn build_levels_in(&mut self, table: &str, from: u8, mut dirty: HashSet<(u32, u32)>, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<()> {
+    fn build_levels_in(
+        &mut self,
+        table: &str,
+        from: u8,
+        mut dirty: HashSet<(u32, u32)>,
+        progress: &mut dyn FnMut(&str, usize, usize),
+        cancel: &AtomicBool,
+    ) -> Result<()> {
         use rayon::prelude::*;
         for level in (MIN_LEVEL..from).rev() {
             let mut parents: Vec<(u32, u32)> = dirty.iter().map(|&(y, x)| (y >> 1, x >> 1)).collect::<HashSet<_>>().into_iter().collect();
@@ -1194,7 +1223,10 @@ impl Writer {
             self.conn.execute("INSERT OR REPLACE INTO seeded (track_id, modified) VALUES (?1, ?2)", params![id, m])?;
         }
         if !self.kind.is_empty() && (self.soundings > 0 || self.rejected_n > 0) {
-            self.conn.execute("INSERT INTO sources (kind, name, bytes, added, soundings, rejected) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![self.kind, self.name, self.bytes, now_s(), self.soundings, self.rejected_n])?;
+            self.conn.execute(
+                "INSERT INTO sources (kind, name, bytes, added, soundings, rejected) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![self.kind, self.name, self.bytes, now_s(), self.soundings, self.rejected_n],
+            )?;
         }
         self.conn.execute_batch("COMMIT")?;
         let _ = self.conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE)");

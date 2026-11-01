@@ -110,8 +110,19 @@ mod tests {
     fn field(param: Param, discipline: u8, category: u8, number: u8, surface: u8, run: i64, step_h: i64, v: f32) -> Field {
         let g = Grid::regular(9, 9, -44.0, 170.0, 0.5, 0.5);
         Field {
-            param, discipline, category, number, surface_type: surface, surface_value: if surface == 103 { 10.0 } else { 0.0 }, centre: 98,
-            ref_time: run, valid_time: run + step_h * 3600, member: None, grid: g, values: vec![v; 81], local: None,
+            param,
+            discipline,
+            category,
+            number,
+            surface_type: surface,
+            surface_value: if surface == 103 { 10.0 } else { 0.0 },
+            centre: 98,
+            ref_time: run,
+            valid_time: run + step_h * 3600,
+            member: None,
+            grid: g,
+            values: vec![v; 81],
+            local: None,
         }
     }
 

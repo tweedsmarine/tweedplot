@@ -9,7 +9,10 @@ fn main() {
     for z in z0..=z1 {
         let n = (1u32 << z) as f64;
         let tx = |lon: f64| ((lon + 180.0) / 360.0 * n) as u32;
-        let ty = |lat: f64| { let r = lat.to_radians(); ((1.0 - (r.tan() + 1.0 / r.cos()).ln() / std::f64::consts::PI) / 2.0 * n) as u32 };
+        let ty = |lat: f64| {
+            let r = lat.to_radians();
+            ((1.0 - (r.tan() + 1.0 / r.cos()).ln() / std::f64::consts::PI) / 2.0 * n) as u32
+        };
         let t0 = std::time::Instant::now();
         let mut k = 0;
         for x in tx(b[0])..=tx(b[2]) {

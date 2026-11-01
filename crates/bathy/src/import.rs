@@ -39,7 +39,12 @@ pub fn decode_pbg_blob(b: &[u8]) -> Result<Vec<(u8, u8, f32)>> {
 
 /// Read the finest level of a PBG database, calling `f` for each tile. Returns the level
 /// read and when the file was made (Unix seconds, 0 if unknown).
-pub fn pbg_level16(db: &Path, f: &mut dyn FnMut(PbgTile) -> Result<()>, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<(u8, i64)> {
+pub fn pbg_level16(
+    db: &Path,
+    f: &mut dyn FnMut(PbgTile) -> Result<()>,
+    progress: &mut dyn FnMut(&str, usize, usize),
+    cancel: &AtomicBool,
+) -> Result<(u8, i64)> {
     pbg_rows(
         db,
         &mut |level, ty, tx, b| match decode_pbg_blob(&b) {
@@ -53,7 +58,12 @@ pub fn pbg_level16(db: &Path, f: &mut dyn FnMut(PbgTile) -> Result<()>, progress
 
 /// The finest level's tiles of a PBG database as stored: `f(level, row from the top,
 /// column, blob)`. Returns the level and when the file was made (Unix seconds, 0 if unknown).
-fn pbg_rows(db: &Path, f: &mut dyn FnMut(u8, u32, u32, Vec<u8>) -> Result<()>, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<(u8, i64)> {
+fn pbg_rows(
+    db: &Path,
+    f: &mut dyn FnMut(u8, u32, u32, Vec<u8>) -> Result<()>,
+    progress: &mut dyn FnMut(&str, usize, usize),
+    cancel: &AtomicBool,
+) -> Result<(u8, i64)> {
     let c = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
     let has: Option<String> = c.query_row("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'MX_RCL'", [], |r| r.get(0)).optional()?;
     if has.is_none() {
@@ -130,7 +140,13 @@ impl Store {
 
     /// [`Store::import_pbg`], leaving out (and keeping apart) cells well off the chart's
     /// depth there when `chart` is given. Returns (cells added, cells left out).
-    pub fn import_pbg_checked(&self, path: &Path, chart: Option<&crate::check::Reference>, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<(i64, i64)> {
+    pub fn import_pbg_checked(
+        &self,
+        path: &Path,
+        chart: Option<&crate::check::Reference>,
+        progress: &mut dyn FnMut(&str, usize, usize),
+        cancel: &AtomicBool,
+    ) -> Result<(i64, i64)> {
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let bytes = std::fs::metadata(path)?.len() as i64;
         let mut magic = [0u8; 4];
@@ -203,7 +219,13 @@ impl Store {
 
     /// [`Store::import_xyz`], leaving out (and keeping apart) points well off the chart's
     /// depth there when `chart` is given. Returns (soundings added, soundings left out).
-    pub fn import_xyz_checked(&self, path: &Path, chart: Option<&crate::check::Reference>, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<(i64, i64)> {
+    pub fn import_xyz_checked(
+        &self,
+        path: &Path,
+        chart: Option<&crate::check::Reference>,
+        progress: &mut dyn FnMut(&str, usize, usize),
+        cancel: &AtomicBool,
+    ) -> Result<(i64, i64)> {
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let bytes = std::fs::metadata(path)?.len();
         let h = hours(mtime_s(path));
@@ -461,11 +483,8 @@ mod tests {
 
     #[test]
     fn spikes_are_dropped() {
-        let d: Vec<Option<f64>> = [30.0, 30.2, 30.1, 4.0, 30.3, 30.4, f64::NAN, 30.2, 300.0, 30.0, 29.9]
-            .iter()
-            .map(|&v| Some(v))
-            .chain([None, Some(0.1)])
-            .collect();
+        let d: Vec<Option<f64>> =
+            [30.0, 30.2, 30.1, 4.0, 30.3, 30.4, f64::NAN, 30.2, 300.0, 30.0, 29.9].iter().map(|&v| Some(v)).chain([None, Some(0.1)]).collect();
         let k = clean_depths(&d);
         assert_eq!(k, vec![true, true, true, false, true, true, false, true, false, true, true, false, false]);
     }

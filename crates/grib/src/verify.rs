@@ -36,7 +36,11 @@ pub struct VerifyTime {
 }
 
 fn src(f: &GribFile) -> Source {
-    if f.members().len() > 1 { Source::Mean } else { Source::Control }
+    if f.members().len() > 1 {
+        Source::Mean
+    } else {
+        Source::Control
+    }
 }
 
 fn has_hour0(f: &GribFile) -> Option<i64> {
@@ -146,7 +150,16 @@ pub fn scores(files: &[&GribFile], vt: &VerifyTime, bbox: [f64; 4], max_points: 
     let g = common_grid(files, &used, Param::WindU, bbox, max_points);
     let sea = sea_mask(files, vt.t);
     #[derive(Default)]
-    struct Acc { n: usize, se: f64, sb: f64, nd: usize, sd: f64, sv: f64, np: usize, sp: f64 }
+    struct Acc {
+        n: usize,
+        se: f64,
+        sb: f64,
+        nd: usize,
+        sd: f64,
+        sv: f64,
+        np: usize,
+        sp: f64,
+    }
     let mut acc: Vec<Acc> = vt.forecasts.iter().map(|_| Acc::default()).collect();
     for j in 0..g.nj {
         let lat = g.lat0 + j as f64 * g.step;
@@ -208,7 +221,15 @@ pub enum ErrorKind {
 
 /// The error field of one forecast against the reference runs at time `at`, on a grid like `compare::agreement`'s.
 /// At the verify time the reference is their hour 0; at later times it is their own forecast.
-pub fn error_grid(files: &[&GribFile], vt: &VerifyTime, forecast: usize, kind: ErrorKind, at: i64, bbox: [f64; 4], max_points: usize) -> Option<crate::compare::AgreementGrid> {
+pub fn error_grid(
+    files: &[&GribFile],
+    vt: &VerifyTime,
+    forecast: usize,
+    kind: ErrorKind,
+    at: i64,
+    bbox: [f64; 4],
+    max_points: usize,
+) -> Option<crate::compare::AgreementGrid> {
     if !vt.forecasts.iter().any(|f| f.file == forecast) || !has_wind(files[forecast], at) || !vt.refs.iter().any(|&r| has_wind(files[r], at)) {
         return None;
     }
@@ -223,8 +244,8 @@ pub fn error_grid(files: &[&GribFile], vt: &VerifyTime, forecast: usize, kind: E
         let lat = g.lat0 + j as f64 * g.step;
         for i in 0..g.ni {
             let lon = g.lon0 + i as f64 * g.step;
-            let (rw, _) = if sea(lat, lon) {             reference(files, &vt.refs, &g.boxes, lat, lon, at) } else { (None, None) };
-                        let fw = layer_wind(f, src(f), lat, own_lon(g.boxes[forecast], lon), at);
+            let (rw, _) = if sea(lat, lon) { reference(files, &vt.refs, &g.boxes, lat, lon, at) } else { (None, None) };
+            let fw = layer_wind(f, src(f), lat, own_lon(g.boxes[forecast], lon), at);
             let v = match (rw, fw) {
                 (Some((ru, rv)), Some((u, v))) => match kind {
                     ErrorKind::Vector => Some(((u - ru).powi(2) + (v - rv).powi(2)).sqrt() * KN),
@@ -237,7 +258,19 @@ pub fn error_grid(files: &[&GribFile], vt: &VerifyTime, forecast: usize, kind: E
             mean_wind.push(rw.map(|(u, v)| (u as f32, v as f32)));
         }
     }
-    Some(crate::compare::AgreementGrid { lon0: g.lon0, lat0: g.lat0, dlon: g.step, dlat: g.step, ni: g.ni, nj: g.nj, values, mean_wind, used, layers: 2, members: false })
+    Some(crate::compare::AgreementGrid {
+        lon0: g.lon0,
+        lat0: g.lat0,
+        dlon: g.step,
+        dlat: g.step,
+        ni: g.ni,
+        nj: g.nj,
+        values,
+        mean_wind,
+        used,
+        layers: 2,
+        members: false,
+    })
 }
 
 /// One line of the track record.
@@ -256,7 +289,13 @@ pub struct TrackRow {
 }
 
 pub fn band(lead_h: f64) -> &'static str {
-    if lead_h <= 24.0 { "≤ 24 h" } else if lead_h <= 48.0 { "≤ 48 h" } else { "> 48 h" }
+    if lead_h <= 24.0 {
+        "≤ 24 h"
+    } else if lead_h <= 48.0 {
+        "≤ 48 h"
+    } else {
+        "> 48 h"
+    }
 }
 
 /// Scores at every verify time averaged by model and lead band.
@@ -302,8 +341,19 @@ mod tests {
         for h in [0, 12, 24] {
             for (param, val) in [(Param::WindU, u), (Param::WindV, 0.0), (Param::Mslp, hpa * 100.0)] {
                 fields.push(Field {
-                    param, discipline: 0, category: 0, number: 0, surface_type: 103, surface_value: 10.0, centre: 98,
-                    ref_time: run, valid_time: run + h * 3600, member: None, grid: g, values: vec![val; 25], local: None,
+                    param,
+                    discipline: 0,
+                    category: 0,
+                    number: 0,
+                    surface_type: 103,
+                    surface_value: 10.0,
+                    centre: 98,
+                    ref_time: run,
+                    valid_time: run + h * 3600,
+                    member: None,
+                    grid: g,
+                    values: vec![val; 25],
+                    local: None,
                 });
             }
         }

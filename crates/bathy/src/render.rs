@@ -54,7 +54,18 @@ pub const MAX_FILL_CELLS: i64 = 192;
 
 impl Default for Style {
     fn default() -> Self {
-        Style { palette: Palette::Rainbow, shallow: 0.0, deep: 500.0, contours: true, shade: true, fill: true, fill_m: 4.0, rejected: false, target: None, reverse: false }
+        Style {
+            palette: Palette::Rainbow,
+            shallow: 0.0,
+            deep: 500.0,
+            contours: true,
+            shade: true,
+            fill: true,
+            fill_m: 4.0,
+            rejected: false,
+            target: None,
+            reverse: false,
+        }
     }
 }
 
@@ -81,13 +92,8 @@ const RAINBOW: &[(f32, [f32; 3])] = &[
     (0.84, [70.0, 62.0, 196.0]),
     (1.0, [92.0, 28.0, 128.0]),
 ];
-const BLUES: &[(f32, [f32; 3])] = &[
-    (0.0, [205.0, 240.0, 236.0]),
-    (0.2, [150.0, 210.0, 234.0]),
-    (0.45, [96.0, 164.0, 220.0]),
-    (0.7, [58.0, 110.0, 184.0]),
-    (1.0, [26.0, 52.0, 120.0]),
-];
+const BLUES: &[(f32, [f32; 3])] =
+    &[(0.0, [205.0, 240.0, 236.0]), (0.2, [150.0, 210.0, 234.0]), (0.45, [96.0, 164.0, 220.0]), (0.7, [58.0, 110.0, 184.0]), (1.0, [26.0, 52.0, 120.0])];
 const MONO: &[(f32, [f32; 3])] = &[(0.0, [20.0, 20.0, 20.0]), (1.0, [235.0, 235.0, 235.0])];
 const BANDS: &[(f32, [f32; 3])] = &[
     (0.0, [20.0, 20.0, 20.0]),
@@ -240,7 +246,11 @@ impl Store {
                 let grow = z <= MAX_LEVEL;
                 for j in 0..TILE {
                     for i in 0..TILE {
-                        let on = mask[j * TILE + i] || (grow && ((i > 0 && mask[j * TILE + i - 1]) || (j > 0 && mask[(j - 1) * TILE + i]) || (i > 0 && j > 0 && mask[(j - 1) * TILE + i - 1])));
+                        let on = mask[j * TILE + i]
+                            || (grow
+                                && ((i > 0 && mask[j * TILE + i - 1])
+                                    || (j > 0 && mask[(j - 1) * TILE + i])
+                                    || (i > 0 && j > 0 && mask[(j - 1) * TILE + i - 1])));
                         if on {
                             let o = (j * TILE + i) * 4;
                             buf[o..o + 4].copy_from_slice(&[220, 0, 200, 255]);

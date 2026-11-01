@@ -338,7 +338,11 @@ mod tests {
     fn segments_round_trip() {
         let mk = |t: i64, lat: f64, lon: f64| TrackPoint { t: Some(t), lat, lon, sog: Some(6.23), cog: Some(359.9), depth: Some(121.5), temp: Some(16.84) };
         let segs = vec![
-            vec![mk(1_700_000_000, -41.2612345, 173.2812345), mk(1_700_000_010, -41.2613, 173.2815), TrackPoint { t: None, lat: -41.3, lon: 173.3, ..Default::default() }],
+            vec![
+                mk(1_700_000_000, -41.2612345, 173.2812345),
+                mk(1_700_000_010, -41.2613, 173.2815),
+                TrackPoint { t: None, lat: -41.3, lon: 173.3, ..Default::default() },
+            ],
             vec![mk(1_699_999_000, -41.0, 179.9999999), mk(1_699_999_010, -41.0, -179.9999999)],
         ];
         let z = encode_segments(&segs);

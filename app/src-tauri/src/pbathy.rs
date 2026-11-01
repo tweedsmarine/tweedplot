@@ -391,10 +391,22 @@ fn today() -> String {
 fn live_state() -> std::sync::MutexGuard<'static, Option<Live>> {
     let mut g = LIVE.lock().unwrap_or_else(|e| e.into_inner());
     if g.is_none() {
-        let (on, max_sog) = store().map_or((false, 0.0), |s| {
-            (s.meta("live_on").as_deref() == Some("1"), s.meta("live_max_sog").and_then(|v| v.parse().ok()).unwrap_or(0.0))
+        let (on, max_sog) =
+            store().map_or((false, 0.0), |s| (s.meta("live_on").as_deref() == Some("1"), s.meta("live_max_sog").and_then(|v| v.parse().ok()).unwrap_or(0.0)));
+        *g = Some(Live {
+            on,
+            max_sog,
+            logger: Default::default(),
+            reference: None,
+            day: today(),
+            added: 0,
+            left: 0,
+            last_depth: 0.0,
+            kind: "",
+            transducer_m: None,
+            settings_at: 0.0,
+            flushing: false,
         });
-        *g = Some(Live { on, max_sog, logger: Default::default(), reference: None, day: today(), added: 0, left: 0, last_depth: 0.0, kind: "", transducer_m: None, settings_at: 0.0, flushing: false });
     }
     g
 }

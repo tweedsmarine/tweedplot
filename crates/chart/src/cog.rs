@@ -153,46 +153,27 @@ fn read_at(f: &mut File, off: u64, len: usize) -> Result<Vec<u8>, Error> {
 
 /// The tags of the IFD at `off`, and the next IFD's offset.
 fn read_ifd(f: &mut File, o: Order, off: u64) -> Result<(Vec<(u16, Val)>, u64), Error> {
-    let (count, entry, head) = if o.big {
-        (read_at(f, off, 8).map(|b| o.u64(&b))?, 20usize, 8u64)
-    } else {
-        (read_at(f, off, 2).map(|b| o.u16(&b) as u64)?, 12usize, 2u64)
-    };
+    let (count, entry, head) =
+        if o.big { (read_at(f, off, 8).map(|b| o.u64(&b))?, 20usize, 8u64) } else { (read_at(f, off, 2).map(|b| o.u16(&b) as u64)?, 12usize, 2u64) };
     if count > 4096 {
         return Err(bad("too many tags"));
     }
-    let raw = read_at(
-        f,
-        off + head,
-        count as usize * entry + if o.big { 8 } else { 4 },
-    )?;
+    let raw = read_at(f, off + head, count as usize * entry + if o.big { 8 } else { 4 })?;
     let mut tags = Vec::new();
     for i in 0..count as usize {
         let e = &raw[i * entry..(i + 1) * entry];
         let tag = o.u16(&e[0..2]);
         let ty = o.u16(&e[2..4]);
-        let (n, inline, voff) = if o.big {
-            (o.u64(&e[4..12]), &e[12..20], o.u64(&e[12..20]))
-        } else {
-            (o.u32(&e[4..8]) as u64, &e[8..12], o.u32(&e[8..12]) as u64)
-        };
+        let (n, inline, voff) =
+            if o.big { (o.u64(&e[4..12]), &e[12..20], o.u64(&e[12..20])) } else { (o.u32(&e[4..8]) as u64, &e[8..12], o.u32(&e[8..12]) as u64) };
         let size = type_size(ty);
         if size == 0 || n > 50_000_000 {
             continue;
         }
         let len = size * n as usize;
-        let bytes = if len <= inline.len() {
-            inline[..len].to_vec()
-        } else {
-            read_at(f, voff, len)?
-        };
+        let bytes = if len <= inline.len() { inline[..len].to_vec() } else { read_at(f, voff, len)? };
         let val = match ty {
-            2 => Val::Text(
-                String::from_utf8_lossy(&bytes)
-                    .trim_end_matches('\0')
-                    .trim()
-                    .to_string(),
-            ),
+            2 => Val::Text(String::from_utf8_lossy(&bytes).trim_end_matches('\0').trim().to_string()),
             _ => Val::Nums(
                 (0..n as usize)
                     .map(|k| {
@@ -205,10 +186,7 @@ fn read_ifd(f: &mut File, o: Order, off: u64) -> Result<(Vec<(u16, Val)>, u64), 
                             4 | 13 => o.u32(b) as f64,
                             9 => o.u32(b) as i32 as f64,
                             5 => o.u32(&b[0..4]) as f64 / o.u32(&b[4..8]).max(1) as f64,
-                            10 => {
-                                o.u32(&b[0..4]) as i32 as f64
-                                    / (o.u32(&b[4..8]) as i32).max(1) as f64
-                            }
+                            10 => o.u32(&b[0..4]) as i32 as f64 / (o.u32(&b[4..8]) as i32).max(1) as f64,
                             11 => f32::from_bits(o.u32(b)) as f64,
                             12 => o.f64(b),
                             16 | 18 => o.u64(b) as f64,
@@ -222,11 +200,7 @@ fn read_ifd(f: &mut File, o: Order, off: u64) -> Result<(Vec<(u16, Val)>, u64), 
         tags.push((tag, val));
     }
     let tail = &raw[count as usize * entry..];
-    let next = if o.big {
-        o.u64(tail)
-    } else {
-        o.u32(tail) as u64
-    };
+    let next = if o.big { o.u64(tail) } else { o.u32(tail) as u64 };
     Ok((tags, next))
 }
 
@@ -268,12 +242,8 @@ impl Cog {
             let (Some(tw), Some(th)) = (num(322), num(323)) else {
                 return Err(bad("not tiled (strips aren't supported)"));
             };
-            let offsets: Vec<u64> = get(324)
-                .map(|v| v.nums().iter().map(|&x| x as u64).collect())
-                .unwrap_or_default();
-            let counts: Vec<u64> = get(325)
-                .map(|v| v.nums().iter().map(|&x| x as u64).collect())
-                .unwrap_or_default();
+            let offsets: Vec<u64> = get(324).map(|v| v.nums().iter().map(|&x| x as u64).collect()).unwrap_or_default();
+            let counts: Vec<u64> = get(325).map(|v| v.nums().iter().map(|&x| x as u64).collect()).unwrap_or_default();
             let spp = num(277).unwrap_or(1.0) as usize;
             if spp != 1 {
                 return Err(bad("only single-band images are read"));
@@ -290,9 +260,7 @@ impl Cog {
                     nodata = t.parse::<f64>().ok();
                 }
             }
-            let (bw, bh) = levels
-                .first()
-                .map_or((w, h), |l| (l.width as f64, l.height as f64));
+            let (bw, bh) = levels.first().map_or((w, h), |l| (l.width as f64, l.height as f64));
             let bp = base_pixel.unwrap_or((1.0, 1.0));
             let lerc_params = get(50674).map(|v| v.nums().to_vec()).unwrap_or_default();
             levels.push(Level {
@@ -314,27 +282,15 @@ impl Cog {
         }
         // coarsest last
         levels[1..].sort_by_key(|l| std::cmp::Reverse(l.width));
-        let origin =
-            origin.ok_or_else(|| bad("no georeferencing (ModelTiepoint/ModelPixelScale)"))?;
-        Ok(Cog {
-            path: path.to_path_buf(),
-            levels,
-            origin,
-            nodata,
-            file: Mutex::new(f),
-        })
+        let origin = origin.ok_or_else(|| bad("no georeferencing (ModelTiepoint/ModelPixelScale)"))?;
+        Ok(Cog { path: path.to_path_buf(), levels, origin, nodata, file: Mutex::new(f) })
     }
 
     /// [min x, min y, max x, max y] in the image's coordinate system.
     pub fn bounds(&self) -> [f64; 4] {
         let l = &self.levels[0];
         let (x0, y1) = self.origin;
-        [
-            x0,
-            y1 - l.height as f64 * l.pixel.1,
-            x0 + l.width as f64 * l.pixel.0,
-            y1,
-        ]
+        [x0, y1 - l.height as f64 * l.pixel.1, x0 + l.width as f64 * l.pixel.0, y1]
     }
 
     /// Tile (`tx`, `ty`) of `level`, decoded; "no data" pixels are invalid.
@@ -344,13 +300,8 @@ impl Cog {
         let (Some(&off), Some(&len)) = (l.offsets.get(i), l.counts.get(i)) else {
             return Err(bad("no such tile"));
         };
-        let empty = || Raster {
-            width: l.tile_w,
-            height: l.tile_h,
-            depth: 1,
-            data: vec![0.0; l.tile_w * l.tile_h],
-            valid: Some(vec![false; l.tile_w * l.tile_h]),
-        };
+        let empty =
+            || Raster { width: l.tile_w, height: l.tile_h, depth: 1, data: vec![0.0; l.tile_w * l.tile_h], valid: Some(vec![false; l.tile_w * l.tile_h]) };
         if len == 0 {
             return Ok(empty()); // a sparse COG leaves empty tiles out
         }
@@ -367,28 +318,14 @@ impl Cog {
                         flate2::read::ZlibDecoder::new(&bytes[..]).read_to_end(&mut out)?;
                         out
                     }
-                    n => {
-                        return Err(bad(format!(
-                            "LERC with extra compression {n} (zstd) isn't supported"
-                        )))
-                    }
+                    n => return Err(bad(format!("LERC with extra compression {n} (zstd) isn't supported"))),
                 };
                 lerc::decode(&blob).map_err(Error::Lerc)?
             }
             1 if l.sample_format == 3 && l.bits == 32 => {
                 let n = l.tile_w * l.tile_h;
-                let data: Vec<f32> = bytes
-                    .chunks(4)
-                    .take(n)
-                    .map(|c| f32::from_le_bytes(c.try_into().unwrap_or([0; 4])))
-                    .collect();
-                Raster {
-                    width: l.tile_w,
-                    height: l.tile_h,
-                    depth: 1,
-                    data,
-                    valid: None,
-                }
+                let data: Vec<f32> = bytes.chunks(4).take(n).map(|c| f32::from_le_bytes(c.try_into().unwrap_or([0; 4]))).collect();
+                Raster { width: l.tile_w, height: l.tile_h, depth: 1, data, valid: None }
             }
             c => return Err(bad(format!("compression {c} isn't supported"))),
         };
@@ -433,13 +370,9 @@ mod tests {
 
     #[test]
     fn reads_a_lerc_cog() {
-        let c = Cog::open(&Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/coastal_dem.tiff"))
-            .unwrap();
+        let c = Cog::open(&Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/coastal_dem.tiff")).unwrap();
         assert_eq!(c.levels.len(), 3);
-        assert_eq!(
-            (c.levels[0].width, c.levels[1].width, c.levels[2].width),
-            (256, 128, 64)
-        );
+        assert_eq!((c.levels[0].width, c.levels[1].width, c.levels[2].width), (256, 128, 64));
         assert_eq!(c.levels[2].pixel, (4.0, 4.0));
         assert_eq!(c.bounds(), [1741600.0, 5672144.0, 1741856.0, 5672400.0]);
         assert_eq!(c.nodata, Some(-9999.0));
@@ -464,10 +397,7 @@ mod tests {
         // an overview: every 4th pixel
         let t = c.tile(2, 0, 0).unwrap();
         let (a, b) = (t.get(5, 7), dem(20, 28));
-        assert!(
-            a.zip(b).is_some_and(|(a, b)| (a - b).abs() < 0.0011),
-            "{a:?} {b:?}"
-        );
+        assert!(a.zip(b).is_some_and(|(a, b)| (a - b).abs() < 0.0011), "{a:?} {b:?}");
         // by position: 10.5 m east, 3.2 m south of the corner
         let v = c.value_at(1741610.5, 5672396.8).unwrap();
         assert!((v - dem(10, 3).unwrap()).abs() < 0.0011);

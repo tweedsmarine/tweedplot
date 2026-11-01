@@ -82,7 +82,10 @@ mod tests {
                    {"icaoId":"NZWN","obsTime":1792400400,"temp":13,"wdir":"VRB","wspd":3,"wgst":null,"visib":10,"altim":1011,"lat":-41.327,"lon":174.805,"name":"Wellington Intl, NI, NZ"}]"#;
         let o = parse(j).unwrap();
         assert_eq!(o.len(), 2);
-        assert_eq!((o[0].id.as_str(), o[0].name.as_str(), o[0].wind_dir, o[0].wind_kn, o[0].gust_kn, o[0].pressure_hpa), ("metar:NZNS", "Nelson Intl", Some(200.0), Some(15.0), Some(25.0), Some(1012.0)));
+        assert_eq!(
+            (o[0].id.as_str(), o[0].name.as_str(), o[0].wind_dir, o[0].wind_kn, o[0].gust_kn, o[0].pressure_hpa),
+            ("metar:NZNS", "Nelson Intl", Some(200.0), Some(15.0), Some(25.0), Some(1012.0))
+        );
         assert!((o[0].vis_km.unwrap() - 9.65).abs() < 0.01);
         assert_eq!(o[1].wind_dir, None);
         assert!(parse("").unwrap().is_empty());

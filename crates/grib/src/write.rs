@@ -147,7 +147,7 @@ pub fn encode(f: &Field, process: u8) -> Vec<u8> {
     s1.extend_from_slice(&[mo, d, h, mi, s]);
     s1.push(0); // operational products
     s1.push(1); // forecast
-    // section 3: grid, template 3.0
+                // section 3: grid, template 3.0
     let mut s3 = vec![0u8]; // source of grid definition
     s3.extend_from_slice(&(n as u32).to_be_bytes());
     s3.extend_from_slice(&[0, 0]);
@@ -169,7 +169,7 @@ pub fn encode(f: &Field, process: u8) -> Vec<u8> {
     s3.extend_from_slice(&(micro(g.dlon) as u32).to_be_bytes());
     s3.extend_from_slice(&(micro(g.dlat) as u32).to_be_bytes());
     s3.push(0x40); // west to east, south to north, rows
-    // section 4: product, template 4.0
+                   // section 4: product, template 4.0
     let lead = f.valid_time - f.ref_time;
     let (unit, ft) = if lead % 3600 == 0 { (1u8, lead / 3600) } else { (0u8, lead / 60) };
     let mut s4 = Vec::new();
@@ -266,8 +266,19 @@ mod tests {
             }
         }
         Field {
-            param, discipline: 0, category: 2, number, surface_type: 103, surface_value: 10.0, centre: 98,
-            ref_time: 1_792_108_800, valid_time: 1_792_108_800 + 9 * 3600, member: None, grid: g, values, local: None,
+            param,
+            discipline: 0,
+            category: 2,
+            number,
+            surface_type: 103,
+            surface_value: 10.0,
+            centre: 98,
+            ref_time: 1_792_108_800,
+            valid_time: 1_792_108_800 + 9 * 3600,
+            member: None,
+            grid: g,
+            values,
+            local: None,
         }
     }
 

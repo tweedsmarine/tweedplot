@@ -92,7 +92,10 @@ pub fn parse_kml(text: &str) -> Result<(GpxData, Vec<TzShape>)> {
             Event::Eof => break,
             Event::Start(e) => {
                 let name = e.local_name().into_inner().to_string();
-                let id = e.attributes().flatten().find(|a| a.key.local_name().into_inner() == "id").map(|a| { let v: &str = &a.value; v.to_string() });
+                let id = e.attributes().flatten().find(|a| a.key.local_name().into_inner() == "id").map(|a| {
+                    let v: &str = &a.value;
+                    v.to_string()
+                });
                 match name.as_str() {
                     "Folder" => folders.push(String::new()),
                     "Placemark" => pm = Some(Placemark::default()),
@@ -108,7 +111,14 @@ pub fn parse_kml(text: &str) -> Result<(GpxData, Vec<TzShape>)> {
             Event::CData(t) => text_buf.push_str(&t),
             Event::GeneralRef(g) => {
                 let n: &str = &g;
-                text_buf.push_str(match n { "amp" => "&", "lt" => "<", "gt" => ">", "quot" => "\"", "apos" => "'", _ => "" });
+                text_buf.push_str(match n {
+                    "amp" => "&",
+                    "lt" => "<",
+                    "gt" => ">",
+                    "quot" => "\"",
+                    "apos" => "'",
+                    _ => "",
+                });
             }
             Event::End(_) => {
                 let name = path.pop().unwrap_or_default();
@@ -204,7 +214,16 @@ pub fn parse_kml(text: &str) -> Result<(GpxData, Vec<TzShape>)> {
     for (k, (p, group)) in marks.into_iter().enumerate() {
         let col = colour(&p.style);
         for pt in &p.points {
-            out.waypoints.push(GpxWaypoint { name: p.name.clone(), lat: pt[1], lon: pt[0], desc: p.desc.clone(), time: p.when, colour: col.clone(), group: group.clone(), ..Default::default() });
+            out.waypoints.push(GpxWaypoint {
+                name: p.name.clone(),
+                lat: pt[1],
+                lon: pt[0],
+                desc: p.desc.clone(),
+                time: p.when,
+                colour: col.clone(),
+                group: group.clone(),
+                ..Default::default()
+            });
         }
         for line in p.lines.into_iter().filter(|l| l.len() >= 2) {
             if line.len() <= 60 {
@@ -221,7 +240,12 @@ pub fn parse_kml(text: &str) -> Result<(GpxData, Vec<TzShape>)> {
             }
         }
         if p.track_coord.len() >= 2 {
-            let seg = p.track_coord.iter().enumerate().map(|(i, c)| TrackPoint { lat: c[1], lon: c[0], t: p.track_when.get(i).copied().flatten(), ..Default::default() }).collect();
+            let seg = p
+                .track_coord
+                .iter()
+                .enumerate()
+                .map(|(i, c)| TrackPoint { lat: c[1], lon: c[0], t: p.track_when.get(i).copied().flatten(), ..Default::default() })
+                .collect();
             out.tracks.push(GpxTrack { name: p.name.clone(), desc: p.desc.clone(), segments: vec![seg] });
         }
         for (j, poly) in p.polygons.into_iter().enumerate() {
@@ -234,7 +258,15 @@ pub fn parse_kml(text: &str) -> Result<(GpxData, Vec<TzShape>)> {
             }
             // an id from the shape itself, so importing the file again matches it
             let key = format!("{}|{:.5}|{:.5}|{}", p.name, pts[0][0], pts[0][1], pts.len());
-            shapes.push(TzShape { id: format!("kml-{:016x}-{j}", fnv(&key)), name: p.name.clone(), kind: "area".into(), points: pts, radius_m: None, layer: group.clone(), colour: col.clone() });
+            shapes.push(TzShape {
+                id: format!("kml-{:016x}-{j}", fnv(&key)),
+                name: p.name.clone(),
+                kind: "area".into(),
+                points: pts,
+                radius_m: None,
+                layer: group.clone(),
+                colour: col.clone(),
+            });
         }
     }
     Ok((out, shapes))
@@ -336,7 +368,12 @@ fn parse_when(s: &str) -> Option<i64> {
         yr += 2000;
     }
     let tm: Vec<u32> = time.split(':').filter_map(|x| x.trim().parse().ok()).collect();
-    let iso = format!("{yr:04}-{mon:02}-{day:02}T{:02}:{:02}:{:02}Z", tm.first().copied().unwrap_or(0), tm.get(1).copied().unwrap_or(0), tm.get(2).copied().unwrap_or(0));
+    let iso = format!(
+        "{yr:04}-{mon:02}-{day:02}T{:02}:{:02}:{:02}Z",
+        tm.first().copied().unwrap_or(0),
+        tm.get(1).copied().unwrap_or(0),
+        tm.get(2).copied().unwrap_or(0)
+    );
     parse_iso(&iso)
 }
 
@@ -388,7 +425,14 @@ pub fn parse_csv(text: &str) -> Result<(GpxData, Vec<String>)> {
     let mut notes = Vec::new();
     if !bad.is_empty() {
         let shown: Vec<String> = bad.iter().take(10).map(|n| n.to_string()).collect();
-        notes.push(format!("{} row{} without a position it could read (line{} {}{})", bad.len(), if bad.len() == 1 { "" } else { "s" }, if bad.len() == 1 { "" } else { "s" }, shown.join(", "), if bad.len() > 10 { "…" } else { "" }));
+        notes.push(format!(
+            "{} row{} without a position it could read (line{} {}{})",
+            bad.len(),
+            if bad.len() == 1 { "" } else { "s" },
+            if bad.len() == 1 { "" } else { "s" },
+            shown.join(", "),
+            if bad.len() > 10 { "…" } else { "" }
+        ));
     }
     if when.is_some() {
         notes.push("dates without a time zone are taken as UTC".into());

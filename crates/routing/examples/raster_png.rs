@@ -11,7 +11,11 @@ fn main() {
     let mut out = format!("P5 {} {} 255\n", r.w, r.h).into_bytes();
     for j in (0..r.h).rev() {
         for i in 0..r.w {
-            out.push(match r.cells[j * r.w + i] { 0 => 200, 1 => 255, _ => 40 });
+            out.push(match r.cells[j * r.w + i] {
+                0 => 200,
+                1 => 255,
+                _ => 40,
+            });
         }
     }
     std::fs::write(&a[7], out).unwrap();

@@ -46,7 +46,8 @@ fn main() {
         println!("cargo:rerun-if-changed={}", oem.display());
         println!("cargo:rerun-if-changed={}", pubf.display());
         if let (Ok(text), Ok(p)) = (std::fs::read_to_string(&oem), std::fs::read_to_string(&pubf)) {
-            let get = |k: &str| text.lines().find_map(|l| l.trim().strip_prefix(k).and_then(|v| v.trim_start().strip_prefix('=')).map(|v| v.trim().to_string()));
+            let get =
+                |k: &str| text.lines().find_map(|l| l.trim().strip_prefix(k).and_then(|v| v.trim_start().strip_prefix('=')).map(|v| v.trim().to_string()));
             match (get("M_ID"), get("M_KEY")) {
                 (Some(id), Some(key)) if id.len() == 2 && key.len() == 5 && p.trim().len() == 64 => {
                     m_id = id;

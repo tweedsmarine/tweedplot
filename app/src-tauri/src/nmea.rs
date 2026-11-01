@@ -10,11 +10,7 @@ use tokio::io::AsyncReadExt;
 use tokio::sync::watch;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(
-    tag = "type",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SourceTransport {
     Serial { port: String, baud_rate: u32 },
     Tcp { address: String },
@@ -46,15 +42,7 @@ pub enum DataGroup {
 }
 
 impl DataGroup {
-    pub const ALL: [Self; 7] = [
-        Self::Position,
-        Self::Motion,
-        Self::Heading,
-        Self::SpeedThroughWater,
-        Self::Wind,
-        Self::Depth,
-        Self::WaterTemperature,
-    ];
+    pub const ALL: [Self; 7] = [Self::Position, Self::Motion, Self::Heading, Self::SpeedThroughWater, Self::Wind, Self::Depth, Self::WaterTemperature];
 
     pub fn key(self) -> &'static str {
         match self {
@@ -105,11 +93,7 @@ pub struct ArbitrationConfig {
 
 impl Default for ArbitrationConfig {
     fn default() -> Self {
-        Self {
-            failover_enabled: default_failover_enabled(),
-            stale_after_seconds: default_stale_after_seconds(),
-            preferred_sources: BTreeMap::new(),
-        }
+        Self { failover_enabled: default_failover_enabled(), stale_after_seconds: default_stale_after_seconds(), preferred_sources: BTreeMap::new() }
     }
 }
 
@@ -149,18 +133,13 @@ static MULTIPLEXER: Mutex<Multiplexer> = Mutex::new(Multiplexer {
     sources: BTreeMap::new(),
     active_sources: BTreeMap::new(),
     source_configs: Vec::new(),
-    arbitration: ArbitrationConfig {
-        failover_enabled: true,
-        stale_after_seconds: 10,
-        preferred_sources: BTreeMap::new(),
-    },
+    arbitration: ArbitrationConfig { failover_enabled: true, stale_after_seconds: 10, preferred_sources: BTreeMap::new() },
 });
 static NEXT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 /// New navigation data since the vessel state was last published (at most 10 a second).
 static VESSEL_DIRTY: AtomicBool = AtomicBool::new(false);
 /// Sources whose status (sentence counts) changed since it was last published.
-static STATUS_DIRTY: Mutex<std::collections::BTreeSet<String>> =
-    Mutex::new(std::collections::BTreeSet::new());
+static STATUS_DIRTY: Mutex<std::collections::BTreeSet<String>> = Mutex::new(std::collections::BTreeSet::new());
 /// Sentences heard since the last "nmea-observation" event, per source: (name, raw).
 static RECENT: Mutex<BTreeMap<String, (String, Vec<String>)>> = Mutex::new(BTreeMap::new());
 /// AIS messages over NMEA are put together and decoded per source.
@@ -178,15 +157,7 @@ fn emit_status(app: &tauri::AppHandle, status: SourceStatus) {
     }
 }
 
-fn update_status(
-    app: &tauri::AppHandle,
-    id: &str,
-    generation: u64,
-    state: Option<&str>,
-    detail: Option<String>,
-    valid: bool,
-    sentence: Option<&Sentence>,
-) {
+fn update_status(app: &tauri::AppHandle, id: &str, generation: u64, state: Option<&str>, detail: Option<String>, valid: bool, sentence: Option<&Sentence>) {
     let mut statuses = STATUSES.lock().unwrap();
     let Some(status) = statuses.get_mut(id) else {
         return;
@@ -238,11 +209,7 @@ fn publish_monitor(app: &tauri::AppHandle) {
     }
     let hub = MULTIPLEXER.lock().unwrap();
     for (id, (name, sentences)) in recent {
-        let observation = hub
-            .sources
-            .get(&id)
-            .map(|s| s.observation.clone())
-            .unwrap_or_default();
+        let observation = hub.sources.get(&id).map(|s| s.observation.clone()).unwrap_or_default();
         if let Err(error) = app.emit(
             "nmea-observation",
             serde_json::json!({
@@ -257,12 +224,7 @@ fn publish_monitor(app: &tauri::AppHandle) {
     }
 }
 
-fn invalid_sentence(
-    app: &tauri::AppHandle,
-    id: &str,
-    generation: u64,
-    error: &marine_nmea::ParseError,
-) {
+fn invalid_sentence(app: &tauri::AppHandle, id: &str, generation: u64, error: &marine_nmea::ParseError) {
     let mut statuses = STATUSES.lock().unwrap();
     let Some(status) = statuses.get_mut(id) else {
         return;
@@ -280,18 +242,10 @@ fn invalid_sentence(
 
 fn sentence_groups(sentence: &Sentence, observation: &Observation) -> Vec<DataGroup> {
     let fields = &sentence.fields;
-    let has_number = |index: usize| {
-        fields
-            .get(index)
-            .and_then(|value| value.parse::<f64>().ok())
-            .is_some_and(f64::is_finite)
-    };
+    let has_number = |index: usize| fields.get(index).and_then(|value| value.parse::<f64>().ok()).is_some_and(f64::is_finite);
     let valid_position = match sentence.formatter.as_str() {
         "RMC" => fields.get(1).is_some_and(|status| status == "A"),
-        "GGA" => fields
-            .get(5)
-            .and_then(|quality| quality.parse::<u8>().ok())
-            .is_some_and(|quality| quality > 0),
+        "GGA" => fields.get(5).and_then(|quality| quality.parse::<u8>().ok()).is_some_and(|quality| quality > 0),
         "GLL" => fields.get(5).is_some_and(|status| status == "A"),
         _ => false,
     };
@@ -300,9 +254,7 @@ fn sentence_groups(sentence: &Sentence, observation: &Observation) -> Vec<DataGr
         groups.push(DataGroup::Position);
     }
     let motion_valid = match sentence.formatter.as_str() {
-        "RMC" => {
-            fields.get(1).is_some_and(|status| status == "A") && (has_number(6) || has_number(7))
-        }
+        "RMC" => fields.get(1).is_some_and(|status| status == "A") && (has_number(6) || has_number(7)),
         "VTG" => has_number(0) || has_number(4) || has_number(6),
         _ => false,
     };
@@ -313,39 +265,25 @@ fn sentence_groups(sentence: &Sentence, observation: &Observation) -> Vec<DataGr
         "HDT" => has_number(0) && fields.get(1).is_some_and(|unit| unit == "T"),
         "HDM" => has_number(0) && fields.get(1).is_some_and(|unit| unit == "M"),
         "HDG" => has_number(0) || has_number(3),
-        "VHW" => {
-            (has_number(0) && fields.get(1).is_some_and(|unit| unit == "T"))
-                || (has_number(2) && fields.get(3).is_some_and(|unit| unit == "M"))
-        }
+        "VHW" => (has_number(0) && fields.get(1).is_some_and(|unit| unit == "T")) || (has_number(2) && fields.get(3).is_some_and(|unit| unit == "M")),
         _ => false,
     };
-    if heading_valid
-        && (observation.heading.is_some()
-            || observation.heading_mag.is_some()
-            || observation.variation.is_some())
-    {
+    if heading_valid && (observation.heading.is_some() || observation.heading_mag.is_some() || observation.variation.is_some()) {
         groups.push(DataGroup::Heading);
     }
     if sentence.formatter == "VHW"
-        && ((has_number(4) && fields.get(5).is_some_and(|unit| unit == "N"))
-            || (has_number(6) && fields.get(7).is_some_and(|unit| unit == "K")))
+        && ((has_number(4) && fields.get(5).is_some_and(|unit| unit == "N")) || (has_number(6) && fields.get(7).is_some_and(|unit| unit == "K")))
         && observation.stw.is_some()
     {
         groups.push(DataGroup::SpeedThroughWater);
     }
     let wind_valid = match sentence.formatter.as_str() {
-        "MWV" => {
-            fields.get(4).is_some_and(|status| status == "A") && has_number(0) && has_number(2)
-        }
+        "MWV" => fields.get(4).is_some_and(|status| status == "A") && has_number(0) && has_number(2),
         "MWD" => has_number(0) || has_number(4) || has_number(6),
         _ => false,
     };
     if wind_valid
-        && (observation.aws.is_some()
-            || observation.awa.is_some()
-            || observation.tws.is_some()
-            || observation.twa.is_some()
-            || observation.twd.is_some())
+        && (observation.aws.is_some() || observation.awa.is_some() || observation.tws.is_some() || observation.twa.is_some() || observation.twd.is_some())
     {
         groups.push(DataGroup::Wind);
     }
@@ -354,18 +292,10 @@ fn sentence_groups(sentence: &Sentence, observation: &Observation) -> Vec<DataGr
         "DBT" | "DBK" | "DBS" => has_number(0) || has_number(2),
         _ => false,
     };
-    if depth_valid
-        && (observation.depth.is_some()
-            || observation.depth_keel.is_some()
-            || observation.depth_surface.is_some())
-    {
+    if depth_valid && (observation.depth.is_some() || observation.depth_keel.is_some() || observation.depth_surface.is_some()) {
         groups.push(DataGroup::Depth);
     }
-    if sentence.formatter == "MTW"
-        && has_number(0)
-        && fields.get(1).is_some_and(|unit| unit == "C")
-        && observation.water_temp.is_some()
-    {
+    if sentence.formatter == "MTW" && has_number(0) && fields.get(1).is_some_and(|unit| unit == "C") && observation.water_temp.is_some() {
         groups.push(DataGroup::WaterTemperature);
     }
     groups
@@ -375,23 +305,10 @@ fn selected_sources(hub: &mut Multiplexer, now: Instant) -> BTreeMap<DataGroup, 
     let mut selected = BTreeMap::new();
     let stale_after = Duration::from_secs(hub.arbitration.stale_after_seconds);
     for group in DataGroup::ALL {
-        let preferred = hub
-            .arbitration
-            .preferred_sources
-            .get(group.key())
-            .filter(|id| !id.is_empty());
-        let is_fresh = |id: &str| {
-            hub.sources
-                .get(id)
-                .and_then(|source| source.last_seen_by_group.get(&group))
-                .is_some_and(|at| now.duration_since(*at) <= stale_after)
-        };
-        let previous = hub
-            .active_sources
-            .get(&group)
-            .cloned()
-            .flatten()
-            .filter(|id| is_fresh(id));
+        let preferred = hub.arbitration.preferred_sources.get(group.key()).filter(|id| !id.is_empty());
+        let is_fresh =
+            |id: &str| hub.sources.get(id).and_then(|source| source.last_seen_by_group.get(&group)).is_some_and(|at| now.duration_since(*at) <= stale_after);
+        let previous = hub.active_sources.get(&group).cloned().flatten().filter(|id| is_fresh(id));
         let fallback = || {
             hub.source_configs
                 .iter()
@@ -404,11 +321,7 @@ fn selected_sources(hub: &mut Multiplexer, now: Instant) -> BTreeMap<DataGroup, 
             Some(_) if !hub.arbitration.failover_enabled => None,
             Some(_) => fallback(),
             None if previous.is_some() => previous,
-            None if hub.arbitration.failover_enabled
-                || !hub.active_sources.get(&group).is_some_and(Option::is_some) =>
-            {
-                fallback()
-            }
+            None if hub.arbitration.failover_enabled || !hub.active_sources.get(&group).is_some_and(Option::is_some) => fallback(),
             None => None,
         };
         selected.insert(group, chosen);
@@ -460,32 +373,19 @@ fn publish_multiplexed(app: &tauri::AppHandle, force: bool) {
             .filter_map(|group| {
                 let before = hub.active_sources.get(&group).cloned().flatten();
                 let after = selected.get(&group).cloned().flatten();
-                (before.is_some() && after.is_some() && before != after)
-                    .then(|| (group, before.unwrap(), after.unwrap()))
+                (before.is_some() && after.is_some() && before != after).then(|| (group, before.unwrap(), after.unwrap()))
             })
             .collect::<Vec<_>>();
         hub.active_sources = selected.clone();
-        let mut vessel = signalk::VesselState {
-            timestamp: Some(chrono::Utc::now().to_rfc3339()),
-            ..Default::default()
-        };
+        let mut vessel = signalk::VesselState { timestamp: Some(chrono::Utc::now().to_rfc3339()), ..Default::default() };
         for (group, source_id) in &selected {
-            if let Some(observation) = source_id
-                .as_ref()
-                .and_then(|id| hub.sources.get(id))
-                .map(|source| &source.observation)
-            {
+            if let Some(observation) = source_id.as_ref().and_then(|id| hub.sources.get(id)).map(|source| &source.observation) {
                 copy_group(&mut vessel, observation, *group);
             }
         }
         (
             vessel,
-            selected
-                .iter()
-                .filter_map(|(group, source)| {
-                    source.as_ref().map(|source| (group.key(), source.clone()))
-                })
-                .collect::<BTreeMap<_, _>>(),
+            selected.iter().filter_map(|(group, source)| source.as_ref().map(|source| (group.key(), source.clone()))).collect::<BTreeMap<_, _>>(),
             switches,
             changed,
         )
@@ -497,31 +397,17 @@ fn publish_multiplexed(app: &tauri::AppHandle, force: bool) {
             .iter()
             .filter_map(|group| {
                 let id = group_sources.get(group.key())?;
-                let name = hub
-                    .source_configs
-                    .iter()
-                    .find(|source| source.id == *id)
-                    .map(|source| source.name.clone())
-                    .unwrap_or_else(|| id.clone());
+                let name = hub.source_configs.iter().find(|source| source.id == *id).map(|source| source.name.clone()).unwrap_or_else(|| id.clone());
                 Some(format!("{}: {name}", group.label()))
             })
             .collect::<Vec<_>>()
     };
-    let any_connected = STATUSES
-        .lock()
-        .unwrap()
-        .values()
-        .any(|status| status.state == "connected" || status.state == "receiving");
+    let any_connected = STATUSES.lock().unwrap().values().any(|status| status.state == "connected" || status.state == "receiving");
     for (group, from, to) in switches {
         let (from_name, to_name) = {
             let hub = MULTIPLEXER.lock().unwrap();
-            let source_name = |id: &str| {
-                hub.source_configs
-                    .iter()
-                    .find(|source| source.id == id)
-                    .map(|source| source.name.clone())
-                    .unwrap_or_else(|| id.to_owned())
-            };
+            let source_name =
+                |id: &str| hub.source_configs.iter().find(|source| source.id == id).map(|source| source.name.clone()).unwrap_or_else(|| id.to_owned());
             (source_name(&from), source_name(&to))
         };
         if let Err(error) = app.emit(
@@ -573,22 +459,13 @@ fn publish_multiplexed(app: &tauri::AppHandle, force: bool) {
     }
 }
 
-fn consume_bytes(
-    app: &tauri::AppHandle,
-    source: &SourceConfig,
-    generation: u64,
-    framer: &mut Framer,
-    observation: &mut Observation,
-    bytes: &[u8],
-) {
+fn consume_bytes(app: &tauri::AppHandle, source: &SourceConfig, generation: u64, framer: &mut Framer, observation: &mut Observation, bytes: &[u8]) {
     for parsed in framer.push(bytes) {
         match parsed {
             Ok(sentence) => {
                 {
                     let mut recent = RECENT.lock().unwrap();
-                    let entry = recent
-                        .entry(source.id.clone())
-                        .or_insert_with(|| (source.name.clone(), Vec::new()));
+                    let entry = recent.entry(source.id.clone()).or_insert_with(|| (source.name.clone(), Vec::new()));
                     entry.1.push(sentence.raw.clone());
                     // the monitor shows the last 100; more than that between ticks is dropped
                     if entry.1.len() > 100 {
@@ -597,12 +474,7 @@ fn consume_bytes(
                 }
                 if matches!(sentence.formatter.as_str(), "VDM" | "VDO") {
                     // AIS: a target for the chart, not navigation data
-                    let update = AIS_DECODERS
-                        .lock()
-                        .unwrap()
-                        .entry(source.id.clone())
-                        .or_default()
-                        .push(&sentence.formatter, &sentence.fields);
+                    let update = AIS_DECODERS.lock().unwrap().entry(source.id.clone()).or_default().push(&sentence.formatter, &sentence.fields);
                     if let Some(update) = update {
                         crate::live::merge_ais(update);
                     }
@@ -612,50 +484,28 @@ fn consume_bytes(
                     let source_observation = hub.sources.entry(source.id.clone()).or_default();
                     source_observation.observation = observation.clone();
                     for group in sentence_groups(&sentence, observation) {
-                        source_observation
-                            .last_seen_by_group
-                            .insert(group, Instant::now());
+                        source_observation.last_seen_by_group.insert(group, Instant::now());
                     }
                     VESSEL_DIRTY.store(true, Ordering::Relaxed);
                 }
-                update_status(
-                    app,
-                    &source.id,
-                    generation,
-                    None,
-                    None,
-                    true,
-                    Some(&sentence),
-                );
+                update_status(app, &source.id, generation, None, None, true, Some(&sentence));
             }
             Err(error) => invalid_sentence(app, &source.id, generation, &error),
         }
     }
 }
 
-fn start_sources(
-    app: &tauri::AppHandle,
-    sources: &[SourceConfig],
-    mut arbitration: ArbitrationConfig,
-) {
+fn start_sources(app: &tauri::AppHandle, sources: &[SourceConfig], mut arbitration: ArbitrationConfig) {
     if arbitration.preferred_sources.is_empty() {
-        if let Some(primary) = sources
-            .iter()
-            .find(|source| source.enabled && source.use_for_navigation)
-        {
+        if let Some(primary) = sources.iter().find(|source| source.enabled && source.use_for_navigation) {
             for group in DataGroup::ALL {
-                arbitration
-                    .preferred_sources
-                    .insert(group.key().to_owned(), primary.id.clone());
+                arbitration.preferred_sources.insert(group.key().to_owned(), primary.id.clone());
             }
         }
     }
     let mux_enabled = sources.iter().any(|source| source.enabled);
-    let navigation_source = mux_enabled
-        .then(|| serde_json::json!({ "id": "nmea-multiplexer", "name": "NMEA multiplexer" }));
-    *NAVIGATION_SOURCE.lock().unwrap() = navigation_source
-        .as_ref()
-        .map(|_| "nmea-multiplexer".to_owned());
+    let navigation_source = mux_enabled.then(|| serde_json::json!({ "id": "nmea-multiplexer", "name": "NMEA multiplexer" }));
+    *NAVIGATION_SOURCE.lock().unwrap() = navigation_source.as_ref().map(|_| "nmea-multiplexer".to_owned());
     {
         let mut hub = MULTIPLEXER.lock().unwrap();
         hub.sources.clear();
@@ -734,23 +584,10 @@ pub(crate) fn navigation_source_id() -> Option<String> {
     NAVIGATION_SOURCE.lock().unwrap().clone()
 }
 
-async fn run_source(
-    app: tauri::AppHandle,
-    source: SourceConfig,
-    generation: u64,
-    mut stop: watch::Receiver<bool>,
-) {
+async fn run_source(app: tauri::AppHandle, source: SourceConfig, generation: u64, mut stop: watch::Receiver<bool>) {
     match &source.transport {
         SourceTransport::Serial { port, baud_rate } => {
-            run_serial(
-                &app,
-                &source,
-                generation,
-                port.clone(),
-                *baud_rate,
-                &mut stop,
-            )
-            .await;
+            run_serial(&app, &source, generation, port.clone(), *baud_rate, &mut stop).await;
         }
         SourceTransport::Tcp { address } => {
             run_tcp(&app, &source, generation, address.clone(), &mut stop).await;
@@ -760,15 +597,7 @@ async fn run_source(
         }
     }
     if *stop.borrow() {
-        update_status(
-            &app,
-            &source.id,
-            generation,
-            Some("stopped"),
-            Some("Source stopped".into()),
-            false,
-            None,
-        );
+        update_status(&app, &source.id, generation, Some("stopped"), Some("Source stopped".into()), false, None);
     }
 }
 
@@ -779,27 +608,13 @@ async fn wait_or_stop(stop: &mut watch::Receiver<bool>, duration: Duration) -> b
     }
 }
 
-async fn run_tcp(
-    app: &tauri::AppHandle,
-    source: &SourceConfig,
-    generation: u64,
-    address: String,
-    stop: &mut watch::Receiver<bool>,
-) {
+async fn run_tcp(app: &tauri::AppHandle, source: &SourceConfig, generation: u64, address: String, stop: &mut watch::Receiver<bool>) {
     let mut observation = Observation::default();
     loop {
         if *stop.borrow() {
             break;
         }
-        update_status(
-            app,
-            &source.id,
-            generation,
-            Some("connecting"),
-            Some(format!("Connecting to {address}")),
-            false,
-            None,
-        );
+        update_status(app, &source.id, generation, Some("connecting"), Some(format!("Connecting to {address}")), false, None);
         let stream = tokio::select! {
             _ = stop.changed() => break,
             result = tokio::net::TcpStream::connect(&address) => result,
@@ -807,15 +622,7 @@ async fn run_tcp(
         match stream {
             Ok(mut stream) => {
                 let mut framer = Framer::default();
-                update_status(
-                    app,
-                    &source.id,
-                    generation,
-                    Some("connected"),
-                    Some(format!("Connected to {address}; waiting for NMEA data")),
-                    false,
-                    None,
-                );
+                update_status(app, &source.id, generation, Some("connected"), Some(format!("Connected to {address}; waiting for NMEA data")), false, None);
                 let mut buf = [0u8; 2048];
                 loop {
                     let read = tokio::select! {
@@ -836,40 +643,17 @@ async fn run_tcp(
                             break;
                         }
                         Ok(n) => {
-                            consume_bytes(
-                                app,
-                                source,
-                                generation,
-                                &mut framer,
-                                &mut observation,
-                                &buf[..n],
-                            );
+                            consume_bytes(app, source, generation, &mut framer, &mut observation, &buf[..n]);
                         }
                         Err(error) => {
-                            update_status(
-                                app,
-                                &source.id,
-                                generation,
-                                Some("error"),
-                                Some(format!("TCP read failed: {error}; retrying")),
-                                false,
-                                None,
-                            );
+                            update_status(app, &source.id, generation, Some("error"), Some(format!("TCP read failed: {error}; retrying")), false, None);
                             break;
                         }
                     }
                 }
             }
             Err(error) => {
-                update_status(
-                    app,
-                    &source.id,
-                    generation,
-                    Some("error"),
-                    Some(format!("Could not connect to {address}: {error}")),
-                    false,
-                    None,
-                );
+                update_status(app, &source.id, generation, Some("error"), Some(format!("Could not connect to {address}: {error}")), false, None);
             }
         }
         if *stop.borrow() || wait_or_stop(stop, Duration::from_secs(2)).await {
@@ -878,13 +662,7 @@ async fn run_tcp(
     }
 }
 
-async fn run_udp(
-    app: &tauri::AppHandle,
-    source: &SourceConfig,
-    generation: u64,
-    bind_address: String,
-    stop: &mut watch::Receiver<bool>,
-) {
+async fn run_udp(app: &tauri::AppHandle, source: &SourceConfig, generation: u64, bind_address: String, stop: &mut watch::Receiver<bool>) {
     let mut framer = Framer::default();
     let mut observation = Observation::default();
     let mut buf = [0u8; 65536];
@@ -892,70 +670,27 @@ async fn run_udp(
         if *stop.borrow() {
             break;
         }
-        update_status(
-            app,
-            &source.id,
-            generation,
-            Some("connecting"),
-            Some(format!("Binding UDP {bind_address}")),
-            false,
-            None,
-        );
+        update_status(app, &source.id, generation, Some("connecting"), Some(format!("Binding UDP {bind_address}")), false, None);
         let socket = match tokio::net::UdpSocket::bind(&bind_address).await {
             Ok(socket) => socket,
             Err(error) => {
-                update_status(
-                    app,
-                    &source.id,
-                    generation,
-                    Some("error"),
-                    Some(format!(
-                        "Could not bind UDP {bind_address}: {error}; retrying"
-                    )),
-                    false,
-                    None,
-                );
+                update_status(app, &source.id, generation, Some("error"), Some(format!("Could not bind UDP {bind_address}: {error}; retrying")), false, None);
                 if *stop.borrow() || wait_or_stop(stop, Duration::from_secs(2)).await {
                     break;
                 }
                 continue;
             }
         };
-        update_status(
-            app,
-            &source.id,
-            generation,
-            Some("connected"),
-            Some(format!(
-                "Listening on UDP {bind_address}; waiting for NMEA data"
-            )),
-            false,
-            None,
-        );
+        update_status(app, &source.id, generation, Some("connected"), Some(format!("Listening on UDP {bind_address}; waiting for NMEA data")), false, None);
         loop {
             let received = tokio::select! {
                 _ = stop.changed() => break,
                 result = socket.recv_from(&mut buf) => result,
             };
             match received {
-                Ok((n, _peer)) => consume_bytes(
-                    app,
-                    source,
-                    generation,
-                    &mut framer,
-                    &mut observation,
-                    &buf[..n],
-                ),
+                Ok((n, _peer)) => consume_bytes(app, source, generation, &mut framer, &mut observation, &buf[..n]),
                 Err(error) => {
-                    update_status(
-                        app,
-                        &source.id,
-                        generation,
-                        Some("error"),
-                        Some(format!("UDP receive failed: {error}; retrying")),
-                        false,
-                        None,
-                    );
+                    update_status(app, &source.id, generation, Some("error"), Some(format!("UDP receive failed: {error}; retrying")), false, None);
                     break;
                 }
             }
@@ -972,42 +707,22 @@ enum SerialMessage {
     Failed(String),
 }
 
-async fn run_serial(
-    app: &tauri::AppHandle,
-    source: &SourceConfig,
-    generation: u64,
-    port_name: String,
-    baud_rate: u32,
-    stop: &mut watch::Receiver<bool>,
-) {
+async fn run_serial(app: &tauri::AppHandle, source: &SourceConfig, generation: u64, port_name: String, baud_rate: u32, stop: &mut watch::Receiver<bool>) {
     let mut observation = Observation::default();
     loop {
         if *stop.borrow() {
             break;
         }
-        update_status(
-            app,
-            &source.id,
-            generation,
-            Some("connecting"),
-            Some(format!("Opening {port_name} at {baud_rate} baud")),
-            false,
-            None,
-        );
+        update_status(app, &source.id, generation, Some("connecting"), Some(format!("Opening {port_name} at {baud_rate} baud")), false, None);
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_cancelled = cancelled.clone();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let worker_port = port_name.clone();
         let worker = tokio::task::spawn_blocking(move || {
-            let mut port = match serialport::new(&worker_port, baud_rate)
-                .timeout(Duration::from_millis(250))
-                .open()
-            {
+            let mut port = match serialport::new(&worker_port, baud_rate).timeout(Duration::from_millis(250)).open() {
                 Ok(port) => port,
                 Err(error) => {
-                    let _ = tx.send(SerialMessage::Failed(format!(
-                        "Could not open {worker_port}: {error}"
-                    )));
+                    let _ = tx.send(SerialMessage::Failed(format!("Could not open {worker_port}: {error}")));
                     return;
                 }
             };
@@ -1023,9 +738,7 @@ async fn run_serial(
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
                     Err(error) => {
-                        let _ = tx.send(SerialMessage::Failed(format!(
-                            "Read failed on {worker_port}: {error}"
-                        )));
+                        let _ = tx.send(SerialMessage::Failed(format!("Read failed on {worker_port}: {error}")));
                         break;
                     }
                 }
@@ -1058,15 +771,7 @@ async fn run_serial(
         }
         cancelled.store(true, Ordering::Relaxed);
         if let Err(error) = worker.await {
-            update_status(
-                app,
-                &source.id,
-                generation,
-                Some("error"),
-                Some(format!("Serial reader failed: {error}")),
-                false,
-                None,
-            );
+            update_status(app, &source.id, generation, Some("error"), Some(format!("Serial reader failed: {error}")), false, None);
         }
         if *stop.borrow() || wait_or_stop(stop, Duration::from_secs(2)).await {
             break;
@@ -1096,21 +801,13 @@ pub fn nmea_sources_get(app: tauri::AppHandle) -> Result<serde_json::Value, Stri
     let settings = crate::settings::settings_get(app)?;
     let mut arbitration = settings.nmea_arbitration.clone();
     if arbitration.preferred_sources.is_empty() {
-        if let Some(primary) = settings
-            .nmea_sources
-            .iter()
-            .find(|source| source.enabled && source.use_for_navigation)
-        {
+        if let Some(primary) = settings.nmea_sources.iter().find(|source| source.enabled && source.use_for_navigation) {
             for group in DataGroup::ALL {
-                arbitration
-                    .preferred_sources
-                    .insert(group.key().to_owned(), primary.id.clone());
+                arbitration.preferred_sources.insert(group.key().to_owned(), primary.id.clone());
             }
         }
     }
-    let statuses = STATUSES
-        .lock()
-        .map_err(|error| format!("NMEA status lock failed: {error}"))?;
+    let statuses = STATUSES.lock().map_err(|error| format!("NMEA status lock failed: {error}"))?;
     Ok(serde_json::json!({
         "sources": settings.nmea_sources,
         "arbitration": arbitration,
@@ -1119,11 +816,7 @@ pub fn nmea_sources_get(app: tauri::AppHandle) -> Result<serde_json::Value, Stri
 }
 
 #[tauri::command]
-pub fn nmea_sources_set(
-    app: tauri::AppHandle,
-    sources: Vec<SourceConfig>,
-    arbitration: ArbitrationConfig,
-) -> Result<(), String> {
+pub fn nmea_sources_set(app: tauri::AppHandle, sources: Vec<SourceConfig>, arbitration: ArbitrationConfig) -> Result<(), String> {
     let mut settings = crate::settings::settings_get(app.clone())?;
     settings.nmea_sources = sources;
     settings.nmea_arbitration = arbitration;
@@ -1149,19 +842,13 @@ mod tests {
             name: id.into(),
             enabled: true,
             use_for_navigation: false,
-            transport: SourceTransport::Tcp {
-                address: "127.0.0.1:10110".into(),
-            },
+            transport: SourceTransport::Tcp { address: "127.0.0.1:10110".into() },
         }
     }
 
     fn observed_position(now: Instant) -> SourceObservation {
         SourceObservation {
-            observation: Observation {
-                lat: Some(-41.0),
-                lon: Some(173.0),
-                ..Default::default()
-            },
+            observation: Observation { lat: Some(-41.0), lon: Some(173.0), ..Default::default() },
             last_seen_by_group: BTreeMap::from([(DataGroup::Position, now)]),
         }
     }
@@ -1176,13 +863,7 @@ mod tests {
             "transport": { "type": "serial", "port": "COM4", "baudRate": 4800 }
         }))
         .unwrap();
-        assert_eq!(
-            source.transport,
-            SourceTransport::Serial {
-                port: "COM4".into(),
-                baud_rate: 4800
-            }
-        );
+        assert_eq!(source.transport, SourceTransport::Serial { port: "COM4".into(), baud_rate: 4800 });
         assert!(source.use_for_navigation);
     }
 
@@ -1191,31 +872,19 @@ mod tests {
         let now = Instant::now();
         let mut hub = Multiplexer {
             source_configs: vec![source("backup"), source("preferred")],
-            arbitration: ArbitrationConfig {
-                preferred_sources: BTreeMap::from([("position".into(), "preferred".into())]),
-                ..Default::default()
-            },
+            arbitration: ArbitrationConfig { preferred_sources: BTreeMap::from([("position".into(), "preferred".into())]), ..Default::default() },
             ..Default::default()
         };
         hub.sources.insert("backup".into(), observed_position(now));
-        hub.sources
-            .insert("preferred".into(), observed_position(now));
+        hub.sources.insert("preferred".into(), observed_position(now));
 
-        assert_eq!(
-            selected_sources(&mut hub, now).get(&DataGroup::Position),
-            Some(&Some("preferred".into()))
-        );
+        assert_eq!(selected_sources(&mut hub, now).get(&DataGroup::Position), Some(&Some("preferred".into())));
 
         let backup_time = now - Duration::from_secs(5);
-        hub.sources
-            .insert("backup".into(), observed_position(backup_time));
+        hub.sources.insert("backup".into(), observed_position(backup_time));
         let stale_time = now - Duration::from_secs(11);
-        hub.sources
-            .insert("preferred".into(), observed_position(stale_time));
-        assert_eq!(
-            selected_sources(&mut hub, now).get(&DataGroup::Position),
-            Some(&Some("backup".into()))
-        );
+        hub.sources.insert("preferred".into(), observed_position(stale_time));
+        assert_eq!(selected_sources(&mut hub, now).get(&DataGroup::Position), Some(&Some("backup".into())));
     }
 
     #[test]
@@ -1231,14 +900,10 @@ mod tests {
             },
             ..Default::default()
         };
-        hub.sources
-            .insert("preferred".into(), observed_position(stale));
+        hub.sources.insert("preferred".into(), observed_position(stale));
         hub.sources.insert("backup".into(), observed_position(now));
 
-        assert_eq!(
-            selected_sources(&mut hub, now).get(&DataGroup::Position),
-            Some(&None)
-        );
+        assert_eq!(selected_sources(&mut hub, now).get(&DataGroup::Position), Some(&None));
     }
 
     #[test]
@@ -1246,26 +911,11 @@ mod tests {
         let sentence = Sentence {
             talker: "GP".into(),
             formatter: "RMC".into(),
-            fields: vec![
-                "120000".into(),
-                "V".into(),
-                "4100.0".into(),
-                "S".into(),
-                "17300.0".into(),
-                "E".into(),
-                "5.0".into(),
-                "90.0".into(),
-            ],
+            fields: vec!["120000".into(), "V".into(), "4100.0".into(), "S".into(), "17300.0".into(), "E".into(), "5.0".into(), "90.0".into()],
             raw: "$GPRMC,...".into(),
             checksum_valid: true,
         };
-        let observation = Observation {
-            lat: Some(-41.0),
-            lon: Some(173.0),
-            sog: Some(5.0),
-            cog: Some(90.0),
-            ..Default::default()
-        };
+        let observation = Observation { lat: Some(-41.0), lon: Some(173.0), sog: Some(5.0), cog: Some(90.0), ..Default::default() };
         assert!(sentence_groups(&sentence, &observation).is_empty());
     }
 }

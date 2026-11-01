@@ -71,9 +71,14 @@ impl crate::ChartStore {
                     let Some(p) = pts.first() else { return };
                     let Some((ref_no, ref_name, rel, hours)) = row.vals[1].as_deref().and_then(parse_tsp) else { return };
                     panels.push(TidalPanel {
-                        lon: p[0], lat: p[1],
+                        lon: p[0],
+                        lat: p[1],
                         name: row.vals[0].clone().unwrap_or_default().trim().to_string(),
-                        ref_no, ref_name, rel, hours, band: t.band,
+                        ref_no,
+                        ref_name,
+                        rel,
+                        hours,
+                        band: t.band,
                     });
                 }),
                 "TS_FEB" => self.query_text(t, bbox, &["cat_ts", "orient", "curvel"], |row| {

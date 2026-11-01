@@ -163,9 +163,8 @@ impl Track {
 
     /// The track as GPX 1.1.
     pub fn to_gpx(&self) -> String {
-        let mut out = String::from(
-            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\" creator=\"racenav\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n",
-        );
+        let mut out =
+            String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\" creator=\"racenav\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n");
         out.push_str(&self.trk_xml());
         out.push_str("</gpx>\n");
         out

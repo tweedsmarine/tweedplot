@@ -184,11 +184,7 @@ fn parse_formats(s: &str) -> Vec<Fmt> {
         let rest = &item[digits.len()..];
         // "b11" etc: the digits belong to the format, not a repeat count
         let (n, rest) = if rest.is_empty() { (1, item) } else { (digits.parse().unwrap_or(1), rest) };
-        let one: Vec<Fmt> = if rest.starts_with('(') {
-            parse_formats(rest)
-        } else {
-            parse_one(rest).into_iter().collect()
-        };
+        let one: Vec<Fmt> = if rest.starts_with('(') { parse_formats(rest) } else { parse_one(rest).into_iter().collect() };
         for _ in 0..n {
             out.extend(one.iter().copied());
         }
@@ -367,9 +363,10 @@ mod tests {
 
     #[test]
     fn formats() {
-        assert_eq!(parse_formats("(b11,b14,2b11,A(2),3A)"), vec![
-            Fmt::B(1, false), Fmt::B(4, false), Fmt::B(1, false), Fmt::B(1, false), Fmt::A(Some(2)), Fmt::A(None), Fmt::A(None), Fmt::A(None)
-        ]);
+        assert_eq!(
+            parse_formats("(b11,b14,2b11,A(2),3A)"),
+            vec![Fmt::B(1, false), Fmt::B(4, false), Fmt::B(1, false), Fmt::B(1, false), Fmt::A(Some(2)), Fmt::A(None), Fmt::A(None), Fmt::A(None)]
+        );
         assert_eq!(parse_formats("(2b24)"), vec![Fmt::B(4, true), Fmt::B(4, true)]);
         assert_eq!(parse_formats("(B(40),4b11)").len(), 5);
         assert_eq!(parse_formats("(A(1),I(10),(b24,b24))").len(), 4);

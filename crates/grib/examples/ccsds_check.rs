@@ -4,7 +4,12 @@ fn main() {
     let orig = grib::GribFile::from_bytes(&std::fs::read(&a[0]).unwrap());
     let t0 = std::time::Instant::now();
     let c = grib::GribFile::from_bytes(&std::fs::read(&a[1]).unwrap());
-    println!("decoded {} CCSDS fields in {:.0} ms, skipped {:?}", c.fields.len(), t0.elapsed().as_secs_f64() * 1000.0, c.skipped.iter().take(3).collect::<Vec<_>>());
+    println!(
+        "decoded {} CCSDS fields in {:.0} ms, skipped {:?}",
+        c.fields.len(),
+        t0.elapsed().as_secs_f64() * 1000.0,
+        c.skipped.iter().take(3).collect::<Vec<_>>()
+    );
     for f in &c.fields {
         let o = orig.fields.iter().find(|o| o.param == f.param && o.valid_time == f.valid_time).unwrap();
         let maxd = f.values.iter().zip(&o.values).map(|(x, y)| (x - y).abs()).fold(0f32, f32::max);

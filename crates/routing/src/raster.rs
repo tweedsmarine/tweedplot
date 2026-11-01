@@ -55,15 +55,7 @@ impl Raster {
         }
         let w = ((width_m / cell).ceil() as usize).max(1);
         let h = ((height_m / cell).ceil() as usize).max(1);
-        Raster {
-            w,
-            h,
-            lon0: bbox[0],
-            lat0: bbox[1],
-            dlon: (bbox[2] - bbox[0]) / w as f64,
-            dlat: (bbox[3] - bbox[1]) / h as f64,
-            cells: vec![UNKNOWN; w * h],
-        }
+        Raster { w, h, lon0: bbox[0], lat0: bbox[1], dlon: (bbox[2] - bbox[0]) / w as f64, dlat: (bbox[3] - bbox[1]) / h as f64, cells: vec![UNKNOWN; w * h] }
     }
 
     pub fn cell_size_m(&self) -> f64 {

@@ -7,7 +7,11 @@ use std::path::{Path, PathBuf};
 fn walk(d: &Path, out: &mut Vec<PathBuf>) {
     for e in std::fs::read_dir(d).into_iter().flatten().flatten() {
         let p = e.path();
-        if p.is_dir() { walk(&p, out) } else { out.push(p) }
+        if p.is_dir() {
+            walk(&p, out)
+        } else {
+            out.push(p)
+        }
     }
 }
 
@@ -27,7 +31,10 @@ fn main() {
             Ok(v) => {
                 for (cell, r) in v {
                     match r {
-                        Ok(pm) => { println!("permit {cell}: ok, expires {}", pm.expiry); permits.push(pm) }
+                        Ok(pm) => {
+                            println!("permit {cell}: ok, expires {}", pm.expiry);
+                            permits.push(pm)
+                        }
                         Err(e) => println!("permit {cell}: {e}"),
                     }
                 }
@@ -45,7 +52,10 @@ fn main() {
         let data = std::fs::read(f).unwrap();
         let sig = s63::signature_name(&name).map(|s| f.with_file_name(s));
         let auth = match sig.as_ref().and_then(|s| std::fs::read(s).ok()) {
-            Some(s) => match s63::verify_cell(&s, &data, &sa) { Ok(()) => "signature ok".to_string(), Err(e) => e.to_string() },
+            Some(s) => match s63::verify_cell(&s, &data, &sa) {
+                Ok(()) => "signature ok".to_string(),
+                Err(e) => e.to_string(),
+            },
             None => "no signature file".into(),
         };
         let stem = &name[..8];

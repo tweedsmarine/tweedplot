@@ -139,7 +139,9 @@ impl Model {
             ]
         };
         match self {
-            Model::Gfs0p25 => ModelInfo { id: self, name: "GFS 0.25°", res_deg: 0.25, max_hours: 384, steps: vec![(120, 1), (384, 3)], params: atmos(), delay_h: 5 },
+            Model::Gfs0p25 => {
+                ModelInfo { id: self, name: "GFS 0.25°", res_deg: 0.25, max_hours: 384, steps: vec![(120, 1), (384, 3)], params: atmos(), delay_h: 5 }
+            }
             Model::Gfs0p50 => ModelInfo { id: self, name: "GFS 0.5°", res_deg: 0.5, max_hours: 384, steps: vec![(384, 3)], params: atmos(), delay_h: 5 },
             Model::Gfs1p00 => ModelInfo { id: self, name: "GFS 1°", res_deg: 1.0, max_hours: 384, steps: vec![(384, 3)], params: atmos(), delay_h: 5 },
             Model::GfsWave0p25 => ModelInfo {
@@ -555,10 +557,7 @@ pub fn download_ex(req: &Request, run: &Run, dir: &Path, progress: Progress, can
             Ok(Downloaded { path: out, note: merge_notes(wind.note, wv.note) })
         }
         Err(Error::Cancelled) => Err(Error::Cancelled),
-        Err(e) => Ok(Downloaded {
-            path: wind.path,
-            note: merge_notes(wind.note, Some(format!("Wind downloaded; the waves could not be: {e}"))),
-        }),
+        Err(e) => Ok(Downloaded { path: wind.path, note: merge_notes(wind.note, Some(format!("Wind downloaded; the waves could not be: {e}"))) }),
     }
 }
 
@@ -662,15 +661,7 @@ pub(crate) fn file_name(req: &Request, run: &Run, last: u32) -> String {
         let v = (v + 180.0).rem_euclid(360.0) - 180.0;
         format!("{}{}", v.abs().round(), if v < 0.0 { "W" } else { "E" })
     };
-    format!(
-        "{m}_{}_{}z_f000-f{last:03}_{}-{}_{}-{}.grb2",
-        run.date,
-        run.hh,
-        lat(req.area[1]),
-        lat(req.area[3]),
-        lon(req.area[0]),
-        lon(req.area[2])
-    )
+    format!("{m}_{}_{}z_f000-f{last:03}_{}-{}_{}-{}.grb2", run.date, run.hh, lat(req.area[1]), lat(req.area[3]), lon(req.area[0]), lon(req.area[2]))
 }
 
 #[cfg(test)]
@@ -690,7 +681,8 @@ mod tests {
             assert!(m.info().params.iter().any(|p| p.id == "waves"), "{m:?}");
         }
         // wind-model filter variables ignore the waves tick (they come from the wave model)
-        let r = Request { model: Model::Gfs0p25, area: [172.0, -41.5, 178.5, -34.0], params: vec!["wind".into(), "waves".into()], hours: 48, every: 3, depth: 0.0 };
+        let r =
+            Request { model: Model::Gfs0p25, area: [172.0, -41.5, 178.5, -34.0], params: vec!["wind".into(), "waves".into()], hours: 48, every: 3, depth: 0.0 };
         assert!(!r.model.vars(&r.params).iter().any(|v| v.contains("HTSGW")));
         // the ECMWF amount counts wave fields at the wave model's size
         let e = Request { model: Model::EcmwfIfs0p25, ..r.clone() };
@@ -698,8 +690,10 @@ mod tests {
         assert!(download_bytes(&e) > download_bytes(&plain));
         let hres = Request { model: Model::EcmwfIfs0p1, ..e.clone() };
         assert!(download_bytes(&hres) > download_bytes(&e));
-        assert_eq!(file_name(&hres, &Run { date: "20261015".into(), hh: "12".into(), t: 0 }, 240),
-            "ECMWF_IFS_0p1_20261015_12z_f000-f240_42S-34S_172E-179E.grb2");
+        assert_eq!(
+            file_name(&hres, &Run { date: "20261015".into(), hh: "12".into(), t: 0 }, 240),
+            "ECMWF_IFS_0p1_20261015_12z_f000-f240_42S-34S_172E-179E.grb2"
+        );
     }
 
     fn req(model: Model) -> Request {
@@ -725,12 +719,18 @@ mod tests {
     fn urls_match_nomads() {
         let run = Run { date: "20261015".into(), hh: "12".into(), t: 0 };
         let u = step_url(&req(Model::Gfs0p25), &run, 3);
-        assert!(u.starts_with("https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?dir=%2Fgfs.20261015%2F12%2Fatmos&file=gfs.t12z.pgrb2.0p25.f003&"), "{u}");
+        assert!(
+            u.starts_with("https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?dir=%2Fgfs.20261015%2F12%2Fatmos&file=gfs.t12z.pgrb2.0p25.f003&"),
+            "{u}"
+        );
         assert!(u.contains("var_UGRD=on") && u.contains("lev_10_m_above_ground=on") && u.contains("var_PRMSL=on"));
         assert!(u.ends_with("&subregion=&leftlon=172&rightlon=178.5&toplat=-34&bottomlat=-41.5"), "{u}");
         let w = Request { params: vec!["waves".into()], ..req(Model::GfsWave0p25) };
         let u = step_url(&w, &run, 3);
-        assert!(u.contains("filter_gfswave.pl?dir=%2Fgfs.20261015%2F12%2Fwave%2Fgridded&file=gfswave.t12z.global.0p25.f003.grib2&var_HTSGW=on&lev_surface=on"), "{u}");
+        assert!(
+            u.contains("filter_gfswave.pl?dir=%2Fgfs.20261015%2F12%2Fwave%2Fgridded&file=gfswave.t12z.global.0p25.f003.grib2&var_HTSGW=on&lev_surface=on"),
+            "{u}"
+        );
         // across the date line: 170E to 170W
         let d = Request { area: [170.0, -45.0, -170.0, -30.0], ..req(Model::Gfs1p00) };
         assert!(step_url(&d, &run, 0).contains("leftlon=170&rightlon=190"));
@@ -800,7 +800,8 @@ mod tests {
         let t = g.times(grib::Param::WaveHeight);
         assert_eq!(t.len(), 1);
         // the area is partly land (Nelson): find a sea point with a value
-        let any = (0..5).flat_map(|i| (0..5).map(move |j| (-41.0 + 0.25 * i as f64, 173.0 + 0.25 * j as f64)))
+        let any = (0..5)
+            .flat_map(|i| (0..5).map(move |j| (-41.0 + 0.25 * i as f64, 173.0 + 0.25 * j as f64)))
             .filter_map(|(la, lo)| g.value(grib::Param::WaveHeight, la, lo, t[0]))
             .count();
         assert!(any > 0);

@@ -6,7 +6,7 @@
 //! 59 rain rate, 157 CAPE, 100–108 waves, 49/50 current) and ECMWF tables 128
 //! (165/166 wind, 151 MSL, 49 gust) and 140 (229 Hs, 230 direction, 231 period).
 
-use crate::{Field, Grid, GribError, Param};
+use crate::{Field, GribError, Grid, Param};
 
 fn u16be(b: &[u8]) -> u16 {
     u16::from_be_bytes([b[0], b[1]])
@@ -17,11 +17,19 @@ fn u24(b: &[u8]) -> u32 {
 /// Sign-magnitude 16 and 24 bit.
 fn sm16(b: &[u8]) -> i32 {
     let v = u16be(b) as i32;
-    if v & 0x8000 != 0 { -(v & 0x7fff) } else { v }
+    if v & 0x8000 != 0 {
+        -(v & 0x7fff)
+    } else {
+        v
+    }
 }
 fn sm24(b: &[u8]) -> i32 {
     let v = u24(b) as i32;
-    if v & 0x80_0000 != 0 { -(v & 0x7f_ffff) } else { v }
+    if v & 0x80_0000 != 0 {
+        -(v & 0x7f_ffff)
+    } else {
+        v
+    }
 }
 /// IBM System/360 single-precision float.
 fn ibm(b: &[u8]) -> f64 {
@@ -145,8 +153,20 @@ fn grid(s: &[u8]) -> Result<Grid, GribError> {
         }
         d
     };
-    let di = if given && di != 0xffff { di as f64 / 1000.0 } else if ni > 1 { span_lon / (ni - 1) as f64 } else { 1.0 };
-    let dj = if given && dj != 0xffff { dj as f64 / 1000.0 } else if nj > 1 { (la2 - la1).abs() / (nj - 1) as f64 } else { 1.0 };
+    let di = if given && di != 0xffff {
+        di as f64 / 1000.0
+    } else if ni > 1 {
+        span_lon / (ni - 1) as f64
+    } else {
+        1.0
+    };
+    let dj = if given && dj != 0xffff {
+        dj as f64 / 1000.0
+    } else if nj > 1 {
+        (la2 - la1).abs() / (nj - 1) as f64
+    } else {
+        1.0
+    };
     Ok(Grid::from_grib(ni, nj, la1, lo1, la2, lo2, di, dj, scan))
 }
 

@@ -23,11 +23,7 @@ fn dp(pts: &[[f64; 2]], tol: f64) -> Vec<[f64; 2]> {
         let l2 = dx * dx + dy * dy;
         let mut best = (0.0, 0);
         for (i, &r) in pts.iter().enumerate().take(b).skip(a + 1) {
-            let d = if l2 > 0.0 {
-                ((r[0] - p[0]) * dy - (r[1] - p[1]) * dx).abs() / l2.sqrt()
-            } else {
-                ((r[0] - p[0]).powi(2) + (r[1] - p[1]).powi(2)).sqrt()
-            };
+            let d = if l2 > 0.0 { ((r[0] - p[0]) * dy - (r[1] - p[1]) * dx).abs() / l2.sqrt() } else { ((r[0] - p[0]).powi(2) + (r[1] - p[1]).powi(2)).sqrt() };
             if d > best.0 {
                 best = (d, i);
             }
@@ -135,8 +131,12 @@ fn main() {
     w.table("wdepth_ne", "POLYGON").unwrap();
     w.table("wdepth_nelo", "POLYGON").unwrap();
     w.meta("source", "Natural Earth 10 m bathymetry (public domain), naturalearthdata.com").unwrap();
-    let mut files: Vec<_> = std::fs::read_dir(dir).unwrap().flatten().map(|e| e.path())
-        .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("ne_10m_bathymetry_"))).collect();
+    let mut files: Vec<_> = std::fs::read_dir(dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("ne_10m_bathymetry_")))
+        .collect();
     files.sort();
     files.reverse(); // L_0 first … A_10000 last: shallow under deep
     let mut total = 0;
@@ -155,11 +155,20 @@ fn main() {
             for p in parts {
                 let rings: Vec<Vec<[f64; 2]>> = p.as_array().unwrap().iter().filter_map(|r| ring(r, tol)).collect();
                 // small scales (zoom 0–3): five depths, coarser, and no rings under ~0.5° across
-                let lrings: Vec<Vec<[f64; 2]>> = p.as_array().unwrap().iter().filter_map(|r| ring(r, tol * 25.0)).filter(|r| {
-                    let (mut a, mut b) = ([f64::MAX; 2], [f64::MIN; 2]);
-                    for q in r { a = [a[0].min(q[0]), a[1].min(q[1])]; b = [b[0].max(q[0]), b[1].max(q[1])]; }
-                    (b[0] - a[0]).max(b[1] - a[1]) > 0.5
-                }).collect();
+                let lrings: Vec<Vec<[f64; 2]>> = p
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|r| ring(r, tol * 25.0))
+                    .filter(|r| {
+                        let (mut a, mut b) = ([f64::MAX; 2], [f64::MIN; 2]);
+                        for q in r {
+                            a = [a[0].min(q[0]), a[1].min(q[1])];
+                            b = [b[0].max(q[0]), b[1].max(q[1])];
+                        }
+                        (b[0] - a[0]).max(b[1] - a[1]) > 0.5
+                    })
+                    .collect();
                 if !lrings.is_empty() && [0.0, 200.0, 1000.0, 3000.0, 5000.0].contains(&depth) {
                     for piece in split(lrings, 30.0) {
                         lo.push((piece, depth));

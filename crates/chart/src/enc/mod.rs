@@ -151,7 +151,20 @@ pub fn write_gpkg(c: &Cell, out: &Path) -> Result<usize, rusqlite::Error> {
         tx.execute("INSERT INTO enc_meta VALUES (?1, ?2)", rusqlite::params![k, v])?;
     }
     for (name, t) in &tables {
-        let cols: String = t.cols.iter().map(|(c, ty)| format!(", \"{c}\" {}", match ty { 'R' => "REAL", 'I' => "INTEGER", _ => "TEXT" })).collect();
+        let cols: String = t
+            .cols
+            .iter()
+            .map(|(c, ty)| {
+                format!(
+                    ", \"{c}\" {}",
+                    match ty {
+                        'R' => "REAL",
+                        'I' => "INTEGER",
+                        _ => "TEXT",
+                    }
+                )
+            })
+            .collect();
         tx.execute_batch(&format!(
             "CREATE TABLE \"{name}\" (fid INTEGER PRIMARY KEY, geom BLOB{cols});
              CREATE VIRTUAL TABLE \"rtree_{name}_geom\" USING rtree(id, minx, maxx, miny, maxy);"
@@ -390,7 +403,8 @@ pub fn find_cells_except(dir: &Path, off: &[PathBuf]) -> Vec<CellFiles> {
         // S-63 signature files share the cell's name with the usage digit as a letter I-N
         let is_signature = |p: &Path| {
             let n = p.file_name().map(|n| n.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
-            n.chars().nth(2).is_some_and(|c| ('I'..='N').contains(&c)) && std::fs::read(p).is_ok_and(|b| b.starts_with(b"//") || b.starts_with(b"\xef\xbb\xbf//"))
+            n.chars().nth(2).is_some_and(|c| ('I'..='N').contains(&c))
+                && std::fs::read(p).is_ok_and(|b| b.starts_with(b"//") || b.starts_with(b"\xef\xbb\xbf//"))
         };
         for b in files.iter().filter(|p| ext(p) == "000" && !is_signature(p)) {
             let stem = b.file_stem().map(|s| s.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
@@ -398,7 +412,10 @@ pub fn find_cells_except(dir: &Path, off: &[PathBuf]) -> Vec<CellFiles> {
                 .iter()
                 .filter(|p| {
                     let e = ext(p);
-                    e.len() == 3 && e != "000" && e.bytes().all(|c| c.is_ascii_digit()) && p.file_stem().is_some_and(|s| s.to_string_lossy().to_ascii_uppercase() == stem)
+                    e.len() == 3
+                        && e != "000"
+                        && e.bytes().all(|c| c.is_ascii_digit())
+                        && p.file_stem().is_some_and(|s| s.to_string_lossy().to_ascii_uppercase() == stem)
                 })
                 .cloned()
                 .collect();
@@ -415,7 +432,11 @@ pub fn find_cells_except(dir: &Path, off: &[PathBuf]) -> Vec<CellFiles> {
                     for f in std::fs::read_dir(&d).into_iter().flatten().flatten() {
                         let p = f.path();
                         let e = ext(&p);
-                        if e.len() == 3 && e != "000" && e.bytes().all(|c| c.is_ascii_digit()) && p.file_stem().is_some_and(|s| s.to_string_lossy().to_ascii_uppercase() == stem) {
+                        if e.len() == 3
+                            && e != "000"
+                            && e.bytes().all(|c| c.is_ascii_digit())
+                            && p.file_stem().is_some_and(|s| s.to_string_lossy().to_ascii_uppercase() == stem)
+                        {
                             if let Ok(t) = f.metadata().and_then(|m| m.modified()) {
                                 times.insert(p.clone(), t);
                             }
@@ -426,7 +447,11 @@ pub fn find_cells_except(dir: &Path, off: &[PathBuf]) -> Vec<CellFiles> {
             }
             updates.sort_by_key(|p| ext(p));
             updates.dedup_by_key(|p| ext(p));
-            let newest = std::iter::once(b).chain(&updates).map(|p| times.get(p).copied().or_else(|| std::fs::metadata(p).and_then(|m| m.modified()).ok())).max().flatten();
+            let newest = std::iter::once(b)
+                .chain(&updates)
+                .map(|p| times.get(p).copied().or_else(|| std::fs::metadata(p).and_then(|m| m.modified()).ok()))
+                .max()
+                .flatten();
             out.push(CellFiles { base: b.clone(), updates, newest });
         }
     }
@@ -480,7 +505,11 @@ fn set_of(dir: &Path, base: &Path) -> String {
 }
 
 fn set_path(dir: &Path, set: &str) -> PathBuf {
-    if set.is_empty() { dir.to_path_buf() } else { dir.join(set) }
+    if set.is_empty() {
+        dir.to_path_buf()
+    } else {
+        dir.join(set)
+    }
 }
 
 /// The chart sets in an ENC folder (walks every cell: for a settings list, not at start-up).
@@ -697,7 +726,11 @@ pub fn clear_protection() {
 
 /// The user permit and M_KEY in use.
 pub fn protection() -> (String, String) {
-    PROTECTION.read().unwrap().clone().unwrap_or_else(|| if oem::is_real() { (String::new(), oem::m_key()) } else { (TEST_USER_PERMIT.into(), TEST_M_KEY.into()) })
+    PROTECTION
+        .read()
+        .unwrap()
+        .clone()
+        .unwrap_or_else(|| if oem::is_real() { (String::new(), oem::m_key()) } else { (TEST_USER_PERMIT.into(), TEST_M_KEY.into()) })
 }
 
 /// The HW_ID from the user permit in use.
@@ -810,7 +843,11 @@ fn s63_permits(dir: &Path) -> Permits {
 }
 
 fn days(d: &str) -> i64 {
-    let (y, m, dd): (i64, i64, i64) = (d.get(..4).and_then(|v| v.parse().ok()).unwrap_or(0), d.get(4..6).and_then(|v| v.parse().ok()).unwrap_or(1), d.get(6..8).and_then(|v| v.parse().ok()).unwrap_or(1));
+    let (y, m, dd): (i64, i64, i64) = (
+        d.get(..4).and_then(|v| v.parse().ok()).unwrap_or(0),
+        d.get(4..6).and_then(|v| v.parse().ok()).unwrap_or(1),
+        d.get(6..8).and_then(|v| v.parse().ok()).unwrap_or(1),
+    );
     let y = if m <= 2 { y - 1 } else { y };
     let era = y.div_euclid(400);
     let yoe = y - era * 400;
@@ -833,17 +870,30 @@ fn read_cell_file(path: &Path, permits: &Permits) -> Result<Vec<u8>, cell::CellE
     }
     let name = path.file_name().map(|n| n.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
     let other = |m: String| cell::CellError::Other(m);
-    let list = permits.get(name.get(..8).unwrap_or("")).filter(|v| !v.is_empty()).ok_or_else(|| other("SSE 11 - Cell permit not found. Load the permit file provided by the data supplier".into()))?;
+    let list = permits
+        .get(name.get(..8).unwrap_or(""))
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| other("SSE 11 - Cell permit not found. Load the permit file provided by the data supplier".into()))?;
     if path.components().any(|c| c.as_os_str() == ".senc") {
         return list.iter().find_map(|p| s63::decrypt_cell(&data, p).ok()).ok_or_else(|| other(s63::S63Error::Decrypt.to_string()));
     }
     let permit = &list[0];
-    let sig = s63::signature_name(&name).map(|s| path.with_file_name(s)).ok_or_else(|| other("SSE 26 - This ENC is not authenticated by the IHO acting as the Scheme Administrator (no signature file)".into()))?;
-    let sig = std::fs::read(&sig).map_err(|_| other("SSE 26 - This ENC is not authenticated by the IHO acting as the Scheme Administrator (no signature file)".into()))?;
+    let sig = s63::signature_name(&name)
+        .map(|s| path.with_file_name(s))
+        .ok_or_else(|| other("SSE 26 - This ENC is not authenticated by the IHO acting as the Scheme Administrator (no signature file)".into()))?;
+    let sig = std::fs::read(&sig)
+        .map_err(|_| other("SSE 26 - This ENC is not authenticated by the IHO acting as the Scheme Administrator (no signature file)".into()))?;
     let sa = s63::parse_public_key(SA_PUBLIC_KEY.as_bytes()).map_err(|e| other(e.to_string()))?;
     s63::verify_cell(&sig, &data, &sa).map_err(|e| other(e.to_string()))?;
     if permit.expiry.as_str() < today().as_str() {
-        note(path, format!("SSE 25 - The permit for ENC {} has expired ({}). This cell may be out of date and MUST NOT be used for primary navigation", &name[..8], permit.expiry));
+        note(
+            path,
+            format!(
+                "SSE 25 - The permit for ENC {} has expired ({}). This cell may be out of date and MUST NOT be used for primary navigation",
+                &name[..8],
+                permit.expiry
+            ),
+        );
     }
     s63::decrypt_cell(&data, permit).map_err(|e| other(e.to_string()))
 }
@@ -951,7 +1001,9 @@ fn merge(files: &[PathBuf], stamp: &[(String, i64)], out: &Path) -> Result<(), r
         }
         let r = (|| -> Result<(), rusqlite::Error> {
             let found: Vec<(String, String)> = {
-                let mut st = db.prepare("SELECT c.table_name, g.geometry_type_name FROM s.gpkg_contents c JOIN s.gpkg_geometry_columns g ON g.table_name = c.table_name")?;
+                let mut st = db.prepare(
+                    "SELECT c.table_name, g.geometry_type_name FROM s.gpkg_contents c JOIN s.gpkg_geometry_columns g ON g.table_name = c.table_name",
+                )?;
                 let v = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.filter_map(Result::ok).collect();
                 v
             };
@@ -1103,7 +1155,11 @@ mod tests {
             std::fs::create_dir_all(b).unwrap();
             for e in std::fs::read_dir(a).unwrap().flatten() {
                 let p = e.path();
-                if p.is_dir() { copy(&p, &b.join(e.file_name())) } else { std::fs::copy(&p, b.join(e.file_name())).unwrap(); }
+                if p.is_dir() {
+                    copy(&p, &b.join(e.file_name()))
+                } else {
+                    std::fs::copy(&p, b.join(e.file_name())).unwrap();
+                }
             }
         }
         copy(&src, &dir);

@@ -48,10 +48,7 @@ impl Decoder {
                 }
                 return None;
             }
-            let i = self
-                .parts
-                .iter()
-                .position(|p| p.0 == key && p.1 == total && p.2.len() + 1 == number)?;
+            let i = self.parts.iter().position(|p| p.0 == key && p.1 == total && p.2.len() + 1 == number)?;
             self.parts[i].2.push(fields[4].clone());
             if number < total {
                 return None;
@@ -101,11 +98,7 @@ impl Bits {
     fn i(&self, a: usize, b: usize) -> Option<i32> {
         let n = self.u(a, b)?;
         let w = b - a;
-        Some(if n >> (w - 1) & 1 == 1 {
-            n as i64 - (1i64 << w)
-        } else {
-            n as i64
-        } as i32)
+        Some(if n >> (w - 1) & 1 == 1 { n as i64 - (1i64 << w) } else { n as i64 } as i32)
     }
     /// Text in the AIS 6-bit alphabet; padding (`@`) and trailing spaces dropped.
     fn text(&self, a: usize, b: usize) -> Option<String> {
@@ -127,11 +120,7 @@ impl Bits {
 
 /// Position in 1/10000 minute (the usual), or 1/10 minute (type 27); None when "not available".
 fn position(b: &Bits, lon_at: usize, lat_at: usize, coarse: bool) -> Option<(f64, f64)> {
-    let (lw, aw, scale) = if coarse {
-        (18, 17, 600.0)
-    } else {
-        (28, 27, 600_000.0)
-    };
+    let (lw, aw, scale) = if coarse { (18, 17, 600.0) } else { (28, 27, 600_000.0) };
     let lon = b.i(lon_at, lon_at + lw)? as f64 / scale;
     let lat = b.i(lat_at, lat_at + aw)? as f64 / scale;
     ((-180.0..=180.0).contains(&lon) && (-90.0..=90.0).contains(&lat)).then_some((lat, lon))
@@ -149,12 +138,7 @@ fn heading(raw: Option<u32>) -> Option<f64> {
 
 /// Size and antenna position from the distances to bow, stern, port and starboard.
 fn dims(u: &mut Update, b: &Bits, at: usize) {
-    let (Some(bow), Some(stern), Some(port), Some(stbd)) = (
-        b.u(at, at + 9),
-        b.u(at + 9, at + 18),
-        b.u(at + 18, at + 24),
-        b.u(at + 24, at + 30),
-    ) else {
+    let (Some(bow), Some(stern), Some(port), Some(stbd)) = (b.u(at, at + 9), b.u(at + 9, at + 18), b.u(at + 18, at + 24), b.u(at + 24, at + 30)) else {
         return;
     };
     let (l, w) = ((bow + stern) as f64, (port + stbd) as f64);
@@ -174,12 +158,7 @@ fn decode(b: &Bits) -> Option<Update> {
     if mmsi == 0 {
         return None;
     }
-    let mut u = Update {
-        mmsi,
-        source: "nmea",
-        kind: Kind::from_mmsi(mmsi),
-        ..Default::default()
-    };
+    let mut u = Update { mmsi, source: "nmea", kind: Kind::from_mmsi(mmsi), ..Default::default() };
     match ty {
         1..=3 => {
             u.status = b.u(38, 42).map(|s| s as u8);
@@ -280,10 +259,7 @@ mod tests {
         assert_eq!(u.mmsi, 366053209);
         assert_eq!(u.class, Some("A"));
         let (lat, lon) = u.pos.unwrap();
-        assert!(
-            (lat - 37.80211).abs() < 1e-4 && (lon + 122.34161).abs() < 1e-4,
-            "{lat} {lon}"
-        );
+        assert!((lat - 37.80211).abs() < 1e-4 && (lon + 122.34161).abs() < 1e-4, "{lat} {lon}");
         assert_eq!(u.sog, Some(0.0));
         assert_eq!(u.status, Some(3));
         assert!((u.cog.unwrap() - 219.3).abs() < 1e-9);
@@ -292,8 +268,7 @@ mod tests {
     #[test]
     fn static_data_in_two_parts() {
         let mut d = Decoder::new();
-        let (fmt, a) =
-            f("!AIVDM,2,1,1,A,55?MbV02;H;s<HtKR20EHE:0@T4@Dn2222222216L961O5Gf0NSQEp6ClRp8,0*1C");
+        let (fmt, a) = f("!AIVDM,2,1,1,A,55?MbV02;H;s<HtKR20EHE:0@T4@Dn2222222216L961O5Gf0NSQEp6ClRp8,0*1C");
         assert!(d.push(&fmt, &a).is_none());
         let (fmt, b) = f("!AIVDM,2,2,1,A,88888888880,2*25");
         let u = d.push(&fmt, &b).unwrap();
@@ -318,10 +293,7 @@ mod tests {
         assert_eq!(u.class, Some("B"));
         assert_eq!(u.sog, Some(0.1));
         let (lat, lon) = u.pos.unwrap();
-        assert!(
-            (lat - 40.68454).abs() < 1e-4 && (lon + 74.07213).abs() < 1e-4,
-            "{lat} {lon}"
-        );
+        assert!((lat - 40.68454).abs() < 1e-4 && (lon + 74.07213).abs() < 1e-4, "{lat} {lon}");
         assert_eq!(u.cog, Some(79.6));
         // the same message as our own ship's (VDO) is not a target
         assert!(d.push("VDO", &fields).is_none());
@@ -330,10 +302,7 @@ mod tests {
     #[test]
     fn bad_payloads_are_ignored() {
         let mut d = Decoder::new();
-        let fields: Vec<String> = ["1", "1", "", "A", "15M67F~~", "0"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+        let fields: Vec<String> = ["1", "1", "", "A", "15M67F~~", "0"].iter().map(|s| s.to_string()).collect();
         assert!(d.push("VDM", &fields).is_none());
         assert!(d.push("VDM", &fields[..3]).is_none());
     }

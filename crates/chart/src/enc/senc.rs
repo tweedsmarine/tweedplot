@@ -47,13 +47,15 @@ fn msg(cell: &str, level: Level, text: impl Into<String>) -> Msg {
     Msg { cell: cell.to_string(), level, text: text.into() }
 }
 
-const SSE05: &str = "SSE 05 - SA Digital Certificate (X509) file is not available. A valid certificate can be obtained from the IHO website or your data supplier";
+const SSE05: &str =
+    "SSE 05 - SA Digital Certificate (X509) file is not available. A valid certificate can be obtained from the IHO website or your data supplier";
 const SSE10: &str = "SSE 10 - Permits not available for this data server. Contact your data supplier to obtain the correct permits";
 const SSE11: &str = "SSE 11 - Cell permit not found. Load the permit file provided by the data supplier";
 const SSE15: &str = "SSE 15 - Subscription service has expired. Please contact your data supplier to renew the subscription licence";
 const SSE20: &str = "SSE 20 - Subscription service will expire in less than 30 days. Please contact your data supplier to renew the subscription licence";
 const SSE22: &str = "SSE 22 - SA Digital Certificate (X509) has expired. A new SA public key can be obtained from the IHO website or from your data supplier";
-const SSE23: &str = "SSE 23 - Non sequential update, previous update(s) missing. Try reloading from the base media. If the problem persists contact your data supplier";
+const SSE23: &str =
+    "SSE 23 - Non sequential update, previous update(s) missing. Try reloading from the base media. If the problem persists contact your data supplier";
 const SSE26: &str = "SSE 26 - This ENC is not authenticated by the IHO acting as the Scheme Administrator";
 
 /// A cell as installed.
@@ -284,7 +286,9 @@ fn base_number(set: &str) -> Option<String> {
 
 /// The exchange sets in a folder: it, or the folders under it, that hold ENC_ROOT.
 pub fn exchange_sets(dir: &Path) -> Vec<PathBuf> {
-    let has_root = |d: &Path| std::fs::read_dir(d).into_iter().flatten().flatten().any(|e| e.path().is_dir() && e.file_name().to_string_lossy().eq_ignore_ascii_case("ENC_ROOT"));
+    let has_root = |d: &Path| {
+        std::fs::read_dir(d).into_iter().flatten().flatten().any(|e| e.path().is_dir() && e.file_name().to_string_lossy().eq_ignore_ascii_case("ENC_ROOT"))
+    };
     if dir.file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("ENC_ROOT")) {
         return dir.parent().map(|p| vec![p.to_path_buf()]).unwrap_or_default();
     }
@@ -371,7 +375,8 @@ impl Senc {
             return vec![msg("", Level::Error, format!("{name} not installed (expired {}). {SSE22}", fmt_date(&not_after.unwrap_or_default())))];
         }
         let sa = key == iho_key();
-        self.state.key = Some(KeyInfo { name: name.to_string(), sa, not_after: not_after.clone(), subject, p: hex(&key.p), q: hex(&key.q), g: hex(&key.g), y: hex(&key.y) });
+        self.state.key =
+            Some(KeyInfo { name: name.to_string(), sa, not_after: not_after.clone(), subject, p: hex(&key.p), q: hex(&key.q), g: hex(&key.g), y: hex(&key.y) });
         self.state.key_set = true;
         self.save();
         let until = not_after.map(|d| format!(", valid to {}", fmt_date(&d))).unwrap_or_default();
@@ -430,7 +435,11 @@ impl Senc {
     /// replacing an older permit for the same cell.
     pub fn install_permits(&mut self, text: &str) -> Vec<Msg> {
         let Some(hw) = super::hw_id() else {
-            let text = if super::protection().0.is_empty() { "TweedPlot isn't activated for encrypted charts yet: send this computer's installation code to Tweedsmarine for an activation code".to_string() } else { s63::S63Error::UserPermit.to_string() };
+            let text = if super::protection().0.is_empty() {
+                "TweedPlot isn't activated for encrypted charts yet: send this computer's installation code to Tweedsmarine for an activation code".to_string()
+            } else {
+                s63::S63Error::UserPermit.to_string()
+            };
             return vec![msg("", Level::Error, text)];
         };
         let found = match s63::read_permits(text, &hw) {
@@ -447,7 +456,11 @@ impl Senc {
                     let ds = if p.data_server.is_empty() { cell.get(..2).unwrap_or("XX").to_string() } else { p.data_server.clone() };
                     let store = by_ds.entry(ds.clone()).or_insert_with(|| {
                         let old = std::fs::read_to_string(self.permit_file(&ds)).unwrap_or_default();
-                        old.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with(':')).map(|l| (l.get(..8).unwrap_or(l).to_string(), l.to_string())).collect()
+                        old.lines()
+                            .map(str::trim)
+                            .filter(|l| !l.is_empty() && !l.starts_with(':'))
+                            .map(|l| (l.get(..8).unwrap_or(l).to_string(), l.to_string()))
+                            .collect()
                     });
                     store.insert(cell.clone(), line.to_string());
                     let days = super::days_between(&today, &p.expiry);
@@ -504,7 +517,10 @@ impl Senc {
         if !dir.is_dir() {
             return vec![];
         }
-        super::find_cells(&dir).into_iter().filter(|c| c.base.parent().and_then(|p| p.file_name()).is_some_and(|n| self.state.cells.contains_key(&n.to_string_lossy().to_string()))).collect()
+        super::find_cells(&dir)
+            .into_iter()
+            .filter(|c| c.base.parent().and_then(|p| p.file_name()).is_some_and(|n| self.state.cells.contains_key(&n.to_string_lossy().to_string())))
+            .collect()
     }
 
     /// Warnings for showing the installed cells (S-63 10.8): expired permits (SSE 25) and
@@ -517,7 +533,10 @@ impl Senc {
             if c.encrypted {
                 if let Some(ps) = permits.get(cell) {
                     if !ps.is_empty() && ps.iter().all(|p| p.expiry.as_str() < today.as_str()) {
-                        out.push((cell.clone(), format!("SSE 25 - The permit for ENC {cell} has expired. This cell may be out of date and MUST NOT be used for primary navigation")));
+                        out.push((
+                            cell.clone(),
+                            format!("SSE 25 - The permit for ENC {cell} has expired. This cell may be out of date and MUST NOT be used for primary navigation"),
+                        ));
                     }
                 }
             }
@@ -555,7 +574,12 @@ impl Senc {
         let set_name = set.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         let label = if serial.ds.is_empty() { set_name.clone() } else { format!("{set_name} ({} {} {})", serial.ds, serial.kind, fmt_date(&serial.date)) };
         out.push(msg("", Level::Info, format!("Exchange set {label}")));
-        let Some(enc_root) = std::fs::read_dir(set).ok().and_then(|rd| rd.flatten().find(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case("ENC_ROOT")).map(|e| e.path())) else { return };
+        let Some(enc_root) = std::fs::read_dir(set)
+            .ok()
+            .and_then(|rd| rd.flatten().find(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case("ENC_ROOT")).map(|e| e.path()))
+        else {
+            return;
+        };
         let files = files_under(&enc_root);
         let catalogue = read_catalogue(&enc_root, &files);
         let entries: Vec<Entry> = match &catalogue {
@@ -666,7 +690,11 @@ impl Senc {
         }
         progress(total, total, "");
         if !no_permit.is_empty() {
-            out.push(msg("", Level::Info, format!("{} cell{} not installed, no permit: {}", no_permit.len(), if no_permit.len() == 1 { "" } else { "s" }, list(&no_permit))));
+            out.push(msg(
+                "",
+                Level::Info,
+                format!("{} cell{} not installed, no permit: {}", no_permit.len(), if no_permit.len() == 1 { "" } else { "s" }, list(&no_permit)),
+            ));
         }
         if !expired.is_empty() {
             out.push(msg("", Level::Warn, format!("{SSE15}: {}", list(&expired))));
@@ -734,14 +762,26 @@ impl Senc {
         };
         if let Some(crc) = e.crc {
             if crc32fast::hash(&plain) != crc {
-                return Err(format!("{name}: SSE 16 - ENC {} CRC value is incorrect. Contact your data supplier as ENC(s) may be corrupted or missing data", e.cell));
+                return Err(format!(
+                    "{name}: SSE 16 - ENC {} CRC value is incorrect. Contact your data supplier as ENC(s) may be corrupted or missing data",
+                    e.cell
+                ));
             }
         }
         Ok(plain)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn import_cell(&mut self, cell: &str, ds: &str, files: &[Entry], permit: &[CellPermit], key: Option<&PublicKey>, products: &BTreeMap<String, Product>, out: &mut Vec<Msg>) {
+    fn import_cell(
+        &mut self,
+        cell: &str,
+        ds: &str,
+        files: &[Entry],
+        permit: &[CellPermit],
+        key: Option<&PublicKey>,
+        products: &BTreeMap<String, Product>,
+        out: &mut Vec<Msg>,
+    ) {
         let before = self.state.cells.get(cell).cloned();
         let mut cur = before.clone();
         let mut already = false;
@@ -833,7 +873,9 @@ impl Senc {
                 out.push(msg(cell, Level::Error, format!("{what}. {err}")));
             }
             (b, Some(c), None) if b.as_ref() == Some(c) => out.push(msg(cell, Level::Info, format!("already installed ({})", state(c)))),
-            (_, Some(c), None) => out.push(msg(cell, Level::Ok, format!("{} installed{}", state(c), if already { " (some files already installed)" } else { "" }))),
+            (_, Some(c), None) => {
+                out.push(msg(cell, Level::Ok, format!("{} installed{}", state(c), if already { " (some files already installed)" } else { "" })))
+            }
             (_, None, None) => {}
         }
     }
@@ -847,7 +889,10 @@ fn cancelled_text(cell: &str, rep: &[String]) -> String {
     if rep.is_empty() {
         format!("Cell {cell} has been cancelled and has been removed")
     } else {
-        format!("Cell {cell} has been cancelled and has been replaced by cell(s) {}. Please contact your data supplier to obtain the additional ENC permits", rep.join("; "))
+        format!(
+            "Cell {cell} has been cancelled and has been replaced by cell(s) {}. Please contact your data supplier to obtain the additional ENC permits",
+            rep.join("; ")
+        )
     }
 }
 

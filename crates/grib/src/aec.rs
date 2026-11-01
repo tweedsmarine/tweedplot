@@ -90,7 +90,11 @@ pub fn decode(data: &[u8], n: usize, bps: usize, block_size: usize, rsi: usize, 
         return Err(AecError::Unsupported("parameters"));
     }
     let id_len = if flags & RESTRICTED != 0 && bps <= 4 {
-        if bps <= 2 { 1 } else { 2 }
+        if bps <= 2 {
+            1
+        } else {
+            2
+        }
     } else if bps > 16 {
         5
     } else if bps > 8 {
@@ -272,7 +276,7 @@ mod tests {
         w.put(0, 1); // zero block
         w.put(100, 8); // reference
         w.fs(0); // one zero block
-        // second block: SE, mapped deltas 2,1 → +1, -1 ...
+                 // second block: SE, mapped deltas 2,1 → +1, -1 ...
         let deltas = [2u64, 1, 2, 1, 0, 0, 4, 3];
         w.put(0, 3);
         w.put(1, 1);

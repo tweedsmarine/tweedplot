@@ -138,7 +138,7 @@ pub fn parse_gpx(text: &str) -> Result<GpxData> {
             }
             Event::CData(t) => text_buf.push_str(&lossy(&t)),
             Event::GeneralRef(r) => {
-                let name = lossy(&r); 
+                let name = lossy(&r);
                 text_buf.push_str(&entity(&name));
             }
             Event::End(e) => {
@@ -293,7 +293,13 @@ pub(crate) fn wpt(tag: &str, m: &Mark, indent: &str) -> String {
         s.push_str(&format!("{indent}  <time>{}</time>\n", crate::tracks::iso_time(m.created)));
     }
     let sym = match m.symbol.as_str() {
-        x if x.is_empty() || x.starts_with("tz:") => if m.kind == "mark" { "Buoy" } else { "Waypoint" },
+        x if x.is_empty() || x.starts_with("tz:") => {
+            if m.kind == "mark" {
+                "Buoy"
+            } else {
+                "Waypoint"
+            }
+        }
         x => x,
     };
     s.push_str(&format!("{indent}  <sym>{}</sym>\n", esc(sym)));

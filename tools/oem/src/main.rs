@@ -61,7 +61,8 @@ fn init() {
     }
     let o = d.join("oem.txt");
     if !o.exists() {
-        std::fs::write(&o, "# TweedPlot S-63 manufacturer credentials from the IHO. Fill in and rebuild TweedPlot.\r\n# M_ID=XX\r\n# M_KEY=XXXXX\r\n").unwrap_or_else(|e| fail(&e.to_string()));
+        std::fs::write(&o, "# TweedPlot S-63 manufacturer credentials from the IHO. Fill in and rebuild TweedPlot.\r\n# M_ID=XX\r\n# M_KEY=XXXXX\r\n")
+            .unwrap_or_else(|e| fail(&e.to_string()));
         println!("made {}: put the M_ID and M_KEY from the IHO in it (without the #), then rebuild TweedPlot and this tool", o.display());
     }
     let r = d.join("register.csv");
@@ -159,7 +160,12 @@ fn issue(args: &[String]) {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    println!("TweedPlot OEM tool: {} (M_ID {}), folder {}", if oem::is_real() { "TweedPlot's own credentials" } else { "IHO TEST credentials" }, oem::m_id(), dir().display());
+    println!(
+        "TweedPlot OEM tool: {} (M_ID {}), folder {}",
+        if oem::is_real() { "TweedPlot's own credentials" } else { "IHO TEST credentials" },
+        oem::m_id(),
+        dir().display()
+    );
     match args.first().map(String::as_str) {
         Some("init") => init(),
         Some("issue") => issue(&args[1..]),

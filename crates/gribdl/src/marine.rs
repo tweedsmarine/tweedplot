@@ -55,22 +55,16 @@ pub const BOUNDARY_ZIPS: &[&str] = &[
 ];
 
 fn linz_base() -> String {
-    std::env::var("RACENAV_LINZ_MB_URL")
-        .unwrap_or_else(|_| "https://www.linz.govt.nz/sites/default/files".into())
+    std::env::var("RACENAV_LINZ_MB_URL").unwrap_or_else(|_| "https://www.linz.govt.nz/sites/default/files".into())
 }
 
 fn mpi_base() -> String {
-    std::env::var("RACENAV_MPI_URL")
-        .unwrap_or_else(|_| "https://geospatial.mpi.govt.nz/portal/rest/services/MARINE".into())
+    std::env::var("RACENAV_MPI_URL").unwrap_or_else(|_| "https://geospatial.mpi.govt.nz/portal/rest/services/MARINE".into())
 }
 
 /// Download LINZ's maritime boundary zips into `dir/boundaries`. A zip that fails is
 /// skipped (and named in the result); it's an error only when none could be had.
-pub fn boundaries(
-    dir: &Path,
-    progress: &(dyn Fn(u64, u64) + Sync),
-    cancel: &AtomicBool,
-) -> Result<(usize, Vec<String>)> {
+pub fn boundaries(dir: &Path, progress: &(dyn Fn(u64, u64) + Sync), cancel: &AtomicBool) -> Result<(usize, Vec<String>)> {
     let out = dir.join("boundaries");
     std::fs::create_dir_all(&out)?;
     let c = client()?;
@@ -81,19 +75,12 @@ pub fn boundaries(
         }
         progress(i as u64, BOUNDARY_ZIPS.len() as u64);
         let url = format!("{}/{name}", linz_base());
-        let r = c
-            .get(&url)
-            .send()
-            .map_err(|e| Error::Http(why(&e)))
-            .and_then(|r| {
-                if !r.status().is_success() {
-                    return Err(Error::Http(format!(
-                        "HTTP {} from {url}",
-                        r.status().as_u16()
-                    )));
-                }
-                r.bytes().map_err(|e| Error::Http(why(&e)))
-            });
+        let r = c.get(&url).send().map_err(|e| Error::Http(why(&e))).and_then(|r| {
+            if !r.status().is_success() {
+                return Err(Error::Http(format!("HTTP {} from {url}", r.status().as_u16())));
+            }
+            r.bytes().map_err(|e| Error::Http(why(&e)))
+        });
         match r {
             Ok(b) if b.starts_with(b"PK") => {
                 let part = out.join(format!("{name}.part"));
@@ -107,10 +94,7 @@ pub fn boundaries(
     }
     progress(BOUNDARY_ZIPS.len() as u64, BOUNDARY_ZIPS.len() as u64);
     if got == 0 {
-        return Err(Error::Http(format!(
-            "no maritime boundaries downloaded ({})",
-            failed.join("; ")
-        )));
+        return Err(Error::Http(format!("no maritime boundaries downloaded ({})", failed.join("; "))));
     }
     Ok((got, failed))
 }
@@ -132,18 +116,12 @@ const BATCH: usize = 50;
 fn get_json(c: &reqwest::blocking::Client, url: &str) -> Result<Value> {
     let r = c.get(url).send().map_err(|e| Error::Http(why(&e)))?;
     if !r.status().is_success() {
-        return Err(Error::Http(format!(
-            "HTTP {} from {url}",
-            r.status().as_u16()
-        )));
+        return Err(Error::Http(format!("HTTP {} from {url}", r.status().as_u16())));
     }
     let b = r.bytes().map_err(|e| Error::Http(format!("{url}: {e}")))?;
     let v: Value = serde_json::from_slice(&b).map_err(|e| Error::Http(format!("{url}: {e}")))?;
     if let Some(e) = v.get("error") {
-        return Err(Error::Http(format!(
-            "{url}: {}",
-            e.get("message").and_then(Value::as_str).unwrap_or("error")
-        )));
+        return Err(Error::Http(format!("{url}: {}", e.get("message").and_then(Value::as_str).unwrap_or("error"))));
     }
     Ok(v)
 }
@@ -162,16 +140,8 @@ fn service_layers(c: &reqwest::blocking::Client, base: &str) -> Result<Vec<(i64,
 }
 
 fn object_ids(c: &reqwest::blocking::Client, layer_url: &str) -> Result<Vec<i64>> {
-    let v = get_json(
-        c,
-        &format!("{layer_url}/query?where=1%3D1&returnIdsOnly=true&f=json"),
-    )?;
-    let mut ids: Vec<i64> = v["objectIds"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_i64)
-        .collect();
+    let v = get_json(c, &format!("{layer_url}/query?where=1%3D1&returnIdsOnly=true&f=json"))?;
+    let mut ids: Vec<i64> = v["objectIds"].as_array().into_iter().flatten().filter_map(Value::as_i64).collect();
     ids.sort_unstable();
     Ok(ids)
 }
@@ -180,21 +150,12 @@ fn object_ids(c: &reqwest::blocking::Client, layer_url: &str) -> Result<Vec<i64>
 /// boundaries, anticlockwise ones holes in the outer ring before them.
 pub fn esri_to_geojson(g: &Value) -> Value {
     let pts = |r: &Value| -> Vec<[f64; 2]> {
-        r.as_array()
-            .map(|a| {
-                a.iter()
-                    .filter_map(|p| Some([p.get(0)?.as_f64()?, p.get(1)?.as_f64()?]))
-                    .collect()
-            })
-            .unwrap_or_default()
+        r.as_array().map(|a| a.iter().filter_map(|p| Some([p.get(0)?.as_f64()?, p.get(1)?.as_f64()?])).collect()).unwrap_or_default()
     };
     if let Some(rings) = g["rings"].as_array() {
         let mut polys: Vec<Vec<Vec<[f64; 2]>>> = Vec::new();
         for r in rings.iter().map(pts).filter(|r| r.len() >= 4) {
-            let area: f64 = r
-                .windows(2)
-                .map(|w| w[0][0] * w[1][1] - w[1][0] * w[0][1])
-                .sum();
+            let area: f64 = r.windows(2).map(|w| w[0][0] * w[1][1] - w[1][0] * w[0][1]).sum();
             if area < 0.0 || polys.is_empty() {
                 polys.push(vec![r]);
             } else {
@@ -211,29 +172,18 @@ pub fn esri_to_geojson(g: &Value) -> Value {
 
 /// Every feature of a layer as GeoJSON (in batches by object id); with
 /// `geometry` false, just the attributes.
-fn layer_features(
-    c: &reqwest::blocking::Client,
-    layer_url: &str,
-    geometry: bool,
-    cancel: &AtomicBool,
-) -> Result<Vec<Value>> {
+fn layer_features(c: &reqwest::blocking::Client, layer_url: &str, geometry: bool, cancel: &AtomicBool) -> Result<Vec<Value>> {
     let ids = object_ids(c, layer_url)?;
     let mut out = Vec::with_capacity(ids.len());
     for chunk in ids.chunks(if geometry { BATCH } else { 500 }) {
         if cancel.load(Ordering::Relaxed) {
             return Err(Error::Cancelled);
         }
-        let list = chunk
-            .iter()
-            .map(i64::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
+        let list = chunk.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
         if geometry {
             let q = format!("{layer_url}/query?objectIds={list}&outFields=*&returnGeometry=true&outSR=4326&geometryPrecision=7");
             match get_json(c, &format!("{q}&f=geojson")) {
-                Ok(v) if v["features"].is_array() && v["type"] == "FeatureCollection" => {
-                    out.extend(v["features"].as_array().cloned().unwrap_or_default())
-                }
+                Ok(v) if v["features"].is_array() && v["type"] == "FeatureCollection" => out.extend(v["features"].as_array().cloned().unwrap_or_default()),
                 // older servers: Esri JSON
                 _ => {
                     let v = get_json(c, &format!("{q}&f=json"))?;
@@ -243,19 +193,8 @@ fn layer_features(
                 }
             }
         } else {
-            let v = get_json(
-                c,
-                &format!(
-                    "{layer_url}/query?objectIds={list}&outFields=*&returnGeometry=false&f=json"
-                ),
-            )?;
-            out.extend(
-                v["features"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .map(|f| f["attributes"].clone()),
-            );
+            let v = get_json(c, &format!("{layer_url}/query?objectIds={list}&outFields=*&returnGeometry=false&f=json"))?;
+            out.extend(v["features"].as_array().into_iter().flatten().map(|f| f["attributes"].clone()));
         }
     }
     Ok(out)
@@ -274,11 +213,7 @@ pub struct MpiSummary {
 /// Download MPI's fishing rules into `dir/mpi`. `progress(stage, done, total)` is
 /// told the service and how many of its layers are done. A service that fails keeps its
 /// last download; it's an error only when nothing could be had.
-pub fn mpi(
-    dir: &Path,
-    progress: &(dyn Fn(&str, u64, u64) + Sync),
-    cancel: &AtomicBool,
-) -> Result<MpiSummary> {
+pub fn mpi(dir: &Path, progress: &(dyn Fn(&str, u64, u64) + Sync), cancel: &AtomicBool) -> Result<MpiSummary> {
     let out_dir = dir.join("mpi");
     std::fs::create_dir_all(&out_dir)?;
     let c = client()?;
@@ -297,10 +232,7 @@ pub fn mpi(
         }
     }
     if sum.files.is_empty() {
-        return Err(Error::Http(format!(
-            "no fishing rules downloaded ({})",
-            sum.failed.join("; ")
-        )));
+        return Err(Error::Http(format!("no fishing rules downloaded ({})", sum.failed.join("; "))));
     }
     Ok(sum)
 }
@@ -318,9 +250,7 @@ fn mpi_service(
     let base = format!("{}/{service}", mpi_base());
     let layers: Vec<(i64, String)> = service_layers(c, &base)?.into_iter().filter(|(id, _)| wanted.is_empty() || wanted.contains(id)).collect();
     // the regulations: the "all regulations" layer with its areas, the others just their members
-    let all_layer = (key == "regs")
-        .then(|| layers.iter().find(|(id, _)| *id == 0).map(|l| l.0))
-        .flatten();
+    let all_layer = (key == "regs").then(|| layers.iter().find(|(id, _)| *id == 0).map(|l| l.0)).flatten();
     let mut out_layers = Vec::new();
     let mut n = 0;
     for (k, (id, name)) in layers.iter().enumerate() {
@@ -366,10 +296,7 @@ mod tests {
                     }
                 }
                 let path = line.split_whitespace().nth(1).unwrap_or("").to_string();
-                let body = routes
-                    .iter()
-                    .find(|(k, _)| path.contains(k))
-                    .map(|(_, b)| b.clone());
+                let body = routes.iter().find(|(k, _)| path.contains(k)).map(|(_, b)| b.clone());
                 let (status, body) = match body {
                     Some(b) => ("200 OK", b),
                     None => ("404 Not Found", "{}".into()),
@@ -407,8 +334,7 @@ mod tests {
             {"type": "Feature", "properties": {"OBJECTID": 1, "Name": "A", "Identifier": "R1", "BottomTrawl": 1}, "geometry": square(173.0)},
             {"type": "Feature", "properties": {"OBJECTID": 2, "Name": "B", "Identifier": "R2", "SetNet": 1}, "geometry": square(174.0)}
         ]});
-        let members =
-            json!({"features": [{"attributes": {"OBJECTID": 7, "Name": "A", "Identifier": "R1"}}]});
+        let members = json!({"features": [{"attributes": {"OBJECTID": 7, "Name": "A", "Identifier": "R1"}}]});
         // customary: a server that only does Esri JSON
         let cust_layers = json!({"layers": [{"id": 1, "name": "Mataitai Reserves"}, {"id": 3, "name": "Mataitai Reserve Coordinates"}]});
         let cust = json!({"features": [{"attributes": {"OBJECTID": 5, "Name": "M"}, "geometry": {"rings": [[[173.0, -41.0], [173.0, -40.9], [173.1, -40.9], [173.0, -41.0]]]}}]});
@@ -420,8 +346,14 @@ mod tests {
             ("CommercialFishing/FeatureServer/17/query?objectIds=7", members.to_string()),
             ("Customary_Restrictions/FeatureServer?f=json", cust_layers.to_string()),
             ("Customary_Restrictions/FeatureServer/1/query?where", json!({"objectIds": [5]}).to_string()),
-            ("Customary_Restrictions/FeatureServer/1/query?objectIds=5&outFields=*&returnGeometry=true&outSR=4326&geometryPrecision=7&f=geojson", json!({"error": {"message": "no geojson"}}).to_string()),
-            ("Customary_Restrictions/FeatureServer/1/query?objectIds=5&outFields=*&returnGeometry=true&outSR=4326&geometryPrecision=7&f=json", cust.to_string()),
+            (
+                "Customary_Restrictions/FeatureServer/1/query?objectIds=5&outFields=*&returnGeometry=true&outSR=4326&geometryPrecision=7&f=geojson",
+                json!({"error": {"message": "no geojson"}}).to_string(),
+            ),
+            (
+                "Customary_Restrictions/FeatureServer/1/query?objectIds=5&outFields=*&returnGeometry=true&outSR=4326&geometryPrecision=7&f=json",
+                cust.to_string(),
+            ),
         ]);
         std::env::set_var("RACENAV_MPI_URL", &base);
         let dir = std::env::temp_dir().join(format!("tp_mpi_{}", std::process::id()));
@@ -429,25 +361,15 @@ mod tests {
         let sum = mpi(&dir, &|_, _, _| {}, &AtomicBool::new(false)).unwrap();
         assert_eq!(sum.files.len(), 2, "{sum:?}");
         assert_eq!(sum.features, 3);
-        assert_eq!(
-            sum.failed.len(),
-            3,
-            "the services the fake server doesn't have"
-        );
-        let regs: Value =
-            serde_json::from_slice(&std::fs::read(dir.join("mpi/regs.json")).unwrap()).unwrap();
+        assert_eq!(sum.failed.len(), 3, "the services the fake server doesn't have");
+        let regs: Value = serde_json::from_slice(&std::fs::read(dir.join("mpi/regs.json")).unwrap()).unwrap();
         assert_eq!(regs["key"], "regs");
         let ls = regs["layers"].as_array().unwrap();
         assert_eq!(ls.len(), 2, "the group layer is skipped");
         assert_eq!(ls[0]["features"]["features"].as_array().unwrap().len(), 2);
         assert_eq!(ls[1]["members"][0]["Identifier"], "R1");
-        let cust: Value =
-            serde_json::from_slice(&std::fs::read(dir.join("mpi/customary.json")).unwrap())
-                .unwrap();
-        assert_eq!(
-            cust["layers"][0]["features"]["features"][0]["geometry"]["type"],
-            "MultiPolygon"
-        );
+        let cust: Value = serde_json::from_slice(&std::fs::read(dir.join("mpi/customary.json")).unwrap()).unwrap();
+        assert_eq!(cust["layers"][0]["features"]["features"][0]["geometry"]["type"], "MultiPolygon");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

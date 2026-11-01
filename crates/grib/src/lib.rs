@@ -6,11 +6,11 @@
 //! (linear). Times are Unix seconds UTC. Outside a file's time span a query
 //! returns `None`: a truncated GRIB must never look like calm weather.
 
-mod decode;
-mod grib1;
 pub mod aec;
 pub mod combine;
 pub mod compare;
+mod decode;
+mod grib1;
 pub mod netcdf;
 #[doc(hidden)]
 pub use netcdf::testdata::sample as netcdf_sample_for_tests;
@@ -100,7 +100,7 @@ impl Param {
             (10, 0, 5) => Param::WindWaveHeight,
             (10, 0, 8) => Param::SwellHeight,
             (10, 0, 10) => Param::WaveDir,
-            (10, 0, 14) => Param::WaveDir,   // ECMWF mwd: mean direction of combined wind waves and swell
+            (10, 0, 14) => Param::WaveDir,    // ECMWF mwd: mean direction of combined wind waves and swell
             (10, 0, 34) => Param::WavePeriod, // ECMWF pp1d: peak period
             (10, 0, 11) => Param::WavePeriod,
             (0, 1, 7) => Param::Rain,
@@ -138,7 +138,13 @@ pub struct Grid {
 impl Grid {
     #[allow(clippy::too_many_arguments)]
     fn from_grib(ni: usize, nj: usize, la1: f64, lo1: f64, la2: f64, _lo2: f64, di: f64, dj: f64, scan: u8) -> Self {
-        let dlat = if dj > 0.0 && nj > 1 { dj } else if nj > 1 { (la2 - la1).abs() / (nj - 1) as f64 } else { 1.0 };
+        let dlat = if dj > 0.0 && nj > 1 {
+            dj
+        } else if nj > 1 {
+            (la2 - la1).abs() / (nj - 1) as f64
+        } else {
+            1.0
+        };
         let dlon = if di > 0.0 { di } else { 1.0 };
         let lat0 = la1.min(la2);
         let west = if scan & 0x80 != 0 { lo1 - (ni as f64 - 1.0) * dlon } else { lo1 };
@@ -176,12 +182,7 @@ impl Grid {
 
     /// [west, south, east, north].
     pub fn bbox(&self) -> [f64; 4] {
-        [
-            self.lon0,
-            self.lat0,
-            self.lon0 + (self.ni as f64 - 1.0) * self.dlon,
-            self.lat0 + (self.nj as f64 - 1.0) * self.dlat,
-        ]
+        [self.lon0, self.lat0, self.lon0 + (self.ni as f64 - 1.0) * self.dlon, self.lat0 + (self.nj as f64 - 1.0) * self.dlat]
     }
 
     /// Fractional grid index of a position, if it is inside the grid.
@@ -419,7 +420,12 @@ impl GribFile {
         }
         let i = idx.partition_point(|&k| self.fields[k].valid_time <= t);
         let a = f(i - 1);
-        let (b, w) = if a.valid_time == t || i == idx.len() { (a, 0.0) } else { let b = f(i); (b, (t - a.valid_time) as f64 / (b.valid_time - a.valid_time) as f64) };
+        let (b, w) = if a.valid_time == t || i == idx.len() {
+            (a, 0.0)
+        } else {
+            let b = f(i);
+            (b, (t - a.valid_time) as f64 / (b.valid_time - a.valid_time) as f64)
+        };
         let va = a.grid.sample(&a.values, lat, lon)?;
         if w == 0.0 {
             return Some(va);
@@ -518,9 +524,10 @@ fn uv_from_speed_dir(fields: &[Field]) -> Vec<Field> {
     }
     let mut out = Vec::new();
     for sp in fields.iter().filter(|f| f.param == Param::WindSpeed) {
-        let Some(dir) = fields.iter().find(|f| {
-            f.param == Param::WindDir && f.valid_time == sp.valid_time && f.ref_time == sp.ref_time && f.member == sp.member && f.grid == sp.grid
-        }) else {
+        let Some(dir) = fields
+            .iter()
+            .find(|f| f.param == Param::WindDir && f.valid_time == sp.valid_time && f.ref_time == sp.ref_time && f.member == sp.member && f.grid == sp.grid)
+        else {
             continue;
         };
         let (mut u, mut v) = (Vec::with_capacity(sp.values.len()), Vec::with_capacity(sp.values.len()));
@@ -625,13 +632,7 @@ pub fn scan(path: impl AsRef<Path>) -> Result<FileInfo, GribError> {
                     extras.push(c.clone());
                 }
             }
-            let mut s = format!(
-                "{} · run {} · {} · to {}",
-                r.model,
-                fmt_short(r.ref_time),
-                fmt_area(&r.bbox),
-                fmt_short(r.last)
-            );
+            let mut s = format!("{} · run {} · {} · to {}", r.model, fmt_short(r.ref_time), fmt_area(&r.bbox), fmt_short(r.last));
             if r.members > 0 {
                 s.push_str(&format!(" · {} members", r.members));
             }
@@ -669,8 +670,18 @@ pub fn fmt_area(b: &[f64; 4]) -> String {
     let r = |x: f64| (x * 10.0).round() / 10.0;
     let b = &[r(b[0]), r(b[1]), r(b[2]), r(b[3])];
     let lat = |a: f64, c: f64| {
-        let (h, x, y) = if a <= 0.0 && c <= 0.0 { ("S", -a, -c) } else if a >= 0.0 { ("N", a, c) } else { ("", a, c) };
-        if h.is_empty() { format!("{x:.1}–{y:.1}°") } else { format!("{:.1}–{:.1}°{h}", x.max(y), x.min(y)) }
+        let (h, x, y) = if a <= 0.0 && c <= 0.0 {
+            ("S", -a, -c)
+        } else if a >= 0.0 {
+            ("N", a, c)
+        } else {
+            ("", a, c)
+        };
+        if h.is_empty() {
+            format!("{x:.1}–{y:.1}°")
+        } else {
+            format!("{:.1}–{:.1}°{h}", x.max(y), x.min(y))
+        }
     };
     let lon = |a: f64, c: f64| {
         if a >= 0.0 && c >= 0.0 {
@@ -771,8 +782,19 @@ mod tests {
     fn speed_and_direction_become_uv() {
         let g = Grid::from_grib(1, 1, -40.0, 170.0, -40.0, 170.0, 1.0, 1.0, 0x40).canonical();
         let mk = |param, number, v: f32| Field {
-            param, discipline: 0, category: 2, number, surface_type: 103, surface_value: 10.0, centre: 0,
-            ref_time: 0, valid_time: 0, member: None, grid: g, values: vec![v], local: None,
+            param,
+            discipline: 0,
+            category: 2,
+            number,
+            surface_type: 103,
+            surface_value: 10.0,
+            centre: 0,
+            ref_time: 0,
+            valid_time: 0,
+            member: None,
+            grid: g,
+            values: vec![v],
+            local: None,
         };
         // 10 m/s from 270 (a westerly)
         let f = GribFile::build(PathBuf::new(), vec![mk(Param::WindSpeed, 1, 10.0), mk(Param::WindDir, 0, 270.0)], vec![]);

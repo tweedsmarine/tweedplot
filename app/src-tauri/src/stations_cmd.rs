@@ -33,7 +33,9 @@ pub async fn stations_latest(bbox: [f64; 4], sources: Vec<String>, refresh: Opti
         let now = chrono::Utc::now().timestamp();
         for s in &sources {
             let r = match s.as_str() {
-                "metservice" => cached("metservice", || stations::wis2::fetch(stations::wis2::METSERVICE, stations::wis2::METSERVICE_SYNOP, now - 4 * 3600, None, 4)),
+                "metservice" => {
+                    cached("metservice", || stations::wis2::fetch(stations::wis2::METSERVICE, stations::wis2::METSERVICE_SYNOP, now - 4 * 3600, None, 4))
+                }
                 "metar" => {
                     // a box a little larger than asked, rounded so small pans reuse it
                     let r = |x: f64, up: bool| if up { (x / 2.0).ceil() * 2.0 } else { (x / 2.0).floor() * 2.0 };

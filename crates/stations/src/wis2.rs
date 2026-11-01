@@ -86,14 +86,21 @@ pub fn group(feats: &[Value], names: &BTreeMap<String, (String, f64, f64)>) -> V
     for f in feats {
         let p = &f["properties"];
         let Some(st) = p["wigos_station_identifier"].as_str().or(p["station_identifier"].as_str()) else { continue };
-        let Some(t) = p["phenomenonTime"].as_str().and_then(|s| chrono::DateTime::parse_from_rfc3339(s.split('/').next_back().unwrap_or(s)).ok()).map(|d| d.timestamp()) else { continue };
+        let Some(t) =
+            p["phenomenonTime"].as_str().and_then(|s| chrono::DateTime::parse_from_rfc3339(s.split('/').next_back().unwrap_or(s)).ok()).map(|d| d.timestamp())
+        else {
+            continue;
+        };
         let Some(name) = p["name"].as_str() else { continue };
         let Some(q) = quantity(name, p["fxxyyy"].as_str()) else { continue };
         let Some(mut val) = p["value"].as_f64().or_else(|| p["value"].as_str().and_then(|s| s.parse().ok())) else { continue };
         let units = p["units"].as_str().unwrap_or("");
         let c = &f["geometry"]["coordinates"];
         let o = by.entry((st.to_string(), t)).or_insert_with(|| {
-            let (nm, la, lo) = names.get(st).cloned().unwrap_or_else(|| (st.rsplit('-').next().unwrap_or(st).to_string(), c[1].as_f64().unwrap_or(f64::NAN), c[0].as_f64().unwrap_or(f64::NAN)));
+            let (nm, la, lo) = names
+                .get(st)
+                .cloned()
+                .unwrap_or_else(|| (st.rsplit('-').next().unwrap_or(st).to_string(), c[1].as_f64().unwrap_or(f64::NAN), c[0].as_f64().unwrap_or(f64::NAN)));
             Obs { id: format!("wis2:{st}"), source: "metservice", name: nm, lat: la, lon: lo, t, kind: "station", ..Default::default() }
         });
         if o.lat.is_nan() {
@@ -145,8 +152,10 @@ mod tests {
 
     #[test]
     fn groups_wis2box_features() {
-        let f = |st: &str, name: &str, v: f64, u: &str, t: &str| json!({"type": "Feature", "geometry": {"type": "Point", "coordinates": [172.67, -40.55, 2.0]},
-            "properties": {"wigos_station_identifier": st, "phenomenonTime": t, "resultTime": t, "name": name, "value": v, "units": u}});
+        let f = |st: &str, name: &str, v: f64, u: &str, t: &str| {
+            json!({"type": "Feature", "geometry": {"type": "Point", "coordinates": [172.67, -40.55, 2.0]},
+            "properties": {"wigos_station_identifier": st, "phenomenonTime": t, "resultTime": t, "name": name, "value": v, "units": u}})
+        };
         let feats = vec![
             f("0-20000-0-93292", "wind_direction", 250.0, "deg", "2026-10-19T09:00:00Z"),
             f("0-20000-0-93292", "wind_speed", 10.0, "m/s", "2026-10-19T09:00:00Z"),

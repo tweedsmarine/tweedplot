@@ -73,12 +73,7 @@ pub fn ensure_gpkgs(dir: &Path, out_dir: &Path) -> Result<Vec<PathBuf>, ChartErr
 
 fn files(dir: &Path, ext: &str) -> Vec<PathBuf> {
     let mut v: Vec<PathBuf> = std::fs::read_dir(dir)
-        .map(|rd| {
-            rd.flatten()
-                .map(|e| e.path())
-                .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case(ext)))
-                .collect()
-        })
+        .map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case(ext))).collect())
         .unwrap_or_default();
     v.sort();
     v
@@ -90,45 +85,24 @@ fn stamp(sources: &[PathBuf]) -> String {
         .iter()
         .map(|p| {
             let m = std::fs::metadata(p).ok();
-            let t = m
-                .as_ref()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map_or(0, |d| d.as_secs());
-            format!(
-                "{}:{}:{t}",
-                p.file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                m.map_or(0, |m| m.len())
-            )
+            let t = m.as_ref().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
+            format!("{}:{}:{t}", p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), m.map_or(0, |m| m.len()))
         })
         .collect::<Vec<_>>()
         .join("|")
 }
 
 fn up_to_date(built: &Path, sources: &[PathBuf]) -> bool {
-    let Ok(c) = Connection::open_with_flags(built, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-    else {
+    let Ok(c) = Connection::open_with_flags(built, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY) else {
         return false;
     };
-    let got: Option<(i64, String)> = c
-        .query_row("SELECT version, stamp FROM racenav_build", [], |r| {
-            Ok((r.get(0)?, r.get(1)?))
-        })
-        .ok();
+    let got: Option<(i64, String)> = c.query_row("SELECT version, stamp FROM racenav_build", [], |r| Ok((r.get(0)?, r.get(1)?))).ok();
     got == Some((BUILD_VERSION, stamp(sources)))
 }
 
 fn finish(db: Connection, sources: &[PathBuf], tmp: &Path, out: &Path) -> Result<(), ChartError> {
-    db.execute(
-        "CREATE TABLE racenav_build (version INTEGER, stamp TEXT)",
-        [],
-    )?;
-    db.execute(
-        "INSERT INTO racenav_build VALUES (?1, ?2)",
-        params![BUILD_VERSION, stamp(sources)],
-    )?;
+    db.execute("CREATE TABLE racenav_build (version INTEGER, stamp TEXT)", [])?;
+    db.execute("INSERT INTO racenav_build VALUES (?1, ?2)", params![BUILD_VERSION, stamp(sources)])?;
     drop(db);
     // the table notes beside an old copy no longer match it
     let _ = std::fs::remove_file(out.with_extension("gpkg.tables"));
@@ -154,35 +128,16 @@ fn boundary_kind(zip: &str, shp: &str, attrs: &str) -> &'static str {
         if has(&s, &["baseline", "base_line", "basepoint"]) {
             return "base";
         }
-        if has(
-            &s,
-            &[
-                "contig", "24nm", "24 nm", "24_nm", "24mile", "24 mile", "24cz", "_cz",
-            ],
-        ) {
+        if has(&s, &["contig", "24nm", "24 nm", "24_nm", "24mile", "24 mile", "24cz", "_cz"]) {
             return "cz";
         }
         if has(&s, &["shelf", "ecs", "350"]) {
             return "cs";
         }
-        if has(
-            &s,
-            &["eez", "exclusive", "200nm", "200 nm", "200mile", "200 mile"],
-        ) {
+        if has(&s, &["eez", "exclusive", "200nm", "200 nm", "200mile", "200 mile"]) {
             return "eez";
         }
-        if has(
-            &s,
-            &[
-                "territorial",
-                "12nm",
-                "12 nm",
-                "12mile",
-                "12 mile",
-                "_ts",
-                "tsea",
-            ],
-        ) {
+        if has(&s, &["territorial", "12nm", "12 nm", "12mile", "12 mile", "_ts", "tsea"]) {
             return "ts";
         }
     }
@@ -251,9 +206,7 @@ fn zip_shapefiles(zip: &Path) -> Result<Vec<ShpSet>, ChartError> {
             short,
             files[shp].clone(),
             files.get(&format!("{base}.dbf")).cloned(),
-            files
-                .get(&format!("{base}.prj"))
-                .map(|b| String::from_utf8_lossy(b).into_owned()),
+            files.get(&format!("{base}.prj")).map(|b| String::from_utf8_lossy(b).into_owned()),
         ));
     }
     Ok(out)
@@ -262,24 +215,14 @@ fn zip_shapefiles(zip: &Path) -> Result<Vec<ShpSet>, ChartError> {
 fn build_boundaries(zips: &[PathBuf], out: &Path) -> Result<(), ChartError> {
     let tmp = out.with_extension("gpkg.part");
     let mut db = gpkgw::create(&tmp)?;
-    gpkgw::feature_table(
-        &db,
-        "mbound_lines",
-        "LINESTRING",
-        &["kind TEXT", "name TEXT"],
-    )?;
+    gpkgw::feature_table(&db, "mbound_lines", "LINESTRING", &["kind TEXT", "name TEXT"])?;
     let tx = db.transaction()?;
     {
-        let mut ins =
-            tx.prepare("INSERT INTO mbound_lines (fid, geom, kind, name) VALUES (?1, ?2, ?3, ?4)")?;
-        let mut rt =
-            tx.prepare("INSERT INTO rtree_mbound_lines_geom VALUES (?1, ?2, ?3, ?4, ?5)")?;
+        let mut ins = tx.prepare("INSERT INTO mbound_lines (fid, geom, kind, name) VALUES (?1, ?2, ?3, ?4)")?;
+        let mut rt = tx.prepare("INSERT INTO rtree_mbound_lines_geom VALUES (?1, ?2, ?3, ?4, ?5)")?;
         let mut fid = 0i64;
         for z in zips {
-            let zname = z
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
+            let zname = z.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
             // the "raw" zips hold the same limits as text coordinates
             if zname.to_ascii_lowercase().starts_with("raw") {
                 continue;
@@ -302,15 +245,7 @@ fn build_boundaries(zips: &[PathBuf], out: &Path) -> Result<(), ChartError> {
                         .or(s.attr("descr"))
                         .filter(|v| !v.is_empty())
                         .map(str::to_string)
-                        .unwrap_or_else(|| {
-                            format!(
-                                "{area}: {}",
-                                BOUNDARY_KINDS
-                                    .iter()
-                                    .find(|k| k.0 == kind)
-                                    .map_or("", |k| k.1)
-                            )
-                        });
+                        .unwrap_or_else(|| format!("{area}: {}", BOUNDARY_KINDS.iter().find(|k| k.0 == kind).map_or("", |k| k.1)));
                     for part in &s.parts {
                         let pts: Vec<Pt> = part.iter().map(|&p| east(p)).collect();
                         for c in gpkgw::chunks(&pts, LINE_CHUNK) {
@@ -347,10 +282,8 @@ pub const GEAR: &[(&str, &str, &str)] = &[
 ];
 
 /// Columns of `mpi_rules` and `mpi_rules_ln` (all small integers) besides fid and geom.
-const RULE_COLS: &[&str] = &[
-    "rid", "src", "prohib", "allp", "v46", "vlim", "glim", "seas", "tmp", "spec", "bt", "mt", "ds",
-    "ps", "bs", "sn", "ll", "pt", "dr", "tr", "hl", "hd",
-];
+const RULE_COLS: &[&str] =
+    &["rid", "src", "prohib", "allp", "v46", "vlim", "glim", "seas", "tmp", "spec", "bt", "mt", "ds", "ps", "bs", "sn", "ll", "pt", "dr", "tr", "hl", "hd"];
 
 /// The rule columns as the tiles carry them (`rid` first).
 pub fn rule_cols() -> &'static [&'static str] {
@@ -364,22 +297,14 @@ fn truthy(v: Option<&Value>) -> bool {
     match v {
         Some(Value::Number(n)) => n.as_f64().is_some_and(|x| x != 0.0),
         Some(Value::Bool(b)) => *b,
-        Some(Value::String(s)) => matches!(
-            s.trim().to_ascii_lowercase().as_str(),
-            "1" | "y" | "yes" | "true"
-        ),
+        Some(Value::String(s)) => matches!(s.trim().to_ascii_lowercase().as_str(), "1" | "y" | "yes" | "true"),
         _ => false,
     }
 }
 
 /// A field, whatever the case of its name.
 fn field<'a>(props: &'a serde_json::Map<String, Value>, name: &str) -> Option<&'a Value> {
-    props.get(name).or_else(|| {
-        props
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case(name))
-            .map(|(_, v)| v)
-    })
+    props.get(name).or_else(|| props.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v))
 }
 
 fn text(props: &serde_json::Map<String, Value>, name: &str) -> String {
@@ -402,29 +327,13 @@ fn rule_key(props: &serde_json::Map<String, Value>) -> String {
 /// Polygons of a GeoJSON geometry, each as rings (exterior first).
 fn geojson_polygons(g: &Value) -> Vec<Vec<Ring>> {
     let ring = |r: &Value| -> Ring {
-        r.as_array()
-            .map(|a| {
-                a.iter()
-                    .filter_map(|p| Some(east([p.get(0)?.as_f64()?, p.get(1)?.as_f64()?])))
-                    .collect()
-            })
-            .unwrap_or_default()
+        r.as_array().map(|a| a.iter().filter_map(|p| Some(east([p.get(0)?.as_f64()?, p.get(1)?.as_f64()?]))).collect()).unwrap_or_default()
     };
-    let poly = |p: &Value| -> Vec<Ring> {
-        p.as_array()
-            .map(|a| a.iter().map(ring).filter(|r| r.len() >= 4).collect())
-            .unwrap_or_default()
-    };
+    let poly = |p: &Value| -> Vec<Ring> { p.as_array().map(|a| a.iter().map(ring).filter(|r| r.len() >= 4).collect()).unwrap_or_default() };
     let c = &g["coordinates"];
     match g["type"].as_str() {
-        Some("Polygon") => vec![poly(c)]
-            .into_iter()
-            .filter(|p| !p.is_empty())
-            .collect(),
-        Some("MultiPolygon") => c
-            .as_array()
-            .map(|a| a.iter().map(poly).filter(|p| !p.is_empty()).collect())
-            .unwrap_or_default(),
+        Some("Polygon") => vec![poly(c)].into_iter().filter(|p| !p.is_empty()).collect(),
+        Some("MultiPolygon") => c.as_array().map(|a| a.iter().map(poly).filter(|p| !p.is_empty()).collect()).unwrap_or_default(),
         _ => Vec::new(),
     }
 }
@@ -432,21 +341,12 @@ fn geojson_polygons(g: &Value) -> Vec<Vec<Ring>> {
 /// Lines of a GeoJSON geometry (for areas given as lines).
 fn geojson_lines(g: &Value) -> Vec<Vec<Pt>> {
     let line = |l: &Value| -> Vec<Pt> {
-        l.as_array()
-            .map(|a| {
-                a.iter()
-                    .filter_map(|p| Some(east([p.get(0)?.as_f64()?, p.get(1)?.as_f64()?])))
-                    .collect()
-            })
-            .unwrap_or_default()
+        l.as_array().map(|a| a.iter().filter_map(|p| Some(east([p.get(0)?.as_f64()?, p.get(1)?.as_f64()?]))).collect()).unwrap_or_default()
     };
     let c = &g["coordinates"];
     match g["type"].as_str() {
         Some("LineString") => vec![line(c)],
-        Some("MultiLineString") => c
-            .as_array()
-            .map(|a| a.iter().map(line).collect())
-            .unwrap_or_default(),
+        Some("MultiLineString") => c.as_array().map(|a| a.iter().map(line).collect()).unwrap_or_default(),
         _ => Vec::new(),
     }
 }
@@ -459,16 +359,9 @@ pub fn split_polygon(rings: Vec<Ring>) -> Vec<Vec<Ring>> {
     if n <= MAX_PIECE || (b[2] - b[0]).max(b[3] - b[1]) < 0.01 {
         return vec![rings];
     }
-    use clipper2_rust::{
-        boolean_op_tree_64, poly_tree_to_faces64, ClipType, FillRule, Path64, Paths64, Point64,
-        PolyTree64,
-    };
+    use clipper2_rust::{boolean_op_tree_64, poly_tree_to_faces64, ClipType, FillRule, Path64, Paths64, Point64, PolyTree64};
     const K: f64 = 1e7;
-    let to = |r: &Ring| -> Path64 {
-        r.iter()
-            .map(|p| Point64::new((p[0] * K).round() as i64, (p[1] * K).round() as i64))
-            .collect()
-    };
+    let to = |r: &Ring| -> Path64 { r.iter().map(|p| Point64::new((p[0] * K).round() as i64, (p[1] * K).round() as i64)).collect() };
     let back = |r: &Path64| -> Ring {
         let mut v: Ring = r.iter().map(|p| [p.x as f64 / K, p.y as f64 / K]).collect();
         if let Some(&f) = v.first() {
@@ -492,13 +385,7 @@ pub fn split_polygon(rings: Vec<Ring>) -> Vec<Vec<Ring>> {
             .map(|p| Point64::new((p[0] * K).round() as i64, (p[1] * K).round() as i64))
             .collect();
         let mut tree = PolyTree64::new();
-        boolean_op_tree_64(
-            ClipType::Intersection,
-            FillRule::EvenOdd,
-            &subj,
-            &vec![rect],
-            &mut tree,
-        );
+        boolean_op_tree_64(ClipType::Intersection, FillRule::EvenOdd, &subj, &vec![rect], &mut tree);
         for face in poly_tree_to_faces64(&tree) {
             let mut p = vec![back(&face.outer)];
             p.extend(face.holes.iter().map(back));
@@ -519,12 +406,7 @@ struct Rule {
     layers: Vec<String>,
 }
 
-fn rule_flags(
-    src: u8,
-    props: &serde_json::Map<String, Value>,
-    all_closed: bool,
-    v46: bool,
-) -> Vec<i64> {
+fn rule_flags(src: u8, props: &serde_json::Map<String, Value>, all_closed: bool, v46: bool) -> Vec<i64> {
     let b = |name: &str| truthy(field(props, name)) as i64;
     // MPI's coded values: gear 0 no, 1 prohibition, 2 restriction; finfish and shellfish
     // 1 prohibition (all species), 2 restriction, 3 prohibition on named species
@@ -570,7 +452,13 @@ fn rule_flags(
     };
     for (name, short, _) in GEAR {
         let c = code(name);
-        f.push(if coded(short) || c == 1 { 1 } else if c != 0 { 2 } else { 0 });
+        f.push(if coded(short) || c == 1 {
+            1
+        } else if c != 0 {
+            2
+        } else {
+            0
+        });
     }
     // closed: to all commercial fishing, or to at least one method
     f[1] = (allp == 1 || f[9..].contains(&1)) as i64;
@@ -581,10 +469,7 @@ fn build_rules(jsons: &[PathBuf], out: &Path) -> Result<(), ChartError> {
     let mut rules: Vec<Rule> = Vec::new();
     let mut areas: Vec<(String, String, Vec<Vec<Pt>>)> = Vec::new(); // (type, code, outlines)
     for j in jsons {
-        let v: Value = match std::fs::read(j)
-            .ok()
-            .and_then(|b| serde_json::from_slice(&b).ok())
-        {
+        let v: Value = match std::fs::read(j).ok().and_then(|b| serde_json::from_slice(&b).ok()) {
             Some(v) => v,
             None => {
                 eprintln!("fishing rules: can't read {}", j.display());
@@ -605,10 +490,7 @@ fn build_rules(jsons: &[PathBuf], out: &Path) -> Result<(), ChartError> {
                             .map(|n| text(&props, n))
                             .find(|s| !s.is_empty())
                             .unwrap_or_default();
-                        let mut lines: Vec<Vec<Pt>> = geojson_polygons(&f["geometry"])
-                            .into_iter()
-                            .flatten()
-                            .collect();
+                        let mut lines: Vec<Vec<Pt>> = geojson_polygons(&f["geometry"]).into_iter().flatten().collect();
                         lines.extend(geojson_lines(&f["geometry"]));
                         areas.push((lname.clone(), code, lines));
                     }
@@ -641,40 +523,26 @@ fn build_rules(jsons: &[PathBuf], out: &Path) -> Result<(), ChartError> {
     let cols: Vec<&str> = cols.iter().map(String::as_str).collect();
     gpkgw::feature_table(&db, "mpi_rules", "POLYGON", &cols)?;
     gpkgw::feature_table(&db, "mpi_rules_ln", "LINESTRING", &cols)?;
-    gpkgw::feature_table(
-        &db,
-        "mpi_areas_ln",
-        "LINESTRING",
-        &["kind TEXT", "code TEXT"],
-    )?;
+    gpkgw::feature_table(&db, "mpi_areas_ln", "LINESTRING", &["kind TEXT", "code TEXT"])?;
     db.execute_batch(
         "CREATE TABLE mpi_rules_attr (rid INTEGER PRIMARY KEY, layers TEXT, attrs TEXT);
          INSERT INTO gpkg_contents (table_name, data_type, identifier) VALUES ('mpi_rules_attr', 'attributes', 'mpi_rules_attr');",
     )?;
     let tx = db.transaction()?;
     {
-        let holders = (0..RULE_COLS.len())
-            .map(|i| format!("?{}", i + 3))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let holders = (0..RULE_COLS.len()).map(|i| format!("?{}", i + 3)).collect::<Vec<_>>().join(", ");
         let names = RULE_COLS.join(", ");
-        let mut ins = tx.prepare(&format!(
-            "INSERT INTO mpi_rules (fid, geom, {names}) VALUES (?1, ?2, {holders})"
-        ))?;
-        let mut ins_ln = tx.prepare(&format!(
-            "INSERT INTO mpi_rules_ln (fid, geom, {names}) VALUES (?1, ?2, {holders})"
-        ))?;
+        let mut ins = tx.prepare(&format!("INSERT INTO mpi_rules (fid, geom, {names}) VALUES (?1, ?2, {holders})"))?;
+        let mut ins_ln = tx.prepare(&format!("INSERT INTO mpi_rules_ln (fid, geom, {names}) VALUES (?1, ?2, {holders})"))?;
         let mut rt = tx.prepare("INSERT INTO rtree_mpi_rules_geom VALUES (?1, ?2, ?3, ?4, ?5)")?;
-        let mut rt_ln =
-            tx.prepare("INSERT INTO rtree_mpi_rules_ln_geom VALUES (?1, ?2, ?3, ?4, ?5)")?;
+        let mut rt_ln = tx.prepare("INSERT INTO rtree_mpi_rules_ln_geom VALUES (?1, ?2, ?3, ?4, ?5)")?;
         let mut attr = tx.prepare("INSERT INTO mpi_rules_attr VALUES (?1, ?2, ?3)")?;
         let (mut fid, mut lfid) = (0i64, 0i64);
         for (i, r) in rules.into_iter().enumerate() {
             let rid = i as i64 + 1;
             let mut vals: Vec<i64> = vec![rid];
             vals.extend(&r.flags);
-            let p: Vec<&dyn rusqlite::ToSql> =
-                vals.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+            let p: Vec<&dyn rusqlite::ToSql> = vals.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
             for poly in r.polys {
                 // outlines from the whole area (the pieces' cuts would draw as lines)
                 for ring in &poly {
@@ -710,16 +578,10 @@ fn build_rules(jsons: &[PathBuf], out: &Path) -> Result<(), ChartError> {
                     rt_ln.execute(params![lfid, b[0], b[2], b[1], b[3]])?;
                 }
             }
-            attr.execute(params![
-                rid,
-                r.layers.join("; "),
-                Value::Object(r.attrs).to_string()
-            ])?;
+            attr.execute(params![rid, r.layers.join("; "), Value::Object(r.attrs).to_string()])?;
         }
-        let mut ins_a =
-            tx.prepare("INSERT INTO mpi_areas_ln (fid, geom, kind, code) VALUES (?1, ?2, ?3, ?4)")?;
-        let mut rt_a =
-            tx.prepare("INSERT INTO rtree_mpi_areas_ln_geom VALUES (?1, ?2, ?3, ?4, ?5)")?;
+        let mut ins_a = tx.prepare("INSERT INTO mpi_areas_ln (fid, geom, kind, code) VALUES (?1, ?2, ?3, ?4)")?;
+        let mut rt_a = tx.prepare("INSERT INTO rtree_mpi_areas_ln_geom VALUES (?1, ?2, ?3, ?4, ?5)")?;
         let mut afid = 0i64;
         for (kind, code, lines) in areas {
             for l in lines {
@@ -746,10 +608,7 @@ fn regs_rules(layers: &[Value]) -> Vec<Rule> {
         let name = l["name"].as_str().unwrap_or("").to_string();
         for m in l["members"].as_array().into_iter().flatten() {
             if let Some(o) = m.as_object() {
-                members
-                    .entry(rule_key(o))
-                    .or_default()
-                    .push((id, name.clone()));
+                members.entry(rule_key(o)).or_default().push((id, name.clone()));
             }
         }
     }
@@ -773,19 +632,12 @@ fn regs_rules(layers: &[Value]) -> Vec<Rule> {
             flags: rule_flags(1, &props, false, v46),
             polys: geojson_polygons(&f["geometry"]),
             lines: geojson_lines(&f["geometry"]),
-            layers: cats
-                .into_iter()
-                .map(|c| c.1)
-                .filter(|n| !n.starts_with("All "))
-                .collect(),
+            layers: cats.into_iter().map(|c| c.1).filter(|n| !n.starts_with("All ")).collect(),
             attrs: props,
         });
     };
     for l in layers.iter().filter(|l| l["features"].is_object()) {
-        let extra = (
-            l["id"].as_i64().unwrap_or(-1),
-            l["name"].as_str().unwrap_or("").to_string(),
-        );
+        let extra = (l["id"].as_i64().unwrap_or(-1), l["name"].as_str().unwrap_or("").to_string());
         let extra = (extra.0 > 1).then_some(extra);
         for f in l["features"]["features"].as_array().into_iter().flatten() {
             take(f, extra.clone(), &mut out);
@@ -810,44 +662,25 @@ impl crate::ChartStore {
             for (k, &p) in points.iter().enumerate() {
                 let p = east(p);
                 let d = 1e-6;
-                self.query(
-                    t,
-                    [p[0] - d, p[1] - d, p[0] + d, p[1] + d],
-                    RULE_COLS,
-                    |vals, g| {
-                        let crate::geom::Geom::Polygons(polys) = g else {
-                            return;
-                        };
-                        let pt = geo::Point::new(p[0], p[1]);
-                        let inside = polys.iter().any(|rings| {
-                            let ring = |r: &Ring| {
-                                geo::LineString::from(
-                                    r.iter().map(|q| (q[0], q[1])).collect::<Vec<_>>(),
-                                )
-                            };
-                            geo::Polygon::new(
-                                ring(&rings[0]),
-                                rings[1..].iter().map(ring).collect(),
-                            )
-                            .contains(&pt)
-                        });
-                        if !inside {
-                            return;
-                        }
-                        let rid = vals[0].unwrap_or(0.0) as i64;
-                        if out[k].iter().any(|h: &RuleHit| h.rid == rid) {
-                            return; // two pieces of one area meet here
-                        }
-                        let flags = RULE_COLS[1..]
-                            .iter()
-                            .zip(&vals[1..])
-                            .filter_map(|(c, v)| {
-                                v.filter(|v| *v != 0.0).map(|v| (c.to_string(), v as i64))
-                            })
-                            .collect();
-                        out[k].push(RuleHit { rid, flags });
-                    },
-                );
+                self.query(t, [p[0] - d, p[1] - d, p[0] + d, p[1] + d], RULE_COLS, |vals, g| {
+                    let crate::geom::Geom::Polygons(polys) = g else {
+                        return;
+                    };
+                    let pt = geo::Point::new(p[0], p[1]);
+                    let inside = polys.iter().any(|rings| {
+                        let ring = |r: &Ring| geo::LineString::from(r.iter().map(|q| (q[0], q[1])).collect::<Vec<_>>());
+                        geo::Polygon::new(ring(&rings[0]), rings[1..].iter().map(ring).collect()).contains(&pt)
+                    });
+                    if !inside {
+                        return;
+                    }
+                    let rid = vals[0].unwrap_or(0.0) as i64;
+                    if out[k].iter().any(|h: &RuleHit| h.rid == rid) {
+                        return; // two pieces of one area meet here
+                    }
+                    let flags = RULE_COLS[1..].iter().zip(&vals[1..]).filter_map(|(c, v)| v.filter(|v| *v != 0.0).map(|v| (c.to_string(), v as i64))).collect();
+                    out[k].push(RuleHit { rid, flags });
+                });
             }
         }
         out
@@ -857,13 +690,8 @@ impl crate::ChartStore {
     pub fn rule_info(&self, rid: i64) -> Option<(String, Value)> {
         let t = self.tables.iter().find(|t| t.kind == crate::Kind::Rule)?;
         let conn = self.dbs[t.db].lock().unwrap_or_else(|e| e.into_inner());
-        let (layers, attrs): (String, String) = conn
-            .query_row(
-                "SELECT layers, attrs FROM mpi_rules_attr WHERE rid = ?1",
-                [rid],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .ok()?;
+        let (layers, attrs): (String, String) =
+            conn.query_row("SELECT layers, attrs FROM mpi_rules_attr WHERE rid = ?1", [rid], |r| Ok((r.get(0)?, r.get(1)?))).ok()?;
         Some((layers, serde_json::from_str(&attrs).unwrap_or(Value::Null)))
     }
 }
@@ -921,30 +749,13 @@ mod tests {
                 [174.0 + r * a.cos(), -41.0 + r * a.sin()]
             })
             .collect();
-        let hole: Ring = vec![
-            [173.9, -41.1],
-            [173.9, -40.9],
-            [174.1, -40.9],
-            [174.1, -41.1],
-            [173.9, -41.1],
-        ];
-        let area = |r: &Ring| {
-            (0..r.len() - 1)
-                .map(|k| r[k][0] * r[k + 1][1] - r[k + 1][0] * r[k][1])
-                .sum::<f64>()
-                .abs()
-                / 2.0
-        };
+        let hole: Ring = vec![[173.9, -41.1], [173.9, -40.9], [174.1, -40.9], [174.1, -41.1], [173.9, -41.1]];
+        let area = |r: &Ring| (0..r.len() - 1).map(|k| r[k][0] * r[k + 1][1] - r[k + 1][0] * r[k][1]).sum::<f64>().abs() / 2.0;
         let whole = area(&outer) - area(&hole);
         let pieces = split_polygon(vec![outer, hole]);
         assert!(pieces.len() >= 4, "{}", pieces.len());
-        assert!(pieces
-            .iter()
-            .all(|p| p.iter().map(Vec::len).sum::<usize>() <= MAX_PIECE + 200));
-        let sum: f64 = pieces
-            .iter()
-            .map(|p| area(&p[0]) - p[1..].iter().map(area).sum::<f64>())
-            .sum();
+        assert!(pieces.iter().all(|p| p.iter().map(Vec::len).sum::<usize>() <= MAX_PIECE + 200));
+        let sum: f64 = pieces.iter().map(|p| area(&p[0]) - p[1..].iter().map(area).sum::<f64>()).sum();
         assert!((sum - whole).abs() / whole < 1e-6, "{sum} v {whole}");
     }
 
@@ -976,47 +787,37 @@ mod tests {
             })
             .unwrap();
         assert_eq!(row, (1, 1, 1, 1, 0));
-        let layers: String = c
-            .query_row(
-                "SELECT layers FROM mpi_rules_attr WHERE attrs LIKE '%Hauraki%'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert!(
-            layers.contains("Trawl prohibitions for vessels over 46m"),
-            "{layers}"
-        );
+        let layers: String = c.query_row("SELECT layers FROM mpi_rules_attr WHERE attrs LIKE '%Hauraki%'", [], |r| r.get(0)).unwrap();
+        assert!(layers.contains("Trawl prohibitions for vessels over 46m"), "{layers}");
         // the Chathams rule east of 180° is stored at 183.5°E
         let w: f64 = c.query_row("SELECT minx FROM rtree_mpi_rules_geom r JOIN mpi_rules m ON m.fid = r.id JOIN mpi_rules_attr a ON a.rid = m.rid WHERE a.attrs LIKE '%Chathams%'", [], |r| r.get(0)).unwrap();
         assert!((w - 183.5).abs() < 1e-9, "{w}");
-        let (seas, sn): (i64, i64) = c.query_row("SELECT seas, sn FROM mpi_rules r JOIN mpi_rules_attr a ON a.rid = r.rid WHERE a.attrs LIKE '%Chathams%'", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        let (seas, sn): (i64, i64) = c
+            .query_row("SELECT seas, sn FROM mpi_rules r JOIN mpi_rules_attr a ON a.rid = r.rid WHERE a.attrs LIKE '%Chathams%'", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
         assert_eq!((seas, sn), (1, 1));
         // customary areas: commercial fishing closed (prohib), source 2
-        let (src, prohib): (i64, i64) = c.query_row("SELECT src, prohib FROM mpi_rules r JOIN mpi_rules_attr a ON a.rid = r.rid WHERE a.attrs LIKE '%Delaware%'", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        let (src, prohib): (i64, i64) = c
+            .query_row("SELECT src, prohib FROM mpi_rules r JOIN mpi_rules_attr a ON a.rid = r.rid WHERE a.attrs LIKE '%Delaware%'", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
         assert_eq!((src, prohib), (2, 1));
         // the outlines are there, and a second call doesn't rebuild
-        let n: i64 = c
-            .query_row("SELECT count(*) FROM mpi_rules_ln", [], |r| r.get(0))
-            .unwrap();
+        let n: i64 = c.query_row("SELECT count(*) FROM mpi_rules_ln", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 3);
         drop(c);
         let t0 = std::fs::metadata(&built[0]).unwrap().modified().unwrap();
         ensure_gpkgs(&dir, &out).unwrap();
-        assert_eq!(
-            std::fs::metadata(&built[0]).unwrap().modified().unwrap(),
-            t0
-        );
+        assert_eq!(std::fs::metadata(&built[0]).unwrap().modified().unwrap(), t0);
         // the store finds the rules at a place, and their details
         let store = crate::ChartStore::open_dirs(std::slice::from_ref(&dir)).unwrap();
         let hits = store.rules_at(&[[174.1, -36.4], [-176.4, -43.9], [170.0, -40.0]]);
         assert_eq!(hits[0].len(), 1);
         assert!(hits[0][0].flags.contains(&("v46".to_string(), 1)));
-        assert_eq!(
-            hits[1].len(),
-            1,
-            "east of 180°, asked for at a western longitude"
-        );
+        assert_eq!(hits[1].len(), 1, "east of 180°, asked for at a western longitude");
         assert!(hits[2].is_empty());
         let (layers, attrs) = store.rule_info(hits[0][0].rid).unwrap();
         assert!(layers.contains("Trawl prohibitions"));
@@ -1033,8 +834,7 @@ mod tests {
         std::fs::create_dir_all(dir.join("boundaries")).unwrap();
         let shp = crate::shp::tests::polyline_shp(&[vec![[-178.0, -44.0], [-176.0, -45.0]]]);
         let dbf = crate::shp::tests::dbf("NAME", &[""]);
-        let mut z =
-            zip::ZipWriter::new(std::fs::File::create(dir.join("boundaries/24CZ.zip")).unwrap());
+        let mut z = zip::ZipWriter::new(std::fs::File::create(dir.join("boundaries/24CZ.zip")).unwrap());
         let o = zip::write::SimpleFileOptions::default();
         z.start_file("24CZ/cz_line.shp", o).unwrap();
         z.write_all(&shp).unwrap();
@@ -1044,16 +844,10 @@ mod tests {
         let out = dir.join(".unzipped");
         let built = ensure_gpkgs(&dir, &out).unwrap();
         let c = Connection::open(&built[0]).unwrap();
-        let (kind, name): (String, String) = c
-            .query_row("SELECT kind, name FROM mbound_lines", [], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })
-            .unwrap();
+        let (kind, name): (String, String) = c.query_row("SELECT kind, name FROM mbound_lines", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
         assert_eq!(kind, "cz");
         assert!(name.contains("Contiguous"), "{name}");
-        let w: f64 = c
-            .query_row("SELECT minx FROM rtree_mbound_lines_geom", [], |r| r.get(0))
-            .unwrap();
+        let w: f64 = c.query_row("SELECT minx FROM rtree_mbound_lines_geom", [], |r| r.get(0)).unwrap();
         assert_eq!(w, 182.0);
         let _ = std::fs::remove_dir_all(&dir);
     }

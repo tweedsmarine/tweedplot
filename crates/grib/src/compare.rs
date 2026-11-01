@@ -89,11 +89,7 @@ pub fn layers(files: &[&GribFile], used: &[usize]) -> (Vec<Layer>, bool) {
         let v = used.iter().zip(&ens).flat_map(|(&i, ms)| ms.iter().map(move |&m| Layer { file: i, src: Source::Member(m) })).collect();
         return (v, true);
     }
-    let v = used
-        .iter()
-        .zip(&ens)
-        .map(|(&i, ms)| Layer { file: i, src: if ms.len() > 1 { Source::Mean } else { Source::Control } })
-        .collect();
+    let v = used.iter().zip(&ens).map(|(&i, ms)| Layer { file: i, src: if ms.len() > 1 { Source::Mean } else { Source::Control } }).collect();
     (v, false)
 }
 
@@ -259,9 +255,7 @@ pub fn meteogram(files: &[&GribFile], lat: f64, lon: f64) -> Vec<Series> {
 /// gives them; files running 0..360 are handled), with at most `max_points` points.
 pub fn agreement(files: &[&GribFile], metric: Metric, t: i64, bbox: [f64; 4], max_points: usize) -> Option<AgreementGrid> {
     let needs_pressure = metric == Metric::Pressure;
-    let used: Vec<usize> = (0..files.len())
-        .filter(|&i| if needs_pressure { covers(files[i], Param::Mslp, t) } else { has_wind(files[i], t) })
-        .collect();
+    let used: Vec<usize> = (0..files.len()).filter(|&i| if needs_pressure { covers(files[i], Param::Mslp, t) } else { has_wind(files[i], t) }).collect();
     if used.len() < 2 {
         return None;
     }
@@ -367,8 +361,19 @@ mod tests {
     fn file(u: f32, v: f32, hpa: f32, run: i64, t: i64) -> GribFile {
         let g = Grid::regular(5, 5, -42.0, 172.0, 0.5, 0.5);
         let f = |param, val: f32| Field {
-            param, discipline: 0, category: 0, number: 0, surface_type: 103, surface_value: 10.0, centre: 98,
-            ref_time: run, valid_time: t, member: None, grid: g, values: vec![val; 25], local: None,
+            param,
+            discipline: 0,
+            category: 0,
+            number: 0,
+            surface_type: 103,
+            surface_value: 10.0,
+            centre: 98,
+            ref_time: run,
+            valid_time: t,
+            member: None,
+            grid: g,
+            values: vec![val; 25],
+            local: None,
         };
         GribFile::from_fields(vec![f(Param::WindU, u), f(Param::WindV, v), f(Param::Mslp, hpa * 100.0)])
     }
@@ -409,8 +414,19 @@ mod tests {
         for m in 1..=members {
             for (param, val) in [(Param::WindU, u0 + m as f32), (Param::WindV, 0.0)] {
                 fields.push(Field {
-                    param, discipline: 0, category: 0, number: 0, surface_type: 103, surface_value: 10.0, centre: 98,
-                    ref_time: run, valid_time: t, member: Some(m), grid: g, values: vec![val; 25], local: None,
+                    param,
+                    discipline: 0,
+                    category: 0,
+                    number: 0,
+                    surface_type: 103,
+                    surface_value: 10.0,
+                    centre: 98,
+                    ref_time: run,
+                    valid_time: t,
+                    member: Some(m),
+                    grid: g,
+                    values: vec![val; 25],
+                    local: None,
                 });
             }
         }

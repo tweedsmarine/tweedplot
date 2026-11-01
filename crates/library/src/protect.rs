@@ -7,8 +7,8 @@
 
 use std::path::Path;
 
-use chacha20poly1305::aead::{Aead, AeadCore, KeyInit, OsRng};
 use chacha20poly1305::aead::rand_core::RngCore;
+use chacha20poly1305::aead::{Aead, AeadCore, KeyInit, OsRng};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 
 use crate::{Error, Result};
@@ -62,9 +62,7 @@ pub fn unprotect_file(src: &Path, dst: &Path, pass: &str) -> Result<()> {
     let (salt, rest) = rest.split_at(16);
     let (nonce, sealed) = rest.split_at(24);
     let cipher = XChaCha20Poly1305::new(&key(pass, salt)?.into());
-    let plain = cipher
-        .decrypt(XNonce::from_slice(nonce), sealed)
-        .map_err(|_| Error::Store("wrong passphrase (or the file is damaged)".into()))?;
+    let plain = cipher.decrypt(XNonce::from_slice(nonce), sealed).map_err(|_| Error::Store("wrong passphrase (or the file is damaged)".into()))?;
     let tmp = dst.with_extension("part");
     std::fs::write(&tmp, plain)?;
     std::fs::rename(&tmp, dst)?;
