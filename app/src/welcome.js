@@ -1,5 +1,5 @@
 // The welcome screen: shown once on a new install (and from Settings › Display), it asks what the
-// boat is mostly used for and how much detail to show. Both can be changed at any time.
+// boat is mostly used for (Use). That can be changed at any time.
 // An install that already has saved views is an existing user: no welcome screen, they are not
 // moved around.
 import { PRIMARY } from "./role.js";
@@ -12,22 +12,22 @@ const existingUser = (() => { try { return localStorage.getItem("racenav.views")
 const T = (k, c, r, w, h) => ({ k, c, r, w, h });
 const TASKS = {
   cruise: {
-    name: "Navigate", icon: "⛵", note: "chart, position, depth, wind", level: "standard", panels: [],
+    name: "Cruising", icon: "⛵", note: "chart, position, depth, wind", panels: [],
     screen: [T("HIGHWAY", 1, 1, 8, 4), T("WDIAL", 9, 1, 4, 4), T("COG", 1, 5, 4, 4), T("SOG", 5, 5, 4, 4), T("DPT", 9, 5, 4, 4)],
   },
   fish: {
-    name: "Go fishing", icon: "🎣", note: "shoot and haul, depth history, sea temperature, currents", level: "standard", panels: [],
+    name: "Fishing", icon: "🎣", note: "shoot and haul, depth history, sea temperature, currents", panels: [],
     // the sounder (depth history) only here, on the Instruments screen: never in Navigation or Planning by default
     screen: [T("SOUNDER", 1, 1, 8, 4), T("WDIAL", 9, 1, 4, 4), T("DPT", 1, 5, 4, 4), T("COG", 5, 5, 4, 4), T("SOG", 9, 5, 4, 4)],
   },
   race: {
-    name: "Race", icon: "🏁", note: "wind instruments, polars, routing", level: "expert",
+    name: "Racing", icon: "🏁", note: "wind instruments, polars, routing",
     panels: [{ id: "prace", x: 0.3, y: 0.74, dir: "row", size: "m", views: ["nav"], name: "Sailing", tiles: ["BSP", "HDG", "AWS", "AWA", "TWS", "TWA", "VMG"] }],
     screen: [T("HIGHWAY", 1, 1, 8, 4), T("WDIAL", 9, 1, 4, 4), T("COG", 1, 5, 6, 4), T("SOG", 7, 5, 6, 4)],
   },
 };
 
-export function setupWelcome({ detail, inst }) {
+export function setupWelcome({ use, inst }) {
   if (!PRIMARY) return;
   const done = () => { try { localStorage.setItem(KEY, "1"); } catch { /* ignore */ } };
   let seen = false;
@@ -35,7 +35,6 @@ export function setupWelcome({ detail, inst }) {
   if (existingUser && !seen) { done(); seen = true; }
 
   let task = "cruise";
-  let level = "standard";
   const el = document.createElement("div");
   el.id = "welcome";
   el.hidden = true;
@@ -43,30 +42,23 @@ export function setupWelcome({ detail, inst }) {
   el.setAttribute("aria-label", "Welcome to TweedPlot");
   el.innerHTML = `<div class="wl-box">
     <h1>Welcome to TweedPlot</h1>
-    <p class="wl-lead">What will you mostly do? This only sets a starting point; everything stays available and you can change it at any time.</p>
+    <p class="wl-lead">What is the boat mostly for? This only sets a starting point; everything stays available, and you can change it at any time in Settings › Display.</p>
     <div class="wl-tasks">${Object.entries(TASKS).map(([k, t]) => `<button data-task="${k}"><span class="wl-ic">${t.icon}</span><b>${t.name}</b><small>${t.note}</small></button>`).join("")}</div>
-    <div class="wl-row"><span>How much to show</span>
-      <div class="wl-seg" role="group" aria-label="Detail">
-        <button data-l="simple">Simple</button><button data-l="standard">Standard</button><button data-l="expert">Expert</button>
-      </div></div>
-    <p class="wl-note">Simple keeps the everyday controls. Standard adds planning, tides and chart tools. Expert shows everything. Nothing is removed. Move the pointer to the top of the screen for the bar that changes the view and this setting.</p>
+    <p class="wl-note">Navigation, Planning and Instruments are on the view button in the toolbar. In the drawers, the less-used settings are in each card's Advanced fold.</p>
     <div class="wl-go"><button class="wl-skip" data-act="skip">Not now</button><button class="wl-start" data-act="start">Start</button></div>
   </div>`;
   document.body.append(el);
 
   const paint = () => {
     for (const b of el.querySelectorAll("[data-task]")) b.classList.toggle("on", b.dataset.task === task);
-    for (const b of el.querySelectorAll("[data-l]")) b.classList.toggle("on", b.dataset.l === level);
   };
   el.addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b) return;
-    if (b.dataset.task) { task = b.dataset.task; level = TASKS[task].level; }
-    else if (b.dataset.l) level = b.dataset.l;
+    if (b.dataset.task) task = b.dataset.task;
     else if (b.dataset.act === "skip") { done(); el.hidden = true; return; }
     else if (b.dataset.act === "start") {
-      detail.setUse(task);
-      detail.set(level);
+      use.setUse(task);
       done();
       el.hidden = true;
       return;
@@ -98,7 +90,7 @@ export function setupWelcome({ detail, inst }) {
   };
   window.addEventListener("racenav-use", (e) => { if (e.detail.use) addPanels(e.detail.use); });
 
-  const show = () => { level = detail.level(); task = detail.use() || "cruise"; paint(); el.hidden = false; };
+  const show = () => { task = use.use() || "cruise"; paint(); el.hidden = false; };
   document.getElementById("set-welcome")?.addEventListener("click", show);
   if (!seen) {
     // after the first chart is up: the start-up splash is above everything until then

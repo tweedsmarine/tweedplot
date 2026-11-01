@@ -719,8 +719,8 @@ html[data-palette^="night"] :is(button, a, summary, label, select, [role="button
 html[data-palette^="night"] :is(button, a, summary, label, [role="button"],
   .list li .main, .ptitle, .tile, .itile, .chip, table.cmp th, table.cmp tr, .seafilter .track, .isel-opt, .ll-body .main, .view-pop .vp-chart)
   :not(input, textarea, .h, .prsz, .trsz, .grip) { cursor: var(--cur-ring) !important; }
-html[data-palette^="night"] :is(#tgt-table th, #tgt-table td, #alarm-banner .txt, #topbar, #manual figure img, #manual figure.diagram, #manual .man-lightbox),
-html[data-palette^="night"] :is(#tgt-table th, #tgt-table td, #alarm-banner .txt, #topbar, #manual figure.diagram, #manual .man-lightbox) :not(input, textarea) { cursor: var(--cur-ring) !important; }
+html[data-palette^="night"] :is(#tgt-table th, #tgt-table td, #alarm-banner .txt, #manual figure img, #manual figure.diagram, #manual .man-lightbox),
+html[data-palette^="night"] :is(#tgt-table th, #tgt-table td, #alarm-banner .txt, #manual figure.diagram, #manual .man-lightbox) :not(input, textarea) { cursor: var(--cur-ring) !important; }
 /* inputs that aren't typed into (dates, files, colours) keep the system arrow unless told */
 html[data-palette^="night"] input:not([type="text"], [type="number"], [type="password"], [type="search"], [type="email"], [type="url"], [type="checkbox"], [type="range"], :not([type])) { cursor: var(--cur-arrow); }
 html[data-palette^="night"] .isel-list .isel-opt.off { cursor: var(--cur-arrow) !important; }
@@ -1254,25 +1254,6 @@ html:not([data-use="fish"]) .tb-fish { display: none; }
 .pb-card .pb-live { font-size: 11px; margin-top: 3px; color: var(--ink, #1d2a33); }
 .pb-card .pb-live.warn { color: #b9770e; }
 
-/* detail level (detail.js): Simple hides data-lv="std" and "exp", Standard hides "exp" */
-html[data-detail="simple"] .lv-std, html[data-detail="simple"] .lv-exp, html[data-detail="standard"] .lv-exp { display: none !important; }
-
-/* the view and detail bar: out of sight until the pointer goes to the top of the screen */
-#topbar-zone { position: fixed; top: 0; left: 50%; transform: translateX(-50%); z-index: 30; width: max-content; max-width: 98vw; min-width: 200px; height: 16px; }
-#topbar-zone:hover, #topbar-zone:focus-within, #topbar-zone.pinned { height: auto; min-height: 52px; }
-#topbar-grip { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 64px; height: 10px; padding: 0; border: 0; border-radius: 0 0 8px 8px; background: var(--panel-bg); opacity: .35; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); cursor: pointer; }
-#topbar-zone:hover #topbar-grip, #topbar-zone:focus-within #topbar-grip, #topbar-zone.pinned #topbar-grip { opacity: 0; }
-#topbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 8px; padding: 6px 10px; border-radius: 0 0 10px 10px; background: var(--panel-bg); color: var(--ink); box-shadow: 0 2px 8px rgba(0, 0, 0, .3); transform: translateY(-110%); transition: transform .18s ease; }
-#topbar .seg button { white-space: nowrap; flex: none; }
-#topbar-zone:hover #topbar, #topbar-zone:focus-within #topbar, #topbar-zone.pinned #topbar { transform: none; }
-#topbar .tb-lab { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--quiet); }
-#topbar .seg { display: flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
-#topbar .seg button { border: 0; border-radius: 0; background: none; padding: 5px 11px; font-size: 13px; }
-#topbar .seg button + button { border-left: 1px solid var(--line); }
-#topbar .seg button.on { background: var(--accent); color: #fff; }
-#topbar-pin { border: 0; background: none; padding: 3px 6px; font-size: 14px; opacity: .45; cursor: pointer; }
-#topbar-pin.on { opacity: 1; background: var(--accent); border-radius: 6px; }
-#topbar { cursor: pointer; }
 
 /* drawer cards (cards.js) */
 .dcard { margin: 6px 0; border: 1px solid var(--line); border-radius: 8px; background: rgba(0, 0, 0, .015); }
@@ -1286,12 +1267,16 @@ html[data-detail="simple"] .lv-std, html[data-detail="simple"] .lv-exp, html[dat
 .dcard > :not(summary) { margin-left: 10px; margin-right: 10px; }
 .dcard > :last-child { margin-bottom: 10px; }
 
-/* help notes: tooltips in Simple and Standard, the full text in Expert (hints.js) */
-html[data-detail="standard"] .hint, html[data-detail="expert"] .hint { display: none; }
-html[data-detail="standard"] .dcard.hints-on .hint, html[data-detail="expert"] .dcard.hints-on .hint { display: block; }
+/* help notes: behind the (i) in the card's heading (hints.js) */
+.hint { display: none; }
+.dcard.hints-on .hint { display: block; }
 .dcard > summary .dc-info { flex: none; border: 0; background: none; padding: 0 4px; font-size: 14px; color: var(--quiet); cursor: pointer; line-height: 1; }
 .dcard > summary .dc-info:hover { color: var(--accent); }
-html:not([data-detail="standard"]):not([data-detail="expert"]) .dc-info { display: none; }
+/* Advanced: the less-used settings of a card, folded at its end; a whole advanced card is tagged (cards.js) */
+.dcard details.adv, details.adv { margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 4px; }
+details.adv > summary { cursor: pointer; font-size: 11px; color: var(--quiet); text-transform: uppercase; letter-spacing: .05em; padding: 4px 0; }
+details.adv[open] > summary { margin-bottom: 4px; }
+.dcard > summary .dc-adv { flex: none; font-size: 10px; color: var(--quiet); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; text-transform: uppercase; letter-spacing: .04em; }
 
 /* welcome screen (welcome.js) */
 #welcome { position: fixed; inset: 0; z-index: 9000; display: flex; align-items: center; justify-content: center; background: rgba(0, 20, 40, .72); }
@@ -1305,12 +1290,6 @@ html:not([data-detail="standard"]):not([data-detail="expert"]) .dc-info { displa
 #welcome .wl-tasks .wl-ic { font-size: 30px; }
 #welcome .wl-tasks b { font-size: 15px; }
 #welcome .wl-tasks small { color: var(--quiet); text-align: center; }
-#welcome .wl-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 8px 0; }
-#welcome .wl-seg { display: flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
-#welcome .wl-seg button { border: 0; border-radius: 0; background: none; padding: 7px 14px; cursor: pointer; color: inherit; }
-#welcome .wl-seg button + button { border-left: 1px solid var(--line); }
-#welcome .wl-seg button.on { background: var(--accent); color: #fff; }
 #welcome .wl-go { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
 #welcome .wl-start { padding: 8px 24px; border: 0; border-radius: 7px; background: var(--accent); color: #fff; font-size: 14px; cursor: pointer; }
 #welcome .wl-skip { padding: 8px 14px; border: 0; background: none; color: var(--quiet); cursor: pointer; }
-#topbar button { cursor: pointer; }

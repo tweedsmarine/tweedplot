@@ -42,7 +42,7 @@ import { setupFleet } from "./fleet.js";
 import { setupGribDownload } from "./gribdl.js";
 import { setupRail } from "./ui.js";
 import { setupViews } from "./views.js";
-import { setupDetail } from "./detail.js";
+import { setupUse } from "./use.js";
 import { setupCards } from "./cards.js";
 import { setupHints } from "./hints.js";
 import { setupWelcome } from "./welcome.js";
@@ -266,7 +266,7 @@ let library = null;
 const ui = setupRail(map);
 const views = setupViews(map);
 setupCards();
-const detail = setupDetail(views);
+const use = setupUse();
 
 // The user manual (bundled with the app): rail button, F1, ? in each drawer.
 const manual = setupManual({
@@ -283,7 +283,7 @@ manual.onToggle((on) => document.getElementById("manual-btn").classList.toggle("
 document.getElementById("drawer-help").onclick = () => manual.help(ui.current());
 const inst = setupInstruments();
 setupHints();
-setupWelcome({ detail, inst, views });
+setupWelcome({ use, inst });
 window.addEventListener("racenav-mob", (e) => { inst.update({ mob: e.detail }); });
 const boat = setupBoat();
 setupSettings({ boat, ui, onReferencePosition: useReferencePosition });
