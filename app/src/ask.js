@@ -1,5 +1,6 @@
 // A small question box in the middle of the screen: a passphrase, or a few choices before
-// a job (what to put in a library file). Enter answers, Esc cancels. Never used for alerts.
+// a job (what to put in a library file), or a message with OK only (cancel: ""). Enter answers,
+// Esc cancels. Drawn by the page, so it follows the night colours (window.alert/prompt don't).
 //
 //   const v = await ask({ title, note, fields: [{ key, label, type: "password" | "text" | "checkbox" | "select", value, options: [[value, label]], disabled }], ok: "Unlock", check: (v) => "error" | "" });
 //   // v: { key: value } or null (cancelled)
@@ -17,6 +18,7 @@ export function ask({ title, note = "", fields = [], ok = "OK", cancel = "Cancel
     box.querySelector(".ask-note").hidden = !note;
     box.querySelector('button[type="submit"]').textContent = ok;
     box.querySelector(".ask-cancel").textContent = cancel;
+    box.querySelector(".ask-cancel").hidden = !cancel; // cancel: "" for a message with OK only
     const inputs = {};
     const wrap = box.querySelector(".ask-fields");
     for (const f of fields) {

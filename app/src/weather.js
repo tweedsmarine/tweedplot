@@ -878,12 +878,13 @@ export function setupWeather(map, layers) {
       // (a file only gives values for times it covers, so only what exists at the slider time is shown)
       if (shown) {
         const extra = {};
+        const src = {}; // key → the name of the file a borrowed value came from
         for (const k of ["tws", "twd", "gust", "mslp", "wave", "period", "wavedir", "temp", "rain", ...SEA_KEYS]) {
           if (shown[k] != null) continue;
           const from = (rows || []).find((r) => r[k] != null);
-          if (from) extra[k] = from[k];
+          if (from) { extra[k] = from[k]; src[k] = loaded.get(from.path)?.name ?? from.name ?? "another file"; }
         }
-        shown = { ...shown, ...extra };
+        shown = { ...shown, ...extra, src };
       }
       for (const fn of pointListeners) fn(shown && { ...shown, t: tt, name: loaded.get(display)?.name ?? shown.name }, at);
       body.innerHTML = "";

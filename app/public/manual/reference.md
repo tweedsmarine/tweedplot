@@ -464,6 +464,7 @@ The Instruments view is one screen of tiles, each a single reading, on a grid of
 - **Move**: point at a panel and its grip (⋮⋮) appears along the edge; drag it. Panels snap to the screen edges and keep clear of the dock. (On a touch screen without a mouse the grip is always shown.)
 - **Fold**: double-click (or double-tap) the grip to shrink a panel to a small title; again to open it.
 - **Change a reading**: click (tap) it to choose what it shows, add another beside it, remove it, change the panel's size (small, medium, large) or lay it out across or down.
+- **Missing data**: a panel of the boat's own readings (position, speed, depth, wind) is always on screen and shows a dash for a reading with no data, so a sensor that has failed is seen, not hidden. Panels that need something first (a route, a GRIB, the cursor on the chart, an ocean file, a MOB) only appear once they have something to show.
 - **Instruments drawer**: **Add panel**, **Fold all**, **Lock layout** (stops accidental moves), **Reset**, **Show instrument panels** (hide or show them all at once), and a tick beside each panel to hide just that one. The alarms have their own drawer, {icon:alarms} **Alarms**, and the wind arrows are in **Chart › Own ship**.
 
 **What can be shown**
@@ -490,7 +491,7 @@ Some readings are drawn rather than written, in the Graphic group of any tile's 
 
 - **Wind**: a dial with the boat pointing up, apparent wind (orange) and true wind (blue) pointers, close-hauled sectors red to port and green to starboard, true wind speed at the top and apparent at the bottom.
 - **Compass**: heading at the top of a turning card, with course over ground (orange) and the bearing to the next mark (green) on its rim.
-- **Sounder history**: a record of the depth under the boat, drawn like a fish-finder's screen. Time runs left to right with now at the right edge, and the depth scale on the right; the bottom is drawn as a hard return, a yellow line over orange bands on a brown body, so a ledge, a drop-off or a hump shows as a shape rather than a number. The depth is big at the top left, with the water temperature under it when the boat reports it. A dashed red line marks the safety depth (Chart › Safety). Two small buttons in the corner set **how much history** fits across the screen (5, 15, 30 minutes, 1 or 2 hours: click to step through) and **how deep** the screen goes (Auto follows the bottom, or fixed at 10, 20, 50, 100, 200 or 500 m). A break in the data (the sounder drops out) leaves a gap, not a made-up line. It records from the Signal K depth (below transducer, or below surface when that is all there is), one point a second for up to two hours, kept while TweedPlot is running (it starts empty each time the program starts). It draws the bottom only: it is a record of depth, not a fish-finder's sonar picture, so it does not show fish, bait or the bottom's hardness. Give it a wide tile; in a panel it makes the panel a free grid, as the Highway does.
+- **Sounder history**: a record of the depth under the boat, drawn like a fish-finder's screen. Time runs left to right with now at the right edge, and the depth scale on the right; the bottom is drawn as a hard return, a yellow line over orange bands on a brown body, so a ledge, a drop-off or a hump shows as a shape rather than a number. The depth is big at the top left, with the water temperature under it when the boat reports it. A dashed red line marks the safety depth (Chart › Safety). Two small buttons in the corner set **how much history** fits across the screen (5, 15, 30 minutes, 1 or 2 hours: click to step through) and **how deep** the screen goes (Auto follows the bottom, or fixed at 10, 20, 50, 100, 200 or 500 m). A break in the data (the sounder drops out) leaves a gap, not a made-up line. It records from the Signal K depth (below transducer, or below surface when that is all there is), one point a second for up to two hours, and keeps those two hours when TweedPlot is closed and opened again (the time it was closed shows as a gap). It draws the bottom only: it is a record of depth, not a fish-finder's sonar picture, so it does not show fish, bait or the bottom's hardness. Give it a wide tile; in a panel it makes the panel a free grid, as the Highway does.
 - **Highway**: a stacked navigation display with heading, course to steer (CTS), speed over ground (SOG), waypoint distance (DTW), a full-width heading-following compass ribbon, a perspective track grid, cross-track error (XTE), time to go (TTG) and estimated arrival (ETA). The heading is marked at the ribbon centre and the bearing graduations scroll continuously. The perspective lane shifts with XTE while the vessel stays fixed. CTS steers back toward the active route leg, with the correction limited to 30°. When both heading and course over ground (COG) are available, their signed difference estimates the combined track offset; the target heading compensates for that offset. A horizontal arrow below the highway shows the direction and size of the required heading change. Values ease toward new readings at 4 Hz. During MOB the display switches to direct bearing and range to the MOB position. Without a heading sensor it works from course over ground (COG), and says so.
 
 The main window does the work that must happen once, whatever the number of windows: it checks the alarms, plays their sound, and keeps the MOB and anchor watch. Monitor windows show the same alarms and can silence them. Keep the main window open; closing it closes the program.
@@ -811,10 +812,10 @@ The Weather button in the toolbar (the cloud with rain, next to the view button)
 - **Run line**: the loaded file being shown, when its run was made and how old it is. It turns red and bold when the run is more than a day old, or the slider is past the end of the forecast.
 - **Time slider**, with ◀ ▶ steps, play and Now, as in the drawer.
 - **Colour bar and filter**: for whatever is shaded now (wind, sea temperature, salinity, sea surface height, chlorophyll ...), the colour bar with three pointers: drag the outer two to the lowest and highest values you care about and the target between them. Click a pointer's number to type a value. Fit puts them back to the file's range.
-- **At the cursor**: a fixed list of every parameter in the loaded GRIBs, so it never grows or shrinks as the cursor moves; a dash where the file has no value. When two files supply the same parameter, the one on the chart is used and the others fill the gaps. With a strong wind blowing against a current of a knot or more it adds a warning of steep, short seas.
+- **At the cursor**: a fixed list of every parameter in the loaded GRIBs, so it never grows or shrinks as the cursor moves; a dash where the file has no value. When two files supply the same parameter, the one on the chart is used and the others fill the gaps; a value taken from another file is marked with a small letter, and the file it came from is named under the list. With a strong wind blowing against a current of a knot or more it adds a warning of steep, short seas.
 - **Show on the chart**: one choice for each thing that can be shaded; a drop-down beside it picks the file when more than one loaded file can supply it (two sea temperatures, say). Choosing one never needs a wind file to be selected in the drawer. Presets (**Fishing**, **Passage**, **Anchorage**, and your own with **Save…**) set the shading and overlays together.
 - **Overlays**: wind barbs, wave direction, current direction, isobars, temperature breaks and contours, each from the file you choose.
-- 📷 saves the chart as it is, with the shading, as a picture.
+- {icon:snap} saves the chart as it is, with the shading, as a picture.
 
 Everything the panel does is also in the Weather drawer; the panel and the drawer always agree.
 
@@ -1067,6 +1068,57 @@ With dusk and night colours the window's title bar turns dark as well. To get ri
 **Diagnostics**
 
 **Radar overlay test**: a simulated radar scanner, there to prove that this PC can draw a real radar overlay smoothly before radar support is built. It makes echoes in the app's core at a real scanner's rate (24 or 48 rpm, up to 4096 spokes of 1024 samples), sends them to the chart as raw bytes and draws them with the graphics card round the boat (or the chart centre): two islands, a coast to the south, a rain cell, eight moving ships and sea clutter. The numbers underneath show frames per second, data rate, how long the chart spends taking the data in, and any backlog. Smooth means 50–60 frames a second while you pan and zoom, with no backlog building up.
+
+## Keyboard shortcuts
+
+Press **?** for this list on screen. A button's tooltip shows its key too.
+
+Single keys (letters, Space, the brackets) work whenever you aren't typing in a box; keys with **Ctrl** and the F keys work everywhere. The arrow keys and **+ / −** move and zoom the chart without clicking it first, unless the keyboard is in an open drawer, the manual, a dialog or a floating window (where they scroll or choose as usual): click the chart, or press a toolbar button, to give them back to the chart. Moving the chart with the keys turns **Follow** off; **B** centres on the boat and follows it again. Space on a focused button or tick box presses that, as usual.
+
+| Key | Does |
+|---|---|
+| **Views** | |
+| `F2` | Navigation view |
+| `F3` | Planning view |
+| `F4` | Instruments view |
+| `P` | Show or hide the panels (rail, drawers and dock) |
+| `F11` | Full screen |
+| **Drawers (the same key again closes it)** | |
+| `W` | Weather and tides |
+| `R` | Route |
+| `G` | Routing |
+| `L` | Library |
+| `C` | Chart |
+| `I` | Instrument panels |
+| `A` | Alarms |
+| `S` | Settings |
+| `Esc` | Close the drawer (or the menu, box or mode that is open) |
+| **Chart** | |
+| `←` `→` `↑` `↓` | Move the chart (turns Follow off) |
+| `Shift+←` `Shift+→` | Turn the chart |
+| `+` `−` | Zoom in and out |
+| `U` | North up |
+| `B` | Centre on the boat (and follow it) |
+| `F` | Follow the boat on or off |
+| `M` | Measure (ruler); Esc stops |
+| `T` | Target list |
+| `N` | Colours: day, dusk, night red, night green |
+| `Space` | Live or paused |
+| **Weather time** | |
+| `[` | Back one step |
+| `]` | Forward one step |
+| `Shift+[` | Back 6 hours |
+| `Shift+]` | Forward 6 hours |
+| `Home` | Now |
+| **Marks and library** | |
+| `E` | Drop a mark at the boat (event mark, no alarm) |
+| `Ctrl+F` | Find in the library |
+| **Safety** | |
+| `Ctrl+M` | Man overboard |
+| `Shift+A` | Silence the sounding alarms (they stay on the list until cleared) |
+| **Help** | |
+| `F1` | User manual |
+| `?` | This list of keys |
 
 ## Data sources and credits
 

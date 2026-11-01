@@ -632,9 +632,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   $("targets-btn").onclick = () => showWin(win.hidden);
   $("ais-win-open").onclick = () => showWin(true);
   $("tgt-close").onclick = () => showWin(false);
-  window.addEventListener("keydown", (e) => {
-    if ((e.key === "t" || e.key === "T") && !e.ctrlKey && !e.altKey && !e.metaKey && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? "")) { showWin(win.hidden); e.preventDefault(); }
-  });
+  // T (keys.js) presses the Targets button
   // drag by the title bar
   win.querySelector("header").addEventListener("pointerdown", (e) => {
     if (e.target.closest("select, button")) return;

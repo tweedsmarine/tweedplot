@@ -12,16 +12,16 @@ const existingUser = (() => { try { return localStorage.getItem("racenav.views")
 const T = (k, c, r, w, h) => ({ k, c, r, w, h });
 const TASKS = {
   cruise: {
-    name: "Cruising", icon: "⛵", note: "chart, position, depth, wind", panels: [],
+    name: "Cruising", icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 3v14H4z"/><path d="M13 6l6 11h-6z"/><path d="M3 19h18l-2 2H5z"/></svg>', note: "chart, position, depth, wind", panels: [],
     screen: [T("HIGHWAY", 1, 1, 8, 4), T("WDIAL", 9, 1, 4, 4), T("COG", 1, 5, 4, 4), T("SOG", 5, 5, 4, 4), T("DPT", 9, 5, 4, 4)],
   },
   fish: {
-    name: "Fishing", icon: "🎣", note: "shoot and haul, depth history, sea temperature, currents", panels: [],
+    name: "Fishing", icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12c3-4 9-5 13-1 1 .8 2 1 3 1-1 0-2 .2-3 1-4 4-10 3-13-1z"/><circle cx="7" cy="11" r=".9" class="fill"/><path d="M19 12l2-3v6z"/></svg>', note: "shoot and haul, depth history, sea temperature, currents", panels: [],
     // the sounder (depth history) only here, on the Instruments screen: never in Navigation or Planning by default
     screen: [T("SOUNDER", 1, 1, 8, 4), T("WDIAL", 9, 1, 4, 4), T("DPT", 1, 5, 4, 4), T("COG", 5, 5, 4, 4), T("SOG", 9, 5, 4, 4)],
   },
   race: {
-    name: "Racing", icon: "🏁", note: "wind instruments, polars, routing",
+    name: "Racing", icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 21V4"/><path d="M5 4h13v9H5"/><path d="M5 4h4v3H5zM13 4h5v3h-5M9 7h4v3H9zM5 10h4v3H5zM13 10h5v3h-5z" class="fill"/></svg>', note: "wind instruments, polars, routing",
     panels: [{ id: "prace", x: 0.3, y: 0.74, dir: "row", size: "m", views: ["nav"], name: "Sailing", tiles: ["BSP", "HDG", "AWS", "AWA", "TWS", "TWA", "VMG"] }],
     screen: [T("HIGHWAY", 1, 1, 8, 4), T("WDIAL", 9, 1, 4, 4), T("COG", 1, 5, 6, 4), T("SOG", 7, 5, 6, 4)],
   },

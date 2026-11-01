@@ -431,5 +431,11 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
   }
 
   const list = () => [...active.values()].map((a) => ({ level: a.level, text: a.text, detail: a.detail, acked: a.acked }));
-  return { raise, clear, ack, sound, list, active: () => [...active.keys()], sync: syncUi };
+  /** Silence every sounding alarm (they stay listed until cleared); how many were silenced. */
+  function ackAll() {
+    const ids = entries().filter(([, a]) => !a.acked).map(([id]) => id);
+    for (const id of ids) ack(id);
+    return ids.length;
+  }
+  return { raise, clear, ack, ackAll, sound, list, active: () => [...active.keys()], sync: syncUi };
 }

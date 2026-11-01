@@ -60,7 +60,10 @@ export function setupTooltips() {
     owner = el;
     x = e.clientX; y = e.clientY;
     timer = setTimeout(() => {
-      tip.textContent = el.dataset.tip || "";
+      const key = el.dataset.key;
+      const t = el.dataset.tip || "";
+      // the keyboard shortcut (keys.js), unless the text already gives it
+      tip.textContent = key && t && !t.includes(`(${key})`) ? `${t} (${key})` : t;
       if (!tip.textContent) return;
       tip.hidden = false;
       place();

@@ -42,6 +42,7 @@ import { setupFleet } from "./fleet.js";
 import { setupGribDownload } from "./gribdl.js";
 import { setupRail } from "./ui.js";
 import { setupViews } from "./views.js";
+import { setupKeys } from "./keys.js";
 import { setupUse } from "./use.js";
 import { setupCards } from "./cards.js";
 import { setupHints } from "./hints.js";
@@ -750,6 +751,34 @@ map.on("dblclick", (e) => {
   followFrac = [0, 0];
   saveFollowFrac();
   if (lastBoat) map.easeTo({ center: lastBoat, offset: [0, 0], duration: 300 });
+});
+
+// ---------- keyboard shortcuts (keys.js holds the table) ------------------------------------
+setupKeys(map, {
+  ui, views,
+  followOff: () => { if (follow) { follow = false; followBtn.classList.remove("on"); } },
+  centreBoat: () => {
+    if (!lastBoat) { toast("No boat position yet", 2500); return; }
+    follow = true;
+    followBtn.classList.add("on");
+    map.easeTo({ center: lastBoat, offset: followOffset(), duration: 300 });
+  },
+  weatherStep: (n) => document.getElementById(n < 0 ? "wx-prev" : "wx-next").click(),
+  weatherHours: (h) => {
+    const sl = document.getElementById("wx-slider");
+    if (!weather || Number(sl.max) <= Number(sl.min)) { toast("Load a GRIB first", 2500); return; }
+    weather.setTime(Number(sl.value) + h * 3600);
+  },
+  findInLibrary: () => {
+    ui.open("library");
+    const box = [...document.querySelectorAll('.pane[data-pane="library"] .ll-search')].find((el) => el.offsetParent);
+    box?.focus();
+    box?.select();
+  },
+  silence: () => {
+    const n = alarms?.ackAll() ?? 0;
+    toast(n ? `${n === 1 ? "Alarm" : `${n} alarms`} silenced` : "No alarm is sounding", 2500);
+  },
 });
 
 const TRACK_MAX = 20000;

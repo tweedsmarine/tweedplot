@@ -3,7 +3,9 @@
 // "alarm") that styles the tile, ready for user-set warnings and alarms later.
 
 import { rhumb } from "./navmath.js";
+import { ask } from "./ask.js";
 import { VIEWS } from "./views.js";
+import { own } from "./role.js";
 import { setupTiles } from "./insttiles.js";
 import { columns, spanFromDrag, cleanSpan, moveReading, dropIndex, CELL, ROW } from "./gridmath.js";
 
@@ -160,6 +162,33 @@ const SND_KEEP_MS = 2 * 3600e3;
 const sndHist = []; // { t (ms), d (m below the surface or transducer, as the Depth reading), w (water °C) }
 const sndPrefs = { win: 15, range: 0 };
 try { Object.assign(sndPrefs, JSON.parse(localStorage.getItem(SND_KEY) || "{}")); } catch { /* ignore */ }
+
+// The last two hours are kept over a restart (each window its own copy), saved every 30 s and
+// when the window closes, as [seconds after t0, depth ×10, water °C ×10] to keep it small.
+const SND_HIST_KEY = own("racenav.sounder.hist");
+(() => {
+  try {
+    const o = JSON.parse(localStorage.getItem(SND_HIST_KEY) || "null");
+    if (!o || !Array.isArray(o.s)) return;
+    const cut = Date.now() - SND_KEEP_MS;
+    for (const [dt, d, w] of o.s) {
+      const t = o.t0 + dt * 1000;
+      if (t >= cut && t <= Date.now() && Number.isFinite(d)) sndHist.push({ t, d: d / 10, w: w == null ? null : w / 10 });
+    }
+  } catch { /* damaged or no storage: start empty */ }
+})();
+let sndSaved = sndHist.at(-1)?.t ?? 0;
+function saveSounder() {
+  const last = sndHist.at(-1);
+  if (!last || last.t === sndSaved) return;
+  sndSaved = last.t;
+  const t0 = sndHist[0].t;
+  const s = sndHist.map((x) => [Math.round((x.t - t0) / 1000), Math.round(x.d * 10), x.w == null ? null : Math.round(x.w * 10)]);
+  try { localStorage.setItem(SND_HIST_KEY, JSON.stringify({ t0, s })); } catch { /* full or unavailable: kept in memory only */ }
+}
+setInterval(saveSounder, 30_000);
+window.addEventListener("beforeunload", saveSounder);
+window.addEventListener("pagehide", saveSounder);
 
 /** One sample a second while the depth is live; a gap in the data leaves a gap in the trace. */
 function sampleDepth(c) {
@@ -825,9 +854,11 @@ export function setupInstruments() {
       const p = panel(el.dataset.id);
       if (!p) continue;
       // the sea panel: only while an ocean file is loaded; the MOB panel: only during a MOB
-      // a panel that has never had a reading (no route, no GRIB, no data input yet) stays out of the way;
-      // once it has, it stays and shows dashes if the data stops
-      if (!seen.has(p) && p.tiles.some((i) => ITEMS[i] && hasValue(ITEMS[i]))) seen.add(p);
+      // A panel of the boat's own readings (position, depth, wind…) is always shown, with a dash
+      // for a reading with no data (IEC 62288: missing data is shown, not hidden). A panel that only
+      // has readings that need something first (a route, a GRIB, the cursor on the chart) stays out
+      // of the way until it has had a reading; then it stays and shows dashes if the data stops.
+      if (!seen.has(p) && (!contextOnly(p) || p.tiles.some((i) => ITEMS[i] && hasValue(ITEMS[i])))) seen.add(p);
       const idle = !seen.has(p);
       const off = (!!p.sea && !ctx.seaLoaded) || (!!p.mob && !ctx.mob) || idle;
       if ((el.style.display === "none") !== off) {
@@ -842,6 +873,8 @@ export function setupInstruments() {
     tiles.render();
   }
   const seen = new WeakSet(); // panels that have had a reading this session (not saved)
+  const CONTEXT_GROUPS = new Set(["Cursor", "GRIB at cursor", "Route", "Sea at cursor", "Man overboard"]);
+  const contextOnly = (p) => p.tiles.every((i) => !ITEMS[i] || CONTEXT_GROUPS.has(ITEMS[i].group));
   function hasValue(it) {
     try {
       const v = it.get(ctx);
@@ -999,7 +1032,7 @@ export function setupInstruments() {
     for (const p of layout.panels) p.collapsed = fold;
     save(); build();
   };
-  document.getElementById("it-add").onclick = () => { if (!tiles.add()) alert("The Instruments screen is full: make a tile smaller or remove one first."); };
+  document.getElementById("it-add").onclick = () => { if (!tiles.add()) ask({ title: "The Instruments screen is full", note: "Make a tile smaller or remove one first.", cancel: "", fields: [] }); };
   document.getElementById("it-reset").onclick = () => tiles.reset();
   lockBtn.onclick = () => { layout.locked = !layout.locked; save(); build(); };
   document.getElementById("inst-all").onchange = (e) => { layout.hideAll = !e.target.checked; save(); build(); };

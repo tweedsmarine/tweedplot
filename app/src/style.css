@@ -1283,9 +1283,26 @@ html:not([data-use="fish"]) .tb-fish { display: none; }
 #welcome .wl-tasks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0; }
 #welcome .wl-tasks button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 16px 8px; border: 2px solid var(--line); border-radius: 10px; background: none; color: inherit; cursor: pointer; }
 #welcome .wl-tasks button.on { border-color: var(--accent); background: rgba(0, 105, 148, .1); }
-#welcome .wl-tasks .wl-ic { font-size: 30px; }
+#welcome .wl-tasks .wl-ic svg { width: 34px; height: 34px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; display: block; }
+#welcome .wl-tasks .wl-ic svg .fill { fill: currentColor; stroke: none; }
 #welcome .wl-tasks b { font-size: 15px; }
 #welcome .wl-tasks small { color: var(--quiet); text-align: center; }
 #welcome .wl-go { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
 #welcome .wl-start { padding: 8px 24px; border: 0; border-radius: 7px; background: var(--accent); color: #fff; font-size: 14px; cursor: pointer; }
 #welcome .wl-skip { padding: 8px 14px; border: 0; background: none; color: var(--quiet); cursor: pointer; }
+
+/* keyboard shortcuts sheet (keys.js) */
+.keys-back[hidden] { display: none; }
+.ask.keys-box { width: min(860px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto; }
+.keys-cols { columns: 2 340px; column-gap: 24px; }
+.keys-cols section { break-inside: avoid; margin-bottom: 10px; }
+.keys-cols h4 { margin: 4px 0; font-size: 13px; }
+.keys-cols table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.keys-cols td { padding: 2px 4px; vertical-align: top; }
+.keys-cols td:first-child { white-space: nowrap; width: 1%; }
+kbd { display: inline-block; min-width: 1.4em; padding: 0 5px; border: 1px solid var(--line, #9aa); border-bottom-width: 2px; border-radius: 4px; font: inherit; font-size: 12px; text-align: center; background: var(--panel-solid, #fff); }
+.keys-close { padding: 0 8px; }
+/* weather panel: values borrowed from another loaded file (wxpanel.js) */
+#wxp .wxp-from { font-size: 0.75em; margin-left: 2px; opacity: 0.8; }
+#wxp .wxp-srcs { display: flex; flex-direction: column; margin-top: 3px; font-size: 11px; opacity: 0.75; }
+#wxp-snap svg.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; vertical-align: -3px; }
