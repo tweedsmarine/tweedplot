@@ -280,9 +280,13 @@ export function setupPbathy(map, { ui } = {}) {
           : check() ? ". Not checked against the chart: no chart depth areas are open." : ".";
       }
       if (r.tracks) {
-        t += r.reduced
-          ? ` Reduced to chart datum with the tide: ${fmt(r.reduced)}${r.no_tide ? `; ${fmt(r.no_tide)} kept below the surface, with no LINZ port within 30 km or no tide data for the time` : ""}.`
-          : r.tides ? " None could be reduced to chart datum: no LINZ port within 30 km of them." : " Not reduced to chart datum: no tide data (Weather and tides › Tides › Download).";
+        // every sounding is one of: already at chart datum (TimeZero's), reduced with the tide, or kept below the surface
+        const parts = [
+          r.already && `${fmt(r.already)} already at chart datum (TimeZero), added as they were`,
+          r.reduced && `${fmt(r.reduced)} reduced to chart datum with the tide`,
+          r.no_tide && `${fmt(r.no_tide)} kept below the surface: ${r.tides ? "no LINZ port within 30 km, or no tide data for the time" : "no tide data (Weather and tides › Tides › Download)"}`,
+        ].filter(Boolean);
+        if (parts.length) t += ` Depths: ${parts.join("; ")}.`;
       }
       if (r.changed) t += ` ${r.changed} track${r.changed === 1 ? " has" : "s have"} changed since being added (not added again; delete all and rebuild to take the changes).`;
       job.done(t, { keep: !!r.changed }); note(t, r.tracks ? "good" : "");

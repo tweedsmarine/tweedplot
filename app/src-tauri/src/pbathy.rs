@@ -25,9 +25,11 @@ pub(crate) struct Datum {
     tides: Option<tides::reduce::Reducer>,
     transducer_m: Option<f64>,
     draft_m: Option<f64>,
-    /// Soundings reduced, and kept below the surface for want of a tide.
+    /// Soundings reduced, kept below the surface for want of a tide, and already at chart
+    /// datum (TimeZero's) so left as they were.
     pub reduced: i64,
     pub no_tide: i64,
+    pub already: i64,
 }
 
 impl Datum {
@@ -38,7 +40,7 @@ impl Datum {
 
     fn with(db: Arc<tides::TideDb>, transducer_m: Option<f64>, draft_m: Option<f64>) -> Self {
         let r = tides::reduce::Reducer::new(db, tides::reduce::DEFAULT_MAX_KM);
-        Datum { tides: r.has_ports().then_some(r), transducer_m, draft_m, reduced: 0, no_tide: 0 }
+        Datum { tides: r.has_ports().then_some(r), transducer_m, draft_m, reduced: 0, no_tide: 0, already: 0 }
     }
 
     /// Whether there is any tide data to reduce with.
@@ -59,6 +61,7 @@ impl Datum {
     /// Depth below chart datum (m, positive down).
     pub(crate) fn reduce(&mut self, lat: f64, lon: f64, t: Option<i64>, d: f64, kind: &str, offset: Option<f64>) -> f64 {
         if kind == "datum" {
+            self.already += 1;
             return d;
         }
         let s = self.below_surface(d, kind, offset);
@@ -308,7 +311,7 @@ pub async fn pbathy_from_tracks(app: tauri::AppHandle, check: Option<bool>) -> R
         let back = if reference.is_some() { s.second_opinion(reference.as_ref(), &mut prog, &CANCEL).map_err(|e| e.to_string())? } else { 0 };
         s.changed();
         Ok(serde_json::json!({ "added": n + back, "back": back, "tracks": todo.len(), "with_depth": with_depth.len(), "kept": counts.kept, "dropped": counts.spikes, "counts": counts, "checked": reference.is_some(), "changed": changed,
-            "reduced": datum.reduced, "no_tide": datum.no_tide, "tides": datum.has_tides(), "unknown_ref": unknown }))
+            "reduced": datum.reduced, "no_tide": datum.no_tide, "already": datum.already, "tides": datum.has_tides(), "unknown_ref": unknown }))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -662,6 +665,7 @@ mod tests {
         let z = d.reduce(-41.0, 173.0, Some(1_700_000_000), 10.0, "transducer", None);
         assert!((z - 8.0).abs() < 0.01, "{z}");
         assert_eq!(d.reduce(-41.0, 173.0, Some(1_700_000_000), 10.0, "datum", None), 10.0);
+        assert_eq!(d.already, 1);
         // far from the port: below the surface
         assert_eq!(d.reduce(-45.0, 170.0, Some(1_700_000_000), 10.0, "surface", None), 10.0);
         assert_eq!((d.reduced, d.no_tide), (1, 1));
