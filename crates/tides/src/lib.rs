@@ -17,6 +17,8 @@
 //! LINZ predictions are Crown copyright; they are not official tide tables under
 //! Maritime Rules Part 25. Not for navigation.
 
+pub mod reduce;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
