@@ -14,3 +14,6 @@ rayon.workspace = true
 
 [[example]]
 name = "grib_info"
+
+[lints]
+workspace = true

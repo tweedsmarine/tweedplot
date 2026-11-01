@@ -40,3 +40,6 @@ stations.workspace = true
 marine-nmea.workspace = true
 serialport.workspace = true
 chrono.workspace = true
+
+[lints]
+workspace = true

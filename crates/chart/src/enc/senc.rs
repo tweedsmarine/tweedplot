@@ -934,7 +934,7 @@ mod tests {
             }
         }
         assert!(out.iter().all(|p| super::super::is_sealed(p)));
-        let store = crate::ChartStore::open_dirs(&[dir.clone()]).unwrap();
+        let store = crate::ChartStore::open_dirs(std::slice::from_ref(&dir)).unwrap();
         assert!(store.tables.iter().any(|t| t.table.contains("_enc_b")), "{:?}", store.tables.iter().map(|t| &t.table).collect::<Vec<_>>());
         super::super::set_today(None);
         let _ = std::fs::remove_dir_all(&dir);

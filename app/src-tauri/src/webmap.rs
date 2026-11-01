@@ -109,10 +109,9 @@ fn parse_path(path: &str) -> Option<(Kind, u8, u32, u32)> {
     let p = path.trim_start_matches('/');
     let (kind, rest) = if let Some(r) = p.strip_prefix("osm/") {
         (Kind::Osm, r)
-    } else if let Some(r) = p.strip_prefix("osea/") {
-        (Kind::Sea, r)
     } else {
-        return None;
+        let r = p.strip_prefix("osea/")?;
+        (Kind::Sea, r)
     };
     let rest = rest.strip_suffix(".png").unwrap_or(rest);
     let mut it = rest.split('/');

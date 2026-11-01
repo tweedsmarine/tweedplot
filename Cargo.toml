@@ -72,3 +72,13 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.bathy]
 opt-level = 3
+
+# House rules for clippy (`cargo clippy --workspace --all-targets`, run in CI): long argument
+# lists and nested tuple types are the style of this code base, and `!(a > b)` is used on
+# purpose where NaN must count as failing the test.
+[workspace.lints.clippy]
+type_complexity = "allow"
+too_many_arguments = "allow"
+neg_cmp_op_on_partial_ord = "allow"
+# events on channels, a few a second: not worth boxing
+large_enum_variant = "allow"

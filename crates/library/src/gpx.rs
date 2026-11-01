@@ -134,11 +134,11 @@ pub fn parse_gpx(text: &str) -> Result<GpxData> {
             }
             Event::Empty(_) => {}
             Event::Text(t) => {
-                text_buf.push_str(&lossy(&*t));
+                text_buf.push_str(&lossy(&t));
             }
-            Event::CData(t) => text_buf.push_str(&lossy(&*t)),
+            Event::CData(t) => text_buf.push_str(&lossy(&t)),
             Event::GeneralRef(r) => {
-                let name = lossy(&*r); 
+                let name = lossy(&r); 
                 text_buf.push_str(&entity(&name));
             }
             Event::End(e) => {

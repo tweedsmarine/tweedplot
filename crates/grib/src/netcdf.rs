@@ -224,7 +224,7 @@ impl<'a> NcFile<'a> {
         }
         let nrec = if numrecs == u32::MAX {
             let first = rec_vars.iter().map(|v| v.begin).min().unwrap_or(0);
-            if recsize > 0 { ((bytes.len() as u64).saturating_sub(first) / recsize) as usize } else { 0 }
+            (bytes.len() as u64).saturating_sub(first).checked_div(recsize).unwrap_or(0) as usize
         } else {
             numrecs as usize
         };

@@ -14,3 +14,6 @@ chart.workspace = true
 getrandom = "0.3"
 ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 chrono.workspace = true
+
+[lints]
+workspace = true

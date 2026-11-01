@@ -1008,7 +1008,7 @@ mod tests {
             t0
         );
         // the store finds the rules at a place, and their details
-        let store = crate::ChartStore::open_dirs(&[dir.clone()]).unwrap();
+        let store = crate::ChartStore::open_dirs(std::slice::from_ref(&dir)).unwrap();
         let hits = store.rules_at(&[[174.1, -36.4], [-176.4, -43.9], [170.0, -40.0]]);
         assert_eq!(hits[0].len(), 1);
         assert!(hits[0][0].flags.contains(&("v46".to_string(), 1)));

@@ -16,3 +16,6 @@ rayon.workspace = true
 
 [[example]]
 name = "route_cli"
+
+[lints]
+workspace = true

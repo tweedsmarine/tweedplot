@@ -530,7 +530,7 @@ mod real {
             println!("level {i}: {}x{} tiles {}x{} with data {used}", l.width, l.height, l.tiles_x(), l.tiles_y());
             for (k, _) in l.counts.iter().enumerate().filter(|(_, &n)| n > 0) {
                 let r = c.tile(i, k % l.tiles_x(), k / l.tiles_x()).unwrap();
-                let v: Vec<f32> = (0..r.data.len()).filter(|&j| r.valid.as_ref().map_or(true, |m| m[j])).map(|j| r.data[j]).collect();
+                let v: Vec<f32> = (0..r.data.len()).filter(|&j| r.valid.as_ref().is_none_or(|m| m[j])).map(|j| r.data[j]).collect();
                 let (mn, mx) = v.iter().fold((f32::MAX, f32::MIN), |a, &x| (a.0.min(x), a.1.max(x)));
                 println!("  tile {k}: {} valid, {mn}..{mx}", v.len());
             }

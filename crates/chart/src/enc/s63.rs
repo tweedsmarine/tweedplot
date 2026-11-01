@@ -47,7 +47,7 @@ impl S63Error {
 
 fn hex(s: &str) -> Option<Vec<u8>> {
     let s = s.trim();
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return None;
     }
     (0..s.len()).step_by(2).map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok()).collect()
@@ -86,7 +86,7 @@ pub fn hw_id_from_user_permit(permit: &str, m_key: &str) -> Result<[u8; 5], S63E
         return Err(S63Error::UserPermit);
     }
     let enc = hex(&p[..16]).ok_or(S63Error::UserPermit)?;
-    let crc = crc32fast::hash(p[..16].as_bytes());
+    let crc = crc32fast::hash(&p.as_bytes()[..16]);
     if format!("{crc:08X}") != p[16..24].to_ascii_uppercase() {
         return Err(S63Error::UserPermit);
     }
@@ -124,7 +124,7 @@ pub fn cell_permit(s: &str, hw: &[u8; 5]) -> Result<([u8; 5], [u8; 5]), S63Error
         return Err(S63Error::PermitFormat);
     }
     let key = hw_id6(hw);
-    let crc = crc32fast::hash(s[..48].as_bytes());
+    let crc = crc32fast::hash(&s.as_bytes()[..48]);
     let want = hex(&s[48..]).ok_or(S63Error::PermitFormat)?;
     if encrypt_padded(&key, &crc.to_be_bytes()).as_slice() != want.as_slice() {
         return Err(S63Error::PermitChecksum);

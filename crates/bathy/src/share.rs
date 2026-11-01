@@ -80,7 +80,7 @@ impl Store {
             let mut ins = tx.prepare(&format!("INSERT INTO {TABLE} (kind, ty, tx, n, data) VALUES (?1, ?2, ?3, ?4, ?5)"))?;
             let mut k = 0usize;
             while let Some(r) = rows.next()? {
-                if k % 512 == 0 {
+                if k.is_multiple_of(512) {
                     if cancel.load(Ordering::Relaxed) {
                         return Err(Error::Cancelled);
                     }
@@ -191,7 +191,7 @@ impl Store {
                 let (ty, tx, blob): (u32, u32, Vec<u8>) = (r.get(0)?, r.get(1)?, r.get(2)?);
                 decode(&blob, |x, y, c| w.reject_cell(tx * TILE as u32 + x as u32, ty * TILE as u32 + y as u32, c))?;
                 done += 1;
-                if done % 256 == 0 {
+                if done.is_multiple_of(256) {
                     if cancel.load(Ordering::Relaxed) {
                         return Err(Error::Cancelled);
                     }

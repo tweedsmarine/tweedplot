@@ -44,7 +44,7 @@ fn index(path: &Path) -> std::io::Result<Vec<(i64, u64)>> {
         }
         // only the time prefix is parsed here
         let head = &buf[..buf.len().min(40)];
-        if let Some(t) = std::str::from_utf8(head).ok().and_then(|h| h.split('\t').next()).and_then(|h| line_time(h)) {
+        if let Some(t) = std::str::from_utf8(head).ok().and_then(|h| h.split('\t').next()).and_then(line_time) {
             out.push((t, off));
         }
         off += n as u64;
@@ -257,7 +257,7 @@ mod tests {
         }
         h.join().unwrap().unwrap();
         assert_eq!(other, 20, "every target message");
-        assert!(own >= 19 && own <= 21, "own vessel at most every 250 ms of log time: {own}");
+        assert!((19..=21).contains(&own), "own vessel at most every 250 ms of log time: {own}");
         assert!((last_lat - (-41.019)).abs() < 1e-9);
 
         // seeking back while paused rebuilds the state at that time

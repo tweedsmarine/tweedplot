@@ -6,3 +6,6 @@ license.workspace = true
 description = "Positions, angles and earth geometry shared by every racenav crate"
 
 [dependencies]
+
+[lints]
+workspace = true

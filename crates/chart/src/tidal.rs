@@ -87,7 +87,7 @@ impl crate::ChartStore {
             }
         }
         // the same diamond in several bands: keep the largest scale
-        panels.sort_by(|a, b| b.band.cmp(&a.band));
+        panels.sort_by_key(|p| std::cmp::Reverse(p.band));
         let mut kept: Vec<TidalPanel> = Vec::new();
         for p in panels {
             let near = |q: &TidalPanel| {
@@ -98,7 +98,7 @@ impl crate::ChartStore {
                 kept.push(p);
             }
         }
-        arrows.sort_by(|a, b| b.band.cmp(&a.band));
+        arrows.sort_by_key(|a| std::cmp::Reverse(a.band));
         let mut karrows: Vec<TidalArrow> = Vec::new();
         for a in arrows {
             let k = a.lat.to_radians().cos();

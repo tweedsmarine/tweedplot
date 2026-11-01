@@ -132,9 +132,7 @@ pub fn decode(data: &[u8], n: usize, bps: usize, block_size: usize, rsi: usize, 
                         out.push(r);
                         cnt -= 1;
                     }
-                    for _ in 0..cnt {
-                        out.push(0);
-                    }
+                    out.resize(out.len() + cnt, 0);
                     block += zb as usize;
                     continue;
                 } else {
@@ -229,7 +227,7 @@ mod tests {
         }
         fn put(&mut self, x: u64, bits: usize) {
             for i in (0..bits).rev() {
-                if self.n % 8 == 0 {
+                if self.n.is_multiple_of(8) {
                     self.v.push(0);
                 }
                 if (x >> i) & 1 == 1 {

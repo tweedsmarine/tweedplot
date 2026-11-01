@@ -394,7 +394,7 @@ impl Cog {
         };
         if let Some(nd) = self.nodata {
             let nd = nd as f32;
-            if r.data.iter().any(|v| *v == nd) {
+            if r.data.contains(&nd) {
                 let mut valid = r.valid.take().unwrap_or_else(|| vec![true; r.data.len()]);
                 for (k, v) in r.data.iter().enumerate() {
                     if *v == nd {

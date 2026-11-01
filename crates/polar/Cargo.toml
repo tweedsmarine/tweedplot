@@ -8,3 +8,6 @@ description = "Boat polars: read qtVlm CSV and .pol files, interpolate, best VMG
 [dependencies]
 thiserror.workspace = true
 nav-core.workspace = true
+
+[lints]
+workspace = true

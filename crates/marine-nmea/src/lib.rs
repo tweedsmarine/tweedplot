@@ -606,8 +606,8 @@ mod tests {
     fn frames_across_chunks_and_rejects_bad_checksum() {
         let sentence = frame("GPRMC,092750.000,A,5321.6802,N,00630.3372,W,5.5,84.4,230394,3.1,E");
         let mut f = Framer::default();
-        assert!(f.push(sentence[..12].as_bytes()).is_empty());
-        let out = f.push(sentence[12..].as_bytes());
+        assert!(f.push(&sentence.as_bytes()[..12]).is_empty());
+        let out = f.push(&sentence.as_bytes()[12..]);
         let parsed = out.into_iter().next().unwrap().unwrap();
         assert_eq!(parsed.formatter, "RMC");
         assert!(parse_sentence(b"$GPHDT,123.4,T*00", 1024).is_err());

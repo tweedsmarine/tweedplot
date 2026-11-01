@@ -22,8 +22,7 @@ fn dp(pts: &[[f64; 2]], tol: f64) -> Vec<[f64; 2]> {
         let (dx, dy) = (q[0] - p[0], q[1] - p[1]);
         let l2 = dx * dx + dy * dy;
         let mut best = (0.0, 0);
-        for i in a + 1..b {
-            let r = pts[i];
+        for (i, &r) in pts.iter().enumerate().take(b).skip(a + 1) {
             let d = if l2 > 0.0 {
                 ((r[0] - p[0]) * dy - (r[1] - p[1]) * dx).abs() / l2.sqrt()
             } else {

@@ -7,3 +7,6 @@ description = "NMEA 0183 framing, sentence catalogue and vessel observations"
 
 [dependencies]
 serde.workspace = true
+
+[lints]
+workspace = true

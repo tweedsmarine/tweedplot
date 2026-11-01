@@ -497,7 +497,7 @@ pub fn chart_sets(dir: &Path) -> Vec<ChartSet> {
     by.into_iter()
         .map(|(set, prod)| {
             let mut producers: Vec<(String, usize)> = prod.into_iter().collect();
-            producers.sort_by(|a, b| b.1.cmp(&a.1));
+            producers.sort_by_key(|p| std::cmp::Reverse(p.1));
             ChartSet {
                 path: set_path(dir, &set),
                 name: match set.as_str() {
@@ -1036,7 +1036,7 @@ mod tests {
         let out = dir.join("t.gpkg");
         assert_eq!(write_gpkg(&c, &out).unwrap(), 14);
         // the chart store reads it like the LINZ layers
-        let store = crate::ChartStore::open_dirs(&[dir.clone()]).unwrap();
+        let store = crate::ChartStore::open_dirs(std::slice::from_ref(&dir)).unwrap();
         assert!(store.tables.iter().any(|t| t.kind == crate::Kind::DepthArea && t.band == 6));
         assert!(store.tables.iter().any(|t| t.kind == crate::Kind::Land && t.band == 6));
     }
@@ -1054,7 +1054,7 @@ mod tests {
         let made = std::fs::metadata(&out[0]).unwrap().modified().unwrap();
         assert_eq!(ensure_gpkgs(&dir), out);
         assert_eq!(std::fs::metadata(&out[0]).unwrap().modified().unwrap(), made, "not made again");
-        let store = crate::ChartStore::open_dirs(&[dir.clone()]).unwrap();
+        let store = crate::ChartStore::open_dirs(std::slice::from_ref(&dir)).unwrap();
         assert!(store.tables.iter().any(|t| t.kind == crate::Kind::DepthArea && t.band == 6 && t.rows == 4));
         // the attribute values themselves, not the column names (SQLite reads an unknown
         // "name" as a string)

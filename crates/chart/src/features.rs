@@ -1360,7 +1360,7 @@ pub fn is_danger(code: &str, a: &Attrs, safety_depth: f64) -> bool {
             a.get("catobs")
                 .and_then(|s| s.split(',').next())
                 .and_then(|s| s.trim().parse::<u32>().ok()),
-            Some(5 | 6 | 7)
+            Some(5..=7)
         ),
         _ => true,
     }
@@ -1437,7 +1437,7 @@ mod tests {
             .locate_in_envelope_intersecting(&bounds_envelope([0.5, 0.5, 2.0, 2.0]))
             .map(|copy| copy.data)
             .collect();
-        found.sort_by(|a, b| a.0.cmp(&b.0));
+        found.sort_by_key(|a| a.0);
         assert_eq!(found, vec![(2, 4.0), (4, 6.0)]);
     }
 

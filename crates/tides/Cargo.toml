@@ -9,3 +9,6 @@ description = "NZ tide predictions from LINZ: daily high/low tables for standard
 thiserror.workspace = true
 chrono.workspace = true
 reqwest = { version = "0.13", default-features = false, features = ["native-tls", "blocking"] }
+
+[lints]
+workspace = true

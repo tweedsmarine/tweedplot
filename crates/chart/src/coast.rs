@@ -402,7 +402,7 @@ mod tests {
         ensure_gpkg(&base, &base.join(".unzipped")).unwrap();
         assert_eq!(std::fs::metadata(&out).unwrap().modified().unwrap(), t);
 
-        let store = crate::ChartStore::open_dirs(&[base.clone()]).unwrap();
+        let store = crate::ChartStore::open_dirs(std::slice::from_ref(&base)).unwrap();
         assert_eq!(store.tables.iter().filter(|t| t.kind == crate::Kind::WorldLand).count(), 5);
         let mut n = 0;
         store.for_each_world_land([169.0, -42.0, 174.0, -38.0], 100.0, |_| n += 1);

@@ -14,9 +14,9 @@ fn main() {
     s.set_style(bathy::Style { rejected: true, shallow: 0.0, deep: 1500.0, ..Default::default() });
     let out = std::path::PathBuf::from(&a[3]);
     std::fs::create_dir_all(&out).unwrap();
-    for (z, lon, lat) in [(10u8, 170.6, -41.9), (12, 171.0, -41.6), (13, 171.3, -41.5), (14, 171.4, -41.55)] {
+    for (z, lon, lat) in [(10u8, 170.6f64, -41.9f64), (12, 171.0, -41.6), (13, 171.3, -41.5), (14, 171.4, -41.55)] {
         let n = (1u64 << z) as f64;
-        let r = (lat as f64).to_radians();
+        let r = lat.to_radians();
         let (x, y) = (((lon + 180.0) / 360.0 * n) as u32, ((1.0 - (r.tan() + 1.0 / r.cos()).ln() / std::f64::consts::PI) / 2.0 * n) as u32);
         let mut magenta = 0;
         let mut drawn = 0;

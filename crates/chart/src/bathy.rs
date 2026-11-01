@@ -538,7 +538,7 @@ mod tests {
         let mid = [173.0 + 20.0 / 240.0, -41.5 + 15.0 / 240.0];
         for p in l {
             let r = (((p[0] - mid[0]) * 240.0 / 20.0).powi(2) + ((p[1] - mid[1]) * 240.0 / 15.0).powi(2)).sqrt();
-            assert!((r - 0.7071).abs() < 0.05, "{r}");
+            assert!((r - std::f64::consts::FRAC_1_SQRT_2).abs() < 0.05, "{r}");
         }
     }
 
@@ -551,7 +551,7 @@ mod tests {
         assert_eq!(sp, 15.0);
         assert_eq!(file_format(&out), FORMAT);
         assert!((a[0] - 173.0).abs() < 1e-9);
-        let store = crate::ChartStore::open_dirs(&[dir.clone()]).unwrap();
+        let store = crate::ChartStore::open_dirs(std::slice::from_ref(&dir)).unwrap();
         assert!(store.tables.iter().any(|t| t.kind == crate::Kind::WorldDepth));
         assert!(store.tables.iter().any(|t| t.kind == crate::Kind::WorldContour));
         // a z10 tile over the bowl carries depth polygons and contours

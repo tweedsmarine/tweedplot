@@ -69,7 +69,7 @@ fn pbg_rows(db: &Path, f: &mut dyn FnMut(u8, u32, u32, Vec<u8>) -> Result<()>, p
     let mut i = 0usize;
     let span = 1u64 << level;
     while let Some(row) = rows.next()? {
-        if i % 1000 == 0 {
+        if i.is_multiple_of(1000) {
             if cancel.load(Ordering::Relaxed) {
                 return Err(Error::Cancelled);
             }
@@ -333,11 +333,7 @@ pub fn clean_depths(d: &[Option<f64>]) -> Vec<bool> {
     for i in 0..d.len() {
         let Some(v) = d[i].filter(|v| ok(*v)) else { continue };
         win.clear();
-        for j in i.saturating_sub(3)..(i + 4).min(d.len()) {
-            if let Some(w) = d[j].filter(|w| ok(*w)) {
-                win.push(w);
-            }
-        }
+        win.extend(d[i.saturating_sub(3)..(i + 4).min(d.len())].iter().filter_map(|w| w.filter(|w| ok(*w))));
         if win.len() < 3 {
             keep[i] = true;
             continue;

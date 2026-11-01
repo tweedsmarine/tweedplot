@@ -210,7 +210,7 @@ impl Raster {
                 }
                 current_band = band;
             }
-            let shallow_here = drval1.map_or(true, |d| d < safety_depth);
+            let shallow_here = drval1.is_none_or(|d| d < safety_depth);
             r.fill(rings, if shallow_here { BLOCKED } else { FREE });
             if shallow_here {
                 shallow.push(rings.to_vec());
@@ -244,7 +244,7 @@ impl Raster {
                 if !lakes.iter().any(|l| b[0] >= l[0] && b[2] <= l[2] && b[1] >= l[1] && b[3] <= l[3]) || !overlaps(b) {
                     return;
                 }
-                let sh = drval1.map_or(true, |d| d < safety_depth);
+                let sh = drval1.is_none_or(|d| d < safety_depth);
                 r.fill(rings, if sh { BLOCKED } else { FREE });
                 if sh {
                     shallow.push(rings.to_vec());

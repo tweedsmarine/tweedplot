@@ -435,7 +435,7 @@ mod tests {
         tack.cog = Some(150.0);
         assert!(r.push(tack));
         // standing still: nothing kept until the idle interval
-        let here = r.track.segments[0].last().unwrap().clone();
+        let here = *r.track.segments[0].last().unwrap();
         assert!(!r.push(TrackPoint { t: Some(t0 + 100), ..here }));
         // a gap of an hour starts a new segment
         assert!(r.push(pt(t0 + 3700, -41.1, 173.1)));

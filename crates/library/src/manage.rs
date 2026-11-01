@@ -197,12 +197,15 @@ impl Library {
         let gone = "SELECT id FROM marks WHERE import_id = ?1 AND deleted_at IS NULL";
         tx.execute(&format!("UPDATE routes SET start_mark = NULL, modified = ?2 WHERE start_mark IN ({gone}) AND id IN ({own_routes})"), params![id, t])?;
         tx.execute(&format!("DELETE FROM route_marks WHERE mark_id IN ({gone}) AND route_id IN ({own_routes})"), params![id])?;
-        let mut n = Counts::default();
-        n.marks = tx.execute("UPDATE marks SET deleted_at = ?2 WHERE import_id = ?1 AND deleted_at IS NULL", params![id, t])?;
-        n.routes = tx.execute("UPDATE routes SET deleted_at = ?2 WHERE import_id = ?1 AND deleted_at IS NULL", params![id, t])?;
-        n.tracks = tx.execute("UPDATE tracks SET deleted_at = ?2 WHERE import_id = ?1 AND deleted_at IS NULL", params![id, t])?;
-        n.barriers = tx.execute("UPDATE barriers SET deleted_at = ?2 WHERE import_id = ?1 AND deleted_at IS NULL", params![id, t])?;
-        n.events = tx.execute("UPDATE events SET deleted_at = ?2 WHERE import_id = ?1 AND deleted_at IS NULL", params![id, t])?;
+        let gone_from = |table: &str| tx.execute(&format!("UPDATE {table} SET deleted_at = ?2 WHERE import_id = ?1 AND deleted_at IS NULL"), params![id, t]);
+        let n = Counts {
+            marks: gone_from("marks")?,
+            routes: gone_from("routes")?,
+            tracks: gone_from("tracks")?,
+            barriers: gone_from("barriers")?,
+            events: gone_from("events")?,
+            ..Default::default()
+        };
         tx.commit()?;
         Ok(n)
     }
@@ -306,7 +309,7 @@ mod tests {
         let b = lib.save_mark(mark("B", -36.1)).unwrap();
         lib.delete_marks(&[a.id.clone(), b.id.clone()], false).unwrap();
         assert_eq!(lib.trash().unwrap().len(), 2);
-        assert_eq!(lib.restore("mark", &[a.id.clone()]).unwrap(), 1);
+        assert_eq!(lib.restore("mark", std::slice::from_ref(&a.id)).unwrap(), 1);
         assert_eq!(lib.marks().unwrap().len(), 1);
         assert_eq!(lib.purge("mark", &[]).unwrap(), 1);
         assert!(lib.trash().unwrap().is_empty());

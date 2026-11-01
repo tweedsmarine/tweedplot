@@ -671,13 +671,13 @@ impl Store {
                         continue;
                     }
                     let key = ((y >> 8) as u32, (x >> 8) as u32);
-                    if !seabed.contains_key(&key) {
+                    if let std::collections::hash_map::Entry::Vacant(e) = seabed.entry(key) {
                         let m = w.read_in(SEABED, (UP, key.0, key.1))?.map(|b| {
                             let mut v = vec![f32::NAN; TILE * TILE];
                             let _ = decode(&b, |x, y, c| v[y * TILE + x] = c.mean);
                             v
                         });
-                        seabed.insert(key, m);
+                        e.insert(m);
                     }
                     if let Some(Some(v)) = seabed.get(&key) {
                         let z = v[((y & 255) * TILE as i64 + (x & 255)) as usize];

@@ -273,7 +273,7 @@ impl ChartStore {
             .par_iter()
             .map(|path| {
                 let k = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if k % 50 == 0 {
+                if k.is_multiple_of(50) {
                     (progress.lock().unwrap_or_else(|e| e.into_inner()))(k, n_files);
                 }
                 let t = std::time::Instant::now();

@@ -131,7 +131,7 @@ pub fn colour(depth: f32, s: &Style) -> [f32; 3] {
 impl Store {
     /// The image for map tile `z/x/y`, or None where there are no soundings.
     pub fn tile_png(&self, z: u8, x: u32, y: u32) -> Option<Arc<Vec<u8>>> {
-        if z < MIN_LEVEL || z > 24 || x >= 1 << z || y >= 1 << z {
+        if !(MIN_LEVEL..=24).contains(&z) || x >= 1 << z || y >= 1 << z {
             return None;
         }
         if let Some(t) = self.images.lock().unwrap_or_else(|e| e.into_inner()).get(&(z, x, y)) {

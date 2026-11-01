@@ -194,7 +194,7 @@ pub fn message(m: &[u8], with_values: bool) -> Result<Option<Field>, GribError> 
         let data = &s[11..];
         let npacked = match bitmap {
             Some(bm) => (0..npoints).filter(|&i| bm.get(i / 8).is_some_and(|b| b & (0x80 >> (i % 8)) != 0)).count(),
-            None => if bits > 0 { ((data.len() * 8).saturating_sub(unused)) / bits } else { npoints }.min(npoints),
+            None => (data.len() * 8).saturating_sub(unused).checked_div(bits).unwrap_or(npoints).min(npoints),
         };
         let mut packed = Vec::with_capacity(npacked);
         if bits == 0 {

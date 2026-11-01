@@ -201,32 +201,6 @@ fn packed(out: &mut Vec<u8>, field: u32, vals: &[u32]) {
     field_bytes(out, field, &b);
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn zigzag() {
-        assert_eq!(zz(0), 0);
-        assert_eq!(zz(-1), 1);
-        assert_eq!(zz(1), 2);
-        assert_eq!(zz(-2), 3);
-    }
-
-    #[test]
-    fn spec_example_point() {
-        // MVT spec example: point (25, 17) -> [9, 50, 34]
-        assert_eq!(encode_points(&[[25, 17]]), vec![9, 50, 34]);
-    }
-
-    #[test]
-    fn spec_example_polygon() {
-        // MVT spec example polygon (3,6) (8,12) (20,34)
-        let r = vec![vec![[3, 6], [8, 12], [20, 34], [3, 6]]];
-        assert_eq!(encode_paths(&r, true), vec![9, 6, 12, 18, 10, 12, 24, 44, 15]);
-    }
-}
-
 /// For diagnostics: every feature of `layer` in an encoded tile as
 /// (cls, band, minz, maxz, x, y of its first point). A small protobuf reader, not a general decoder.
 pub fn debug_points(tile: &[u8], layer: &str) -> Vec<(String, u64, f64, f64, i64, i64)> {
@@ -300,4 +274,30 @@ pub fn debug_points(tile: &[u8], layer: &str) -> Vec<(String, u64, f64, f64, i64
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zigzag() {
+        assert_eq!(zz(0), 0);
+        assert_eq!(zz(-1), 1);
+        assert_eq!(zz(1), 2);
+        assert_eq!(zz(-2), 3);
+    }
+
+    #[test]
+    fn spec_example_point() {
+        // MVT spec example: point (25, 17) -> [9, 50, 34]
+        assert_eq!(encode_points(&[[25, 17]]), vec![9, 50, 34]);
+    }
+
+    #[test]
+    fn spec_example_polygon() {
+        // MVT spec example polygon (3,6) (8,12) (20,34)
+        let r = vec![vec![[3, 6], [8, 12], [20, 34], [3, 6]]];
+        assert_eq!(encode_paths(&r, true), vec![9, 6, 12, 18, 10, 12, 24, 44, 15]);
+    }
 }

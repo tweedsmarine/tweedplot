@@ -13,3 +13,6 @@ chrono.workspace = true
 grib.workspace = true
 reqwest = { version = "0.13", default-features = false, features = ["native-tls", "blocking"] }
 
+
+[lints]
+workspace = true

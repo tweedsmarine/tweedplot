@@ -16,3 +16,6 @@ chrono.workspace = true
 
 [[example]]
 name = "sk_watch"
+
+[lints]
+workspace = true

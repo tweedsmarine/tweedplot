@@ -39,3 +39,6 @@ name = "chart_info"
 
 [[example]]
 name = "world_depth"
+
+[lints]
+workspace = true

@@ -370,7 +370,7 @@ pub fn parse_csv(text: &str) -> Result<(GpxData, Vec<String>)> {
             continue;
         };
         let mut desc = get(notes).to_string();
-        if let Some(d) = get(depth).parse::<f64>().ok() {
+        if let Ok(d) = get(depth).parse::<f64>() {
             desc = if desc.is_empty() { format!("{d} m") } else { format!("{desc} ({d} m)") };
         }
         out.waypoints.push(GpxWaypoint {
