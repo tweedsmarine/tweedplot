@@ -40,11 +40,12 @@ export function addMarkLayers(map, p, before) {
   const isSym = ["==", ["slice", ["get", "kind"], 0, 4], "sym-"];
   const isIcon = ["any", isBuoy, isPoi, isSym];
   map.addLayer({ id: `${p}-marks`, type: "circle", source: `${p}-marks`,
-    paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, ["case", isIcon, 11, 2.5], 10, ["case", isIcon, 11, 5]],
+    // the plain marks (racing mark, waypoint, start and finish line ends, danger) as big as the symbols
+    paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, ["case", isIcon, 11, 7], 8, ["case", isIcon, 11, 9.5]],
              // a mark's own colour (from TimeZero and other plotters), else by its type
              "circle-color": ["coalesce", ["get", "colour"], ["match", ["get", "kind"], "danger", "#c0392b", "waypoint", "#5b6b75", "#e67e22"]],
              "circle-opacity": ["case", isIcon, 0, 1], "circle-stroke-opacity": ["case", isIcon, 0, 1],
-             "circle-stroke-color": "#fff", "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 5, 0.5, 10, 1.5] } }, before);
+             "circle-stroke-color": "#fff", "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 5, 1.5, 8, 2.5] } }, before);
   map.addLayer({ id: `${p}-buoys`, type: "symbol", source: `${p}-marks`, filter: isBuoy,
     layout: { "icon-image": ["concat", "s57:", ["get", ["get", "kind"], ["literal", BUOY_ICONS]]], "icon-anchor": "bottom", "icon-offset": [0, 3],
               "icon-allow-overlap": true, "icon-ignore-placement": true } }, `${p}-marks`);
@@ -288,10 +289,11 @@ export function setupLibrary(map, { ui, toast = () => {}, getBoat = () => null }
     if (SYMBOL_KINDS[k]) return imageUrl(symImage(`sym:${k}:${colour || ""}`));
     if (BUOY_ICONS[k]) return imageUrl(featureImage(`s57:${BUOY_ICONS[k]}`));
     if (POI_KINDS[k]) return imageUrl(poiImage(`poi:${k}`));
-    const c = document.createElement("canvas"); c.width = c.height = 16;
+    // the plain marks: a dot as big as the other types' symbols (48 px, shown at half size or less)
+    const c = document.createElement("canvas"); c.width = c.height = 48;
     const g = c.getContext("2d");
-    g.beginPath(); g.arc(8, 8, 5.5, 0, 7); g.fillStyle = DOTS[k] || "#e67e22"; g.fill();
-    g.lineWidth = 1.5; g.strokeStyle = "#fff"; g.stroke(); g.lineWidth = 0.8; g.strokeStyle = "rgba(0,0,0,0.35)"; g.beginPath(); g.arc(8, 8, 6.6, 0, 7); g.stroke();
+    g.beginPath(); g.arc(24, 24, 17, 0, 7); g.fillStyle = DOTS[k] || "#e67e22"; g.fill();
+    g.lineWidth = 4; g.strokeStyle = "#fff"; g.stroke(); g.lineWidth = 2; g.strokeStyle = "rgba(0,0,0,0.35)"; g.beginPath(); g.arc(24, 24, 20, 0, 7); g.stroke();
     return c.toDataURL();
   }
   const markType = (m) => (COURSE.has(m.kind) || !m.kind ? "course" : m.kind === "danger" ? "danger" : BUOY_ICONS[m.kind] ? "buoy" : POI_KINDS[m.kind] ? "poi" : "course");
