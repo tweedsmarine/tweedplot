@@ -169,7 +169,9 @@ fn client() -> Option<&'static reqwest::blocking::Client> {
     static C: OnceLock<Option<reqwest::blocking::Client>> = OnceLock::new();
     C.get_or_init(|| {
         reqwest::blocking::Client::builder()
-            .user_agent(concat!("TweedPlot/", env!("CARGO_PKG_VERSION"), " (marine chart plotter; https://tweedsmarine.nz; chris@tweedsmarine.nz)"))
+            // the OSM tile policy asks for a name of the app's own and optionally a contact URL or email:
+            // the URL only (the site carries a contact address), so no personal address goes to every tile server
+            .user_agent(concat!("TweedPlot/", env!("CARGO_PKG_VERSION"), " (marine chart plotter; +https://tweedsmarine.nz)"))
             .connect_timeout(Duration::from_secs(8))
             .timeout(Duration::from_secs(20))
             .build()

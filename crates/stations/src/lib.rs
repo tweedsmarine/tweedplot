@@ -57,7 +57,7 @@ pub(crate) const MS_TO_KN: f64 = 3600.0 / 1852.0;
 
 pub(crate) fn client() -> Result<reqwest::blocking::Client> {
     reqwest::blocking::Client::builder()
-        .user_agent("racenav/0.1 (sailing navigation; chris@tweedsmarine.nz)")
+        .user_agent("TweedPlot (marine chart plotter; weather observations; +https://tweedsmarine.nz)")
         .timeout(std::time::Duration::from_secs(40))
         .build()
         .map_err(|e| Error::Http(e.to_string()))

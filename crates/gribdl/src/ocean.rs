@@ -41,7 +41,7 @@ use crate::{client, get_retry, Error, Model, Progress, Request, Result};
 /// HYCOM's subset server is slow (half a minute or more a request): a long timeout.
 fn slow_client() -> Result<reqwest::blocking::Client> {
     reqwest::blocking::Client::builder()
-        .user_agent(concat!("TweedPlot/", env!("CARGO_PKG_VERSION"), " (marine chart plotter; tweedsmarine.nz)"))
+        .user_agent(concat!("TweedPlot/", env!("CARGO_PKG_VERSION"), " (marine chart plotter; +https://tweedsmarine.nz)"))
         .timeout(std::time::Duration::from_secs(420))
         .build()
         .map_err(|e| Error::Http(e.to_string()))

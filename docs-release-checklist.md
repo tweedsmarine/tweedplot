@@ -19,7 +19,7 @@
 - **Anyone building from source gets test credentials** and can open only the IHO test data.
 - **Dependencies** (about 560 Rust crates, 45 JS packages) are all GPL-3.0 compatible. MPL-2.0 crates are fine if unmodified. `unescaper` and `r-efi` are used under their MIT option. The font is OFL-1.1.
 - **Tracking sample** (`crates/tracking/tests/ggr2026_history_sample.b64`) holds only positions for two 1968 "ghost" boats: no personal data.
-- **Personal data elsewhere:** only `chris@tweedsmarine.nz` (manifests, user-agents) and the public `query@saildocs.com`.
+- **Personal data elsewhere:** only `chris@tweedsmarine.nz` (manifests, CONTRIBUTING, TRADEMARKS; the user-agents carry the website URL, not the email) and the public `query@saildocs.com`.
 
 ## Done in the repo
 - Added `LICENSE` (GPL-3.0) and `LICENSE-DOCS.txt` (CC BY-SA 4.0).

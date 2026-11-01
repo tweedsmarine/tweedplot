@@ -479,7 +479,7 @@ pub fn estimate_bytes(req: &Request) -> u64 {
 
 pub(crate) fn client() -> Result<reqwest::blocking::Client> {
     reqwest::blocking::Client::builder()
-        .user_agent(concat!("TweedPlot/", env!("CARGO_PKG_VERSION"), " (marine chart plotter; tweedsmarine.nz)"))
+        .user_agent(concat!("TweedPlot/", env!("CARGO_PKG_VERSION"), " (marine chart plotter; +https://tweedsmarine.nz)"))
         .timeout(Duration::from_secs(120))
         .build()
         .map_err(|e| Error::Http(e.to_string()))

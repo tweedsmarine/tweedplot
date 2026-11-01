@@ -514,7 +514,7 @@ pub struct Progress {
 
 fn client() -> Result<reqwest::blocking::Client, Error> {
     reqwest::blocking::Client::builder()
-        .user_agent("racenav (tide predictions; chris@tweedsmarine.nz)")
+        .user_agent("TweedPlot (marine chart plotter; tide predictions; +https://tweedsmarine.nz)")
         .timeout(std::time::Duration::from_secs(60))
         .build()
         .map_err(|e| Error::Http(e.to_string()))
