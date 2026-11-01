@@ -1306,3 +1306,6 @@ kbd { display: inline-block; min-width: 1.4em; padding: 0 5px; border: 1px solid
 #wxp .wxp-from { font-size: 0.75em; margin-left: 2px; opacity: 0.8; }
 #wxp .wxp-srcs { display: flex; flex-direction: column; margin-top: 3px; font-size: 11px; opacity: 0.75; }
 #wxp-snap svg.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; vertical-align: -3px; }
+/* night cursor near the window edges, drawn by the page (nightcursor.js) */
+html.cur-edge, html.cur-edge * { cursor: none !important; }
+#night-cursor { position: fixed; left: 0; top: 0; z-index: 2147483647; pointer-events: none; }
