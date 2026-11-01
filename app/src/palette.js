@@ -12,6 +12,37 @@ const $ = (id) => document.getElementById(id);
 
 /** Each window (monitor) keeps its own colours: an office well and a fly bridge differ.
  *  Everything shown in a window, whatever its view, uses that window's colours. */
+// Chromium drops a page's own cursor for the system one (white) when the cursor image is over
+// 32 pixels and reaches past the edge of the window, which happens near the edges with display
+// scaling above 100 %: 24 px drawn at 150 % is 36. The night cursors are redrawn small enough to
+// stay under that at this window's scaling (24 px at up to 133 %, 21 at 150 %, 16 at 200 %).
+const CURSORS = ["--cur-arrow", "--cur-ring", "--cur-cross", "--cur-grab", "--cur-grabbing", "--cur-nwse", "--cur-ew", "--cur-ns"];
+/** The size (CSS px) that keeps a cursor at or under 32 device pixels. */
+export const cursorPx = (dpr) => Math.max(12, Math.min(24, Math.floor(32 / (dpr || 1))));
+/** A 24 px cursor value (url(...) x y, fallback) redrawn at `px`, hot spot scaled with it. */
+export function scaleCursor(v, px) {
+  if (px >= 24) return v;
+  return v
+    .replace(/width='24' height='24'/, `width='${px}' height='${px}' viewBox='0 0 24 24'`)
+    .replace(/\)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s*,/, (_, x, y) => `) ${Math.round((x * px) / 24)} ${Math.round((y * px) / 24)},`);
+}
+function fitCursors() {
+  const root = document.documentElement;
+  for (const n of CURSORS) root.style.removeProperty(n);
+  const px = cursorPx(window.devicePixelRatio);
+  if (px >= 24 || !String(root.dataset.palette).startsWith("night")) return;
+  const cs = getComputedStyle(root);
+  for (const n of CURSORS) {
+    const v = cs.getPropertyValue(n).trim();
+    if (v) root.style.setProperty(n, scaleCursor(v, px));
+  }
+}
+/** Refit when the window moves to a screen with other scaling. */
+function watchScaling() {
+  const mq = matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+  mq.addEventListener("change", () => { fitCursors(); watchScaling(); }, { once: true });
+}
+
 export function setupPalette() {
   // the main window carries on with the setting from before monitors existed
   let p = { mode: "day", dim: { dusk: 75, "night-red": 60, "night-green": 60 } };
@@ -32,6 +63,7 @@ export function setupPalette() {
     $("palette-btn").title = `Colours for this window: ${NAMES[p.mode]} (click for ${NAMES[next]}; right-click or hold for brightness)`;
     $("palette-btn").classList.toggle("night", p.mode !== "day");
     setWindowDark(p.mode !== "day");
+    fitCursors();
     if (persist) { try { localStorage.setItem(own(KEY), JSON.stringify(p)); } catch { /* ignore */ } }
   }
   $("palette-btn").onclick = () => { p.mode = MODES[(MODES.indexOf(p.mode) + 1) % MODES.length]; apply(); };
@@ -73,5 +105,6 @@ export function setupPalette() {
   window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !pop.hidden) { pop.hidden = true; e.preventDefault(); } });
   installFullscreenKey();
   apply();
+  watchScaling();
   return { mode: () => p.mode, set: (m) => { if (MODES.includes(m)) { p.mode = m; apply(); } } };
 }

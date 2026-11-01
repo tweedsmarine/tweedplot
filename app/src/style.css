@@ -696,7 +696,7 @@ html[data-palette="night-green"] {
   --cur-grab: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M12 3v18M3 12h18' stroke='%2300a000' stroke-width='2.5'/%3E%3Ccircle cx='12' cy='12' r='4' fill='none' stroke='%2300a000' stroke-width='2'/%3E%3C/svg%3E") 12 12, grab;
   --cur-grabbing: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M12 3v18M3 12h18' stroke='%2300a000' stroke-width='2.5'/%3E%3Ccircle cx='12' cy='12' r='4' fill='%2300a000'/%3E%3C/svg%3E") 12 12, grabbing;
 }
-:where(html[data-palette^="night"]) :not(input, textarea) { cursor: var(--cur-arrow); }
+html[data-palette^="night"], :where(html[data-palette^="night"]) :not(input, textarea) { cursor: var(--cur-arrow); }
 /* resize cursors: a double arrow in the night colour with a dark edge */
 html[data-palette="night-red"] {
   --cur-nwse: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M5 5l14 14M5 5h6M5 5v6M19 19h-6M19 19v-6' fill='none' stroke='%23000' stroke-width='4.5'/%3E%3Cpath d='M5 5l14 14M5 5h6M5 5v6M19 19h-6M19 19v-6' fill='none' stroke='%23b00000' stroke-width='2'/%3E%3C/svg%3E") 12 12, nwse-resize;
