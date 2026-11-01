@@ -1,27 +1,22 @@
-//! Which depth areas contain a point: `depth_at <dir>... -- lon lat`.
+//! Print the charted depth at a place: `cargo run -p chart --example depth_at -- <chart dir> <lon> <lat>`,
+//! or with a fourth argument (a step in degrees), how many places on a grid around it have one.
 fn main() {
-    let a: Vec<String> = std::env::args().skip(1).collect();
-    let k = a.iter().position(|s| s == "--").unwrap();
-    let dirs: Vec<std::path::PathBuf> = a[..k].iter().map(Into::into).collect();
-    let (x, y): (f64, f64) = (a[k + 1].parse().unwrap(), a[k + 2].parse().unwrap());
-    let s = chart::ChartStore::open_dirs(&dirs).unwrap();
-    let inside = |r: &[[f64; 2]]| {
-        let mut c = false;
-        let n = r.len();
-        for i in 0..n {
-            let (p, q) = (r[i], r[(i + n - 1) % n]);
-            if (p[1] > y) != (q[1] > y) && x < (q[0] - p[0]) * (y - p[1]) / (q[1] - p[1]) + p[0] {
-                c = !c;
+    let a: Vec<String> = std::env::args().collect();
+    let store = chart::ChartStore::open_dir(&a[1]).expect("charts");
+    let (lon, lat): (f64, f64) = (a[2].parse().unwrap(), a[3].parse().unwrap());
+    match a.get(4).and_then(|s| s.parse::<f64>().ok()) {
+        None => println!("{:?}", store.depth_area_at(lon, lat)),
+        Some(step) => {
+            let mut hits = Vec::new();
+            for i in -20..=20 {
+                for j in -20..=20 {
+                    let (x, y) = (lon + i as f64 * step, lat + j as f64 * step);
+                    if let Some(h) = store.depth_area_at(x, y) {
+                        hits.push((x, y, h.2));
+                    }
+                }
             }
+            println!("{} of 1681 places; first {:?}", hits.len(), hits.first());
         }
-        c
-    };
-    let mut n = 0;
-    s.for_each_depth_area([x - 0.001, y - 0.001, x + 0.001, y + 0.001], |band, d, rings| {
-        if inside(&rings[0]) && !rings[1..].iter().any(|h| inside(h)) {
-            n += 1;
-            println!("band {band} drval1 {d:?}");
-        }
-    });
-    println!("{n} depth areas contain {x} {y}");
+    }
 }

@@ -452,6 +452,9 @@ impl ChartStore {
                         }
                     }
                     let mut props = vec![("band", Value::UInt(t.band as u64))];
+                    if t.table.to_ascii_lowercase().contains("dredged") {
+                        props.push(("dredged", Value::UInt(1)));
+                    }
                     for (k, v) in [("drval1", vals[0]), ("drval2", vals[1])] {
                         if let Some(v) = v {
                             props.push((k, Value::F64(v)));
@@ -770,6 +773,32 @@ impl ChartStore {
                 }
             });
         }
+    }
+
+    /// The depth area at a place, from the largest-scale chart that has one there: (band,
+    /// table, DRVAL1, DRVAL2, dredged). For the chart's report on a click on open water.
+    pub fn depth_area_at(&self, lon: f64, lat: f64) -> Option<(u8, String, Option<f64>, Option<f64>, bool)> {
+        let mut tables: Vec<&TableInfo> = self.tables.iter().filter(|t| t.kind == Kind::DepthArea).collect();
+        tables.sort_by_key(|t| std::cmp::Reverse(t.band));
+        let e = 1e-7;
+        for t in tables {
+            let mut found = None;
+            self.query(t, [lon - e, lat - e, lon + e, lat + e], &["drval1", "drval2"], |vals, g| {
+                if found.is_some() {
+                    return;
+                }
+                if let Geom::Polygons(polys) = g {
+                    if polys.iter().any(|rings| point_in_polygon(rings, lon, lat)) {
+                        found = Some((vals[0], vals[1]));
+                    }
+                }
+            });
+            if let Some((d1, d2)) = found {
+                let dredged = t.table.to_ascii_lowercase().contains("dredged");
+                return Some((t.band, t.table.clone(), d1, d2, dredged));
+            }
+        }
+        None
     }
 
     /// Every lake polygon touching `bbox` (inland water), and the rivers too if `rivers`.
@@ -1173,6 +1202,26 @@ fn open_gpkg_scan(path: &Path) -> Result<Option<(Connection, Vec<TableInfo>)>, C
     Ok(any.then_some((conn, tables)))
 }
 
+/// A point inside a polygon (exterior ring then holes): even-odd over all its rings.
+fn point_in_polygon(rings: &[geom::Ring], x: f64, y: f64) -> bool {
+    let mut c = false;
+    for r in rings {
+        let n = r.len();
+        if n < 3 {
+            continue;
+        }
+        let mut j = n - 1;
+        for i in 0..n {
+            let (a, b) = (r[i], r[j]);
+            if (a[1] > y) != (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0] {
+                c = !c;
+            }
+            j = i;
+        }
+    }
+    c
+}
+
 fn classify(table: &str) -> Option<(Kind, u8)> {
     let t = table.to_ascii_lowercase();
     match t.as_str() {
@@ -1230,7 +1279,10 @@ fn classify(table: &str) -> Option<(Kind, u8)> {
         Kind::Lake
     } else if t.contains("coverage_polygon") {
         Kind::Coverage
-    } else if t.contains("depth_area") {
+    } else if t.contains("depth_area") || t.contains("dredged_area") {
+        // dredged channels and berths (S-57 DRGARE): charted with their maintained depth
+        // (DRVAL1), and cut out of the depth areas; without them a channel shows whatever a
+        // coarser chart has there
         Kind::DepthArea
     } else if t.contains("depth_contour") {
         Kind::Contour
@@ -1522,6 +1574,11 @@ mod tests {
     #[test]
     fn classifies_linz_tables() {
         assert_eq!(classify("depth_area_polygon_hydro_14k_122k"), Some((Kind::DepthArea, 5)));
+        assert_eq!(classify("dredged_area_polygon_hydro_122k_190k"), Some((Kind::DepthArea, 4)));
+        // a square with a square hole: inside the ring, not in the hole
+        let sq = |a: f64, b: f64| vec![[a, a], [b, a], [b, b], [a, b], [a, a]];
+        let poly = vec![sq(0.0, 10.0), sq(4.0, 6.0)];
+        assert!(point_in_polygon(&poly, 1.0, 1.0) && !point_in_polygon(&poly, 5.0, 5.0) && !point_in_polygon(&poly, 11.0, 5.0));
         assert_eq!(classify("depth_contour_polyline_hydro_1350k_11500k"), Some((Kind::Contour, 2)));
         assert_eq!(classify("sounding_points_hydro_115mil_and_smaller"), Some((Kind::Sounding, 1)));
         assert_eq!(classify("nz_coastlines_and_islands_polygons_topo_150k"), Some((Kind::Land, 0)));

@@ -236,7 +236,7 @@ The symbols follow the paper chart and ECDIS conventions (IHO S-52), simplified 
 | {img:s57:ca} | Caution area: click it for the restriction | {img:s57:rs} | Rescue station |
 | {img:s57:lm} | Landmark | {img:s57:fg} | Fog signal |
 
-Depths are in metres below chart datum; a height that dries at low tide is labelled "dries", with its height above chart datum. Click any symbol for its full details in an info window.
+Depths are in metres below chart datum; a height that dries at low tide is labelled "dries", with its height above chart datum. Click any symbol for its full details in an info window; click open water for the charted depth there (the depth area, or the dredged area of a channel or berth with the depth it is dredged to) and which chart scale it comes from. Dredged channels are drawn in the colour of their dredged depth.
 
 **Where the chart scales meet.** LINZ charts come in scale bands, and the same farm, cable or rock is often drawn differently in each (a 1:190,000 chart may show one big farm block where the 1:122,000 chart shows the separate farms). TweedPlot uses each band's coverage, as an ECDIS does: inside the area a larger-scale chart covers, its features are the ones shown, and a smaller-scale chart's features are cut back to outside it. So a feature can change shape at a chart boundary, but never at the edge of a map tile, and nothing comes and goes as you zoom except where the charts themselves differ. Click a light, mark, danger or area for its details: light characteristics, buoy shape and colours, depth over a rock, area restrictions.
 

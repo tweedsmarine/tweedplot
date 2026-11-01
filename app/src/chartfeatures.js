@@ -176,11 +176,13 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
       && map.queryRenderedFeatures(e.point, { layers: ["mar-rules-fill"] }).length > 0;
     const hit = map.queryRenderedFeatures(box, { layers: POINTS }).concat(
       map.queryRenderedFeatures(box, { layers: LINES }), inRule ? [] : map.queryRenderedFeatures(e.point, { layers: ["f-area-hit"] }));
-    if (!hit.length) return;
-    // several features at one spot (a beacon with its light): show them all
+    // several features at one spot (a beacon with its light): show them all; on open water,
+    // the depth (or dredged) area of the largest-scale chart there
     const seen = new Set();
     const list = hit.filter((f) => { const k = `${f.properties.t}/${f.properties.fid}`; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 4);
-    const infos = (await Promise.all(list.map((f) => invoke("chart_feature", { t: f.properties.t, fid: f.properties.fid }).catch(() => null)))).filter(Boolean);
+    const infos = list.length
+      ? (await Promise.all(list.map((f) => invoke("chart_feature", { t: f.properties.t, fid: f.properties.fid }).catch(() => null)))).filter(Boolean)
+      : [await invoke("chart_depth_at", { lon: e.lngLat.lng, lat: e.lngLat.lat }).catch(() => null)].filter(Boolean);
     if (!infos.length) return;
     const el = document.createElement("div");
     el.className = "feat-pop";

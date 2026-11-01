@@ -1388,6 +1388,49 @@ fn open_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
     std::process::Command::new(prog).arg(&p).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// The charted depth at a place (a click on open water): the depth area or dredged area of the
+/// largest-scale chart there, as a feature report.
+#[tauri::command]
+fn chart_depth_at(lon: f64, lat: f64) -> Option<serde_json::Value> {
+    let (band, table, d1, d2, dredged) = charts()?.depth_area_at(lon, lat)?;
+    let m = |v: f64| format!("{} m", (v * 10.0).round() / 10.0);
+    let scale = if table.to_ascii_lowercase().contains("_enc_b") {
+        format!("ENC, usage band {band}")
+    } else {
+        match band {
+            5 => "LINZ 1:14,000 to 1:122,000".into(),
+            4 => "LINZ 1:122,000 to 1:190,000".into(),
+            3 => "LINZ 1:190,000 to 1:1,350,000".into(),
+            2 => "LINZ 1:1,350,000 to 1:11,500,000".into(),
+            _ => "LINZ 1:11,500,000 and smaller".into(),
+        }
+    };
+    let mut attrs: Vec<(String, String)> = Vec::new();
+    if dredged {
+        if let Some(v) = d1 {
+            attrs.push(("Dredged to".into(), m(v)));
+        }
+        if let Some(v) = d2 {
+            attrs.push(("Deepest".into(), m(v)));
+        }
+    } else {
+        match (d1, d2) {
+            (Some(a), _) if a < 0.0 => attrs.push(("Dries".into(), m(-a))),
+            (Some(a), Some(b)) => attrs.push(("Depth".into(), format!("{} to {}", m(a), m(b)))),
+            (Some(a), None) => attrs.push(("Depth".into(), format!("{} and deeper", m(a)))),
+            (None, _) => attrs.push(("Depth".into(), "not given".into())),
+        }
+    }
+    attrs.push(("Chart".into(), scale));
+    attrs.push(("Below".into(), "chart datum".into()));
+    Some(serde_json::json!({
+        "code": if dredged { "DRGARE" } else { "DEPARE" },
+        "name": if dredged { "Dredged area" } else { "Depth area" },
+        "band": band,
+        "attrs": attrs,
+    }))
+}
+
 /// All attributes of a chart feature (table index and fid from the tiles), in words.
 #[tauri::command]
 fn chart_feature(t: usize, fid: i64) -> Option<serde_json::Value> {
@@ -1707,6 +1750,7 @@ pub fn run() {
             open_folder,
             chart_info,
             chart_feature,
+            chart_depth_at,
             chart_clearances,
             chart_shallow_ahead,
             monitor_open,
