@@ -711,11 +711,26 @@ html[data-palette="night-green"] {
 html[data-palette^="night"] :is(.prsz, .trsz) { cursor: var(--cur-nwse) !important; }
 html[data-palette^="night"] :is(.seafilter .h, #manual .man-grip) { cursor: var(--cur-ew) !important; }
 html[data-palette^="night"] .dock-grip { cursor: var(--cur-ns) !important; }
+/* Things to click: the ring, also over the text and icons inside them (the rule for every element
+   above would otherwise give those the arrow). Not over a text field or a handle inside one.
+   Rules with an id are kept apart: an id inside :is() lifts the whole list above the rules after it. */
 html[data-palette^="night"] :is(button, a, summary, label, select, [role="button"], input[type="checkbox"], input[type="range"],
-  .list li .main, .ptitle, .tile, .itile, .chip, table.cmp th, table.cmp tr, #tgt-table th, #tgt-table td, .seafilter .track, #alarm-banner .txt) { cursor: var(--cur-ring) !important; }
-html[data-palette^="night"] .grip, html[data-palette^="night"] .float-win header { cursor: var(--cur-grab) !important; }
-html[data-palette^="night"] .maplibregl-canvas-container.maplibregl-interactive { cursor: var(--cur-grab); }
-html[data-palette^="night"] .maplibregl-map:active .maplibregl-canvas-container.maplibregl-interactive { cursor: var(--cur-grabbing); }
+  .list li .main, .ptitle, .tile, .itile, .chip, table.cmp th, table.cmp tr, .seafilter .track, .isel-opt, .ll-body .main, .view-pop .vp-chart),
+html[data-palette^="night"] :is(button, a, summary, label, [role="button"],
+  .list li .main, .ptitle, .tile, .itile, .chip, table.cmp th, table.cmp tr, .seafilter .track, .isel-opt, .ll-body .main, .view-pop .vp-chart)
+  :not(input, textarea, .h, .prsz, .trsz, .grip) { cursor: var(--cur-ring) !important; }
+html[data-palette^="night"] :is(#tgt-table th, #tgt-table td, #alarm-banner .txt, #topbar, #manual figure img, #manual figure.diagram, #manual .man-lightbox),
+html[data-palette^="night"] :is(#tgt-table th, #tgt-table td, #alarm-banner .txt, #topbar, #manual figure.diagram, #manual .man-lightbox) :not(input, textarea) { cursor: var(--cur-ring) !important; }
+/* inputs that aren't typed into (dates, files, colours) keep the system arrow unless told */
+html[data-palette^="night"] input:not([type="text"], [type="number"], [type="password"], [type="search"], [type="email"], [type="url"], [type="checkbox"], [type="range"], :not([type])) { cursor: var(--cur-arrow); }
+html[data-palette^="night"] .isel-list .isel-opt.off { cursor: var(--cur-arrow) !important; }
+/* drag handles, and the plain text in them (the title), but not the controls in them */
+html[data-palette^="night"] :is(.grip, .float-win header, .float-drag, .act-head, .pb-card .pb-head),
+html[data-palette^="night"] :is(.grip, .float-win header, .float-drag, .act-head, .pb-card .pb-head) :not(button, button *, select, input, label, label *) { cursor: var(--cur-grab) !important; }
+html[data-palette^="night"] :is(.dragging, .dragging .float-drag) { cursor: var(--cur-grabbing) !important; }
+html[data-palette^="night"] svg.mg { cursor: var(--cur-cross) !important; }
+html[data-palette^="night"] :is(.maplibregl-canvas-container.maplibregl-interactive, .maplibregl-canvas-container.maplibregl-interactive .maplibregl-canvas) { cursor: var(--cur-grab); }
+html[data-palette^="night"] .maplibregl-map:active :is(.maplibregl-canvas-container.maplibregl-interactive, .maplibregl-canvas-container.maplibregl-interactive .maplibregl-canvas) { cursor: var(--cur-grabbing); }
 html[data-palette^="night"] .maplibregl-canvas[style*="cursor: pointer"] { cursor: var(--cur-ring) !important; }
 html[data-palette^="night"] .maplibregl-canvas[style*="cursor: crosshair"], html[data-palette^="night"] .maplibregl-map.drawing .maplibregl-canvas { cursor: var(--cur-cross) !important; }
 html[data-palette^="night"] .maplibregl-canvas[style*="cursor: grabbing"] { cursor: var(--cur-grabbing) !important; }
@@ -1161,7 +1176,7 @@ button.on.warn { background: #b03a2e; color: #fff; border-color: #b03a2e; }
 .lf-bar button { flex: none; }
 
 .float-drag { cursor: grab; touch-action: none; user-select: none; }
-.float-drag.dragging { cursor: grabbing; }
+.dragging, .dragging .float-drag { cursor: grabbing; }
 
 /* a question box (ask.js) */
 .ask-back { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, 0.35); display: flex; align-items: center; justify-content: center; }

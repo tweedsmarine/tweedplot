@@ -14,7 +14,8 @@ export function floatDrag(el, key, handle = el) {
     const y = Math.min(Math.max(0, pos.y * p.height), Math.max(0, p.height - el.offsetHeight));
     Object.assign(el.style, { left: `${x}px`, top: `${y}px`, right: "auto", bottom: "auto" });
   }
-  el.classList.add("float-drag");
+  // the drag cursor only where it can be dragged (the title of a card with controls in it)
+  handle.classList.add("float-drag");
   handle.title = "Drag to move; double-click to put it back";
   handle.addEventListener("pointerdown", (e) => {
     if (e.button !== 0 || (handle !== el && e.target.closest("button, select, input"))) return;
