@@ -57,9 +57,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Formatting (rustfmt.toml)
+        run: cargo fmt --all --check
       - name: Rust tests (library crates)
         run: cargo test # the workspace's default members: every crate but the app
+      # a new Rust release can bring new lints: they show on the run, but don't stop the installers
+      - name: Clippy (library crates)
+        continue-on-error: true
+        run: cargo clippy --all-targets -- -D warnings
 
   windows:
     needs: [plan, test]

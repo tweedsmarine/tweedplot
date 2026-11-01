@@ -19,18 +19,21 @@ A modern race navigation app for Windows: chartplotter basics, a GRIB viewer for
 | `app/src-tauri/src/nmea.rs` | Concurrent native serial, TCP client and UDP listener workers; source status and observations; per-data-group source preferences; automatic failover with alarms | Multiple inputs can drive one composed vessel state. Actisense/NMEA 2000 and protected configuration remain future work; virtual COM output is a release goal; network I/O will be developed with RADAR overlay |
 | `crates/ais` | AIS targets: Signal K AIS contexts and the aisstream.io WebSocket feed, merged by MMSI, expiry, distress kinds from MMSI | Parsers tested; aisstream.io not yet tried live |
 | `crates/stations` | Weather observations: MetService WIS2 (OGC API), aviationweather.gov METAR, NOAA NDBC buoys | Parsers tested; not yet tried live |
-| `crates/library` | Mark library, routes, saved routings and tracks as JSON files; track recorder; GPX import and export | Working, tested |
+| `crates/library` | The library (a GeoPackage): marks, routes, routings, tracks, barriers, the fishing log and trips; Trash, imports and Undo, export, merge, protected files; track recorder; GPX, TimeZero, KML and CSV import | Working, tested |
 | `crates/tides` | LINZ tide predictions: daily tables, secondary ports from LINZ differences, cosine curves, downloader | Working, tested on LINZ files |
+| `app/src-tauri/src` | The Tauri commands: `lib.rs` (start-up, chart tiles, jobs, activity log, tracks, tides, fleet, settings and the command list), `grib_cmd.rs` (GRIB downloads and display), `routing_cmd.rs` (polars, route_compute), `library_cmd.rs` (the library), and `webmap.rs`, `pbathy.rs`, `nmea.rs`, `s63_cmd.rs`, `stations_cmd.rs`, `live.rs` | |
 | `app/` | Tauri shell + MapLibre GL front end: icon rail with one drawer at a time, chart, GRIB, routing, library, floating instrument panels | Working |
 
 ## Build and test
 
 ```
 cargo test
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p polar --example polar_info -- "path\to\Morgane_median.csv"
 ```
 
-See `SETUP-WINDOWS.md` for how to install the toolchain.
+See `SETUP-WINDOWS.md` for how to install the toolchain. Formatting follows `rustfmt.toml` (long lines); the clippy exceptions are in the root `Cargo.toml` (`[workspace.lints.clippy]`). CI runs both, and `git config blame.ignoreRevsFile .git-blame-ignore-revs` keeps the formatting commit out of blame.
 
 ## Run the app
 
