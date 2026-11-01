@@ -1,4 +1,5 @@
 // racenav front end: offline chart, own boat, track and instrument panel.
+import { placing } from "./modes.js";
 import "./clock24.js";
 import * as maplibregl from "maplibre-gl";
 import "@fontsource/atkinson-hyperlegible-next/400.css";
@@ -968,7 +969,7 @@ function openInLibrary(o) {
 }
 map.on("dblclick", (e) => {
   // drawing a barrier or measuring uses double-click to finish
-  if (document.querySelector(".armed") || barriers?.isDrawing() || ruler?.isArmed()) return;
+  if (placing() || barriers?.isDrawing() || ruler?.isArmed()) return;
   const o = libraryObjectAt(e.point, true); // inside a big zone, a double-click still zooms
   if (!o) return;
   e.preventDefault(); // not a zoom

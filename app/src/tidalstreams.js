@@ -4,6 +4,7 @@
 // and ebb arrows (TS_FEB). The predicted stream is drawn as IMO SN.1/Circ.243 asks: a
 // single long-dashed line with three arrowheads, labelled with the rate and the time
 // (hours from high water at the reference port), on opposite sides.
+import { placing } from "./modes.js";
 import { invoke } from "@tauri-apps/api/core";
 import { infoBox } from "./infobox.js";
 
@@ -143,9 +144,9 @@ export function setupTidalStreams(map, { before, getTime, onTime, isOn, status =
     else box.update(html);
   }
   for (const l of ["ts-diamond", "ts-arrow"]) {
-    map.on("click", l, (e) => { if (document.querySelector(".armed")) return; const f = e.features?.[0]; if (f) showPanel(f.properties.i); });
-    map.on("mouseenter", l, () => { if (!document.querySelector(".armed")) map.getCanvas().style.cursor = "pointer"; });
-    map.on("mouseleave", l, () => { if (!document.querySelector(".armed")) map.getCanvas().style.cursor = ""; });
+    map.on("click", l, (e) => { if (placing()) return; const f = e.features?.[0]; if (f) showPanel(f.properties.i); });
+    map.on("mouseenter", l, () => { if (!placing()) map.getCanvas().style.cursor = "pointer"; });
+    map.on("mouseleave", l, () => { if (!placing()) map.getCanvas().style.cursor = ""; });
   }
 
   let t0 = null;

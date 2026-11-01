@@ -3,6 +3,7 @@
 // lines, names. The tiles come from the Rust chart store (layers fpt, fln, far,
 // lsec); symbols and labels are drawn here on demand, so nothing needs fetching.
 // Click a feature for all its details.
+import { placing } from "./modes.js";
 import { infoBox } from "./infobox.js";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -165,11 +166,11 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
   const POINTS = ["f-points", "f-lights"];
   const LINES = ["f-line-mag", "f-line-solid", "f-line-dash"];
   map.on("click", async (e) => {
-    if (!enabled || document.querySelector(".armed")) return;
+    if (!enabled || placing()) return;
     // leave clicks on the app's own things (course, routings, fleet, marks) to them
     const pad = 6;
     const box = [[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]];
-    const own = map.queryRenderedFeatures(box).some((f) => /^(rt-|lib-|fl-|dl-|boat|tide-|stn-|ais-|alarm-)/.test(f.layer.id));
+    const own = map.queryRenderedFeatures(box).some((f) => /^(rt-|lib-|fl-|dl-|boat|tide-|stn-|ais-|alarm-|ruler-|bar-|trk-|evt-|ovl-)/.test(f.layer.id));
     if (own) return;
     // inside a fishing rule area, the rules box (marine.js) stands in for chart areas
     const inRule = map.getLayer("mar-rules-fill") && map.getLayoutProperty("mar-rules-fill", "visibility") !== "none"
@@ -207,8 +208,8 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
     infoBox(map, "chart", { width: 360, height: 360 }).open(el, { title: infos.length > 1 ? `${infos.length} chart features` : infos[0].name, at: [e.lngLat.lng, e.lngLat.lat] });
   });
   for (const id of [...POINTS, ...LINES]) {
-    map.on("mouseenter", id, () => { if (!document.querySelector(".armed")) map.getCanvas().style.cursor = "pointer"; });
-    map.on("mouseleave", id, () => { if (!document.querySelector(".armed")) map.getCanvas().style.cursor = ""; });
+    map.on("mouseenter", id, () => { if (!placing()) map.getCanvas().style.cursor = "pointer"; });
+    map.on("mouseleave", id, () => { if (!placing()) map.getCanvas().style.cursor = ""; });
   }
 
   return {

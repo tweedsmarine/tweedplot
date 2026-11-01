@@ -6,6 +6,7 @@
 // variation) and distance, with the total at the end. Points move like course
 // marks: click one (amber ring), wait for the ring to turn green, then drag.
 // Right-click a ruler: delete it, delete a point, or save it as a route.
+import { placing } from "./modes.js";
 import { invoke } from "@tauri-apps/api/core";
 import { greatCircle, greatCircleGeometry, greatCirclePath, rhumb, fmtBrg, fmtNm } from "./navmath.js";
 
@@ -170,7 +171,7 @@ export function setupRuler(map, { before, ui, library, route, toast, getVariatio
     drawSel();
   }
   map.on("click", "ruler-pt", (e) => {
-    if (armed || document.querySelector(".armed")) return;
+    if (armed || placing()) return;
     const f = e.features[0].properties;
     if (sel && sel.rid === f.rid && sel.i === f.i) return;
     select(f.rid, f.i);

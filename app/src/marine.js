@@ -4,6 +4,7 @@
 // this boat (its gear and length), explains them on a click, and in the main window raises
 // an alarm on entering, or heading into, an area closed to the boat's gear.
 
+import { placing } from "./modes.js";
 import { invoke } from "@tauri-apps/api/core";
 import { infoBox } from "./infobox.js";
 import { PRIMARY } from "./role.js";
@@ -150,11 +151,11 @@ export function setupMarine(map, { getBoat = () => ({}), getLength = () => 0, al
   }
 
   map.on("click", async (e) => {
-    if (!s.rules || document.querySelector(".armed")) return;
+    if (!s.rules || placing()) return;
     const pad = 6;
     const box = [[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]];
     // chart symbols and the app's own things keep their own info
-    const other = map.queryRenderedFeatures(box).some((f) => /^(f-points|f-lights|f-line|rt-|lib-|fl-|dl-|boat|tide-|stn-|ais-|alarm-)/.test(f.layer.id));
+    const other = map.queryRenderedFeatures(box).some((f) => /^(f-points|f-lights|f-line|rt-|lib-|fl-|dl-|boat|tide-|stn-|ais-|alarm-|ruler-|bar-|trk-|evt-|ovl-)/.test(f.layer.id));
     if (other || !map.queryRenderedFeatures(e.point, { layers: ["mar-rules-fill"] }).length) return;
     const [hits] = await invoke("rules_at", { points: [[e.lngLat.lng, e.lngLat.lat]] }).catch(() => [[]]);
     const len = getLength() || 0;

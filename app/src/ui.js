@@ -43,7 +43,7 @@ export function setupRail(map) {
   });
   window.addEventListener("keydown", (e) => {
     // Esc closes the drawer only when nothing else (menus, modes, selections) wants it
-    if (e.key === "Escape" && !e.defaultPrevented && current && !document.querySelector(".ctx:not([hidden])") && !document.querySelector(".armed") && !document.body.classList.contains("ruler-armed")) {
+    if (e.key === "Escape" && !e.defaultPrevented && current && !document.querySelector(".ctx:not([hidden])") && !placing()) {
       if (document.activeElement && drawer.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
       open(null);
     }

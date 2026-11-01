@@ -1,6 +1,7 @@
 // Tide stations on the chart (LINZ): daily ports and secondary ports, with an info box
 // showing the day's tidal curve, highs and lows, and the height at the planning time.
 // Data comes from the Rust side (tides crate), downloaded once from LINZ.
+import { placing } from "./modes.js";
 import { infoBox } from "./infobox.js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -188,12 +189,12 @@ export function setupTides(map, { before, getTime, onTime }) {
   }
   for (const l of ["tide-daily", "tide-sec"]) {
     map.on("click", l, (e) => {
-      if (document.querySelector(".armed")) return;
+      if (placing()) return;
       const f = e.features[0];
       show(f.properties.id, f.geometry.coordinates);
     });
-    map.on("mouseenter", l, () => { if (!document.querySelector(".armed")) map.getCanvas().style.cursor = "pointer"; });
-    map.on("mouseleave", l, () => { if (!document.querySelector(".armed")) map.getCanvas().style.cursor = ""; });
+    map.on("mouseenter", l, () => { if (!placing()) map.getCanvas().style.cursor = "pointer"; });
+    map.on("mouseleave", l, () => { if (!placing()) map.getCanvas().style.cursor = ""; });
   }
   // the planning time moved: follow it if the box shows that day
   let pending = null;

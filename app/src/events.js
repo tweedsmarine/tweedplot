@@ -6,6 +6,7 @@
 // Events follow the Whole library filters, belong to the trip they were made in, and are
 // drawn on the chart (a tow as a dashed line from shot to haul).
 
+import { placing } from "./modes.js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import * as activity from "./activity.js";
@@ -418,7 +419,7 @@ export function setupEvents(map, { ui, getBoat }) {
   $("evt-show").checked = prefs.show;
   $("evt-show").onchange = (e) => { prefs.show = e.target.checked; save(); draw(); renderFloatNote(); };
   map.on("click", "evt-icons", (e) => {
-    if (document.querySelector(".armed")) return;
+    if (placing()) return;
     const ev = byId(e.features[0].properties.id);
     if (!ev) return;
     ui.openTab("library", "log");

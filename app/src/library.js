@@ -3,6 +3,7 @@
 // (liblist.js: search, filters, sort, selection and actions). Tracks and barriers are in
 // tracks.js and barriers.js, in the same list. The data is in the library's database,
 // kept by the Rust side.
+import { placing } from "./modes.js";
 import { invoke } from "@tauri-apps/api/core";
 import * as activity from "./activity.js";
 import { ask, askPassphrase } from "./ask.js";
@@ -119,7 +120,7 @@ export function setupLibrary(map, { ui, toast = () => {} }) {
     armTimer = setTimeout(() => { movable = true; drawSel(); toast(`Drag ${m?.name || "the mark"} to move it.`); }, ARM_MS);
   }
   function deselectMark() { clearTimeout(armTimer); if (sel) toast(""); sel = null; movable = false; drawSel(); }
-  const busy = () => document.querySelector(".armed");
+  const busy = () => placing();
   map.on("click", (e) => {
     if (busy() || !prefs.show) return;
     const f = map.queryRenderedFeatures([[e.point.x - 6, e.point.y - 6], [e.point.x + 6, e.point.y + 6]], { layers: ["lib-marks"] })[0];

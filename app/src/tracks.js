@@ -3,6 +3,7 @@
 // boat was at the weather time (replays and comparisons); click a track for the
 // time, SOG and COG there. The recorder itself runs in Rust (it keeps logging
 // while plotting is paused); this module starts and stops it and shows its progress.
+import { placing } from "./modes.js";
 import { infoBox } from "./infobox.js";
 import { seaScale } from "./weather.js";
 import { ownSoundingsScale } from "./pbathy.js";
@@ -279,7 +280,7 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
 
   // click a track: time, SOG and COG at the nearest fix
   map.on("click", "trk-lines", async (e) => {
-    if (document.querySelector(".armed")) return;
+    if (placing()) return;
     const id = e.features[0].properties.id;
     const d = cache.get(id);
     const s = list.find((x) => x.id === id);
@@ -302,8 +303,8 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
     el.querySelectorAll("tr").forEach((tr, i) => { tr.cells[0].textContent = rows[i][0]; tr.cells[1].textContent = rows[i][1]; });
     infoBox(map, "track", { width: 260, height: 170 }).open(el, { title: s.name, at: [best[0], best[1]] });
   });
-  map.on("mouseenter", "trk-lines", () => { if (!document.querySelector(".armed")) map.getCanvas().style.cursor = "pointer"; });
-  map.on("mouseleave", "trk-lines", () => { if (!document.querySelector(".armed")) map.getCanvas().style.cursor = ""; });
+  map.on("mouseenter", "trk-lines", () => { if (!placing()) map.getCanvas().style.cursor = "pointer"; });
+  map.on("mouseleave", "trk-lines", () => { if (!placing()) map.getCanvas().style.cursor = ""; });
 
   // ---------- list ----------------------------------------------------------
   async function refresh() {

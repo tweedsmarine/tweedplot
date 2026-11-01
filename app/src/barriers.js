@@ -5,6 +5,7 @@
 // Draw line / Draw zone → click points, double-click to finish, Esc to stop.
 // Points move like course marks: click one (amber ring), wait for green, drag.
 // Right-click a barrier: delete a point, delete it, or switch it off/on.
+import { placing } from "./modes.js";
 import { invoke } from "@tauri-apps/api/core";
 import { libList } from "./liblist.js";
 
@@ -202,7 +203,7 @@ export function setupBarriers(map, { before, library, toast }) {
   }
   function deselect() { clearTimeout(armTimer); if (sel) toast(""); sel = null; movable = false; drawSel(); }
   map.on("click", "bar-pt", (e) => {
-    if (drawing || document.querySelector(".armed")) return;
+    if (drawing || placing()) return;
     const f = e.features[0].properties;
     if (!f.id || (sel && sel.id === f.id && sel.i === f.i)) return;
     select(f.id, f.i);

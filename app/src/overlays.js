@@ -4,6 +4,7 @@
 // their tracks are drawn when those filters pick 200 or fewer. The list of libraries shown
 // is kept (racenav.overlays) and opened again at start.
 
+import { placing } from "./modes.js";
 import { invoke } from "@tauri-apps/api/core";
 import * as activity from "./activity.js";
 import { addMarkLayers, plainLibrary } from "./library.js";
@@ -71,7 +72,7 @@ export function setupOverlays(map, { library }) {
 
   // ---------- clicking one of their marks: what it is (read-only) ----------
   map.on("click", "ovl-ring", (e) => {
-    if (document.querySelector(".armed")) return;
+    if (placing()) return;
     const f = e.features[0];
     const o = list[f.properties.ovl];
     const m = data.get(o?.path)?.marks?.find((x) => x.id === f.properties.id);
@@ -88,8 +89,8 @@ export function setupOverlays(map, { library }) {
     el.querySelectorAll("tr").forEach((tr, i) => { tr.cells[0].textContent = rows[i][0]; tr.cells[1].textContent = rows[i][1]; });
     infoBox(map, "overlay-mark", { width: 280, height: 200 }).open(el, { title: m.name || "Mark", at: [m.lon, m.lat] });
   });
-  map.on("mouseenter", "ovl-ring", () => { if (!document.querySelector(".armed")) map.getCanvas().style.cursor = "pointer"; });
-  map.on("mouseleave", "ovl-ring", () => { if (!document.querySelector(".armed")) map.getCanvas().style.cursor = ""; });
+  map.on("mouseenter", "ovl-ring", () => { if (!placing()) map.getCanvas().style.cursor = "pointer"; });
+  map.on("mouseleave", "ovl-ring", () => { if (!placing()) map.getCanvas().style.cursor = ""; });
 
   // ---------- opening them ----------
   async function load(o) {
