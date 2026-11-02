@@ -197,7 +197,7 @@ Wharves, breakwaters, jetties, pontoons, floating docks and causeways are drawn 
 | Setting | What it does |
 | --- | --- |
 | **Safety depth (m)** | The least depth you will sail in: the draft plus a margin for swell, squat and chart error. Routing will not enter water shallower than this, and it is the shallow water alarm's depth unless you set another |
-| **Safety contour (m)** | The contour drawn bold. Water shallower than it is shaded darker blue, as on a paper chart. Usually the next charted contour at or deeper than the safety depth. The **Safety contour ahead** alarm watches for it |
+| **Safety contour (m)** | The contour drawn bold. Water shallower than it is shaded darker blue, as on a paper chart. Set it to the safety depth or the next contour deeper. Where the chart has no contour at exactly that depth, the next deeper contour it has is drawn bold instead (as an ECDIS does), so the bold line never goes missing. The **Safety contour ahead** alarm watches for it |
 | **Chart symbol size** | Scales buoys, beacons, lights, dangers and other chart symbols from 75% to 200% (default 120%) to suit the screen and the viewing distance. Labels grow at half the rate, so they stay clear of each other |
 
 **Display: Base, Standard and All**
@@ -206,21 +206,27 @@ As on an ECDIS (IHO S-52), **Display** decides how much of the chart is shown:
 
 | Display | Shows |
 | --- | --- |
-| **Base** | Land and coastline, depth areas, the safety contour, and the dangers to your boat (rocks, wrecks, obstructions, marine farms, bridges and overhead cables). Base can't be reduced any further: these are never hidden |
-| **Standard** | Base, plus buoys, beacons and lights (with their sectors), leading lines and recommended tracks, restricted, caution and anchorage areas, wharves and other constructions, and spot soundings if **Soundings** is ticked |
-| **All** | Standard, plus every spot sounding, the other depth contours, submarine cables and pipelines, ferry routes and dumping grounds |
+| **Base** | Land and coastline, depth areas, the safety contour, the dangers to your boat (rocks, wrecks, obstructions, marine farms, bridges and overhead cables), buoys and beacons, and traffic separation schemes. Base can't be reduced any further: these are never hidden (the IMO ECDIS performance standard's "display base") |
+| **Standard** | Base, plus lights (with their sectors), leading lines and recommended tracks, fairways and ferry routes, restricted, caution and anchorage areas, wharves and other constructions, chart objects TweedPlot has no symbol for (a magenta ?), and spot soundings if **Soundings** is ticked |
+| **All** | Standard, plus every spot sounding, the other depth contours, submarine cables and pipelines, dumping grounds and kelp |
+
+The display in use is always shown beside the scale bar, bottom right.
 
 **Names and labels** (light characteristics, names of marks and places, depths over dangers) and **Light sectors** go on and off separately in Standard and All. **Standard display** puts everything back in one press: Standard, with light sectors, names and soundings, the display to come back to when the chart has been changed for a particular job (S-Mode, IMO's standard user interface for navigation equipment, asks for this). The button is highlighted while the chart is at the standard display.
 
-Underwater dangers deeper than the safety contour are shown with their depth only, so the chart stays readable while anything that matters to your boat stands out.
+**Isolated dangers.** A rock, wreck or obstruction shallower than your safety contour (or of unknown depth, drying or awash) that lies in water deeper than the safety contour gets the ECDIS isolated danger symbol {img:s57:iso}: a magenta ring with a cross. It is the danger the shading alone won't warn you of, out in what looks like safe water. Dangers in water already shaded shallow keep their ordinary symbols, and so do dangers deeper than the safety contour, with their depth beside them. Wrecks charted as not dangerous and foul ground never get it.
 
-**Hazards are never hidden by zoom.** Rocks, wrecks, obstructions, piles, platforms, marine farms, hulks, bridges and overhead cables and pipelines stay on the chart at every zoom, even in the Base display, and even where the chart's own scale-minimum setting (SCAMIN) would hide them. This follows the ECDIS performance standard, which puts isolated dangers in the "display base" that can't be removed, and learns from groundings such as Team Vestas Wind's on the Cargados Carajos Shoals in 2014, where a reef did not show on a racing navigator's chart display at the zoom he was using. Zoomed well out, where symbols would pile up, they are thinned to one every few pixels, keeping the most dangerous (drying and awash first, then the shallowest), and a farm or obstruction too small to see is also drawn as its symbol. Zoom in to see each one. Underwater dangers deeper than your safety contour are the exception: they appear from the scale the chart says, as their depth.
+**Objects without a symbol.** An ENC can hold objects TweedPlot doesn't draw yet (an unsurveyed area, a sand wave, a water turbulence warning...). Rather than leave them off, they are drawn with a magenta question mark {img:s57:uk} (areas also with a magenta dashed outline), as an ECDIS does with an unknown object. Click it to see what it is: the S-57 object class and its details. Roads, buildings, the seabed type and other land features are left out.
+
+**No depth charted.** Inside a chart's coverage, where it charts no depth (usually between two charts' coastlines), the chart is grey: no data, rather than a depth colour.
+
+**Hazards are never hidden by zoom.** Rocks, wrecks, obstructions, piles, platforms, marine farms, hulks, bridges and overhead cables and pipelines stay on the chart at every zoom, even in the Base display, and even where the chart's own scale-minimum setting (SCAMIN) would hide them. This follows the ECDIS performance standard, which puts isolated dangers in the "display base" that can't be removed, and learns from groundings such as Team Vestas Wind's on the Cargados Carajos Shoals in 2014, where a reef did not show on a racing navigator's chart display at the zoom he was using. Zoomed well out, where symbols would pile up, they are thinned to one every few pixels, keeping the most dangerous (drying and awash first, then the shallowest), and a farm or obstruction too small to see is also drawn as its symbol. Zoom in to see each one. Underwater dangers deeper than your safety contour are the exception: they appear from the scale the chart says, with their depth.
 
 **Port entry information shows early.** Pilot boarding places, radio calling-in (reporting) points and lines, signal stations and rescue stations show from about 1:500,000 (zoom 9), well before their charted SCAMIN, which often hides them until the harbour chart. That way they can be found while planning an approach to an unfamiliar port.
 
 **Chart symbols at a glance**
 
-The symbols follow the paper chart and ECDIS conventions (IHO S-52), simplified to read on a screen. The commonest:
+The symbols are simplified paper-chart symbols (INT 1), with some from the ECDIS presentation library (IHO S-52): the isolated danger, the unknown object, tide and weather stations, tidal streams. A full S-52 symbol set is being built and will become the default. The commonest:
 
 | Symbol | Meaning | Symbol | Meaning |
 | --- | --- | --- | --- |
@@ -237,6 +243,8 @@ The symbols follow the paper chart and ECDIS conventions (IHO S-52), simplified 
 | {img:s57:pb} | Pilot boarding place | {img:s57:rc} | Radio calling-in (reporting) point |
 | {img:s57:ca} | Caution area: click it for the restriction | {img:s57:rs} | Rescue station |
 | {img:s57:lm} | Landmark | {img:s57:fg} | Fog signal |
+| {img:s57:iso} | Isolated danger: shallower than your safety contour, in deeper water | {img:s57:uk} | Chart object with no symbol yet: click it |
+| {img:s57:ts} | Traffic lane direction (turns with the chart) | | |
 
 Depths are in metres below chart datum; a height that dries at low tide is labelled "dries", with its height above chart datum. Click any symbol for its full details in an info window; click open water for the charted depth there (the depth area, or the dredged area of a channel or berth with the depth it is dredged to) and which chart scale it comes from. Dredged channels are drawn in the colour of their dredged depth. Where the largest-scale chart covers a place but charts no depth there (usually where its coastline and the more detailed Topo50 coastline differ), the place is drawn in the very-shallow colour rather than taking a depth from a smaller-scale chart, and a click says "No charted depth".
 

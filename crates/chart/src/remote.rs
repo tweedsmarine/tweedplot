@@ -226,4 +226,22 @@ mod tests {
         assert_eq!(fa, remote.feature(rt, 1).map(|f| f.attrs));
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// Contours carry the DRVAL1 of the shallower depth area they bound (`sh`), so the
+    /// chart can pick the safety contour whatever contour values the cell has.
+    #[test]
+    fn contours_carry_their_shallow_side() {
+        let dir = std::env::temp_dir().join(format!("tp_sh_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let c = enc_s57::cell::Cell::from_bytes(include_bytes!("../tests/data/1B5X02NE.000"), &[]).unwrap();
+        crate::enc::write_gpkg(&c, &dir.join("cell.gpkg")).unwrap();
+        let store = crate::ChartStore::open_dirs(std::slice::from_ref(&dir)).unwrap();
+        let b = store.tables.iter().find(|t| t.kind == crate::Kind::Contour).unwrap().bounds;
+        let (x, y) = tile_of((b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0, 14);
+        let tile = store.tile(14, x, y);
+        // the layer's key table: field 3, length 2, "sh"
+        assert!(tile.windows(4).any(|w| w == b"\x1a\x02sh"), "no sh key in the tile");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -27,6 +27,13 @@
 //! drawn as its symbol. (IMO's ECDIS performance standard keeps isolated
 //! dangers in the display base, which can't be removed; small-scale chart
 //! displays dropping a reef were behind the Vestas Wind stranding in 2014.)
+//!
+//! Other properties: `db` = 1 on what IMO's ECDIS performance standard puts in the
+//! display base besides dangers (buoys and beacons, ships' routeing); `wd` on a rock,
+//! wreck or obstruction is the DRVAL1 of the depth area it lies in, so the chart can
+//! give an isolated danger (shallower than the safety contour, in water deeper than
+//! it: S-52 UDWHAZ05) the isolated danger symbol, and `nd` = 1 marks one charted as
+//! not dangerous; `rot` turns a symbol with the chart (a traffic lane's arrow).
 
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
@@ -80,6 +87,58 @@ pub fn is_hazard(code: &str) -> bool {
 /// Information a stranger entering port needs to find early (pilot boarding, radio
 /// calling-in points, signal and rescue stations): shown from `INFO_ZOOM` whatever the
 /// chart's SCAMIN, which often hides them until the harbour chart.
+/// Classes IMO's ECDIS performance standard puts in the display base (with the dangers):
+/// buoys and beacons, whether aids to navigation or not, and traffic routeing systems.
+pub fn is_display_base(code: &str) -> bool {
+    code.starts_with("BOY") || code.starts_with("BCN") || matches!(code, "TSSLPT" | "TSSBND" | "TSSCRS" | "TSSRON" | "TSEZNE" | "TSELNE" | "ISTZNE")
+}
+
+/// Charted as not dangerous to surface navigation (S-52 leaves these out of the
+/// isolated-danger test): a non-dangerous wreck or distributed remains, foul ground.
+fn not_dangerous(code: &str, a: &Attrs) -> bool {
+    match code {
+        "WRECKS" => matches!(a.first("catwrk"), Some(1 | 3)),
+        "OBSTRN" => matches!(a.first("catobs"), Some(5..=7)),
+        _ => false,
+    }
+}
+
+/// The depth areas of a tile, to find the water a danger lies in.
+struct DepthAreas(Vec<(u8, f64, [f64; 4], Vec<Ring>)>);
+
+impl DepthAreas {
+    fn load(store: &ChartStore, bbox: [f64; 4]) -> Self {
+        let mut v = Vec::new();
+        store.for_each_depth_band(bbox, |band, d1, _, rings| {
+            if let (Some(d1), Some(outer)) = (d1, rings.first()) {
+                let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+                for p in outer {
+                    b = [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])];
+                }
+                v.push((band, d1, b, rings.to_vec()));
+            }
+        });
+        DepthAreas(v)
+    }
+
+    /// DRVAL1 of the largest-scale depth area at `p`.
+    fn at(&self, p: [f64; 2]) -> Option<f64> {
+        let mut best: Option<(u8, f64)> = None;
+        for (band, d1, b, rings) in &self.0 {
+            if best.is_some_and(|(bb, _)| bb >= *band) {
+                continue;
+            }
+            if p[0] < b[0] || p[0] > b[2] || p[1] < b[1] || p[1] > b[3] {
+                continue;
+            }
+            if crate::point_in_polygon(rings, p[0], p[1]) {
+                best = Some((*band, *d1));
+            }
+        }
+        best.map(|(_, d)| d)
+    }
+}
+
 pub fn is_info(code: &str) -> bool {
     matches!(code, "PILBOP" | "RDOCAL" | "SISTAT" | "RSCSTA")
 }
@@ -524,6 +583,8 @@ impl ChartStore {
 
         // buoys, beacons and other marks drawn in this tile: (position, band, minz)
         let mut marks: Vec<([f64; 2], u8, f64)> = Vec::new();
+        // the depth areas, read the first time a danger needs them
+        let mut depth_areas: Option<DepthAreas> = None;
         for (class, tables) in &groups {
             match class.geo {
                 // lights last, so they can follow the marks they stand on (below)
@@ -593,6 +654,19 @@ impl ChartStore {
                                     if let Some(d) = a.num("valsou") {
                                         props.push(("dep", Value::F64(d)));
                                     }
+                                }
+                                // the water it lies in, for the isolated danger test (S-52 UDWHAZ05)
+                                if matches!(class.code, "UWTROC" | "WRECKS" | "OBSTRN") {
+                                    let da = depth_areas.get_or_insert_with(|| DepthAreas::load(self, bbox));
+                                    if let Some(wd) = da.at(p) {
+                                        props.push(("wd", Value::F64(wd)));
+                                    }
+                                    if not_dangerous(class.code, &a) {
+                                        props.push(("nd", Value::UInt(1)));
+                                    }
+                                }
+                                if is_display_base(class.code) {
+                                    props.push(("db", Value::UInt(1)));
                                 }
                                 if let Some(n) = a.get("objnam") {
                                     props.push(("name", Value::Str(n.into())));
@@ -710,6 +784,9 @@ impl ChartStore {
                             if hazard {
                                 props.push(("hz", Value::UInt(1)));
                             }
+                            if is_display_base(class.code) {
+                                props.push(("db", Value::UInt(1)));
+                            }
                             if let Some(n) = row.vals[0].as_deref().filter(|s| !s.trim().is_empty()) {
                                 props.push(("name", Value::Str(n.trim().into())));
                             }
@@ -738,6 +815,32 @@ impl ChartStore {
                                         pp.push(("icon", Value::Str(icon)));
                                         put_hazard(c, 500.0, pp, &mut fpt);
                                     }
+                                }
+                            }
+                            // an area's symbol at its middle: a traffic lane's direction arrow (S-52
+                            // TSSLPT51, turned to its ORIENT), or the "?" of an object without a symbol
+                            if class.geo == Geo::Area && matches!(class.code, "TSSLPT" | s57::UNKNOWN) {
+                                let g = geom_bounds(geom);
+                                let mid = [(g[0] + g[2]) / 2.0, (g[1] + g[3]) / 2.0];
+                                // the middle of the bounds may fall outside an odd shape: then a vertex
+                                let at = match geom {
+                                    Geom::Polygons(p) if !p.iter().any(|r| crate::point_in_polygon(r, mid[0], mid[1])) => {
+                                        p.first().and_then(|r| r.first()).and_then(|r| r.first()).copied().unwrap_or(mid)
+                                    }
+                                    _ => mid,
+                                };
+                                let c = tp.px(&at);
+                                let orient = row.vals[5].as_deref().and_then(|v| v.trim().parse::<f64>().ok());
+                                if inside(c) && (class.code != "TSSLPT" || orient.is_some()) {
+                                    let mut pp = props.clone();
+                                    pp[0] = ("cls", Value::Str(class.code.into()));
+                                    if let Some(o) = orient {
+                                        pp.push(("icon", Value::Str("ts".into())));
+                                        pp.push(("rot", Value::F64(o)));
+                                    } else {
+                                        pp.push(("icon", Value::Str("uk".into())));
+                                    }
+                                    fpt.add(&TileGeom::Points(vec![[c[0].round() as i32, c[1].round() as i32]]), &pp);
                                 }
                             }
                             if let Some(tg) = tg {

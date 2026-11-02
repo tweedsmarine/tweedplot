@@ -88,19 +88,28 @@ function saveSettings() { try { localStorage.setItem("racenav.chart", JSON.strin
 const TILE_URL = window.RACENAV_TILE_URL
   ?? `${navigator.userAgent.includes("Windows") ? "http://chart.localhost" : "chart://localhost"}/{z}/{x}/{y}.pbf?s=${Date.now().toString(36)}`;
 
-// S-52 style depth shades (day palette).
-const DEPTH = { drying: "#a9c8a0", vshallow: "#7fb8e8", mshallow: "#a6cdf0", mdeep: "#c9e1ee", deep: "#e9f3f6" };
+// S-52 style depth shades (day palette). nodata: S-52 NODTA, where a chart charts no depth.
+const DEPTH = { drying: "#a9c8a0", vshallow: "#7fb8e8", mshallow: "#a6cdf0", mdeep: "#c9e1ee", deep: "#e9f3f6", nodata: "#b4bcc0" };
 function depareColour() {
   const d1 = ["coalesce", ["get", "drval1"], 0];
   return ["case",
     ["has", "lake"], DEPTH.deep,
-    // inside a chart's coverage where it charts no depth (chart.rs: "gap")
-    ["has", "gap"], DEPTH.vshallow,
+    // inside a chart's coverage where it charts no depth (chart.rs: "gap"): no data, as S-52
+    // shows it, not a depth colour (the click report says no depth is charted there)
+    ["has", "gap"], DEPTH.nodata,
     ["<", d1, 0], DEPTH.drying,
     ["<", d1, settings.shallow], DEPTH.vshallow,
     ["<", d1, settings.safetyContour], DEPTH.mshallow,
     ["<", d1, settings.deep], DEPTH.mdeep,
     DEPTH.deep];
+}
+/** The safety contour (S-52 DEPCNT02): the contour between a depth area shallower than the
+ *  chosen value and one at least as deep, so the next deeper contour the chart has when it
+ *  has none at exactly that depth (`sh` from the chart store: the shallower area's DRVAL1). */
+function safetyContourFilter() {
+  const sc = settings.safetyContour;
+  return ["all", ["<=", sc, ["get", "valdco"]],
+    ["case", ["has", "sh"], ["<", ["get", "sh"], sc], ["==", ["get", "valdco"], sc]]];
 }
 function soundingImage() {
   return ["concat", ["case", ["<=", ["get", "depth"], settings.safetyDepth], "sh:", "dp:"], ["to-string", ["get", "depth"]]];
@@ -159,7 +168,7 @@ const map = new maplibregl.Map({
       { id: "depcnt", type: "line", source: "chart", "source-layer": "depcnt", layout: { visibility: "none" },
         paint: { "line-color": "#7d97a6", "line-width": 0.6 } },
       { id: "safety-contour", type: "line", source: "chart", "source-layer": "depcnt",
-        filter: ["==", ["get", "valdco"], settings.safetyContour], layout: { visibility: "none" },
+        filter: safetyContourFilter(), layout: { visibility: "none" },
         paint: { "line-color": "#1d2a33", "line-width": 1.6 } },
       // Bundled land: shown until chart tiles arrive (setChartFallbackRange).
       { id: "land-world", type: "fill", source: "land-world", maxzoom: 6,
@@ -645,7 +654,7 @@ map.on("moveend", () => {
 
 function applyChartSettings() {
   map.setPaintProperty("depare", "fill-color", depareColour());
-  map.setFilter("safety-contour", ["==", ["get", "valdco"], settings.safetyContour]);
+  map.setFilter("safety-contour", safetyContourFilter());
   map.setLayoutProperty("soundg", "icon-image", soundingImage());
   features?.setSafetyContour(settings.safetyContour);
 }

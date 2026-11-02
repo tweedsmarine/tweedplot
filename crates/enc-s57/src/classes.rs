@@ -21,7 +21,7 @@ pub struct FeatureClass {
 }
 
 macro_rules! fc {
-    ($code:literal, $name:literal, $prefix:literal, $geo:ident) => {
+    ($code:expr, $name:literal, $prefix:literal, $geo:ident) => {
         FeatureClass { code: $code, name: $name, prefix: $prefix, geo: Geo::$geo }
     };
 }
@@ -98,7 +98,84 @@ pub static CLASSES: &[FeatureClass] = &[
     fc!("MORFAC", "Mooring facility", "mooring_warping_facility_polygon", Area),
     fc!("CAUSWY", "Causeway", "causeway_polygon", Area),
     fc!("SEAARE", "Sea area", "sea_area_named_water_area_polygon", Area),
+    // ships' routeing (IMO ECDIS PS: part of the display base)
+    fc!("TSSLPT", "Traffic separation scheme lane", "traffic_separation_scheme_lane_part_polygon", Area),
+    fc!("TSSBND", "Traffic separation scheme boundary", "traffic_separation_scheme_boundary_polyline", Line),
+    fc!("TSSCRS", "Traffic separation scheme crossing", "traffic_separation_scheme_crossing_polygon", Area),
+    fc!("TSSRON", "Traffic separation scheme roundabout", "traffic_separation_scheme_roundabout_polygon", Area),
+    fc!("TSEZNE", "Traffic separation zone", "traffic_separation_zone_polygon", Area),
+    fc!("TSELNE", "Traffic separation line", "traffic_separation_line_polyline", Line),
+    fc!("ISTZNE", "Inshore traffic zone", "inshore_traffic_zone_polygon", Area),
+    fc!("FAIRWY", "Fairway", "fairway_polygon", Area),
+    // any other sea object in an ENC cell: drawn with a magenta "?" (S-52 QUESMRK1) so
+    // nothing in the data goes unseen; `objl` holds its S-57 class
+    fc!(UNKNOWN, "Other chart object", "other_object_points", Point),
+    fc!(UNKNOWN, "Other chart object", "other_object_polyline", Line),
+    fc!(UNKNOWN, "Other chart object", "other_object_polygon", Area),
 ];
+
+/// Class code of the catch-all tables for objects TweedPlot has no symbol for.
+pub const UNKNOWN: &str = "UNKNWN";
+
+/// Objects not drawn and not shown as unknown either: metadata, collections, land and
+/// administrative features that don't concern a vessel (an ECDIS shows these, but a "?"
+/// on every road and building would bury the chart). Everything else unlisted is shown.
+pub fn ignored(acr: &str) -> bool {
+    acr.starts_with("M_")
+        || acr.starts_with("C_")
+        || acr.starts_with('$')
+        || acr.starts_with("T_")
+        || acr.starts_with("TS_")
+        || matches!(
+            acr,
+            "ADMARE"
+                | "AIRARE"
+                | "BUAARE"
+                | "BUISGL"
+                | "CANBNK"
+                | "CHKPNT"
+                | "CONVYR"
+                | "CONZNE"
+                | "COSARE"
+                | "CTSARE"
+                | "DAMCON"
+                | "DYKCON"
+                | "EXEZNE"
+                | "FNCLNE"
+                | "FORSTC"
+                | "HRBARE"
+                | "LNDELV"
+                | "LNDRGN"
+                | "MAGVAR"
+                | "PRDARE"
+                | "PYLONS"
+                | "RAILWY"
+                | "RIVBNK"
+                | "ROADWY"
+                | "RUNWAY"
+                | "SBDARE"
+                | "SILTNK"
+                | "SLOTOP"
+                | "SQUARE"
+                | "STSLNE"
+                | "TESARE"
+                | "TUNNEL"
+                | "VEGATN"
+                | "WATFAL"
+                | "ICEARE"
+                | "LNDARE"
+                | "LAKARE"
+                | "RIVERS"
+                | "CANALS"
+                | "DEPARE"
+                | "DRGARE"
+                | "DEPCNT"
+                | "SOUNDG"
+                | "COALNE"
+                | "LIGHTS"
+                | "LNDMRK"
+        )
+}
 
 /// The class of a LINZ table, by its name.
 pub fn class_for(table: &str) -> Option<&'static FeatureClass> {

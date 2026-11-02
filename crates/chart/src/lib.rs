@@ -7,7 +7,7 @@
 //! | --- | --- | --- |
 //! | `land`   | NZ Coastlines and Islands Polygons (Topo 1:50k) | – |
 //! | `depare` | Depth area polygons (Hydro), all scale bands | `drval1`, `drval2` (m), `band` |
-//! | `depcnt` | Depth contour polylines (Hydro) | `valdco` (m), `band` |
+//! | `depcnt` | Depth contour polylines (Hydro) | `valdco` (m), `band`, `sh` (DRVAL1 of the shallower depth area it bounds, m) |
 //! | `soundg` | Sounding points (Hydro) | `depth` (m), `band` |
 //!
 //! `band` runs from 1 (1:1.5M and smaller) to 5 (1:4k–1:22k). Each band only
@@ -443,9 +443,16 @@ impl ChartStore {
         // chart water that world land gives way to (from WORLD_CUT_ZOOM)
         let mut chart_water: Vec<Vec<[i32; 2]>> = Vec::new();
         let want_water = z >= WORLD_CUT_ZOOM;
+        // the depth ranges charted here, by band: a contour of value v bounds the areas
+        // [d1, v] and [v, d2], and is the safety contour when d1 < safety contour <= v
+        // (S-52 DEPCNT02), whatever values the chart's contours happen to have
+        let mut ranges: Vec<(u8, f64, f64)> = Vec::new();
         // Depth areas: every visible band, coarse first.
         for t in bands.iter().filter(|t| t.kind == Kind::DepthArea) {
             self.query(t, bbox, &["drval1", "drval2"], |vals, g| {
+                if let (Some(d1), Some(d2)) = (vals[0], vals[1]) {
+                    ranges.push((t.band, d1, d2));
+                }
                 if let Some(tg) = tp.polygons(&g) {
                     if want_water {
                         if let TileGeom::Rings(r) = &tg {
@@ -541,6 +548,11 @@ impl ChartStore {
                         let mut props = vec![("band", Value::UInt(t.band as u64))];
                         if let Some(v) = vals[0] {
                             props.push((col, Value::F64(v)));
+                            if kind == Kind::Contour {
+                                if let Some(sh) = shallow_side(&ranges, t.band, v) {
+                                    props.push(("sh", Value::F64(sh)));
+                                }
+                            }
                         }
                         layer.add(&tg, &props);
                     }
@@ -958,6 +970,13 @@ pub(crate) fn shift_geom(g: &mut Geom, dlon: f64) {
     }
 }
 
+/// DRVAL1 of the shallower depth area a contour of value `v` bounds, from the depth
+/// ranges charted around it in its band. Where areas of several ranges end at `v` the
+/// shallowest is taken, so a contour is never left thin that could be the safety contour.
+fn shallow_side(ranges: &[(u8, f64, f64)], band: u8, v: f64) -> Option<f64> {
+    ranges.iter().filter(|(b, d1, d2)| *b == band && (d2 - v).abs() < 0.01 && *d1 < v).map(|(_, d1, _)| *d1).reduce(f64::min)
+}
+
 pub(crate) fn geom_bounds(g: &Geom) -> [f64; 4] {
     let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
     let mut add = |p: &[f64; 2]| b = [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])];
@@ -1255,7 +1274,7 @@ fn open_gpkg_scan(path: &Path) -> Result<Option<(Connection, Vec<TableInfo>)>, C
 }
 
 /// A point inside a polygon (exterior ring then holes): even-odd over all its rings.
-fn point_in_polygon(rings: &[geom::Ring], x: f64, y: f64) -> bool {
+pub(crate) fn point_in_polygon(rings: &[geom::Ring], x: f64, y: f64) -> bool {
     let mut c = false;
     for r in rings {
         let n = r.len();
@@ -1652,6 +1671,19 @@ mod tests {
         shift_geom(&mut g, -360.0);
         assert!(matches!(g, Geom::Points(ref p) if (p[0][0] + 176.5).abs() < 1e-9));
         assert!(inside([-176.9, -44.4, -176.1, -43.6], TOPO50_AREA));
+    }
+
+    #[test]
+    fn contour_shallow_side() {
+        let r = [(4, 0.0, 2.0), (4, 2.0, 5.0), (4, 5.0, 10.0), (3, 0.0, 10.0), (4, -2.0, 0.0)];
+        assert_eq!(shallow_side(&r, 4, 5.0), Some(2.0));
+        assert_eq!(shallow_side(&r, 4, 10.0), Some(5.0));
+        assert_eq!(shallow_side(&r, 3, 10.0), Some(0.0));
+        assert_eq!(shallow_side(&r, 4, 20.0), None);
+        // safety contour 3: the 5 m contour (2 < 3 <= 5), not the 2 m or 10 m
+        let sc = 3.0;
+        let is_sc = |v: f64| shallow_side(&r, 4, v).is_some_and(|sh| sh < sc && sc <= v);
+        assert!(is_sc(5.0) && !is_sc(2.0) && !is_sc(10.0));
     }
 
     #[test]

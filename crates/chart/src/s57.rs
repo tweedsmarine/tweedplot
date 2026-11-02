@@ -5,7 +5,7 @@
 //! attributes into a chart icon and label for the vector tiles, and decodes the
 //! S-57 codes into words for the feature details shown on a click.
 
-pub use enc_s57::classes::{class_for, FeatureClass, Geo, CLASSES};
+pub use enc_s57::classes::{class_for, FeatureClass, Geo, CLASSES, UNKNOWN};
 
 /// Attribute columns read for the tiles (whichever a table has).
 pub const TILE_COLS: &[&str] = &[
@@ -94,6 +94,7 @@ pub fn icon(code: &str, a: &Attrs) -> Option<String> {
         "SISTAT" => "ss".into(),
         "SMCFAC" | "HRBFAC" => "hf".into(),
         "FOGSIG" => "fg".into(),
+        UNKNOWN => "uk".into(),
         _ => return None,
     })
 }
@@ -277,6 +278,7 @@ pub fn light_colour(colours: &[u32]) -> &'static str {
 /// Words for an S-57 attribute acronym.
 pub fn attr_name(a: &str) -> String {
     let s = match a {
+        "objl" => "S-57 object class",
         "objnam" => "Name",
         "nobjnm" => "Name (local)",
         "colour" => "Colour",
@@ -829,6 +831,17 @@ fn trim_num_n(x: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unknown_objects_get_the_question_mark() {
+        let v = vec![None; TILE_COLS.len()];
+        assert_eq!(icon(UNKNOWN, &Attrs(&v)).as_deref(), Some("uk"));
+        assert_eq!(class_for("other_object_polygon_hydro_enc_b4").unwrap().code, UNKNOWN);
+        assert_eq!(class_for("traffic_separation_zone_polygon_hydro_enc_b3").unwrap().code, "TSEZNE");
+        assert_eq!(enc_s57::gpkg::table_for("UNSARE", 3, 4).as_deref(), Some("other_object_polygon_hydro_enc_b4"));
+        assert_eq!(enc_s57::gpkg::table_for("BUISGL", 1, 4), None);
+        assert_eq!(enc_s57::gpkg::table_for("M_QUAL", 3, 4), None);
+    }
 
     #[test]
     fn finds_classes() {

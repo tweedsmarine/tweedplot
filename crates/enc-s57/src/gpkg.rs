@@ -12,7 +12,7 @@ use crate::catalogue;
 use crate::cell::{Cell, Shape};
 
 /// Bump when the conversion changes, so cells are converted again.
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 /// Bump when merging changes, so the merged files are made again (the cells needn't be).
 pub const MERGE_VERSION: u32 = 2;
 
@@ -53,8 +53,19 @@ pub fn table_for(acr: &str, prim: u8, band: u8) -> Option<String> {
     if let Some(p) = fixed {
         return Some(format!("{p}_enc_b{band}"));
     }
-    let c = crate::classes::CLASSES.iter().find(|c| c.code == acr && c.geo == geo)?;
+    if let Some(c) = crate::classes::CLASSES.iter().find(|c| c.code == acr && c.geo == geo) {
+        return Some(format!("{}_hydro_enc_b{band}", c.prefix));
+    }
+    if crate::classes::ignored(acr) {
+        return None;
+    }
+    let c = crate::classes::CLASSES.iter().find(|c| c.code == crate::classes::UNKNOWN && c.geo == geo)?;
     Some(format!("{}_hydro_enc_b{band}", c.prefix))
+}
+
+/// Whether a table is one of the catch-all tables for objects without a symbol.
+pub fn is_unknown_table(name: &str) -> bool {
+    name.starts_with("other_object_")
 }
 
 #[derive(Default)]
@@ -75,6 +86,10 @@ pub fn write_into(c: &Cell, db: &mut Connection) -> Result<usize, rusqlite::Erro
         let Some(tname) = table_for(acr, f.prim, band) else { continue };
         let Some(shape) = c.shape(f) else { continue };
         let mut vals: Vec<(String, String)> = Vec::new();
+        if is_unknown_table(&tname) {
+            vals.push(("objl".into(), acr.to_string()));
+            tables.entry(tname.clone()).or_default().cols.insert("objl".into(), 'T');
+        }
         for (k, v) in f.attf.iter().chain(&f.natf) {
             if let Some((a, ty)) = catalogue::attribute(*k) {
                 let ty = match ty {

@@ -17,12 +17,26 @@ const DEFAULTS = { cat: "all", sectors: true, names: true, soundings: true, avoi
 /** The standard display (S-Mode): one press back to it. */
 const STANDARD = { cat: "standard", sectors: true, names: true, soundings: true };
 
-/** Point symbols; underwater dangers deeper than the safety contour show as their depth only. */
-const pointFilter = (contour) => ["all", ["!", ["in", ["get", "cls"], ["literal", ["LIGHTS", "SEAARE", "LNDRGN"]]]],
-  ["any", ["!", ["has", "dep"]], ["<", ["get", "dep"], contour]], ["any", HZ, minzDeep]];
+/** An underwater danger with a known depth at least as deep as the safety contour. */
+const deeper = (contour) => ["all", ["has", "dep"], [">=", ["get", "dep"], contour]];
+/** Point symbols. Hazards show at every zoom, except underwater dangers deeper than the
+ *  safety contour, which keep their symbol (S-52) but follow the chart's SCAMIN. Symbols
+ *  turned with the chart (`rot`: a traffic lane's arrow) are in their own layer. */
+const pointFilter = (contour) => ["all", ["!", ["in", ["get", "cls"], ["literal", ["LIGHTS", "SEAARE", "LNDRGN"]]]], ["!", ["has", "rot"]],
+  ["any", ["all", HZ, ["!", deeper(contour)]], minzDeep]];
 
-const labelFilter = (contour) => ["all", minz, ["has", "lbl"], ["!", ["in", ["get", "cls"], ["literal", ["SEAARE", "LNDRGN"]]]],
-  ["any", ["!", ["has", "dep"]], ["<", ["get", "dep"], contour]]];
+const labelFilter = (contour) => ["all", ["has", "lbl"], ["!", ["in", ["get", "cls"], ["literal", ["SEAARE", "LNDRGN"]]]],
+  ["any", ["all", ["!", deeper(contour)], minz], minzDeep]];
+
+/** Isolated danger (S-52 UDWHAZ05): a rock, wreck or obstruction shallower than the safety
+ *  contour (or of unknown depth, drying or awash) lying in water at least as deep as the
+ *  safety contour (`wd`, the depth area it is in). It gets the isolated danger symbol. */
+const isolated = (contour) => ["all", ["has", "wd"], [">=", ["get", "wd"], contour], ["!=", ["get", "nd"], 1], ["!", deeper(contour)]];
+const pointIcon = (contour) => ["case", isolated(contour), "s57:iso", ["concat", "s57:", ["get", "icon"]]];
+
+/** What stays in the Base display (IMO ECDIS performance standard, display base): the
+ *  dangers (`hz`), and buoys, beacons and traffic routeing (`db`). */
+const BASE = ["any", ["==", ["get", "hz"], 1], ["==", ["get", "db"], 1]];
 
 /** Zoom filter: a feature shows from its SCAMIN zoom, except hazards to the vessel
  * (rocks, wrecks, obstructions, farms, piles, platforms, bridges, overhead cables:
@@ -51,14 +65,21 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
       paint: { "fill-color": ["match", ["get", "cls"], "OBSTRN", "#7fb8e8", MAGENTA], "fill-opacity": ["match", ["get", "cls"], "OBSTRN", 0.5, 0.08] } },
     { id: "f-area-hit", type: "fill", ...src, "source-layer": "far", filter: ["all", minz, ["!", cls("SEAARE")]],
       paint: { "fill-color": "#000", "fill-opacity": 0.01 } },
-    { id: "f-area-dash", type: "line", ...src, "source-layer": "far", filter: ["all", minz, cls("RESARE", "ACHARE", "MARCUL", "CBLARE", "CTNARE", "PRCARE")],
-      paint: { "line-color": MAGENTA, "line-width": ["match", ["get", "cls"], "RESARE", 1.4, 1], "line-dasharray": [4, 2.5] } },
+    { id: "f-area-dash", type: "line", ...src, "source-layer": "far", filter: ["all", minz, cls("RESARE", "ACHARE", "MARCUL", "CBLARE", "CTNARE", "PRCARE", "ISTZNE", "TSSCRS", "TSSRON", "FAIRWY", "FERYRT", "UNKNWN")],
+      paint: { "line-color": ["match", ["get", "cls"], ["FAIRWY", "FERYRT"], "#5b6b75", MAGENTA], "line-width": ["match", ["get", "cls"], "RESARE", 1.4, 1], "line-dasharray": [4, 2.5] } },
+    // ships' routeing: separation zones and lines (S-52 TSEZNE, TSELNE: translucent magenta), boundaries
+    { id: "f-tss-fill", type: "fill", ...src, "source-layer": "far", filter: ["all", minz, cls("TSEZNE")],
+      paint: { "fill-color": MAGENTA, "fill-opacity": 0.22 } },
+    { id: "f-tss-line", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, cls("TSELNE")],
+      paint: { "line-color": MAGENTA, "line-width": 6, "line-opacity": 0.35 } },
+    { id: "f-tss-bnd", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, cls("TSSBND")],
+      paint: { "line-color": MAGENTA, "line-width": 2, "line-dasharray": [4, 2.5] } },
     // wharves, breakwaters, pontoons, floating docks, hulks, causeways
     { id: "f-construct", type: "fill", ...src, "source-layer": "far", filter: ["all", minz, cls("SLCONS", "PONTON", "FLODOC", "HULKES", "MORFAC", "CAUSWY")],
       paint: { "fill-color": "#b9b2a3", "fill-outline-color": INK } },
     { id: "f-bridge", type: "fill", ...src, "source-layer": "far", filter: ["all", minz, cls("BRIDGE")],
       paint: { "fill-color": "#9a9a9a", "fill-outline-color": INK } },
-    { id: "f-area-grey", type: "line", ...src, "source-layer": "far", filter: ["all", minz, cls("DMPGRD", "FERYRT", "OBSTRN")],
+    { id: "f-area-grey", type: "line", ...src, "source-layer": "far", filter: ["all", minz, cls("DMPGRD", "OBSTRN", "WEDKLP")],
       paint: { "line-color": "#5b6b75", "line-width": 0.9, "line-dasharray": [2, 2] } },
     // lines
     { id: "f-line-mag", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, cls("CBLSUB", "PIPSOL", "RDOCAL")],
@@ -68,8 +89,8 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
     // ENC coastlines (the ENC land fill has no outline of its own)
     { id: "f-coast", type: "line", ...src, "source-layer": "fln", filter: cls("COALNE"),
       paint: { "line-color": "#8a7a4a", "line-width": 0.9 } },
-    { id: "f-line-dash", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, cls("RECTRC", "CBLOHD", "PIPOHD", "FSHFAC")],
-      paint: { "line-color": ["match", ["get", "cls"], "RECTRC", INK, "#5b6b75"], "line-width": 1, "line-dasharray": [5, 3] } },
+    { id: "f-line-dash", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, cls("RECTRC", "CBLOHD", "PIPOHD", "FSHFAC", "UNKNWN")],
+      paint: { "line-color": ["match", ["get", "cls"], "RECTRC", INK, "UNKNWN", MAGENTA, "#5b6b75"], "line-width": 1, "line-dasharray": [5, 3] } },
     // light sectors
     { id: "f-sec-leg", type: "line", ...src, "source-layer": "lsec", filter: ["all", minz, ["==", ["get", "k"], "leg"]],
       paint: { "line-color": INK, "line-width": 0.7, "line-dasharray": [4, 3] } },
@@ -84,11 +105,15 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
     { id: "f-lights", type: "symbol", ...src, "source-layer": "fpt", filter: ["all", minz, cls("LIGHTS")],
       layout: { "icon-image": ["concat", "s57:", ["get", "icon"]], "icon-anchor": "top-left", "icon-offset": [-2, -2],
                 "icon-allow-overlap": true, "icon-ignore-placement": true } },
+    // symbols that turn with the chart: a traffic lane's direction arrow
+    { id: "f-rot", type: "symbol", ...src, "source-layer": "fpt", filter: ["all", minz, ["has", "rot"]],
+      layout: { "icon-image": ["concat", "s57:", ["get", "icon"]], "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map",
+                "icon-allow-overlap": true, "icon-ignore-placement": true } },
     { id: "f-points", type: "symbol", ...src, "source-layer": "fpt", filter: pointFilter(safetyContour),
-      layout: { "icon-image": ["concat", "s57:", ["get", "icon"]],
+      layout: { "icon-image": pointIcon(safetyContour),
                 "icon-anchor": ["match", ["slice", ["get", "icon"], 0, 2], ["b|", "c|"], "bottom", "center"],
                 "icon-allow-overlap": true, "icon-ignore-placement": true,
-                "symbol-sort-key": ["match", ["get", "cls"], ["UWTROC", "WRECKS", "OBSTRN"], 2, 1] } },
+                "symbol-sort-key": ["case", isolated(safetyContour), 3, ["match", ["get", "cls"], ["UWTROC", "WRECKS", "OBSTRN"], 2, 1]] } },
     // labels: light characteristics, names of marks, depths over dangers
     { id: "f-labels", type: "symbol", ...src, "source-layer": "fpt", filter: labelFilter(safetyContour),
       layout: { "icon-image": ["concat", "txt:", ["match", ["get", "cls"], "LIGHTS", "l", ["UWTROC", "WRECKS", "OBSTRN"], "d", "b"], ":", ["get", "lbl"]],
@@ -99,17 +124,31 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
   for (const l of layers) map.addLayer(l, before);
   // hazards stay on the chart when chart features are switched off (like an ECDIS's
   // display base, which can't be removed): these layers keep their hazards then
-  const HAZ_LAYERS = ["f-area-fill", "f-area-hit", "f-area-dash", "f-construct", "f-bridge", "f-area-grey", "f-line-solid", "f-line-dash", "f-points"];
+  const HAZ_LAYERS = ["f-area-fill", "f-area-hit", "f-area-dash", "f-construct", "f-bridge", "f-area-grey", "f-line-solid", "f-line-dash", "f-points",
+    "f-tss-fill", "f-tss-line", "f-tss-bnd", "f-rot"];
   const baseFilter = Object.fromEntries(layers.map((l) => [l.id, l.filter]));
   // labels only once there is room
   map.setLayerZoomRange("f-labels", 11, 24);
 
+  // the display category, always on screen beside the scale (IMO ECDIS performance
+  // standard: the display mode is part of the display base)
+  const corner = map.getContainer().querySelector(".maplibregl-ctrl-bottom-right");
+  if (corner && !$("dispcat-ind")) {
+    const ind = document.createElement("div");
+    ind.id = "dispcat-ind";
+    ind.className = "maplibregl-ctrl dispcat-ind";
+    ind.title = "Chart display category (Chart › Display)";
+    ind.hidden = true;
+    corner.prepend(ind);
+  }
+
   const SECTOR = ["f-sec-leg", "f-sec-arc"];
   const NAMES = ["f-names", "f-pnames", "f-labels"];
   // Display categories, as an ECDIS (IHO S-52): Base is land, depth areas, the safety
-  // contour and isolated dangers, and can't be reduced; Standard adds aids to navigation,
-  // routeing measures, restricted and caution areas, constructions; All adds soundings,
-  // the other contours, submarine cables and pipelines, ferry routes and dumping grounds.
+  // contour, dangers, buoys and beacons, and traffic separation schemes, and can't be
+  // reduced; Standard adds lights, other routeing measures, ferry routes and fairways,
+  // restricted and caution areas, constructions; All adds soundings, the other contours,
+  // submarine cables and pipelines, dumping grounds and kelp.
   const ALL_ONLY = ["f-line-mag", "f-area-grey"];
   const MAIN_ALL = ["depcnt", "wdcnt"]; // chart layers in main.js shown only in All
   function apply() {
@@ -121,7 +160,12 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
       if (SECTOR.includes(l.id)) on = on && opts.sectors;
       if (NAMES.includes(l.id)) on = on && opts.names;
       map.setLayoutProperty(l.id, "visibility", on ? "visible" : "none");
-      if (haz) map.setFilter(l.id, cat !== "base" ? baseFilter[l.id] : ["all", baseFilter[l.id], HZ]);
+      if (haz) map.setFilter(l.id, cat !== "base" ? baseFilter[l.id] : ["all", baseFilter[l.id], BASE]);
+    }
+    const ind = $("dispcat-ind");
+    if (ind) {
+      ind.hidden = !enabled;
+      ind.textContent = { base: "Display: Base", standard: "Display: Standard", all: "Display: All" }[cat] ?? "";
     }
     for (const id of MAIN_ALL) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", enabled && cat === "all" ? "visible" : "none");
     if (map.getLayer("soundg")) map.setLayoutProperty("soundg", "visibility", enabled && cat !== "base" && (cat === "all" || opts.soundings) ? "visible" : "none");
@@ -149,6 +193,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
     const k = opts.symSize, kl = 1 + (k - 1) / 2;
     map.setLayoutProperty("f-lights", "icon-size", k);
     map.setLayoutProperty("f-points", "icon-size", k);
+    map.setLayoutProperty("f-rot", "icon-size", k);
     map.setLayoutProperty("f-labels", "icon-size", kl);
     // labels sit beside the symbol: keep them clear of it as it grows
     map.setLayoutProperty("f-labels", "icon-offset", ["match", ["get", "cls"], "LIGHTS", ["literal", [12 * k / kl, 8 * k / kl]], ["literal", [8 * k / kl, -6 * k / kl]]]);
@@ -163,8 +208,8 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
   applySize();
 
   // ---------- details on a click ----------------------------------------------------------
-  const POINTS = ["f-points", "f-lights"];
-  const LINES = ["f-line-mag", "f-line-solid", "f-line-dash"];
+  const POINTS = ["f-points", "f-lights", "f-rot"];
+  const LINES = ["f-line-mag", "f-line-solid", "f-line-dash", "f-tss-line", "f-tss-bnd"];
   map.on("click", async (e) => {
     if (!enabled || placing()) return;
     // leave clicks on the app's own things (course, routings, fleet, marks) to them
@@ -215,14 +260,20 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
   return {
     setEnabled: (on) => { enabled = on; apply(); },
     /** Underwater rocks, wrecks and obstructions deeper than this lose their danger symbol. */
-    setSafetyContour: (m) => { baseFilter["f-points"] = pointFilter(m); baseFilter["f-labels"] = labelFilter(m); map.setFilter("f-labels", labelFilter(m)); apply(); },
+    setSafetyContour: (m) => {
+      baseFilter["f-points"] = pointFilter(m); baseFilter["f-labels"] = labelFilter(m); map.setFilter("f-labels", labelFilter(m));
+      map.setLayoutProperty("f-points", "icon-image", pointIcon(m));
+      map.setLayoutProperty("f-points", "symbol-sort-key", ["case", isolated(m), 3, ["match", ["get", "cls"], ["UWTROC", "WRECKS", "OBSTRN"], 2, 1]]);
+      apply();
+    },
     /** Routing options: which charted hazards to keep off. */
     avoid: () => ({ dangers: opts.avoidDangers, farms: opts.avoidFarms }),
   };
 }
 
 // ---------- symbols ----------------------------------------------------------
-// Drawn at twice the size (pixelRatio 2). Simplified paper-chart (INT 1) symbols.
+// Drawn at twice the size (pixelRatio 2). Simplified paper-chart (INT 1) symbols, with the
+// S-52 isolated danger and unknown-object symbols. (The S-52 Presentation Library set is to come.)
 
 function canvas(w, h) {
   const c = document.createElement("canvas");
@@ -405,6 +456,16 @@ function small(kind) {
     case "ss": g.beginPath(); g.arc(cx, cy + 4, 4, 0, 7); g.stroke(); g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx, cy - 11); g.lineTo(cx + 8, cy - 8); g.lineTo(cx, cy - 5); g.stroke(); break;
     case "hf": anchor(g, cx, cy, 0.7, "#5b6b75"); break;
     case "fg": g.strokeStyle = MAGENTA; for (const r of [5, 9, 13]) { g.beginPath(); g.arc(cx - 6, cy, r, -0.6, 0.6); g.stroke(); } break;
+    case "iso": // isolated danger (S-52 ISODGR01): a magenta ring with a cross, on a white disc so it shows on any depth colour
+      g.fillStyle = "rgba(255,255,255,0.85)"; g.beginPath(); g.arc(cx, cy, 10, 0, 7); g.fill();
+      g.strokeStyle = MAGENTA; g.lineWidth = 2.2; g.beginPath(); g.arc(cx, cy, 10, 0, 7); g.stroke();
+      g.beginPath(); g.moveTo(cx - 6, cy - 6); g.lineTo(cx + 6, cy + 6); g.moveTo(cx + 6, cy - 6); g.lineTo(cx - 6, cy + 6); g.stroke(); break;
+    case "uk": // an object TweedPlot has no symbol for (S-52 QUESMRK1): click it for what it is
+      g.fillStyle = MAGENTA; g.font = `700 22px "Segoe UI", system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
+      g.lineWidth = 3; g.strokeStyle = "rgba(255,255,255,0.9)"; g.strokeText("?", cx, cy + 1); g.fillText("?", cx, cy + 1); break;
+    case "ts": // traffic lane direction (S-52 TSSLPT51): an open magenta arrow pointing up, turned to the lane's ORIENT
+      g.strokeStyle = MAGENTA; g.lineWidth = 1.8; g.beginPath();
+      g.moveTo(cx, cy - 13); g.lineTo(cx + 7, cy - 4); g.lineTo(cx + 3, cy - 4); g.lineTo(cx + 3, cy + 13); g.lineTo(cx - 3, cy + 13); g.lineTo(cx - 3, cy - 4); g.lineTo(cx - 7, cy - 4); g.closePath(); g.stroke(); break;
     default: g.beginPath(); g.arc(cx, cy, 3, 0, 7); g.fill();
   }
   return g.getImageData(0, 0, n, n);

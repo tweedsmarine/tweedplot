@@ -1314,3 +1314,7 @@ html.cur-edge:not(#n1):not(#n2):not(#n3), html.cur-edge:not(#n1):not(#n2):not(#n
 /* mark editor title and position buttons (library.js) */
 .edit .edit-title { display: block; margin: 2px 0 4px; font-size: 13px; }
 .edit .mark-pos button { padding: 2px 8px; }
+
+/* chart display category beside the scale (chartfeatures.js) */
+.dispcat-ind { font: 600 11px "Segoe UI", system-ui, sans-serif; color: #1d2a33; background: rgba(255,255,255,0.75); padding: 1px 6px; border-radius: 3px; pointer-events: none; }
+.dispcat-ind[hidden] { display: none; }
