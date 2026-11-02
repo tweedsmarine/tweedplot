@@ -269,3 +269,13 @@ The code is GPL-3.0-or-later and the manual CC BY-SA 4.0: see [NOTICE.md](NOTICE
 - WGS84 decimal degrees, south and west negative.
 - Bearings in degrees true, distances in NM, speeds in knots, times in UTC.
 - en-GB spelling in docs and UI text.
+
+## Chart portrayal (S-101 Portrayal Catalogue)
+
+The IHO S-101 Portrayal Catalogue 2.1.0 is bundled unchanged in
+`app/src-tauri/resources/s101-pc/PortrayalCatalog` (installed with the app as a resource).
+Its licence and disclaimer are in `LICENSE-IHO.txt` beside it and must stay with every copy:
+credit IHO, NOAA and the contributors wherever it is redistributed or used (About, the manual's
+Data sources and credits, THIRD-PARTY-NOTICES.md). Don't edit the catalogue's files: a new
+release replaces the folder. `crates/portrayal` reads it (colour palettes, symbols, line styles,
+area fills, rules); running the Lua rules on chart features is the next step.

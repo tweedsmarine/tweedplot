@@ -1318,3 +1318,15 @@ html.cur-edge:not(#n1):not(#n2):not(#n3), html.cur-edge:not(#n1):not(#n2):not(#n
 /* chart display category beside the scale (chartfeatures.js) */
 .dispcat-ind { font: 600 11px "Segoe UI", system-ui, sans-serif; color: #1d2a33; background: rgba(255,255,255,0.75); padding: 1px 6px; border-radius: 3px; pointer-events: none; }
 .dispcat-ind[hidden] { display: none; }
+
+/* disclaimer (disclaimer.js): over everything, the splash and welcome included */
+#disclaimer { position: fixed; inset: 0; z-index: 9800; display: flex; align-items: center; justify-content: center; background: rgba(0, 20, 40, .8); }
+#disclaimer[hidden] { display: none; }
+#disclaimer .dc-box { width: min(680px, 94vw); max-height: 94vh; overflow: auto; padding: 22px 26px; border-radius: 12px; background: var(--panel-bg, #fff); color: var(--ink); box-shadow: 0 8px 30px rgba(0, 0, 0, .45); border-top: 6px solid #c0392b; }
+#disclaimer h1 { margin: 0 0 10px; font-size: 22px; }
+#disclaimer .dc-strong { font-weight: 600; font-size: 15px; }
+#disclaimer ul { padding-left: 20px; font-size: 13.5px; line-height: 1.45; }
+#disclaimer li { margin: 6px 0; }
+#disclaimer .dc-go { display: flex; justify-content: flex-end; margin-top: 14px; }
+#disclaimer .dc-ok { padding: 9px 24px; border: 0; border-radius: 7px; background: var(--accent); color: #fff; font-size: 14px; cursor: pointer; }
+.about-warn { padding: 6px 8px; border-left: 4px solid #c0392b; background: rgba(192, 57, 43, .08); }

@@ -1151,10 +1151,19 @@ TweedPlot downloads open data from the organisations below. They did not make Tw
 | Online AIS | aisstream.io, from volunteer shore stations. Needs your own free key. Not for navigation |
 | Race tracking | YB Tracking (yb.tl) and the race organiser. Positions may be delayed |
 | Saildocs | Saildocs (saildocs.com) forecasts by email, from NOAA and other sources |
+| Chart symbols, line styles, area patterns, chart colours and portrayal rules (bundled) | IHO S-101 Portrayal Catalogue 2.1.0, from the International Hydrographic Organization (IHO), NOAA and the contributors (github.com/iho-ohi/S-101_Portrayal-Catalogue), included unchanged. Their licence and disclaimer are below |
 | Font | Atkinson Hyperlegible Next, Braille Institute of America, SIL Open Font License 1.1 |
 | Map display | MapLibre GL JS, BSD-3-Clause |
 | Land outlines (bundled) | © OpenStreetMap contributors, ODbL |
 | Online maps (optional) | OpenStreetMap tiles and OpenSeaMap seamarks, © OpenStreetMap contributors, ODbL. OpenSeaMap is not for navigation |
+
+### IHO S-101 Portrayal Catalogue: licence and disclaimer
+
+TweedPlot includes the IHO S-101 Portrayal Catalogue 2.1.0 unchanged (installed with the program in `resources/s101-pc`, with this notice in `LICENSE-IHO.txt`). Credit: International Hydrographic Organization (IHO), NOAA and the contributors. The IHO, NOAA and the contributors did not make TweedPlot and do not endorse it.
+
+> **License.** Permission to copy and distribute this document is hereby granted provided that this notice is retained on all copies, and that IHO, NOAA and the contributors are credited when the material is redistributed or used in part or whole in derivative works. Redistributions in binary form must reproduce this notice in the documentation and/or other materials provided with the distribution.
+>
+> **Disclaimer.** This work is provided by the copyright holders and contributors "as is" and any express or implied warranties, including, but not limited to, the implied warranties of merchantability and fitness for a particular purpose are disclaimed. In no event shall the copyright owner or contributors be liable for any direct, indirect, incidental, special, exemplary, or consequential damages (including, but not limited to, procurement of substitute goods or services; loss of use, data, or profits; or business interruption) however caused and on any theory of liability, whether in contract, strict liability, or tort (including negligence or otherwise) arising in any way out of the use of this software, even if advised of the possibility of such damage.
 
 ### Online maps
 

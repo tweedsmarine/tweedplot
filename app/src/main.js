@@ -48,6 +48,7 @@ import { setupUse } from "./use.js";
 import { setupCards } from "./cards.js";
 import { setupHints } from "./hints.js";
 import { setupWelcome } from "./welcome.js";
+import { setupDisclaimer } from "./disclaimer.js";
 import { setupMonitors } from "./monitors.js";
 import { setupWindowState } from "./windowstate.js";
 import { setupUiPrefs } from "./uiprefs.js";
@@ -301,6 +302,7 @@ document.getElementById("drawer-help").onclick = () => manual.help(ui.current())
 const inst = setupInstruments();
 setupHints();
 setupWelcome({ use, inst });
+setupDisclaimer();
 window.addEventListener("racenav-mob", (e) => { inst.update({ mob: e.detail }); });
 const boat = setupBoat();
 setupSettings({ boat, ui, onReferencePosition: useReferencePosition });

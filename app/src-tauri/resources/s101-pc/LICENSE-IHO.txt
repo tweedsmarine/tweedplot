@@ -1,0 +1,22 @@
+IHO S-101 Portrayal Catalogue, version 2.1.0
+Credit: International Hydrographic Organization (IHO), NOAA and the contributors.
+Source: https://github.com/iho-ohi/S-101_Portrayal-Catalogue (release 2.1.0).
+Included in TweedPlot unchanged, in the folder PortrayalCatalog; TweedPlot's own
+code that reads it is not part of it.
+
+License
+Permission to copy and distribute this document is hereby granted provided that this notice is
+retained on all copies, and that IHO, NOAA and the contributors are credited when the material is
+redistributed or used in part or whole in derivative works.
+Redistributions in binary form must reproduce this notice in the documentation and/or other
+materials provided with the distribution.
+
+Disclaimer
+This work is provided by the copyright holders and contributors "as is" and any express or implied
+warranties, including, but not limited to, the implied warranties of merchantability and fitness
+for a particular purpose are disclaimed. In no event shall the copyright owner or contributors be
+liable for any direct, indirect, incidental, special, exemplary, or consequential damages (including,
+but not limited to, procurement of substitute goods or services; loss of use, data, or profits; or
+business interruption) however caused and on any theory of liability, whether in contract, strict
+liability, or tort (including negligence or otherwise) arising in any way out of the use of this
+software, even if advised of the possibility of such damage.
