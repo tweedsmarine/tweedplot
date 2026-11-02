@@ -278,4 +278,7 @@ Its licence and disclaimer are in `LICENSE-IHO.txt` beside it and must stay with
 credit IHO, NOAA and the contributors wherever it is redistributed or used (About, the manual's
 Data sources and credits, THIRD-PARTY-NOTICES.md). Don't edit the catalogue's files: a new
 release replaces the folder. `crates/portrayal` reads it (colour palettes, symbols, line styles,
-area fills, rules); running the Lua rules on chart features is the next step.
+area fills, rules). The S-101 Feature Catalogue 2.1.0 (`resources/s101-fc`, same licence) gives
+the rules their feature and attribute types and maps S-57 acronyms to S-101 codes (its aliases).
+`portrayal::Portrayer` runs the rules (Lua 5.1 via mlua, vendored) as the S-100 Part 9a host
+(`crates/portrayal/src/host.lua`) and returns each feature's drawing instructions.

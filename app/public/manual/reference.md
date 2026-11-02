@@ -1152,6 +1152,7 @@ TweedPlot downloads open data from the organisations below. They did not make Tw
 | Race tracking | YB Tracking (yb.tl) and the race organiser. Positions may be delayed |
 | Saildocs | Saildocs (saildocs.com) forecasts by email, from NOAA and other sources |
 | Chart symbols, line styles, area patterns, chart colours and portrayal rules (bundled) | IHO S-101 Portrayal Catalogue 2.1.0, from the International Hydrographic Organization (IHO), NOAA and the contributors (github.com/iho-ohi/S-101_Portrayal-Catalogue), included unchanged. Their licence and disclaimer are below |
+| Chart feature definitions (bundled) | IHO S-101 Feature Catalogue 2.1.0, from the IHO and the contributors (github.com/iho-ohi/S-101-Documentation-and-FC), included unchanged, under the same licence and disclaimer |
 | Font | Atkinson Hyperlegible Next, Braille Institute of America, SIL Open Font License 1.1 |
 | Map display | MapLibre GL JS, BSD-3-Clause |
 | Land outlines (bundled) | © OpenStreetMap contributors, ODbL |
@@ -1159,7 +1160,7 @@ TweedPlot downloads open data from the organisations below. They did not make Tw
 
 ### IHO S-101 Portrayal Catalogue: licence and disclaimer
 
-TweedPlot includes the IHO S-101 Portrayal Catalogue 2.1.0 unchanged (installed with the program in `resources/s101-pc`, with this notice in `LICENSE-IHO.txt`). Credit: International Hydrographic Organization (IHO), NOAA and the contributors. The IHO, NOAA and the contributors did not make TweedPlot and do not endorse it.
+TweedPlot includes the IHO S-101 Portrayal Catalogue 2.1.0 and the S-101 Feature Catalogue 2.1.0 unchanged (installed with the program in `resources/s101-pc` and `resources/s101-fc`, each with this notice in `LICENSE-IHO.txt`). Credit: International Hydrographic Organization (IHO), NOAA and the contributors. The IHO, NOAA and the contributors did not make TweedPlot and do not endorse it.
 
 > **License.** Permission to copy and distribute this document is hereby granted provided that this notice is retained on all copies, and that IHO, NOAA and the contributors are credited when the material is redistributed or used in part or whole in derivative works. Redistributions in binary form must reproduce this notice in the documentation and/or other materials provided with the distribution.
 >

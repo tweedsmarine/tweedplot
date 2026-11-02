@@ -7,6 +7,13 @@
 //! and the symbols (SVG, sized in millimetres), line styles, area fills and portrayal
 //! rules (Lua) by name. Running the rules on chart features comes next.
 
+pub mod dom;
+pub mod engine;
+pub mod fc;
+
+pub use engine::{Attrs, Feature, Geometry, Portrayal, Portrayer, Value};
+pub use fc::FeatureCatalogue;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 

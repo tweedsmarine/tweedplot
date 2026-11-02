@@ -38,7 +38,8 @@
     "resources": [
       "resources/world_depth.gpkg",
       "resources/polars/*",
-      "resources/s101-pc/**/*"
+      "resources/s101-pc/**/*",
+      "resources/s101-fc/*"
     ],
     "publisher": "TweedsMarine",
     "homepage": "https://tweedsmarine.nz",
