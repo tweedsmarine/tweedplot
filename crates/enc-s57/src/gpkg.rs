@@ -12,7 +12,7 @@ use crate::catalogue;
 use crate::cell::{Cell, Shape};
 
 /// Bump when the conversion changes, so cells are converted again.
-pub const VERSION: u32 = 3;
+pub const VERSION: u32 = 4;
 /// Bump when merging changes, so the merged files are made again (the cells needn't be).
 pub const MERGE_VERSION: u32 = 2;
 
@@ -48,6 +48,7 @@ pub fn table_for(acr: &str, prim: u8, band: u8) -> Option<String> {
         ("LNDARE", 3) => Some("land_area_polygon"),
         ("LAKARE", 3) => Some("lake_polygon_hydro"),
         ("RIVERS", 3) => Some("river_polygon_hydro"),
+        ("UNSARE", 3) => Some("unsurveyed_area_polygon_hydro"),
         _ => None,
     };
     if let Some(p) = fixed {

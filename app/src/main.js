@@ -94,6 +94,10 @@ const DEPTH = { drying: "#a9c8a0", vshallow: "#7fb8e8", mshallow: "#a6cdf0", mde
 function depareColour() {
   const d1 = ["coalesce", ["get", "drval1"], 0];
   return ["case",
+    // the chart's own land (under its depth areas: shows where Topo50 has water instead)
+    ["has", "land"], css("--land"),
+    // unsurveyed (S-52 NODTA, as the IHO colour profile has it; patterned in "unsare")
+    ["has", "uns"], "#93aebb",
     ["has", "lake"], DEPTH.deep,
     // inside a chart's coverage where it charts no depth (chart.rs: "gap"): shallow, to be
     // safe. (S-52 grey no-data read as land where port basins and channels are gaps in
@@ -169,6 +173,11 @@ const map = new maplibregl.Map({
       { id: "osm", type: "raster", source: "osm", layout: { visibility: "none" } },
       { id: "depcnt", type: "line", source: "chart", "source-layer": "depcnt", layout: { visibility: "none" },
         paint: { "line-color": "#7d97a6", "line-width": 0.6 } },
+      // unsurveyed areas: the S-52 no-data pattern (NODATA03) and a grey outline
+      { id: "unsare", type: "fill", source: "chart", "source-layer": "unsare", layout: { visibility: "none" },
+        paint: { "fill-pattern": "pat:nodata" } },
+      { id: "unsare-line", type: "line", source: "chart", "source-layer": "unsare", layout: { visibility: "none" },
+        paint: { "line-color": "#7a8a91", "line-width": 1.2 } },
       // dredged areas (channels, berths) outlined, as S-52 draws DRGARE: grey dashes
       { id: "depare-drg", type: "line", source: "chart", "source-layer": "depare", filter: ["has", "dredged"], layout: { visibility: "none" },
         paint: { "line-color": "#5b6b75", "line-width": 1.2, "line-dasharray": [4, 3] } },
@@ -269,6 +278,7 @@ map.on("sourcedata", (e) => {
 // Sounding figures are drawn on demand: no font files needed offline.
 map.setMissingStyleImageResolver((id) => {
   if (map.hasImage(id)) return;
+  if (id === "pat:nodata") { map.addImage(id, noDataPattern(), { pixelRatio: 2 }); return; }
   const m = /^(sh|dp):(-?[0-9.]+)$/.exec(id);
   if (m) { map.addImage(id, soundingIcon(parseFloat(m[2]), m[1] === "sh"), { pixelRatio: 2 }); return; }
   const img = barbImage(id) || markImage(id) || labelImage(id) || featureImage(id) || tideImage(id) || poiImage(id) || symImage(id) || stationImage(id) || tidalImage(id);
@@ -1249,6 +1259,19 @@ function boatIcon() {
   g.fill();
   g.stroke();
   return g.getImageData(0, 0, w, h);
+}
+
+/** The unsurveyed / no-data pattern (as S-52 NODATA03): thin grey diagonals on clear. */
+function noDataPattern() {
+  const n = 24, c = document.createElement("canvas");
+  c.width = c.height = n;
+  const g = c.getContext("2d");
+  g.strokeStyle = "rgba(90, 105, 112, 0.55)";
+  g.lineWidth = 1.5;
+  g.beginPath();
+  for (const o of [-n, 0, n]) { g.moveTo(o, n); g.lineTo(o + n, 0); }
+  g.stroke();
+  return g.getImageData(0, 0, n, n);
 }
 
 /** Sounding figure in S-52 style: metres, tenths as a smaller subscript below 31 m, drying heights underlined. */

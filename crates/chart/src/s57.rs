@@ -838,7 +838,8 @@ mod tests {
         assert_eq!(icon(UNKNOWN, &Attrs(&v)).as_deref(), Some("uk"));
         assert_eq!(class_for("other_object_polygon_hydro_enc_b4").unwrap().code, UNKNOWN);
         assert_eq!(class_for("traffic_separation_zone_polygon_hydro_enc_b3").unwrap().code, "TSEZNE");
-        assert_eq!(enc_s57::gpkg::table_for("UNSARE", 3, 4).as_deref(), Some("other_object_polygon_hydro_enc_b4"));
+        assert_eq!(enc_s57::gpkg::table_for("UNSARE", 3, 4).as_deref(), Some("unsurveyed_area_polygon_hydro_enc_b4"));
+        assert_eq!(enc_s57::gpkg::table_for("SNDWAV", 3, 4).as_deref(), Some("other_object_polygon_hydro_enc_b4"));
         assert_eq!(enc_s57::gpkg::table_for("BUISGL", 1, 4), None);
         assert_eq!(enc_s57::gpkg::table_for("M_QUAL", 3, 4), None);
     }

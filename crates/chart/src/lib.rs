@@ -87,6 +87,12 @@ pub enum Kind {
     RuleLine,
     /// Fisheries management and statistical area outlines (MPI).
     FishArea,
+    /// A chart's own land (LINZ hydrographic LNDARE): not drawn as land (Topo50 is), but
+    /// in the land colour under the chart's depth areas, so a "no depth charted" gap
+    /// doesn't show as water where the chart has land.
+    ChartLand,
+    /// Unsurveyed areas (S-57 UNSARE): the S-52 no-data colour and pattern.
+    Unsurveyed,
 }
 
 #[derive(Debug, Clone)]
@@ -429,7 +435,7 @@ impl ChartStore {
         // (or covers a place without saying what is there), the larger-scale chart's land
         // and water show instead of none
         let skin = |t: &TableInfo| {
-            (matches!(t.kind, Kind::DepthArea | Kind::Lake | Kind::Land) && t.band > 0).then(|| {
+            (matches!(t.kind, Kind::DepthArea | Kind::Lake | Kind::Land | Kind::ChartLand | Kind::Unsurveyed) && t.band > 0).then(|| {
                 if t.table.contains("_enc_b") {
                     SKIN_EARLY_ENC
                 } else {
@@ -488,6 +494,41 @@ impl ChartStore {
             if let Some(tg) = tp.polygons(&Geom::Polygons(polys)) {
                 depare.add(&tg, &[("band", Value::UInt(b as u64)), ("gap", Value::UInt(1)), ("sk", Value::F64(b as f64 - 0.5))]);
             }
+        }
+        // The chart's own land over that gap, in the land colour: where the chart has land and
+        // Topo50 has water (their coastlines differ), the place shows as land, not as a
+        // sliver of "very shallow" between the land and a drying bank.
+        for t in bands.iter().filter(|t| t.kind == Kind::ChartLand) {
+            self.query(t, bbox, &[], |_, g| {
+                if let Some(tg) = tp.polygons(&g) {
+                    depare.add(&tg, &[("band", Value::UInt(t.band as u64)), ("land", Value::UInt(1)), ("sk", Value::F64(t.band as f64 - 0.25))]);
+                }
+            });
+        }
+        // Unsurveyed areas: the no-data colour over the band's depth areas (sk), under a
+        // finer band's; and in "unsare" for the pattern and outline, cut to outside the finer
+        // bands' coverage so the pattern never lies over a finer chart's depths.
+        let mut unsare = Layer::new("unsare");
+        for t in bands.iter().filter(|t| t.kind == Kind::Unsurveyed) {
+            let finer: Vec<u8> = {
+                let mut v: Vec<u8> = bands.iter().filter(|x| x.kind == Kind::DepthArea && x.band > t.band).map(|x| x.band).collect();
+                v.sort();
+                v.dedup();
+                v
+            };
+            let cover = if finer.is_empty() { None } else { self.cover_in(&finer, bbox) };
+            self.query(t, bbox, &[], |_, g| {
+                if let Some(tg) = tp.polygons(&g) {
+                    depare.add(&tg, &[("band", Value::UInt(t.band as u64)), ("uns", Value::UInt(1)), ("sk", Value::F64(t.band as f64 + 0.1))]);
+                }
+                let g = match &cover {
+                    None => Some(g),
+                    Some(c) => features::cut_outside(&g, c),
+                };
+                if let Some(tg) = g.and_then(|g| tp.polygons(&g)) {
+                    unsare.add(&tg, &[("band", Value::UInt(t.band as u64))]);
+                }
+            });
         }
         // ENC lakes and wide rivers (LAKARE, RIVERS areas): water too, often how small-scale
         // cells chart the Great Lakes; drawn as deep water, and the world land gives way
@@ -679,7 +720,7 @@ impl ChartStore {
         }
         let [far, fln, fpt, lsec] = self.render_features(&tp, z, &starts);
         let [mbound, rules, rules_ln, fareas] = self.render_marine(&tp, z, bbox);
-        mvt::encode_tile(&[wland, wdepth, wdcnt, depare, depcnt, far, land, wcoast, fln, soundg, lsec, fpt, mbound, rules, rules_ln, fareas])
+        mvt::encode_tile(&[wland, wdepth, wdcnt, depare, unsare, depcnt, far, land, wcoast, fln, soundg, lsec, fpt, mbound, rules, rules_ln, fareas])
     }
 
     /// Maritime boundaries ("mbound": `kind`, `name`), fishing rule areas ("rules") and
@@ -1419,6 +1460,8 @@ fn classify(table: &str) -> Option<(Kind, u8)> {
             Kind::Contour
         } else if t.starts_with("sounding") {
             Kind::Sounding
+        } else if t.starts_with("unsurveyed_area_polygon") {
+            Kind::Unsurveyed
         } else if s57::class_for(&t).is_some() {
             Kind::Feature
         } else {
@@ -1446,6 +1489,10 @@ fn classify(table: &str) -> Option<(Kind, u8)> {
         Kind::Contour
     } else if t.contains("sounding") {
         Kind::Sounding
+    } else if t.starts_with("land_area_polygon_hydro") {
+        Kind::ChartLand
+    } else if t.starts_with("unsurveyed_area_polygon_hydro") {
+        Kind::Unsurveyed
     } else if s57::class_for(&t).is_some() {
         Kind::Feature
     } else {
@@ -1740,6 +1787,9 @@ mod tests {
         assert_eq!(classify("depth_contour_polyline_hydro_1350k_11500k"), Some((Kind::Contour, 2)));
         assert_eq!(classify("sounding_points_hydro_115mil_and_smaller"), Some((Kind::Sounding, 1)));
         assert_eq!(classify("nz_coastlines_and_islands_polygons_topo_150k"), Some((Kind::Land, 0)));
+        assert_eq!(classify("land_area_polygon_hydro_122k_190k"), Some((Kind::ChartLand, 4)));
+        assert_eq!(classify("unsurveyed_area_polygon_hydro_122k_190k"), Some((Kind::Unsurveyed, 4)));
+        assert_eq!(classify("unsurveyed_area_polygon_hydro_enc_b5"), Some((Kind::Unsurveyed, 5)));
         assert_eq!(classify("nz_lake_polygons_topo_150k"), Some((Kind::Lake, 0)));
         assert_eq!(classify("nz_river_polygons_topo_150k"), Some((Kind::Lake, 0)));
         assert_eq!(classify("lake_polygon_hydro_14k_122k"), Some((Kind::Lake, 5)));
