@@ -88,15 +88,16 @@ function saveSettings() { try { localStorage.setItem("racenav.chart", JSON.strin
 const TILE_URL = window.RACENAV_TILE_URL
   ?? `${navigator.userAgent.includes("Windows") ? "http://chart.localhost" : "chart://localhost"}/{z}/{x}/{y}.pbf?s=${Date.now().toString(36)}`;
 
-// S-52 style depth shades (day palette). nodata: S-52 NODTA, where a chart charts no depth.
-const DEPTH = { drying: "#a9c8a0", vshallow: "#7fb8e8", mshallow: "#a6cdf0", mdeep: "#c9e1ee", deep: "#e9f3f6", nodata: "#b4bcc0" };
+// S-52 style depth shades (day palette).
+const DEPTH = { drying: "#a9c8a0", vshallow: "#7fb8e8", mshallow: "#a6cdf0", mdeep: "#c9e1ee", deep: "#e9f3f6" };
 function depareColour() {
   const d1 = ["coalesce", ["get", "drval1"], 0];
   return ["case",
     ["has", "lake"], DEPTH.deep,
-    // inside a chart's coverage where it charts no depth (chart.rs: "gap"): no data, as S-52
-    // shows it, not a depth colour (the click report says no depth is charted there)
-    ["has", "gap"], DEPTH.nodata,
+    // inside a chart's coverage where it charts no depth (chart.rs: "gap"): shallow, to be
+    // safe. (S-52 grey no-data read as land where port basins and channels are gaps in
+    // LINZ's charts, so it waits for the S-52 engine's no-data pattern.)
+    ["has", "gap"], DEPTH.vshallow,
     ["<", d1, 0], DEPTH.drying,
     ["<", d1, settings.shallow], DEPTH.vshallow,
     ["<", d1, settings.safetyContour], DEPTH.mshallow,

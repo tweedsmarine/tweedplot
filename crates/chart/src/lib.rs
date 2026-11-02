@@ -443,15 +443,15 @@ impl ChartStore {
         // chart water that world land gives way to (from WORLD_CUT_ZOOM)
         let mut chart_water: Vec<Vec<[i32; 2]>> = Vec::new();
         let want_water = z >= WORLD_CUT_ZOOM;
-        // the depth ranges charted here, by band: a contour of value v bounds the areas
-        // [d1, v] and [v, d2], and is the safety contour when d1 < safety contour <= v
-        // (S-52 DEPCNT02), whatever values the chart's contours happen to have
-        let mut ranges: Vec<(u8, f64, f64)> = Vec::new();
+        // the depth areas charted here, kept to find the water each side of a contour
+        // (S-52 DEPCNT02: the safety contour is the contour between a depth area shallower
+        // than the chosen value and one at least as deep, whatever the chart's values)
+        let mut areas = DepthSides::default();
         // Depth areas: every visible band, coarse first.
         for t in bands.iter().filter(|t| t.kind == Kind::DepthArea) {
             self.query(t, bbox, &["drval1", "drval2"], |vals, g| {
-                if let (Some(d1), Some(d2)) = (vals[0], vals[1]) {
-                    ranges.push((t.band, d1, d2));
+                if let (Some(d1), Geom::Polygons(p)) = (vals[0], &g) {
+                    areas.add(t.band, d1, p);
                 }
                 if let Some(tg) = tp.polygons(&g) {
                     if want_water {
@@ -522,6 +522,10 @@ impl ChartStore {
                 let before = layer.len();
                 let col = if kind == Kind::Contour { "valdco" } else { "depth" };
                 self.query(t, bbox, &[col], |vals, g| {
+                    let sh = match (kind, vals[0]) {
+                        (Kind::Contour, Some(v)) => areas.shallow_side(t.band, v, &g),
+                        _ => None,
+                    };
                     let g = match &cover {
                         None => g,
                         Some(c) if kind == Kind::Contour => match features::cut_outside(&g, c) {
@@ -548,10 +552,8 @@ impl ChartStore {
                         let mut props = vec![("band", Value::UInt(t.band as u64))];
                         if let Some(v) = vals[0] {
                             props.push((col, Value::F64(v)));
-                            if kind == Kind::Contour {
-                                if let Some(sh) = shallow_side(&ranges, t.band, v) {
-                                    props.push(("sh", Value::F64(sh)));
-                                }
+                            if let Some(sh) = sh {
+                                props.push(("sh", Value::F64(sh)));
                             }
                         }
                         layer.add(&tg, &props);
@@ -970,11 +972,64 @@ pub(crate) fn shift_geom(g: &mut Geom, dlon: f64) {
     }
 }
 
-/// DRVAL1 of the shallower depth area a contour of value `v` bounds, from the depth
-/// ranges charted around it in its band. Where areas of several ranges end at `v` the
-/// shallowest is taken, so a contour is never left thin that could be the safety contour.
-fn shallow_side(ranges: &[(u8, f64, f64)], band: u8, v: f64) -> Option<f64> {
-    ranges.iter().filter(|(b, d1, d2)| *b == band && (d2 - v).abs() < 0.01 && *d1 < v).map(|(_, d1, _)| *d1).reduce(f64::min)
+/// A tile's depth areas (band, DRVAL1, bounds, polygon), to find the water either side
+/// of a contour.
+#[derive(Default)]
+struct DepthSides(Vec<(u8, f64, [f64; 4], Vec<geom::Ring>)>);
+
+impl DepthSides {
+    fn add(&mut self, band: u8, d1: f64, polys: &[Vec<geom::Ring>]) {
+        for rings in polys {
+            let Some(outer) = rings.first() else { continue };
+            let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+            for p in outer {
+                b = [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])];
+            }
+            self.0.push((band, d1, b, rings.clone()));
+        }
+    }
+
+    /// DRVAL1 of the band's depth area at `p`, if any.
+    fn at(&self, band: u8, p: [f64; 2]) -> Option<f64> {
+        self.0
+            .iter()
+            .filter(|(b, _, bb, _)| *b == band && p[0] >= bb[0] && p[0] <= bb[2] && p[1] >= bb[1] && p[1] <= bb[3])
+            .find(|(_, _, _, rings)| point_in_polygon(rings, p[0], p[1]))
+            .map(|(_, d1, _, _)| *d1)
+    }
+
+    /// DRVAL1 of the shallower depth area a contour of value `v` bounds: looked for a
+    /// little to each side of the middle of the contour's longest segment, in the
+    /// contour's own band (S-57 contours lie on the edges of the depth areas).
+    fn shallow_side(&self, band: u8, v: f64, g: &Geom) -> Option<f64> {
+        let Geom::Lines(lines) = g else { return None };
+        let mut best: Option<f64> = None;
+        for l in lines {
+            let Some((a, b)) = l.windows(2).map(|w| (w[0], w[1])).max_by(|x, y| seg_len2(x).total_cmp(&seg_len2(y))) else {
+                continue;
+            };
+            let len = seg_len2(&(a, b)).sqrt();
+            if len == 0.0 {
+                continue;
+            }
+            let m = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0];
+            let n = [-(b[1] - a[1]) / len, (b[0] - a[0]) / len];
+            // far enough off the line to be clear of rounding, well inside the areas
+            let e = (len * 0.05).clamp(1e-7, 2e-5);
+            for side in [1.0, -1.0] {
+                if let Some(d1) = self.at(band, [m[0] + n[0] * e * side, m[1] + n[1] * e * side]) {
+                    if d1 < v - 0.005 {
+                        best = Some(best.map_or(d1, |x: f64| x.min(d1)));
+                    }
+                }
+            }
+        }
+        best
+    }
+}
+
+fn seg_len2((a, b): &([f64; 2], [f64; 2])) -> f64 {
+    (b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2)
 }
 
 pub(crate) fn geom_bounds(g: &Geom) -> [f64; 4] {
@@ -1675,15 +1730,22 @@ mod tests {
 
     #[test]
     fn contour_shallow_side() {
-        let r = [(4, 0.0, 2.0), (4, 2.0, 5.0), (4, 5.0, 10.0), (3, 0.0, 10.0), (4, -2.0, 0.0)];
-        assert_eq!(shallow_side(&r, 4, 5.0), Some(2.0));
-        assert_eq!(shallow_side(&r, 4, 10.0), Some(5.0));
-        assert_eq!(shallow_side(&r, 3, 10.0), Some(0.0));
-        assert_eq!(shallow_side(&r, 4, 20.0), None);
-        // safety contour 3: the 5 m contour (2 < 3 <= 5), not the 2 m or 10 m
-        let sc = 3.0;
-        let is_sc = |v: f64| shallow_side(&r, 4, v).is_some_and(|sh| sh < sc && sc <= v);
-        assert!(is_sc(5.0) && !is_sc(2.0) && !is_sc(10.0));
+        // a 0-2 m area west of x = 1, a 2-5 m area from 1 to 2, 5-10 m east of 2
+        let sq = |x0: f64, x1: f64| vec![vec![vec![[x0, 0.0], [x1, 0.0], [x1, 1.0], [x0, 1.0], [x0, 0.0]]]];
+        let mut a = DepthSides::default();
+        a.add(4, 0.0, &sq(0.0, 1.0));
+        a.add(4, 2.0, &sq(1.0, 2.0));
+        a.add(4, 5.0, &sq(2.0, 3.0));
+        a.add(3, 0.0, &sq(0.0, 3.0));
+        let line = |x: f64| Geom::Lines(vec![vec![[x, 0.2], [x, 0.8]]]);
+        assert_eq!(a.shallow_side(4, 2.0, &line(1.0)), Some(0.0));
+        assert_eq!(a.shallow_side(4, 5.0, &line(2.0)), Some(2.0));
+        // another band's areas don't count, nor a contour with no area beside it
+        assert_eq!(a.shallow_side(2, 5.0, &line(2.0)), None);
+        assert_eq!(a.shallow_side(4, 10.0, &line(5.0)), None);
+        // safety contour 3: the 5 m contour (2 < 3 <= 5), not the 2 m one
+        let is_sc = |v: f64, x: f64| a.shallow_side(4, v, &line(x)).is_some_and(|sh| sh < 3.0 && 3.0 <= v);
+        assert!(is_sc(5.0, 2.0) && !is_sc(2.0, 1.0));
     }
 
     #[test]

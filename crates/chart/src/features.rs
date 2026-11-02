@@ -30,7 +30,8 @@
 //!
 //! Other properties: `db` = 1 on what IMO's ECDIS performance standard puts in the
 //! display base besides dangers (buoys and beacons, ships' routeing); `wd` on a rock,
-//! wreck or obstruction is the DRVAL1 of the depth area it lies in, so the chart can
+//! wreck or obstruction is the least DRVAL1 of the depth areas at and just around it
+//! (its own band; land counts as 0), so the chart can
 //! give an isolated danger (shallower than the safety contour, in water deeper than
 //! it: S-52 UDWHAZ05) the isolated danger symbol, and `nd` = 1 marks one charted as
 //! not dangerous; `rot` turns a symbol with the chart (a traffic lane's arrow).
@@ -121,21 +122,38 @@ impl DepthAreas {
         DepthAreas(v)
     }
 
-    /// DRVAL1 of the largest-scale depth area at `p`.
-    fn at(&self, p: [f64; 2]) -> Option<f64> {
-        let mut best: Option<(u8, f64)> = None;
-        for (band, d1, b, rings) in &self.0 {
-            if best.is_some_and(|(bb, _)| bb >= *band) {
-                continue;
-            }
-            if p[0] < b[0] || p[0] > b[2] || p[1] < b[1] || p[1] > b[3] {
-                continue;
-            }
-            if crate::point_in_polygon(rings, p[0], p[1]) {
-                best = Some((*band, *d1));
-            }
+    /// DRVAL1 of the depth area at `p` in the band, if any.
+    fn at(&self, band: u8, p: [f64; 2]) -> Option<f64> {
+        self.0
+            .iter()
+            .filter(|(b, _, bb, _)| *b == band && p[0] >= bb[0] && p[0] <= bb[2] && p[1] >= bb[1] && p[1] <= bb[3])
+            .find(|(_, _, _, rings)| crate::point_in_polygon(rings, p[0], p[1]))
+            .map(|(_, d1, _, _)| *d1)
+    }
+
+    /// The water a danger lies in, for the isolated danger test: the least DRVAL1 of the
+    /// danger's own band at it and around it, about half a millimetre away at the band's
+    /// scale. As S-52 looks in the danger's own cell, other bands don't count. Land or no
+    /// depth area there counts as dry, so a rock at the foot of a cliff, or one on the
+    /// edge of shallower water the shading already shows, isn't an isolated danger; one
+    /// with deep water all round is. None where the band has no depth area at the danger.
+    fn around(&self, band: u8, p: [f64; 2]) -> Option<f64> {
+        let mut least = self.at(band, p)?;
+        let r_m = match band {
+            0 | 1 => 2500.0,
+            2 => 700.0,
+            3 => 200.0,
+            4 => 50.0,
+            5 => 20.0,
+            _ => 10.0,
+        };
+        let (dlat, dlon) = (r_m / 111_320.0, r_m / (111_320.0 * p[1].to_radians().cos().max(0.05)));
+        for k in 0..8 {
+            let a = k as f64 * std::f64::consts::FRAC_PI_4;
+            let q = [p[0] + dlon * a.cos(), p[1] + dlat * a.sin()];
+            least = least.min(self.at(band, q).unwrap_or(0.0));
         }
-        best.map(|(_, d)| d)
+        Some(least)
     }
 }
 
@@ -657,8 +675,9 @@ impl ChartStore {
                                 }
                                 // the water it lies in, for the isolated danger test (S-52 UDWHAZ05)
                                 if matches!(class.code, "UWTROC" | "WRECKS" | "OBSTRN") {
-                                    let da = depth_areas.get_or_insert_with(|| DepthAreas::load(self, bbox));
-                                    if let Some(wd) = da.at(p) {
+                                    let da = depth_areas
+                                        .get_or_insert_with(|| DepthAreas::load(self, [bbox[0] - 0.01, bbox[1] - 0.01, bbox[2] + 0.01, bbox[3] + 0.01]));
+                                    if let Some(wd) = da.around(t.band, p) {
                                         props.push(("wd", Value::F64(wd)));
                                     }
                                     if not_dangerous(class.code, &a) {

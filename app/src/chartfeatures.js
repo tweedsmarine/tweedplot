@@ -457,9 +457,9 @@ function small(kind) {
     case "hf": anchor(g, cx, cy, 0.7, "#5b6b75"); break;
     case "fg": g.strokeStyle = MAGENTA; for (const r of [5, 9, 13]) { g.beginPath(); g.arc(cx - 6, cy, r, -0.6, 0.6); g.stroke(); } break;
     case "iso": // isolated danger (S-52 ISODGR01): a magenta ring with a cross, on a white disc so it shows on any depth colour
-      g.fillStyle = "rgba(255,255,255,0.85)"; g.beginPath(); g.arc(cx, cy, 10, 0, 7); g.fill();
-      g.strokeStyle = MAGENTA; g.lineWidth = 2.2; g.beginPath(); g.arc(cx, cy, 10, 0, 7); g.stroke();
-      g.beginPath(); g.moveTo(cx - 6, cy - 6); g.lineTo(cx + 6, cy + 6); g.moveTo(cx + 6, cy - 6); g.lineTo(cx - 6, cy + 6); g.stroke(); break;
+      g.fillStyle = "rgba(255,255,255,0.85)"; g.beginPath(); g.arc(cx, cy, 8, 0, 7); g.fill();
+      g.strokeStyle = MAGENTA; g.lineWidth = 1.8; g.beginPath(); g.arc(cx, cy, 8, 0, 7); g.stroke();
+      g.beginPath(); g.moveTo(cx - 5, cy - 5); g.lineTo(cx + 5, cy + 5); g.moveTo(cx + 5, cy - 5); g.lineTo(cx - 5, cy + 5); g.stroke(); break;
     case "uk": // an object TweedPlot has no symbol for (S-52 QUESMRK1): click it for what it is
       g.fillStyle = MAGENTA; g.font = `700 22px "Segoe UI", system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
       g.lineWidth = 3; g.strokeStyle = "rgba(255,255,255,0.9)"; g.strokeText("?", cx, cy + 1); g.fillText("?", cx, cy + 1); break;
