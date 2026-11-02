@@ -82,6 +82,28 @@ impl Catalogue {
         })
     }
 
+    /// A symbol's SVG, standing alone: the palette's style sheet ("Day", "Dusk",
+    /// "Night") put inside it in place of the link to it, so it draws the same in an
+    /// image element. With its view box (min x, min y, width, height in mm; the pivot
+    /// point, where the symbol stands, is 0,0).
+    pub fn symbol_svg(&self, id: &str, palette: &str) -> Option<(String, [f64; 4])> {
+        let s = self.symbols.get(id)?;
+        let text = std::fs::read_to_string(&s.file).ok()?;
+        let css = std::fs::read_to_string(self.dir.join("Symbols").join(format!("{}SvgStyle.css", palette.to_ascii_lowercase()))).ok()?;
+        let start = text.find("<svg")?;
+        let open_end = start + text[start..].find('>')? + 1;
+        let vb = text[start..open_end].split("viewBox=\"").nth(1).and_then(|r| r.split('"').next()).map(|v| {
+            let n: Vec<f64> = v.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+            if n.len() == 4 {
+                [n[0], n[1], n[2], n[3]]
+            } else {
+                [0.0; 4]
+            }
+        })?;
+        let svg = format!("{}<style>{}</style>{}", &text[start..open_end], css, &text[open_end..]);
+        Some((svg, vb))
+    }
+
     /// A colour by token in a palette ("Day", "Dusk", "Night"), as `#rrggbb`.
     pub fn colour(&self, palette: &str, token: &str) -> Option<String> {
         self.palettes.get(palette)?.get(token).map(|c| format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2]))
@@ -235,6 +257,9 @@ mod tests {
         for id in ["ISODGR01", "QUESMRK1", "BOYCAR01", "LIGHTS11", "TSSLPT51"] {
             assert!(c.symbols.contains_key(id), "symbol {id}");
         }
+        let (svg, vb) = c.symbol_svg("LIGHTS11", "Day").unwrap();
+        assert!(svg.starts_with("<svg") && svg.contains("<style>") && svg.contains(".fLITRD"));
+        assert_eq!(vb, [-1.36, -7.21, 2.64, 7.37]);
         assert!(c.line_styles.contains_key("CBLSUB06"));
         assert!(c.area_fills.contains_key("DRGARE01") && c.area_fills.contains_key("NODATA03"));
         for r in ["main", "CardinalBuoy", "DepthArea", "LightAllAround"] {

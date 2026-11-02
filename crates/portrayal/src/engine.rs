@@ -100,6 +100,11 @@ impl Portrayer {
         }
     }
 
+    /// A context parameter's value: TweedPlot's, or the catalogue's default.
+    pub fn value(&self, id: &str) -> Option<&str> {
+        self.values.get(id).map(String::as_str).or_else(|| self.context.iter().find(|c| c.id == id).map(|c| c.default.as_str()))
+    }
+
     pub fn feature_catalogue(&self) -> &FeatureCatalogue {
         &self.fc
     }

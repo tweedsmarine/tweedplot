@@ -105,9 +105,29 @@ fn not_dangerous(code: &str, a: &Attrs) -> bool {
 }
 
 /// The depth areas of a tile, to find the water a danger lies in.
-struct DepthAreas(Vec<(u8, f64, [f64; 4], Vec<Ring>)>);
+pub(crate) struct DepthAreas(Vec<(u8, f64, [f64; 4], Vec<Ring>)>);
 
 impl DepthAreas {
+    /// One band's depth areas in `bbox`.
+    pub(crate) fn load_band(store: &ChartStore, band: u8, bbox: [f64; 4]) -> Self {
+        let mut v = Vec::new();
+        for t in store.tables.iter().filter(|t| t.kind == Kind::DepthArea && t.band == band) {
+            store.query(t, bbox, &["drval1"], |vals, g| {
+                if let (Some(d1), Geom::Polygons(polys)) = (vals[0], g) {
+                    for rings in polys {
+                        let Some(outer) = rings.first() else { continue };
+                        let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+                        for p in outer {
+                            b = [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])];
+                        }
+                        v.push((band, d1, b, rings));
+                    }
+                }
+            });
+        }
+        DepthAreas(v)
+    }
+
     fn load(store: &ChartStore, bbox: [f64; 4]) -> Self {
         let mut v = Vec::new();
         store.for_each_depth_band(bbox, |band, d1, _, rings| {
@@ -137,7 +157,7 @@ impl DepthAreas {
     /// depth area there counts as dry, so a rock at the foot of a cliff, or one on the
     /// edge of shallower water the shading already shows, isn't an isolated danger; one
     /// with deep water all round is. None where the band has no depth area at the danger.
-    fn around(&self, band: u8, p: [f64; 2]) -> Option<f64> {
+    pub(crate) fn around(&self, band: u8, p: [f64; 2]) -> Option<f64> {
         let mut least = self.at(band, p)?;
         let r_m = match band {
             0 | 1 => 2500.0,
@@ -614,6 +634,8 @@ impl ChartStore {
                         let mut finer_bands: Vec<u8> = tables[..k].iter().map(|(_, ft)| ft.band).filter(|b| *b > t.band).collect();
                         finer_bands.dedup();
                         let mut mine = Vec::new();
+                        // the IHO portrayal of this table (worked out before reading it)
+                        let syms = self.s52_table(*ti);
                         self.query_text(t, bbox, TILE_COLS, |row| {
                             let Geom::Points(pts) = &row.geom else { return };
                             let a = Attrs(&row.vals);
@@ -686,6 +708,12 @@ impl ChartStore {
                                 }
                                 if is_display_base(class.code) {
                                     props.push(("db", Value::UInt(1)));
+                                }
+                                // the IHO portrayal's symbols, when it is on
+                                if let Some(sy) = syms.as_ref().and_then(|m| m.get(&row.fid)) {
+                                    if !sy.is_empty() {
+                                        props.push(("sy", Value::Str(sy.to_string())));
+                                    }
                                 }
                                 if let Some(n) = a.get("objnam") {
                                     props.push(("name", Value::Str(n.into())));
@@ -960,6 +988,11 @@ impl ChartStore {
                 ];
                 if finer < f64::MAX {
                     props.push(("maxz", Value::F64((finer * 10.0).round() / 10.0)));
+                }
+                if let Some(sy) = self.s52_table(first.t).and_then(|m| m.get(&first.fid).cloned()) {
+                    if !sy.is_empty() {
+                        props.push(("sy", Value::Str(sy.to_string())));
+                    }
                 }
                 let lbl = s57::light_label(&lights);
                 if !lbl.is_empty() {

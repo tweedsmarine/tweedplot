@@ -42,6 +42,8 @@ pub static CLASSES: &[FeatureClass] = &[
     fc!("BCNSAW", "Safe water beacon", "beacon_safe_water_points", Point),
     fc!("BCNSPP", "Special purpose beacon", "beacon_special_purpose_general_points", Point),
     fc!("DAYMAR", "Daymark", "daymark_points", Point),
+    // not drawn on its own: its shape goes on the buoy or beacon it stands on (S-52)
+    fc!("TOPMAR", "Topmark", "topmark_points", Point),
     fc!("UWTROC", "Rock", "underwater_awash_rock_points", Point),
     fc!("WRECKS", "Wreck", "wreck_points", Point),
     fc!("OBSTRN", "Obstruction", "obstruction_points", Point),

@@ -6,6 +6,15 @@ fn main() {
     let port = std::env::args().nth(2).unwrap_or_else(|| "7070".into());
     let dirs: Vec<std::path::PathBuf> = dir.split(',').map(Into::into).collect();
     let store = std::sync::Arc::new(chart::ChartStore::open_dirs(&dirs).expect("open charts"));
+    // TILESERVE_S52=1: the IHO portrayal (symbols as `sy`), from the app's bundled catalogues
+    if std::env::var_os("TILESERVE_S52").is_some() {
+        let res = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/resources");
+        let s = chart::s52::S52::open(&res.join("s101-pc"), &res.join("s101-fc/101_Feature_Catalogue_2.1.0.20260612_Unsigned.xml")).expect("portrayal");
+        store.set_s52(Some(s));
+        store.set_s52_context("SafetyContour", "5");
+        let n = store.s52_warm(&|_, _| {});
+        eprintln!("portrayed {n} tables");
+    }
     let server = tiny_http::Server::http(format!("0.0.0.0:{port}")).expect("bind");
     // high-resolution depths for testing: TILESERVE_HIRES=<folder>, served at /hires/z/x/y.png
     let hires = std::env::var("TILESERVE_HIRES").ok().map(|d| chart::hires::Hires::open(std::path::Path::new(&d)));

@@ -668,7 +668,17 @@ map.on("moveend", () => {
   }
 });
 
+/** The IHO portrayal's context: the chart store portrays again when it changes. */
+function sendPortrayalContext() {
+  invoke("chart_s52_context", { id: "SafetyContour", value: String(settings.safetyContour) }).catch(() => {});
+  invoke("chart_s52_context", { id: "SafetyDepth", value: String(settings.safetyDepth) }).catch(() => {});
+}
+sendPortrayalContext();
+// the chart store has portrayed the features (or again, after a change): draw the tiles again
+listen("chart-s52", () => reloadChartTiles()).catch(() => {});
+
 function applyChartSettings() {
+  sendPortrayalContext();
   map.setPaintProperty("depare", "fill-color", depareColour());
   map.setFilter("safety-contour", safetyContourFilter());
   map.setLayoutProperty("soundg", "icon-image", soundingImage());

@@ -188,7 +188,7 @@ Wharves, breakwaters, jetties, pontoons, floating docks and causeways are drawn 
 | Part | Settings |
 | --- | --- |
 | **Safety** | **Safety depth** and **safety contour** (below), with the draft from **Settings › Vessel** beside them and how much water the safety depth leaves under the keel |
-| **Chart display** | **Display**: Base, Standard or All (below); **Standard display**; **Light sectors**, **Names and labels**, **Soundings**; **Chart symbol size** |
+| **Chart display** | **Display**: Base, Standard or All (below); **Standard display**; **Light sectors**, **Names and labels**, **Soundings**; **Symbols**: IHO (S-52) or Paper chart (below); **Chart symbol size** |
 | **Layers** | **Chart layers** (**High-resolution depths**, **Detailed depths (ETOPO)**, **World depths**, **World coastline**), **Own soundings**, **Online maps**, and the boundaries and fishing rules (see *Boundaries and fishing rules*). Layers can overlap: the world depths are coarse, so with **OpenStreetMap** on they show as pale water that doesn't match its coastline. Switch off any layer you don't want |
 | **Own ship** | **Heading line**, **COG line** and **Wind arrows** (see Your boat) |
 | **Chart data** | Every download and import: world coastline, detailed depths, high-resolution depths, boundaries, fishing rules, and the LINZ charts |
@@ -224,7 +224,14 @@ The display in use is always shown beside the scale bar, bottom right.
 
 **Chart symbols at a glance**
 
-The symbols are simplified paper-chart symbols (INT 1), with some from the ECDIS presentation library (IHO S-52): the isolated danger, the unknown object, tide and weather stations, tidal streams. A full S-52 symbol set is being built and will become the default. The commonest:
+**Chart display › Symbols** chooses how buoys, beacons, lights, rocks, wrecks and the other point features are drawn:
+
+- **IHO (S-52)**, the default: the ECDIS symbols, chosen for each feature by the IHO S-101 portrayal rules (as on an ECDIS: a beacon with its topmark, a light's flare turned the way the rules turn it, a rock or wreck as an isolated danger when it lies inside your safety contour). The rules run in the background when the charts load and whenever the safety contour or safety depth changes; until they finish, and for any feature the rules don't cover, the paper-chart symbol stands in, and the chart redraws when they are done.
+- **Paper chart**: simplified paper-chart symbols (INT 1), shown below.
+
+Lines and areas (cables, restricted areas, depth areas...) are still drawn TweedPlot's way in both; the IHO line styles, area patterns and the dusk and night colours come next.
+
+With **Paper chart**, some symbols still come from the ECDIS presentation library (IHO S-52): the isolated danger, the unknown object, tide and weather stations, tidal streams. The commonest:
 
 | Symbol | Meaning | Symbol | Meaning |
 | --- | --- | --- | --- |

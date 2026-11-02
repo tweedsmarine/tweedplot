@@ -32,6 +32,7 @@ pub mod lerc;
 pub mod marine;
 pub mod mvt;
 pub mod remote;
+pub mod s52;
 pub mod s57;
 pub mod shp;
 pub mod tidal;
@@ -168,6 +169,8 @@ pub struct ChartStore {
     coverage: std::sync::OnceLock<features::CoverageIndex>,
     /// Per feature table: its median SCAMIN (when its features usually start to show).
     scamin_median: Mutex<std::collections::HashMap<usize, Arc<std::sync::OnceLock<Option<f64>>>>>,
+    /// The IHO portrayal, when on (see [`s52`]).
+    pub(crate) s52: std::sync::RwLock<Option<Arc<s52::S52>>>,
 }
 
 /// NZ mainland area covered by LINZ Topo50 land: GSHHG polygons wholly inside
@@ -296,6 +299,7 @@ impl ChartStore {
             cache: Mutex::new(lru::LruCache::new(NonZeroUsize::new(2048).unwrap())),
             coverage: std::sync::OnceLock::new(),
             scamin_median: Mutex::new(std::collections::HashMap::new()),
+            s52: std::sync::RwLock::new(None),
         })
     }
 
@@ -770,7 +774,7 @@ impl ChartStore {
         [mbound, rules, rules_ln, fareas]
     }
 
-    fn query(&self, t: &TableInfo, b: [f64; 4], cols: &[&str], mut f: impl FnMut(&[Option<f64>], Geom)) {
+    pub(crate) fn query(&self, t: &TableInfo, b: [f64; 4], cols: &[&str], mut f: impl FnMut(&[Option<f64>], Geom)) {
         if !t.touches(b) {
             return;
         }

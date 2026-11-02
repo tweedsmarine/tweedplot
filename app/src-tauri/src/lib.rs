@@ -834,6 +834,84 @@ fn marine_dir(app: &tauri::AppHandle) -> PathBuf {
     app.path().app_data_dir().map(|p| p.join("marine")).unwrap_or_else(|_| PathBuf::from("marine"))
 }
 
+/// The bundled IHO S-101 catalogues: the folder holding `s101-pc` and `s101-fc`.
+fn s101_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let candidates = [
+        app.path().resource_dir().ok().map(|d| d.join("resources")),
+        app.path().resource_dir().ok(),
+        Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources")),
+    ];
+    candidates.into_iter().flatten().find(|d| d.join("s101-pc").is_dir() && d.join("s101-fc").is_dir())
+}
+
+const S101_FC: &str = "101_Feature_Catalogue_2.1.0.20260612_Unsigned.xml";
+
+/// Portrayal context values set by the page (safety contour, ...), kept for a re-opened store.
+static S52_CONTEXT: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
+
+/// Turn on the IHO portrayal in a newly opened store.
+fn s52_attach(app: &tauri::AppHandle, store: &chart::ChartStore) {
+    let Some(dir) = s101_dir(app) else {
+        log_chart_tile("charts: the S-101 catalogues are not installed: no IHO symbols");
+        return;
+    };
+    match chart::s52::S52::open(&dir.join("s101-pc"), &dir.join("s101-fc").join(S101_FC)) {
+        Ok(s) => {
+            store.set_s52(Some(s));
+            for (k, v) in S52_CONTEXT.lock().unwrap().iter() {
+                store.set_s52_context(k, v);
+            }
+        }
+        Err(e) => log_chart_tile(&format!("charts: IHO portrayal not available: {e}")),
+    }
+}
+
+/// Portray the chart's features in the background; `chart-s52` when done (the page then
+/// asks for the tiles again).
+fn s52_warm(app: tauri::AppHandle, store: Arc<chart::ChartStore>) {
+    if !store.s52_on() {
+        return;
+    }
+    std::thread::spawn(move || {
+        let t0 = std::time::Instant::now();
+        let n = store.s52_warm(&|_, _| {});
+        if n > 0 {
+            log_chart_tile(&format!("charts: IHO portrayal of {n} tables in {:.1} s", t0.elapsed().as_secs_f64()));
+            let _ = app.emit("chart-s52", serde_json::json!({ "tables": n }));
+        }
+    });
+}
+
+/// Set a portrayal context parameter (SafetyContour, SafetyDepth, ...): the features are
+/// portrayed again when it changes anything.
+#[tauri::command]
+fn chart_s52_context(app: tauri::AppHandle, id: String, value: String) {
+    {
+        let mut c = S52_CONTEXT.lock().unwrap();
+        c.retain(|(k, _)| *k != id);
+        c.push((id.clone(), value.clone()));
+    }
+    let store = CHARTS.read().unwrap().clone();
+    if let Some(store) = store {
+        if store.set_s52_context(&id, &value) {
+            s52_warm(app, store);
+        }
+    }
+}
+
+/// The catalogue's symbols for a palette ("Day", "Dusk", "Night"): id, standalone SVG and
+/// view box in mm (the symbol's pivot is 0,0).
+#[tauri::command]
+async fn s52_symbols(app: tauri::AppHandle, palette: String) -> Result<Vec<serde_json::Value>, String> {
+    let dir = s101_dir(&app).ok_or("the S-101 portrayal catalogue is not installed")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let cat = portrayal::Catalogue::open(&dir.join("s101-pc")).map_err(|e| e.to_string())?;
+        Ok(cat.symbols.keys().filter_map(|id| cat.symbol_svg(id, &palette).map(|(svg, vb)| serde_json::json!({ "id": id, "svg": svg, "vb": vb }))).collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// The folder holding the bundled world depths (`world_depth.gpkg`).
 fn world_depth_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
     let candidates = [
@@ -950,9 +1028,12 @@ fn open_store(handle: tauri::AppHandle, dirs: Vec<PathBuf>, dir: PathBuf, prepar
             log_chart_tile(&format!("charts: render indexes prepared in {:.1} s", t0.elapsed().as_secs_f64()));
             let n = store.tables.len();
             let world = store.has_world_land();
-            *CHARTS.write().unwrap() = Some(Arc::new(store));
+            s52_attach(&handle, &store);
+            let store = Arc::new(store);
+            *CHARTS.write().unwrap() = Some(store.clone());
             CHARTS_READY.store(true, std::sync::atomic::Ordering::Release);
-            let _ = handle.emit("chart-ready", serde_json::json!({ "ready": true, "tables": n, "dir": dir, "world_land": world }));
+            let _ = handle.emit("chart-ready", serde_json::json!({ "ready": true, "tables": n, "dir": dir, "world_land": world, "s52": store.s52_on() }));
+            s52_warm(handle.clone(), store);
         }
         Err(e) => {
             *CHART_ERROR.lock().unwrap() = Some(e.to_string());
@@ -1797,6 +1878,8 @@ pub fn run() {
             chart_info,
             chart_feature,
             chart_depth_at,
+            chart_s52_context,
+            s52_symbols,
             chart_clearances,
             chart_shallow_ahead,
             monitor_open,

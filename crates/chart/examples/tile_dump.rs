@@ -5,5 +5,12 @@ fn main() {
     let dirs: Vec<std::path::PathBuf> = a[1..k].iter().map(Into::into).collect();
     let (z, x, y): (u8, u32, u32) = (a[k + 1].parse().unwrap(), a[k + 2].parse().unwrap(), a[k + 3].parse().unwrap());
     let s = chart::ChartStore::open_dirs(&dirs).unwrap();
+    if std::env::var_os("TILESERVE_S52").is_some() {
+        let res = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/resources");
+        s.set_s52(Some(chart::s52::S52::open(&res.join("s101-pc"), &res.join("s101-fc/101_Feature_Catalogue_2.1.0.20260612_Unsigned.xml")).unwrap()));
+        s.set_s52_context("SafetyContour", "5");
+        let n = s.s52_warm(&|_, _| {});
+        eprintln!("portrayed {n} tables");
+    }
     std::fs::write(&a[0], s.tile(z, x, y).as_ref()).unwrap();
 }

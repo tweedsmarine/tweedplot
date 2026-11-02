@@ -6,6 +6,7 @@
 import { placing } from "./modes.js";
 import { infoBox } from "./infobox.js";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 const MAGENTA = "#b5359a";
 const INK = "#1d2a33";
@@ -13,7 +14,7 @@ const COLOURS = { 1: "#ffffff", 2: "#111111", 3: "#d7262b", 4: "#1f9a3a", 5: "#2
 const LIGHT = { r: "#d7262b", g: "#1f9a3a", w: "#f4c20d", o: MAGENTA, m: MAGENTA };
 
 const KEY = "racenav.chartfeatures";
-const DEFAULTS = { cat: "all", sectors: true, names: true, soundings: true, avoidDangers: true, avoidFarms: true, symSize: 1.2 };
+const DEFAULTS = { cat: "all", sectors: true, names: true, soundings: true, avoidDangers: true, avoidFarms: true, symSize: 1.2, sym: "s52" };
 /** The standard display (S-Mode): one press back to it. */
 const STANDARD = { cat: "standard", sectors: true, names: true, soundings: true };
 
@@ -33,6 +34,51 @@ const labelFilter = (contour) => ["all", ["has", "lbl"], ["!", ["in", ["get", "c
  *  safety contour (`wd`, the depth area it is in). It gets the isolated danger symbol. */
 const isolated = (contour) => ["all", ["has", "wd"], [">=", ["get", "wd"], contour], ["!=", ["get", "nd"], 1], ["!", deeper(contour)]];
 const pointIcon = (contour) => ["case", isolated(contour), "s57:iso", ["concat", "s57:", ["get", "icon"]]];
+
+// ---------- IHO symbols (S-52 / S-101 Portrayal Catalogue) ----------------------------
+// The chart store runs the IHO rules and puts the symbols they choose on each point
+// feature (`sy`: "BOYPIL24,TOPMAR06", "LIGHTS11@135"). The catalogue's SVGs are loaded
+// once; a feature's image is its symbols drawn over each other at their pivot points.
+const S52 = { ready: false, imgs: new Map() };
+/** Pixels per millimetre for the symbols, drawn at twice the size (pixelRatio 2). */
+const S52_PX_MM = 3.78 * 2;
+async function loadS52Symbols(palette = "Day") {
+  const list = await invoke("s52_symbols", { palette });
+  await Promise.all(list.map(({ id, svg, vb }) => new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => { S52.imgs.set(id, { img, vb }); resolve(); };
+    img.onerror = () => resolve();
+    img.src = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+  })));
+  S52.ready = S52.imgs.size > 0;
+  return S52.ready;
+}
+/** The image for "s52:<sy>", or null while the symbols are loading. */
+function s52Image(sy) {
+  if (!S52.ready) return null;
+  const parts = sy.split(",").filter(Boolean).map((p) => { const [id, a] = p.split("@"); return { s: S52.imgs.get(id), a: ((Number(a) || 0) * Math.PI) / 180 }; }).filter((p) => p.s);
+  if (!parts.length) return null;
+  // the canvas is centred on the pivot: as far out as any (turned) corner reaches
+  let half = 1;
+  for (const { s: { vb }, a } of parts) {
+    for (const [x, y] of [[vb[0], vb[1]], [vb[0] + vb[2], vb[1]], [vb[0], vb[1] + vb[3]], [vb[0] + vb[2], vb[1] + vb[3]]]) {
+      const rx = x * Math.cos(a) - y * Math.sin(a), ry = x * Math.sin(a) + y * Math.cos(a);
+      half = Math.max(half, Math.abs(rx) * S52_PX_MM, Math.abs(ry) * S52_PX_MM);
+    }
+  }
+  const n = Math.ceil(half) * 2 + 2;
+  const c = document.createElement("canvas");
+  c.width = c.height = n;
+  const g = c.getContext("2d");
+  for (const { s: { img, vb }, a } of parts) {
+    g.save();
+    g.translate(n / 2, n / 2);
+    g.rotate(a);
+    g.drawImage(img, vb[0] * S52_PX_MM, vb[1] * S52_PX_MM, vb[2] * S52_PX_MM, vb[3] * S52_PX_MM);
+    g.restore();
+  }
+  return g.getImageData(0, 0, n, n);
+}
 
 /** What stays in the Base display (IMO ECDIS performance standard, display base): the
  *  dangers (`hz`), and buoys, beacons and traffic routeing (`db`). */
@@ -210,6 +256,26 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
     const v = $("set-symsize-v");
     if (v) v.textContent = `${Math.round(k * 100)}%`;
   }
+  // which symbols: the IHO's (S-52) where the chart store has them, else TweedPlot's
+  let contour = safetyContour;
+  const useS52 = () => opts.sym === "s52" && S52.ready;
+  function applySymbols() {
+    const on = useS52();
+    const has = ["has", "sy"];
+    map.setLayoutProperty("f-points", "icon-image", on ? ["case", has, ["concat", "s52:", ["get", "sy"]], pointIcon(contour)] : pointIcon(contour));
+    map.setLayoutProperty("f-points", "icon-anchor", on ? ["case", has, "center", ["match", ["slice", ["get", "icon"], 0, 2], ["b|", "c|"], "bottom", "center"]]
+      : ["match", ["slice", ["get", "icon"], 0, 2], ["b|", "c|"], "bottom", "center"]);
+    map.setLayoutProperty("f-lights", "icon-image", on ? ["case", has, ["concat", "s52:", ["get", "sy"]], ["concat", "s57:", ["get", "icon"]]] : ["concat", "s57:", ["get", "icon"]]);
+    map.setLayoutProperty("f-lights", "icon-anchor", on ? ["case", has, "center", "top-left"] : "top-left");
+    map.setLayoutProperty("f-lights", "icon-offset", on ? ["case", has, ["literal", [0, 0]], ["literal", [-2, -2]]] : ["literal", [-2, -2]]);
+    const sel = $("set-symbols");
+    if (sel) sel.value = opts.sym;
+  }
+  const symSel = $("set-symbols");
+  if (symSel) symSel.onchange = () => { opts.sym = symSel.value; save(); applySymbols(); };
+  loadS52Symbols().then(applySymbols).catch((e) => console.warn("IHO symbols:", e));
+  applySymbols();
+
   const sz = $("set-symsize");
   if (sz) {
     sz.value = opts.symSize;
@@ -272,7 +338,8 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
     /** Underwater rocks, wrecks and obstructions deeper than this lose their danger symbol. */
     setSafetyContour: (m) => {
       baseFilter["f-points"] = pointFilter(m); baseFilter["f-labels"] = labelFilter(m); map.setFilter("f-labels", labelFilter(m));
-      map.setLayoutProperty("f-points", "icon-image", pointIcon(m));
+      contour = m;
+      applySymbols();
       map.setLayoutProperty("f-points", "symbol-sort-key", ["case", isolated(m), 3, ["match", ["get", "cls"], ["UWTROC", "WRECKS", "OBSTRN"], 2, 1]]);
       apply();
     },
@@ -526,6 +593,7 @@ function text(style, t) {
 
 /** Image for an `s57:` icon id or a `txt:` label id, or null. */
 export function featureImage(id) {
+  if (id.startsWith("s52:")) return s52Image(id.slice(4));
   if (id.startsWith("txt:")) {
     const style = id[4];
     const t = id.slice(6);

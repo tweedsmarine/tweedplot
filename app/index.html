@@ -490,6 +490,8 @@
           <select id="set-dispcat"><option value="base">Base</option><option value="standard">Standard</option><option value="all">All</option></select>
           <button id="set-std" title="Back to the standard display: Standard, with light sectors, names and soundings">Standard display</button></div>
         <div class="wx-row checks"><label><input id="set-sectors" type="checkbox" /> Light sectors</label><label><input id="set-featnames" type="checkbox" /> Names and labels</label><label title="Spot soundings, in Standard and All"><input id="set-soundings" type="checkbox" /> Soundings</label></div>
+        <div class="wx-row"><label class="grow" for="set-symbols" title="IHO: the ECDIS symbols and rules of the IHO S-101 Portrayal Catalogue (S-52 look), where the chart has them. Paper chart: TweedPlot's simplified paper-chart symbols">Symbols</label>
+          <select id="set-symbols"><option value="s52">IHO (S-52)</option><option value="paper">Paper chart</option></select></div>
         <div class="wx-row"><label class="grow" for="set-symsize" title="Size of buoys, beacons, lights, dangers and other chart symbols. Labels grow at half the rate">Chart symbol size</label><input id="set-symsize" type="range" min="0.75" max="2" step="0.05" /><span id="set-symsize-v" class="val"></span></div>
         <div class="wx-note">From the LINZ hydrographic layers in the linz folder (any scale band). Click a light, mark or area for its details. Not for navigation.</div>
                 <h3>Layers</h3>

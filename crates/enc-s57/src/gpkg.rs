@@ -12,7 +12,7 @@ use crate::catalogue;
 use crate::cell::{Cell, Shape};
 
 /// Bump when the conversion changes, so cells are converted again.
-pub const VERSION: u32 = 4;
+pub const VERSION: u32 = 5;
 /// Bump when merging changes, so the merged files are made again (the cells needn't be).
 pub const MERGE_VERSION: u32 = 2;
 

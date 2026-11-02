@@ -7,6 +7,7 @@ description = "Chart data: LINZ GeoPackage layers (coastline, depth areas, conto
 
 [dependencies]
 enc-s57.workspace = true
+portrayal.workspace = true
 plugin-api.workspace = true
 rusqlite = { workspace = true, features = ["serialize"] }
 zip.workspace = true
