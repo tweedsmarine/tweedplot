@@ -130,16 +130,26 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
   // labels only once there is room
   map.setLayerZoomRange("f-labels", 11, 24);
 
-  // the display category, always on screen beside the scale (IMO ECDIS performance
-  // standard: the display mode is part of the display base)
-  const corner = map.getContainer().querySelector(".maplibregl-ctrl-bottom-right");
-  if (corner && !$("dispcat-ind")) {
+  // the display category, always on screen just left of the scale bar (IMO ECDIS
+  // performance standard: the display mode is part of the display base). Beside it, not
+  // above it: above, the Drop button covered it
+  if (!$("dispcat-ind")) {
     const ind = document.createElement("div");
     ind.id = "dispcat-ind";
-    ind.className = "maplibregl-ctrl dispcat-ind";
+    ind.className = "dispcat-ind";
     ind.title = "Chart display category (Chart › Display)";
     ind.hidden = true;
-    corner.prepend(ind);
+    map.getContainer().append(ind);
+    const place = () => {
+      const scale = map.getContainer().querySelector(".maplibregl-ctrl-scale");
+      if (!scale) return;
+      const m = map.getContainer().getBoundingClientRect(), r = scale.getBoundingClientRect();
+      ind.style.right = `${m.right - r.left + 6}px`;
+      ind.style.bottom = `${m.bottom - r.bottom}px`;
+    };
+    map.on("moveend", place);
+    map.on("resize", place);
+    setTimeout(place, 500);
   }
 
   const SECTOR = ["f-sec-leg", "f-sec-arc"];

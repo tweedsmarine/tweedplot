@@ -1316,7 +1316,7 @@ html.cur-edge:not(#n1):not(#n2):not(#n3), html.cur-edge:not(#n1):not(#n2):not(#n
 .edit .mark-pos button { padding: 2px 8px; }
 
 /* chart display category beside the scale (chartfeatures.js) */
-.dispcat-ind { font: 600 11px "Segoe UI", system-ui, sans-serif; color: #1d2a33; background: rgba(255,255,255,0.75); padding: 1px 6px; border-radius: 3px; pointer-events: none; }
+.dispcat-ind { position: absolute; z-index: 3; font: 600 11px "Segoe UI", system-ui, sans-serif; color: #1d2a33; background: rgba(255,255,255,0.75); padding: 1px 6px; border-radius: 3px; pointer-events: none; }
 .dispcat-ind[hidden] { display: none; }
 
 /* disclaimer (disclaimer.js): over everything, the splash and welcome included */
