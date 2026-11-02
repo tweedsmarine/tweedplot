@@ -168,6 +168,9 @@ const map = new maplibregl.Map({
       { id: "osm", type: "raster", source: "osm", layout: { visibility: "none" } },
       { id: "depcnt", type: "line", source: "chart", "source-layer": "depcnt", layout: { visibility: "none" },
         paint: { "line-color": "#7d97a6", "line-width": 0.6 } },
+      // dredged areas (channels, berths) outlined, as S-52 draws DRGARE: grey dashes
+      { id: "depare-drg", type: "line", source: "chart", "source-layer": "depare", filter: ["has", "dredged"], layout: { visibility: "none" },
+        paint: { "line-color": "#5b6b75", "line-width": 1.2, "line-dasharray": [4, 3] } },
       { id: "safety-contour", type: "line", source: "chart", "source-layer": "depcnt",
         filter: safetyContourFilter(), layout: { visibility: "none" },
         paint: { "line-color": "#1d2a33", "line-width": 1.6 } },

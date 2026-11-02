@@ -177,15 +177,8 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
       box.hidden = true;
       note.textContent = count && !range ? "The shown tracks have no depth logged." : !count ? "Tick tracks to show them."
         : "Colours and range from Chart data › Own soundings (Fit to view there sets the range).";
-      leg.hidden = !(range && count);
-      if (leg.hidden) return;
-      const o = ownSoundingsScale(), w = o.hi - o.lo;
-      const css = `linear-gradient(to right, ${o.stops.map(([v, c]) => `${c} ${((v - o.lo) / w) * 100}%`).join(", ")})`;
-      leg.innerHTML = `<b></b><div class="bar"></div><div class="ticks"><span></span><span class="tg"></span><span></span></div>`;
-      leg.querySelector("b").textContent = "Depth, m (own soundings colours)";
-      leg.querySelector(".bar").style.background = css;
-      const s = leg.querySelectorAll(".ticks span");
-      s[0].textContent = `${Math.round(o.lo)}`; s[1].textContent = ""; s[2].textContent = `${Math.round(o.hi)}`;
+      // no key on the chart: the own soundings' range card shows these colours already
+      leg.hidden = true;
       return;
     }
     note.textContent = by && count && !range ? `The shown tracks have no ${by.name.toLowerCase()} logged.` : by && !count ? "Tick tracks to show them." : "";
