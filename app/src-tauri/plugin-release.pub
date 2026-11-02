@@ -1,0 +1,7 @@
+# Tweedsmarine's release keys for TweedPlot plugin packages (.tpplugin): Ed25519 public
+# keys in hex, one per line. TweedPlot installs and starts only packages signed with one
+# of these. The Licence Manager shows the real key (Settings › Plugin releases); put it
+# here, and remove the test key below before a public release.
+#
+# Test key (its secret half is public, in the Licence Manager's test mode):
+d19b2fd780f3a4a3f11cb3166a277fce8d938d35499e40a185c35d032dc3ace9

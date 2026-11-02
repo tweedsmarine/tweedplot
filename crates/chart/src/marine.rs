@@ -689,7 +689,7 @@ impl crate::ChartStore {
     /// A fishing rule's details: the MPI layers it is in and all its attributes.
     pub fn rule_info(&self, rid: i64) -> Option<(String, Value)> {
         let t = self.tables.iter().find(|t| t.kind == crate::Kind::Rule)?;
-        let conn = self.dbs[t.db].lock().unwrap_or_else(|e| e.into_inner());
+        let conn = self.dbs[t.db].local()?;
         let (layers, attrs): (String, String) =
             conn.query_row("SELECT layers, attrs FROM mpi_rules_attr WHERE rid = ?1", [rid], |r| Ok((r.get(0)?, r.get(1)?))).ok()?;
         Some((layers, serde_json::from_str(&attrs).unwrap_or(Value::Null)))

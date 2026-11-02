@@ -311,7 +311,21 @@ impl ChartStore {
         if !t.touches(b) {
             return;
         }
-        let conn = self.dbs[t.db].lock().unwrap_or_else(|e| e.into_inner());
+        let conn = match &self.dbs[t.db] {
+            crate::remote::Db::Local(c) => c.lock().unwrap_or_else(|e| e.into_inner()),
+            crate::remote::Db::Remote(src, db) => {
+                for shift in crate::wrap_shifts(b) {
+                    for r in src.rows(*db, &t.table, [b[0] + shift, b[1], b[2] + shift, b[3]], cols) {
+                        let vals: Vec<Option<String>> = r.vals.iter().map(plugin_api::Value::as_text).collect();
+                        if let Some(mut geom) = parse_gpkg(&r.geom) {
+                            crate::shift_geom(&mut geom, -shift);
+                            f(Row { fid: r.fid, vals, geom });
+                        }
+                    }
+                }
+                return;
+            }
+        };
         let gcol = t.rtree.trim_start_matches(&format!("rtree_{}_", t.table)).to_string();
         let have: Vec<bool> = cols.iter().map(|c| t.cols.iter().any(|x| x == c)).collect();
         let sel: String = cols.iter().zip(&have).map(|(c, h)| if *h { format!("t.\"{c}\", ") } else { "NULL, ".into() }).collect();
@@ -352,7 +366,10 @@ impl ChartStore {
             if !t.cols.iter().any(|c| c == "scamin") {
                 return None;
             }
-            let conn = self.dbs[t.db].lock().unwrap_or_else(|e| e.into_inner());
+            let conn = match &self.dbs[t.db] {
+                crate::remote::Db::Local(c) => c.lock().unwrap_or_else(|e| e.into_inner()),
+                crate::remote::Db::Remote(src, db) => return src.median(*db, &t.table, "scamin"),
+            };
             let n: i64 = conn.query_row(&format!("SELECT count(scamin) FROM \"{}\"", t.table), [], |r| r.get(0)).unwrap_or(0);
             if n == 0 {
                 return None;
@@ -924,18 +941,31 @@ impl ChartStore {
     pub fn feature(&self, table: usize, fid: i64) -> Option<FeatureInfo> {
         let t = self.tables.get(table)?;
         let class = t.class?;
-        let conn = self.dbs[t.db].lock().unwrap_or_else(|e| e.into_inner());
         let gcol = t.rtree.trim_start_matches(&format!("rtree_{}_", t.table)).to_string();
         let cols: Vec<&String> = t.cols.iter().filter(|c| **c != gcol.to_ascii_lowercase() && *c != "fid" && *c != "fidn" && **c != t.pk).collect();
-        let sel: String = cols.iter().map(|c| format!("\"{c}\", ")).collect();
-        let sql = format!("SELECT {sel}\"{gcol}\" FROM \"{}\" WHERE \"{}\" = ?1", t.table, t.pk);
-        let mut st = conn.prepare(&sql).ok()?;
-        let mut rows = st.query([fid]).ok()?;
-        let r = rows.next().ok()??;
+        // the row's values in words, and its geometry
+        let (vals, geom): (Vec<Option<String>>, Vec<u8>) = match &self.dbs[t.db] {
+            crate::remote::Db::Remote(src, db) => {
+                let names: Vec<&str> = cols.iter().map(|c| c.as_str()).collect();
+                let r = src.feature(*db, &t.table, fid, &names)?;
+                (r.vals.iter().map(plugin_api::Value::as_text).collect(), r.geom)
+            }
+            crate::remote::Db::Local(c) => {
+                let conn = c.lock().unwrap_or_else(|e| e.into_inner());
+                let sel: String = cols.iter().map(|c| format!("\"{c}\", ")).collect();
+                let sql = format!("SELECT {sel}\"{gcol}\" FROM \"{}\" WHERE \"{}\" = ?1", t.table, t.pk);
+                let mut st = conn.prepare(&sql).ok()?;
+                let mut rows = st.query([fid]).ok()?;
+                let r = rows.next().ok()??;
+                let vals = (0..cols.len()).map(|i| r.get_ref(i).ok().and_then(text)).collect();
+                let geom = r.get_ref(cols.len()).ok().and_then(|v| v.as_blob().ok()).map(<[u8]>::to_vec).unwrap_or_default();
+                (vals, geom)
+            }
+        };
         let mut attrs = Vec::new();
         let mut raw: Vec<(String, String)> = Vec::new();
-        for (i, c) in cols.iter().enumerate() {
-            let Some(v) = r.get_ref(i).ok().and_then(text) else {
+        for (c, v) in cols.iter().zip(vals) {
+            let Some(v) = v else {
                 continue;
             };
             if v.trim().is_empty() {
@@ -956,7 +986,7 @@ impl ChartStore {
             let n = attrs.remove(i);
             attrs.insert(0, n);
         }
-        let position = r.get_ref(cols.len()).ok().and_then(|v| v.as_blob().ok()).and_then(parse_gpkg).and_then(|g| match g {
+        let position = parse_gpkg(&geom).and_then(|g| match g {
             Geom::Points(p) => p.first().copied(),
             Geom::Lines(l) => l.first().and_then(|x| x.first().copied()),
             Geom::Polygons(p) => p.first().and_then(|x| x.first()).and_then(|x| x.first().copied()),

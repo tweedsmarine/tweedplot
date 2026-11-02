@@ -6,6 +6,8 @@ license.workspace = true
 description = "Chart data: LINZ GeoPackage layers (coastline, depth areas, contours, soundings) served as vector tiles"
 
 [dependencies]
+enc-s57.workspace = true
+plugin-api.workspace = true
 rusqlite = { workspace = true, features = ["serialize"] }
 zip.workspace = true
 lru.workspace = true
@@ -13,26 +15,13 @@ geo = "0.31"
 rayon.workspace = true
 rstar = "0.12"
 clipper2-rust = "1.2"
-blowfish = "0.9"
 crc32fast = "1"
 flate2 = "1"
 png = "0.17"
-sha1 = "0.10"
-num-bigint = "0.4"
 thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2 = "0.10"
-chacha20poly1305 = "0.10"
-getrandom = "0.3"
-base64 = "0.22"
-ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
-zeroize = "1.8"
-x25519-dalek = { version = "2", features = ["static_secrets", "zeroize"] }
-hmac = "0.12"
 
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_System_Memory"] }
 
 [dev-dependencies]
 tiny_http = "0.12"

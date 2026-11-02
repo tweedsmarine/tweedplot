@@ -52,9 +52,46 @@ export function setupS63(map, { toast } = {}) {
   }
   const count = (lines, level) => lines.filter((m) => m.level === level).length;
 
+  /** The plugin's own row: installed or not, its version, and what can be done. */
+  function pluginRow() {
+    const p = status.plugin || {};
+    const note = $("s63-plugin-note");
+    const on = !!p.running;
+    $("s63-main").hidden = !on;
+    $("s63-plugin-get").textContent = p.installed ? "Update" : "Download";
+    $("s63-plugin-get").hidden = p.installed && !updateFound;
+    $("s63-plugin-check").hidden = !p.installed;
+    $("s63-plugin-remove").hidden = !p.installed;
+    if (on) {
+      note.textContent = `${p.name} ${p.version}${p.dev ? " (development build, not checked)" : ""}${updateFound ? ` · version ${updateFound} is available` : ""}`;
+      note.className = `grow wx-note ${p.dev ? "warn" : ""}`;
+    } else if (p.installed) {
+      note.textContent = `${p.name} is installed but not running: ${p.error || "it couldn't be started"}`;
+      note.className = "grow wx-note bad";
+    } else {
+      note.textContent = `Encrypted (S-63) charts need ${p.name || "the TweedPlot S-63 Charts plugin"} from Tweedsmarine: a separate download, or a package file for computers without internet.`;
+      note.className = "grow wx-note warn";
+    }
+  }
+  let updateFound = null;
+
   async function refresh() {
     try { status = await invoke("s63_status"); } catch { return; }
     if (!status) return;
+    pluginRow();
+    if (status.error) report([{ cell: "", level: "error", text: status.error }]);
+    if (!status.plugin?.running) {
+      status.cells = status.cells || [];
+      status.permits = status.permits || [];
+      status.notes = status.notes || [];
+      banner();
+      const list = $("s63-notes");
+      list.innerHTML = "";
+      for (const m of status.notes) { const li = document.createElement("li"); li.textContent = `${m.cell}: ${m.text}`; list.append(li); }
+      $("s63-note-sum").textContent = `Messages from opening the charts: ${status.notes.length}`;
+      $("s63-note-details").hidden = status.notes.length === 0;
+      return;
+    }
     $("s63-inst").value = status.installation_code || "";
     $("s63-up").value = status.user_permit || "";
     $("s63-up").classList.toggle("bad", !status.hw_ok);
@@ -186,6 +223,31 @@ export function setupS63(map, { toast } = {}) {
   $("s63-rel-copy").onclick = async () => {
     try { await navigator.clipboard.writeText($("s63-rel").value.trim()); report("Release code copied: send it to Tweedsmarine."); } catch { $("s63-rel").select(); }
   };
+
+  const busy = async (btn, text, job) => {
+    btn.disabled = true;
+    report(text);
+    try { await job(); } catch (e) { report([{ cell: "", level: "error", text: String(e) }]); } finally { btn.disabled = false; }
+    refresh();
+  };
+  $("s63-plugin-get").onclick = () => busy($("s63-plugin-get"), "Downloading TweedPlot S-63 Charts…", async () => {
+    const v = await invoke("s63_plugin_download");
+    updateFound = null;
+    report([{ cell: "", level: "ok", text: `TweedPlot S-63 Charts ${v} installed. Opening the charts again…` }]);
+  });
+  $("s63-plugin-file").onclick = () => busy($("s63-plugin-file"), "Choose the package file (.tpplugin)…", async () => {
+    const v = await invoke("s63_plugin_install_file");
+    if (v) { updateFound = null; report([{ cell: "", level: "ok", text: `TweedPlot S-63 Charts ${v} installed. Opening the charts again…` }]); } else report([]);
+  });
+  $("s63-plugin-check").onclick = () => busy($("s63-plugin-check"), "Looking on tweedsmarine.nz…", async () => {
+    const r = await invoke("s63_plugin_check");
+    updateFound = r.newer ? r.version : null;
+    report(r.newer ? `Version ${r.version} is available: press Update.` : `Up to date (${r.installed}).`);
+  });
+  $("s63-plugin-remove").onclick = () => twice($("s63-plugin-remove"), "Sure? Remove", () => busy($("s63-plugin-remove"), "Removing the plugin…", async () => {
+    await invoke("s63_plugin_remove");
+    report("TweedPlot S-63 Charts removed. Its activation stays on this computer, for when it is installed again; the encrypted charts aren't shown without it.");
+  }));
 
   $("s63-key-btn").onclick = () => $("s63-key-file").click();
   $("s63-key-file").onchange = async (ev) => {

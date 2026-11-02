@@ -600,6 +600,16 @@
         </div>
         <h3>Encrypted charts (S-63)</h3>
         <div id="s63-box">
+          <div id="s63-plugin">
+            <div class="wx-row"><span id="s63-plugin-note" class="grow wx-note"></span></div>
+            <div class="wx-row">
+              <button id="s63-plugin-get" title="Download TweedPlot S-63 Charts from tweedsmarine.nz and install it">Download</button>
+              <button id="s63-plugin-file" title="Install TweedPlot S-63 Charts from a package file (.tpplugin), e.g. on a USB stick">Install from file…</button>
+              <button id="s63-plugin-check" title="See whether a newer version is on tweedsmarine.nz" hidden>Check for update</button>
+              <button id="s63-plugin-remove" title="Remove the plugin (its activation stays on this computer)" hidden>Remove plugin</button>
+            </div>
+          </div>
+          <div id="s63-main">
           <div class="wx-row"><label class="grow" for="s63-inst" title="This computer's installation code: send it to Tweedsmarine for an activation code">Installation code</label>
             <button id="s63-inst-copy" title="Copy the installation code, to send to Tweedsmarine">Copy</button></div>
           <div class="wx-row"><input id="s63-inst" class="mono grow" readonly spellcheck="false" /></div>
@@ -628,6 +638,7 @@
           <details id="s63-cell-details"><summary id="s63-cell-sum">Installed ENCs</summary>
             <table id="s63-cells"><thead><tr><th>Cell</th><th>Edition</th><th>Update</th><th>From</th></tr></thead><tbody></tbody></table>
             <div class="wx-row"><span class="grow"></span><button id="s63-remove-cells" title="Remove every installed ENC (the permits and key stay)">Remove all ENCs</button></div></details>
+          </div>
           <details id="s63-note-details"><summary id="s63-note-sum">Messages</summary><ul id="s63-notes"></ul></details>
         </div>
       </section>

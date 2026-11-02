@@ -1,0 +1,19 @@
+[package]
+name = "plugin-api"
+version = "0.1.0"
+edition.workspace = true
+license = "MIT OR Apache-2.0"
+authors.workspace = true
+description = "The interface between TweedPlot and its plugins (the S-63 Charts plugin): framed messages over a child process's pipes, table rows, signed plugin packages"
+
+[dependencies]
+enc-s57.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+zip.workspace = true
+sha2 = "0.10"
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
+
+[lints]
+workspace = true

@@ -63,9 +63,10 @@ Bug reports, ideas and pull requests are welcome. Please read [CONTRIBUTING.md](
 
 ## Licence
 
-- Code: [GNU GPL v3.0 or later](LICENSE). If you distribute a modified version you must release it under the same licence, with its source.
+- Code: [GNU GPL v3.0 or later](LICENSE), with a [plugin exception](LICENSE-PLUGIN-EXCEPTION.md): separate plugin programs that talk to TweedPlot only through its plugin interface may be under any licence. If you distribute a modified version you must release it under the same licence, with its source.
+- The shared crates `crates/enc-s57` (S-57 reader and converter) and `crates/plugin-api` (the plugin interface): MIT or Apache-2.0.
 - Manual and documentation: CC BY-SA 4.0 ([LICENSE-DOCS.txt](LICENSE-DOCS.txt)).
 - The TweedPlot and TweedsMarine names and logos are not licensed for modified versions: see [TRADEMARKS.md](TRADEMARKS.md).
 - Third-party data and libraries (LINZ, OpenStreetMap, Natural Earth, GSHHG, NOAA, ECMWF and others): see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and [NOTICE.md](NOTICE.md).
 
-A build from source uses the IHO test credentials for S-63; official installers use TweedsMarine's own.
+Encrypted (S-63) charts are not handled by TweedPlot itself but by the **TweedPlot S-63 Charts** plugin, TweedsMarine's separately licensed program, installed from Chart › Encrypted charts (download or package file). Unencrypted S-57 ENCs (NOAA and others) and the LINZ data need no plugin.

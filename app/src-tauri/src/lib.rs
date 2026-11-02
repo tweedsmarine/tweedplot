@@ -13,6 +13,7 @@ mod library_cmd;
 mod live;
 mod nmea;
 mod pbathy;
+mod plugin;
 mod radar_sim;
 mod routing_cmd;
 mod s63_cmd;
@@ -884,11 +885,34 @@ fn open_charts_started(handle: tauri::AppHandle) {
             }));
         }
         log_chart_tile(&format!("charts: ENC cells checked in {:.1} s", t_enc.elapsed().as_secs_f64()));
-        open_store(handle, dirs, dir, prepared_enc_gpkgs)
+        // encrypted charts: the S-63 Charts plugin decrypts what is new and opens them
+        let mut remote = None;
+        if !sets_off.contains(&s63_cmd::plugin_set_path(&handle)) {
+            if let Some(p) = plugin::get(&handle) {
+                let t = std::time::Instant::now();
+                match p.client.call("open", serde_json::json!({}), std::time::Duration::from_secs(3600)) {
+                    Ok(v) => match serde_json::from_value::<plugin_api::protocol::Opened>(v) {
+                        Ok(o) => {
+                            PLUGIN_CELLS.store(o.cells, std::sync::atomic::Ordering::Relaxed);
+                            log_chart_tile(&format!("charts: {} encrypted cells opened by the plugin in {:.1} s", o.cells, t.elapsed().as_secs_f64()));
+                            remote = Some((p.client.clone(), o.tables));
+                        }
+                        Err(e) => log_chart_tile(&format!("charts: the plugin's answer can't be read: {e}")),
+                    },
+                    Err(e) => log_chart_tile(&format!("charts: the plugin couldn't open the encrypted charts: {e}")),
+                }
+            }
+        }
+        open_store(handle, dirs, dir, prepared_enc_gpkgs, remote)
     });
 }
 
-fn open_store(handle: tauri::AppHandle, dirs: Vec<PathBuf>, dir: PathBuf, prepared_enc_gpkgs: Vec<PathBuf>) {
+/// How many encrypted cells the plugin opened last (for the chart sets list).
+static PLUGIN_CELLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+type PluginTables = (Arc<plugin_api::PluginClient>, Vec<plugin_api::protocol::TableMeta>);
+
+fn open_store(handle: tauri::AppHandle, dirs: Vec<PathBuf>, dir: PathBuf, prepared_enc_gpkgs: Vec<PathBuf>, remote: Option<PluginTables>) {
     let h = handle.clone();
     let t0 = std::time::Instant::now();
     let opened = chart::ChartStore::open_dirs_with_extra_gpkgs(&dirs, &prepared_enc_gpkgs, &mut |k, n| {
@@ -903,7 +927,11 @@ fn open_store(handle: tauri::AppHandle, dirs: Vec<PathBuf>, dir: PathBuf, prepar
         }
     });
     match opened {
-        Ok(store) => {
+        Ok(mut store) => {
+            if let Some((client, tables)) = remote {
+                let n = store.add_remote(Arc::new(plugin::Remote(client)), &tables);
+                log_chart_tile(&format!("charts: {n} tables from the S-63 Charts plugin"));
+            }
             let t0 = std::time::Instant::now();
             let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
             store.prepare_with_progress(&mut |done, total| {
@@ -956,6 +984,7 @@ fn chart_sets_off(app: &tauri::AppHandle) -> Vec<PathBuf> {
 async fn chart_sets_list(app: tauri::AppHandle) -> Result<Vec<serde_json::Value>, String> {
     let off = chart_sets_off(&app);
     let dirs = s63_cmd::enc_dirs(&app);
+    let a = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let mut v = Vec::new();
         for d in dirs.iter().filter(|d| d.is_dir()) {
@@ -963,6 +992,12 @@ async fn chart_sets_list(app: tauri::AppHandle) -> Result<Vec<serde_json::Value>
                 let on = !off.contains(&s.path);
                 v.push(serde_json::json!({ "path": s.path, "name": s.name, "cells": s.cells, "producers": s.producers, "folder": d, "in_use": on }));
             }
+        }
+        // the encrypted charts the plugin holds, as one set
+        if plugin::installed(&a) {
+            let p = s63_cmd::plugin_set_path(&a);
+            let n = PLUGIN_CELLS.load(std::sync::atomic::Ordering::Relaxed);
+            v.push(serde_json::json!({ "path": p, "name": format!("Encrypted charts ({})", plugin::NAME), "cells": n, "producers": [], "folder": s63_cmd::enc_home(&a), "in_use": !off.contains(&p) }));
         }
         v
     })
@@ -1942,7 +1977,11 @@ pub fn run() {
             s63_cmd::s63_remove_permits,
             s63_cmd::s63_install_key,
             s63_cmd::s63_import_exchange_set,
-            s63_cmd::s63_remove_cells
+            s63_cmd::s63_remove_cells,
+            s63_cmd::s63_plugin_install_file,
+            s63_cmd::s63_plugin_check,
+            s63_cmd::s63_plugin_download,
+            s63_cmd::s63_plugin_remove
         ])
         .register_asynchronous_uri_scheme_protocol("chart", |_ctx, request, responder| {
             let path = request.uri().path().to_string();

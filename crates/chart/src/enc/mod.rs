@@ -1,470 +1,93 @@
 //! S-57 ENC cells (`.000` with updates `.001`, `.002` ...) for the chart store.
 //!
 //! Each cell found under a chart folder is converted once into a GeoPackage in that
-//! folder's `.enc` subfolder, laid out like the LINZ layers (`light_points_hydro_enc_b4`
-//! and so on, S-57 attribute acronyms as columns), so the store draws ENC cells with the
-//! same code as the LINZ data. A cell is converted again when it or an update changes,
-//! or when the converter changes ([`VERSION`]). The band comes from the cell's intended
-//! usage (overview 2, general 3, coastal 4, approach 5, harbour and berthing 6).
+//! folder's `.enc` subfolder (see [`enc_s57::gpkg`]), so the store draws ENC cells with
+//! the same code as the LINZ data. A cell is converted again when it or an update
+//! changes, or when the converter changes ([`VERSION`]).
+//!
+//! Encrypted (S-63) cells are not handled here: they belong to the TweedPlot S-63 Charts
+//! plugin, a separate program that imports, decrypts and keeps them, and serves their
+//! tables to the chart store (see `crate::remote`). One found in a chart folder is left
+//! alone with a note.
 
-pub mod catalogue;
-pub mod cell;
-pub mod device;
-pub mod iso8211;
-pub mod machine;
-pub mod oem;
-pub mod s63;
-pub mod senc;
+pub use enc_s57::files::{find_cells, find_cells_except, CellFiles};
+pub use enc_s57::gpkg::{band_for, table_for, write_gpkg, MERGE_VERSION, VERSION};
+pub use enc_s57::{catalogue, cell, iso8211};
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
-use zeroize::Zeroizing;
 
-use cell::{Cell, Shape};
+use cell::Cell;
+#[cfg(test)]
+use cell::Shape;
 
-/// Bump when the conversion changes, so cells are converted again.
-pub const VERSION: u32 = 2;
-/// Bump when merging changes, so the merged files are made again (the cells needn't be).
-pub const MERGE_VERSION: u32 = 2;
-
-/// The chart band for a cell's intended usage (DSID INTU).
-pub fn band_for(intu: u8) -> u8 {
-    match intu {
-        1 => 2,
-        2 => 3,
-        3 => 4,
-        4 => 5,
-        5 | 6 => 6,
-        _ => 4,
-    }
-}
-
-/// The table a feature goes in, or None for those the chart doesn't draw.
-fn table_for(acr: &str, prim: u8, band: u8) -> Option<String> {
-    let geo = match prim {
-        1 => crate::s57::Geo::Point,
-        2 => crate::s57::Geo::Line,
-        3 => crate::s57::Geo::Area,
-        _ => return None,
-    };
-    let fixed = match (acr, prim) {
-        ("DEPARE" | "DRGARE", 3) => Some("depth_area_polygon_hydro"),
-        ("DEPCNT", 2) => Some("depth_contour_polyline_hydro"),
-        ("SOUNDG", 1) => Some("sounding_points_hydro"),
-        ("M_COVR", 3) => Some("coverage_polygon_hydro"),
-        ("LNDARE", 3) => Some("land_area_polygon"),
-        ("LAKARE", 3) => Some("lake_polygon_hydro"),
-        ("RIVERS", 3) => Some("river_polygon_hydro"),
-        _ => None,
-    };
-    if let Some(p) = fixed {
-        return Some(format!("{p}_enc_b{band}"));
-    }
-    let c = crate::s57::CLASSES.iter().find(|c| c.code == acr && c.geo == geo)?;
-    Some(format!("{}_hydro_enc_b{band}", c.prefix))
-}
-
-#[derive(Default)]
-struct Table {
-    geo: &'static str,
-    cols: BTreeMap<String, char>,
-    rows: Vec<(Vec<(String, String)>, Vec<u8>, [f64; 4])>,
-}
-
-/// Write a cell's features into a new GeoPackage at `out`. Returns the features written.
-pub fn write_gpkg(c: &Cell, out: &Path) -> Result<usize, rusqlite::Error> {
-    let band = band_for(c.intu);
-    let mut tables: BTreeMap<String, Table> = BTreeMap::new();
-    let mut n = 0;
-    for f in c.features.values() {
-        let Some(acr) = catalogue::object(f.objl) else { continue };
-        let Some(tname) = table_for(acr, f.prim, band) else { continue };
-        let Some(shape) = c.shape(f) else { continue };
-        let mut vals: Vec<(String, String)> = Vec::new();
-        for (k, v) in f.attf.iter().chain(&f.natf) {
-            if let Some((a, ty)) = catalogue::attribute(*k) {
-                let ty = match ty {
-                    b'F' => 'R',
-                    b'I' => 'I',
-                    _ => 'T',
-                };
-                vals.push((a.to_ascii_lowercase(), v.trim().to_string()));
-                let t = tables.entry(tname.clone()).or_default();
-                t.cols.insert(a.to_ascii_lowercase(), ty);
-            }
-        }
-        let t = tables.entry(tname.clone()).or_default();
-        match shape {
-            Shape::Points(pts) if acr == "SOUNDG" => {
-                t.geo = "POINT";
-                t.cols.insert("depth".into(), 'R');
-                for p in pts {
-                    let mut v = vals.clone();
-                    v.push(("depth".into(), format!("{}", p[2])));
-                    t.rows.push((v, gp_point(p[0], p[1]), [p[0], p[0], p[1], p[1]]));
-                }
-            }
-            Shape::Points(pts) => {
-                t.geo = "POINT";
-                let p = pts[0];
-                t.rows.push((vals, gp_point(p[0], p[1]), [p[0], p[0], p[1], p[1]]));
-            }
-            Shape::Lines(ls) => {
-                t.geo = "MULTILINESTRING";
-                let env = envelope(ls.iter().flatten());
-                t.rows.push((vals, gp_lines(&ls, env), env));
-            }
-            Shape::Polygons(ps) => {
-                t.geo = "MULTIPOLYGON";
-                let env = envelope(ps.iter().flat_map(|p| p[0].iter()));
-                t.rows.push((vals, gp_polys(&ps, env), env));
-            }
-        }
-        n += 1;
-    }
-
-    let _ = std::fs::remove_file(out);
-    let tmp = out.with_extension("tmp");
-    let _ = std::fs::remove_file(&tmp);
-    let mut db = new_db(out, &tmp)?;
-    db.execute_batch(
-        "PRAGMA application_id = 1196444487; PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF;
-         CREATE TABLE gpkg_spatial_ref_sys (srs_name TEXT NOT NULL, srs_id INTEGER PRIMARY KEY, organization TEXT NOT NULL,
-           organization_coordsys_id INTEGER NOT NULL, definition TEXT NOT NULL, description TEXT);
-         INSERT INTO gpkg_spatial_ref_sys VALUES ('WGS 84', 4326, 'EPSG', 4326, 'GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]]', NULL);
-         CREATE TABLE gpkg_contents (table_name TEXT PRIMARY KEY, data_type TEXT NOT NULL, identifier TEXT, description TEXT DEFAULT '',
-           last_change DATETIME, min_x DOUBLE, min_y DOUBLE, max_x DOUBLE, max_y DOUBLE, srs_id INTEGER);
-         CREATE TABLE gpkg_geometry_columns (table_name TEXT NOT NULL, column_name TEXT NOT NULL, geometry_type_name TEXT NOT NULL,
-           srs_id INTEGER NOT NULL, z TINYINT NOT NULL, m TINYINT NOT NULL, PRIMARY KEY (table_name, column_name));
-         CREATE TABLE enc_meta (key TEXT PRIMARY KEY, value TEXT);",
-    )?;
-    let tx = db.transaction()?;
-    for (k, v) in [
-        ("version", VERSION.to_string()),
-        ("cell", c.name.clone()),
-        ("edition", c.edition.clone()),
-        ("update", c.update.clone()),
-        ("issue_date", c.issue_date.clone()),
-        ("intended_usage", c.intu.to_string()),
-        ("compilation_scale", c.cscl.to_string()),
-    ] {
-        tx.execute("INSERT INTO enc_meta VALUES (?1, ?2)", rusqlite::params![k, v])?;
-    }
-    for (name, t) in &tables {
-        let cols: String = t
-            .cols
-            .iter()
-            .map(|(c, ty)| {
-                format!(
-                    ", \"{c}\" {}",
-                    match ty {
-                        'R' => "REAL",
-                        'I' => "INTEGER",
-                        _ => "TEXT",
-                    }
-                )
-            })
-            .collect();
-        tx.execute_batch(&format!(
-            "CREATE TABLE \"{name}\" (fid INTEGER PRIMARY KEY, geom BLOB{cols});
-             CREATE VIRTUAL TABLE \"rtree_{name}_geom\" USING rtree(id, minx, maxx, miny, maxy);"
-        ))?;
-        tx.execute("INSERT INTO gpkg_contents (table_name, data_type, identifier, srs_id) VALUES (?1, 'features', ?1, 4326)", [name])?;
-        tx.execute("INSERT INTO gpkg_geometry_columns VALUES (?1, 'geom', ?2, 4326, 0, 0)", rusqlite::params![name, t.geo])?;
-        let names: Vec<&String> = t.cols.keys().collect();
-        let ph: String = (0..names.len()).map(|i| format!(", ?{}", i + 3)).collect();
-        let cl: String = names.iter().map(|c| format!(", \"{c}\"")).collect();
-        let mut ins = tx.prepare(&format!("INSERT INTO \"{name}\" (fid, geom{cl}) VALUES (?1, ?2{ph})"))?;
-        let mut rt = tx.prepare(&format!("INSERT INTO \"rtree_{name}_geom\" VALUES (?1, ?2, ?3, ?4, ?5)"))?;
-        for (i, (vals, blob, env)) in t.rows.iter().enumerate() {
-            let fid = i as i64 + 1;
-            let mut params: Vec<rusqlite::types::Value> = vec![fid.into(), blob.clone().into()];
-            for c in &names {
-                let v = vals.iter().find(|(k, _)| k == *c).map(|(_, v)| v.as_str()).filter(|v| !v.is_empty());
-                params.push(match (v, t.cols[*c]) {
-                    (None, _) => rusqlite::types::Value::Null,
-                    (Some(v), 'R') => v.parse::<f64>().map(Into::into).unwrap_or(rusqlite::types::Value::Null),
-                    (Some(v), 'I') => v.parse::<i64>().map(Into::into).unwrap_or(rusqlite::types::Value::Null),
-                    (Some(v), _) => v.to_string().into(),
-                });
-            }
-            ins.execute(rusqlite::params_from_iter(params))?;
-            rt.execute(rusqlite::params![fid, env[0], env[1], env[2], env[3]])?;
-        }
-    }
-    tx.commit()?;
-    finish_db(db, out, &tmp)?;
-    Ok(n)
-}
-
-/// Whether a file of TweedPlot's holds data from encrypted cells, sealed on disk.
-pub fn is_sealed(p: &Path) -> bool {
-    p.extension().is_some_and(|e| e == "tpx")
-}
-
-/// A new database for `out`: a file at `tmp`, or in memory when `out` is to be sealed.
-fn new_db(out: &Path, tmp: &Path) -> Result<Connection, rusqlite::Error> {
-    if is_sealed(out) {
-        Connection::open_in_memory()
-    } else {
-        Connection::open(tmp)
-    }
-}
-
-fn io_err(e: impl std::error::Error + Send + Sync + 'static) -> rusqlite::Error {
-    rusqlite::Error::ToSqlConversionFailure(Box::new(e))
-}
-
-/// Put a database made by [`new_db`] in place at `out` (sealed when `out` is a .tpx).
-fn finish_db(db: Connection, out: &Path, tmp: &Path) -> Result<(), rusqlite::Error> {
-    if is_sealed(out) {
-        let data = db.serialize("main")?;
-        let sealed = protect::seal(&data);
-        drop(data);
-        drop(db);
-        std::fs::write(tmp, sealed).map_err(io_err)?;
-    } else {
-        drop(db);
-    }
-    let _ = std::fs::remove_file(out);
-    std::fs::rename(tmp, out).map_err(io_err)
-}
-
-/// Open one of TweedPlot's GeoPackages read-only: a sealed one is unsealed into memory.
+/// Open one of TweedPlot's GeoPackages read-only.
 pub fn open_db(path: &Path) -> Result<Connection, rusqlite::Error> {
-    if !is_sealed(path) {
-        return Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX);
-    }
-    let mut db = Connection::open_in_memory()?;
-    load_sealed(&mut db, "main", path)?;
-    Ok(db)
+    Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX)
 }
 
-fn load_sealed(db: &mut Connection, schema: &str, path: &Path) -> Result<(), rusqlite::Error> {
-    let sealed = std::fs::read(path).map_err(io_err)?;
-    let plain = protect::unseal(&sealed).ok_or_else(|| io_err(std::io::Error::other(format!("{} can't be unsealed on this computer", path.display()))))?;
-    let n = plain.len();
-    db.deserialize_read_exact(schema, std::io::Cursor::new(&plain[..]), n, true)
-}
+/// What an encrypted cell found in a chart folder is told.
+pub const NOT_IMPORTED: &str =
+    "is an encrypted (S-63) cell. Encrypted charts need the TweedPlot S-63 Charts plugin: install it and import the exchange set in Chart › Encrypted charts";
 
-/// Sealing the chart data made from encrypted (S-63) cells: S-63's licence holds for the
-/// decrypted data too, so it is kept on disk encrypted with a key that only this
-/// installation has (from the computer's fingerprint, the HW_ID and the installation's
-/// device key), and only unsealed into memory, which is wiped after use.
-pub mod protect {
-    use chacha20poly1305::aead::{Aead, KeyInit};
-    use chacha20poly1305::{ChaCha20Poly1305, Nonce};
-    use sha2::{Digest, Sha256};
-    use zeroize::Zeroizing;
-
-    const MAGIC: &[u8; 4] = b"TPX1";
-
-    fn key() -> Zeroizing<[u8; 32]> {
-        let mut h = Sha256::new();
-        h.update(b"TweedPlot SENC 2");
-        h.update(super::machine::fingerprint());
-        if let Some(hw) = super::hw_id() {
-            h.update(&hw[..]);
+/// A plain cell and its updates. Updates are applied in sequence from the base cell's own
+/// update number; a missing one stops them there (SSE 23).
+fn open_cell(c: &CellFiles) -> Result<Cell, cell::CellError> {
+    let base = std::fs::read(&c.base)?;
+    let first = Cell::from_bytes(&base, &[])?;
+    let mut next: u32 = first.update.trim().parse::<u32>().unwrap_or(0) + 1;
+    let mut ups = Vec::new();
+    for u in &c.updates {
+        let n: u32 = u.extension().and_then(|e| e.to_str()).and_then(|e| e.parse().ok()).unwrap_or(0);
+        if n < next {
+            continue; // already in a re-issued base cell
         }
-        if let Some(d) = super::DEVICE.read().unwrap().as_ref() {
-            h.update(&d[..]);
+        if n > next {
+            note(u, format!("SSE 23 - Non sequential update, update {next} is missing: updates from {n} on are not applied"));
+            break;
         }
-        Zeroizing::new(h.finalize().into())
-    }
-
-    /// A short tag for the key in use, put in sealed files' names: files sealed with
-    /// another key (another computer or HW_ID) are made again rather than opened.
-    pub fn tag() -> String {
-        let d = Sha256::digest(&key()[..]);
-        d[..4].iter().map(|b| format!("{b:02x}")).collect()
-    }
-
-    pub fn seal(plain: &[u8]) -> Vec<u8> {
-        let mut nonce = [0u8; 12];
-        getrandom::fill(&mut nonce).expect("random numbers");
-        let c = ChaCha20Poly1305::new(key()[..].into());
-        let body = c.encrypt(Nonce::from_slice(&nonce), plain).expect("encrypt");
-        let mut out = Vec::with_capacity(16 + body.len());
-        out.extend_from_slice(MAGIC);
-        out.extend_from_slice(&nonce);
-        out.extend_from_slice(&body);
-        out
-    }
-
-    /// The plain data, wiped from memory when dropped.
-    pub fn unseal(data: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
-        if data.len() < 16 || &data[..4] != MAGIC {
-            return None;
-        }
-        let c = ChaCha20Poly1305::new(key()[..].into());
-        c.decrypt(Nonce::from_slice(&data[4..16]), &data[16..]).ok().map(Zeroizing::new)
-    }
-}
-
-fn envelope<'a>(pts: impl Iterator<Item = &'a [f64; 2]>) -> [f64; 4] {
-    let mut e = [f64::MAX, f64::MIN, f64::MAX, f64::MIN];
-    for p in pts {
-        e = [e[0].min(p[0]), e[1].max(p[0]), e[2].min(p[1]), e[3].max(p[1])];
-    }
-    e
-}
-
-fn header(env: Option<[f64; 4]>) -> Vec<u8> {
-    let mut b = vec![b'G', b'P', 0, if env.is_some() { 0x03 } else { 0x01 }];
-    b.extend_from_slice(&4326i32.to_le_bytes());
-    if let Some(e) = env {
-        for v in e {
-            b.extend_from_slice(&v.to_le_bytes());
-        }
-    }
-    b
-}
-
-fn put_pts(b: &mut Vec<u8>, pts: &[[f64; 2]]) {
-    b.extend_from_slice(&(pts.len() as u32).to_le_bytes());
-    for p in pts {
-        b.extend_from_slice(&p[0].to_le_bytes());
-        b.extend_from_slice(&p[1].to_le_bytes());
-    }
-}
-
-fn gp_point(x: f64, y: f64) -> Vec<u8> {
-    let mut b = header(None);
-    b.push(1);
-    b.extend_from_slice(&1u32.to_le_bytes());
-    b.extend_from_slice(&x.to_le_bytes());
-    b.extend_from_slice(&y.to_le_bytes());
-    b
-}
-
-fn gp_lines(ls: &[Vec<[f64; 2]>], env: [f64; 4]) -> Vec<u8> {
-    let mut b = header(Some(env));
-    b.push(1);
-    b.extend_from_slice(&5u32.to_le_bytes());
-    b.extend_from_slice(&(ls.len() as u32).to_le_bytes());
-    for l in ls {
-        b.push(1);
-        b.extend_from_slice(&2u32.to_le_bytes());
-        put_pts(&mut b, l);
-    }
-    b
-}
-
-fn gp_polys(ps: &[Vec<Vec<[f64; 2]>>], env: [f64; 4]) -> Vec<u8> {
-    let mut b = header(Some(env));
-    b.push(1);
-    b.extend_from_slice(&6u32.to_le_bytes());
-    b.extend_from_slice(&(ps.len() as u32).to_le_bytes());
-    for p in ps {
-        b.push(1);
-        b.extend_from_slice(&3u32.to_le_bytes());
-        b.extend_from_slice(&(p.len() as u32).to_le_bytes());
-        for r in p {
-            put_pts(&mut b, r);
-        }
-    }
-    b
-}
-
-/// A base cell and its updates, in order.
-pub struct CellFiles {
-    pub base: PathBuf,
-    pub updates: Vec<PathBuf>,
-    /// The newest time any of its files was changed (from the folder listing).
-    pub newest: Option<std::time::SystemTime>,
-}
-
-/// Every ENC base cell under `dir` (not in hidden folders), with its updates.
-pub fn find_cells(dir: &Path) -> Vec<CellFiles> {
-    find_cells_except(dir, &[])
-}
-
-/// [`find_cells`], not looking in the folders `off` at all (chart sets not in use).
-pub fn find_cells_except(dir: &Path, off: &[PathBuf]) -> Vec<CellFiles> {
-    let mut out = Vec::new();
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(d) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&d) else { continue };
-        let mut files: Vec<PathBuf> = Vec::new();
-        // file times from the listing (Windows gives them with it: no extra disk query)
-        let mut times: std::collections::HashMap<PathBuf, std::time::SystemTime> = std::collections::HashMap::new();
-        for e in rd.flatten() {
-            let p = e.path();
-            let hidden = p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.'));
-            // the type from the directory listing itself: asking the disk about every file
-            // again (is_dir) is slow on Windows with tens of thousands of cells
-            let is_dir = e.file_type().map(|t| t.is_dir() || (t.is_symlink() && p.is_dir())).unwrap_or(false);
-            if is_dir {
-                if !hidden && !off.iter().any(|o| o == &p) {
-                    stack.push(p);
-                }
-            } else {
-                if let Ok(t) = e.metadata().and_then(|m| m.modified()) {
-                    times.insert(p.clone(), t);
-                }
-                files.push(p);
+        match std::fs::read(u) {
+            Ok(b) => ups.push(b),
+            Err(e) => {
+                note(u, e.to_string());
+                break;
             }
         }
-        let ext = |p: &Path| p.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
-        // S-63 signature files share the cell's name with the usage digit as a letter I-N
-        let is_signature = |p: &Path| {
-            let n = p.file_name().map(|n| n.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
-            n.chars().nth(2).is_some_and(|c| ('I'..='N').contains(&c))
-                && std::fs::read(p).is_ok_and(|b| b.starts_with(b"//") || b.starts_with(b"\xef\xbb\xbf//"))
-        };
-        for b in files.iter().filter(|p| ext(p) == "000" && !is_signature(p)) {
-            let stem = b.file_stem().map(|s| s.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
-            let mut updates: Vec<PathBuf> = files
-                .iter()
-                .filter(|p| {
-                    let e = ext(p);
-                    e.len() == 3
-                        && e != "000"
-                        && e.bytes().all(|c| c.is_ascii_digit())
-                        && p.file_stem().is_some_and(|s| s.to_string_lossy().to_ascii_uppercase() == stem)
-                })
-                .cloned()
-                .collect();
-            // an exchange set's layout, ENC_ROOT/<agency>/<cell>/<edition>/<update>/: the
-            // updates are in the edition folder's other update folders
-            let numeric = |p: Option<&Path>| p.and_then(|p| p.file_name()).is_some_and(|n| n.to_string_lossy().bytes().all(|c| c.is_ascii_digit()));
-            if numeric(b.parent()) && numeric(b.parent().and_then(|p| p.parent())) {
-                let ed = b.parent().unwrap().parent().unwrap();
-                for e in std::fs::read_dir(ed).into_iter().flatten().flatten() {
-                    let d = e.path();
-                    if !d.is_dir() || Some(d.as_path()) == b.parent() || !numeric(Some(&d)) {
-                        continue;
-                    }
-                    for f in std::fs::read_dir(&d).into_iter().flatten().flatten() {
-                        let p = f.path();
-                        let e = ext(&p);
-                        if e.len() == 3
-                            && e != "000"
-                            && e.bytes().all(|c| c.is_ascii_digit())
-                            && p.file_stem().is_some_and(|s| s.to_string_lossy().to_ascii_uppercase() == stem)
-                        {
-                            if let Ok(t) = f.metadata().and_then(|m| m.modified()) {
-                                times.insert(p.clone(), t);
-                            }
-                            updates.push(p);
-                        }
-                    }
-                }
-            }
-            updates.sort_by_key(|p| ext(p));
-            updates.dedup_by_key(|p| ext(p));
-            let newest = std::iter::once(b)
-                .chain(&updates)
-                .map(|p| times.get(p).copied().or_else(|| std::fs::metadata(p).and_then(|m| m.modified()).ok()))
-                .max()
-                .flatten();
-            out.push(CellFiles { base: b.clone(), updates, newest });
-        }
+        next += 1;
     }
-    out.sort_by(|a, b| a.base.cmp(&b.base));
-    out
+    let refs: Vec<&[u8]> = ups.iter().map(Vec::as_slice).collect();
+    Cell::from_bytes(&base, &refs)
+}
+
+/// What happened to a cell that could not be opened, or opens with a warning .
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Note {
+    pub file: String,
+    pub cell: String,
+    pub text: String,
+}
+
+static NOTES: std::sync::Mutex<Vec<Note>> = std::sync::Mutex::new(Vec::new());
+
+pub(crate) fn note(file: &Path, text: impl Into<String>) {
+    let text = text.into();
+    eprintln!("ENC {}: {text}", file.display());
+    let cell = file.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let mut n = NOTES.lock().unwrap();
+    n.retain(|x| !(x.file == file.display().to_string() && x.text == text));
+    n.push(Note { file: file.display().to_string(), cell, text });
+}
+
+/// Notes from converting cells since the charts were last opened.
+pub fn notes() -> Vec<Note> {
+    NOTES.lock().unwrap().clone()
+}
+
+/// Forget the notes (before the charts are opened again).
+pub fn clear_notes() {
+    NOTES.lock().unwrap().clear();
 }
 
 fn hash(s: &str) -> u32 {
@@ -488,8 +111,9 @@ pub fn ensure_gpkgs_with(dir: &Path, progress: &mut dyn FnMut(usize, usize, &str
 }
 
 /// A chart set: one top-level folder of an ENC folder (an exchange set such as NOAA's
-/// ENC_ROOT, or the IHO's test data), the cells straight in the ENC folder, or the cells
-/// installed from S-63 exchange sets (`.senc`). Sets can be left out of use.
+/// ENC_ROOT, or the IHO's test data), or the cells straight in the ENC folder. Sets can be
+/// left out of use. (Cells installed from S-63 exchange sets belong to the S-63 Charts
+/// plugin, which offers them as a set of its own.)
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ChartSet {
     /// What turns it on and off: the set's folder (the ENC folder itself for its loose cells).
@@ -522,10 +146,7 @@ fn set_path(dir: &Path, set: &str) -> PathBuf {
 
 /// The chart sets in an ENC folder (walks every cell: for a settings list, not at start-up).
 pub fn chart_sets(dir: &Path) -> Vec<ChartSet> {
-    let mut cells = find_cells(dir);
-    if senc::Senc::exists(dir) {
-        cells.extend(senc::Senc::open_bare(dir).cell_files());
-    }
+    let cells = find_cells(dir);
     let mut by: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
     for c in &cells {
         let code: String = c.base.file_stem().map(|s| s.to_string_lossy().to_ascii_uppercase().chars().take(2).collect()).unwrap_or_default();
@@ -539,7 +160,6 @@ pub fn chart_sets(dir: &Path) -> Vec<ChartSet> {
                 path: set_path(dir, &set),
                 name: match set.as_str() {
                     "" => "Cells in the ENC folder itself".into(),
-                    ".senc" => "Installed from S-63 exchange sets".into(),
                     s => s.to_string(),
                 },
                 cells: producers.iter().map(|p| p.1).sum(),
@@ -549,20 +169,12 @@ pub fn chart_sets(dir: &Path) -> Vec<ChartSet> {
         .collect()
 }
 
-/// [`ensure_gpkgs_with`], leaving out the chart sets `off` (their folders; `<dir>/.senc` for
-/// the installed S-63 cells; `<dir>` itself for the cells straight in it). Each set has its
+/// [`ensure_gpkgs_with`], leaving out the chart sets `off` (their folders; `<dir>` itself
+/// for the cells straight in it). Each set has its
 /// own merged files, so a set turned off and on again is ready at once.
 pub fn ensure_gpkgs_sets(dir: &Path, off: &[PathBuf], progress: &mut dyn FnMut(usize, usize, &str)) -> Vec<PathBuf> {
     let loose_off = off.iter().any(|o| o == dir);
-    let mut cells: Vec<CellFiles> = find_cells_except(dir, off).into_iter().filter(|c| !(loose_off && set_of(dir, &c.base).is_empty())).collect();
-    // and the cells installed from exchange sets, with their warnings (SSE 25, SSE 27)
-    if senc::Senc::exists(dir) && !off.iter().any(|o| o == &dir.join(".senc")) {
-        let s = senc::Senc::open_bare(dir);
-        for (cell, text) in s.display_notes() {
-            note(&dir.join(".senc").join("cells").join(&cell), text);
-        }
-        cells.extend(s.cell_files());
-    }
+    let cells: Vec<CellFiles> = find_cells_except(dir, off).into_iter().filter(|c| !(loose_off && set_of(dir, &c.base).is_empty())).collect();
     if cells.is_empty() {
         return vec![];
     }
@@ -593,18 +205,15 @@ pub fn ensure_gpkgs_sets(dir: &Path, off: &[PathBuf], progress: &mut dyn FnMut(u
     }
     let mtime = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
     let suffix = format!("-v{VERSION}.gpkg");
-    // cells that were encrypted are kept sealed, with the key's tag in the name
-    let sealed_suffix = format!("-v{VERSION}-k{}.tpx", protect::tag());
     let encrypted = |p: &Path| -> bool {
         let mut b = [0u8; 8];
         std::fs::File::open(p).and_then(|mut f| std::io::Read::read_exact(&mut f, &mut b)).is_ok() && !(b[..5].iter().all(u8::is_ascii_digit) && b[6] == b'L')
     };
-    // encrypted cells are only taken from the ENC store, where Import checked them
+    // encrypted (S-63) cells are the plugin's: imported with it, never read here
     let cells: Vec<CellFiles> = cells
         .into_iter()
         .filter(|c| {
-            let installed = c.base.components().any(|p| p.as_os_str() == ".senc");
-            if !installed && encrypted(&c.base) {
+            if encrypted(&c.base) {
                 let name = c.base.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
                 note(&c.base, format!("{name} {NOT_IMPORTED}"));
                 return false;
@@ -619,26 +228,22 @@ pub fn ensure_gpkgs_sets(dir: &Path, off: &[PathBuf], progress: &mut dyn FnMut(u
             let stem = c.base.file_stem().map(|s| s.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
             let rel = c.base.parent().and_then(|p| p.strip_prefix(dir).ok()).map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
             let key = format!("{stem}-{:08x}", hash(&rel));
-            // its conversion, if one is newer than the cell's files: sealed (it was encrypted)
-            // or plain (it wasn't, and hasn't changed since, so no need to look inside it again)
+            // its conversion, if one is newer than the cell's files
             let kb = format!("{key}-b");
             let newest = c.newest;
             let fresh = by_key
                 .get(key.as_str())
                 .into_iter()
                 .flatten()
-                .filter(|e| e.starts_with(&kb) && (e.ends_with(&sealed_suffix) || e.ends_with(&suffix)))
+                .filter(|e| e.starts_with(&kb) && e.ends_with(&suffix))
                 .find(|e| matches!((newest, existing_time.get(e.as_str())), (Some(n), Some(m)) if *m >= n))
                 .map(|e| out_dir.join(e.as_str()));
             (c, key, fresh)
         })
         .collect();
     let todo = plan.iter().filter(|p| p.2.is_none()).count();
-    // the installed S-63 permits with their cell keys, only when a cell needs converting
-    // (dropped, and the keys wiped, when this function ends)
-    let permits = if todo > 0 { s63_permits(dir) } else { Default::default() };
     let mut done = 0;
-    let mut by_band: BTreeMap<(String, u8, bool), Vec<PathBuf>> = BTreeMap::new();
+    let mut by_band: BTreeMap<(String, u8), Vec<PathBuf>> = BTreeMap::new();
     for (c, key, fresh) in plan {
         let set = set_of(dir, &c.base);
         let gpkg = match fresh {
@@ -655,15 +260,14 @@ pub fn ensure_gpkgs_sets(dir: &Path, off: &[PathBuf], progress: &mut dyn FnMut(u
                 for e in existing.iter().filter(|e| e.starts_with(&kd)) {
                     let _ = std::fs::remove_file(out_dir.join(e));
                 }
-                let cell = match open_cell(&c, &permits) {
+                let cell = match open_cell(&c) {
                     Ok(cell) => cell,
                     Err(e) => {
                         note(&c.base, e.to_string());
                         continue;
                     }
                 };
-                let sfx = if encrypted(&c.base) { &sealed_suffix } else { &suffix };
-                let g = out_dir.join(format!("{key}-b{}{sfx}", band_for(cell.intu)));
+                let g = out_dir.join(format!("{key}-b{}{suffix}", band_for(cell.intu)));
                 if let Err(e) = write_gpkg(&cell, &g) {
                     eprintln!("ENC {}: {e}", c.base.display());
                     continue;
@@ -677,8 +281,7 @@ pub fn ensure_gpkgs_sets(dir: &Path, off: &[PathBuf], progress: &mut dyn FnMut(u
             n[i + 2..].split('-').next()?.parse::<u8>().ok()
         });
         if let Some(b) = band {
-            let sealed = is_sealed(&gpkg);
-            by_band.entry((set, b, sealed)).or_default().push(gpkg);
+            by_band.entry((set, b)).or_default().push(gpkg);
         }
     }
     if todo > 0 {
@@ -690,10 +293,10 @@ pub fn ensure_gpkgs_sets(dir: &Path, off: &[PathBuf], progress: &mut dyn FnMut(u
     let set_tag = |set: &str| format!("{:08x}", hash(&format!("{}|{set}", dir.to_string_lossy())));
     let mut out = Vec::new();
     let mut tags_in_use = std::collections::HashSet::new();
-    for ((set, band, sealed), files) in by_band {
+    for ((set, band), files) in by_band {
         let tag = set_tag(&set);
         tags_in_use.insert(tag.clone());
-        let merged = out_dir.join(format!("all-{tag}-b{band}-m{MERGE_VERSION}{}", if sealed { &sealed_suffix } else { &suffix }));
+        let merged = out_dir.join(format!("all-{tag}-b{band}-m{MERGE_VERSION}{suffix}"));
         let stamp: Vec<(String, i64)> = files
             .iter()
             .map(|f| {
@@ -727,319 +330,27 @@ pub fn ensure_gpkgs_sets(dir: &Path, off: &[PathBuf], progress: &mut dyn FnMut(u
     out
 }
 
-/// The S-63 identity in use: this system's user permit and its HW_ID (from the
-/// activation code; never shown, wiped from memory when replaced). The M_KEY is not in
-/// TweedPlot at all.
-struct Protection {
-    user_permit: String,
-    hw_id: Zeroizing<[u8; 5]>,
-}
-
-static PROTECTION: std::sync::RwLock<Option<Protection>> = std::sync::RwLock::new(None);
-
-/// This installation's device secret, part of the key that seals the decrypted chart data.
-static DEVICE: std::sync::RwLock<Option<Zeroizing<[u8; 32]>>> = std::sync::RwLock::new(None);
-
-/// The IHO's generic S-64 test credentials: user permit and manufacturer key (M_KEY).
-/// These are public, for testing; a build with TweedPlot's own M_ID never uses them.
-pub const TEST_USER_PERMIT: &str = "66B5CBFDF7E4139D5B6086C23130";
-pub const TEST_M_KEY: &str = "10121";
-
-/// Use this user permit and HW_ID for decrypting S-63 cells.
-pub fn set_protection(user_permit: &str, hw_id: &[u8; 5]) {
-    *PROTECTION.write().unwrap() = Some(Protection { user_permit: user_permit.trim().to_ascii_uppercase(), hw_id: Zeroizing::new(*hw_id) });
-}
-
-/// Use the IHO's generic test user permit (for the S-64 tests).
-pub fn set_test_protection() {
-    let hw = s63::hw_id_from_user_permit(TEST_USER_PERMIT, TEST_M_KEY).expect("the IHO test permit");
-    set_protection(TEST_USER_PERMIT, &hw);
-}
-
-/// Forget the user permit set (back to the default: the IHO test permit in a test build,
-/// none in a build with TweedPlot's own credentials).
-pub fn clear_protection() {
-    *PROTECTION.write().unwrap() = None;
-}
-
-/// Use this installation's device key for sealing the decrypted chart data.
-pub fn set_device(d: &device::Device) {
-    *DEVICE.write().unwrap() = Some(Zeroizing::new(*d.secret()));
-}
-
-/// The user permit in use ("" when there is none: a real build not yet activated).
-pub fn user_permit() -> String {
-    match PROTECTION.read().unwrap().as_ref() {
-        Some(p) => p.user_permit.clone(),
-        None if oem::is_real() => String::new(),
-        None => TEST_USER_PERMIT.into(),
-    }
-}
-
-/// The HW_ID in use, wiped from memory when dropped.
-pub fn hw_id() -> Option<Zeroizing<[u8; 5]>> {
-    match PROTECTION.read().unwrap().as_ref() {
-        Some(p) => Some(p.hw_id.clone()),
-        None if oem::is_real() => None,
-        None => s63::hw_id_from_user_permit(TEST_USER_PERMIT, TEST_M_KEY).ok().map(Zeroizing::new),
-    }
-}
-
-/// What happened to a cell that could not be opened, or opens with a warning (S-63 codes).
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct Note {
-    pub file: String,
-    pub cell: String,
-    pub text: String,
-}
-
-static NOTES: std::sync::Mutex<Vec<Note>> = std::sync::Mutex::new(Vec::new());
-
-pub(crate) fn note(file: &Path, text: impl Into<String>) {
-    let text = text.into();
-    eprintln!("ENC {}: {text}", file.display());
-    let cell = file.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-    let mut n = NOTES.lock().unwrap();
-    n.retain(|x| !(x.file == file.display().to_string() && x.text == text));
-    n.push(Note { file: file.display().to_string(), cell, text });
-}
-
-/// Notes from converting cells since the charts were last opened.
-pub fn notes() -> Vec<Note> {
-    NOTES.lock().unwrap().clone()
-}
-
-/// Forget the notes (before the charts are opened again).
-pub fn clear_notes() {
-    NOTES.lock().unwrap().clear();
-}
-
-/// The IHO Scheme Administrator's public key (S-63), for checking cell signatures.
-pub const SA_PUBLIC_KEY: &str = "// BIG p
-FCA6 82CE 8E12 CABA 26EF CCF7 110E 526D B078 B05E DECB CD1E B4A2 08F3 AE16 17AE 01F3 5B91 A47E 6DF6 3413 C5E1 2ED0 899B CD13 2ACD 50D9 9151 BDC4 3EE7 3759 2E17.
-// BIG q
-962E DDCC 369C BA8E BB26 0EE6 B6A1 26D9 346E 38C5.
-// BIG g
-6784 71B2 7A9C F44E E91A 49C5 147D B1A9 AAF2 44F0 5A43 4D64 8693 1D2D 1427 1B9E 3503 0B71 FD73 DA17 9069 B32E 2935 630E 1C20 6235 4D0D A20A 6C41 6E50 BE79 4CA4.
-// BIG y
-963F 14E3 2BA5 3729 28F2 4F15 B073 0C49 D31B 28E5 C764 1002 564D B959 95B1 5CF8 800E D54E 3548 67B8 2BB9 597B 1582 69E0 79F0 C4F4 926B 1776 1CC8 9EB7 7C9B 7EF8.
-";
-
-type Permits = std::collections::HashMap<String, Vec<s63::CellPermit>>;
-
-/// The permits installed with the exchange sets (Chart › Encrypted charts), with their
-/// cell keys: only while cells are being converted.
-fn s63_permits(dir: &Path) -> Permits {
-    if senc::Senc::exists(dir) {
-        senc::Senc::open_bare(dir).cell_permits()
-    } else {
-        Default::default()
-    }
-}
-
-/// What an encrypted cell found loose in a chart folder (not imported) is told.
-pub const NOT_IMPORTED: &str =
-    "is an encrypted (S-63) cell that hasn't been imported. Import its exchange set with Chart › Encrypted charts › Import exchange set";
-
-fn days(d: &str) -> i64 {
-    let (y, m, dd): (i64, i64, i64) = (
-        d.get(..4).and_then(|v| v.parse().ok()).unwrap_or(0),
-        d.get(4..6).and_then(|v| v.parse().ok()).unwrap_or(1),
-        d.get(6..8).and_then(|v| v.parse().ok()).unwrap_or(1),
-    );
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + dd - 1;
-    era * 146097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719468
-}
-
-pub fn days_between(a: &str, b: &str) -> i64 {
-    days(b) - days(a)
-}
-
-/// Read a cell's file, decrypting it when it is S-63. Encrypted cells are only read from
-/// the ENC store (`.senc`), where they were checked (signature, CRC, permits) when they
-/// were imported; one found anywhere else is left alone. The result is wiped from memory
-/// when dropped.
-fn read_cell_file(path: &Path, permits: &Permits) -> Result<Zeroizing<Vec<u8>>, cell::CellError> {
-    let data = std::fs::read(path)?;
-    // an ISO 8211 file starts with its record length (five digits) and the leader
-    if data.len() > 24 && data[..5].iter().all(u8::is_ascii_digit) && data[6] == b'L' {
-        return Ok(Zeroizing::new(data));
-    }
-    let name = path.file_name().map(|n| n.to_string_lossy().to_ascii_uppercase()).unwrap_or_default();
-    let other = |m: String| cell::CellError::Other(m);
-    if !path.components().any(|c| c.as_os_str() == ".senc") {
-        return Err(other(format!("{name} {NOT_IMPORTED}")));
-    }
-    let list = permits
-        .get(name.get(..8).unwrap_or(""))
-        .filter(|v| !v.is_empty())
-        .ok_or_else(|| other("SSE 11 - Cell permit not found. Load the permit file provided by the data supplier".into()))?;
-    list.iter().find_map(|p| s63::decrypt_cell(&data, p).ok()).ok_or_else(|| other(s63::S63Error::Decrypt.to_string()))
-}
-
-static TODAY: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
-
-/// Use this date ("YYYYMMDD") as today for permit and certificate expiry: for running the
-/// IHO S-64 tests, which are set in 2007-2013. None: the computer's date.
-pub fn set_today(d: Option<&str>) {
-    *TODAY.write().unwrap() = d.map(str::to_string);
-}
-
-/// Today as "YYYYMMDD" (UTC).
-pub fn today() -> String {
-    if let Some(d) = TODAY.read().unwrap().clone() {
-        return d;
-    }
-    let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() / 86400) as i64;
-    // days since 1970 to y-m-d (civil from days)
-    let z = d + 719468;
-    let era = z.div_euclid(146097);
-    let doe = z - era * 146097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + if month <= 2 { 1 } else { 0 };
-    format!("{year:04}{month:02}{day:02}")
-}
-
-/// A cell and its updates, decrypting S-63 files. Updates are applied in sequence from
-/// the base cell's own update number; a missing one stops them there (SSE 23).
-fn open_cell(c: &CellFiles, permits: &Permits) -> Result<Cell, cell::CellError> {
-    let base = read_cell_file(&c.base, permits)?;
-    let first = Cell::from_bytes(&base, &[])?;
-    let mut next: u32 = first.update.trim().parse::<u32>().unwrap_or(0) + 1;
-    let mut ups = Vec::new();
-    for u in &c.updates {
-        let n: u32 = u.extension().and_then(|e| e.to_str()).and_then(|e| e.parse().ok()).unwrap_or(0);
-        if n < next {
-            continue; // already in a re-issued base cell
-        }
-        if n > next {
-            note(u, format!("SSE 23 - Non sequential update, update {next} is missing: updates from {n} on are not applied"));
-            break;
-        }
-        match read_cell_file(u, permits) {
-            Ok(b) => ups.push(b),
-            Err(e) => {
-                // apply the updates up to the first one that can't be read
-                note(u, e.to_string());
-                break;
-            }
-        }
-        next += 1;
-    }
-    let refs: Vec<&[u8]> = ups.iter().map(|u| &u[..]).collect();
-    Cell::from_bytes(&base, &refs)
-}
-
 /// Whether a merged file was made from exactly these cell files (names and times).
 fn merged_is(merged: &Path, stamp: &[(String, i64)]) -> bool {
     if !merged.is_file() {
         return false;
     }
     let Ok(db) = open_db(merged) else { return false };
-    let Ok(mut st) = db.prepare("SELECT file, mtime FROM merged_from ORDER BY file") else { return false };
-    let Ok(rows) = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))) else { return false };
-    let have: Vec<(String, i64)> = rows.filter_map(Result::ok).collect();
     let mut want = stamp.to_vec();
     want.sort();
-    have == want
+    enc_s57::gpkg::merged_stamp(&db) == want
 }
 
-/// Merge cells' GeoPackages (same table layout) into one.
+/// Merge cells' GeoPackages into one file.
 fn merge(files: &[PathBuf], stamp: &[(String, i64)], out: &Path) -> Result<(), rusqlite::Error> {
     let tmp = out.with_extension("tmp");
     let _ = std::fs::remove_file(&tmp);
-    let mut db = new_db(out, &tmp)?;
-    db.execute_batch(
-        "PRAGMA application_id = 1196444487; PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF;
-         CREATE TABLE gpkg_spatial_ref_sys (srs_name TEXT NOT NULL, srs_id INTEGER PRIMARY KEY, organization TEXT NOT NULL,
-           organization_coordsys_id INTEGER NOT NULL, definition TEXT NOT NULL, description TEXT);
-         INSERT INTO gpkg_spatial_ref_sys VALUES ('WGS 84', 4326, 'EPSG', 4326, 'GEOGCS[\"WGS 84\"]', NULL);
-         CREATE TABLE gpkg_contents (table_name TEXT PRIMARY KEY, data_type TEXT NOT NULL, identifier TEXT, description TEXT DEFAULT '',
-           last_change DATETIME, min_x DOUBLE, min_y DOUBLE, max_x DOUBLE, max_y DOUBLE, srs_id INTEGER);
-         CREATE TABLE gpkg_geometry_columns (table_name TEXT NOT NULL, column_name TEXT NOT NULL, geometry_type_name TEXT NOT NULL,
-           srs_id INTEGER NOT NULL, z TINYINT NOT NULL, m TINYINT NOT NULL, PRIMARY KEY (table_name, column_name));
-         CREATE TABLE merged_from (file TEXT PRIMARY KEY, mtime INTEGER);
-         CREATE TABLE cells (cell TEXT, edition TEXT, upd TEXT, issue_date TEXT, file TEXT);",
-    )?;
-    // per table: its columns (name, type) and the next fid
-    let mut tables: std::collections::HashMap<String, (Vec<(String, String)>, i64)> = std::collections::HashMap::new();
-    for f in files {
-        if is_sealed(f) {
-            db.execute("ATTACH DATABASE ':memory:' AS s", [])?;
-            if let Err(e) = load_sealed(&mut db, "s", f) {
-                eprintln!("ENC: merging {}: {e}", f.display());
-                db.execute("DETACH DATABASE s", [])?;
-                continue;
-            }
-        } else {
-            db.execute("ATTACH DATABASE ?1 AS s", [f.to_string_lossy().as_ref()])?;
-        }
-        let r = (|| -> Result<(), rusqlite::Error> {
-            let found: Vec<(String, String)> = {
-                let mut st = db.prepare(
-                    "SELECT c.table_name, g.geometry_type_name FROM s.gpkg_contents c JOIN s.gpkg_geometry_columns g ON g.table_name = c.table_name",
-                )?;
-                let v = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.filter_map(Result::ok).collect();
-                v
-            };
-            db.execute_batch("BEGIN")?;
-            for (t, geo) in found {
-                let cols: Vec<(String, String)> = {
-                    let mut st = db.prepare(&format!("SELECT name, type FROM pragma_table_info('{t}', 's') WHERE name NOT IN ('fid', 'geom')"))?;
-                    let v = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.filter_map(Result::ok).collect();
-                    v
-                };
-                let entry = match tables.get_mut(&t) {
-                    Some(e) => e,
-                    None => {
-                        db.execute_batch(&format!(
-                            "CREATE TABLE \"{t}\" (fid INTEGER PRIMARY KEY, geom BLOB);
-                             CREATE VIRTUAL TABLE \"rtree_{t}_geom\" USING rtree(id, minx, maxx, miny, maxy);"
-                        ))?;
-                        db.execute("INSERT INTO gpkg_contents (table_name, data_type, identifier, srs_id) VALUES (?1, 'features', ?1, 4326)", [&t])?;
-                        db.execute("INSERT INTO gpkg_geometry_columns VALUES (?1, 'geom', ?2, 4326, 0, 0)", rusqlite::params![t, geo])?;
-                        tables.entry(t.clone()).or_insert((Vec::new(), 0))
-                    }
-                };
-                for (c, ty) in &cols {
-                    if !entry.0.iter().any(|(n, _)| n == c) {
-                        db.execute_batch(&format!("ALTER TABLE \"{t}\" ADD COLUMN \"{c}\" {ty}"))?;
-                        entry.0.push((c.clone(), ty.clone()));
-                    }
-                }
-                let off = entry.1;
-                let list: String = cols.iter().map(|(c, _)| format!(", \"{c}\"")).collect();
-                db.execute_batch(&format!(
-                    "INSERT INTO \"{t}\" (fid, geom{list}) SELECT fid + {off}, geom{list} FROM s.\"{t}\";
-                     INSERT INTO \"rtree_{t}_geom\" SELECT id + {off}, minx, maxx, miny, maxy FROM s.\"rtree_{t}_geom\";"
-                ))?;
-                entry.1 = db.query_row(&format!("SELECT coalesce(max(fid), 0) FROM \"{t}\""), [], |r| r.get(0))?;
-            }
-            let meta = |k: &str| -> String { db.query_row("SELECT value FROM s.enc_meta WHERE key = ?1", [k], |r| r.get(0)).unwrap_or_default() };
-            let (c, e, u, d) = (meta("cell"), meta("edition"), meta("update"), meta("issue_date"));
-            db.execute("INSERT INTO cells VALUES (?1, ?2, ?3, ?4, ?5)", rusqlite::params![c, e, u, d, f.file_name().map(|n| n.to_string_lossy().to_string())])?;
-            db.execute_batch("COMMIT")
-        })();
-        if r.is_err() {
-            let _ = db.execute_batch("ROLLBACK");
-        }
-        db.execute("DETACH DATABASE s", [])?;
-        if let Err(e) = r {
-            eprintln!("ENC: merging {}: {e}", f.display());
-        }
-    }
-    for (f, t) in stamp {
-        db.execute("INSERT OR REPLACE INTO merged_from VALUES (?1, ?2)", rusqlite::params![f, t])?;
-    }
+    let mut db = Connection::open(&tmp)?;
+    enc_s57::gpkg::merge_into(&mut db, files, stamp, &mut enc_s57::gpkg::attach_file)?;
+    drop(db);
     let _ = std::fs::remove_file(PathBuf::from(format!("{}.tables", out.display())));
-    finish_db(db, out, &tmp)
+    let _ = std::fs::remove_file(out);
+    std::fs::rename(&tmp, out).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
 }
 
 #[cfg(test)]
@@ -1126,33 +437,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// An S-63 cell from the IHO's S-64 test data (test 6a): its signature is checked,
-    /// it is decrypted with the generic test credentials, and its update applied.
+    /// An encrypted (S-63) cell in a chart folder is left alone, with a note.
     #[test]
-    fn loose_encrypted_cells_are_not_decrypted() {
-        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/s63");
+    fn encrypted_cells_are_left_to_the_plugin() {
         let dir = std::env::temp_dir().join(format!("enc_s63_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        fn copy(a: &Path, b: &Path) {
-            std::fs::create_dir_all(b).unwrap();
-            for e in std::fs::read_dir(a).unwrap().flatten() {
-                let p = e.path();
-                if p.is_dir() {
-                    copy(&p, &b.join(e.file_name()))
-                } else {
-                    std::fs::copy(&p, b.join(e.file_name())).unwrap();
-                }
-            }
-        }
-        copy(&src, &dir);
-        let cells = find_cells(&dir);
-        assert_eq!(cells.len(), 1, "signature files are not cells");
-        assert_eq!(cells[0].updates.len(), 1);
-        // the cell's PERMIT.TXT is beside it, but it wasn't imported: not decrypted
-        let e = open_cell(&cells[0], &s63_permits(&dir)).unwrap_err().to_string();
-        assert!(e.contains("hasn't been imported"), "{e}");
+        std::fs::create_dir_all(dir.join("set")).unwrap();
+        // not an ISO 8211 file: what an S-63 cell looks like from outside
+        std::fs::write(dir.join("set/GB61021B.000"), [0x9fu8; 64]).unwrap();
         assert!(ensure_gpkgs(&dir).is_empty());
-        assert!(notes().iter().any(|n| n.text.contains("hasn't been imported")));
+        assert!(notes().iter().any(|n| n.text.contains("S-63 Charts plugin")));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -17,3 +17,5 @@ register.csv
 *.tpv
 vault.key
 signing.key
+*.tpplugin
+/tweedplot-charts/

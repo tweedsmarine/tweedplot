@@ -13,7 +13,9 @@ A modern race navigation app for Windows: chartplotter basics, a GRIB viewer for
 | `crates/polar` | Read qtVlm `.csv` / `.pol` polars, interpolate, best VMG | Working, tested |
 | `crates/grib` | GRIB2 decoding (simple and complex packing, bitmaps, Meltemus JSON section), wind/gust/MSLP/waves/currents in space and time | Working, matches ecCodes on Meltemus files; GRIB1 next |
 | `crates/routing` | Isochrone routing (modified isochrone method) round land and water shallower than the safety depth, multi-leg, tack/gybe penalties, currents | Working, tested |
-| `crates/chart` | LINZ GeoPackages (Topo50 coastline, depth areas, contours, soundings, all scale bands) served as vector tiles | Working, tested on the full LINZ download |
+| `crates/chart` | LINZ GeoPackages (Topo50 coastline, depth areas, contours, soundings, all scale bands), plain S-57 ENC cells and the S-63 Charts plugin's tables (`remote.rs`) served as vector tiles | Working, tested on the full LINZ download |
+| `crates/enc-s57` | S-57 ENC cells: ISO 8211 and cell reader with updates, IHO catalogue, conversion to LINZ-style GeoPackages, merging by band (MIT/Apache, shared with the S-63 Charts plugin) | Working, tested |
+| `crates/plugin-api` | The plugin interface: framed JSON + binary messages over a child process's pipes, table rows, signed `.tpplugin` packages and the download index (MIT/Apache) | Working, tested |
 | `crates/signalk` | Signal K WebSocket client (`subscribe=all`), own-vessel state (position, COG/SOG, heading, BSP, depth, apparent and true wind, log), true wind worked out when the server has none, other contexts (AIS) passed on, session log and log replay | Working, tested against Signal K playing a Morgane log |
 | `crates/marine-nmea` | NMEA 0183 framing, checksum validation, common sentence decoding, and searchable sentence catalog; unknown valid sentences retained | Parser tested; connected to the Settings viewer and source-aware multiplexer |
 | `app/src-tauri/src/nmea.rs` | Concurrent native serial, TCP client and UDP listener workers; source status and observations; per-data-group source preferences; automatic failover with alarms | Multiple inputs can drive one composed vessel state. Actisense/NMEA 2000 and protected configuration remain future work; virtual COM output is a release goal; network I/O will be developed with RADAR overlay |
@@ -21,7 +23,7 @@ A modern race navigation app for Windows: chartplotter basics, a GRIB viewer for
 | `crates/stations` | Weather observations: MetService WIS2 (OGC API), aviationweather.gov METAR, NOAA NDBC buoys | Parsers tested; not yet tried live |
 | `crates/library` | The library (a GeoPackage): marks, routes, routings, tracks, barriers, the fishing log and trips; Trash, imports and Undo, export, merge, protected files; track recorder; GPX, TimeZero, KML and CSV import | Working, tested |
 | `crates/tides` | LINZ tide predictions: daily tables, secondary ports from LINZ differences, cosine curves, downloader | Working, tested on LINZ files |
-| `app/src-tauri/src` | The Tauri commands: `lib.rs` (start-up, chart tiles, jobs, activity log, tracks, tides, fleet, settings and the command list), `grib_cmd.rs` (GRIB downloads and display), `routing_cmd.rs` (polars, route_compute), `library_cmd.rs` (the library), and `webmap.rs`, `pbathy.rs`, `nmea.rs`, `s63_cmd.rs`, `stations_cmd.rs`, `live.rs` | |
+| `app/src-tauri/src` | The Tauri commands: `lib.rs` (start-up, chart tiles, jobs, activity log, tracks, tides, fleet, settings and the command list), `grib_cmd.rs` (GRIB downloads and display), `routing_cmd.rs` (polars, route_compute), `library_cmd.rs` (the library), and `webmap.rs`, `pbathy.rs`, `nmea.rs`, `s63_cmd.rs` and `plugin.rs` (the S-63 Charts plugin: install, start, forward), `stations_cmd.rs`, `live.rs` | |
 | `app/` | Tauri shell + MapLibre GL front end: icon rail with one drawer at a time, chart, GRIB, routing, library, floating instrument panels | Working |
 
 ## Build and test
@@ -260,7 +262,7 @@ The text is written as a Claude Doc ("TweedPlot User Manual") and bundled from `
 
 ## Licence and contributing
 
-The code is GPL-3.0-or-later and the manual CC BY-SA 4.0: see [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE). The name and logos are not licensed for modified versions ([TRADEMARKS.md](TRADEMARKS.md)). Third-party data and libraries: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). To contribute, read [CONTRIBUTING.md](CONTRIBUTING.md). A build from this source uses the IHO test credentials for S-63; official installers use TweedsMarine's own.
+The code is GPL-3.0-or-later and the manual CC BY-SA 4.0: see [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE). The name and logos are not licensed for modified versions ([TRADEMARKS.md](TRADEMARKS.md)). Third-party data and libraries: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). To contribute, read [CONTRIBUTING.md](CONTRIBUTING.md). Encrypted (S-63) charts are the TweedPlot S-63 Charts plugin's (a separate, private repository): this repository holds only the plugin interface (`crates/plugin-api`, `app/src-tauri/src/plugin.rs`) and the chart store's remote tables (`crates/chart/src/remote.rs`). For development, set `TWEEDPLOT_CHARTS_PLUGIN` to a built `tweedplot-charts.exe` to run it unchecked.
 
 ## Conventions
 

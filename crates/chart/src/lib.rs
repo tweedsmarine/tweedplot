@@ -31,6 +31,7 @@ pub mod hires;
 pub mod lerc;
 pub mod marine;
 pub mod mvt;
+pub mod remote;
 pub mod s57;
 pub mod shp;
 pub mod tidal;
@@ -154,7 +155,7 @@ fn band_visible(z: u8, band: u8, start: u8, skin_early: Option<u8>) -> bool {
 }
 
 pub struct ChartStore {
-    pub(crate) dbs: Vec<Mutex<Connection>>,
+    pub(crate) dbs: Vec<remote::Db>,
     pub tables: Vec<TableInfo>,
     cache: Mutex<lru::LruCache<(u8, u32, u32), Arc<Vec<u8>>>>,
     /// Coverage polygons of each band and their spatial index, loaded on first use.
@@ -279,7 +280,7 @@ impl ChartStore {
                 t.db = db;
                 t
             }));
-            dbs.push(Mutex::new(conn));
+            dbs.push(remote::Db::Local(Mutex::new(conn)));
         }
         log(&format!("charts: {} tables from {n_files} files open in {:.1} s", tables.len(), t0.elapsed().as_secs_f64()));
         progress(n_files, n_files);
@@ -718,7 +719,24 @@ impl ChartStore {
         if !t.touches(b) {
             return;
         }
-        let conn = self.dbs[t.db].lock().unwrap_or_else(|e| e.into_inner());
+        let conn = match &self.dbs[t.db] {
+            remote::Db::Local(c) => c.lock().unwrap_or_else(|e| e.into_inner()),
+            remote::Db::Remote(src, db) => {
+                for shift in wrap_shifts(b) {
+                    for r in src.rows(*db, &t.table, [b[0] + shift, b[1], b[2] + shift, b[3]], cols) {
+                        let vals: Vec<Option<f64>> = r.vals.iter().map(plugin_api::Value::as_f64).collect();
+                        if let Some(mut g) = parse_gpkg(&r.geom) {
+                            if t.kind == Kind::DepthArea && drop_seam_strips(&mut g) {
+                                continue;
+                            }
+                            shift_geom(&mut g, -shift);
+                            f(&vals, g);
+                        }
+                    }
+                }
+                return;
+            }
+        };
         let gcol = t.rtree.trim_start_matches(&format!("rtree_{}_", t.table)).to_string();
         let sel: String = cols.iter().map(|c| format!("t.\"{c}\", ")).collect();
         let sql = format!(
