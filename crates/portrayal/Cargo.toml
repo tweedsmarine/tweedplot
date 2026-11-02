@@ -10,3 +10,7 @@ description = "Chart portrayal from an IHO S-100 portrayal catalogue (S-101): co
 quick-xml.workspace = true
 thiserror.workspace = true
 mlua = { version = "0.12", features = ["lua51", "vendored"] }
+
+[dev-dependencies]
+rusqlite.workspace = true
+enc-s57.workspace = true

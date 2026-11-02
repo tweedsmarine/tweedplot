@@ -10,9 +10,11 @@
 pub mod dom;
 pub mod engine;
 pub mod fc;
+pub mod s57;
 
 pub use engine::{Attrs, Feature, Geometry, Portrayal, Portrayer, Value};
 pub use fc::FeatureCatalogue;
+pub use s57::{Converter, S57Object};
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

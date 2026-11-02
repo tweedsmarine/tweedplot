@@ -282,3 +282,8 @@ area fills, rules). The S-101 Feature Catalogue 2.1.0 (`resources/s101-fc`, same
 the rules their feature and attribute types and maps S-57 acronyms to S-101 codes (its aliases).
 `portrayal::Portrayer` runs the rules (Lua 5.1 via mlua, vendored) as the S-100 Part 9a host
 (`crates/portrayal/src/host.lua`) and returns each feature's drawing instructions.
+`portrayal::Converter` turns S-57 objects (LINZ layers, ENC cells) into S-101 features through
+the catalogue's aliases, puts attributes S-101 moved into complex attributes where they belong,
+splits MORFAC by CATMOR, puts a TOPMAR on its buoy or beacon and merges the records of a sector
+light. `cargo run --release -p portrayal --example linz_portray -- <folder of LINZ gpkg> [safety
+contour]` portrays a folder and reports per feature type what the rules drew and any rule errors.

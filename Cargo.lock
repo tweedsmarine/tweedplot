@@ -3144,8 +3144,10 @@ dependencies = [
 name = "portrayal"
 version = "0.1.0"
 dependencies = [
+ "enc-s57",
  "mlua",
  "quick-xml",
+ "rusqlite",
  "thiserror 1.0.69",
 ]
 
