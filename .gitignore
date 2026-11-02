@@ -12,3 +12,8 @@ register.csv
 .env.*
 *.pem
 *.pfx
+# S-63 OEM material never belongs here (the Licence Manager has its own private repository)
+/tools/licence/
+*.tpv
+vault.key
+signing.key

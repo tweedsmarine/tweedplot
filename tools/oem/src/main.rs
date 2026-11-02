@@ -3,7 +3,7 @@
 //!   tweedplot-oem fingerprint     this computer's fingerprint sources and installation code
 //!
 //! Licences, seats, activation codes and the M_KEY are in the Licence Manager
-//! (`cargo run --release -p tweedplot-licence`), which keeps them in its vault.
+//! (its own private repository, tweedplot-licence, cloned beside this one), which keeps them in its vault.
 
 use chart::enc::{device::Device, machine, oem};
 
@@ -23,7 +23,7 @@ fn main() {
         }
         _ => {
             println!("usage: tweedplot-oem fingerprint");
-            println!("Licences, seats and activation codes are in the Licence Manager: cargo run --release -p tweedplot-licence");
+            println!("Licences, seats and activation codes are in the Licence Manager (C:\\dev\\tweedplot-licence: cargo run --release)");
         }
     }
 }

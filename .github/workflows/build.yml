@@ -60,6 +60,12 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      # the Licence Manager (M_KEY, signing key, licences) lives in its own private
+      # repository and must never come back into this one or its builds
+      - name: No licence tool in this repository
+        run: |
+          if git ls-files | grep -qiE '(^|/)(tools/licence|tweedplot-licence)(/|$)|licences(-test)?\.tpv$|vault\.key$|signing\.key$'; then
+            echo "::error::Licence Manager files or OEM secrets found in the repository"; exit 1; fi
       - name: Formatting (rustfmt.toml)
         run: cargo fmt --all --check
       - name: Rust tests (library crates)

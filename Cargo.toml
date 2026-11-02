@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing", "crates/library", "crates/tracking", "crates/gribdl", "crates/tides", "crates/ais", "crates/stations", "crates/marine-nmea", "crates/bathy", "app/src-tauri", "tools/oem", "tools/licence"]
+members = ["crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing", "crates/library", "crates/tracking", "crates/gribdl", "crates/tides", "crates/ais", "crates/stations", "crates/marine-nmea", "crates/bathy", "app/src-tauri", "tools/oem"]
 # `cargo test` at the root skips the GUI app; build it with `npm run tauri dev` in app/.
 default-members = ["crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing", "crates/library", "crates/tracking", "crates/gribdl", "crates/tides", "crates/ais", "crates/stations", "crates/bathy"]
 
