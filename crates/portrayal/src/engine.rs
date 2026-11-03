@@ -116,7 +116,24 @@ impl Portrayer {
         let lua = Lua::new();
         let g = lua.globals();
         let package: Table = g.get("package")?;
-        package.set("path", format!("{}/?.lua", self.rules.display().to_string().replace('\\', "/")))?;
+        // The rules are found by a loader of our own, not through package.path: Lua's
+        // search path uses '?' as the placeholder, and a Windows install path can hold
+        // one (\\?\C:\...), which sent `require 'main'` to "//main/C:/...".
+        package.set("path", "")?;
+        package.set("cpath", "")?;
+        let rules = self.rules.clone();
+        let loader = lua.create_function(move |lua, name: String| {
+            if name.contains(['/', '\\']) || name.contains("..") {
+                return Ok(mlua::Value::String(lua.create_string(format!("\n\tno rule '{name}'"))?));
+            }
+            let file = rules.join(format!("{name}.lua"));
+            match std::fs::read(&file) {
+                Ok(src) => Ok(mlua::Value::Function(lua.load(src).set_name(format!("@{name}.lua")).into_function()?)),
+                Err(e) => Ok(mlua::Value::String(lua.create_string(format!("\n\tno rule {}: {e}", file.display()))?)),
+            }
+        })?;
+        let loaders: Table = package.get("loaders")?;
+        loaders.raw_insert(2, loader)?;
         g.set("HostFC", self.fc_table(&lua)?)?;
         g.set("HostEmitted", lua.create_table()?)?;
         g.set("HostTrace", lua.create_table()?)?;

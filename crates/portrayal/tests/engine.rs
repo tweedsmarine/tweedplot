@@ -68,3 +68,27 @@ fn rules_portray_features() {
     assert!(get("depth").contains("ColorFill:DEP"), "{}", get("depth"));
     assert!(get("rock").contains("PointInstruction:"), "{}", get("rock"));
 }
+
+/// The catalogue under a folder whose name holds a '?', as a Windows install path does
+/// (\\?\C:\...): the rules must still be found.
+#[cfg(unix)]
+#[test]
+fn rules_found_under_a_path_with_a_question_mark() {
+    let dir = std::env::temp_dir().join(format!("tp?{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let link = dir.join("s101-pc");
+    let _ = std::fs::remove_file(&link);
+    std::os::unix::fs::symlink(res("s101-pc").canonicalize().unwrap(), &link).unwrap();
+    let cat = Catalogue::open(&link).unwrap();
+    let text = std::fs::read_to_string(res("s101-fc/101_Feature_Catalogue_2.1.0.20260612_Unsigned.xml")).unwrap();
+    let p = Portrayer::new(&cat, FeatureCatalogue::parse(&text).unwrap()).unwrap();
+    let f = Feature {
+        id: "buoy".into(),
+        code: "CardinalBuoy".into(),
+        attrs: attrs(&[("buoyShape", &["4"]), ("categoryOfCardinalMark", &["1"]), ("colour", &["2", "6"]), ("colourPattern", &["1"])]),
+        geometry: Some(Geometry::Point([173.25, -41.25])),
+    };
+    let out = p.portray(&[f], &mut Vec::new());
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(out.unwrap()[0].instructions.contains("PointInstruction:BOYPIL"));
+}
