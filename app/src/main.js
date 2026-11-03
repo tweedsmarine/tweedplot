@@ -74,6 +74,9 @@ const css = (name) => getComputedStyle(document.documentElement).getPropertyValu
 // ---------- chart settings (kept per viewer in local storage) ----------------
 const DEFAULTS = {
   shallow: 2, safetyDepth: 3, safetyContour: 5, deep: 10,
+  // S-52 mariner option: the isolated danger symbol for dangers in water shallower than the
+  // safety contour too (the IHO catalogue's default is on; off keeps the chart clear)
+  shallowDangers: false,
   // own-boat lines: shown, and length in minutes of travel or "inf" (to the edge of the chart)
   hdgLine: true, hdgLen: "inf", cogLine: true, cogLen: "10",
   // damping of Signal K readings, seconds (0 = none)
@@ -392,7 +395,7 @@ function noteChartsReady(info) {
   finishStartupWhenReady();
 }
 map.on("load", () => {
-  features = setupChartFeatures(map, { before: "track", safetyContour: settings.safetyContour });
+  features = setupChartFeatures(map, { before: "track", safetyContour: settings.safetyContour, shallow: !!settings.shallowDangers });
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
   window.__weather = weather; // debugging handle
   setupData(map, { toast, reloadTiles: reloadChartTiles });
@@ -672,6 +675,7 @@ map.on("moveend", () => {
 function sendPortrayalContext() {
   invoke("chart_s52_context", { id: "SafetyContour", value: String(settings.safetyContour) }).catch(() => {});
   invoke("chart_s52_context", { id: "SafetyDepth", value: String(settings.safetyDepth) }).catch(() => {});
+  invoke("chart_s52_context", { id: "ShallowWaterDangers", value: String(!!settings.shallowDangers) }).catch(() => {});
 }
 sendPortrayalContext();
 // the chart store has portrayed the features (or again, after a change): draw the tiles again
@@ -682,7 +686,7 @@ function applyChartSettings() {
   map.setPaintProperty("depare", "fill-color", depareColour());
   map.setFilter("safety-contour", safetyContourFilter());
   map.setLayoutProperty("soundg", "icon-image", soundingImage());
-  features?.setSafetyContour(settings.safetyContour);
+  features?.setSafetyContour(settings.safetyContour, !!settings.shallowDangers);
 }
 for (const [id, key] of [["set-safety-depth", "safetyDepth"], ["set-safety-contour", "safetyContour"]]) {
   const el = document.getElementById(id);
@@ -691,6 +695,13 @@ for (const [id, key] of [["set-safety-depth", "safetyDepth"], ["set-safety-conto
     const v = parseFloat(el.value);
     if (Number.isFinite(v) && v >= 0) { settings[key] = v; saveSettings(); applyChartSettings(); feed(); safeNote(); }
   };
+}
+{
+  const el = document.getElementById("set-shallow-dangers");
+  if (el) {
+    el.checked = !!settings.shallowDangers;
+    el.onchange = () => { settings.shallowDangers = el.checked; saveSettings(); applyChartSettings(); };
+  }
 }
 // Chart › Safety: the safety depth against the vessel's draft (Settings › Vessel)
 function safeNote() {

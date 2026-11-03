@@ -31,8 +31,10 @@ const labelFilter = (contour) => ["all", ["has", "lbl"], ["!", ["in", ["get", "c
 
 /** Isolated danger (S-52 UDWHAZ05): a rock, wreck or obstruction shallower than the safety
  *  contour (or of unknown depth, drying or awash) lying in water at least as deep as the
- *  safety contour (`wd`, the depth area it is in). It gets the isolated danger symbol. */
-const isolated = (contour) => ["all", ["has", "wd"], [">=", ["get", "wd"], contour], ["!=", ["get", "nd"], 1], ["!", deeper(contour)]];
+ *  safety contour (`wd`, the depth area it is in). It gets the isolated danger symbol. With
+ *  "isolated dangers in shallow water" on, also those in water from 0 m to the contour. */
+let shallowDangers = false;
+const isolated = (contour) => ["all", ["has", "wd"], shallowDangers ? [">=", ["get", "wd"], 0] : [">=", ["get", "wd"], contour], ["!=", ["get", "nd"], 1], ["!", deeper(contour)]];
 const pointIcon = (contour) => ["case", isolated(contour), "s57:iso", ["concat", "s57:", ["get", "icon"]]];
 
 // ---------- IHO symbols (S-52 / S-101 Portrayal Catalogue) ----------------------------
@@ -94,7 +96,8 @@ const notReplaced = ["any", ["!", ["has", "maxz"]], ["<", ["zoom"], ["get", "max
 const minz = ["all", notReplaced, ["any", HZ, ["!", ["has", "minz"]], [">=", ["zoom"], ["get", "minz"]]]];
 const minzDeep = ["all", notReplaced, ["any", ["!", ["has", "minz"]], [">=", ["zoom"], ["get", "minz"]]]];
 
-export function setupChartFeatures(map, { before, safetyContour = 5 }) {
+export function setupChartFeatures(map, { before, safetyContour = 5, shallow = false }) {
+  shallowDangers = shallow;
   const $ = (id) => document.getElementById(id);
   const opts = { ...DEFAULTS };
   try { Object.assign(opts, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
@@ -335,8 +338,11 @@ export function setupChartFeatures(map, { before, safetyContour = 5 }) {
 
   return {
     setEnabled: (on) => { enabled = on; apply(); },
-    /** Underwater rocks, wrecks and obstructions deeper than this lose their danger symbol. */
-    setSafetyContour: (m) => {
+    /** Underwater rocks, wrecks and obstructions deeper than this lose their danger symbol.
+     *  `shallow`: the isolated danger symbol also for dangers in water shallower than the
+     *  safety contour (S-52 "isolated dangers in shallow water", off unless chosen). */
+    setSafetyContour: (m, shallow = false) => {
+      shallowDangers = shallow;
       baseFilter["f-points"] = pointFilter(m); baseFilter["f-labels"] = labelFilter(m); map.setFilter("f-labels", labelFilter(m));
       contour = m;
       applySymbols();

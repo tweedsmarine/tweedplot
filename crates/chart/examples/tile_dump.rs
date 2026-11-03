@@ -9,6 +9,9 @@ fn main() {
         let res = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/resources");
         s.set_s52(Some(chart::s52::S52::open(&res.join("s101-pc"), &res.join("s101-fc/101_Feature_Catalogue_2.1.0.20260612_Unsigned.xml")).unwrap()));
         s.set_s52_context("SafetyContour", "5");
+        if let Ok(v) = std::env::var("TILESERVE_SWD") {
+            s.set_s52_context("ShallowWaterDangers", &v);
+        }
         let n = s.s52_warm(&|_, _| {});
         eprintln!("portrayed {n} tables");
     }

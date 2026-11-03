@@ -484,6 +484,7 @@
         <h3>Safety</h3>
         <div class="wx-row"><label class="grow" for="set-safety-depth">Safety depth (m)</label><input id="set-safety-depth" type="number" min="0" step="0.5" /></div>
         <div class="wx-row"><label class="grow" for="set-safety-contour">Safety contour (m)</label><input id="set-safety-contour" type="number" min="0" step="1" /></div>
+        <div class="wx-row checks"><label title="S-52 mariner option. Off: the isolated danger symbol only for dangers in water at least as deep as the safety contour (outside the safe water you'd otherwise expect). On: also for dangers in water from 0 m to the safety contour, which fills harbours and coasts with the symbol"><input id="set-shallow-dangers" type="checkbox" /> Isolated dangers in shallow water</label></div>
                 <div id="safe-note" class="wx-note"></div>
         <h3>Chart display</h3>
         <div class="wx-row"><label class="grow" for="set-dispcat" title="What the chart shows, as on an ECDIS. Base: land, depth areas, the safety contour and dangers (can't be reduced further). Standard: adds buoys, beacons, lights, routeing measures, restricted and caution areas. All: adds soundings, other contours, cables and pipelines, names and other detail">Display</label>

@@ -91,3 +91,21 @@ fn the_iho_test_cell_converts() {
     assert!(get("Sounding").iter().all(|i| i.contains("SOUNDS")), "{:?}", get("Sounding"));
     assert!(get("LandArea").iter().all(|i| i.contains("ColorFill:LANDA")), "{:?}", get("LandArea"));
 }
+
+/// S-52 UDWHAZ05: a 2 m rock is an isolated danger in 20 m of water, not in 2 m of water
+/// unless "shallow water dangers" is on (the catalogue's default; TweedPlot's is off).
+#[test]
+fn isolated_dangers_follow_the_surrounding_depth() {
+    let fc = fc();
+    let c = Converter::new(&fc);
+    let cat = Catalogue::open(&res("s101-pc")).unwrap();
+    let mut p = Portrayer::new(&cat, self::fc()).unwrap();
+    p.set("SafetyContour", "5");
+    let rock = |id: &str, around: Option<f64>| c.convert(id, &obj("UWTROC", &[("watlev", "3"), ("valsou", "2")], Geometry::Point([173.0, -41.0])), around);
+    let fs = vec![rock("deep", Some(20.0)), rock("shallow", Some(2.0)), rock("drying", Some(-1.0))];
+    let iso = |p: &Portrayer| -> Vec<bool> { p.portray(&fs, &mut Vec::new()).unwrap().iter().map(|o| o.instructions.contains("ISODGR01")).collect() };
+    p.set("ShallowWaterDangers", "false");
+    assert_eq!(iso(&p), [true, false, false]);
+    p.set("ShallowWaterDangers", "true");
+    assert_eq!(iso(&p), [true, true, false]);
+}

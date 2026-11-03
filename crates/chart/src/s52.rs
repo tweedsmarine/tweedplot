@@ -28,7 +28,10 @@ impl S52 {
         let cat = portrayal::Catalogue::open(pc).map_err(|e| e.to_string())?;
         let text = std::fs::read_to_string(fc).map_err(|e| format!("{}: {e}", fc.display()))?;
         let fc = portrayal::FeatureCatalogue::parse(&text)?;
-        let p = Portrayer::new(&cat, fc).map_err(|e| e.to_string())?;
+        let mut p = Portrayer::new(&cat, fc).map_err(|e| e.to_string())?;
+        // TweedPlot's defaults where they differ from the catalogue's: isolated dangers in
+        // shallow water (the catalogue has it on) is a mariner's choice, off to start with
+        p.set("ShallowWaterDangers", "false");
         Ok(S52 { portrayer: RwLock::new(p), tables: Mutex::new(HashMap::new()) })
     }
 
