@@ -641,8 +641,16 @@ pub(crate) fn symins(s: &str) -> Option<String> {
             // only (an attribute's value isn't at hand here)
             "TX" if args.len() >= 9 && a0.starts_with('\'') => {
                 let text = a0.trim_matches('\'');
-                let h = match args[1] { "1" => "Center", "2" => "End", _ => "Start" };
-                let v = match args[2] { "1" => "Bottom", "2" => "Center", _ => "Top" };
+                let h = match args[1] {
+                    "1" => "Center",
+                    "2" => "End",
+                    _ => "Start",
+                };
+                let v = match args[2] {
+                    "1" => "Bottom",
+                    "2" => "Center",
+                    _ => "Top",
+                };
                 let size = args[4].trim_matches('\'').get(3..).and_then(|n| n.parse::<f64>().ok()).unwrap_or(10.0);
                 // offsets in body sizes (about 3.51 mm), y down
                 let off = |i: usize| args[i].parse::<f64>().unwrap_or(0.0) * 3.51;
@@ -893,12 +901,9 @@ impl ChartStore {
         }
         // each feature's S-57 class (an unknown-object table holds several)
         let s57_class: HashMap<String, String> = rows.iter().map(|(f, o)| (f.to_string(), o.class.clone())).collect();
-        let s57_symins: HashMap<String, String> = rows
-            .iter()
-            .filter_map(|(f, o)| Some((f.to_string(), symins(o.attrs.iter().find(|(k, _)| k == "SYMINS")?.1.as_str())?)))
-            .collect();
-        let s57_point: HashMap<String, String> =
-            rows.iter().filter_map(|(f, o)| Some((f.to_string(), point_fallback(o)?))).collect();
+        let s57_symins: HashMap<String, String> =
+            rows.iter().filter_map(|(f, o)| Some((f.to_string(), symins(o.attrs.iter().find(|(k, _)| k == "SYMINS")?.1.as_str())?))).collect();
+        let s57_point: HashMap<String, String> = rows.iter().filter_map(|(f, o)| Some((f.to_string(), point_fallback(o)?))).collect();
         // features; a sector light's records (one per sector) at one place as one feature
         let mut features = Vec::new();
         let mut same: HashMap<String, Vec<i64>> = HashMap::new();

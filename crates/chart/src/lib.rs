@@ -528,10 +528,8 @@ impl ChartStore {
             });
             let rings = if water.is_empty() { rings } else { cut_water(rings, water.clone()) };
             if !rings.is_empty() {
-                depare.add(
-                    &TileGeom::Rings(rings),
-                    &[("band", Value::UInt(t.band as u64)), ("land", Value::UInt(1)), ("sk", Value::F64(t.band as f64 - 0.25))],
-                );
+                depare
+                    .add(&TileGeom::Rings(rings), &[("band", Value::UInt(t.band as u64)), ("land", Value::UInt(1)), ("sk", Value::F64(t.band as f64 - 0.25))]);
             }
         }
         // Unsurveyed areas: the no-data colour over the band's depth areas (sk), under a

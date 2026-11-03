@@ -695,7 +695,11 @@ impl ChartStore {
                                 if let Some(e) = syms.as_ref().and_then(|m| m.get(&row.fid)) {
                                     let tx = crate::s52::entry_texts(e);
                                     if !tx.is_empty() {
-                                        let mut base = vec![("cls", Value::Str(class.code.into())), ("band", Value::UInt(t.band as u64)), ("minz", Value::F64((minz * 10.0).round() / 10.0))];
+                                        let mut base = vec![
+                                            ("cls", Value::Str(class.code.into())),
+                                            ("band", Value::UInt(t.band as u64)),
+                                            ("minz", Value::F64((minz * 10.0).round() / 10.0)),
+                                        ];
                                         base.extend(date_props(|k| a.get(k).map(str::to_string)));
                                         if finer < f64::MAX {
                                             base.push(("maxz", Value::F64((finer * 10.0).round() / 10.0)));
@@ -728,9 +732,10 @@ impl ChartStore {
                                 // TweedPlot's "?" of an object the IHO rules portray but draw
                                 // nothing for (S-52 shows nothing there either)
                                 if class.code == s57::UNKNOWN
-                                    && syms.as_ref().and_then(|m| m.get(&row.fid)).is_some_and(|e| {
-                                        crate::s52::entry_category(e) > 0 && e.split('|').take(3).all(str::is_empty)
-                                    })
+                                    && syms
+                                        .as_ref()
+                                        .and_then(|m| m.get(&row.fid))
+                                        .is_some_and(|e| crate::s52::entry_category(e) > 0 && e.split('|').take(3).all(str::is_empty))
                                 {
                                     props.push(("po", Value::UInt(1)));
                                 }
@@ -813,7 +818,12 @@ impl ChartStore {
                         .iter()
                         .map(|(_, t)| {
                             let mut rows = Vec::new();
-                            self.query_text(t, bbox, &["objnam", "scamin", "catrea", "restrn", "catmfa", "orient", "watlev", "datsta", "datend", "persta", "perend"], |row| rows.push(row));
+                            self.query_text(
+                                t,
+                                bbox,
+                                &["objnam", "scamin", "catrea", "restrn", "catmfa", "orient", "watlev", "datsta", "datend", "persta", "perend"],
+                                |row| rows.push(row),
+                            );
                             rows
                         })
                         .collect();
@@ -1020,8 +1030,11 @@ impl ChartStore {
                                 if let (Some(at), true) = (at, shown) {
                                     let c = tp.px(&at);
                                     if inside(c) {
-                                        let mut pp: Vec<(&str, Value)> =
-                                            props.iter().filter(|(k, _)| !matches!(*k, "sl" | "slw" | "lc" | "lw" | "cf" | "ct" | "af" | "maxz")).cloned().collect();
+                                        let mut pp: Vec<(&str, Value)> = props
+                                            .iter()
+                                            .filter(|(k, _)| !matches!(*k, "sl" | "slw" | "lc" | "lw" | "cf" | "ct" | "af" | "maxz"))
+                                            .cloned()
+                                            .collect();
                                         if let Some(sy) = &centre_symbol {
                                             pp.push(("sy", Value::Str(sy.clone())));
                                         }
@@ -1033,8 +1046,11 @@ impl ChartStore {
                                         }
                                         pp.push(("ac", Value::UInt(1)));
                                         if !centre_texts.is_empty() {
-                                            let base: Vec<(&str, Value)> =
-                                                pp.iter().filter(|(k, _)| matches!(*k, "cls" | "band" | "minz" | "maxz" | "ds" | "de" | "ps" | "pe")).cloned().collect();
+                                            let base: Vec<(&str, Value)> = pp
+                                                .iter()
+                                                .filter(|(k, _)| matches!(*k, "cls" | "band" | "minz" | "maxz" | "ds" | "de" | "ps" | "pe"))
+                                                .cloned()
+                                                .collect();
                                             put_texts(&mut ftx, c, &centre_texts, &base);
                                         }
                                         if centre_symbol.is_some() || centre_info.is_some() {
@@ -1222,7 +1238,11 @@ impl ChartStore {
                             lsec,
                             tp,
                             &[c, end],
-                            &[&[("k", Value::Str("sdash".into())), ("tok", Value::Str("CHBLK".into())), ("minz", mz.clone()), ("maxz", mx.clone())][..], &first.dates[..]].concat(),
+                            &[
+                                &[("k", Value::Str("sdash".into())), ("tok", Value::Str("CHBLK".into())), ("minz", mz.clone()), ("maxz", mx.clone())][..],
+                                &first.dates[..],
+                            ]
+                            .concat(),
                         );
                     }
                 }
