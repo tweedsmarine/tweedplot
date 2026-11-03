@@ -147,7 +147,12 @@ pub fn point_entry(instructions: &str) -> String {
 
 /// The display category in a point entry (0: none).
 pub(crate) fn entry_category(s: &str) -> u8 {
-    s.splitn(4, '|').nth(3).and_then(|c| c.parse().ok()).unwrap_or(0)
+    s.split('|').nth(3).and_then(|c| c.parse().ok()).unwrap_or(0)
+}
+
+/// Whether a point entry's feature carries a light (`|1` after the category).
+pub(crate) fn entry_lit(s: &str) -> bool {
+    s.split('|').nth(4) == Some("1")
 }
 
 /// A light's sector drawing from the rules (S-52 LIGHTS05/06): legs and arcs.
@@ -533,6 +538,34 @@ impl ChartStore {
                 });
             }
         }
+        // which of them carry a light of the same band (a lighthouse, a beacon): the chart
+        // shows such a structure whenever it shows the light, so a light never stands alone
+        let mut lit: std::collections::HashSet<i64> = std::collections::HashSet::new();
+        if class.geo == crate::s57::Geo::Point && class.code != "LIGHTS" {
+            let mut grid: HashMap<(i64, i64), Vec<[f64; 2]>> = HashMap::new();
+            let cell = |p: [f64; 2]| ((p[0] * 1000.0).floor() as i64, (p[1] * 1000.0).floor() as i64);
+            for lt in self.tables.iter().filter(|x| x.band == t.band && x.class.is_some_and(|c| c.code == "LIGHTS")) {
+                self.query_text(lt, t.bounds, &[], |row| {
+                    if let Geom::Points(p) = &row.geom {
+                        for q in p {
+                            grid.entry(cell(*q)).or_default().push(*q);
+                        }
+                    }
+                });
+            }
+            if !grid.is_empty() {
+                for (fid, o) in &rows {
+                    let Some(p) = pos(o) else { continue };
+                    let (cx, cy) = cell(p);
+                    let near = (-1..=1)
+                        .flat_map(|dx| (-1..=1).map(move |dy| (cx + dx, cy + dy)))
+                        .any(|c| grid.get(&c).is_some_and(|v| v.iter().any(|q| (q[0] - p[0]).abs() < 2e-4 && (q[1] - p[1]).abs() < 2e-4)));
+                    if near {
+                        lit.insert(*fid);
+                    }
+                }
+            }
+        }
         // the water around dangers (S-101 surroundingDepth), from the band's depth areas,
         // read a cell of about 20 km at a time
         const C: f64 = 0.2;
@@ -603,8 +636,15 @@ impl ChartStore {
         };
         let mut map = HashMap::new();
         for o in out {
-            let sy: Arc<str> =
-                if class.geo == crate::s57::Geo::Point { point_entry(&o.instructions).into() } else { s.encode(&drawn(&o.instructions, &s.cat)).into() };
+            let sy: Arc<str> = if class.geo == crate::s57::Geo::Point {
+                let mut e = point_entry(&o.instructions);
+                if o.id.parse::<i64>().is_ok_and(|f| lit.contains(&f)) {
+                    e.push_str("|1");
+                }
+                e.into()
+            } else {
+                s.encode(&drawn(&o.instructions, &s.cat)).into()
+            };
             match same.get(&o.id) {
                 Some(fids) => {
                     for f in fids {

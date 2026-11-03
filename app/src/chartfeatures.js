@@ -340,7 +340,9 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     // an area's IHO symbol at its middle (`ac`), or TweedPlot's symbol for a small one (`po`)
     // points in Standard: what the rules put in Base or Standard (landmarks, for one, are
     // "Other"), with hazards and TweedPlot's display base (buoys, beacons) always
-    const ptOk = cat === "standard" ? ["any", ["!", ["has", "vg"]], ["<=", ["get", "vg"], 2], HZ, ["==", ["get", "db"], 1]] : true;
+    // (and a light's structure, `lt`, whenever its light shows: a lighthouse the rules put
+    // in "Other" would leave the light standing alone)
+    const ptOk = cat === "standard" ? ["any", ["!", ["has", "vg"]], ["<=", ["get", "vg"], 2], HZ, ["==", ["get", "db"], 1], ["==", ["get", "lt"], 1]] : true;
     // a light the IHO rules drew as sectors only: no flare of TweedPlot's either
     if (id === "f-lights") return s52 ? ["all", ["any", ["has", "sy"], ["!", ["has", "s5"]]], ptOk] : null;
     // the IHO symbol of a danger writes its depth in it: no label beside it as well

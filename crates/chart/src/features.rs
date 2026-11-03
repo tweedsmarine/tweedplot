@@ -742,6 +742,10 @@ impl ChartStore {
                                         0 => {}
                                         c => props.push(("vg", Value::UInt(c as u64))),
                                     }
+                                    // a light's structure: shown with its light
+                                    if crate::s52::entry_lit(e) {
+                                        props.push(("lt", Value::UInt(1)));
+                                    }
                                     if !sy.is_empty() {
                                         props.push(("sy", Value::Str(sy.into())));
                                     }
