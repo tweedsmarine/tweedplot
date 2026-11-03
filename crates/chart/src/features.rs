@@ -572,16 +572,17 @@ impl ChartStore {
             .any(|(band, b, poly)| bands.contains(band) && p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3] && poly.contains(&pt))
     }
 
-    /// The four feature layers of one tile: [areas, lines, points, light sectors].
-    pub(crate) fn render_features(&self, tp: &TileProj, z: u8, starts: &[u8; 8]) -> [Layer; 4] {
+    /// The feature layers of one tile: [areas, lines, points, light sectors, IHO texts].
+    pub(crate) fn render_features(&self, tp: &TileProj, z: u8, starts: &[u8; 8]) -> [Layer; 5] {
         let mut far = Layer::new("far");
         let mut fln = Layer::new("fln");
         let mut fpt = Layer::new("fpt");
         let mut lsec = Layer::new("lsec");
+        let mut ftx = Layer::new("ftx");
         let bbox = tp.lonlat_bbox(crate::BUFFER);
         let all = self.feature_tables(z, bbox, starts);
         if all.is_empty() {
-            return [far, fln, fpt, lsec];
+            return [far, fln, fpt, lsec, ftx];
         }
         // classes in the order of s57::CLASSES, tables finest band first
         let mut groups: Vec<(&'static s57::FeatureClass, Vec<(usize, &TableInfo)>)> = Vec::new();
@@ -689,6 +690,20 @@ impl ChartStore {
                                 let px = tp.px(&p);
                                 if !inside(px) {
                                     continue;
+                                }
+                                // the IHO rules' texts (a light's description, a seabed's nature...)
+                                if let Some(e) = syms.as_ref().and_then(|m| m.get(&row.fid)) {
+                                    let tx = crate::s52::entry_texts(e);
+                                    if !tx.is_empty() {
+                                        let mut base = vec![("cls", Value::Str(class.code.into())), ("band", Value::UInt(t.band as u64)), ("minz", Value::F64((minz * 10.0).round() / 10.0))];
+                                        if finer < f64::MAX {
+                                            base.push(("maxz", Value::F64((finer * 10.0).round() / 10.0)));
+                                        }
+                                        if crate::s52::entry_lit(e) {
+                                            base.push(("lt", Value::UInt(1)));
+                                        }
+                                        put_texts(&mut ftx, px, &tx, &base);
+                                    }
                                 }
                                 // no symbol of TweedPlot's: drawn only by the IHO rules, if they draw it
                                 // (`ac`: as an area's IHO symbol, shown with the IHO symbols only)
@@ -891,6 +906,7 @@ impl ChartStore {
                             let drawn = s52[k].as_ref().and_then(|m| m.get(&row.fid)).filter(|e| !e.is_empty());
                             let mut centre_symbol = None;
                             let mut centre_info = None;
+                            let mut centre_texts = Vec::new();
                             if let Some(e) = drawn {
                                 props.push(("s5", Value::UInt(1)));
                                 for (key, v) in crate::s52::props(e) {
@@ -898,6 +914,7 @@ impl ChartStore {
                                         "slw" | "ct" | "lw" => props.push((key, Value::F64(v.parse().unwrap_or(0.0)))),
                                         "vg" => props.push((key, Value::UInt(v.parse().unwrap_or(3)))),
                                         "sy" => centre_symbol = Some(v.to_string()),
+                                        "tx" => centre_texts = crate::s52::decode_texts(v),
                                         "si" => centre_info = Some(v.to_string()),
                                         _ => props.push((key, Value::Str(v.into()))),
                                     }
@@ -971,7 +988,7 @@ impl ChartStore {
                             // (from the whole feature: a coarser chart's copy cut back to outside a
                             // finer chart's coverage keeps its symbol only where the finer copy
                             // doesn't show yet, so one feature has one symbol)
-                            if centre_symbol.is_some() || centre_info.is_some() {
+                            if centre_symbol.is_some() || centre_info.is_some() || !centre_texts.is_empty() {
                                 let geom = &row.geom;
                                 let at = match geom {
                                     Geom::Polygons(p) => {
@@ -1004,7 +1021,14 @@ impl ChartStore {
                                             pp.push(("maxz", Value::F64((tz.min(30.0) * 10.0).round() / 10.0)));
                                         }
                                         pp.push(("ac", Value::UInt(1)));
-                                        fpt.add(&TileGeom::Points(vec![[c[0].round() as i32, c[1].round() as i32]]), &pp);
+                                        if !centre_texts.is_empty() {
+                                            let base: Vec<(&str, Value)> =
+                                                pp.iter().filter(|(k, _)| matches!(*k, "cls" | "band" | "minz" | "maxz")).cloned().collect();
+                                            put_texts(&mut ftx, c, &centre_texts, &base);
+                                        }
+                                        if centre_symbol.is_some() || centre_info.is_some() {
+                                            fpt.add(&TileGeom::Points(vec![[c[0].round() as i32, c[1].round() as i32]]), &pp);
+                                        }
                                     }
                                 }
                             }
@@ -1031,16 +1055,26 @@ impl ChartStore {
             fpt.add(&TileGeom::Points(vec![q]), &props);
         }
         if let Some((_, tables)) = groups.iter().find(|(c, _)| c.code == "LIGHTS") {
-            self.render_lights(tp, z, tables, &marks, &mut fpt, &mut lsec);
+            self.render_lights(tp, z, tables, &marks, &mut fpt, &mut lsec, &mut ftx);
         }
-        [far, fln, fpt, lsec]
+        [far, fln, fpt, lsec, ftx]
     }
 
     /// `marks`: the buoys and beacons drawn in this tile. A light whose mark comes from
     /// a finer chart (which may not carry the light itself: LINZ's layers are not always
     /// complete in every band) shows from the same zoom as that mark, so a light's flare
     /// never stands on the chart without its buoy or beacon.
-    fn render_lights(&self, tp: &TileProj, z: u8, tables: &[(usize, &TableInfo)], marks: &[([f64; 2], u8, f64)], fpt: &mut Layer, lsec: &mut Layer) {
+    #[allow(clippy::too_many_arguments)]
+    fn render_lights(
+        &self,
+        tp: &TileProj,
+        z: u8,
+        tables: &[(usize, &TableInfo)],
+        marks: &[([f64; 2], u8, f64)],
+        fpt: &mut Layer,
+        lsec: &mut Layer,
+        ftx: &mut Layer,
+    ) {
         // lights a little outside the tile still throw sectors into it
         let mut bbox = tp.lonlat_bbox(LEG_R + 48.0);
         // full light lines: lights up to about 30 M away reach into the tile
@@ -1128,6 +1162,14 @@ impl ChartStore {
                     }
                     if !si.is_empty() {
                         props.push(("si", Value::Str(si.into())));
+                    }
+                    // its description as the IHO rules write it (`itx`: TweedPlot's own label
+                    // gives way to it)
+                    let tx = crate::s52::entry_texts(e);
+                    if !tx.is_empty() {
+                        props.push(("itx", Value::UInt(1)));
+                        let base: Vec<(&str, Value)> = props.iter().filter(|(k, _)| matches!(*k, "cls" | "band" | "minz" | "maxz")).cloned().collect();
+                        put_texts(ftx, c, &tx, &base);
                     }
                 }
                 let lbl = s57::light_label(&lights);
@@ -1469,4 +1511,31 @@ pub struct Clearance {
     pub distance_m: f64,
     /// True bearing from the boat to the nearest point.
     pub bearing: f64,
+}
+
+/// The IHO rules' texts at a point (tile pixels), one feature each in the text layer
+/// (`ftx`): `txt`, alignment `h` (S/C/E) and `v` (T/C/B), offset `dx` `dy` (mm, y up),
+/// colour token `c`, size `fs` (pt), text group `g`, display category `vg`, rotation
+/// `rot`, with the feature's `base` properties (class, band, zooms).
+fn put_texts(ftx: &mut Layer, at: [f64; 2], texts: &[crate::s52::Text], base: &[(&str, Value)]) {
+    for t in texts {
+        let mut p: Vec<(&str, Value)> = base.to_vec();
+        p.push(("txt", Value::Str(t.text.clone())));
+        p.push(("h", Value::Str(t.h.to_string())));
+        p.push(("v", Value::Str(t.v.to_string())));
+        if t.dx != 0.0 {
+            p.push(("dx", Value::F64(t.dx)));
+        }
+        if t.dy != 0.0 {
+            p.push(("dy", Value::F64(t.dy)));
+        }
+        p.push(("c", Value::Str(t.colour.clone())));
+        p.push(("fs", Value::F64(t.size)));
+        p.push(("g", Value::UInt(t.group as u64)));
+        p.push(("vg", Value::UInt(t.category as u64)));
+        if t.rot != 0.0 {
+            p.push(("rot", Value::F64(t.rot)));
+        }
+        ftx.add(&TileGeom::Points(vec![[at[0].round() as i32, at[1].round() as i32]]), &p);
+    }
 }

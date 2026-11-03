@@ -272,6 +272,123 @@ pub(crate) fn sectors(s: &str) -> Vec<SectorPart> {
         .collect()
 }
 
+/// A text the rules draw (S-100 TextInstruction) with its style at the time.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Text {
+    pub text: String,
+    /// Horizontal alignment: 'S' start (text to the right), 'C' centre, 'E' end.
+    pub h: char,
+    /// Vertical alignment: 'T' top (text below), 'C' centre, 'B' bottom or baseline.
+    pub v: char,
+    /// Offset from the feature's point, mm on the screen, y up.
+    pub dx: f64,
+    pub dy: f64,
+    /// Colour token (CHBLK...).
+    pub colour: String,
+    /// Font size, points.
+    pub size: f64,
+    /// Its text group (S-52: 10-19 important text, 20- other text; 23 light descriptions...).
+    pub group: u16,
+    /// Display category of the text (1 base, 2 standard, 3 other).
+    pub category: u8,
+    /// Rotation, degrees clockwise.
+    pub rot: f64,
+}
+
+/// The texts in a feature's drawing instructions, each with the text style in force.
+pub fn texts(instructions: &str) -> Vec<Text> {
+    let mut out = Vec::new();
+    let (mut h, mut v, mut dx, mut dy, mut colour, mut size, mut rot) = ('S', 'B', 0.0, 0.0, "CHBLK".to_string(), 10.0, 0.0);
+    let (mut group, mut cat) = (0u16, 0u8);
+    for part in instructions.split(';') {
+        let (k, val) = part.split_once(':').unwrap_or((part, ""));
+        let nums: Vec<f64> = val.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+        match k {
+            "TextAlignHorizontal" => h = val.chars().next().unwrap_or('S'),
+            "TextAlignVertical" => v = val.chars().next().map(|c| if c == 'B' { 'B' } else { c }).unwrap_or('B'),
+            "LocalOffset" if nums.len() == 2 => (dx, dy) = (nums[0], nums[1]),
+            "FontColor" if !val.is_empty() => colour = val.split(',').next().unwrap_or("CHBLK").trim().to_string(),
+            "FontSize" if !nums.is_empty() => size = nums[0],
+            "Rotation" => rot = val.split(',').nth(1).and_then(|a| a.trim().parse().ok()).unwrap_or(0.0),
+            "ViewingGroup" => {
+                let g: Vec<u32> = val.split(',').filter_map(|g| g.trim().parse().ok()).collect();
+                // a text's: its text group, then its feature's viewing group
+                if g.len() >= 2 && g[0] < 100 {
+                    group = g[0] as u16;
+                    cat = (g[1] / 10000).clamp(1, 3) as u8;
+                } else {
+                    group = 0;
+                }
+            }
+            "TextInstruction" if group > 0 => {
+                let text: String = val.chars().map(|c| if matches!(c, '|' | ';') || c.is_control() { ' ' } else { c }).collect();
+                let text = text.trim();
+                if !text.is_empty() {
+                    out.push(Text { text: text.to_string(), h, v, dx, dy, colour: colour.clone(), size, group, category: cat, rot });
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+const TEXT_SEP: char = '\u{1f}';
+const FIELD_SEP: char = '\u{1e}';
+
+/// Texts as one string for a table entry (see [`decode_texts`]).
+pub(crate) fn encode_texts(t: &[Text]) -> String {
+    let r = |x: f64| (x * 100.0).round() / 100.0;
+    t.iter()
+        .map(|t| {
+            format!(
+                "{}{FIELD_SEP}{}{}{FIELD_SEP}{}{FIELD_SEP}{}{FIELD_SEP}{}{FIELD_SEP}{}{FIELD_SEP}{}{FIELD_SEP}{}{FIELD_SEP}{}",
+                t.text,
+                t.h,
+                t.v,
+                r(t.dx),
+                r(t.dy),
+                t.colour,
+                r(t.size),
+                t.group,
+                t.category,
+                r(t.rot)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(&TEXT_SEP.to_string())
+}
+
+pub(crate) fn decode_texts(s: &str) -> Vec<Text> {
+    s.split(TEXT_SEP)
+        .filter_map(|t| {
+            let f: Vec<&str> = t.split(FIELD_SEP).collect();
+            if f.len() != 9 {
+                return None;
+            }
+            let mut a = f[1].chars();
+            let n = |i: usize| f[i].parse::<f64>().ok();
+            Some(Text {
+                text: f[0].to_string(),
+                h: a.next()?,
+                v: a.next()?,
+                dx: n(2)?,
+                dy: n(3)?,
+                colour: f[4].to_string(),
+                size: n(5)?,
+                group: f[6].parse().ok()?,
+                category: f[7].parse().ok()?,
+                rot: n(8)?,
+            })
+        })
+        .collect()
+}
+
+/// The texts in a point entry (after the light flag).
+pub(crate) fn entry_texts(s: &str) -> Vec<Text> {
+    s.split('|').nth(5).map(decode_texts).unwrap_or_default()
+}
+
 /// What the rules draw for a line or an area, as tile properties (the module notes):
 /// `sl` its line style (a catalogue name, or `_interval_width_colour[_start-length...]`
 /// for a simple line), `slw` how tall the line is drawn (mm), `cf` and `ct` its colour
@@ -284,10 +401,11 @@ pub struct Drawn {
     pub pattern: Option<String>,
     pub symbols: String,
     pub category: u8,
+    pub texts: Vec<Text>,
 }
 
 pub fn drawn(instructions: &str, cat: &portrayal::Catalogue) -> Drawn {
-    let mut d = Drawn { symbols: point_symbols(instructions), category: category(instructions), ..Default::default() };
+    let mut d = Drawn { symbols: point_symbols(instructions), category: category(instructions), texts: texts(instructions), ..Default::default() };
     let mut dashes: Vec<(f64, f64)> = Vec::new();
     let mut simple: Option<portrayal::LineStyle> = None;
     for part in instructions.split(';') {
@@ -380,6 +498,9 @@ impl S52 {
         if d.category > 0 {
             out.push(format!("vg={}", d.category));
         }
+        if !d.texts.is_empty() {
+            out.push(format!("tx={}", encode_texts(&d.texts)));
+        }
         out.join(";")
     }
 
@@ -441,7 +562,7 @@ fn point_fallback(o: &S57Object) -> Option<String> {
 
 /// An object's own S-52 drawing (its SYMINS attribute: a new object class, a temporary
 /// notice) as drawing instructions like the IHO rules': its symbols (SY), lines (LC, LS)
-/// and fills (AC, AP). Its texts (TX, TE) aren't drawn.
+/// and fills (AC, AP), and its texts (TX with the text itself).
 pub(crate) fn symins(s: &str) -> Option<String> {
     let mut out = vec!["ViewingGroup:26050".to_string()];
     for cmd in s.split(';') {
@@ -476,6 +597,23 @@ pub(crate) fn symins(s: &str) -> Option<String> {
                 out.push(format!("ColorFill:{a0},{tr}"));
             }
             "AP" if !a0.is_empty() => out.push(format!("AreaFillReference:{a0}")),
+            // TX('text',hjust,vjust,space,'chars',xoffs,yoffs,colour,group): a quoted text
+            // only (an attribute's value isn't at hand here)
+            "TX" if args.len() >= 9 && a0.starts_with('\'') => {
+                let text = a0.trim_matches('\'');
+                let h = match args[1] { "1" => "Center", "2" => "End", _ => "Start" };
+                let v = match args[2] { "1" => "Bottom", "2" => "Center", _ => "Top" };
+                let size = args[4].trim_matches('\'').get(3..).and_then(|n| n.parse::<f64>().ok()).unwrap_or(10.0);
+                // offsets in body sizes (about 3.51 mm), y down
+                let off = |i: usize| args[i].parse::<f64>().unwrap_or(0.0) * 3.51;
+                out.push(format!(
+                    "FontColor:{};FontSize:{size};TextAlignHorizontal:{h};TextAlignVertical:{v};LocalOffset:{},{};ViewingGroup:{},26050;TextInstruction:{text}",
+                    args[7],
+                    off(5),
+                    -off(6),
+                    args[8].parse::<u32>().unwrap_or(26).min(99)
+                ));
+            }
             _ => {}
         }
     }
@@ -507,6 +645,7 @@ pub(crate) fn props(encoded: &str) -> impl Iterator<Item = (&'static str, &str)>
             "sy" => "sy",
             "si" => "si",
             "vg" => "vg",
+            "tx" => "tx",
             _ => return None,
         };
         Some((k, v))
@@ -766,8 +905,14 @@ impl ChartStore {
                     _ => o.instructions.as_str(),
                 };
                 let mut e = point_entry(ins);
-                if o.id.parse::<i64>().is_ok_and(|f| lit.contains(&f)) {
-                    e.push_str("|1");
+                let lit = o.id.parse::<i64>().is_ok_and(|f| lit.contains(&f));
+                let tx = encode_texts(&texts(ins));
+                if lit || !tx.is_empty() {
+                    e.push_str(if lit { "|1" } else { "|" });
+                }
+                if !tx.is_empty() {
+                    e.push('|');
+                    e.push_str(&tx);
                 }
                 e.into()
             } else {
@@ -811,12 +956,26 @@ impl ChartStore {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn texts_with_their_style() {
+        let i = "ViewingGroup:27070;Rotation:PortrayalCRS,135;PointInstruction:LIGHTS13;Rotation:PortrayalCRS,0;FontColor:CHBLK;LocalOffset:7.02,0;TextAlignHorizontal:Start;TextAlignVertical:Center;ViewingGroup:23,27070;DrawingPriority:24;TextInstruction:Fl W;ViewingGroup:27070";
+        let t = super::texts(i);
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].text.as_str(), t[0].h, t[0].v, t[0].dx, t[0].group, t[0].category), ("Fl W", 'S', 'C', 7.02, 23, 2));
+        assert_eq!(super::decode_texts(&super::encode_texts(&t)), t);
+        let e = format!("LIGHTS13|||2|1|{}", super::encode_texts(&t));
+        assert!(super::entry_lit(&e));
+        assert_eq!(super::entry_texts(&e), t);
+        assert_eq!(super::entry_texts("LIGHTS13|||2|1"), vec![]);
+    }
+
+    #[test]
     fn symins_to_instructions() {
         let i = super::symins("SY(CTNARE51);LC(CTNARE51);TX(OBJNAM,1,2,3,'15110',0,0,CHBLK,26)").unwrap();
         assert_eq!(i, "ViewingGroup:26050;PointInstruction:CTNARE51;LineInstruction:CTNARE51");
         let i = super::symins("LS(DASH,2,CHMGD);AC(DEPVS,2)").unwrap();
         assert_eq!(i, "ViewingGroup:26050;Dash:0,3.6;LineStyle:_simple_,5.4,0.64,CHMGD;LineInstruction:_simple_;ColorFill:DEPVS,0.5");
-        assert_eq!(super::symins("TX('x',1,2,3,'15110',0,0,CHBLK,26)"), None);
+        let t = super::texts(&super::symins("TX('V-AIS',3,2,2,'15110',2,0,CHMGD,11)").unwrap());
+        assert_eq!((t[0].text.as_str(), t[0].h, t[0].v, t[0].dx, t[0].colour.as_str(), t[0].group), ("V-AIS", 'S', 'C', 7.02, "CHMGD", 11));
     }
 
     #[test]

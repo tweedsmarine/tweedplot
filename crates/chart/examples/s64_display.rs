@@ -74,6 +74,14 @@ fn main() {
         let mut trace = Vec::new();
         let outp = p.portray(&features, &mut trace).unwrap();
         let by: BTreeMap<&str, &str> = outp.iter().map(|o| (o.id.as_str(), o.instructions.as_str())).collect();
+        // S64_DUMP=LIGHTS,BOYLAT: each such object's drawing instructions
+        if let Ok(d) = std::env::var("S64_DUMP") {
+            for o in &outp {
+                if d.split(',').any(|c| o.id.starts_with(&format!("{c}/"))) {
+                    println!("{} {}", o.id, o.instructions);
+                }
+            }
+        }
         // per class: count, table, S-101 code, categories, a sample of what is drawn
         struct Row {
             n: usize,

@@ -160,6 +160,15 @@ fn main() {
         t0.elapsed().as_secs_f64()
     );
     let by_id: BTreeMap<&str, &str> = out.iter().map(|o| (o.id.as_str(), o.instructions.as_str())).collect();
+    // TEXTS=1: every text the rules draw, with its feature
+    if std::env::var_os("TEXTS").is_some() {
+        for f in &features {
+            let ins = by_id.get(f.id.as_str()).copied().unwrap_or("");
+            if ins.contains("TextInstruction") {
+                println!("TEXT {} {} {}", f.code, f.id, ins);
+            }
+        }
+    }
     let mut stats: BTreeMap<String, (usize, usize, String)> = BTreeMap::new();
     for f in &features {
         let ins = by_id.get(f.id.as_str()).copied().unwrap_or("");

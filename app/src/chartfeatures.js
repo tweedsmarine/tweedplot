@@ -14,7 +14,8 @@ const COLOURS = { 1: "#ffffff", 2: "#111111", 3: "#d7262b", 4: "#1f9a3a", 5: "#2
 const LIGHT = { r: "#d7262b", g: "#1f9a3a", w: "#f4c20d", o: MAGENTA, m: MAGENTA };
 
 const KEY = "racenav.chartfeatures";
-const DEFAULTS = { cat: "all", sectors: true, names: true, soundings: true, avoidDangers: true, avoidFarms: true, symSize: 1.2, sym: "s52", info: false, bounds: "plain" };
+const DEFAULTS = { cat: "all", sectors: true, names: true, soundings: true, avoidDangers: true, avoidFarms: true, symSize: 1.2, sym: "s52", info: false, bounds: "plain",
+  textImportant: true, textOther: true };
 /** The standard display (S-Mode): one press back to it. */
 const STANDARD = { cat: "standard", sectors: true, names: true, soundings: true };
 
@@ -104,6 +105,57 @@ function s52Image(sy) {
     g.restore();
   }
   return g.getImageData(0, 0, n, n);
+}
+
+/** An IHO text, "colour:size:HV:dx:dy:text" (size in points; H S/C/E start, centre,
+ *  end; V T/C/B top, centre, bottom; offset in mm, y up): an image holding the feature's
+ *  point and the text where the rules put it, the point at the image's anchor
+ *  (`textAnchor`): a corner or edge when the text lies wholly to one side, else the
+ *  middle. Plain, as S-52 has it. */
+function s52TextImage(spec) {
+  const f = spec.split(":");
+  if (f.length < 6) return null;
+  const [colour, size, hv, dxs, dys] = f;
+  const t = f.slice(5).join(":");
+  if (!t) return null;
+  const px = Math.max(6, Number(size) * 0.3528 * S52_PX_MM); // pt → mm → image pixels
+  const font = `${Math.round(px)}px "Segoe UI", system-ui, sans-serif`;
+  const g0 = canvas(1, 1)[1];
+  g0.font = font;
+  const w = Math.ceil(g0.measureText(t).width) + 2, h = Math.ceil(px * 1.2);
+  const dx = Number(dxs) || 0, dy = Number(dys) || 0;
+  // the text box from the point (y down)
+  const x = dx * S52_PX_MM - (hv[0] === "C" ? w / 2 : hv[0] === "E" ? w : 0);
+  const y = -dy * S52_PX_MM - (hv[1] === "C" ? h / 2 : hv[1] === "B" ? h : 0);
+  // along each axis: from the point when the text is wholly to one side (as textAnchor
+  // reckons it), else centred on the point
+  const span = (oneSide, lo, hi) => {
+    if (oneSide === 1) return [0, Math.ceil(hi)];
+    if (oneSide === -1) return [Math.floor(lo), 0];
+    const m = Math.ceil(Math.max(Math.abs(lo), Math.abs(hi)));
+    return [-m, m];
+  };
+  const sx = hv[0] === "S" && dx >= 0 ? 1 : hv[0] === "E" && dx <= 0 ? -1 : 0;
+  const sy = hv[1] === "T" && dy <= 0 ? 1 : hv[1] === "B" && dy >= 0 ? -1 : 0;
+  const [ax, bx] = span(sx, x, x + w), [ay, by] = span(sy, y, y + h);
+  const [, g] = canvas(Math.max(1, bx - ax), Math.max(1, by - ay));
+  g.font = font;
+  g.textBaseline = "middle";
+  g.fillStyle = S52.colours[colour] || S52.colours.CHBLK || "#000";
+  g.fillText(t, x - ax + 1, y - ay + h / 2);
+  return g.getImageData(0, 0, Math.max(1, bx - ax), Math.max(1, by - ay));
+}
+
+/** Where an IHO text's image (s52TextImage) is anchored on its point. */
+function textAnchor() {
+  const dx = ["coalesce", ["get", "dx"], 0], dy = ["coalesce", ["get", "dy"], 0];
+  const hp = ["case", ["all", ["==", ["get", "h"], "S"], [">=", dx, 0]], "left", ["all", ["==", ["get", "h"], "E"], ["<=", dx, 0]], "right", ""];
+  const vp = ["case", ["all", ["==", ["get", "v"], "T"], ["<=", dy, 0]], "top", ["all", ["==", ["get", "v"], "B"], [">=", dy, 0]], "bottom", ""];
+  return ["let", "hp", hp, "vp", vp,
+    ["case", ["all", ["==", ["var", "hp"], ""], ["==", ["var", "vp"], ""]], "center",
+      ["==", ["var", "vp"], ""], ["var", "hp"],
+      ["==", ["var", "hp"], ""], ["var", "vp"],
+      ["concat", ["var", "vp"], "-", ["var", "hp"]]]];
 }
 
 /** A line style as drawn: a catalogue style, or a rule's simple line
@@ -289,6 +341,13 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
                 "icon-anchor": "left", "icon-offset": ["match", ["get", "cls"], "LIGHTS", ["literal", [12, 8]], ["literal", [8, -6]]],
                 "icon-allow-overlap": false, "icon-padding": 1,
                 "symbol-sort-key": ["match", ["get", "cls"], "LIGHTS", 0, 1] } },
+    // the IHO rules' texts, placed before TweedPlot's labels (above them) (light descriptions, clearances, bearings, seabed...): each an
+    // image anchored on its feature, the text placed in it as the rules align and offset it
+    { id: "s52-text", type: "symbol", ...src, "source-layer": "ftx", filter: ["all", minz, ["has", "txt"]],
+      layout: { "icon-image": ["concat", "s52t:", ["get", "c"], ":", ["get", "fs"], ":", ["get", "h"], ["get", "v"], ":",
+                  ["coalesce", ["get", "dx"], 0], ":", ["coalesce", ["get", "dy"], 0], ":", ["get", "txt"]],
+                "icon-anchor": textAnchor(), "icon-rotate": ["coalesce", ["get", "rot"], 0], "icon-allow-overlap": false, "icon-padding": 0,
+                "symbol-sort-key": ["get", "g"] } },
   ];
   for (const l of layers) map.addLayer(l, before);
   // hazards stay on the chart when chart features are switched off (like an ECDIS's
@@ -333,13 +392,23 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   // With the IHO symbols, the IHO rules draw the lines and areas they portray (`s5`), in
   // the display category their viewing groups give (`vg`: 1 base, 2 standard, 3 other;
   // hazards always); TweedPlot's own layers draw the rest.
-  const S52_LAYERS = ["s52-fill", "s52-pat", "s52-aline", "s52-line", "s52-aline-solid", "s52-line-solid", "s52-info", "s52-sec-arc", "s52-sec-dash"];
+  const S52_LAYERS = ["s52-fill", "s52-pat", "s52-aline", "s52-line", "s52-aline-solid", "s52-line-solid", "s52-info", "s52-sec-arc", "s52-sec-dash", "s52-text"];
+  // S-52 text groups: important (10-19: clearances, bearings...) and other (20-: light
+  // descriptions, seabed, heights...), each switched by the mariner
+  const textGroups = () => {
+    const g = ["get", "g"];
+    if (opts.textImportant && opts.textOther) return null;
+    if (opts.textImportant) return ["<", g, 20];
+    if (opts.textOther) return [">=", g, 20];
+    return ["has", "__never__"];
+  };
   const TP_DRAWN = ["f-area-fill", "f-area-dash", "f-tss-fill", "f-tss-line", "f-tss-bnd", "f-construct", "f-bridge", "f-area-grey",
     "f-line-mag", "f-line-solid", "f-coast", "f-line-dash", "f-sec-leg", "f-sec-arc"];
   function modeFilter(id, cat) {
     const s52 = useS52();
     const vgOk = cat === "base" ? ["any", ["==", ["get", "vg"], 1], HZ]
       : cat === "standard" ? ["any", ["!", ["has", "vg"]], ["<=", ["get", "vg"], 2], HZ] : null;
+    if (id === "s52-text") { const tg = textGroups(); return vgOk && tg ? ["all", vgOk, tg] : (vgOk ?? tg); }
     if (S52_LAYERS.includes(id)) return vgOk;
     if (TP_DRAWN.includes(id)) return s52 ? ["!", ["has", "s5"]] : null;
     // a traffic lane's arrow of TweedPlot's, where the IHO rules draw the lane's own
@@ -353,7 +422,8 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     // a light the IHO rules drew as sectors only: no flare of TweedPlot's either
     if (id === "f-lights") return s52 ? ["all", ["any", ["has", "sy"], ["!", ["has", "s5"]]], ptOk] : null;
     // the IHO symbol of a danger writes its depth in it: no label beside it as well
-    if (id === "f-labels") return s52 ? ["all", ["!", ["in", "SOUNDS", ["coalesce", ["get", "sy"], ""]]], ptOk] : null;
+    // (and a light's description written by the IHO rules, `itx`, stands for TweedPlot's)
+    if (id === "f-labels") return s52 ? ["all", ["!", ["in", "SOUNDS", ["coalesce", ["get", "sy"], ""]]], ptOk, ...(opts.textOther ? [["!", ["has", "itx"]]] : [])] : null;
     if (id === "f-points") return s52 ? ["all", ["!", ["has", "po"]], ptOk, ["any", ["!", ["has", "ac"]], ["all", ["has", "sy"], vgOk ?? true]]] : ["!", ["has", "ac"]];
     return null;
   }
@@ -393,7 +463,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     if (map.getLayer("soundg")) map.setLayoutProperty("soundg", "visibility", enabled && cat !== "base" && (cat === "all" || opts.soundings) ? "visible" : "none");
     const sel = $("set-dispcat");
     if (sel) sel.value = cat;
-    for (const [id, key] of [["set-sectors", "sectors"], ["set-featnames", "names"], ["set-soundings", "soundings"], ["set-info", "info"]]) if ($(id)) $(id).checked = opts[key];
+    for (const [id, key] of [["set-sectors", "sectors"], ["set-featnames", "names"], ["set-soundings", "soundings"], ["set-info", "info"], ["set-text-important", "textImportant"], ["set-text-other", "textOther"]]) if ($(id)) $(id).checked = opts[key];
     if ($("set-soundings")) $("set-soundings").disabled = cat !== "standard";
     const std = $("set-std");
     if (std) std.classList.toggle("on", Object.entries(STANDARD).every(([k, v]) => opts[k] === v));
@@ -402,7 +472,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   if (sel) sel.onchange = () => { opts.cat = sel.value; save(); apply(); };
   const std = $("set-std");
   if (std) std.onclick = () => { Object.assign(opts, STANDARD); save(); apply(); };
-  for (const [id, key] of [["set-sectors", "sectors"], ["set-featnames", "names"], ["set-soundings", "soundings"], ["set-info", "info"], ["set-avoid-dangers", "avoidDangers"], ["set-avoid-farms", "avoidFarms"]]) {
+  for (const [id, key] of [["set-sectors", "sectors"], ["set-featnames", "names"], ["set-soundings", "soundings"], ["set-info", "info"], ["set-text-important", "textImportant"], ["set-text-other", "textOther"], ["set-avoid-dangers", "avoidDangers"], ["set-avoid-farms", "avoidFarms"]]) {
     const el = $(id);
     if (!el) continue;
     el.checked = opts[key];
@@ -417,6 +487,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     map.setLayoutProperty("f-points", "icon-size", k);
     map.setLayoutProperty("f-rot", "icon-size", k);
     map.setLayoutProperty("s52-info", "icon-size", k);
+    map.setLayoutProperty("s52-text", "icon-size", k);
     map.setLayoutProperty("f-labels", "icon-size", kl);
     // labels sit beside the symbol: keep them clear of it as it grows
     map.setLayoutProperty("f-labels", "icon-offset", ["match", ["get", "cls"], "LIGHTS", ["literal", [12 * k / kl, 8 * k / kl]], ["literal", [8 * k / kl, -6 * k / kl]]]);
@@ -795,6 +866,7 @@ function text(style, t) {
 
 /** Image for an `s57:` icon id or a `txt:` label id, or null. */
 export function featureImage(id) {
+  if (id.startsWith("s52t:")) return s52TextImage(id.slice(5));
   if (id.startsWith("s52:")) return s52Image(id.slice(4));
   if (id.startsWith("s52l:")) return s52LineImage(id.slice(5));
   if (id.startsWith("s52f:")) return s52FillImage(id.slice(5));
