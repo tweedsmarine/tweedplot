@@ -323,6 +323,10 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     { id: "f-lights", type: "symbol", ...src, "source-layer": "fpt", filter: ["all", minz, cls("LIGHTS")],
       layout: { "icon-image": ["concat", "s57:", ["get", "icon"]], "icon-anchor": "top-left", "icon-offset": [-2, -2],
                 "icon-allow-overlap": true, "icon-ignore-placement": true } },
+    // where a light can be clicked for its details, whatever it is drawn with (with the IHO
+    // symbols a sector light has no flare, just its sectors)
+    { id: "f-light-hit", type: "circle", ...src, "source-layer": "fpt", filter: ["all", minz, cls("LIGHTS")],
+      paint: { "circle-radius": 9, "circle-opacity": 0, "circle-stroke-opacity": 0 } },
     // symbols that turn with the chart: a traffic lane's direction arrow
     { id: "f-rot", type: "symbol", ...src, "source-layer": "fpt", filter: ["all", minz, ["has", "rot"]],
       layout: { "icon-image": ["concat", "s57:", ["get", "icon"]], "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map",
@@ -420,6 +424,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     // in "Other" would leave the light standing alone)
     const ptOk = cat === "standard" ? ["any", ["!", ["has", "vg"]], ["<=", ["get", "vg"], 2], HZ, ["==", ["get", "db"], 1], ["==", ["get", "lt"], 1]] : true;
     // a light the IHO rules drew as sectors only: no flare of TweedPlot's either
+    if (id === "f-light-hit") return s52 ? ptOk : null;
     if (id === "f-lights") return s52 ? ["all", ["any", ["has", "sy"], ["!", ["has", "s5"]]], ptOk] : null;
     // the IHO symbol of a danger writes its depth in it: no label beside it as well
     // (and a light's description written by the IHO rules, `itx`, stands for TweedPlot's)
@@ -536,7 +541,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   applySize();
 
   // ---------- details on a click ----------------------------------------------------------
-  const POINTS = ["f-points", "f-lights", "f-rot", "s52-info"];
+  const POINTS = ["f-points", "f-lights", "f-light-hit", "f-rot", "s52-info"];
   const LINES = ["f-line-mag", "f-line-solid", "f-line-dash", "f-tss-line", "f-tss-bnd", "s52-line", "s52-line-solid"];
   map.on("click", async (e) => {
     if (!enabled || placing()) return;
@@ -553,8 +558,16 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       map.queryRenderedFeatures(box, { layers: LINES }), inRule ? [] : map.queryRenderedFeatures(e.point, { layers: ["f-area-hit"] }));
     // several features at one spot (a beacon with its light): show them all; on open water,
     // the depth (or dredged) area of the largest-scale chart there
+    // nearest the click first (a mark and its light together), lines and areas after the
+    // points: a crowded spot (rocks, a coarser chart's copy) mustn't push the light off
+    const dist = (f) => {
+      if (f.geometry?.type !== "Point") return 1e6;
+      const q = map.project(f.geometry.coordinates);
+      return Math.round(Math.hypot(q.x - e.point.x, q.y - e.point.y) / 3);
+    };
+    const near = hit.map((f, i) => [dist(f), i, f]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map((x) => x[2]);
     const seen = new Set();
-    const list = hit.filter((f) => { const k = `${f.properties.t}/${f.properties.fid}`; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 4);
+    const list = near.filter((f) => { const k = `${f.properties.t}/${f.properties.fid}`; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 5);
     const infos = list.length
       ? (await Promise.all(list.map((f) => invoke("chart_feature", { t: f.properties.t, fid: f.properties.fid }).catch(() => null)))).filter(Boolean)
       : [await invoke("chart_depth_at", { lon: e.lngLat.lng, lat: e.lngLat.lat }).catch(() => null)].filter(Boolean);
