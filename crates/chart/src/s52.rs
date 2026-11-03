@@ -74,28 +74,43 @@ impl S52 {
     }
 }
 
-/// The symbols in a feature's drawing instructions, as `sy` (see the module notes).
+/// The symbols in a feature's drawing instructions, as `sy` (see the module notes), then
+/// after a `|` the information symbols (the "i" of a feature with notes, INFORM01, and the
+/// like: viewing groups 90020-90022, which an ECDIS shows only when asked), if any.
 pub fn point_symbols(instructions: &str) -> String {
     let mut out: Vec<String> = Vec::new();
+    let mut info: Vec<String> = Vec::new();
     let mut rot = 0.0f64;
+    let mut in_info = false;
     for part in instructions.split(';') {
         let (k, v) = part.split_once(':').unwrap_or((part, ""));
         match k {
+            "ViewingGroup" => in_info = v.split(',').any(|g| matches!(g.trim(), "90020" | "90021" | "90022")),
             "Rotation" => {
                 // Rotation:PortrayalCRS,135 (screen) or GeographicCRS,…
                 rot = v.split(',').nth(1).and_then(|a| a.trim().parse().ok()).unwrap_or(0.0);
             }
             "PointInstruction" if !v.is_empty() => {
-                if rot.abs() > 1e-6 {
-                    out.push(format!("{v}@{}", rot.round() as i64));
+                let s = if rot.abs() > 1e-6 { format!("{v}@{}", rot.round() as i64) } else { v.to_string() };
+                if in_info {
+                    info.push(s);
                 } else {
-                    out.push(v.to_string());
+                    out.push(s);
                 }
             }
             _ => {}
         }
     }
-    out.join(",")
+    if info.is_empty() {
+        out.join(",")
+    } else {
+        format!("{}|{}", out.join(","), info.join(","))
+    }
+}
+
+/// `sy` and the information symbols (`si`) from [`point_symbols`].
+pub(crate) fn split_info(s: &str) -> (&str, &str) {
+    s.split_once('|').unwrap_or((s, ""))
 }
 
 /// What the rules draw for a line or an area, as tile properties (the module notes):
@@ -197,8 +212,12 @@ impl S52 {
         if let Some(p) = &d.pattern {
             out.push(format!("af={p}"));
         }
-        if !d.symbols.is_empty() {
-            out.push(format!("sy={}", d.symbols));
+        let (sy, si) = split_info(&d.symbols);
+        if !sy.is_empty() {
+            out.push(format!("sy={sy}"));
+        }
+        if !si.is_empty() {
+            out.push(format!("si={si}"));
         }
         if d.category > 0 {
             out.push(format!("vg={}", d.category));
@@ -223,6 +242,7 @@ pub(crate) fn props(encoded: &str) -> impl Iterator<Item = (&'static str, &str)>
             "ct" => "ct",
             "af" => "af",
             "sy" => "sy",
+            "si" => "si",
             "vg" => "vg",
             _ => return None,
         };
@@ -467,6 +487,8 @@ mod tests {
         assert_eq!(s, "BOYPIL24,TOPMAR06");
         let l = super::point_symbols("Hover:true;Rotation:PortrayalCRS,135;PointInstruction:LIGHTS11;Rotation:PortrayalCRS,0;FontColor:CHBLK");
         assert_eq!(l, "LIGHTS11@135");
+        let i = super::point_symbols("ViewingGroup:27070;PointInstruction:LIGHTS13;ViewingGroup:27070,90020;DrawingPriority:24;PointInstruction:INFORM01");
+        assert_eq!(super::split_info(&i), ("LIGHTS13", "INFORM01"));
     }
 
     #[test]

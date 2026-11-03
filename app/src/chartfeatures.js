@@ -14,7 +14,7 @@ const COLOURS = { 1: "#ffffff", 2: "#111111", 3: "#d7262b", 4: "#1f9a3a", 5: "#2
 const LIGHT = { r: "#d7262b", g: "#1f9a3a", w: "#f4c20d", o: MAGENTA, m: MAGENTA };
 
 const KEY = "racenav.chartfeatures";
-const DEFAULTS = { cat: "all", sectors: true, names: true, soundings: true, avoidDangers: true, avoidFarms: true, symSize: 1.2, sym: "s52" };
+const DEFAULTS = { cat: "all", sectors: true, names: true, soundings: true, avoidDangers: true, avoidFarms: true, symSize: 1.2, sym: "s52", info: false };
 /** The standard display (S-Mode): one press back to it. */
 const STANDARD = { cat: "standard", sectors: true, names: true, soundings: true };
 
@@ -258,6 +258,9 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     { id: "f-rot", type: "symbol", ...src, "source-layer": "fpt", filter: ["all", minz, ["has", "rot"]],
       layout: { "icon-image": ["concat", "s57:", ["get", "icon"]], "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map",
                 "icon-allow-overlap": true, "icon-ignore-placement": true } },
+    // the IHO information symbols (the "i" of a feature with notes): only when asked for, as on an ECDIS
+    { id: "s52-info", type: "symbol", ...src, "source-layer": "fpt", filter: ["all", minz, ["has", "si"]],
+      layout: { "icon-image": ["concat", "s52:", ["get", "si"]], "icon-allow-overlap": true, "icon-ignore-placement": true } },
     { id: "f-points", type: "symbol", ...src, "source-layer": "fpt", filter: pointFilter(safetyContour),
       layout: { "icon-image": pointIcon(safetyContour),
                 "icon-anchor": ["match", ["slice", ["get", "icon"], 0, 2], ["b|", "c|"], "bottom", "center"],
@@ -313,7 +316,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   // With the IHO symbols, the IHO rules draw the lines and areas they portray (`s5`), in
   // the display category their viewing groups give (`vg`: 1 base, 2 standard, 3 other;
   // hazards always); TweedPlot's own layers draw the rest.
-  const S52_LAYERS = ["s52-fill", "s52-pat", "s52-aline", "s52-line"];
+  const S52_LAYERS = ["s52-fill", "s52-pat", "s52-aline", "s52-line", "s52-info"];
   const TP_DRAWN = ["f-area-fill", "f-area-dash", "f-tss-fill", "f-tss-line", "f-tss-bnd", "f-construct", "f-bridge", "f-area-grey",
     "f-line-mag", "f-line-solid", "f-coast", "f-line-dash"];
   function modeFilter(id, cat) {
@@ -325,7 +328,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     // an area's IHO symbol at its middle (`ac`), or TweedPlot's symbol for a small one (`po`)
     // the IHO symbol of a danger writes its depth in it: no label beside it as well
     if (id === "f-labels") return s52 ? ["!", ["in", "SOUNDS", ["coalesce", ["get", "sy"], ""]]] : null;
-    if (id === "f-points") return s52 ? ["all", ["!", ["has", "po"]], ["any", ["!", ["has", "ac"]], vgOk ?? true]] : ["!", ["has", "ac"]];
+    if (id === "f-points") return s52 ? ["all", ["!", ["has", "po"]], ["any", ["!", ["has", "ac"]], ["all", ["has", "sy"], vgOk ?? true]]] : ["!", ["has", "ac"]];
     return null;
   }
   function apply() {
@@ -335,6 +338,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       const s52layer = S52_LAYERS.includes(l.id);
       let on = enabled && (cat !== "base" || haz || s52layer || l.id === "f-coast"); // the ENC coast is part of the chart base
       if (s52layer) on = on && useS52();
+      if (l.id === "s52-info") on = on && opts.info;
       if (ALL_ONLY.includes(l.id)) on = on && cat === "all";
       if (SECTOR.includes(l.id)) on = on && opts.sectors;
       if (NAMES.includes(l.id)) on = on && opts.names;
@@ -355,7 +359,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     if (map.getLayer("soundg")) map.setLayoutProperty("soundg", "visibility", enabled && cat !== "base" && (cat === "all" || opts.soundings) ? "visible" : "none");
     const sel = $("set-dispcat");
     if (sel) sel.value = cat;
-    for (const [id, key] of [["set-sectors", "sectors"], ["set-featnames", "names"], ["set-soundings", "soundings"]]) if ($(id)) $(id).checked = opts[key];
+    for (const [id, key] of [["set-sectors", "sectors"], ["set-featnames", "names"], ["set-soundings", "soundings"], ["set-info", "info"]]) if ($(id)) $(id).checked = opts[key];
     if ($("set-soundings")) $("set-soundings").disabled = cat !== "standard";
     const std = $("set-std");
     if (std) std.classList.toggle("on", Object.entries(STANDARD).every(([k, v]) => opts[k] === v));
@@ -364,7 +368,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   if (sel) sel.onchange = () => { opts.cat = sel.value; save(); apply(); };
   const std = $("set-std");
   if (std) std.onclick = () => { Object.assign(opts, STANDARD); save(); apply(); };
-  for (const [id, key] of [["set-sectors", "sectors"], ["set-featnames", "names"], ["set-soundings", "soundings"], ["set-avoid-dangers", "avoidDangers"], ["set-avoid-farms", "avoidFarms"]]) {
+  for (const [id, key] of [["set-sectors", "sectors"], ["set-featnames", "names"], ["set-soundings", "soundings"], ["set-info", "info"], ["set-avoid-dangers", "avoidDangers"], ["set-avoid-farms", "avoidFarms"]]) {
     const el = $(id);
     if (!el) continue;
     el.checked = opts[key];
@@ -378,6 +382,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     map.setLayoutProperty("f-lights", "icon-size", k);
     map.setLayoutProperty("f-points", "icon-size", k);
     map.setLayoutProperty("f-rot", "icon-size", k);
+    map.setLayoutProperty("s52-info", "icon-size", k);
     map.setLayoutProperty("f-labels", "icon-size", kl);
     // labels sit beside the symbol: keep them clear of it as it grows
     map.setLayoutProperty("f-labels", "icon-offset", ["match", ["get", "cls"], "LIGHTS", ["literal", [12 * k / kl, 8 * k / kl]], ["literal", [8 * k / kl, -6 * k / kl]]]);
@@ -414,7 +419,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   applySize();
 
   // ---------- details on a click ----------------------------------------------------------
-  const POINTS = ["f-points", "f-lights", "f-rot"];
+  const POINTS = ["f-points", "f-lights", "f-rot", "s52-info"];
   const LINES = ["f-line-mag", "f-line-solid", "f-line-dash", "f-tss-line", "f-tss-bnd", "s52-line"];
   map.on("click", async (e) => {
     if (!enabled || placing()) return;

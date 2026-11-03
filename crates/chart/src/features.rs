@@ -322,6 +322,17 @@ impl CoverageClip {
         Self { bounds, paths: cover_paths(cover) }
     }
 
+    /// Whether a point is inside the coverage.
+    pub(crate) fn contains(&self, p: [f64; 2]) -> bool {
+        use clipper2_rust::core::{point_in_polygon, Point64, PointInPolygonResult};
+        let Some(b) = self.bounds else { return false };
+        if p[0] < b[0] || p[0] > b[2] || p[1] < b[1] || p[1] > b[3] {
+            return false;
+        }
+        let q = Point64::new((p[0] * SCALE).round() as i64, (p[1] * SCALE).round() as i64);
+        self.paths.iter().filter(|path| point_in_polygon(q, path) != PointInPolygonResult::IsOutside).count() % 2 == 1
+    }
+
     fn reaches(&self, g: &Geom) -> bool {
         let Some(b) = self.bounds else { return false };
         let gb = geom_bounds(g);
@@ -710,9 +721,13 @@ impl ChartStore {
                                     props.push(("db", Value::UInt(1)));
                                 }
                                 // the IHO portrayal's symbols, when it is on
-                                if let Some(sy) = syms.as_ref().and_then(|m| m.get(&row.fid)) {
+                                if let Some(e) = syms.as_ref().and_then(|m| m.get(&row.fid)) {
+                                    let (sy, si) = crate::s52::split_info(e);
                                     if !sy.is_empty() {
-                                        props.push(("sy", Value::Str(sy.to_string())));
+                                        props.push(("sy", Value::Str(sy.into())));
+                                    }
+                                    if !si.is_empty() {
+                                        props.push(("si", Value::Str(si.into())));
                                     }
                                 }
                                 if let Some(n) = a.get("objnam") {
@@ -843,6 +858,7 @@ impl ChartStore {
                             // how the IHO rules draw it (`s5`: they do)
                             let drawn = s52[k].as_ref().and_then(|m| m.get(&row.fid)).filter(|e| !e.is_empty());
                             let mut centre_symbol = None;
+                            let mut centre_info = None;
                             if let Some(e) = drawn {
                                 props.push(("s5", Value::UInt(1)));
                                 for (key, v) in crate::s52::props(e) {
@@ -850,6 +866,7 @@ impl ChartStore {
                                         "slw" | "ct" => props.push((key, Value::F64(v.parse().unwrap_or(0.0)))),
                                         "vg" => props.push((key, Value::UInt(v.parse().unwrap_or(3)))),
                                         "sy" => centre_symbol = Some(v.to_string()),
+                                        "si" => centre_info = Some(v.to_string()),
                                         _ => props.push((key, Value::Str(v.into()))),
                                     }
                                 }
@@ -913,7 +930,11 @@ impl ChartStore {
                             }
                             // the IHO rules' symbol at an area's middle (its anchorage anchor, the
                             // "i" of an area with notes, ...), and at a line's
-                            if let Some(sy) = &centre_symbol {
+                            // (from the whole feature: a coarser chart's copy cut back to outside a
+                            // finer chart's coverage keeps its symbol only where the finer copy
+                            // doesn't show yet, so one feature has one symbol)
+                            if centre_symbol.is_some() || centre_info.is_some() {
+                                let geom = &row.geom;
                                 let at = match geom {
                                     Geom::Polygons(p) => {
                                         let g = geom_bounds(geom);
@@ -927,12 +948,23 @@ impl ChartStore {
                                     Geom::Lines(l) => l.iter().max_by_key(|l| l.len()).and_then(|l| l.get(l.len() / 2)).copied(),
                                     Geom::Points(_) => None,
                                 };
-                                if let Some(at) = at {
+                                // where a finer chart covers the middle: only until its copy shows
+                                let finer = at.and_then(|at| cover.filter(|c| c.contains(at)).map(|_| takeover));
+                                let shown = finer.is_none_or(|tz| tz > z as f64 && tz < f64::MAX);
+                                if let (Some(at), true) = (at, shown) {
                                     let c = tp.px(&at);
                                     if inside(c) {
                                         let mut pp: Vec<(&str, Value)> =
-                                            props.iter().filter(|(k, _)| !matches!(*k, "sl" | "slw" | "cf" | "ct" | "af")).cloned().collect();
-                                        pp.push(("sy", Value::Str(sy.clone())));
+                                            props.iter().filter(|(k, _)| !matches!(*k, "sl" | "slw" | "cf" | "ct" | "af" | "maxz")).cloned().collect();
+                                        if let Some(sy) = &centre_symbol {
+                                            pp.push(("sy", Value::Str(sy.clone())));
+                                        }
+                                        if let Some(si) = &centre_info {
+                                            pp.push(("si", Value::Str(si.clone())));
+                                        }
+                                        if let Some(tz) = finer {
+                                            pp.push(("maxz", Value::F64((tz.min(30.0) * 10.0).round() / 10.0)));
+                                        }
                                         pp.push(("ac", Value::UInt(1)));
                                         fpt.add(&TileGeom::Points(vec![[c[0].round() as i32, c[1].round() as i32]]), &pp);
                                     }
@@ -1037,9 +1069,13 @@ impl ChartStore {
                 if finer < f64::MAX {
                     props.push(("maxz", Value::F64((finer * 10.0).round() / 10.0)));
                 }
-                if let Some(sy) = self.s52_table(first.t).and_then(|m| m.get(&first.fid).cloned()) {
+                if let Some(e) = self.s52_table(first.t).and_then(|m| m.get(&first.fid).cloned()) {
+                    let (sy, si) = crate::s52::split_info(&e);
                     if !sy.is_empty() {
-                        props.push(("sy", Value::Str(sy.to_string())));
+                        props.push(("sy", Value::Str(sy.into())));
+                    }
+                    if !si.is_empty() {
+                        props.push(("si", Value::Str(si.into())));
                     }
                 }
                 let lbl = s57::light_label(&lights);
