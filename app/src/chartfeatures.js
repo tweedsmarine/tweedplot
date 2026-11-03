@@ -20,14 +20,14 @@ const STANDARD = { cat: "standard", sectors: true, names: true, soundings: true 
 
 /** An underwater danger with a known depth at least as deep as the safety contour. */
 const deeper = (contour) => ["all", ["has", "dep"], [">=", ["get", "dep"], contour]];
-/** Point symbols. Hazards show at every zoom, except underwater dangers deeper than the
- *  safety contour, which keep their symbol (S-52) but follow the chart's SCAMIN. Symbols
+/** Point symbols. Hazards show at every zoom, except underwater dangers of known depth that
+ *  aren't isolated dangers (scaminDanger), which follow the chart's SCAMIN. Symbols
  *  turned with the chart (`rot`: a traffic lane's arrow) are in their own layer. */
 const pointFilter = (contour) => ["all", ["!", ["in", ["get", "cls"], ["literal", ["LIGHTS", "SEAARE", "LNDRGN"]]]], ["!", ["has", "rot"]],
-  ["any", ["all", HZ, ["!", deeper(contour)]], minzDeep]];
+  ["any", ["all", HZ, ["!", scaminDanger(contour)]], minzDeep]];
 
 const labelFilter = (contour) => ["all", ["has", "lbl"], ["!", ["in", ["get", "cls"], ["literal", ["SEAARE", "LNDRGN"]]]],
-  ["any", ["all", ["!", deeper(contour)], minz], minzDeep]];
+  ["any", ["all", ["!", scaminDanger(contour)], minz], minzDeep]];
 
 /** Isolated danger (S-52 UDWHAZ05): a rock, wreck or obstruction shallower than the safety
  *  contour (or of unknown depth, drying or awash) lying in water at least as deep as the
@@ -35,6 +35,11 @@ const labelFilter = (contour) => ["all", ["has", "lbl"], ["!", ["in", ["get", "c
  *  "isolated dangers in shallow water" on, also those in water from 0 m to the contour. */
 let shallowDangers = false;
 const isolated = (contour) => ["all", ["has", "wd"], shallowDangers ? [">=", ["get", "wd"], 0] : [">=", ["get", "wd"], contour], ["!=", ["get", "nd"], 1], ["!", deeper(contour)]];
+/** Underwater dangers of known depth that aren't isolated dangers (deeper than the safety
+ *  contour, or in water already shaded shallower than it) follow the chart's SCAMIN, as on
+ *  an ECDIS; isolated dangers, drying and awash ones and those of unknown depth show at
+ *  every zoom. */
+const scaminDanger = (contour) => ["all", ["has", "dep"], ["!", isolated(contour)], ["!", ["in", "ISODGR01", ["coalesce", ["get", "sy"], ""]]]];
 const pointIcon = (contour) => ["case", isolated(contour), "s57:iso", ["concat", "s57:", ["get", "icon"]]];
 
 // ---------- IHO symbols (S-52 / S-101 Portrayal Catalogue) ----------------------------
@@ -88,8 +93,8 @@ const BASE = ["any", ["==", ["get", "hz"], 1], ["==", ["get", "db"], 1]];
 
 /** Zoom filter: a feature shows from its SCAMIN zoom, except hazards to the vessel
  * (rocks, wrecks, obstructions, farms, piles, platforms, bridges, overhead cables:
- * `hz` from the chart store), which show at every zoom. Underwater dangers deeper
- * than the safety contour still follow SCAMIN (the point filters below). */
+ * `hz` from the chart store), which show at every zoom. Underwater dangers of known
+ * depth that aren't isolated dangers still follow SCAMIN (the point filters below). */
 const HZ = ["==", ["get", "hz"], 1];
 // `maxz`: a coarser chart's copy of a mark, standing in until the finer chart's copy shows
 const notReplaced = ["any", ["!", ["has", "maxz"]], ["<", ["zoom"], ["get", "maxz"]]];
