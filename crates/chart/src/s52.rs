@@ -229,7 +229,7 @@ pub fn light_sectors(instructions: &str) -> Vec<SectorPart> {
 }
 
 /// [`light_sectors`] written into a tile table entry (after `sy|si|`), and back.
-fn encode_sectors(parts: &[SectorPart]) -> String {
+pub(crate) fn encode_sectors(parts: &[SectorPart]) -> String {
     parts
         .iter()
         .map(|p| match p {

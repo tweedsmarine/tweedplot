@@ -146,6 +146,55 @@ function s52TextImage(spec) {
   return g.getImageData(0, 0, Math.max(1, bx - ax), Math.max(1, by - ay));
 }
 
+/** A light's S-52 sectors of fixed size on the screen (chart.rs `sec`): "L bearing mm"
+ *  limits and "A radius start extent styles" arcs (radius mm, degrees clockwise from
+ *  north, styles "s0.64LITRD+d0.32CHBLK": solid or dashed, width mm, colour token), as an
+ *  image centred on the light, north up (the map turns it). */
+function s52SectorImage(spec) {
+  if (!S52.ready) return null;
+  const parts = spec.split("/").map((p) => p.split(" "));
+  let reach = 1;
+  for (const f of parts) reach = Math.max(reach, (Number(f[f[0] === "A" ? 1 : 2]) || 0) + 1.5);
+  const half = Math.ceil(reach * S52_PX_MM) + 2, n = half * 2;
+  const [, g] = canvas(n, n);
+  const at = (b, r) => [half + r * Math.sin((b * Math.PI) / 180), half - r * Math.cos((b * Math.PI) / 180)];
+  const colour = (t) => S52.colours[t] || "#000";
+  g.lineCap = "butt";
+  const dash = () => g.setLineDash([3.6 * S52_PX_MM, 1.8 * S52_PX_MM]);
+  // the arcs, wider styles first (the black edging under the colour)
+  const strokes = [];
+  for (const f of parts) {
+    if (f[0] !== "A") continue;
+    const [r, start, extent] = [Number(f[1]), Number(f[2]), Number(f[3])];
+    for (const st of (f[4] || "").split("+").filter(Boolean)) {
+      const m = /^([sd])([0-9.]+)([A-Z0-9]+)$/.exec(st);
+      if (m) strokes.push({ r, start, extent, dashed: m[1] === "d", w: Number(m[2]), tok: m[3] });
+    }
+  }
+  strokes.sort((a, b) => b.w - a.w);
+  for (const s of strokes) {
+    g.beginPath();
+    // canvas angles run clockwise from east; a bearing clockwise from north
+    const a0 = ((s.start - 90) * Math.PI) / 180, a1 = ((s.start + s.extent - 90) * Math.PI) / 180;
+    g.arc(half, half, s.r * S52_PX_MM, Math.min(a0, a1), Math.max(a0, a1));
+    g.lineWidth = Math.max(1, s.w * S52_PX_MM);
+    g.strokeStyle = colour(s.tok);
+    if (s.dashed) dash(); else g.setLineDash([]);
+    g.stroke();
+  }
+  // the sector limits, 25 mm (or as charted on the screen)
+  g.setLineDash([]);
+  dash();
+  g.lineWidth = Math.max(1, 0.32 * S52_PX_MM);
+  g.strokeStyle = colour("CHBLK");
+  for (const f of parts) {
+    if (f[0] !== "L") continue;
+    const [x, y] = at(Number(f[1]), Number(f[2]) * S52_PX_MM);
+    g.beginPath(); g.moveTo(half, half); g.lineTo(x, y); g.stroke();
+  }
+  return g.getImageData(0, 0, n, n);
+}
+
 /** Where an IHO text's image (s52TextImage) is anchored on its point. */
 function textAnchor() {
   const dx = ["coalesce", ["get", "dx"], 0], dy = ["coalesce", ["get", "dy"], 0];
@@ -336,13 +385,15 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     // the IHO portrayal's areas and lines (Symbols: IHO), in the order of their drawing
     // priorities (S-52 10.3.4.1): s52Layers()
     ...s52Layers(),
-    // light sectors as S-52 draws them (with the IHO symbols): arcs in the light's colour
-    // over black, legs and obscured arcs dashed
-    { id: "s52-sec-arc", type: "line", ...src, "source-layer": "lsec", filter: ["all", minz, ["==", ["get", "k"], "sarc"]],
-      layout: { "line-sort-key": ["-", 0, ["get", "w"]], "line-cap": "butt" },
-      paint: { "line-color": "#000", "line-width": ["*", ["get", "w"], S52_PX_MM / 2] } },
+    // light sectors as S-52 draws them (with the IHO symbols): limits of a length on the
+    // ground (full light lines, or charted) dashed lines; the arcs (in the light's colour
+    // over black, obscured ones dashed) and the 25 mm limits an image of fixed size on the
+    // screen at the light (`sec`), as an ECDIS draws them, turning with the chart
     { id: "s52-sec-dash", type: "line", ...src, "source-layer": "lsec", filter: ["all", minz, ["==", ["get", "k"], "sdash"]],
       paint: { "line-color": "#000", "line-width": 0.32 * S52_PX_MM / 2, "line-dasharray": [3.6 / 0.32, 1.8 / 0.32] } },
+    { id: "s52-sec-img", type: "symbol", ...src, "source-layer": "fpt", filter: ["all", minz, ["has", "sec"]],
+      layout: { "icon-image": ["concat", "s52sec:", ["get", "sec"]], "icon-rotation-alignment": "map", "icon-pitch-alignment": "map",
+                "icon-allow-overlap": true, "icon-ignore-placement": true } },
     // light sectors
     { id: "f-sec-leg", type: "line", ...src, "source-layer": "lsec", filter: ["all", minz, ["==", ["get", "k"], "leg"]],
       paint: { "line-color": INK, "line-width": 0.7, "line-dasharray": [4, 3] } },
@@ -421,7 +472,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     setTimeout(place, 500);
   }
 
-  const SECTOR = ["f-sec-leg", "f-sec-arc", "s52-sec-arc", "s52-sec-dash"];
+  const SECTOR = ["f-sec-leg", "f-sec-arc", "s52-sec-img", "s52-sec-dash"];
   const NAMES = ["f-names", "f-pnames", "f-labels"];
   // Display categories, as an ECDIS (IHO S-52): Base is land, depth areas, the safety
   // contour, dangers, buoys and beacons, and traffic separation schemes, and can't be
@@ -433,7 +484,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   // With the IHO symbols, the IHO rules draw the lines and areas they portray (`s5`), in
   // the display category their viewing groups give (`vg`: 1 base, 2 standard, 3 other;
   // hazards always); TweedPlot's own layers draw the rest.
-  const S52_LAYERS = [...S52_AREA_IDS, ...S52_LINE_IDS, "s52-info", "s52-date", "s52-sec-arc", "s52-sec-dash", "s52-text"];
+  const S52_LAYERS = [...S52_AREA_IDS, ...S52_LINE_IDS, "s52-info", "s52-date", "s52-sec-img", "s52-sec-dash", "s52-text"];
   // S-52 text groups: important (10-19: clearances, bearings...) and other (20-: light
   // descriptions, seabed, heights...), each switched by the mariner
   const textGroups = () => {
@@ -516,7 +567,6 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     }
     if (useS52()) {
       for (const id of S52_FILL_IDS) map.setPaintProperty(id, "fill-color", s52FillColour());
-      map.setPaintProperty("s52-sec-arc", "line-color", s52FillColour("tok"));
       for (const id of S52_SOLID_IDS) map.setPaintProperty(id, "line-color", s52FillColour("lc"));
       map.setPaintProperty("s52-sec-dash", "line-color", s52FillColour("tok"));
     }
@@ -959,6 +1009,7 @@ function text(style, t) {
 
 /** Image for an `s57:` icon id or a `txt:` label id, or null. */
 export function featureImage(id) {
+  if (id.startsWith("s52sec:")) return s52SectorImage(id.slice(7));
   if (id.startsWith("s52t:")) return s52TextImage(id.slice(5));
   if (id.startsWith("s52:")) return s52Image(id.slice(4));
   if (id.startsWith("s52l:")) return s52LineImage(id.slice(5));

@@ -1164,6 +1164,14 @@ impl ChartStore {
                     props.push(("maxz", Value::F64((finer * 10.0).round() / 10.0)));
                 }
                 props.extend(first.dates.iter().cloned());
+                // S-52 sector arcs and limits of fixed size on the screen (20 mm arcs, 25 mm
+                // legs): an image the chart draws at the light (`sec`), so they keep their
+                // size at every zoom; limits of a length on the ground stay lines (below)
+                let on_screen: Vec<crate::s52::SectorPart> =
+                    s52_sectors.iter().filter(|p| !matches!(p, crate::s52::SectorPart::Leg { metres: Some(_), .. })).cloned().collect();
+                if !on_screen.is_empty() {
+                    props.push(("sec", Value::Str(crate::s52::encode_sectors(&on_screen))));
+                }
                 if let Some(e) = &s52 {
                     props.push(("s5", Value::UInt(1)));
                     match crate::s52::entry_category(e) {
@@ -1196,25 +1204,19 @@ impl ChartStore {
             let mz = Value::F64((minz * 10.0).round() / 10.0);
             // no finer copy: shown at every zoom from minz
             let mx = Value::F64(if finer < f64::MAX { (finer * 10.0).round() / 10.0 } else { 99.0 });
-            // S-52 sectors (drawn with the IHO symbols): legs dashed, 25 mm (or their charted
-            // length), arcs 20 mm round the light in the light's colour over black, dashed thin
-            // where the light is obscured
-            const UNITS_PER_MM: f64 = 3.78 * EXTENT as f64 / 512.0;
-            let at = |b: f64, r: f64| {
-                let br = b.to_radians();
-                [c[0] + r * br.sin(), c[1] - r * br.cos()]
-            };
+            // S-52 sectors (drawn with the IHO symbols): the arcs (20 mm round the light in its
+            // colour over black, thin dashed where it is obscured) and 25 mm legs are in the
+            // light's `sec` image; legs of a length on the ground (full light lines, or
+            // charted) are dashed lines here
             for part in &s52_sectors {
                 match part {
-                    crate::s52::SectorPart::Leg { bearing, metres, mm } => {
-                        let end = match metres {
-                            Some(m) => {
-                                let br = bearing.to_radians();
-                                let q =
-                                    [first.p[0] + m * br.sin() / (111_320.0 * first.p[1].to_radians().cos().max(0.05)), first.p[1] + m * br.cos() / 111_320.0];
-                                tp.px(&q)
-                            }
-                            None => at(*bearing, mm * UNITS_PER_MM),
+                    // (fixed on the screen: in the light's `sec` image)
+                    crate::s52::SectorPart::Leg { metres: None, .. } | crate::s52::SectorPart::Arc { .. } => {}
+                    crate::s52::SectorPart::Leg { bearing, metres: Some(m), .. } => {
+                        let end = {
+                            let br = bearing.to_radians();
+                            let q = [first.p[0] + m * br.sin() / (111_320.0 * first.p[1].to_radians().cos().max(0.05)), first.p[1] + m * br.cos() / 111_320.0];
+                            tp.px(&q)
                         };
                         add_line(
                             lsec,
@@ -1222,29 +1224,6 @@ impl ChartStore {
                             &[c, end],
                             &[&[("k", Value::Str("sdash".into())), ("tok", Value::Str("CHBLK".into())), ("minz", mz.clone()), ("maxz", mx.clone())][..], &first.dates[..]].concat(),
                         );
-                    }
-                    crate::s52::SectorPart::Arc { radius, start, extent, styles } => {
-                        let r = radius * UNITS_PER_MM;
-                        let n = (extent.abs() / 3.0).ceil().max(2.0) as usize;
-                        let arc: Vec<[f64; 2]> = (0..=n).map(|i| at(start + extent * i as f64 / n as f64, r)).collect();
-                        for (dash, w, tok) in styles {
-                            add_line(
-                                lsec,
-                                tp,
-                                &arc,
-                                &[
-                                    &[
-                                        ("k", Value::Str(if *dash { "sdash" } else { "sarc" }.into())),
-                                        ("tok", Value::Str(tok.clone())),
-                                        ("w", Value::F64(*w)),
-                                        ("minz", mz.clone()),
-                                        ("maxz", mx.clone()),
-                                    ][..],
-                                    &first.dates[..],
-                                ]
-                                .concat(),
-                            );
-                        }
                     }
                 }
             }
