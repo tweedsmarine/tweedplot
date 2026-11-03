@@ -502,12 +502,37 @@ impl ChartStore {
         // The chart's own land over that gap, in the land colour: where the chart has land and
         // Topo50 has water (their coastlines differ), the place shows as land, not as a
         // sliver of "very shallow" between the land and a drying bank.
+        // (Not over the lakes and rivers Topo50 has: a small-scale chart takes them in as land,
+        // and they would show its land colour through the holes in the Topo50 land.)
+        let mut inland: Option<Vec<Vec<[i32; 2]>>> = None;
         for t in bands.iter().filter(|t| t.kind == Kind::ChartLand) {
+            let mut rings: Vec<Vec<[i32; 2]>> = Vec::new();
             self.query(t, bbox, &[], |_, g| {
-                if let Some(tg) = tp.polygons(&g) {
-                    depare.add(&tg, &[("band", Value::UInt(t.band as u64)), ("land", Value::UInt(1)), ("sk", Value::F64(t.band as f64 - 0.25))]);
+                if let Some(TileGeom::Rings(r)) = tp.polygons(&g) {
+                    rings.extend(r);
                 }
             });
+            if rings.is_empty() {
+                continue;
+            }
+            let water = inland.get_or_insert_with(|| {
+                let mut w = Vec::new();
+                for lt in self.tables.iter().filter(|lt| lt.kind == Kind::Lake && !lt.table.contains("_enc_b")) {
+                    self.query(lt, bbox, &[], |_, g| {
+                        if let Some(TileGeom::Rings(r)) = tp.polygons(&g) {
+                            w.extend(r);
+                        }
+                    });
+                }
+                w
+            });
+            let rings = if water.is_empty() { rings } else { cut_water(rings, water.clone()) };
+            if !rings.is_empty() {
+                depare.add(
+                    &TileGeom::Rings(rings),
+                    &[("band", Value::UInt(t.band as u64)), ("land", Value::UInt(1)), ("sk", Value::F64(t.band as f64 - 0.25))],
+                );
+            }
         }
         // Unsurveyed areas: the no-data colour over the band's depth areas (sk), under a
         // finer band's; and in "unsare" for the pattern and outline, cut to outside the finer
