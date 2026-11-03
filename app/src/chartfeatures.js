@@ -52,19 +52,31 @@ const pointIcon = (contour) => ["case", isolated(contour), "s57:iso", ["concat",
 const S52 = { ready: false, imgs: new Map(), colours: {}, lines: {}, fills: {} };
 /** Pixels per millimetre for the symbols, drawn at twice the size (pixelRatio 2). */
 const S52_PX_MM = 3.78 * 2;
+/** Each palette's symbols and styles, loaded once (725 SVGs to decode: a second or
+ *  two), so switching between day, dusk and night is immediate after the first time. */
+const S52_PALETTES = new Map();
+export function loadS52Palette(palette = "Day") {
+  if (!S52_PALETTES.has(palette)) {
+    S52_PALETTES.set(palette, (async () => {
+      const [list, styles] = await Promise.all([invoke("s52_symbols", { palette }), invoke("s52_styles", { palette })]);
+      const imgs = new Map();
+      await Promise.all(list.map(({ id, svg, vb }) => new Promise((resolve) => {
+        const img = new Image();
+        const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+        img.onload = () => { imgs.set(id, { img, vb }); URL.revokeObjectURL(url); resolve(); };
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+        img.src = url;
+      })));
+      return { palette, imgs, colours: styles?.colours || {}, lines: styles?.lines || {}, fills: styles?.fills || {} };
+    })().catch((e) => { S52_PALETTES.delete(palette); throw e; }));
+  }
+  return S52_PALETTES.get(palette);
+}
 async function loadS52Symbols(palette = "Day") {
-  const [list, styles] = await Promise.all([invoke("s52_symbols", { palette }), invoke("s52_styles", { palette })]);
-  const imgs = new Map();
-  await Promise.all(list.map(({ id, svg, vb }) => new Promise((resolve) => {
-    const img = new Image();
-    const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
-    img.onload = () => { imgs.set(id, { img, vb }); URL.revokeObjectURL(url); resolve(); };
-    img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
-    img.src = url;
-  })));
-  S52.imgs = imgs;
-  if (styles) Object.assign(S52, { palette, colours: styles.colours || {}, lines: styles.lines || {}, fills: styles.fills || {} });
+  Object.assign(S52, await loadS52Palette(palette));
   S52.ready = S52.imgs.size > 0;
+  // the others in the background, for switching to them later
+  if (S52.ready) setTimeout(() => { for (const p of ["Dusk", "Night"]) loadS52Palette(p).catch(() => {}); }, 10000);
   return S52.ready;
 }
 /** The image for "s52:<sy>", or null while the symbols are loading. */
@@ -456,10 +468,18 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     /** Whether the IHO symbols are in use (Symbols: IHO, and loaded). */
     usingS52: () => useS52(),
     /** Draw the IHO symbols, lines and areas in a palette ("Day", "Dusk", "Night"). */
-    setPalette: async (palette) => {
-      if (S52.palette === palette) return;
-      await loadS52Symbols(palette);
-      for (const id of map.listImages()) if (id.startsWith("s52")) map.removeImage(id);
+    /** Draw the IHO symbols, lines and areas in a palette ("Day", "Dusk", "Night"), once
+     *  loaded (loadS52Palette): the images on the map are redrawn in place, all at once. */
+    usePalette: (bundle) => {
+      if (!bundle || S52.palette === bundle.palette) return;
+      Object.assign(S52, bundle);
+      for (const id of map.listImages()) {
+        if (!id.startsWith("s52")) continue;
+        const img = featureImage(id);
+        const old = map.getImage(id);
+        if (img && old && img.width === old.data.width && img.height === old.data.height) map.updateImage(id, img);
+        else map.removeImage(id);
+      }
       apply();
     },
     /** Underwater rocks, wrecks and obstructions deeper than this lose their danger symbol.

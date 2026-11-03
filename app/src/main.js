@@ -16,7 +16,7 @@ import { setupWeatherPanel } from "./wxpanel.js";
 import { setupBrand } from "./brand.js";
 import { setupWebMap } from "./webmap.js";
 import { setupLayerVisibility } from "./layervis.js";
-import { setupChartFeatures, featureImage } from "./chartfeatures.js";
+import { setupChartFeatures, featureImage, loadS52Palette } from "./chartfeatures.js";
 import { setupTides, tideImage } from "./tides.js";
 import { tidalImage } from "./tidalstreams.js";
 import { setupTracks } from "./tracks.js";
@@ -263,8 +263,11 @@ function applyChartColours() {
   set("unsare-line", "line-color", c.grey);
   set("depare-drg", "line-color", c.grey);
   set("unsare", "fill-pattern", ihoColours ? "s52f:NODATA03" : "pat:nodata");
-  // soundings are drawn in the palette's colours: drawn again
-  for (const id of map.listImages()) if (/^(sh|dp):/.test(id)) map.removeImage(id);
+  // soundings are drawn in the palette's colours: redrawn in place
+  for (const id of map.listImages()) {
+    const m = /^(sh|dp):(-?[0-9.]+)$/.exec(id);
+    if (m) map.updateImage(id, soundingIcon(parseFloat(m[2]), m[1] === "sh"));
+  }
 }
 /** Day, dusk, night (IHO) with the IHO symbols: the IHO palette for the chart, the rest
  *  darkened to suit. Otherwise TweedPlot's colours (and the page's filter, style.css). */
@@ -274,13 +277,15 @@ function applyPalette() {
   paletteBusy = paletteBusy.then(async () => {
     const on = !!features?.usingS52();
     const palette = on ? ({ dusk: "Dusk", "iho-night": "Night" }[paletteMode] ?? "Day") : "Day";
-    document.documentElement.toggleAttribute("data-iho", on);
-    try {
-      if (on) await features.setPalette(palette);
-      ihoColours = on ? ((await invoke("s52_styles", { palette }))?.colours ?? null) : null;
-    } catch (e) { console.warn("IHO palette:", e); ihoColours = null; }
+    // everything loaded first (once per palette), then the whole switch in one go
+    let bundle = null;
+    try { if (on) bundle = await loadS52Palette(palette); } catch (e) { console.warn("IHO palette:", e); }
+    const live = on && !!bundle;
+    features?.usePalette(bundle);
+    ihoColours = live ? bundle.colours : null;
+    document.documentElement.toggleAttribute("data-iho", live);
     applyChartColours();
-    mapPalette.apply(on ? palette : null, (id) => IHO_CHART_LAYERS.has(id) || id.startsWith("s52-"));
+    mapPalette.apply(live ? palette : null, (id) => IHO_CHART_LAYERS.has(id) || id.startsWith("s52-"));
   });
   return paletteBusy;
 }

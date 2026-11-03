@@ -674,7 +674,10 @@ html[data-palette="dusk"]:not([data-iho]) { filter: brightness(var(--pal-dim, 0.
    Night (IHO) with the paper chart symbols: the same dark page, map and all. */
 html[data-palette="dusk"][data-iho], html[data-palette="iho-night"] { filter: invert(1) hue-rotate(180deg) brightness(var(--pal-dim, 0.8)); }
 html[data-palette="dusk"][data-iho] body, html[data-palette="iho-night"] body { background: #fff; }
-:is(html[data-palette="dusk"][data-iho], html[data-palette="iho-night"]) :is(#rail, .ipanel, #itiles, .dot, #replay-bar, #tip) { filter: invert(1) hue-rotate(180deg); }
+/* things already dark (the rail, instrument panels, the title bars of floating boxes, the
+   about box, messages) are turned back, so they stay dark rather than going light grey */
+:is(html[data-palette="dusk"][data-iho], html[data-palette="iho-night"]) :is(#rail, .ipanel, #itiles, .dot, #replay-bar, #tip,
+  .float-win header, .about, .toast, .startup-splash, #wx-pop-btn.on) { filter: invert(1) hue-rotate(180deg); }
 :is(html[data-palette="dusk"][data-iho], html[data-palette="iho-night"][data-iho]) #map .maplibregl-canvas-container { filter: hue-rotate(180deg) invert(1); }
 /* Night: invert (light chart → dark), then one hue. Things that are already dark
    (the rail, instrument panels) are inverted first so they stay dark. */

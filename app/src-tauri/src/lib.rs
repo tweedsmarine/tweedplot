@@ -902,11 +902,41 @@ fn chart_s52_context(app: tauri::AppHandle, id: String, value: String) {
 /// The catalogue's symbols for a palette ("Day", "Dusk", "Night"): id, standalone SVG and
 /// view box in mm (the symbol's pivot is 0,0).
 #[tauri::command]
-async fn s52_symbols(app: tauri::AppHandle, palette: String) -> Result<Vec<serde_json::Value>, String> {
+async fn s52_symbols(app: tauri::AppHandle, palette: String) -> Result<serde_json::Value, String> {
+    s52_cached(app, format!("symbols:{palette}"), move |cat| {
+        serde_json::Value::Array(
+            cat.symbols.keys().filter_map(|id| cat.symbol_svg(id, &palette).map(|(svg, vb)| serde_json::json!({ "id": id, "svg": svg, "vb": vb }))).collect(),
+        )
+    })
+    .await
+}
+
+/// The portrayal catalogue's answers, worked out once per run (the catalogue is read once).
+static S52_CACHE: std::sync::LazyLock<Mutex<(Option<Arc<portrayal::Catalogue>>, std::collections::HashMap<String, Arc<serde_json::Value>>)>> =
+    std::sync::LazyLock::new(|| Mutex::new((None, std::collections::HashMap::new())));
+
+async fn s52_cached(
+    app: tauri::AppHandle,
+    key: String,
+    make: impl FnOnce(&portrayal::Catalogue) -> serde_json::Value + Send + 'static,
+) -> Result<serde_json::Value, String> {
+    if let Some(v) = S52_CACHE.lock().unwrap().1.get(&key) {
+        return Ok((**v).clone());
+    }
     let dir = s101_dir(&app).ok_or("the S-101 portrayal catalogue is not installed")?;
     tauri::async_runtime::spawn_blocking(move || {
-        let cat = portrayal::Catalogue::open(&dir.join("s101-pc")).map_err(|e| e.to_string())?;
-        Ok(cat.symbols.keys().filter_map(|id| cat.symbol_svg(id, &palette).map(|(svg, vb)| serde_json::json!({ "id": id, "svg": svg, "vb": vb }))).collect())
+        let cached = S52_CACHE.lock().unwrap().0.clone();
+        let cat = match cached {
+            Some(c) => c,
+            None => {
+                let c = Arc::new(portrayal::Catalogue::open(&dir.join("s101-pc")).map_err(|e| e.to_string())?);
+                S52_CACHE.lock().unwrap().0 = Some(c.clone());
+                c
+            }
+        };
+        let v = Arc::new(make(&cat));
+        S52_CACHE.lock().unwrap().1.insert(key, v.clone());
+        Ok((*v).clone())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -916,9 +946,7 @@ async fn s52_symbols(app: tauri::AppHandle, palette: String) -> Result<Vec<serde
 /// each is drawn, mm) and its area fills, for drawing the IHO lines and areas.
 #[tauri::command]
 async fn s52_styles(app: tauri::AppHandle, palette: String) -> Result<serde_json::Value, String> {
-    let dir = s101_dir(&app).ok_or("the S-101 portrayal catalogue is not installed")?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let cat = portrayal::Catalogue::open(&dir.join("s101-pc")).map_err(|e| e.to_string())?;
+    s52_cached(app, format!("styles:{palette}"), move |cat| {
         let colours: serde_json::Map<String, serde_json::Value> = cat
             .palettes
             .get(&palette)
@@ -937,10 +965,9 @@ async fn s52_styles(app: tauri::AppHandle, palette: String) -> Result<serde_json
             .collect();
         let fills: serde_json::Map<String, serde_json::Value> =
             cat.area_fills.keys().filter_map(|n| Some((n.clone(), serde_json::to_value(cat.area_fill(n)?).ok()?))).collect();
-        Ok(serde_json::json!({ "colours": colours, "lines": lines, "fills": fills }))
+        serde_json::json!({ "colours": colours, "lines": lines, "fills": fills })
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// The folder holding the bundled world depths (`world_depth.gpkg`).
