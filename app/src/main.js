@@ -671,13 +671,20 @@ map.on("moveend", () => {
   }
 });
 
-/** The IHO portrayal's context: the chart store portrays again when it changes. */
+/** The IHO portrayal's context: the chart store portrays again when it changes. Sent once
+ *  the setting has stopped changing (the arrows of a number box change it per click); the
+ *  chart keeps its symbols until the new ones are ready. */
+let portrayalTimer = 0;
 function sendPortrayalContext() {
+  clearTimeout(portrayalTimer);
+  portrayalTimer = setTimeout(sendPortrayalContextNow, 700);
+}
+function sendPortrayalContextNow() {
   invoke("chart_s52_context", { id: "SafetyContour", value: String(settings.safetyContour) }).catch(() => {});
   invoke("chart_s52_context", { id: "SafetyDepth", value: String(settings.safetyDepth) }).catch(() => {});
   invoke("chart_s52_context", { id: "ShallowWaterDangers", value: String(!!settings.shallowDangers) }).catch(() => {});
 }
-sendPortrayalContext();
+sendPortrayalContextNow();
 // the chart store has portrayed the features (or again, after a change): draw the tiles again
 listen("chart-s52", () => reloadChartTiles()).catch(() => {});
 

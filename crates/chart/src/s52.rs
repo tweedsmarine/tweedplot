@@ -7,7 +7,8 @@
 //! Results are kept per table until the context (safety contour...) changes.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 
 use portrayal::{Converter, Geometry, Portrayer, S57Object};
 
@@ -16,10 +17,22 @@ use crate::{features::DepthAreas, ChartStore};
 
 pub(crate) type TableSymbols = Arc<HashMap<i64, Arc<str>>>;
 
-/// The IHO portrayal: the rules, and each table's results so far.
+/// The IHO portrayal: the rules, the context TweedPlot has set, and the results.
+///
+/// A context change (safety contour...) doesn't drop the results: the chart keeps the
+/// symbols it has until a fresh run has done every table, then swaps them in at once.
+/// A run is abandoned as soon as the context changes again, so a burst of changes (the
+/// arrows of a number box) costs one run, not one per click.
 pub struct S52 {
     portrayer: RwLock<Portrayer>,
-    tables: Mutex<HashMap<usize, Arc<OnceLock<TableSymbols>>>>,
+    /// The context as TweedPlot wants it, applied at the start of each run.
+    context: Mutex<Vec<(String, String)>>,
+    /// Raised by every context change.
+    generation: AtomicU64,
+    /// The results, and the generation they were made for.
+    done: RwLock<(u64, Arc<HashMap<usize, TableSymbols>>)>,
+    /// One run at a time.
+    running: Mutex<()>,
 }
 
 impl S52 {
@@ -28,24 +41,31 @@ impl S52 {
         let cat = portrayal::Catalogue::open(pc).map_err(|e| e.to_string())?;
         let text = std::fs::read_to_string(fc).map_err(|e| format!("{}: {e}", fc.display()))?;
         let fc = portrayal::FeatureCatalogue::parse(&text)?;
-        let mut p = Portrayer::new(&cat, fc).map_err(|e| e.to_string())?;
+        let p = Portrayer::new(&cat, fc).map_err(|e| e.to_string())?;
+        let s = S52 {
+            portrayer: RwLock::new(p),
+            context: Mutex::new(Vec::new()),
+            generation: AtomicU64::new(1),
+            done: RwLock::new((0, Arc::new(HashMap::new()))),
+            running: Mutex::new(()),
+        };
         // TweedPlot's defaults where they differ from the catalogue's: isolated dangers in
         // shallow water (the catalogue has it on) is a mariner's choice, off to start with
-        p.set("ShallowWaterDangers", "false");
-        Ok(S52 { portrayer: RwLock::new(p), tables: Mutex::new(HashMap::new()) })
+        s.set("ShallowWaterDangers", "false");
+        Ok(s)
     }
 
-    /// Set a context parameter ("SafetyContour", "5"). True when it changed: the
-    /// results so far are dropped.
+    /// Set a context parameter ("SafetyContour", "5"). True when it changed: the next
+    /// run portrays everything again. Never waits for a run.
     pub fn set(&self, id: &str, value: &str) -> bool {
-        let mut p = self.portrayer.write().unwrap_or_else(|e| e.into_inner());
-        let before = p.value(id).map(str::to_string);
-        p.set(id, value);
-        let changed = p.value(id).map(str::to_string) != before;
-        if changed {
-            self.tables.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        let mut c = self.context.lock().unwrap_or_else(|e| e.into_inner());
+        if c.iter().any(|(k, v)| k == id && v == value) {
+            return false;
         }
-        changed
+        c.retain(|(k, _)| k != id);
+        c.push((id.to_string(), value.to_string()));
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        true
     }
 }
 
@@ -93,26 +113,20 @@ impl ChartStore {
     }
 
     /// Set a portrayal context parameter ("SafetyContour", "SafetyDepth",
-    /// "SimplifiedSymbols", ...). Drops the rendered tiles when it changed anything.
-    /// True when it changed: then [`s52_warm`](Self::s52_warm) again.
+    /// "ShallowWaterDangers", ...). True when it changed: then [`s52_warm`](Self::s52_warm)
+    /// again. The chart keeps its symbols until that run is done.
     pub fn set_s52_context(&self, id: &str, value: &str) -> bool {
         let s = self.s52.read().unwrap_or_else(|e| e.into_inner()).clone();
-        match s {
-            Some(s) if s.set(id, value) => {
-                self.clear_cache();
-                true
-            }
-            _ => false,
-        }
+        s.is_some_and(|s| s.set(id, value))
     }
 
-    /// A table's `sy` by fid; None when the portrayal is off or the table hasn't been
-    /// portrayed yet ([`s52_warm`](Self::s52_warm) does that, in the background): a tile
-    /// never waits for it, it is drawn again when the portrayal is ready.
+    /// A table's `sy` by fid; None when the portrayal is off or hasn't run yet
+    /// ([`s52_warm`](Self::s52_warm) does that, in the background): a tile never waits
+    /// for it, it is drawn again when the portrayal is ready.
     pub(crate) fn s52_table(&self, table: usize) -> Option<TableSymbols> {
         let s = self.s52.read().unwrap_or_else(|e| e.into_inner()).clone()?;
-        let cell = s.tables.lock().unwrap_or_else(|e| e.into_inner()).get(&table).cloned()?;
-        cell.get().cloned()
+        let done = s.done.read().unwrap_or_else(|e| e.into_inner());
+        done.1.get(&table).cloned()
     }
 
     /// Whether the portrayal is on.
@@ -120,31 +134,53 @@ impl ChartStore {
         self.s52.read().unwrap_or_else(|e| e.into_inner()).is_some()
     }
 
-    /// Portray every point feature table not done yet (in parallel), then drop the
-    /// rendered tiles so they are drawn with the symbols. `progress(done, total)`.
-    /// Returns the number of tables portrayed (0: nothing to do).
+    /// Portray every point feature table for the current context (in parallel), swap the
+    /// results in and drop the rendered tiles so they are drawn with them. Returns the
+    /// number of tables portrayed: 0 when the results are already current, or when the
+    /// context changed during the run (the run is abandoned; the caller of that change
+    /// runs again). `progress(done, total)`.
     pub fn s52_warm(&self, progress: &(dyn Fn(usize, usize) + Sync)) -> usize {
         use rayon::prelude::*;
         let Some(s) = self.s52.read().unwrap_or_else(|e| e.into_inner()).clone() else { return 0 };
+        let _one = s.running.lock().unwrap_or_else(|e| e.into_inner());
+        let generation = s.generation.load(Ordering::SeqCst);
+        if s.done.read().unwrap_or_else(|e| e.into_inner()).0 == generation {
+            return 0;
+        }
+        {
+            let ctx = s.context.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let mut p = s.portrayer.write().unwrap_or_else(|e| e.into_inner());
+            for (k, v) in &ctx {
+                p.set(k, v);
+            }
+        }
         let todo: Vec<usize> = self
             .tables
             .iter()
             .enumerate()
             .filter(|(_, t)| t.kind == crate::Kind::Feature && t.class.is_some_and(|c| c.geo == crate::s57::Geo::Point && c.code != "TOPMAR"))
             .map(|(i, _)| i)
-            .filter(|i| s.tables.lock().unwrap_or_else(|e| e.into_inner()).get(i).is_none_or(|c| c.get().is_none()))
             .collect();
         let total = todo.len();
-        let done = std::sync::atomic::AtomicUsize::new(0);
-        todo.par_iter().for_each(|&ti| {
-            let cell = s.tables.lock().unwrap_or_else(|e| e.into_inner()).entry(ti).or_default().clone();
-            cell.get_or_init(|| Arc::new(self.portray_table(&s, ti)));
-            progress(done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1, total);
-        });
-        if total > 0 {
-            self.clear_cache();
+        let n = std::sync::atomic::AtomicUsize::new(0);
+        let stale = || s.generation.load(Ordering::SeqCst) != generation;
+        let out: Vec<(usize, TableSymbols)> = todo
+            .par_iter()
+            .filter_map(|&ti| {
+                if stale() {
+                    return None;
+                }
+                let r = Arc::new(self.portray_table(&s, ti));
+                progress(n.fetch_add(1, Ordering::Relaxed) + 1, total);
+                Some((ti, r))
+            })
+            .collect();
+        if stale() {
+            return 0;
         }
-        total
+        *s.done.write().unwrap_or_else(|e| e.into_inner()) = (generation, Arc::new(out.into_iter().collect()));
+        self.clear_cache();
+        total.max(1)
     }
 
     /// Run one table's features through the rules: fid → `sy`.
