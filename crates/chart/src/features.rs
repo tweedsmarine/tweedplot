@@ -1004,7 +1004,7 @@ impl ChartStore {
     /// never stands on the chart without its buoy or beacon.
     fn render_lights(&self, tp: &TileProj, z: u8, tables: &[(usize, &TableInfo)], marks: &[([f64; 2], u8, f64)], fpt: &mut Layer, lsec: &mut Layer) {
         // lights a little outside the tile still throw sectors into it
-        let bbox = tp.lonlat_bbox(LEG_R + 16.0);
+        let bbox = tp.lonlat_bbox(LEG_R + 48.0);
         struct Rec {
             p: [f64; 2],
             band: u8,
@@ -1054,6 +1054,9 @@ impl ChartStore {
             }
             kept.push((first.p, first.band, minz));
             let c = tp.px(&first.p);
+            // the IHO portrayal of this light (symbols, and its sectors as S-52 draws them)
+            let s52 = self.s52_table(first.t).and_then(|m| m.get(&first.fid).cloned()).filter(|e| !e.is_empty());
+            let s52_sectors = s52.as_deref().map(crate::s52::sectors).unwrap_or_default();
             let lights: Vec<Light> = idx.iter().map(|&i| recs[i].light.clone()).collect();
             let cols: Vec<&str> = lights.iter().map(|l| s57::light_colour(&l.colours)).collect();
             let col = if cols.iter().all(|x| *x == cols[0]) { cols[0] } else { "m" };
@@ -1069,8 +1072,9 @@ impl ChartStore {
                 if finer < f64::MAX {
                     props.push(("maxz", Value::F64((finer * 10.0).round() / 10.0)));
                 }
-                if let Some(e) = self.s52_table(first.t).and_then(|m| m.get(&first.fid).cloned()) {
-                    let (sy, si) = crate::s52::split_info(&e);
+                if let Some(e) = &s52 {
+                    props.push(("s5", Value::UInt(1)));
+                    let (sy, si) = crate::s52::split_info(e);
                     if !sy.is_empty() {
                         props.push(("sy", Value::Str(sy.into())));
                     }
@@ -1084,7 +1088,59 @@ impl ChartStore {
                 }
                 fpt.add(&TileGeom::Points(vec![[c[0].round() as i32, c[1].round() as i32]]), &props);
             }
+            let mz = Value::F64((minz * 10.0).round() / 10.0);
+            // no finer copy: shown at every zoom from minz
+            let mx = Value::F64(if finer < f64::MAX { (finer * 10.0).round() / 10.0 } else { 99.0 });
+            // S-52 sectors (drawn with the IHO symbols): legs dashed, 25 mm (or their charted
+            // length), arcs 20 mm round the light in the light's colour over black, dashed thin
+            // where the light is obscured
+            const UNITS_PER_MM: f64 = 3.78 * EXTENT as f64 / 512.0;
+            let at = |b: f64, r: f64| {
+                let br = b.to_radians();
+                [c[0] + r * br.sin(), c[1] - r * br.cos()]
+            };
+            for part in &s52_sectors {
+                match part {
+                    crate::s52::SectorPart::Leg { bearing, metres, mm } => {
+                        let end = match metres {
+                            Some(m) => {
+                                let br = bearing.to_radians();
+                                let q =
+                                    [first.p[0] + m * br.sin() / (111_320.0 * first.p[1].to_radians().cos().max(0.05)), first.p[1] + m * br.cos() / 111_320.0];
+                                tp.px(&q)
+                            }
+                            None => at(*bearing, mm * UNITS_PER_MM),
+                        };
+                        add_line(
+                            lsec,
+                            tp,
+                            &[c, end],
+                            &[("k", Value::Str("sdash".into())), ("tok", Value::Str("CHBLK".into())), ("minz", mz.clone()), ("maxz", mx.clone())],
+                        );
+                    }
+                    crate::s52::SectorPart::Arc { radius, start, extent, styles } => {
+                        let r = radius * UNITS_PER_MM;
+                        let n = (extent.abs() / 3.0).ceil().max(2.0) as usize;
+                        let arc: Vec<[f64; 2]> = (0..=n).map(|i| at(start + extent * i as f64 / n as f64, r)).collect();
+                        for (dash, w, tok) in styles {
+                            add_line(
+                                lsec,
+                                tp,
+                                &arc,
+                                &[
+                                    ("k", Value::Str(if *dash { "sdash" } else { "sarc" }.into())),
+                                    ("tok", Value::Str(tok.clone())),
+                                    ("w", Value::F64(*w)),
+                                    ("minz", mz.clone()),
+                                    ("maxz", mx.clone()),
+                                ],
+                            );
+                        }
+                    }
+                }
+            }
             // sectors: limits are bearings from seaward, so the light shines the opposite way
+            // (TweedPlot's own drawing; `s5`: the IHO one above stands in for it)
             for l in &lights {
                 let Some((s1, s2)) = l.sectors else { continue };
                 let (a0, mut a1) = ((s1 + 180.0) % 360.0, (s2 + 180.0) % 360.0);
@@ -1101,17 +1157,15 @@ impl ChartStore {
                 let n = ((a1 - a0) / 3.0).ceil().max(2.0) as usize;
                 let arc: Vec<[f64; 2]> = (0..=n).map(|i| at(a0 + (a1 - a0) * i as f64 / n as f64, ARC_R)).collect();
                 let col = s57::light_colour(&l.colours);
-                let mz = Value::F64((minz * 10.0).round() / 10.0);
-                // no finer copy: shown at every zoom from minz
-                let mx = Value::F64(if finer < f64::MAX { (finer * 10.0).round() / 10.0 } else { 99.0 });
-                add_line(lsec, tp, &arc, &[("col", Value::Str(col.into())), ("k", Value::Str("arc".into())), ("minz", mz.clone()), ("maxz", mx.clone())]);
+                let mut pa = vec![("col", Value::Str(col.into())), ("k", Value::Str("arc".into())), ("minz", mz.clone()), ("maxz", mx.clone())];
+                if !s52_sectors.is_empty() {
+                    pa.push(("s5", Value::UInt(1)));
+                }
+                add_line(lsec, tp, &arc, &pa);
                 for b in [a0, a1] {
-                    add_line(
-                        lsec,
-                        tp,
-                        &[c, at(b, LEG_R)],
-                        &[("col", Value::Str(col.into())), ("k", Value::Str("leg".into())), ("minz", mz.clone()), ("maxz", mx.clone())],
-                    );
+                    let mut pl = pa.clone();
+                    pl[1] = ("k", Value::Str("leg".into()));
+                    add_line(lsec, tp, &[c, at(b, LEG_R)], &pl);
                 }
             }
         }

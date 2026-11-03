@@ -110,7 +110,125 @@ pub fn point_symbols(instructions: &str) -> String {
 
 /// `sy` and the information symbols (`si`) from [`point_symbols`].
 pub(crate) fn split_info(s: &str) -> (&str, &str) {
-    s.split_once('|').unwrap_or((s, ""))
+    let (sy, rest) = s.split_once('|').unwrap_or((s, ""));
+    (sy, rest.split_once('|').map_or(rest, |(si, _)| si))
+}
+
+/// A light's sector drawing from the rules (S-52 LIGHTS05/06): legs and arcs.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SectorPart {
+    /// A sector limit from the light: bearing (degrees true, from the light), and length in
+    /// metres on the ground, or else in millimetres on the screen.
+    Leg { bearing: f64, metres: Option<f64>, mm: f64 },
+    /// An arc round the light (radius mm on the screen) from `start` clockwise through
+    /// `extent` degrees, drawn in each style in turn: (dashed, width mm, colour token).
+    Arc { radius: f64, start: f64, extent: f64, styles: Vec<(bool, f64, String)> },
+}
+
+/// The legs and arcs in a light's drawing instructions.
+pub fn light_sectors(instructions: &str) -> Vec<SectorPart> {
+    enum G {
+        Ray(f64, Option<f64>, f64),
+        Arc(f64, f64, f64),
+    }
+    let mut out: Vec<SectorPart> = Vec::new();
+    let mut pending_arc: Option<(f64, f64, f64)> = None;
+    let mut geom: Option<G> = None;
+    let mut dash = false;
+    let mut style: Option<(bool, f64, String)> = None;
+    for part in instructions.split(';') {
+        let (k, v) = part.split_once(':').unwrap_or((part, ""));
+        let f: Vec<&str> = v.split(',').map(str::trim).collect();
+        let n = |i: usize| f.get(i).and_then(|x| x.parse::<f64>().ok());
+        match k {
+            "AugmentedRay" => {
+                // GeographicCRS,bearing,crs of the length,length
+                if let (Some(b), Some(len)) = (n(1), n(3)) {
+                    geom = Some(if f.get(2) == Some(&"GeographicCRS") { G::Ray(b, Some(len), 0.0) } else { G::Ray(b, None, len) });
+                }
+            }
+            "ArcByRadius" => {
+                if let (Some(r), Some(s), Some(e)) = (n(2), n(3), n(4)) {
+                    pending_arc = Some((r, s, e));
+                }
+            }
+            "AugmentedPath" => geom = pending_arc.take().map(|(r, s, e)| G::Arc(r, s, e)),
+            "Dash" => dash = true,
+            "LineStyle" => {
+                // _simple_,interval,width,colour
+                if f.len() == 4 {
+                    style = Some((dash, n(2).unwrap_or(0.32), f[3].to_string()));
+                }
+                dash = false;
+            }
+            "LineInstruction" => {
+                let Some(st) = style.clone() else { continue };
+                match &geom {
+                    Some(G::Ray(b, m, mm)) => {
+                        let leg = SectorPart::Leg { bearing: *b, metres: *m, mm: *mm };
+                        if !out.contains(&leg) {
+                            out.push(leg);
+                        }
+                    }
+                    Some(G::Arc(r, s, e)) => {
+                        let same = |p: &SectorPart| matches!(p, SectorPart::Arc { radius, start, extent, .. } if radius == r && start == s && extent == e);
+                        match out.iter_mut().rev().find(|p| same(p)) {
+                            Some(SectorPart::Arc { styles, .. }) => styles.push(st),
+                            _ => out.push(SectorPart::Arc { radius: *r, start: *s, extent: *e, styles: vec![st] }),
+                        }
+                    }
+                    None => {}
+                }
+            }
+            "ClearGeometry" => geom = None,
+            _ => {}
+        }
+    }
+    out
+}
+
+/// [`light_sectors`] written into a tile table entry (after `sy|si|`), and back.
+fn encode_sectors(parts: &[SectorPart]) -> String {
+    parts
+        .iter()
+        .map(|p| match p {
+            SectorPart::Leg { bearing, metres: Some(m), .. } => format!("G {bearing} {m}"),
+            SectorPart::Leg { bearing, metres: None, mm } => format!("L {bearing} {mm}"),
+            SectorPart::Arc { radius, start, extent, styles } => {
+                let st: Vec<String> = styles.iter().map(|(d, w, c)| format!("{}{w}{c}", if *d { "d" } else { "s" })).collect();
+                format!("A {radius} {start} {extent} {}", st.join("+"))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+pub(crate) fn sectors(s: &str) -> Vec<SectorPart> {
+    let Some(enc) = s.splitn(3, '|').nth(2) else { return Vec::new() };
+    enc.split('/')
+        .filter_map(|p| {
+            let f: Vec<&str> = p.split(' ').collect();
+            let n = |i: usize| f.get(i).and_then(|x| x.parse::<f64>().ok());
+            match *f.first()? {
+                "G" => Some(SectorPart::Leg { bearing: n(1)?, metres: n(2), mm: 0.0 }),
+                "L" => Some(SectorPart::Leg { bearing: n(1)?, metres: None, mm: n(2)? }),
+                "A" => {
+                    let styles = f
+                        .get(4)?
+                        .split('+')
+                        .filter_map(|s| {
+                            let dash = s.starts_with('d');
+                            let body = &s[1..];
+                            let cut = body.find(|c: char| c.is_ascii_alphabetic())?;
+                            Some((dash, body[..cut].parse().ok()?, body[cut..].to_string()))
+                        })
+                        .collect();
+                    Some(SectorPart::Arc { radius: n(1)?, start: n(2)?, extent: n(3)?, styles })
+                }
+                _ => None,
+            }
+        })
+        .collect()
 }
 
 /// What the rules draw for a line or an area, as tile properties (the module notes):
@@ -451,8 +569,22 @@ impl ChartStore {
         };
         let mut map = HashMap::new();
         for o in out {
-            let sy: Arc<str> =
-                if class.geo == crate::s57::Geo::Point { point_symbols(&o.instructions).into() } else { s.encode(&drawn(&o.instructions, &s.cat)).into() };
+            let sy: Arc<str> = if class.geo == crate::s57::Geo::Point {
+                let mut e = point_symbols(&o.instructions);
+                if class.code == "LIGHTS" {
+                    let sec = light_sectors(&o.instructions);
+                    if !sec.is_empty() {
+                        if !e.contains('|') {
+                            e.push('|');
+                        }
+                        e.push('|');
+                        e.push_str(&encode_sectors(&sec));
+                    }
+                }
+                e.into()
+            } else {
+                s.encode(&drawn(&o.instructions, &s.cat)).into()
+            };
             match same.get(&o.id) {
                 Some(fids) => {
                     for f in fids {
@@ -489,6 +621,19 @@ mod tests {
         assert_eq!(l, "LIGHTS11@135");
         let i = super::point_symbols("ViewingGroup:27070;PointInstruction:LIGHTS13;ViewingGroup:27070,90020;DrawingPriority:24;PointInstruction:INFORM01");
         assert_eq!(super::split_info(&i), ("LIGHTS13", "INFORM01"));
+        // a sector of a light: two legs, an arc drawn black then red (S-101 LightSectored)
+        let ins = "ViewingGroup:27070;AugmentedRay:GeographicCRS,190,LocalCRS,25;Dash:0,3.6;LineStyle:_simple_,5.4,0.32,CHBLK;LineInstruction:_simple_;\
+            AugmentedRay:GeographicCRS,250,LocalCRS,25;LineInstruction:_simple_;ArcByRadius:0,0,20,190,60;AugmentedPath:LocalCRS,GeographicCRS,LocalCRS;\
+            LineStyle:_simple_,,1.28,CHBLK;LineInstruction:_simple_;LineStyle:_simple_,,0.64,LITRD;LineInstruction:_simple_;ClearGeometry";
+        let sec = super::light_sectors(ins);
+        assert_eq!(sec.len(), 3, "{sec:?}");
+        assert_eq!(sec[0], super::SectorPart::Leg { bearing: 190.0, metres: None, mm: 25.0 });
+        let super::SectorPart::Arc { radius, extent, styles, .. } = &sec[2] else { panic!() };
+        assert_eq!((*radius, *extent), (20.0, 60.0));
+        assert_eq!(styles, &vec![(false, 1.28, "CHBLK".to_string()), (false, 0.64, "LITRD".to_string())]);
+        let enc = format!("||{}", super::encode_sectors(&sec));
+        assert_eq!(super::sectors(&enc), sec);
+        assert_eq!(super::split_info(&enc), ("", ""));
     }
 
     #[test]

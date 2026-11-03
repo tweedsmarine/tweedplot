@@ -166,9 +166,9 @@ function s52FillImage(af) {
   return g.getImageData(0, 0, tw, th);
 }
 /** The colour of a token, as an expression over `cf`. */
-const s52FillColour = () => {
+const s52FillColour = (prop = "cf") => {
   const pairs = Object.entries(S52.colours).flat();
-  return pairs.length ? ["match", ["coalesce", ["get", "cf"], ""], ...pairs, "#ff00ff"] : "#ff00ff";
+  return pairs.length ? ["match", ["coalesce", ["get", prop], ""], ...pairs, "#ff00ff"] : "#ff00ff";
 };
 
 /** What stays in the Base display (IMO ECDIS performance standard, display base): the
@@ -240,6 +240,13 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       paint: { "line-pattern": ["concat", "s52l:", ["get", "sl"]], "line-width": ["*", ["get", "slw"], S52_PX_MM / 2] } },
     { id: "s52-line", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, ["has", "sl"]],
       paint: { "line-pattern": ["concat", "s52l:", ["get", "sl"]], "line-width": ["*", ["get", "slw"], S52_PX_MM / 2] } },
+    // light sectors as S-52 draws them (with the IHO symbols): arcs in the light's colour
+    // over black, legs and obscured arcs dashed
+    { id: "s52-sec-arc", type: "line", ...src, "source-layer": "lsec", filter: ["all", minz, ["==", ["get", "k"], "sarc"]],
+      layout: { "line-sort-key": ["-", 0, ["get", "w"]], "line-cap": "butt" },
+      paint: { "line-color": "#000", "line-width": ["*", ["get", "w"], S52_PX_MM / 2] } },
+    { id: "s52-sec-dash", type: "line", ...src, "source-layer": "lsec", filter: ["all", minz, ["==", ["get", "k"], "sdash"]],
+      paint: { "line-color": "#000", "line-width": 0.32 * S52_PX_MM / 2, "line-dasharray": [3.6 / 0.32, 1.8 / 0.32] } },
     // light sectors
     { id: "f-sec-leg", type: "line", ...src, "source-layer": "lsec", filter: ["all", minz, ["==", ["get", "k"], "leg"]],
       paint: { "line-color": INK, "line-width": 0.7, "line-dasharray": [4, 3] } },
@@ -304,7 +311,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     setTimeout(place, 500);
   }
 
-  const SECTOR = ["f-sec-leg", "f-sec-arc"];
+  const SECTOR = ["f-sec-leg", "f-sec-arc", "s52-sec-arc", "s52-sec-dash"];
   const NAMES = ["f-names", "f-pnames", "f-labels"];
   // Display categories, as an ECDIS (IHO S-52): Base is land, depth areas, the safety
   // contour, dangers, buoys and beacons, and traffic separation schemes, and can't be
@@ -316,9 +323,9 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   // With the IHO symbols, the IHO rules draw the lines and areas they portray (`s5`), in
   // the display category their viewing groups give (`vg`: 1 base, 2 standard, 3 other;
   // hazards always); TweedPlot's own layers draw the rest.
-  const S52_LAYERS = ["s52-fill", "s52-pat", "s52-aline", "s52-line", "s52-info"];
+  const S52_LAYERS = ["s52-fill", "s52-pat", "s52-aline", "s52-line", "s52-info", "s52-sec-arc", "s52-sec-dash"];
   const TP_DRAWN = ["f-area-fill", "f-area-dash", "f-tss-fill", "f-tss-line", "f-tss-bnd", "f-construct", "f-bridge", "f-area-grey",
-    "f-line-mag", "f-line-solid", "f-coast", "f-line-dash"];
+    "f-line-mag", "f-line-solid", "f-coast", "f-line-dash", "f-sec-leg", "f-sec-arc"];
   function modeFilter(id, cat) {
     const s52 = useS52();
     const vgOk = cat === "base" ? ["any", ["==", ["get", "vg"], 1], HZ]
@@ -326,6 +333,8 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     if (S52_LAYERS.includes(id)) return vgOk;
     if (TP_DRAWN.includes(id)) return s52 ? ["!", ["has", "s5"]] : null;
     // an area's IHO symbol at its middle (`ac`), or TweedPlot's symbol for a small one (`po`)
+    // a light the IHO rules drew as sectors only: no flare of TweedPlot's either
+    if (id === "f-lights") return s52 ? ["any", ["has", "sy"], ["!", ["has", "s5"]]] : null;
     // the IHO symbol of a danger writes its depth in it: no label beside it as well
     if (id === "f-labels") return s52 ? ["!", ["in", "SOUNDS", ["coalesce", ["get", "sy"], ""]]] : null;
     if (id === "f-points") return s52 ? ["all", ["!", ["has", "po"]], ["any", ["!", ["has", "ac"]], ["all", ["has", "sy"], vgOk ?? true]]] : ["!", ["has", "ac"]];
@@ -349,7 +358,11 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       if (m) parts.push(m);
       map.setFilter(l.id, parts.length > 1 ? ["all", ...parts] : parts[0]);
     }
-    if (useS52()) map.setPaintProperty("s52-fill", "fill-color", s52FillColour());
+    if (useS52()) {
+      map.setPaintProperty("s52-fill", "fill-color", s52FillColour());
+      map.setPaintProperty("s52-sec-arc", "line-color", s52FillColour("tok"));
+      map.setPaintProperty("s52-sec-dash", "line-color", s52FillColour("tok"));
+    }
     const ind = $("dispcat-ind");
     if (ind) {
       ind.hidden = !enabled;
