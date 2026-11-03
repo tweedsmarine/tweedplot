@@ -25,6 +25,9 @@ pub(crate) type TableSymbols = Arc<HashMap<i64, Arc<str>>>;
 /// arrows of a number box) costs one run, not one per click.
 pub struct S52 {
     portrayer: RwLock<Portrayer>,
+    /// The catalogue: line styles' heights for the tiles.
+    cat: portrayal::Catalogue,
+    heights: Mutex<HashMap<String, f64>>,
     /// The context as TweedPlot wants it, applied at the start of each run.
     context: Mutex<Vec<(String, String)>>,
     /// Raised by every context change.
@@ -44,6 +47,8 @@ impl S52 {
         let p = Portrayer::new(&cat, fc).map_err(|e| e.to_string())?;
         let s = S52 {
             portrayer: RwLock::new(p),
+            cat,
+            heights: Mutex::new(HashMap::new()),
             context: Mutex::new(Vec::new()),
             generation: AtomicU64::new(1),
             done: RwLock::new((0, Arc::new(HashMap::new()))),
@@ -91,6 +96,138 @@ pub fn point_symbols(instructions: &str) -> String {
         }
     }
     out.join(",")
+}
+
+/// What the rules draw for a line or an area, as tile properties (the module notes):
+/// `sl` its line style (a catalogue name, or `_interval_width_colour[_start-length...]`
+/// for a simple line), `slw` how tall the line is drawn (mm), `cf` and `ct` its colour
+/// fill (token, transparency), `af` its area fill pattern, `sy` the symbols at its middle,
+/// `vg` its display category from the rules' viewing groups (1 base, 2 standard, 3 other).
+#[derive(Debug, Default, PartialEq)]
+pub struct Drawn {
+    pub line: Option<(String, portrayal::LineStyle)>,
+    pub fill: Option<(String, f64)>,
+    pub pattern: Option<String>,
+    pub symbols: String,
+    pub category: u8,
+}
+
+pub fn drawn(instructions: &str, cat: &portrayal::Catalogue) -> Drawn {
+    let mut d = Drawn { symbols: point_symbols(instructions), ..Default::default() };
+    let mut dashes: Vec<(f64, f64)> = Vec::new();
+    let mut simple: Option<portrayal::LineStyle> = None;
+    for part in instructions.split(';') {
+        let (k, v) = part.split_once(':').unwrap_or((part, ""));
+        let nums = |v: &str| -> Vec<f64> { v.split(',').map(|x| x.trim().parse().unwrap_or(0.0)).collect() };
+        match k {
+            "ViewingGroup" => {
+                for g in v.split(',').filter_map(|g| g.trim().parse::<u32>().ok()).filter(|g| *g >= 10000) {
+                    let c = (g / 10000).min(3) as u8;
+                    if d.category == 0 || c < d.category {
+                        d.category = c;
+                    }
+                }
+            }
+            "Dash" => {
+                let n = nums(v);
+                if n.len() == 2 {
+                    dashes.push((n[0], n[1]));
+                }
+            }
+            "LineStyle" => {
+                // _simple_,interval,width,colour
+                let f: Vec<&str> = v.split(',').collect();
+                if f.len() == 4 {
+                    let interval = f[1].trim().parse().unwrap_or(0.0);
+                    let width = f[2].trim().parse().unwrap_or(0.32);
+                    simple = Some(portrayal::LineStyle::simple(interval, width, f[3].trim(), std::mem::take(&mut dashes)));
+                }
+            }
+            "LineInstruction" if d.line.is_none() => {
+                if v == "_simple_" {
+                    if let Some(s) = simple.take() {
+                        let mut name = format!("_{}_{}_{}", s.interval, s.width, s.colour);
+                        if s.interval > 0.0 {
+                            for (a, b) in &s.dashes {
+                                name.push_str(&format!("_{a}-{b}"));
+                            }
+                        }
+                        d.line = Some((name, s));
+                    }
+                } else if let Some(s) = cat.line_style(v) {
+                    d.line = Some((v.to_string(), s));
+                }
+                dashes.clear();
+            }
+            "ColorFill" if d.fill.is_none() => {
+                let mut f = v.split(',');
+                let token = f.next().unwrap_or("").trim().to_string();
+                let tr = f.next().and_then(|x| x.trim().parse().ok()).unwrap_or(0.0);
+                if !token.is_empty() {
+                    d.fill = Some((token, tr));
+                }
+            }
+            "AreaFillReference" if d.pattern.is_none() && !v.is_empty() => d.pattern = Some(v.to_string()),
+            _ => {}
+        }
+    }
+    d
+}
+
+impl S52 {
+    /// How tall lines in this style are drawn (mm).
+    fn height(&self, name: &str, style: &portrayal::LineStyle) -> f64 {
+        let mut h = self.heights.lock().unwrap_or_else(|e| e.into_inner());
+        *h.entry(name.to_string()).or_insert_with(|| self.cat.line_height(style))
+    }
+
+    /// A line or area feature's tile properties (see [`Drawn`]), joined with `;`.
+    fn encode(&self, d: &Drawn) -> String {
+        let mut out: Vec<String> = Vec::new();
+        if let Some((name, style)) = &d.line {
+            out.push(format!("sl={name}"));
+            out.push(format!("slw={}", (self.height(name, style) * 100.0).round() / 100.0));
+        }
+        if let Some((token, tr)) = &d.fill {
+            out.push(format!("cf={token}"));
+            if *tr > 0.0 {
+                out.push(format!("ct={tr}"));
+            }
+        }
+        if let Some(p) = &d.pattern {
+            out.push(format!("af={p}"));
+        }
+        if !d.symbols.is_empty() {
+            out.push(format!("sy={}", d.symbols));
+        }
+        if d.category > 0 {
+            out.push(format!("vg={}", d.category));
+        }
+        out.join(";")
+    }
+
+    /// The catalogue.
+    pub fn catalogue(&self) -> &portrayal::Catalogue {
+        &self.cat
+    }
+}
+
+/// A line or area feature's tile properties from what [`S52::encode`] made.
+pub(crate) fn props(encoded: &str) -> impl Iterator<Item = (&'static str, &str)> {
+    encoded.split(';').filter_map(|kv| {
+        let (k, v) = kv.split_once('=')?;
+        let k = match k {
+            "sl" => "sl",
+            "slw" => "slw",
+            "cf" => "cf",
+            "ct" => "ct",
+            "af" => "af",
+            "sy" => "sy",
+            "vg" => "vg",
+            _ => return None,
+        };
+        Some((k, v))
+    })
 }
 
 fn geometry(g: &Geom) -> Option<Geometry> {
@@ -158,7 +295,7 @@ impl ChartStore {
             .tables
             .iter()
             .enumerate()
-            .filter(|(_, t)| t.kind == crate::Kind::Feature && t.class.is_some_and(|c| c.geo == crate::s57::Geo::Point && c.code != "TOPMAR"))
+            .filter(|(_, t)| t.kind == crate::Kind::Feature && t.class.is_some_and(|c| c.code != "TOPMAR" && c.code != "SEAARE" && c.code != "LNDRGN"))
             .map(|(i, _)| i)
             .collect();
         let total = todo.len();
@@ -230,8 +367,21 @@ impl ChartStore {
         let mut depths: HashMap<i64, Option<f64>> = HashMap::new();
         if matches!(class.code, "UWTROC" | "WRECKS" | "OBSTRN") {
             let mut cells: HashMap<(i64, i64), Vec<(i64, [f64; 2])>> = HashMap::new();
+            // an area: the water at its middle
+            let anchor = |o: &S57Object| match &o.geometry {
+                Some(Geometry::Surface(rings)) => {
+                    let pts = rings.first()?;
+                    let (mut b0, mut b1) = ([f64::MAX; 2], [f64::MIN; 2]);
+                    for q in pts {
+                        b0 = [b0[0].min(q[0]), b0[1].min(q[1])];
+                        b1 = [b1[0].max(q[0]), b1[1].max(q[1])];
+                    }
+                    (b0[0] <= b1[0]).then(|| [(b0[0] + b1[0]) / 2.0, (b0[1] + b1[1]) / 2.0])
+                }
+                _ => pos(o),
+            };
             for (fid, o) in &rows {
-                if let Some(p) = pos(o) {
+                if let Some(p) = anchor(o) {
                     cells.entry(((p[0] / C).floor() as i64, (p[1] / C).floor() as i64)).or_default().push((*fid, p));
                 }
             }
@@ -281,7 +431,8 @@ impl ChartStore {
         };
         let mut map = HashMap::new();
         for o in out {
-            let sy: Arc<str> = point_symbols(&o.instructions).into();
+            let sy: Arc<str> =
+                if class.geo == crate::s57::Geo::Point { point_symbols(&o.instructions).into() } else { s.encode(&drawn(&o.instructions, &s.cat)).into() };
             match same.get(&o.id) {
                 Some(fids) => {
                     for f in fids {
@@ -316,5 +467,22 @@ mod tests {
         assert_eq!(s, "BOYPIL24,TOPMAR06");
         let l = super::point_symbols("Hover:true;Rotation:PortrayalCRS,135;PointInstruction:LIGHTS11;Rotation:PortrayalCRS,0;FontColor:CHBLK");
         assert_eq!(l, "LIGHTS11@135");
+    }
+
+    #[test]
+    fn lines_and_areas_from_instructions() {
+        let cat = portrayal::Catalogue::open(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/resources/s101-pc")).unwrap();
+        let r = super::drawn("ScaleMinimum:119999;ViewingGroup:26010;DrawingPriority:15;PointInstruction:INFARE51;Dash:0,3.6;LineStyle:_simple_,5.4,0.64,CHMGD;LineInstruction:_simple_;LocalOffset:0,0", &cat);
+        assert_eq!(r.line.as_ref().unwrap().0, "_5.4_0.64_CHMGD_0-3.6");
+        assert_eq!(r.symbols, "INFARE51");
+        assert_eq!(r.category, 2);
+        let u = super::drawn("ViewingGroup:11050;ColorFill:NODTA;AreaFillReference:NODATA03;LineStyle:_simple_,,0.64,CHGRD;LineInstruction:_simple_", &cat);
+        assert_eq!(u.fill, Some(("NODTA".into(), 0.0)));
+        assert_eq!(u.pattern.as_deref(), Some("NODATA03"));
+        assert_eq!(u.line.as_ref().unwrap().0, "_0_0.64_CHGRD");
+        assert_eq!(u.category, 1);
+        let c = super::drawn("ViewingGroup:34070;LineInstruction:CBLSUB06", &cat);
+        assert_eq!(c.line.as_ref().unwrap().1.symbols.len(), 3);
+        assert_eq!(c.category, 3);
     }
 }

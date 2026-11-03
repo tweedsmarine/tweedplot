@@ -229,7 +229,7 @@ The display in use is always shown beside the scale bar, bottom right.
 - **IHO (S-52)**, the default: the ECDIS symbols, chosen for each feature by the IHO S-101 portrayal rules (as on an ECDIS: a beacon with its topmark, a light's flare turned the way the rules turn it, a rock or wreck as an isolated danger when it is shallower than your safety contour with deeper water all round it, as above). The rules run in the background when the charts load and whenever the safety contour, safety depth or the shallow water dangers option changes; until they finish, and for any feature the rules don't cover, the paper-chart symbol stands in, and the chart redraws when they are done.
 - **Paper chart**: simplified paper-chart symbols (INT 1), shown below.
 
-Lines and areas (cables, restricted areas, depth areas...) are still drawn TweedPlot's way in both; the IHO line styles, area patterns and the dusk and night colours come next.
+With **IHO (S-52)** the rules also draw the lines and areas they cover: cables, pipelines, tracks, leading lines, coastlines and constructions in the IHO line styles (a submarine cable's wave, a recommended track's arrows), and restricted, caution, anchorage and marine farm areas, foul ground and the like with their boundaries, fill patterns and the symbol at their middle (an "i" where the chart has notes on the area). Each shows in the display category the IHO rules give it (Base, Standard or All). Depth areas, contours, land and light sectors are still drawn TweedPlot's way; the IHO dusk and night colours come next.
 
 With **Paper chart**, some symbols still come from the ECDIS presentation library (IHO S-52): the isolated danger, the unknown object, tide and weather stations, tidal streams. The commonest:
 

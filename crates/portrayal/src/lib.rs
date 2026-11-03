@@ -11,10 +11,12 @@ pub mod dom;
 pub mod engine;
 pub mod fc;
 pub mod s57;
+pub mod styles;
 
 pub use engine::{Attrs, Feature, Geometry, Portrayal, Portrayer, Value};
 pub use fc::FeatureCatalogue;
 pub use s57::{Converter, S57Object};
+pub use styles::{AreaFill, LineStyle};
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -92,14 +94,7 @@ impl Catalogue {
         let css = std::fs::read_to_string(self.dir.join("Symbols").join(format!("{}SvgStyle.css", palette.to_ascii_lowercase()))).ok()?;
         let start = text.find("<svg")?;
         let open_end = start + text[start..].find('>')? + 1;
-        let vb = text[start..open_end].split("viewBox=\"").nth(1).and_then(|r| r.split('"').next()).map(|v| {
-            let n: Vec<f64> = v.split_whitespace().filter_map(|x| x.parse().ok()).collect();
-            if n.len() == 4 {
-                [n[0], n[1], n[2], n[3]]
-            } else {
-                [0.0; 4]
-            }
-        })?;
+        let vb = view_box(&text)?;
         let svg = format!("{}<style>{}</style>{}", &text[start..open_end], css, &text[open_end..]);
         Some((svg, vb))
     }
@@ -224,6 +219,20 @@ fn svg_size_mm(p: &Path) -> Result<(f64, f64), Error> {
             _ => {}
         }
     }
+}
+
+/// An SVG's view box (min x, min y, width, height).
+pub(crate) fn view_box(text: &str) -> Option<[f64; 4]> {
+    let start = text.find("<svg")?;
+    let open_end = start + text[start..].find('>')? + 1;
+    text[start..open_end].split("viewBox=\"").nth(1).and_then(|r| r.split('"').next()).map(|v| {
+        let n: Vec<f64> = v.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+        if n.len() == 4 {
+            [n[0], n[1], n[2], n[3]]
+        } else {
+            [0.0; 4]
+        }
+    })
 }
 
 #[cfg(test)]

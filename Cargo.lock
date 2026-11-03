@@ -3149,6 +3149,7 @@ dependencies = [
  "mlua",
  "quick-xml",
  "rusqlite",
+ "serde",
  "thiserror 1.0.69",
 ]
 

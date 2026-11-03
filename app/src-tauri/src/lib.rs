@@ -912,6 +912,37 @@ async fn s52_symbols(app: tauri::AppHandle, palette: String) -> Result<Vec<serde
     .map_err(|e| e.to_string())?
 }
 
+/// The catalogue's colours (token → #rrggbb) for a palette, its line styles (with how tall
+/// each is drawn, mm) and its area fills, for drawing the IHO lines and areas.
+#[tauri::command]
+async fn s52_styles(app: tauri::AppHandle, palette: String) -> Result<serde_json::Value, String> {
+    let dir = s101_dir(&app).ok_or("the S-101 portrayal catalogue is not installed")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let cat = portrayal::Catalogue::open(&dir.join("s101-pc")).map_err(|e| e.to_string())?;
+        let colours: serde_json::Map<String, serde_json::Value> = cat
+            .palettes
+            .get(&palette)
+            .map(|p| p.keys().filter_map(|k| Some((k.clone(), serde_json::Value::String(cat.colour(&palette, k)?)))).collect())
+            .unwrap_or_default();
+        let lines: serde_json::Map<String, serde_json::Value> = cat
+            .line_styles
+            .keys()
+            .filter_map(|n| {
+                let s = cat.line_style(n)?;
+                let h = cat.line_height(&s);
+                let mut v = serde_json::to_value(&s).ok()?;
+                v["height"] = serde_json::json!(h);
+                Some((n.clone(), v))
+            })
+            .collect();
+        let fills: serde_json::Map<String, serde_json::Value> =
+            cat.area_fills.keys().filter_map(|n| Some((n.clone(), serde_json::to_value(cat.area_fill(n)?).ok()?))).collect();
+        Ok(serde_json::json!({ "colours": colours, "lines": lines, "fills": fills }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// The folder holding the bundled world depths (`world_depth.gpkg`).
 fn world_depth_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
     let candidates = [
@@ -1880,6 +1911,7 @@ pub fn run() {
             chart_depth_at,
             chart_s52_context,
             s52_symbols,
+            s52_styles,
             chart_clearances,
             chart_shallow_ahead,
             monitor_open,

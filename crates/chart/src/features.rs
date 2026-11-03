@@ -739,6 +739,9 @@ impl ChartStore {
                     // SCAMIN (a coarser chart's copy is often cut off at the edge of its cell, as
                     // Lyttelton's dumping grounds are, so the finer whole one has to stand in)
                     let lat_m = (bbox[1] + bbox[3]) / 2.0;
+                    // the IHO portrayal's results for these tables (before the queries: each
+                    // holds the table's database while it runs)
+                    let s52: Vec<Option<crate::s52::TableSymbols>> = tables.iter().map(|(ti, _)| self.s52_table(*ti)).collect();
                     let rows_by_table: Vec<Vec<Row>> = tables
                         .iter()
                         .map(|(_, t)| {
@@ -837,6 +840,20 @@ impl ChartStore {
                             if let Some(n) = row.vals[0].as_deref().filter(|s| !s.trim().is_empty()) {
                                 props.push(("name", Value::Str(n.trim().into())));
                             }
+                            // how the IHO rules draw it (`s5`: they do)
+                            let drawn = s52[k].as_ref().and_then(|m| m.get(&row.fid)).filter(|e| !e.is_empty());
+                            let mut centre_symbol = None;
+                            if let Some(e) = drawn {
+                                props.push(("s5", Value::UInt(1)));
+                                for (key, v) in crate::s52::props(e) {
+                                    match key {
+                                        "slw" | "ct" => props.push((key, Value::F64(v.parse().unwrap_or(0.0)))),
+                                        "vg" => props.push((key, Value::UInt(v.parse().unwrap_or(3)))),
+                                        "sy" => centre_symbol = Some(v.to_string()),
+                                        _ => props.push((key, Value::Str(v.into()))),
+                                    }
+                                }
+                            }
                             // restrictions that matter to a yacht: entry prohibited / restricted, area to be avoided
                             if let Some(r) = row.vals[3].as_deref() {
                                 if r.split(',').any(|c| matches!(c.trim(), "7" | "8" | "14")) {
@@ -860,6 +877,10 @@ impl ChartStore {
                                     if let (Some(icon), true) = (icon, inside(c)) {
                                         let mut pp = props.clone();
                                         pp.push(("icon", Value::Str(icon)));
+                                        if centre_symbol.is_some() {
+                                            // the IHO symbol at its middle stands in for it (below)
+                                            pp.push(("po", Value::UInt(1)));
+                                        }
                                         put_hazard(c, 500.0, pp, &mut fpt);
                                     }
                                 }
@@ -888,6 +909,33 @@ impl ChartStore {
                                         pp.push(("icon", Value::Str("uk".into())));
                                     }
                                     fpt.add(&TileGeom::Points(vec![[c[0].round() as i32, c[1].round() as i32]]), &pp);
+                                }
+                            }
+                            // the IHO rules' symbol at an area's middle (its anchorage anchor, the
+                            // "i" of an area with notes, ...), and at a line's
+                            if let Some(sy) = &centre_symbol {
+                                let at = match geom {
+                                    Geom::Polygons(p) => {
+                                        let g = geom_bounds(geom);
+                                        let mid = [(g[0] + g[2]) / 2.0, (g[1] + g[3]) / 2.0];
+                                        if p.iter().any(|r| crate::point_in_polygon(r, mid[0], mid[1])) {
+                                            Some(mid)
+                                        } else {
+                                            p.first().and_then(|r| r.first()).and_then(|r| r.first()).copied()
+                                        }
+                                    }
+                                    Geom::Lines(l) => l.iter().max_by_key(|l| l.len()).and_then(|l| l.get(l.len() / 2)).copied(),
+                                    Geom::Points(_) => None,
+                                };
+                                if let Some(at) = at {
+                                    let c = tp.px(&at);
+                                    if inside(c) {
+                                        let mut pp: Vec<(&str, Value)> =
+                                            props.iter().filter(|(k, _)| !matches!(*k, "sl" | "slw" | "cf" | "ct" | "af")).cloned().collect();
+                                        pp.push(("sy", Value::Str(sy.clone())));
+                                        pp.push(("ac", Value::UInt(1)));
+                                        fpt.add(&TileGeom::Points(vec![[c[0].round() as i32, c[1].round() as i32]]), &pp);
+                                    }
                                 }
                             }
                             if let Some(tg) = tg {

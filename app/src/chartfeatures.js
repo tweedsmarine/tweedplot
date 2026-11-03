@@ -46,11 +46,15 @@ const pointIcon = (contour) => ["case", isolated(contour), "s57:iso", ["concat",
 // The chart store runs the IHO rules and puts the symbols they choose on each point
 // feature (`sy`: "BOYPIL24,TOPMAR06", "LIGHTS11@135"). The catalogue's SVGs are loaded
 // once; a feature's image is its symbols drawn over each other at their pivot points.
-const S52 = { ready: false, imgs: new Map() };
+// Lines and areas: the rules' line style (`sl`, drawn `slw` mm tall), colour fill (`cf`,
+// transparency `ct`), fill pattern (`af`) and display category (`vg`) are on the tile
+// features; the line styles and patterns are drawn here from the catalogue's definitions.
+const S52 = { ready: false, imgs: new Map(), colours: {}, lines: {}, fills: {} };
 /** Pixels per millimetre for the symbols, drawn at twice the size (pixelRatio 2). */
 const S52_PX_MM = 3.78 * 2;
 async function loadS52Symbols(palette = "Day") {
-  const list = await invoke("s52_symbols", { palette });
+  const [list, styles] = await Promise.all([invoke("s52_symbols", { palette }), invoke("s52_styles", { palette })]);
+  if (styles) Object.assign(S52, { colours: styles.colours || {}, lines: styles.lines || {}, fills: styles.fills || {} });
   await Promise.all(list.map(({ id, svg, vb }) => new Promise((resolve) => {
     const img = new Image();
     img.onload = () => { S52.imgs.set(id, { img, vb }); resolve(); };
@@ -87,6 +91,71 @@ function s52Image(sy) {
   return g.getImageData(0, 0, n, n);
 }
 
+/** A line style as drawn: a catalogue style, or a rule's simple line
+ *  "_interval_width_colour[_start-length...]". */
+function s52LineStyle(sl) {
+  if (!sl.startsWith("_")) return S52.lines[sl] || null;
+  const [interval, width, colour, ...dashes] = sl.slice(1).split("_");
+  const w = Number(width) || 0.32;
+  return { interval: Number(interval) || 0, width: w, colour, height: w, symbols: [], parts: [],
+    dashes: dashes.map((d) => d.split("-").map(Number)) };
+}
+/** Draw symbol `id` with its pivot at x, y (px), and its copies a period away either side. */
+function s52Stamp(g, id, x, y, wrapX, wrapY) {
+  const s = S52.imgs.get(id);
+  if (!s) return;
+  const { img, vb } = s, k = S52_PX_MM;
+  for (const dx of wrapX ? [-wrapX, 0, wrapX] : [0]) for (const dy of wrapY ? [-wrapY, 0, wrapY] : [0])
+    g.drawImage(img, x + dx + vb[0] * k, y + dy + vb[1] * k, vb[2] * k, vb[3] * k);
+}
+/** The image for "s52l:<sl>": one interval of the line style, the line along its middle,
+ *  repeated along the line by the map (line-pattern, as tall as the line is wide). */
+function s52LineImage(sl) {
+  if (!S52.ready) return null;
+  const st = s52LineStyle(sl);
+  if (!st) return null;
+  const k = S52_PX_MM;
+  const W = Math.max(2, Math.round((st.interval || 0.5) * k));
+  const H = Math.max(2, Math.round((st.height || st.width) * k));
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const g = c.getContext("2d");
+  const y = H / 2;
+  for (const p of st.parts?.length ? st.parts : [st]) {
+    g.fillStyle = S52.colours[p.colour] || "#ff00ff";
+    const lw = Math.max(1, p.width * k);
+    if (!p.dashes?.length || !st.interval) g.fillRect(0, y - lw / 2, W, lw);
+    else for (const [s, l] of p.dashes) for (const off of [-W, 0]) g.fillRect(s * k + off, y - lw / 2, l * k, lw);
+    for (const [id, pos] of p.symbols || []) s52Stamp(g, id, pos * k, y, W, 0);
+  }
+  return g.getImageData(0, 0, W, H);
+}
+/** The image for "s52f:<af>": a tile of the area fill's symbol lattice. */
+function s52FillImage(af) {
+  if (!S52.ready) return null;
+  const f = S52.fills[af];
+  if (!f) return null;
+  const k = S52_PX_MM;
+  const W = f.v1[0] || 10;
+  // rows shift by v2.x: repeat n rows so the tile wraps (n with the least shift left over)
+  let n = 1, best = Infinity;
+  for (let m = 1; m <= 4; m++) {
+    const r = ((m * f.v2[0]) % W + W) % W, e = Math.min(r, W - r);
+    if (e < best - 0.05) { best = e; n = m; }
+  }
+  const tw = Math.max(2, Math.round(W * k)), th = Math.max(2, Math.round(n * f.v2[1] * k));
+  const c = document.createElement("canvas");
+  c.width = tw; c.height = th;
+  const g = c.getContext("2d");
+  for (let i = 0; i < n; i++) s52Stamp(g, f.symbol, (((i * f.v2[0]) % W + W) % W) * k, i * f.v2[1] * k, tw, th);
+  return g.getImageData(0, 0, tw, th);
+}
+/** The colour of a token, as an expression over `cf`. */
+const s52FillColour = () => {
+  const pairs = Object.entries(S52.colours).flat();
+  return pairs.length ? ["match", ["coalesce", ["get", "cf"], ""], ...pairs, "#ff00ff"] : "#ff00ff";
+};
+
 /** What stays in the Base display (IMO ECDIS performance standard, display base): the
  *  dangers (`hz`), and buoys, beacons and traffic routeing (`db`). */
 const BASE = ["any", ["==", ["get", "hz"], 1], ["==", ["get", "db"], 1]];
@@ -110,10 +179,16 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   if (opts.show === false) { opts.cat = "base"; delete opts.show; } else delete opts.show;
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(opts)); } catch { /* ignore */ } };
   let enabled = false;
+  const useS52 = () => opts.sym === "s52" && S52.ready;
 
   const src = { source: "chart" };
   const cls = (...c) => ["in", ["get", "cls"], ["literal", c]];
   const layers = [
+    // the IHO portrayal's areas (Symbols: IHO): colour fills and fill patterns
+    { id: "s52-fill", type: "fill", ...src, "source-layer": "far", filter: ["all", minz, ["has", "cf"]],
+      paint: { "fill-color": "#ff00ff", "fill-opacity": ["-", 1, ["coalesce", ["get", "ct"], 0]] } },
+    { id: "s52-pat", type: "fill", ...src, "source-layer": "far", filter: ["all", minz, ["has", "af"]],
+      paint: { "fill-pattern": ["concat", "s52f:", ["get", "af"]] } },
     // areas
     { id: "f-area-fill", type: "fill", ...src, "source-layer": "far", filter: ["all", minz, ["any", cls("MARCUL", "OBSTRN"), ["==", ["get", "entry"], 1]]],
       paint: { "fill-color": ["match", ["get", "cls"], "OBSTRN", "#7fb8e8", MAGENTA], "fill-opacity": ["match", ["get", "cls"], "OBSTRN", 0.5, 0.08] } },
@@ -145,6 +220,11 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       paint: { "line-color": "#8a7a4a", "line-width": 0.9 } },
     { id: "f-line-dash", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, cls("RECTRC", "CBLOHD", "PIPOHD", "FSHFAC", "UNKNWN")],
       paint: { "line-color": ["match", ["get", "cls"], "RECTRC", INK, "UNKNWN", MAGENTA, "#5b6b75"], "line-width": 1, "line-dasharray": [5, 3] } },
+    // the IHO portrayal's lines and area boundaries: each line style drawn as a pattern
+    { id: "s52-aline", type: "line", ...src, "source-layer": "far", filter: ["all", minz, ["has", "sl"]],
+      paint: { "line-pattern": ["concat", "s52l:", ["get", "sl"]], "line-width": ["*", ["get", "slw"], S52_PX_MM / 2] } },
+    { id: "s52-line", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, ["has", "sl"]],
+      paint: { "line-pattern": ["concat", "s52l:", ["get", "sl"]], "line-width": ["*", ["get", "slw"], S52_PX_MM / 2] } },
     // light sectors
     { id: "f-sec-leg", type: "line", ...src, "source-layer": "lsec", filter: ["all", minz, ["==", ["get", "k"], "leg"]],
       paint: { "line-color": INK, "line-width": 0.7, "line-dasharray": [4, 3] } },
@@ -215,17 +295,42 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   // submarine cables and pipelines, dumping grounds and kelp.
   const ALL_ONLY = ["f-line-mag", "f-area-grey"];
   const MAIN_ALL = ["depcnt", "wdcnt"]; // chart layers in main.js shown only in All
+  // With the IHO symbols, the IHO rules draw the lines and areas they portray (`s5`), in
+  // the display category their viewing groups give (`vg`: 1 base, 2 standard, 3 other;
+  // hazards always); TweedPlot's own layers draw the rest.
+  const S52_LAYERS = ["s52-fill", "s52-pat", "s52-aline", "s52-line"];
+  const TP_DRAWN = ["f-area-fill", "f-area-dash", "f-tss-fill", "f-tss-line", "f-tss-bnd", "f-construct", "f-bridge", "f-area-grey",
+    "f-line-mag", "f-line-solid", "f-coast", "f-line-dash"];
+  function modeFilter(id, cat) {
+    const s52 = useS52();
+    const vgOk = cat === "base" ? ["any", ["==", ["get", "vg"], 1], HZ]
+      : cat === "standard" ? ["any", ["!", ["has", "vg"]], ["<=", ["get", "vg"], 2], HZ] : null;
+    if (S52_LAYERS.includes(id)) return vgOk;
+    if (TP_DRAWN.includes(id)) return s52 ? ["!", ["has", "s5"]] : null;
+    // an area's IHO symbol at its middle (`ac`), or TweedPlot's symbol for a small one (`po`)
+    // the IHO symbol of a danger writes its depth in it: no label beside it as well
+    if (id === "f-labels") return s52 ? ["!", ["in", "SOUNDS", ["coalesce", ["get", "sy"], ""]]] : null;
+    if (id === "f-points") return s52 ? ["all", ["!", ["has", "po"]], ["any", ["!", ["has", "ac"]], vgOk ?? true]] : ["!", ["has", "ac"]];
+    return null;
+  }
   function apply() {
     const cat = opts.cat;
     for (const l of layers) {
       const haz = HAZ_LAYERS.includes(l.id);
-      let on = enabled && (cat !== "base" || haz || l.id === "f-coast"); // the ENC coast is part of the chart base
+      const s52layer = S52_LAYERS.includes(l.id);
+      let on = enabled && (cat !== "base" || haz || s52layer || l.id === "f-coast"); // the ENC coast is part of the chart base
+      if (s52layer) on = on && useS52();
       if (ALL_ONLY.includes(l.id)) on = on && cat === "all";
       if (SECTOR.includes(l.id)) on = on && opts.sectors;
       if (NAMES.includes(l.id)) on = on && opts.names;
       map.setLayoutProperty(l.id, "visibility", on ? "visible" : "none");
-      if (haz) map.setFilter(l.id, cat !== "base" ? baseFilter[l.id] : ["all", baseFilter[l.id], BASE]);
+      const parts = [baseFilter[l.id]];
+      if (haz && cat === "base") parts.push(BASE);
+      const m = modeFilter(l.id, cat);
+      if (m) parts.push(m);
+      map.setFilter(l.id, parts.length > 1 ? ["all", ...parts] : parts[0]);
     }
+    if (useS52()) map.setPaintProperty("s52-fill", "fill-color", s52FillColour());
     const ind = $("dispcat-ind");
     if (ind) {
       ind.hidden = !enabled;
@@ -266,7 +371,6 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   }
   // which symbols: the IHO's (S-52) where the chart store has them, else TweedPlot's
   let contour = safetyContour;
-  const useS52 = () => opts.sym === "s52" && S52.ready;
   function applySymbols() {
     const on = useS52();
     const has = ["has", "sy"];
@@ -278,6 +382,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     map.setLayoutProperty("f-lights", "icon-offset", on ? ["case", has, ["literal", [0, 0]], ["literal", [-2, -2]]] : ["literal", [-2, -2]]);
     const sel = $("set-symbols");
     if (sel) sel.value = opts.sym;
+    apply();
   }
   const symSel = $("set-symbols");
   if (symSel) symSel.onchange = () => { opts.sym = symSel.value; save(); applySymbols(); };
@@ -293,7 +398,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
 
   // ---------- details on a click ----------------------------------------------------------
   const POINTS = ["f-points", "f-lights", "f-rot"];
-  const LINES = ["f-line-mag", "f-line-solid", "f-line-dash", "f-tss-line", "f-tss-bnd"];
+  const LINES = ["f-line-mag", "f-line-solid", "f-line-dash", "f-tss-line", "f-tss-bnd", "s52-line"];
   map.on("click", async (e) => {
     if (!enabled || placing()) return;
     // leave clicks on the app's own things (course, routings, fleet, marks) to them
@@ -605,6 +710,8 @@ function text(style, t) {
 /** Image for an `s57:` icon id or a `txt:` label id, or null. */
 export function featureImage(id) {
   if (id.startsWith("s52:")) return s52Image(id.slice(4));
+  if (id.startsWith("s52l:")) return s52LineImage(id.slice(5));
+  if (id.startsWith("s52f:")) return s52FillImage(id.slice(5));
   if (id.startsWith("txt:")) {
     const style = id[4];
     const t = id.slice(6);
