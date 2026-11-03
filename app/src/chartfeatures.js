@@ -245,6 +245,11 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       paint: { "line-pattern": ["concat", "s52l:", ["get", "sl"]], "line-width": ["*", ["get", "slw"], S52_PX_MM / 2] } },
     { id: "s52-line", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, ["has", "sl"]],
       paint: { "line-pattern": ["concat", "s52l:", ["get", "sl"]], "line-width": ["*", ["get", "slw"], S52_PX_MM / 2] } },
+    // plain solid lines (`lc` colour, `lw` mm)
+    { id: "s52-aline-solid", type: "line", ...src, "source-layer": "far", filter: ["all", minz, ["has", "lc"]],
+      paint: { "line-color": "#000", "line-width": ["max", 1, ["*", ["get", "lw"], S52_PX_MM / 2]] } },
+    { id: "s52-line-solid", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, ["has", "lc"]],
+      paint: { "line-color": "#000", "line-width": ["max", 1, ["*", ["get", "lw"], S52_PX_MM / 2]] } },
     // light sectors as S-52 draws them (with the IHO symbols): arcs in the light's colour
     // over black, legs and obscured arcs dashed
     { id: "s52-sec-arc", type: "line", ...src, "source-layer": "lsec", filter: ["all", minz, ["==", ["get", "k"], "sarc"]],
@@ -328,7 +333,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   // With the IHO symbols, the IHO rules draw the lines and areas they portray (`s5`), in
   // the display category their viewing groups give (`vg`: 1 base, 2 standard, 3 other;
   // hazards always); TweedPlot's own layers draw the rest.
-  const S52_LAYERS = ["s52-fill", "s52-pat", "s52-aline", "s52-line", "s52-info", "s52-sec-arc", "s52-sec-dash"];
+  const S52_LAYERS = ["s52-fill", "s52-pat", "s52-aline", "s52-line", "s52-aline-solid", "s52-line-solid", "s52-info", "s52-sec-arc", "s52-sec-dash"];
   const TP_DRAWN = ["f-area-fill", "f-area-dash", "f-tss-fill", "f-tss-line", "f-tss-bnd", "f-construct", "f-bridge", "f-area-grey",
     "f-line-mag", "f-line-solid", "f-coast", "f-line-dash", "f-sec-leg", "f-sec-arc"];
   function modeFilter(id, cat) {
@@ -337,6 +342,8 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       : cat === "standard" ? ["any", ["!", ["has", "vg"]], ["<=", ["get", "vg"], 2], HZ] : null;
     if (S52_LAYERS.includes(id)) return vgOk;
     if (TP_DRAWN.includes(id)) return s52 ? ["!", ["has", "s5"]] : null;
+    // a traffic lane's arrow of TweedPlot's, where the IHO rules draw the lane's own
+    if (id === "f-rot") return s52 ? ["!", ["has", "po"]] : null;
     // an area's IHO symbol at its middle (`ac`), or TweedPlot's symbol for a small one (`po`)
     // points in Standard: what the rules put in Base or Standard (landmarks, for one, are
     // "Other"), with hazards and TweedPlot's display base (buoys, beacons) always
@@ -373,6 +380,8 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     if (useS52()) {
       map.setPaintProperty("s52-fill", "fill-color", s52FillColour());
       map.setPaintProperty("s52-sec-arc", "line-color", s52FillColour("tok"));
+      map.setPaintProperty("s52-aline-solid", "line-color", s52FillColour("lc"));
+      map.setPaintProperty("s52-line-solid", "line-color", s52FillColour("lc"));
       map.setPaintProperty("s52-sec-dash", "line-color", s52FillColour("tok"));
     }
     const ind = $("dispcat-ind");
@@ -457,7 +466,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
 
   // ---------- details on a click ----------------------------------------------------------
   const POINTS = ["f-points", "f-lights", "f-rot", "s52-info"];
-  const LINES = ["f-line-mag", "f-line-solid", "f-line-dash", "f-tss-line", "f-tss-bnd", "s52-line"];
+  const LINES = ["f-line-mag", "f-line-solid", "f-line-dash", "f-tss-line", "f-tss-bnd", "s52-line", "s52-line-solid"];
   map.on("click", async (e) => {
     if (!enabled || placing()) return;
     // leave clicks on the app's own things (course, routings, fleet, marks, tide stations and

@@ -708,6 +708,15 @@ impl ChartStore {
                                     Some(i) => props.push(("icon", Value::Str(i))),
                                     None => props.push(("ac", Value::UInt(1))),
                                 }
+                                // TweedPlot's "?" of an object the IHO rules portray but draw
+                                // nothing for (S-52 shows nothing there either)
+                                if class.code == s57::UNKNOWN
+                                    && syms.as_ref().and_then(|m| m.get(&row.fid)).is_some_and(|e| {
+                                        crate::s52::entry_category(e) > 0 && e.split('|').take(3).all(str::is_empty)
+                                    })
+                                {
+                                    props.push(("po", Value::UInt(1)));
+                                }
                                 if finer < f64::MAX {
                                     props.push(("maxz", Value::F64((finer * 10.0).round() / 10.0)));
                                 }
@@ -886,7 +895,7 @@ impl ChartStore {
                                 props.push(("s5", Value::UInt(1)));
                                 for (key, v) in crate::s52::props(e) {
                                     match key {
-                                        "slw" | "ct" => props.push((key, Value::F64(v.parse().unwrap_or(0.0)))),
+                                        "slw" | "ct" | "lw" => props.push((key, Value::F64(v.parse().unwrap_or(0.0)))),
                                         "vg" => props.push((key, Value::UInt(v.parse().unwrap_or(3)))),
                                         "sy" => centre_symbol = Some(v.to_string()),
                                         "si" => centre_info = Some(v.to_string()),
@@ -938,10 +947,16 @@ impl ChartStore {
                                     _ => mid,
                                 };
                                 let c = tp.px(&at);
-                                let orient = row.vals[5].as_deref().and_then(|v| v.trim().parse::<f64>().ok());
+                                // (only a traffic lane's orientation is its arrow: an unknown object's
+                                // ORIENT is something else)
+                                let orient = row.vals[5].as_deref().and_then(|v| v.trim().parse::<f64>().ok()).filter(|_| class.code == "TSSLPT");
                                 if inside(c) && (class.code != "TSSLPT" || orient.is_some()) {
-                                    let mut pp = props.clone();
-                                    pp[0] = ("cls", Value::Str(class.code.into()));
+                                    let mut pp: Vec<(&str, Value)> =
+                                        props.iter().filter(|(k, _)| !matches!(*k, "sl" | "slw" | "lc" | "lw" | "cf" | "ct" | "af")).cloned().collect();
+                                    if drawn.is_some() {
+                                        // the IHO rules draw the area: theirs stands in for it
+                                        pp.push(("po", Value::UInt(1)));
+                                    }
                                     if let Some(o) = orient {
                                         pp.push(("icon", Value::Str("ts".into())));
                                         pp.push(("rot", Value::F64(o)));
@@ -978,7 +993,7 @@ impl ChartStore {
                                     let c = tp.px(&at);
                                     if inside(c) {
                                         let mut pp: Vec<(&str, Value)> =
-                                            props.iter().filter(|(k, _)| !matches!(*k, "sl" | "slw" | "cf" | "ct" | "af" | "maxz")).cloned().collect();
+                                            props.iter().filter(|(k, _)| !matches!(*k, "sl" | "slw" | "lc" | "lw" | "cf" | "ct" | "af" | "maxz")).cloned().collect();
                                         if let Some(sy) = &centre_symbol {
                                             pp.push(("sy", Value::Str(sy.clone())));
                                         }

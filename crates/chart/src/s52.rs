@@ -351,8 +351,15 @@ impl S52 {
     fn encode(&self, d: &Drawn) -> String {
         let mut out: Vec<String> = Vec::new();
         if let Some((name, style)) = &d.line {
-            out.push(format!("sl={name}"));
-            out.push(format!("slw={}", (self.height(name, style) * 100.0).round() / 100.0));
+            if name.starts_with('_') && (style.dashes.is_empty() || style.interval <= 0.0) && style.symbols.is_empty() {
+                // a plain solid line: drawn as a line, not a pattern (crisper, and wide ones
+                // don't show the pattern's seams)
+                out.push(format!("lc={}", style.colour));
+                out.push(format!("lw={}", style.width));
+            } else {
+                out.push(format!("sl={name}"));
+                out.push(format!("slw={}", (self.height(name, style) * 100.0).round() / 100.0));
+            }
         }
         if let Some((token, tr)) = &d.fill {
             out.push(format!("cf={token}"));
@@ -382,6 +389,109 @@ impl S52 {
     }
 }
 
+/// How S-52 draws an S-57 object the S-101 rules have no feature for (they give the "?"),
+/// as tile properties: a recommended track charted as an area is a dashed grey outline
+/// (S-52 RECTRC, the arrows are its lines'), the place a tide or tidal stream table applies
+/// a dashed grey outline with the table's symbol in the middle; others keep the "?".
+fn s52_fallback(class: &str, geo: crate::s57::Geo) -> Option<String> {
+    match (class, geo) {
+        ("RECTRC", crate::s57::Geo::Area) => Some("sl=_5.4_0.32_CHGRD_0-3.6;slw=0.32;vg=2".into()),
+        // tide and tidal stream tables: where they apply, and their symbol at the middle
+        (c, crate::s57::Geo::Area) => {
+            let sy = tide_symbol(c)?;
+            Some(format!("sl=_5.4_0.32_CHGRD_0-3.6;slw=0.32;vg=3;sy={sy}"))
+        }
+        _ => None,
+    }
+}
+
+/// Drawing instructions for an S-57 point the S-101 rules give only a "?", as S-52 draws
+/// it: a tidal stream without its rates (flood, ebb or plain stream arrow, turned to its
+/// ORIENT, or the stream symbol without a direction), the places of tide and stream
+/// tables, a control point, an opening bridge as a point.
+fn point_fallback(o: &S57Object) -> Option<String> {
+    let attr = |k: &str| o.attrs.iter().find(|(a, _)| a == k).map(|(_, v)| v.trim());
+    if let Some(i) = attr("SYMINS").and_then(symins) {
+        return Some(i);
+    }
+    match o.class.as_str() {
+        "TS_FEB" => {
+            let Some(orient) = attr("ORIENT").and_then(|v| v.parse::<f64>().ok()) else {
+                return Some("ViewingGroup:33060;PointInstruction:CURDEF01".into());
+            };
+            let sym = match attr("CAT_TS") {
+                Some("1") => "FLDSTR01",
+                Some("2") => "EBBSTR01",
+                _ => "CURENT01",
+            };
+            Some(format!("ViewingGroup:33060;Rotation:GeographicCRS,{orient};PointInstruction:{sym}"))
+        }
+        "T_HMON" | "T_NHMN" | "T_TIMS" | "TS_PNH" | "TS_PRH" | "TS_TIS" | "TS_PAD" => {
+            Some(format!("ViewingGroup:33060;PointInstruction:{}", tide_symbol(&o.class)?))
+        }
+        "CTRPNT" => Some("ViewingGroup:32250;PointInstruction:POSGEN04".into()),
+        // an opening bridge's symbol; S-52 draws nothing for any other bridge as a point
+        "BRIDGE" if attr("CATBRG").is_some_and(|c| c.split(',').any(|c| matches!(c.trim(), "2" | "3" | "4" | "5" | "7"))) => {
+            Some("ViewingGroup:12210;PointInstruction:BRIDGE01".into())
+        }
+        "BRIDGE" => Some("ViewingGroup:12210".into()),
+        _ => None,
+    }
+}
+
+/// An object's own S-52 drawing (its SYMINS attribute: a new object class, a temporary
+/// notice) as drawing instructions like the IHO rules': its symbols (SY), lines (LC, LS)
+/// and fills (AC, AP). Its texts (TX, TE) aren't drawn.
+pub(crate) fn symins(s: &str) -> Option<String> {
+    let mut out = vec!["ViewingGroup:26050".to_string()];
+    for cmd in s.split(';') {
+        let cmd = cmd.trim();
+        let Some((op, rest)) = cmd.split_once('(') else { continue };
+        let args: Vec<&str> = rest.trim_end_matches(')').split(',').map(str::trim).collect();
+        let a0 = args.first().copied().unwrap_or("");
+        match op.trim() {
+            "SY" if !a0.is_empty() => {
+                if let Some(r) = args.get(1).and_then(|r| r.parse::<f64>().ok()) {
+                    out.push(format!("Rotation:GeographicCRS,{r}"));
+                }
+                out.push(format!("PointInstruction:{a0}"));
+            }
+            "LC" if !a0.is_empty() => out.push(format!("LineInstruction:{a0}")),
+            "LS" if args.len() >= 3 => {
+                // S-52 widths are in 0.32 mm pixels; dashes 3.6 mm with 1.8 mm gaps, dots 0.6/1.2
+                let w = args[1].parse::<f64>().unwrap_or(1.0) * 0.32;
+                let (interval, dash) = match a0 {
+                    "DASH" => (5.4, Some(3.6)),
+                    "DOTT" => (1.8, Some(0.6)),
+                    _ => (0.0, None),
+                };
+                if let Some(d) = dash {
+                    out.push(format!("Dash:0,{d}"));
+                }
+                out.push(format!("LineStyle:_simple_,{interval},{w},{}", args[2]));
+                out.push("LineInstruction:_simple_".into());
+            }
+            "AC" if !a0.is_empty() => {
+                let tr = args.get(1).and_then(|t| t.parse::<f64>().ok()).unwrap_or(0.0) * 0.25;
+                out.push(format!("ColorFill:{a0},{tr}"));
+            }
+            "AP" if !a0.is_empty() => out.push(format!("AreaFillReference:{a0}")),
+            _ => {}
+        }
+    }
+    (out.len() > 1).then(|| out.join(";"))
+}
+
+/// The S-52 symbol of a tide (height) or tidal stream table's place.
+fn tide_symbol(class: &str) -> Option<&'static str> {
+    match class {
+        "T_HMON" | "T_NHMN" | "T_TIMS" => Some("TIDEHT01"),
+        "TS_PNH" | "TS_PRH" | "TS_TIS" | "TS_PAD" => Some("TIDSTR01"),
+        "TS_FEB" => Some("CURDEF01"),
+        _ => None,
+    }
+}
+
 /// A line or area feature's tile properties from what [`S52::encode`] made.
 pub(crate) fn props(encoded: &str) -> impl Iterator<Item = (&'static str, &str)> {
     encoded.split(';').filter_map(|kv| {
@@ -389,6 +499,8 @@ pub(crate) fn props(encoded: &str) -> impl Iterator<Item = (&'static str, &str)>
         let k = match k {
             "sl" => "sl",
             "slw" => "slw",
+            "lc" => "lc",
+            "lw" => "lw",
             "cf" => "cf",
             "ct" => "ct",
             "af" => "af",
@@ -598,6 +710,14 @@ impl ChartStore {
                 }
             }
         }
+        // each feature's S-57 class (an unknown-object table holds several)
+        let s57_class: HashMap<String, String> = rows.iter().map(|(f, o)| (f.to_string(), o.class.clone())).collect();
+        let s57_symins: HashMap<String, String> = rows
+            .iter()
+            .filter_map(|(f, o)| Some((f.to_string(), symins(o.attrs.iter().find(|(k, _)| k == "SYMINS")?.1.as_str())?)))
+            .collect();
+        let s57_point: HashMap<String, String> =
+            rows.iter().filter_map(|(f, o)| Some((f.to_string(), point_fallback(o)?))).collect();
         // features; a sector light's records (one per sector) at one place as one feature
         let mut features = Vec::new();
         let mut same: HashMap<String, Vec<i64>> = HashMap::new();
@@ -637,13 +757,30 @@ impl ChartStore {
         let mut map = HashMap::new();
         for o in out {
             let sy: Arc<str> = if class.geo == crate::s57::Geo::Point {
-                let mut e = point_entry(&o.instructions);
+                // a class the S-101 rules can't draw from the old data ("?"): the S-52 symbol
+                // (a new object's own drawing, SYMINS, always: S-101 makes every one a
+                // virtual AIS aid)
+                let newobj = s57_class.get(&o.id).is_some_and(|c| c == "NEWOBJ");
+                let ins = match s57_point.get(&o.id) {
+                    Some(f) if newobj || o.instructions.contains("QUESMRK1") => f.as_str(),
+                    _ => o.instructions.as_str(),
+                };
+                let mut e = point_entry(ins);
                 if o.id.parse::<i64>().is_ok_and(|f| lit.contains(&f)) {
                     e.push_str("|1");
                 }
                 e.into()
             } else {
-                s.encode(&drawn(&o.instructions, &s.cat)).into()
+                let unknown = o.instructions.contains("QUESMRK1");
+                let newobj = s57_class.get(&o.id).is_some_and(|c| c == "NEWOBJ");
+                match s57_symins.get(&o.id).filter(|_| unknown || newobj) {
+                    // its own S-52 drawing
+                    Some(ins) => s.encode(&drawn(ins, &s.cat)).into(),
+                    None => {
+                        let fallback = unknown.then(|| s57_class.get(&o.id).and_then(|c| s52_fallback(c, class.geo))).flatten();
+                        fallback.map(Into::into).unwrap_or_else(|| s.encode(&drawn(&o.instructions, &s.cat)).into())
+                    }
+                }
             };
             match same.get(&o.id) {
                 Some(fids) => {
@@ -673,6 +810,15 @@ impl ChartStore {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn symins_to_instructions() {
+        let i = super::symins("SY(CTNARE51);LC(CTNARE51);TX(OBJNAM,1,2,3,'15110',0,0,CHBLK,26)").unwrap();
+        assert_eq!(i, "ViewingGroup:26050;PointInstruction:CTNARE51;LineInstruction:CTNARE51");
+        let i = super::symins("LS(DASH,2,CHMGD);AC(DEPVS,2)").unwrap();
+        assert_eq!(i, "ViewingGroup:26050;Dash:0,3.6;LineStyle:_simple_,5.4,0.64,CHMGD;LineInstruction:_simple_;ColorFill:DEPVS,0.5");
+        assert_eq!(super::symins("TX('x',1,2,3,'15110',0,0,CHBLK,26)"), None);
+    }
+
     #[test]
     fn symbols_from_instructions() {
         let s = super::point_symbols("ViewingGroup:27010;PointInstruction:BOYPIL24;ViewingGroup:27010,27050;PointInstruction:TOPMAR06");

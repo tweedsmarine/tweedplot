@@ -535,7 +535,7 @@ impl ChartStore {
             });
         }
         // ENC lakes and wide rivers (LAKARE, RIVERS areas): water too, often how small-scale
-        // cells chart the Great Lakes; drawn as deep water, and the world land gives way
+        // cells chart the Great Lakes; drawn as water (main.js), and the world land gives way
         for t in bands.iter().filter(|t| t.kind == Kind::Lake && t.table.contains("_enc_b")) {
             self.query(t, bbox, &[], |_, g| {
                 if let Some(tg) = tp.polygons(&g) {

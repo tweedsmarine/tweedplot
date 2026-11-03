@@ -843,7 +843,7 @@ mod tests {
         assert_eq!(enc_s57::gpkg::table_for("BUISGL", 1, 4).as_deref(), Some("chart_object_points_hydro_enc_b4"));
         assert_eq!(enc_s57::gpkg::table_for("LNDARE", 1, 4).as_deref(), Some("chart_object_points_hydro_enc_b4"));
         assert_eq!(enc_s57::gpkg::table_for("LNDARE", 3, 4).as_deref(), Some("land_area_polygon_enc_b4"));
-        assert_eq!(enc_s57::gpkg::table_for("TS_PNH", 1, 4), None);
+        assert_eq!(enc_s57::gpkg::table_for("TS_PNH", 1, 4).as_deref(), Some("chart_object_points_hydro_enc_b4"));
         assert_eq!(enc_s57::gpkg::table_for("M_QUAL", 3, 4), None);
     }
 

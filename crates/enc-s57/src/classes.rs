@@ -127,10 +127,11 @@ pub const CHART_OBJECT: &str = "CHTOBJ";
 
 /// Objects TweedPlot doesn't draw itself (see [`ignored`]) that are still kept for the
 /// IHO portrayal (S-52), as an ECDIS shows them: all but metadata, collections,
-/// cartographic objects, tide tables and the depth and land data kept elsewhere.
+/// cartographic objects and the depth and land data kept elsewhere. (Tide and tidal
+/// stream tables are kept: S-52 marks where they apply.)
 pub fn portrayed_only(acr: &str, prim: u8) -> bool {
     ignored(acr)
-        && !(acr.starts_with("M_") || acr.starts_with("C_") || acr.starts_with('$') || acr.starts_with("T_") || acr.starts_with("TS_"))
+        && !(acr.starts_with("M_") || acr.starts_with("C_") || acr.starts_with('$'))
         && !matches!(acr, "DEPARE" | "DRGARE" | "DEPCNT" | "SOUNDG" | "LIGHTS")
         // the land and water areas have their own tables; their points and lines (an islet,
         // a narrow river) don't

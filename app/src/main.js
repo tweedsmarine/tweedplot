@@ -122,7 +122,8 @@ function depareColour() {
     ["has", "land"], DEPTH.land,
     // unsurveyed (S-52 NODTA, as the IHO colour profile has it; patterned in "unsare")
     ["has", "uns"], DEPTH.nodata,
-    ["has", "lake"], DEPTH.deep,
+    // (S-52 colours lakes and rivers as very shallow water, DEPVS; TweedPlot as deep)
+    ["has", "lake"], ihoColours ? DEPTH.vshallow : DEPTH.deep,
     // inside a chart's coverage where it charts no depth (chart.rs: "gap"): shallow, to be
     // safe. (S-52 grey no-data read as land where port basins and channels are gaps in
     // LINZ's charts, so it waits for the S-52 engine's no-data pattern.)

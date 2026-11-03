@@ -86,12 +86,14 @@ impl<'a> Converter<'a> {
                     Some("1" | "2") => pick("Dolphin"),
                     Some("3") => pick("Bollard"),
                     Some("5") => pick("Pile"),
-                    Some("6") => pick("MooringTrot"),
+                    Some("6") if prim == "surface" => pick("MooringTrot"),
                     Some("7") => pick("MooringBuoy"),
                     // no (or another) category: an area of moorings
                     _ if prim == "surface" => pick("MooringArea"),
                     // S-52's default for a mooring point (MORFAC03) is the dolphin's
                     _ if prim == "point" => pick("Dolphin"),
+                    // a tie-up wall or a trot as a line: S-101 has no mooring line
+                    _ if prim == "curve" => pick("ShorelineConstruction"),
                     _ => None,
                 };
             }
