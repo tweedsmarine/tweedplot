@@ -16,7 +16,7 @@ import { setupWeatherPanel } from "./wxpanel.js";
 import { setupBrand } from "./brand.js";
 import { setupWebMap } from "./webmap.js";
 import { setupLayerVisibility } from "./layervis.js";
-import { setupChartFeatures, featureImage, loadS52Palette } from "./chartfeatures.js";
+import { setupChartFeatures, featureImage, loadS52Palette, s52PxPerMm } from "./chartfeatures.js";
 import { setupTides, tideImage } from "./tides.js";
 import { tidalImage } from "./tidalstreams.js";
 import { setupTracks } from "./tracks.js";
@@ -505,7 +505,9 @@ function noteChartsReady(info) {
 }
 map.on("load", () => {
   features = setupChartFeatures(map, { before: "track", safetyContour: settings.safetyContour, shallow: !!settings.shallowDangers,
-    onSymbols: () => applyPalette() });
+    onSymbols: () => applyPalette(),
+    // a new screen calibration: the images drawn to IHO sizes again
+    onScale: () => { for (const id of map.listImages()) if (/^(cl:|dpat:)/.test(id)) map.removeImage(id); } });
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
   window.__weather = weather; // debugging handle
   setupData(map, { toast, reloadTiles: reloadChartTiles });
@@ -1442,14 +1444,16 @@ function contourLabelIcon(depth) {
   const t = String(Math.round(Math.abs(depth) * 10) / 10);
   const c = document.createElement("canvas");
   const g = c.getContext("2d");
-  const f = `17px "Segoe UI", system-ui, sans-serif`;
+  // the size of the IHO's text (10 pt, about 3.5 mm on a calibrated screen), at pixel ratio 2
+  const px = Math.round(3.5 * s52PxPerMm() * 2);
+  const f = `600 ${px}px "Segoe UI", system-ui, sans-serif`;
   g.font = f;
   c.width = Math.ceil(g.measureText(t).width) + 4;
-  c.height = 22;
+  c.height = Math.ceil(px * 1.25);
   g.font = f;
   g.textBaseline = "middle";
   g.fillStyle = chartColours().safety;
-  g.fillText(t, 2, 11);
+  g.fillText(t, 2, c.height / 2);
   return g.getImageData(0, 0, c.width, c.height);
 }
 function contourLabelFilter() {

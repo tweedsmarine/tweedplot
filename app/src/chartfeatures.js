@@ -14,7 +14,7 @@ const COLOURS = { 1: "#ffffff", 2: "#111111", 3: "#d7262b", 4: "#1f9a3a", 5: "#2
 const LIGHT = { r: "#d7262b", g: "#1f9a3a", w: "#f4c20d", o: MAGENTA, m: MAGENTA };
 
 const KEY = "racenav.chartfeatures";
-const DEFAULTS = { cat: "all", sectors: true, names: true, soundings: true, avoidDangers: true, avoidFarms: true, symSize: 1.2, sym: "s52", info: false, bounds: "plain",
+const DEFAULTS = { screenMm: 50, cat: "all", sectors: true, names: true, soundings: true, avoidDangers: true, avoidFarms: true, symSize: 1.2, sym: "s52", info: false, bounds: "plain",
   textImportant: true, textOther: true, dateSym: false };
 /** The standard display (S-Mode): one press back to it. */
 const STANDARD = { cat: "standard", sectors: true, names: true, soundings: true };
@@ -52,7 +52,12 @@ const pointIcon = (contour) => ["case", isolated(contour), "s57:iso", ["concat",
 // features; the line styles and patterns are drawn here from the catalogue's definitions.
 const S52 = { ready: false, imgs: new Map(), colours: {}, lines: {}, fills: {} };
 /** Pixels per millimetre for the symbols, drawn at twice the size (pixelRatio 2). */
-const S52_PX_MM = 3.78 * 2;
+// IHO symbols are drawn to size in millimetres (S-52): image pixels per mm (images are
+// added at pixel ratio 2). 3.78 CSS px per mm is the browser's nominal 96 dpi; the
+// mariner's screen calibration (Chart display) corrects it to the real screen.
+let S52_PX_MM = 3.78 * 2;
+/** CSS pixels per millimetre on this screen, as calibrated. */
+export function s52PxPerMm() { return S52_PX_MM / 2; }
 /** Each palette's symbols and styles, loaded once (725 SVGs to decode: a second or
  *  two), so switching between day, dusk and night is immediate after the first time. */
 const S52_PALETTES = new Map();
@@ -337,7 +342,7 @@ function s52Layers() {
   return out;
 }
 
-export function setupChartFeatures(map, { before, safetyContour = 5, shallow = false, onSymbols = () => {} }) {
+export function setupChartFeatures(map, { before, safetyContour = 5, shallow = false, onSymbols = () => {}, onScale = () => {} }) {
   shallowDangers = shallow;
   const $ = (id) => document.getElementById(id);
   const opts = { ...DEFAULTS };
@@ -345,6 +350,8 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   // before display categories: "Lights, marks, dangers, areas" off was the base display
   if (opts.show === false) { opts.cat = "base"; delete opts.show; } else delete opts.show;
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(opts)); } catch { /* ignore */ } };
+  // the screen calibration's scale, before the layers are made with it (applyCalibration)
+  if (Number(opts.screenMm) > 5) S52_PX_MM = 3.78 * 2 * (50 / Number(opts.screenMm));
   let enabled = false;
   const useS52 = () => String(opts.sym).startsWith("s52") && S52.ready;
 
@@ -611,6 +618,29 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   if (dateNow) dateNow.onclick = () => setDates(null, null);
   showDate();
   apply();
+
+  // Screen calibration: a bar 50 mm long by the browser's reckoning (189 CSS px, at its
+  // nominal 96 dpi; it never changes), and what the mariner measures it to be on the
+  // screen; every IHO symbol, line, pattern and text is drawn to the scale that gives
+  function applyCalibration(redraw = true) {
+    const mm = Number(opts.screenMm) > 5 ? Number(opts.screenMm) : 50;
+    S52_PX_MM = 3.78 * 2 * (50 / mm);
+    if (!redraw) return;
+    const lineW = ["*", ["get", "slw"], S52_PX_MM / 2], solidW = ["max", 1, ["*", ["get", "lw"], S52_PX_MM / 2]];
+    for (const id of S52_AREA_IDS.concat(S52_LINE_IDS)) {
+      if (!map.getLayer(id) || map.getLayer(id).type !== "line") continue;
+      map.setPaintProperty(id, "line-width", id.includes("solid") ? solidW : lineW);
+    }
+    map.setPaintProperty("s52-sec-dash", "line-width", 0.32 * S52_PX_MM / 2);
+    for (const id of map.listImages()) if (id.startsWith("s52")) map.removeImage(id);
+    onScale();
+  }
+  const calIn = $("set-screen-mm");
+  if (calIn) {
+    calIn.value = opts.screenMm;
+    calIn.onchange = () => { const v = Number(calIn.value); if (v > 5 && v < 500) { opts.screenMm = v; save(); applyCalibration(); } };
+  }
+  applyCalibration(false);
 
   // symbol size: the symbols are drawn at twice size, so up to 2x stays sharp; labels grow at half the rate
   function applySize() {
