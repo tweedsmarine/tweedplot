@@ -76,7 +76,7 @@ export function setupMapPalette(map) {
     return rawAdd(layer, before);
   };
   const isData = (img) => img && typeof img.width === "number" && img.data && img.data.length === img.width * img.height * 4;
-  const skipImage = (id) => /^(s52|sh:|dp:|pat:)/.test(id);
+  const skipImage = (id) => /^(s52|sh:|dp:|pat:|dpat:)/.test(id);
   const darkImage = (img) => {
     const d = new Uint8ClampedArray(img.data);
     for (let i = 0; i < d.length; i += 4) {

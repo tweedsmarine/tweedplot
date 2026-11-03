@@ -136,11 +136,34 @@ function depareColour() {
     DEPTH.deep];
 }
 /** The S-52 shallow water pattern (DIAMOND1) over depth areas shallower than the safety
- *  contour, when chosen (for screens where the shades are hard to tell apart). */
-function shallowPatternFilter() {
-  if (!settings.shallowPattern) return ["has", "__never__"];
-  return ["all", ["!", ["has", "land"]], ["!", ["has", "uns"]], ["!", ["has", "lake"]],
+ *  contour, when chosen (for screens where the shades are hard to tell apart). Drawn as
+ *  each depth area's own fill (an image of its colour, with the diamonds where shallow),
+ *  so a finer chart's deep area covers a coarser chart's shallow one, as with the colours;
+ *  null: plain colours. */
+function depareFillPattern() {
+  if (!settings.shallowPattern) return null;
+  const shallow = ["all", ["!", ["has", "land"]], ["!", ["has", "uns"]], ["!", ["has", "lake"]],
     ["<", ["coalesce", ["get", "drval1"], 0], settings.safetyContour]];
+  return ["concat", "dpat:", ["case", shallow, "1", "0"], ":", depareColour()];
+}
+/** The image for "dpat:<1 or 0>:<colour>": the colour, with the shallow water pattern on it. */
+function depthPatternImage(id) {
+  const [, diamonds, colour] = id.split(":");
+  const pat = diamonds === "1" ? featureImage("s52f:DIAMOND1") : null;
+  if (diamonds === "1" && !pat) return null; // the IHO symbols aren't loaded yet
+  const w = pat?.width ?? 8, h = pat?.height ?? 8;
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const g = c.getContext("2d");
+  g.fillStyle = colour;
+  g.fillRect(0, 0, w, h);
+  if (pat) {
+    const o = document.createElement("canvas");
+    o.width = w; o.height = h;
+    o.getContext("2d").putImageData(pat instanceof ImageData ? pat : new ImageData(new Uint8ClampedArray(pat.data), w, h), 0, 0);
+    g.drawImage(o, 0, 0);
+  }
+  return g.getImageData(0, 0, w, h);
 }
 /** The safety contour (S-52 DEPCNT02): the contour between a depth area shallower than the
  *  chosen value and one at least as deep, so the next deeper contour the chart has when it
@@ -196,8 +219,6 @@ const map = new maplibregl.Map({
       { id: "depare", type: "fill", source: "chart", "source-layer": "depare",
         layout: { visibility: "none", "fill-sort-key": ["coalesce", ["get", "sk"], ["get", "band"]] },
         paint: { "fill-color": depareColour(), "fill-antialias": false } },
-      { id: "depare-pat", type: "fill", source: "chart", "source-layer": "depare", filter: shallowPatternFilter(), layout: { visibility: "none" },
-        paint: { "fill-pattern": "s52f:DIAMOND1" } },
       // over the charted depth areas, under the chart's contours (the safety contour stays on top)
       { id: "hires", type: "raster", source: "hires", minzoom: 10, layout: { visibility: localStorage.getItem("racenav.hires.show") === "0" ? "none" : "visible" },
         paint: { "raster-opacity": 0.92, "raster-resampling": "linear" } },
@@ -264,7 +285,7 @@ const map = new maplibregl.Map({
 // IHO dusk and night: everything on the map that isn't chart is darkened to suit
 const mapPalette = setupMapPalette(map);
 /** Chart layers coloured from the IHO palette here (left alone by mapPalette). */
-const IHO_CHART_LAYERS = new Set(["sea", "depare", "depare-pat", "depcnt", "unsare", "unsare-line", "depare-drg", "safety-contour", "land-world", "land-nz",
+const IHO_CHART_LAYERS = new Set(["sea", "depare", "depcnt", "unsare", "unsare-line", "depare-drg", "safety-contour", "land-world", "land-nz",
   "chart-world-land", "coast-world", "coast-nz", "chart-land", "chart-coast", "chart-wcoast", "soundg"]);
 /** The chart's base layers in the colours of the moment (chartColours). */
 function applyChartColours() {
@@ -274,6 +295,7 @@ function applyChartColours() {
   for (const id of ["land-world", "land-nz", "chart-world-land", "chart-land"]) set(id, "fill-color", c.land);
   for (const id of ["coast-world", "coast-nz", "chart-coast", "chart-wcoast"]) set(id, "line-color", c.coast);
   set("depare", "fill-color", depareColour());
+  set("depare", "fill-pattern", depareFillPattern());
   set("depcnt", "line-color", c.contour);
   set("safety-contour", "line-color", c.safety);
   set("unsare-line", "line-color", c.grey);
@@ -359,6 +381,7 @@ map.on("sourcedata", (e) => {
 map.setMissingStyleImageResolver((id) => {
   if (map.hasImage(id)) return;
   if (id === "pat:nodata") { map.addImage(id, noDataPattern(), { pixelRatio: 2 }); return; }
+  if (id.startsWith("dpat:")) { const im = depthPatternImage(id); if (im) map.addImage(id, im, { pixelRatio: 2 }); return; }
   const m = /^(sh|dp):(-?[0-9.]+)$/.exec(id);
   if (m) { map.addImage(id, soundingIcon(parseFloat(m[2]), m[1] === "sh"), { pixelRatio: 2 }); return; }
   const img = barbImage(id) || markImage(id) || labelImage(id) || featureImage(id) || tideImage(id) || poiImage(id) || symImage(id) || stationImage(id) || tidalImage(id);
@@ -770,7 +793,7 @@ listen("chart-s52", () => reloadChartTiles()).catch(() => {});
 function applyChartSettings() {
   sendPortrayalContext();
   map.setPaintProperty("depare", "fill-color", depareColour());
-  map.setFilter("depare-pat", shallowPatternFilter());
+  map.setPaintProperty("depare", "fill-pattern", depareFillPattern());
   map.setFilter("safety-contour", safetyContourFilter());
   map.setLayoutProperty("soundg", "icon-image", soundingImage());
   features?.setSafetyContour(settings.safetyContour, !!settings.shallowDangers);
