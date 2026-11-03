@@ -723,6 +723,10 @@ impl ChartStore {
                                 // the IHO portrayal's symbols, when it is on
                                 if let Some(e) = syms.as_ref().and_then(|m| m.get(&row.fid)) {
                                     let (sy, si) = crate::s52::split_info(e);
+                                    match crate::s52::entry_category(e) {
+                                        0 => {}
+                                        c => props.push(("vg", Value::UInt(c as u64))),
+                                    }
                                     if !sy.is_empty() {
                                         props.push(("sy", Value::Str(sy.into())));
                                     }
@@ -1080,6 +1084,10 @@ impl ChartStore {
                 }
                 if let Some(e) = &s52 {
                     props.push(("s5", Value::UInt(1)));
+                    match crate::s52::entry_category(e) {
+                        0 => {}
+                        c => props.push(("vg", Value::UInt(c as u64))),
+                    }
                     let (sy, si) = crate::s52::split_info(e);
                     if !sy.is_empty() {
                         props.push(("sy", Value::Str(sy.into())));

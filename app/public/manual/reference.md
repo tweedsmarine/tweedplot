@@ -187,8 +187,8 @@ Wharves, breakwaters, jetties, pontoons, floating docks and causeways are drawn 
 
 | Part | Settings |
 | --- | --- |
-| **Safety** | **Safety depth** and **safety contour** (below), **Isolated dangers in shallow water** (see Isolated dangers), with the draft from **Settings › Vessel** beside them and how much water the safety depth leaves under the keel |
-| **Chart display** | **Display**: Base, Standard or All (below); **Standard display**; **Light sectors**, **Sector lines to full range**, **Names and labels**, **Soundings**, **Information symbols**; **Symbols**: IHO (S-52) or Paper chart (below); **Chart symbol size** |
+| **Safety** | **Safety depth** and **safety contour** (below), **Isolated dangers in shallow water** (see Isolated dangers), **Depth shades** (four: drying, shallow, safety and deep contours; or two, as S-52: shallower or deeper than the safety contour) and **Shallow water pattern** (the S-52 grid of small diamonds over water shallower than the safety contour, for screens or light where the shades are hard to tell apart), with the draft from **Settings › Vessel** beside them and how much water the safety depth leaves under the keel |
+| **Chart display** | **Display**: Base, Standard or All (below); **Standard display**; **Light sectors**, **Sector lines to full range**, **Names and labels**, **Soundings**, **Information symbols**; **Symbols**: IHO (S-52) with paper-chart or simplified symbols, or TweedPlot paper chart (below); **Area boundaries**: plain or symbolised; **Chart symbol size** |
 | **Layers** | **Chart layers** (**High-resolution depths**, **Detailed depths (ETOPO)**, **World depths**, **World coastline**), **Own soundings**, **Online maps**, and the boundaries and fishing rules (see *Boundaries and fishing rules*). Layers can overlap: the world depths are coarse, so with **OpenStreetMap** on they show as pale water that doesn't match its coastline. Switch off any layer you don't want |
 | **Own ship** | **Heading line**, **COG line** and **Wind arrows** (see Your boat) |
 | **Chart data** | Every download and import: world coastline, detailed depths, high-resolution depths, boundaries, fishing rules, and the LINZ charts |
@@ -227,11 +227,16 @@ The display in use is always shown beside the scale bar, bottom right.
 **Chart display › Symbols** chooses how buoys, beacons, lights, rocks, wrecks and the other point features are drawn:
 
 - **IHO (S-52)**, the default: the ECDIS symbols, chosen for each feature by the IHO S-101 portrayal rules (as on an ECDIS: a beacon with its topmark, a light's flare turned the way the rules turn it, a rock or wreck as an isolated danger when it is shallower than your safety contour with deeper water all round it, as above). The rules run in the background when the charts load and whenever the safety contour, safety depth or the shallow water dangers option changes; until they finish, and for any feature the rules don't cover, the paper-chart symbol stands in, and the chart redraws when they are done.
-- **Paper chart**: simplified paper-chart symbols (INT 1), shown below.
+- **IHO (S-52), simplified symbols**: the same, with the ECDIS simplified buoys and beacons (small shapes by colour and type, as on most ECDIS at sea) instead of the paper-chart style ones.
+- **TweedPlot paper chart**: simplified paper-chart symbols (INT 1), shown below.
+
+**Area boundaries** (Chart display, with the IHO symbols): **Plain** draws restricted areas, farms, anchorages and the like with plain dashed edges; **Symbolised** adds the IHO's small symbols along the inside of each edge (ticks, anchors, "T"s...), as an ECDIS's symbolised boundaries, so the kind of area shows from any part of its edge.
+
+With the IHO symbols, point features also follow the display category the rules give them: in Standard, those the IHO puts in "Other" (landmarks, for one) wait for All. Hazards, buoys and beacons stay in every category.
 
 With **IHO (S-52)** the rules also draw the lines and areas they cover: cables, pipelines, tracks, leading lines, coastlines and constructions in the IHO line styles (a submarine cable's wave, a recommended track's arrows), and restricted, caution, anchorage and marine farm areas, foul ground and the like with their boundaries, fill patterns and the symbol at their middle. A feature that appears on more than one chart scale gets one symbol, from the chart in use there. Each shows in the display category the IHO rules give it (Base, Standard or All). **Information symbols** (Chart display) adds the IHO "i" to every feature the chart has notes for: marine farms, lights, landmarks, restricted areas. As on an ECDIS it is off to start with, because in places like Tasman Bay or the Sounds they crowd the chart; turn it on to find which features have notes, and click one to read them. Light sectors are drawn as on an ECDIS: each sector's arc 20 mm round the light in the light's colour, edged in black, with its limits as dashed lines 25 mm long; a sector where the light is obscured has a thin dashed arc. A sector light has no flare of its own, just its sectors and its description. **Sector lines to full range** (Chart display) draws each sector's limits out to the light's nominal range instead, as an ECDIS's full light lines: useful in pilotage to see which sector you will be in, though busy in a harbour with many lights. Depth areas, contours and land are coloured from the IHO palette too (they are still drawn TweedPlot's way).
 
-With **Paper chart**, some symbols still come from the ECDIS presentation library (IHO S-52): the isolated danger, the unknown object, tide and weather stations, tidal streams. The commonest:
+With **TweedPlot paper chart**, some symbols still come from the ECDIS presentation library (IHO S-52): the isolated danger, the unknown object, tide and weather stations, tidal streams. The commonest:
 
 | Symbol | Meaning | Symbol | Meaning |
 | --- | --- | --- | --- |

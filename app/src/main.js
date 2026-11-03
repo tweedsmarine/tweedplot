@@ -80,6 +80,9 @@ const DEFAULTS = {
   shallowDangers: false,
   // S-52 mariner option: light sector limits drawn to the light's nominal range (else 25 mm)
   fullLightLines: false,
+  // depth shades: four (TweedPlot's usual: shallow contour, safety contour, deep contour) or
+  // two (S-52: shallower or deeper than the safety contour); the shallow water pattern
+  fourShades: true, shallowPattern: false,
   // own-boat lines: shown, and length in minutes of travel or "inf" (to the edge of the chart)
   hdgLine: true, hdgLen: "inf", cogLine: true, cogLen: "10",
   // damping of Signal K readings, seconds (0 = none)
@@ -125,10 +128,19 @@ function depareColour() {
     // LINZ's charts, so it waits for the S-52 engine's no-data pattern.)
     ["has", "gap"], DEPTH.vshallow,
     ["<", d1, 0], DEPTH.drying,
-    ["<", d1, settings.shallow], DEPTH.vshallow,
-    ["<", d1, settings.safetyContour], DEPTH.mshallow,
-    ["<", d1, settings.deep], DEPTH.mdeep,
+    // two shades (S-52 mariner option): shallower or deeper than the safety contour
+    ...(settings.fourShades === false ? [["<", d1, settings.safetyContour], DEPTH.vshallow] : [
+      ["<", d1, settings.shallow], DEPTH.vshallow,
+      ["<", d1, settings.safetyContour], DEPTH.mshallow,
+      ["<", d1, settings.deep], DEPTH.mdeep]),
     DEPTH.deep];
+}
+/** The S-52 shallow water pattern (DIAMOND1) over depth areas shallower than the safety
+ *  contour, when chosen (for screens where the shades are hard to tell apart). */
+function shallowPatternFilter() {
+  if (!settings.shallowPattern) return ["==", 1, 0];
+  return ["all", ["!", ["has", "land"]], ["!", ["has", "uns"]], ["!", ["has", "lake"]],
+    ["<", ["coalesce", ["get", "drval1"], 0], settings.safetyContour]];
 }
 /** The safety contour (S-52 DEPCNT02): the contour between a depth area shallower than the
  *  chosen value and one at least as deep, so the next deeper contour the chart has when it
@@ -184,6 +196,8 @@ const map = new maplibregl.Map({
       { id: "depare", type: "fill", source: "chart", "source-layer": "depare",
         layout: { visibility: "none", "fill-sort-key": ["coalesce", ["get", "sk"], ["get", "band"]] },
         paint: { "fill-color": depareColour(), "fill-antialias": false } },
+      { id: "depare-pat", type: "fill", source: "chart", "source-layer": "depare", filter: shallowPatternFilter(), layout: { visibility: "none" },
+        paint: { "fill-pattern": "s52f:DIAMOND1" } },
       // over the charted depth areas, under the chart's contours (the safety contour stays on top)
       { id: "hires", type: "raster", source: "hires", minzoom: 10, layout: { visibility: localStorage.getItem("racenav.hires.show") === "0" ? "none" : "visible" },
         paint: { "raster-opacity": 0.92, "raster-resampling": "linear" } },
@@ -250,7 +264,7 @@ const map = new maplibregl.Map({
 // IHO dusk and night: everything on the map that isn't chart is darkened to suit
 const mapPalette = setupMapPalette(map);
 /** Chart layers coloured from the IHO palette here (left alone by mapPalette). */
-const IHO_CHART_LAYERS = new Set(["sea", "depare", "depcnt", "unsare", "unsare-line", "depare-drg", "safety-contour", "land-world", "land-nz",
+const IHO_CHART_LAYERS = new Set(["sea", "depare", "depare-pat", "depcnt", "unsare", "unsare-line", "depare-drg", "safety-contour", "land-world", "land-nz",
   "chart-world-land", "coast-world", "coast-nz", "chart-land", "chart-coast", "chart-wcoast", "soundg"]);
 /** The chart's base layers in the colours of the moment (chartColours). */
 function applyChartColours() {
@@ -756,6 +770,7 @@ listen("chart-s52", () => reloadChartTiles()).catch(() => {});
 function applyChartSettings() {
   sendPortrayalContext();
   map.setPaintProperty("depare", "fill-color", depareColour());
+  map.setFilter("depare-pat", shallowPatternFilter());
   map.setFilter("safety-contour", safetyContourFilter());
   map.setLayoutProperty("soundg", "icon-image", soundingImage());
   features?.setSafetyContour(settings.safetyContour, !!settings.shallowDangers);
@@ -773,6 +788,16 @@ for (const [id, key] of [["set-safety-depth", "safetyDepth"], ["set-safety-conto
   if (el) {
     el.checked = !!settings.shallowDangers;
     el.onchange = () => { settings.shallowDangers = el.checked; saveSettings(); applyChartSettings(); };
+  }
+  const sh = document.getElementById("set-shades");
+  if (sh) {
+    sh.value = settings.fourShades === false ? "2" : "4";
+    sh.onchange = () => { settings.fourShades = sh.value !== "2"; saveSettings(); applyChartSettings(); };
+  }
+  const sp = document.getElementById("set-shallow-pattern");
+  if (sp) {
+    sp.checked = !!settings.shallowPattern;
+    sp.onchange = () => { settings.shallowPattern = sp.checked; saveSettings(); applyChartSettings(); };
   }
   // S-52 mariner option: sector limits drawn out to the light's nominal range
   const fl = document.getElementById("set-full-light-lines");

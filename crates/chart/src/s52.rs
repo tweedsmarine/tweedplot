@@ -115,8 +115,39 @@ pub fn point_symbols(instructions: &str) -> String {
 
 /// `sy` and the information symbols (`si`) from [`point_symbols`].
 pub(crate) fn split_info(s: &str) -> (&str, &str) {
-    let (sy, rest) = s.split_once('|').unwrap_or((s, ""));
-    (sy, rest.split_once('|').map_or(rest, |(si, _)| si))
+    let mut f = s.splitn(4, '|');
+    (f.next().unwrap_or(""), f.next().unwrap_or(""))
+}
+
+/// The display category the rules give a feature, from its viewing groups (S-52: 1xxxx
+/// display base, 2xxxx standard, 3xxxx other; the lowest counts), 0 when none.
+pub fn category(instructions: &str) -> u8 {
+    let mut cat = 0u8;
+    for part in instructions.split(';') {
+        if let Some(v) = part.strip_prefix("ViewingGroup:") {
+            for g in v.split(',').filter_map(|g| g.trim().parse::<u32>().ok()).filter(|g| (10000..90000).contains(g)) {
+                let c = (g / 10000).min(3) as u8;
+                if cat == 0 || c < cat {
+                    cat = c;
+                }
+            }
+        }
+    }
+    cat
+}
+
+/// A point feature's table entry: `sy|si|sectors|category` (see [`point_symbols`],
+/// [`light_sectors`], [`category`]).
+pub fn point_entry(instructions: &str) -> String {
+    let e = point_symbols(instructions);
+    let (sy, si) = split_info(&e);
+    let sec = encode_sectors(&light_sectors(instructions));
+    format!("{sy}|{si}|{sec}|{}", category(instructions))
+}
+
+/// The display category in a point entry (0: none).
+pub(crate) fn entry_category(s: &str) -> u8 {
+    s.splitn(4, '|').nth(3).and_then(|c| c.parse().ok()).unwrap_or(0)
 }
 
 /// A light's sector drawing from the rules (S-52 LIGHTS05/06): legs and arcs.
@@ -209,7 +240,7 @@ fn encode_sectors(parts: &[SectorPart]) -> String {
 }
 
 pub(crate) fn sectors(s: &str) -> Vec<SectorPart> {
-    let Some(enc) = s.splitn(3, '|').nth(2) else { return Vec::new() };
+    let Some(enc) = s.split('|').nth(2).filter(|e| !e.is_empty()) else { return Vec::new() };
     enc.split('/')
         .filter_map(|p| {
             let f: Vec<&str> = p.split(' ').collect();
@@ -251,21 +282,13 @@ pub struct Drawn {
 }
 
 pub fn drawn(instructions: &str, cat: &portrayal::Catalogue) -> Drawn {
-    let mut d = Drawn { symbols: point_symbols(instructions), ..Default::default() };
+    let mut d = Drawn { symbols: point_symbols(instructions), category: category(instructions), ..Default::default() };
     let mut dashes: Vec<(f64, f64)> = Vec::new();
     let mut simple: Option<portrayal::LineStyle> = None;
     for part in instructions.split(';') {
         let (k, v) = part.split_once(':').unwrap_or((part, ""));
         let nums = |v: &str| -> Vec<f64> { v.split(',').map(|x| x.trim().parse().unwrap_or(0.0)).collect() };
         match k {
-            "ViewingGroup" => {
-                for g in v.split(',').filter_map(|g| g.trim().parse::<u32>().ok()).filter(|g| *g >= 10000) {
-                    let c = (g / 10000).min(3) as u8;
-                    if d.category == 0 || c < d.category {
-                        d.category = c;
-                    }
-                }
-            }
             "Dash" => {
                 let n = nums(v);
                 if n.len() == 2 {
@@ -580,22 +603,8 @@ impl ChartStore {
         };
         let mut map = HashMap::new();
         for o in out {
-            let sy: Arc<str> = if class.geo == crate::s57::Geo::Point {
-                let mut e = point_symbols(&o.instructions);
-                if class.code == "LIGHTS" {
-                    let sec = light_sectors(&o.instructions);
-                    if !sec.is_empty() {
-                        if !e.contains('|') {
-                            e.push('|');
-                        }
-                        e.push('|');
-                        e.push_str(&encode_sectors(&sec));
-                    }
-                }
-                e.into()
-            } else {
-                s.encode(&drawn(&o.instructions, &s.cat)).into()
-            };
+            let sy: Arc<str> =
+                if class.geo == crate::s57::Geo::Point { point_entry(&o.instructions).into() } else { s.encode(&drawn(&o.instructions, &s.cat)).into() };
             match same.get(&o.id) {
                 Some(fids) => {
                     for f in fids {
@@ -642,9 +651,10 @@ mod tests {
         let super::SectorPart::Arc { radius, extent, styles, .. } = &sec[2] else { panic!() };
         assert_eq!((*radius, *extent), (20.0, 60.0));
         assert_eq!(styles, &vec![(false, 1.28, "CHBLK".to_string()), (false, 0.64, "LITRD".to_string())]);
-        let enc = format!("||{}", super::encode_sectors(&sec));
+        let enc = super::point_entry(ins);
         assert_eq!(super::sectors(&enc), sec);
         assert_eq!(super::split_info(&enc), ("", ""));
+        assert_eq!(super::entry_category(&enc), 2);
     }
 
     #[test]

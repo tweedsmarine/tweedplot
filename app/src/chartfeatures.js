@@ -14,7 +14,7 @@ const COLOURS = { 1: "#ffffff", 2: "#111111", 3: "#d7262b", 4: "#1f9a3a", 5: "#2
 const LIGHT = { r: "#d7262b", g: "#1f9a3a", w: "#f4c20d", o: MAGENTA, m: MAGENTA };
 
 const KEY = "racenav.chartfeatures";
-const DEFAULTS = { cat: "all", sectors: true, names: true, soundings: true, avoidDangers: true, avoidFarms: true, symSize: 1.2, sym: "s52", info: false };
+const DEFAULTS = { cat: "all", sectors: true, names: true, soundings: true, avoidDangers: true, avoidFarms: true, symSize: 1.2, sym: "s52", info: false, bounds: "plain" };
 /** The standard display (S-Mode): one press back to it. */
 const STANDARD = { cat: "standard", sectors: true, names: true, soundings: true };
 
@@ -135,6 +135,11 @@ function s52LineImage(sl) {
   const c = document.createElement("canvas");
   c.width = W; c.height = H;
   const g = c.getContext("2d");
+  // the map draws a line pattern's image mirrored across the line (its top on the left of
+  // the way the line runs); the IHO's symbols sit on the right (inside an area's clockwise
+  // boundary): drawn upside down here, they come out the IHO's way round
+  g.translate(0, H);
+  g.scale(1, -1);
   const y = H / 2;
   for (const p of st.parts?.length ? st.parts : [st]) {
     g.fillStyle = S52.colours[p.colour] || "#ff00ff";
@@ -194,7 +199,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   if (opts.show === false) { opts.cat = "base"; delete opts.show; } else delete opts.show;
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(opts)); } catch { /* ignore */ } };
   let enabled = false;
-  const useS52 = () => opts.sym === "s52" && S52.ready;
+  const useS52 = () => String(opts.sym).startsWith("s52") && S52.ready;
 
   const src = { source: "chart" };
   const cls = (...c) => ["in", ["get", "cls"], ["literal", c]];
@@ -333,11 +338,14 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     if (S52_LAYERS.includes(id)) return vgOk;
     if (TP_DRAWN.includes(id)) return s52 ? ["!", ["has", "s5"]] : null;
     // an area's IHO symbol at its middle (`ac`), or TweedPlot's symbol for a small one (`po`)
+    // points in Standard: what the rules put in Base or Standard (landmarks, for one, are
+    // "Other"), with hazards and TweedPlot's display base (buoys, beacons) always
+    const ptOk = cat === "standard" ? ["any", ["!", ["has", "vg"]], ["<=", ["get", "vg"], 2], HZ, ["==", ["get", "db"], 1]] : true;
     // a light the IHO rules drew as sectors only: no flare of TweedPlot's either
-    if (id === "f-lights") return s52 ? ["any", ["has", "sy"], ["!", ["has", "s5"]]] : null;
+    if (id === "f-lights") return s52 ? ["all", ["any", ["has", "sy"], ["!", ["has", "s5"]]], ptOk] : null;
     // the IHO symbol of a danger writes its depth in it: no label beside it as well
-    if (id === "f-labels") return s52 ? ["!", ["in", "SOUNDS", ["coalesce", ["get", "sy"], ""]]] : null;
-    if (id === "f-points") return s52 ? ["all", ["!", ["has", "po"]], ["any", ["!", ["has", "ac"]], ["all", ["has", "sy"], vgOk ?? true]]] : ["!", ["has", "ac"]];
+    if (id === "f-labels") return s52 ? ["all", ["!", ["in", "SOUNDS", ["coalesce", ["get", "sy"], ""]]], ptOk] : null;
+    if (id === "f-points") return s52 ? ["all", ["!", ["has", "po"]], ptOk, ["any", ["!", ["has", "ac"]], ["all", ["has", "sy"], vgOk ?? true]]] : ["!", ["has", "ac"]];
     return null;
   }
   function apply() {
@@ -420,7 +428,19 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   }
   let lastOn = null;
   const symSel = $("set-symbols");
-  if (symSel) symSel.onchange = () => { opts.sym = symSel.value; save(); applySymbols(); };
+  // the IHO rules' mariner options: simplified or paper-chart point symbols, plain or
+  // symbolised area boundaries (the chart store portrays again when they change)
+  function sendOptions() {
+    invoke("chart_s52_context", { id: "SimplifiedSymbols", value: String(opts.sym === "s52s") }).catch(() => {});
+    invoke("chart_s52_context", { id: "PlainBoundaries", value: String(opts.bounds !== "symbolised") }).catch(() => {});
+  }
+  sendOptions();
+  if (symSel) symSel.onchange = () => { opts.sym = symSel.value; save(); sendOptions(); applySymbols(); };
+  const bndSel = $("set-boundaries");
+  if (bndSel) {
+    bndSel.value = opts.bounds;
+    bndSel.onchange = () => { opts.bounds = bndSel.value; save(); sendOptions(); };
+  }
   loadS52Symbols().then(applySymbols).catch((e) => console.warn("IHO symbols:", e));
   applySymbols();
 
