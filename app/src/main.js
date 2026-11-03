@@ -82,7 +82,7 @@ const DEFAULTS = {
   fullLightLines: false,
   // depth shades: four (TweedPlot's usual: shallow contour, safety contour, deep contour) or
   // two (S-52: shallower or deeper than the safety contour); the shallow water pattern
-  fourShades: true, shallowPattern: false,
+  fourShades: true, shallowPattern: false, contourLabels: false,
   // own-boat lines: shown, and length in minutes of travel or "inf" (to the edge of the chart)
   hdgLine: true, hdgLen: "inf", cogLine: true, cogLen: "10",
   // damping of Signal K readings, seconds (0 = none)
@@ -241,6 +241,10 @@ const map = new maplibregl.Map({
       { id: "safety-contour", type: "line", source: "chart", "source-layer": "depcnt",
         filter: safetyContourFilter(), layout: { visibility: "none" },
         paint: { "line-color": "#1d2a33", "line-width": 1.6 } },
+      // contour labels (S-52 mariner's option): each contour's depth along it, upright
+      { id: "depcnt-lbl", type: "symbol", source: "chart", "source-layer": "depcnt", filter: contourLabelFilter(),
+        layout: { visibility: "none", "symbol-placement": "line", "symbol-spacing": 220, "icon-rotation-alignment": "viewport",
+                  "icon-image": ["concat", "cl:", ["to-string", ["get", "valdco"]]], "icon-allow-overlap": false, "icon-padding": 1 } },
       // Bundled land: shown until chart tiles arrive (setChartFallbackRange).
       { id: "land-world", type: "fill", source: "land-world", maxzoom: 6,
         paint: { "fill-color": css("--land") } },
@@ -302,10 +306,12 @@ function applyChartColours() {
   set("unsare-line", "line-color", c.grey);
   set("depare-drg", "line-color", c.grey);
   set("unsare", "fill-pattern", ihoColours ? "s52f:NODATA03" : "pat:nodata");
-  // soundings are drawn in the palette's colours: redrawn in place
+  // soundings and contour labels are drawn in the palette's colours: redrawn in place
   for (const id of map.listImages()) {
     const m = /^(sh|dp):(-?[0-9.]+)$/.exec(id);
     if (m) map.updateImage(id, soundingIcon(parseFloat(m[2]), m[1] === "sh"));
+    const l = /^cl:(-?[0-9.]+)$/.exec(id);
+    if (l) { const im = contourLabelIcon(parseFloat(l[1])); const old = map.getImage(id); if (old && old.data.width === im.width && old.data.height === im.height) map.updateImage(id, im); else map.removeImage(id); }
   }
 }
 /** Day, dusk, night (IHO) with the IHO symbols: the IHO palette for the chart, the rest
@@ -385,6 +391,8 @@ map.setMissingStyleImageResolver((id) => {
   if (id.startsWith("dpat:")) { const im = depthPatternImage(id); if (im) map.addImage(id, im, { pixelRatio: 2 }); return; }
   const m = /^(sh|dp):(-?[0-9.]+)$/.exec(id);
   if (m) { map.addImage(id, soundingIcon(parseFloat(m[2]), m[1] === "sh"), { pixelRatio: 2 }); return; }
+  const cl = /^cl:(-?[0-9.]+)$/.exec(id);
+  if (cl) { map.addImage(id, contourLabelIcon(parseFloat(cl[1])), { pixelRatio: 2 }); return; }
   const img = barbImage(id) || markImage(id) || labelImage(id) || featureImage(id) || tideImage(id) || poiImage(id) || symImage(id) || stationImage(id) || tidalImage(id);
   if (img) map.addImage(id, img, { pixelRatio: 2 });
 });
@@ -796,6 +804,7 @@ function applyChartSettings() {
   map.setPaintProperty("depare", "fill-color", depareColour());
   map.setPaintProperty("depare", "fill-pattern", depareFillPattern());
   map.setFilter("safety-contour", safetyContourFilter());
+  if (map.getLayer("depcnt-lbl")) map.setFilter("depcnt-lbl", contourLabelFilter());
   map.setLayoutProperty("soundg", "icon-image", soundingImage());
   features?.setSafetyContour(settings.safetyContour, !!settings.shallowDangers);
 }
@@ -817,6 +826,11 @@ for (const [id, key] of [["set-safety-depth", "safetyDepth"], ["set-safety-conto
   if (sh) {
     sh.value = settings.fourShades === false ? "2" : "4";
     sh.onchange = () => { settings.fourShades = sh.value !== "2"; saveSettings(); applyChartSettings(); };
+  }
+  const cl = document.getElementById("set-contour-labels");
+  if (cl) {
+    cl.checked = !!settings.contourLabels;
+    cl.onchange = () => { settings.contourLabels = cl.checked; saveSettings(); applyChartSettings(); };
   }
   const sp = document.getElementById("set-shallow-pattern");
   if (sp) {
@@ -1423,6 +1437,24 @@ function noDataPattern() {
 }
 
 /** Sounding figure in S-52 style: metres, tenths as a smaller subscript below 31 m, drying heights underlined. */
+/** A depth contour's label (S-52 SAFCON digits): its depth, small, in the contour colour. */
+function contourLabelIcon(depth) {
+  const t = String(Math.round(Math.abs(depth) * 10) / 10);
+  const c = document.createElement("canvas");
+  const g = c.getContext("2d");
+  const f = `17px "Segoe UI", system-ui, sans-serif`;
+  g.font = f;
+  c.width = Math.ceil(g.measureText(t).width) + 4;
+  c.height = 22;
+  g.font = f;
+  g.textBaseline = "middle";
+  g.fillStyle = chartColours().safety;
+  g.fillText(t, 2, 11);
+  return g.getImageData(0, 0, c.width, c.height);
+}
+function contourLabelFilter() {
+  return settings.contourLabels ? ["has", "valdco"] : ["has", "__never__"];
+}
 function soundingIcon(depth, shallow) {
   const dry = depth < 0;
   const a = Math.abs(depth);

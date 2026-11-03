@@ -15,7 +15,7 @@ const LIGHT = { r: "#d7262b", g: "#1f9a3a", w: "#f4c20d", o: MAGENTA, m: MAGENTA
 
 const KEY = "racenav.chartfeatures";
 const DEFAULTS = { cat: "all", sectors: true, names: true, soundings: true, avoidDangers: true, avoidFarms: true, symSize: 1.2, sym: "s52", info: false, bounds: "plain",
-  textImportant: true, textOther: true };
+  textImportant: true, textOther: true, dateSym: false };
 /** The standard display (S-Mode): one press back to it. */
 const STANDARD = { cat: "standard", sectors: true, names: true, soundings: true };
 
@@ -334,6 +334,9 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     // the IHO information symbols (the "i" of a feature with notes): only when asked for, as on an ECDIS
     { id: "s52-info", type: "symbol", ...src, "source-layer": "fpt", filter: ["all", minz, ["has", "si"]],
       layout: { "icon-image": ["concat", "s52:", ["get", "si"]], "icon-allow-overlap": true, "icon-ignore-placement": true } },
+    // the IHO date-dependent symbol (CHDATD01) on features charted for a time only: when asked for
+    { id: "s52-date", type: "symbol", ...src, "source-layer": "fpt", filter: ["all", minz, ["has", "sd"]],
+      layout: { "icon-image": ["concat", "s52:", ["get", "sd"]], "icon-allow-overlap": true, "icon-ignore-placement": true } },
     { id: "f-points", type: "symbol", ...src, "source-layer": "fpt", filter: pointFilter(safetyContour),
       layout: { "icon-image": pointIcon(safetyContour),
                 "icon-anchor": ["match", ["slice", ["get", "icon"], 0, 2], ["b|", "c|"], "bottom", "center"],
@@ -392,11 +395,11 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   // restricted and caution areas, constructions; All adds soundings, the other contours,
   // submarine cables and pipelines, dumping grounds and kelp.
   const ALL_ONLY = ["f-line-mag", "f-area-grey"];
-  const MAIN_ALL = ["depcnt", "wdcnt"]; // chart layers in main.js shown only in All
+  const MAIN_ALL = ["depcnt", "wdcnt", "depcnt-lbl"]; // chart layers in main.js shown only in All
   // With the IHO symbols, the IHO rules draw the lines and areas they portray (`s5`), in
   // the display category their viewing groups give (`vg`: 1 base, 2 standard, 3 other;
   // hazards always); TweedPlot's own layers draw the rest.
-  const S52_LAYERS = ["s52-fill", "s52-pat", "s52-aline", "s52-line", "s52-aline-solid", "s52-line-solid", "s52-info", "s52-sec-arc", "s52-sec-dash", "s52-text"];
+  const S52_LAYERS = ["s52-fill", "s52-pat", "s52-aline", "s52-line", "s52-aline-solid", "s52-line-solid", "s52-info", "s52-date", "s52-sec-arc", "s52-sec-dash", "s52-text"];
   // S-52 text groups: important (10-19: clearances, bearings...) and other (20-: light
   // descriptions, seabed, heights...), each switched by the mariner
   const textGroups = () => {
@@ -408,6 +411,23 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   };
   const TP_DRAWN = ["f-area-fill", "f-area-dash", "f-tss-fill", "f-tss-line", "f-tss-bnd", "f-construct", "f-bridge", "f-area-grey",
     "f-line-mag", "f-line-solid", "f-coast", "f-line-dash", "f-sec-leg", "f-sec-arc"];
+  // The viewing date (S-52 10.4.1): today unless the mariner sets another, or a range of
+  // dates (`viewDate`, `viewTo`; not kept between runs: the chart always starts on today)
+  let viewDate = null, viewTo = null;
+  const ymd = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+  // x within lo..hi on the year's circle (a period can run over the new year)
+  const within = (x, lo, hi) => ["case", ["<=", lo, hi], ["all", ["<=", lo, x], [">=", hi, x]], ["any", ["<=", lo, x], [">=", hi, x]]];
+  function dateFilter() {
+    const a = ymd(viewDate ?? new Date()), b = viewTo && ymd(viewTo) > a ? ymd(viewTo) : a;
+    // charted at some time in a..b
+    const fixed = ["all", ["any", ["!", ["has", "ds"]], ["<=", ["get", "ds"], b]], ["any", ["!", ["has", "de"]], [">=", ["get", "de"], a]]];
+    const ps = ["get", "ps"], pe = ["get", "pe"], ma = a.slice(4), mb = b.slice(4);
+    const yearRound = Number(b.slice(0, 4)) - Number(a.slice(0, 4)) > 1 || (b.slice(0, 4) !== a.slice(0, 4) && mb >= ma);
+    const periodic = yearRound ? true : ["any", ["!", ["has", "ps"]], within(ma, ps, pe), within(ps, ma, mb)];
+    return ["all", fixed, periodic];
+  }
+  // a new day: the chart moves on with it
+  setInterval(() => { if (!viewDate) apply(); }, 3600 * 1000);
   function modeFilter(id, cat) {
     const s52 = useS52();
     const vgOk = cat === "base" ? ["any", ["==", ["get", "vg"], 1], HZ]
@@ -440,6 +460,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       let on = enabled && (cat !== "base" || haz || s52layer || l.id === "f-coast"); // the ENC coast is part of the chart base
       if (s52layer) on = on && useS52();
       if (l.id === "s52-info") on = on && opts.info;
+      if (l.id === "s52-date") on = on && opts.dateSym;
       if (ALL_ONLY.includes(l.id)) on = on && cat === "all";
       if (SECTOR.includes(l.id)) on = on && opts.sectors;
       if (NAMES.includes(l.id)) on = on && opts.names;
@@ -450,6 +471,8 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       if (haz && cat === "base") parts.push(useS52() ? ["any", BASE, ["==", ["get", "vg"], 1]] : BASE);
       const m = modeFilter(l.id, cat);
       if (m) parts.push(m);
+      // only what is charted for the viewing date (S-52 10.4.1)
+      parts.push(dateFilter());
       map.setFilter(l.id, parts.length > 1 ? ["all", ...parts] : parts[0]);
     }
     if (useS52()) {
@@ -462,13 +485,16 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     const ind = $("dispcat-ind");
     if (ind) {
       ind.hidden = !enabled;
-      ind.textContent = { base: "Display: Base", standard: "Display: Standard", all: "Display: All" }[cat] ?? "";
+      const fmt = (d) => d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+      ind.textContent = ({ base: "Display: Base", standard: "Display: Standard", all: "Display: All" }[cat] ?? "")
+        + (viewDate ? ` · Chart date ${fmt(viewDate)}${viewTo ? ` to ${fmt(viewTo)}` : ""}` : "");
+      ind.classList.toggle("dated", !!viewDate);
     }
     for (const id of MAIN_ALL) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", enabled && cat === "all" ? "visible" : "none");
     if (map.getLayer("soundg")) map.setLayoutProperty("soundg", "visibility", enabled && cat !== "base" && (cat === "all" || opts.soundings) ? "visible" : "none");
     const sel = $("set-dispcat");
     if (sel) sel.value = cat;
-    for (const [id, key] of [["set-sectors", "sectors"], ["set-featnames", "names"], ["set-soundings", "soundings"], ["set-info", "info"], ["set-text-important", "textImportant"], ["set-text-other", "textOther"]]) if ($(id)) $(id).checked = opts[key];
+    for (const [id, key] of [["set-sectors", "sectors"], ["set-featnames", "names"], ["set-soundings", "soundings"], ["set-info", "info"], ["set-text-important", "textImportant"], ["set-text-other", "textOther"], ["set-datesym", "dateSym"]]) if ($(id)) $(id).checked = opts[key];
     if ($("set-soundings")) $("set-soundings").disabled = cat !== "standard";
     const std = $("set-std");
     if (std) std.classList.toggle("on", Object.entries(STANDARD).every(([k, v]) => opts[k] === v));
@@ -477,12 +503,25 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   if (sel) sel.onchange = () => { opts.cat = sel.value; save(); apply(); };
   const std = $("set-std");
   if (std) std.onclick = () => { Object.assign(opts, STANDARD); save(); apply(); };
-  for (const [id, key] of [["set-sectors", "sectors"], ["set-featnames", "names"], ["set-soundings", "soundings"], ["set-info", "info"], ["set-text-important", "textImportant"], ["set-text-other", "textOther"], ["set-avoid-dangers", "avoidDangers"], ["set-avoid-farms", "avoidFarms"]]) {
+  for (const [id, key] of [["set-sectors", "sectors"], ["set-featnames", "names"], ["set-soundings", "soundings"], ["set-info", "info"], ["set-text-important", "textImportant"], ["set-text-other", "textOther"], ["set-datesym", "dateSym"], ["set-avoid-dangers", "avoidDangers"], ["set-avoid-farms", "avoidFarms"]]) {
     const el = $(id);
     if (!el) continue;
     el.checked = opts[key];
     el.onchange = () => { opts[key] = el.checked; save(); apply(); };
   }
+  const dateIn = $("set-chartdate"), dateTo = $("set-chartdate-to"), dateNow = $("set-chartdate-today");
+  const iso = (d) => (d ? `${ymd(d).slice(0, 4)}-${ymd(d).slice(4, 6)}-${ymd(d).slice(6)}` : "");
+  const parse = (v) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ""); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+  const showDate = () => { if (dateIn) dateIn.value = iso(viewDate); if (dateTo) dateTo.value = iso(viewTo); };
+  const setDates = (from, to) => {
+    viewDate = from; viewTo = from && to && ymd(to) > ymd(from) ? to : null;
+    if (viewDate && !viewTo && ymd(viewDate) === ymd(new Date())) viewDate = null;
+    showDate(); apply();
+  };
+  if (dateIn) dateIn.onchange = () => setDates(parse(dateIn.value), viewTo);
+  if (dateTo) dateTo.onchange = () => setDates(viewDate ?? new Date(), parse(dateTo.value));
+  if (dateNow) dateNow.onclick = () => setDates(null, null);
+  showDate();
   apply();
 
   // symbol size: the symbols are drawn at twice size, so up to 2x stays sharp; labels grow at half the rate
@@ -492,6 +531,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     map.setLayoutProperty("f-points", "icon-size", k);
     map.setLayoutProperty("f-rot", "icon-size", k);
     map.setLayoutProperty("s52-info", "icon-size", k);
+    map.setLayoutProperty("s52-date", "icon-size", k);
     map.setLayoutProperty("s52-text", "icon-size", k);
     map.setLayoutProperty("f-labels", "icon-size", kl);
     // labels sit beside the symbol: keep them clear of it as it grows
@@ -601,6 +641,8 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
 
   return {
     setEnabled: (on) => { enabled = on; apply(); },
+    /** View the chart as at another date (a Date), or today (null). */
+    setChartDate: (d, to = null) => setDates(d, to),
     /** Whether the IHO symbols are in use (Symbols: IHO, and loaded). */
     usingS52: () => useS52(),
     /** Draw the IHO symbols, lines and areas in a palette ("Day", "Dusk", "Night"). */

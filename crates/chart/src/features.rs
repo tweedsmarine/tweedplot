@@ -696,6 +696,7 @@ impl ChartStore {
                                     let tx = crate::s52::entry_texts(e);
                                     if !tx.is_empty() {
                                         let mut base = vec![("cls", Value::Str(class.code.into())), ("band", Value::UInt(t.band as u64)), ("minz", Value::F64((minz * 10.0).round() / 10.0))];
+                                        base.extend(date_props(|k| a.get(k).map(str::to_string)));
                                         if finer < f64::MAX {
                                             base.push(("maxz", Value::F64((finer * 10.0).round() / 10.0)));
                                         }
@@ -723,6 +724,7 @@ impl ChartStore {
                                     Some(i) => props.push(("icon", Value::Str(i))),
                                     None => props.push(("ac", Value::UInt(1))),
                                 }
+                                props.extend(date_props(|k| a.get(k).map(str::to_string)));
                                 // TweedPlot's "?" of an object the IHO rules portray but draw
                                 // nothing for (S-52 shows nothing there either)
                                 if class.code == s57::UNKNOWN
@@ -774,7 +776,7 @@ impl ChartStore {
                                         props.push(("sy", Value::Str(sy.into())));
                                     }
                                     if !si.is_empty() {
-                                        props.push(("si", Value::Str(si.into())));
+                                        props.extend(info_props(si));
                                     }
                                 }
                                 if let Some(n) = a.get("objnam") {
@@ -808,7 +810,7 @@ impl ChartStore {
                         .iter()
                         .map(|(_, t)| {
                             let mut rows = Vec::new();
-                            self.query_text(t, bbox, &["objnam", "scamin", "catrea", "restrn", "catmfa", "orient", "watlev"], |row| rows.push(row));
+                            self.query_text(t, bbox, &["objnam", "scamin", "catrea", "restrn", "catmfa", "orient", "watlev", "datsta", "datend", "persta", "perend"], |row| rows.push(row));
                             rows
                         })
                         .collect();
@@ -899,6 +901,11 @@ impl ChartStore {
                             if is_display_base(class.code) {
                                 props.push(("db", Value::UInt(1)));
                             }
+                            const DATE_COLS: [&str; 4] = ["datsta", "datend", "persta", "perend"];
+                            props.extend(date_props(|k| {
+                                let i = DATE_COLS.iter().position(|c| *c == k)? + 7;
+                                row.vals.get(i)?.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(str::to_string)
+                            }));
                             if let Some(n) = row.vals[0].as_deref().filter(|s| !s.trim().is_empty()) {
                                 props.push(("name", Value::Str(n.trim().into())));
                             }
@@ -1015,7 +1022,7 @@ impl ChartStore {
                                             pp.push(("sy", Value::Str(sy.clone())));
                                         }
                                         if let Some(si) = &centre_info {
-                                            pp.push(("si", Value::Str(si.clone())));
+                                            pp.extend(info_props(si));
                                         }
                                         if let Some(tz) = finer {
                                             pp.push(("maxz", Value::F64((tz.min(30.0) * 10.0).round() / 10.0)));
@@ -1023,7 +1030,7 @@ impl ChartStore {
                                         pp.push(("ac", Value::UInt(1)));
                                         if !centre_texts.is_empty() {
                                             let base: Vec<(&str, Value)> =
-                                                pp.iter().filter(|(k, _)| matches!(*k, "cls" | "band" | "minz" | "maxz")).cloned().collect();
+                                                pp.iter().filter(|(k, _)| matches!(*k, "cls" | "band" | "minz" | "maxz" | "ds" | "de" | "ps" | "pe")).cloned().collect();
                                             put_texts(&mut ftx, c, &centre_texts, &base);
                                         }
                                         if centre_symbol.is_some() || centre_info.is_some() {
@@ -1090,6 +1097,7 @@ impl ChartStore {
             fid: i64,
             light: Light,
             minz: f64,
+            dates: Vec<(&'static str, Value)>,
         }
         let mut recs: Vec<Rec> = Vec::new();
         for (ti, t) in tables {
@@ -1098,7 +1106,8 @@ impl ChartStore {
                 let a = Attrs(&row.vals);
                 for &p in pts {
                     let minz = a.num("scamin").map_or(0.0, |s| s57::scamin_zoom(s, p[1]));
-                    recs.push(Rec { p, band: t.band, t: *ti, fid: row.fid, light: Light::from_attrs(&a), minz });
+                    let dates = date_props(|k| a.get(k).map(str::to_string));
+                    recs.push(Rec { p, band: t.band, t: *ti, fid: row.fid, light: Light::from_attrs(&a), minz, dates });
                 }
             });
         }
@@ -1150,6 +1159,7 @@ impl ChartStore {
                 if finer < f64::MAX {
                     props.push(("maxz", Value::F64((finer * 10.0).round() / 10.0)));
                 }
+                props.extend(first.dates.iter().cloned());
                 if let Some(e) = &s52 {
                     props.push(("s5", Value::UInt(1)));
                     match crate::s52::entry_category(e) {
@@ -1161,14 +1171,15 @@ impl ChartStore {
                         props.push(("sy", Value::Str(sy.into())));
                     }
                     if !si.is_empty() {
-                        props.push(("si", Value::Str(si.into())));
+                        props.extend(info_props(si));
                     }
                     // its description as the IHO rules write it (`itx`: TweedPlot's own label
                     // gives way to it)
                     let tx = crate::s52::entry_texts(e);
                     if !tx.is_empty() {
                         props.push(("itx", Value::UInt(1)));
-                        let base: Vec<(&str, Value)> = props.iter().filter(|(k, _)| matches!(*k, "cls" | "band" | "minz" | "maxz")).cloned().collect();
+                        let base: Vec<(&str, Value)> =
+                            props.iter().filter(|(k, _)| matches!(*k, "cls" | "band" | "minz" | "maxz" | "ds" | "de" | "ps" | "pe")).cloned().collect();
                         put_texts(ftx, c, &tx, &base);
                     }
                 }
@@ -1205,7 +1216,7 @@ impl ChartStore {
                             lsec,
                             tp,
                             &[c, end],
-                            &[("k", Value::Str("sdash".into())), ("tok", Value::Str("CHBLK".into())), ("minz", mz.clone()), ("maxz", mx.clone())],
+                            &[&[("k", Value::Str("sdash".into())), ("tok", Value::Str("CHBLK".into())), ("minz", mz.clone()), ("maxz", mx.clone())][..], &first.dates[..]].concat(),
                         );
                     }
                     crate::s52::SectorPart::Arc { radius, start, extent, styles } => {
@@ -1218,12 +1229,16 @@ impl ChartStore {
                                 tp,
                                 &arc,
                                 &[
-                                    ("k", Value::Str(if *dash { "sdash" } else { "sarc" }.into())),
-                                    ("tok", Value::Str(tok.clone())),
-                                    ("w", Value::F64(*w)),
-                                    ("minz", mz.clone()),
-                                    ("maxz", mx.clone()),
-                                ],
+                                    &[
+                                        ("k", Value::Str(if *dash { "sdash" } else { "sarc" }.into())),
+                                        ("tok", Value::Str(tok.clone())),
+                                        ("w", Value::F64(*w)),
+                                        ("minz", mz.clone()),
+                                        ("maxz", mx.clone()),
+                                    ][..],
+                                    &first.dates[..],
+                                ]
+                                .concat(),
                             );
                         }
                     }
@@ -1248,6 +1263,7 @@ impl ChartStore {
                 let arc: Vec<[f64; 2]> = (0..=n).map(|i| at(a0 + (a1 - a0) * i as f64 / n as f64, ARC_R)).collect();
                 let col = s57::light_colour(&l.colours);
                 let mut pa = vec![("col", Value::Str(col.into())), ("k", Value::Str("arc".into())), ("minz", mz.clone()), ("maxz", mx.clone())];
+                pa.extend(first.dates.iter().cloned());
                 if !s52_sectors.is_empty() {
                     pa.push(("s5", Value::UInt(1)));
                 }
@@ -1440,6 +1456,25 @@ pub fn polygons(g: &Geom) -> &[Vec<Ring>] {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn date_ranges_filled_out() {
+        let v = |m: &[(&str, &str)]| {
+            super::date_props(|k| m.iter().find(|(a, _)| *a == k).map(|(_, b)| b.to_string()))
+                .into_iter()
+                .map(|(k, v)| match v {
+                    super::Value::Str(s) => format!("{k}={s}"),
+                    _ => String::new(),
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(v(&[("datsta", "20120816"), ("datend", "2086")]), ["ds=20120816", "de=20869999"]);
+        assert_eq!(v(&[("persta", "--10"), ("perend", "--1215")]), ["ps=1000", "pe=1215"]);
+        assert_eq!(v(&[("perend", "--03")]), ["ps=0000", "pe=0399"]);
+        assert!(v(&[]).is_empty());
+        let i = super::info_props("INFORM01,CHDATD01");
+        assert_eq!(i.len(), 2);
+    }
+
     use super::*;
 
     #[test]
@@ -1538,4 +1573,45 @@ fn put_texts(ftx: &mut Layer, at: [f64; 2], texts: &[crate::s52::Text], base: &[
         }
         ftx.add(&TileGeom::Points(vec![[at[0].round() as i32, at[1].round() as i32]]), &p);
     }
+}
+
+/// When a feature is charted for (S-57 DATSTA/DATEND, and each year PERSTA/PEREND) as tile
+/// properties the chart filters on the viewing date: `ds` and `de` (CCYYMMDD, a partial
+/// date filled out to its first or last day), `ps` and `pe` (MMDD, likewise).
+fn date_props(get: impl Fn(&str) -> Option<String>) -> Vec<(&'static str, Value)> {
+    let digits = |v: String| -> String { v.chars().filter(char::is_ascii_digit).collect() };
+    let fill = |d: String, n: usize, c: char| -> Option<String> {
+        if d.is_empty() || d.len() > n {
+            return None;
+        }
+        Some(format!("{d}{}", c.to_string().repeat(n - d.len())))
+    };
+    let mut out = Vec::new();
+    if let Some(v) = get("datsta").map(digits).and_then(|d| fill(d, 8, '0')) {
+        out.push(("ds", Value::Str(v)));
+    }
+    if let Some(v) = get("datend").map(digits).and_then(|d| fill(d, 8, '9')) {
+        out.push(("de", Value::Str(v)));
+    }
+    let ps = get("persta").map(digits).and_then(|d| fill(d, 4, '0'));
+    let pe = get("perend").map(digits).and_then(|d| fill(d, 4, '9'));
+    if ps.is_some() || pe.is_some() {
+        out.push(("ps", Value::Str(ps.unwrap_or_else(|| "0000".into()))));
+        out.push(("pe", Value::Str(pe.unwrap_or_else(|| "1299".into()))));
+    }
+    out
+}
+
+/// The IHO information symbols as tile properties: `si` the chart notes' ("i" and the
+/// like), `sd` the date-dependent symbol (CHDATD01), each shown when the mariner asks.
+fn info_props(si: &str) -> Vec<(&'static str, Value)> {
+    let (date, info): (Vec<&str>, Vec<&str>) = si.split(',').filter(|x| !x.is_empty()).partition(|x| x.starts_with("CHDATD"));
+    let mut out = Vec::new();
+    if !info.is_empty() {
+        out.push(("si", Value::Str(info.join(","))));
+    }
+    if !date.is_empty() {
+        out.push(("sd", Value::Str(date.join(","))));
+    }
+    out
 }

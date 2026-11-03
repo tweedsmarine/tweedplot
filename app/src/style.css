@@ -1328,6 +1328,7 @@ html.cur-edge:not(#n1):not(#n2):not(#n3), html.cur-edge:not(#n1):not(#n2):not(#n
 /* chart display category beside the scale (chartfeatures.js) */
 .dispcat-ind { position: absolute; z-index: 3; font: 600 11px "Segoe UI", system-ui, sans-serif; color: #1d2a33; background: rgba(255,255,255,0.75); padding: 1px 6px; border-radius: 3px; pointer-events: none; }
 .dispcat-ind[hidden] { display: none; }
+.dispcat-ind.dated { background: #ffe9a8; color: #6b3d00; }
 
 /* disclaimer (disclaimer.js): over everything, the splash and welcome included */
 #disclaimer { position: fixed; inset: 0; z-index: 9800; display: flex; align-items: center; justify-content: center; background: rgba(0, 20, 40, .8); }

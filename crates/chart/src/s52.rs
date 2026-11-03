@@ -551,6 +551,7 @@ fn point_fallback(o: &S57Object) -> Option<String> {
             Some(format!("ViewingGroup:33060;PointInstruction:{}", tide_symbol(&o.class)?))
         }
         "CTRPNT" => Some("ViewingGroup:32250;PointInstruction:POSGEN04".into()),
+        "ICNARE" => Some("ViewingGroup:26040;PointInstruction:INFARE51".into()),
         // an opening bridge's symbol; S-52 draws nothing for any other bridge as a point
         "BRIDGE" if attr("CATBRG").is_some_and(|c| c.split(',').any(|c| matches!(c.trim(), "2" | "3" | "4" | "5" | "7"))) => {
             Some("ViewingGroup:12210;PointInstruction:BRIDGE01".into())
@@ -921,6 +922,16 @@ impl ChartStore {
                 match s57_symins.get(&o.id).filter(|_| unknown || newobj) {
                     // its own S-52 drawing
                     Some(ins) => s.encode(&drawn(ins, &s.cat)).into(),
+                    // an incineration area (no S-101 feature): S-52's information-area symbol and
+                    // boundary, symbolised or plain as chosen
+                    None if unknown && class.geo == crate::s57::Geo::Area && s57_class.get(&o.id).is_some_and(|c| c == "ICNARE") => {
+                        let line = if s.value("PlainBoundaries").as_deref() == Some("false") {
+                            "LineInstruction:CTYARE51".to_string()
+                        } else {
+                            "Dash:0,3.6;LineStyle:_simple_,5.4,0.64,CHMGD;LineInstruction:_simple_".to_string()
+                        };
+                        s.encode(&drawn(&format!("ViewingGroup:26040;PointInstruction:INFARE51;{line}"), &s.cat)).into()
+                    }
                     None => {
                         let fallback = unknown.then(|| s57_class.get(&o.id).and_then(|c| s52_fallback(c, class.geo))).flatten();
                         fallback.map(Into::into).unwrap_or_else(|| s.encode(&drawn(&o.instructions, &s.cat)).into())
