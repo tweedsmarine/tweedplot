@@ -647,6 +647,14 @@ impl ChartStore {
                         let mut mine = Vec::new();
                         // the IHO portrayal of this table (worked out before reading it)
                         let syms = self.s52_table(*ti);
+                        // Everything else read from the charts is read before the table is: an
+                        // ENC band file holds all its tables in one database, which is locked
+                        // while the table is read (reading the depth areas or the coverage from
+                        // inside, as this did, waited on itself for ever with ENC cells)
+                        if matches!(class.code, "UWTROC" | "WRECKS" | "OBSTRN") && depth_areas.is_none() {
+                            depth_areas = Some(DepthAreas::load(self, [bbox[0] - 0.01, bbox[1] - 0.01, bbox[2] + 0.01, bbox[3] + 0.01]));
+                        }
+                        let _ = self.coverage();
                         self.query_text(t, bbox, TILE_COLS, |row| {
                             let Geom::Points(pts) = &row.geom else { return };
                             let a = Attrs(&row.vals);
@@ -682,17 +690,24 @@ impl ChartStore {
                                 if !inside(px) {
                                     continue;
                                 }
-                                let Some(icon) = s57::icon(class.code, &a) else {
+                                // no symbol of TweedPlot's: drawn only by the IHO rules, if they draw it
+                                // (`ac`: as an area's IHO symbol, shown with the IHO symbols only)
+                                let icon = s57::icon(class.code, &a);
+                                let iho_sy = syms.as_ref().and_then(|m| m.get(&row.fid)).is_some_and(|e| !crate::s52::split_info(e).0.is_empty());
+                                if icon.is_none() && !iho_sy {
                                     continue;
-                                };
+                                }
                                 let mut props = vec![
                                     ("cls", Value::Str(class.code.into())),
-                                    ("icon", Value::Str(icon)),
                                     ("t", Value::UInt(*ti as u64)),
                                     ("fid", Value::UInt(row.fid.max(0) as u64)),
                                     ("band", Value::UInt(t.band as u64)),
                                     ("minz", Value::F64((minz * 10.0).round() / 10.0)),
                                 ];
+                                match icon {
+                                    Some(i) => props.push(("icon", Value::Str(i))),
+                                    None => props.push(("ac", Value::UInt(1))),
+                                }
                                 if finer < f64::MAX {
                                     props.push(("maxz", Value::F64((finer * 10.0).round() / 10.0)));
                                 }

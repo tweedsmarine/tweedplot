@@ -361,7 +361,9 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       if (NAMES.includes(l.id)) on = on && opts.names;
       map.setLayoutProperty(l.id, "visibility", on ? "visible" : "none");
       const parts = [baseFilter[l.id]];
-      if (haz && cat === "base") parts.push(BASE);
+      // Base: hazards and TweedPlot's display base, and with the IHO symbols whatever the
+      // rules put in the display base (a hulk, a pylon, an islet, a conspicuous structure)
+      if (haz && cat === "base") parts.push(useS52() ? ["any", BASE, ["==", ["get", "vg"], 1]] : BASE);
       const m = modeFilter(l.id, cat);
       if (m) parts.push(m);
       map.setFilter(l.id, parts.length > 1 ? ["all", ...parts] : parts[0]);

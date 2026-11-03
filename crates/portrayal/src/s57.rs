@@ -88,9 +88,15 @@ impl<'a> Converter<'a> {
                     Some("5") => pick("Pile"),
                     Some("6") => pick("MooringTrot"),
                     Some("7") => pick("MooringBuoy"),
+                    // no (or another) category: an area of moorings
+                    _ if prim == "surface" => pick("MooringArea"),
+                    // S-52's default for a mooring point (MORFAC03) is the dolphin's
+                    _ if prim == "point" => pick("Dolphin"),
                     _ => None,
                 };
             }
+            // S-101 has one feature for both
+            "TSEZNE" | "TSELNE" => return pick("SeparationZoneOrLine"),
             "DRGARE" => return pick("DredgedArea"),
             "UNSARE" => return pick("UnsurveyedArea"),
             "CTNARE" => return pick("CautionArea"),

@@ -5,7 +5,7 @@
 //! attributes into a chart icon and label for the vector tiles, and decodes the
 //! S-57 codes into words for the feature details shown on a click.
 
-pub use enc_s57::classes::{class_for, FeatureClass, Geo, CLASSES, UNKNOWN};
+pub use enc_s57::classes::{class_for, FeatureClass, Geo, CHART_OBJECT, CLASSES, UNKNOWN};
 
 /// Attribute columns read for the tiles (whichever a table has).
 pub const TILE_COLS: &[&str] = &[
@@ -840,7 +840,10 @@ mod tests {
         assert_eq!(class_for("traffic_separation_zone_polygon_hydro_enc_b3").unwrap().code, "TSEZNE");
         assert_eq!(enc_s57::gpkg::table_for("UNSARE", 3, 4).as_deref(), Some("unsurveyed_area_polygon_hydro_enc_b4"));
         assert_eq!(enc_s57::gpkg::table_for("SNDWAV", 3, 4).as_deref(), Some("other_object_polygon_hydro_enc_b4"));
-        assert_eq!(enc_s57::gpkg::table_for("BUISGL", 1, 4), None);
+        assert_eq!(enc_s57::gpkg::table_for("BUISGL", 1, 4).as_deref(), Some("chart_object_points_hydro_enc_b4"));
+        assert_eq!(enc_s57::gpkg::table_for("LNDARE", 1, 4).as_deref(), Some("chart_object_points_hydro_enc_b4"));
+        assert_eq!(enc_s57::gpkg::table_for("LNDARE", 3, 4).as_deref(), Some("land_area_polygon_enc_b4"));
+        assert_eq!(enc_s57::gpkg::table_for("TS_PNH", 1, 4), None);
         assert_eq!(enc_s57::gpkg::table_for("M_QUAL", 3, 4), None);
     }
 

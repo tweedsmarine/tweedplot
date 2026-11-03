@@ -504,7 +504,7 @@ impl ChartStore {
         let mut rows: Vec<(i64, S57Object)> = Vec::new();
         self.query_text(t, t.bounds, &cols, |row| {
             let attrs: Vec<(String, String)> = cols.iter().zip(row.vals).filter_map(|(c, v)| Some((c.to_ascii_uppercase(), v?))).collect();
-            let cls = if class.code == crate::s57::UNKNOWN {
+            let cls = if class.code == crate::s57::UNKNOWN || class.code == crate::s57::CHART_OBJECT {
                 attrs.iter().find(|(k, _)| k == "OBJL").map(|(_, v)| v.clone()).unwrap_or_default()
             } else {
                 class.code.to_string()

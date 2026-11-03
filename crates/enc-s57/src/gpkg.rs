@@ -12,7 +12,7 @@ use crate::catalogue;
 use crate::cell::{Cell, Shape};
 
 /// Bump when the conversion changes, so cells are converted again.
-pub const VERSION: u32 = 5;
+pub const VERSION: u32 = 6;
 /// Bump when merging changes, so the merged files are made again (the cells needn't be).
 pub const MERGE_VERSION: u32 = 2;
 
@@ -58,7 +58,11 @@ pub fn table_for(acr: &str, prim: u8, band: u8) -> Option<String> {
         return Some(format!("{}_hydro_enc_b{band}", c.prefix));
     }
     if crate::classes::ignored(acr) {
-        return None;
+        if !crate::classes::portrayed_only(acr, prim) {
+            return None;
+        }
+        let c = crate::classes::CLASSES.iter().find(|c| c.code == crate::classes::CHART_OBJECT && c.geo == geo)?;
+        return Some(format!("{}_hydro_enc_b{band}", c.prefix));
     }
     let c = crate::classes::CLASSES.iter().find(|c| c.code == crate::classes::UNKNOWN && c.geo == geo)?;
     Some(format!("{}_hydro_enc_b{band}", c.prefix))
@@ -66,7 +70,7 @@ pub fn table_for(acr: &str, prim: u8, band: u8) -> Option<String> {
 
 /// Whether a table is one of the catch-all tables for objects without a symbol.
 pub fn is_unknown_table(name: &str) -> bool {
-    name.starts_with("other_object_")
+    name.starts_with("other_object_") || name.starts_with("chart_object_")
 }
 
 #[derive(Default)]

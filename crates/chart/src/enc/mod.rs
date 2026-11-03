@@ -379,7 +379,8 @@ mod tests {
         let dir = std::env::temp_dir().join("enc_test");
         std::fs::create_dir_all(&dir).unwrap();
         let out = dir.join("t.gpkg");
-        assert_eq!(write_gpkg(&c, &out).unwrap(), 14);
+        // (19: with the land detail kept for the IHO portrayal)
+        assert_eq!(write_gpkg(&c, &out).unwrap(), 19);
         // the chart store reads it like the LINZ layers
         let store = crate::ChartStore::open_dirs(std::slice::from_ref(&dir)).unwrap();
         assert!(store.tables.iter().any(|t| t.kind == crate::Kind::DepthArea && t.band == 6));
