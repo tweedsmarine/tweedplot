@@ -384,6 +384,11 @@ pub(crate) fn decode_texts(s: &str) -> Vec<Text> {
         .collect()
 }
 
+/// The drawing priority in a point entry (after the texts).
+pub(crate) fn entry_priority(s: &str) -> Option<u8> {
+    s.split('|').nth(6)?.parse().ok()
+}
+
 /// The texts in a point entry (after the light flag).
 pub(crate) fn entry_texts(s: &str) -> Vec<Text> {
     s.split('|').nth(5).map(decode_texts).unwrap_or_default()
@@ -402,16 +407,38 @@ pub struct Drawn {
     pub symbols: String,
     pub category: u8,
     pub texts: Vec<Text>,
+    /// The rules' drawing priorities (S-100 DrawingPriority, S-52's ×3) of its fill or
+    /// pattern and of its line: what draws over what.
+    pub fill_priority: Option<u8>,
+    pub line_priority: Option<u8>,
+}
+
+/// The drawing priority of a feature's first point symbol (not its information symbols).
+pub fn point_priority(instructions: &str) -> Option<u8> {
+    let mut prio = None;
+    let mut info = false;
+    for part in instructions.split(';') {
+        let (k, v) = part.split_once(':').unwrap_or((part, ""));
+        match k {
+            "DrawingPriority" => prio = v.trim().parse::<f64>().ok().map(|p| p.clamp(0.0, 99.0) as u8),
+            "ViewingGroup" => info = v.split(',').any(|g| matches!(g.trim(), "90020" | "90021" | "90022")),
+            "PointInstruction" if !v.is_empty() && !info => return prio,
+            _ => {}
+        }
+    }
+    None
 }
 
 pub fn drawn(instructions: &str, cat: &portrayal::Catalogue) -> Drawn {
     let mut d = Drawn { symbols: point_symbols(instructions), category: category(instructions), texts: texts(instructions), ..Default::default() };
     let mut dashes: Vec<(f64, f64)> = Vec::new();
     let mut simple: Option<portrayal::LineStyle> = None;
+    let mut prio: Option<u8> = None;
     for part in instructions.split(';') {
         let (k, v) = part.split_once(':').unwrap_or((part, ""));
         let nums = |v: &str| -> Vec<f64> { v.split(',').map(|x| x.trim().parse().unwrap_or(0.0)).collect() };
         match k {
+            "DrawingPriority" => prio = v.trim().parse::<f64>().ok().map(|p| p.clamp(0.0, 99.0) as u8),
             "Dash" => {
                 let n = nums(v);
                 if n.len() == 2 {
@@ -437,9 +464,11 @@ pub fn drawn(instructions: &str, cat: &portrayal::Catalogue) -> Drawn {
                             }
                         }
                         d.line = Some((name, s));
+                        d.line_priority = prio;
                     }
                 } else if let Some(s) = cat.line_style(v) {
                     d.line = Some((v.to_string(), s));
+                    d.line_priority = prio;
                 }
                 dashes.clear();
             }
@@ -449,9 +478,13 @@ pub fn drawn(instructions: &str, cat: &portrayal::Catalogue) -> Drawn {
                 let tr = f.next().and_then(|x| x.trim().parse().ok()).unwrap_or(0.0);
                 if !token.is_empty() {
                     d.fill = Some((token, tr));
+                    d.fill_priority = d.fill_priority.max(prio);
                 }
             }
-            "AreaFillReference" if d.pattern.is_none() && !v.is_empty() => d.pattern = Some(v.to_string()),
+            "AreaFillReference" if d.pattern.is_none() && !v.is_empty() => {
+                d.pattern = Some(v.to_string());
+                d.fill_priority = d.fill_priority.max(prio);
+            }
             _ => {}
         }
     }
@@ -497,6 +530,12 @@ impl S52 {
         }
         if d.category > 0 {
             out.push(format!("vg={}", d.category));
+        }
+        if let Some(p) = d.fill_priority.filter(|_| d.fill.is_some() || d.pattern.is_some()) {
+            out.push(format!("pf={p}"));
+        }
+        if let Some(p) = d.line_priority.filter(|_| d.line.is_some()) {
+            out.push(format!("pl={p}"));
         }
         if !d.texts.is_empty() {
             out.push(format!("tx={}", encode_texts(&d.texts)));
@@ -647,6 +686,8 @@ pub(crate) fn props(encoded: &str) -> impl Iterator<Item = (&'static str, &str)>
             "si" => "si",
             "vg" => "vg",
             "tx" => "tx",
+            "pf" => "pf",
+            "pl" => "pl",
             _ => return None,
         };
         Some((k, v))
@@ -908,12 +949,16 @@ impl ChartStore {
                 let mut e = point_entry(ins);
                 let lit = o.id.parse::<i64>().is_ok_and(|f| lit.contains(&f));
                 let tx = encode_texts(&texts(ins));
-                if lit || !tx.is_empty() {
+                let pr = point_priority(ins);
+                if lit || !tx.is_empty() || pr.is_some() {
                     e.push_str(if lit { "|1" } else { "|" });
                 }
-                if !tx.is_empty() {
+                if !tx.is_empty() || pr.is_some() {
                     e.push('|');
                     e.push_str(&tx);
+                }
+                if let Some(p) = pr {
+                    e.push_str(&format!("|{p}"));
                 }
                 e.into()
             } else {
@@ -966,6 +1011,18 @@ impl ChartStore {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn drawing_priorities() {
+        let cat = portrayal::Catalogue::open(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/resources/s101-pc")).unwrap();
+        let d = super::drawn("ViewingGroup:26010;DrawingPriority:9;ColorFill:CHBRN;DrawingPriority:18;LineInstruction:CTYARE51", &cat);
+        assert_eq!((d.fill_priority, d.line_priority), (Some(9), Some(18)));
+        assert_eq!(super::point_priority("ViewingGroup:27010;DrawingPriority:24;PointInstruction:BOYLAT13"), Some(24));
+        assert_eq!(super::point_priority("ViewingGroup:27010,90020;DrawingPriority:24;PointInstruction:INFORM01"), None);
+        assert_eq!(super::entry_priority("BOYLAT13|||2|||24"), Some(24));
+        assert!(super::entry_texts("BOYLAT13|||2|||24").is_empty());
+        assert!(!super::entry_lit("BOYLAT13|||2|||24"));
+    }
+
     #[test]
     fn texts_with_their_style() {
         let i = "ViewingGroup:27070;Rotation:PortrayalCRS,135;PointInstruction:LIGHTS13;Rotation:PortrayalCRS,0;FontColor:CHBLK;LocalOffset:7.02,0;TextAlignHorizontal:Start;TextAlignVertical:Center;ViewingGroup:23,27070;DrawingPriority:24;TextInstruction:Fl W;ViewingGroup:27070";

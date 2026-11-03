@@ -242,6 +242,52 @@ const notReplaced = ["any", ["!", ["has", "maxz"]], ["<", ["zoom"], ["get", "max
 const minz = ["all", notReplaced, ["any", HZ, ["!", ["has", "minz"]], [">=", ["zoom"], ["get", "minz"]]]];
 const minzDeep = ["all", notReplaced, ["any", ["!", ["has", "minz"]], [">=", ["zoom"], ["get", "minz"]]]];
 
+/** Which point symbols draw over which: the IHO drawing priority (`pp`), then dangers
+ *  over other marks and isolated dangers over all. */
+function pointSortKey(m) {
+  return ["+", ["*", ["coalesce", ["get", "pp"], 24], 10], ["case", isolated(m), 3, ["match", ["get", "cls"], ["UWTROC", "WRECKS", "OBSTRN"], 2, 1]]];
+}
+
+// The IHO drawing priorities (S-101's, S-52's ×3): each step's areas, then its area
+// boundaries, then its lines, so a higher priority draws over a lower one whatever the
+// geometry, and at one priority lines over areas (S-52 10.3.4.1). Features of old tiles
+// without priorities: fills at 3, lines at 15.
+const S52_PRIORITIES = [0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30];
+const S52_AREA_IDS = [], S52_LINE_IDS = [], S52_FILL_IDS = [], S52_SOLID_IDS = [];
+function s52Layers() {
+  const src = { source: "chart" };
+  const out = [];
+  S52_PRIORITIES.forEach((p, i) => {
+    const hi = S52_PRIORITIES[i + 1] ?? 1000;
+    const band = (key, dflt) => { const v = ["coalesce", ["get", key], dflt]; return ["all", [">=", v, i ? p : -1], ["<", v, hi]]; };
+    const lineW = ["*", ["get", "slw"], S52_PX_MM / 2], solidW = ["max", 1, ["*", ["get", "lw"], S52_PX_MM / 2]];
+    out.push(
+      // colour fills and fill patterns
+      { id: `s52-fill-${p}`, type: "fill", ...src, "source-layer": "far", filter: ["all", minz, ["has", "cf"], band("pf", 3)],
+        paint: { "fill-color": "#ff00ff", "fill-opacity": ["-", 1, ["coalesce", ["get", "ct"], 0]] } },
+      { id: `s52-pat-${p}`, type: "fill", ...src, "source-layer": "far", filter: ["all", minz, ["has", "af"], band("pf", 3)],
+        paint: { "fill-pattern": ["concat", "s52f:", ["get", "af"]] } },
+      // area boundaries and lines: a line style drawn as a pattern, or a plain solid line
+      // (`lc` colour, `lw` mm)
+      { id: `s52-aline-${p}`, type: "line", ...src, "source-layer": "far", filter: ["all", minz, ["has", "sl"], band("pl", 15)],
+        paint: { "line-pattern": ["concat", "s52l:", ["get", "sl"]], "line-width": lineW } },
+      { id: `s52-aline-solid-${p}`, type: "line", ...src, "source-layer": "far", filter: ["all", minz, ["has", "lc"], band("pl", 15)],
+        paint: { "line-color": "#000", "line-width": solidW } },
+      { id: `s52-line-${p}`, type: "line", ...src, "source-layer": "fln", filter: ["all", minz, ["has", "sl"], band("pl", 15)],
+        paint: { "line-pattern": ["concat", "s52l:", ["get", "sl"]], "line-width": lineW } },
+      { id: `s52-line-solid-${p}`, type: "line", ...src, "source-layer": "fln", filter: ["all", minz, ["has", "lc"], band("pl", 15)],
+        paint: { "line-color": "#000", "line-width": solidW } },
+    );
+    if (!S52_FILL_IDS.includes(`s52-fill-${p}`)) {
+      S52_FILL_IDS.push(`s52-fill-${p}`);
+      S52_SOLID_IDS.push(`s52-aline-solid-${p}`, `s52-line-solid-${p}`);
+      S52_AREA_IDS.push(`s52-fill-${p}`, `s52-pat-${p}`, `s52-aline-${p}`, `s52-aline-solid-${p}`);
+      S52_LINE_IDS.push(`s52-line-${p}`, `s52-line-solid-${p}`);
+    }
+  });
+  return out;
+}
+
 export function setupChartFeatures(map, { before, safetyContour = 5, shallow = false, onSymbols = () => {} }) {
   shallowDangers = shallow;
   const $ = (id) => document.getElementById(id);
@@ -256,11 +302,6 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   const src = { source: "chart" };
   const cls = (...c) => ["in", ["get", "cls"], ["literal", c]];
   const layers = [
-    // the IHO portrayal's areas (Symbols: IHO): colour fills and fill patterns
-    { id: "s52-fill", type: "fill", ...src, "source-layer": "far", filter: ["all", minz, ["has", "cf"]],
-      paint: { "fill-color": "#ff00ff", "fill-opacity": ["-", 1, ["coalesce", ["get", "ct"], 0]] } },
-    { id: "s52-pat", type: "fill", ...src, "source-layer": "far", filter: ["all", minz, ["has", "af"]],
-      paint: { "fill-pattern": ["concat", "s52f:", ["get", "af"]] } },
     // areas
     { id: "f-area-fill", type: "fill", ...src, "source-layer": "far", filter: ["all", minz, ["any", cls("MARCUL", "OBSTRN"), ["==", ["get", "entry"], 1]]],
       paint: { "fill-color": ["match", ["get", "cls"], "OBSTRN", "#7fb8e8", MAGENTA], "fill-opacity": ["match", ["get", "cls"], "OBSTRN", 0.5, 0.08] } },
@@ -292,16 +333,9 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       paint: { "line-color": "#8a7a4a", "line-width": 0.9 } },
     { id: "f-line-dash", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, cls("RECTRC", "CBLOHD", "PIPOHD", "FSHFAC", "UNKNWN")],
       paint: { "line-color": ["match", ["get", "cls"], "RECTRC", INK, "UNKNWN", MAGENTA, "#5b6b75"], "line-width": 1, "line-dasharray": [5, 3] } },
-    // the IHO portrayal's lines and area boundaries: each line style drawn as a pattern
-    { id: "s52-aline", type: "line", ...src, "source-layer": "far", filter: ["all", minz, ["has", "sl"]],
-      paint: { "line-pattern": ["concat", "s52l:", ["get", "sl"]], "line-width": ["*", ["get", "slw"], S52_PX_MM / 2] } },
-    { id: "s52-line", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, ["has", "sl"]],
-      paint: { "line-pattern": ["concat", "s52l:", ["get", "sl"]], "line-width": ["*", ["get", "slw"], S52_PX_MM / 2] } },
-    // plain solid lines (`lc` colour, `lw` mm)
-    { id: "s52-aline-solid", type: "line", ...src, "source-layer": "far", filter: ["all", minz, ["has", "lc"]],
-      paint: { "line-color": "#000", "line-width": ["max", 1, ["*", ["get", "lw"], S52_PX_MM / 2]] } },
-    { id: "s52-line-solid", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, ["has", "lc"]],
-      paint: { "line-color": "#000", "line-width": ["max", 1, ["*", ["get", "lw"], S52_PX_MM / 2]] } },
+    // the IHO portrayal's areas and lines (Symbols: IHO), in the order of their drawing
+    // priorities (S-52 10.3.4.1): s52Layers()
+    ...s52Layers(),
     // light sectors as S-52 draws them (with the IHO symbols): arcs in the light's colour
     // over black, legs and obscured arcs dashed
     { id: "s52-sec-arc", type: "line", ...src, "source-layer": "lsec", filter: ["all", minz, ["==", ["get", "k"], "sarc"]],
@@ -341,7 +375,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       layout: { "icon-image": pointIcon(safetyContour),
                 "icon-anchor": ["match", ["slice", ["get", "icon"], 0, 2], ["b|", "c|"], "bottom", "center"],
                 "icon-allow-overlap": true, "icon-ignore-placement": true,
-                "symbol-sort-key": ["case", isolated(safetyContour), 3, ["match", ["get", "cls"], ["UWTROC", "WRECKS", "OBSTRN"], 2, 1]] } },
+                "symbol-sort-key": pointSortKey(safetyContour) } },
     // labels: light characteristics, names of marks, depths over dangers
     { id: "f-labels", type: "symbol", ...src, "source-layer": "fpt", filter: labelFilter(safetyContour),
       layout: { "icon-image": ["concat", "txt:", ["match", ["get", "cls"], "LIGHTS", "l", ["UWTROC", "WRECKS", "OBSTRN"], "d", "b"], ":", ["get", "lbl"]],
@@ -399,7 +433,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   // With the IHO symbols, the IHO rules draw the lines and areas they portray (`s5`), in
   // the display category their viewing groups give (`vg`: 1 base, 2 standard, 3 other;
   // hazards always); TweedPlot's own layers draw the rest.
-  const S52_LAYERS = ["s52-fill", "s52-pat", "s52-aline", "s52-line", "s52-aline-solid", "s52-line-solid", "s52-info", "s52-date", "s52-sec-arc", "s52-sec-dash", "s52-text"];
+  const S52_LAYERS = [...S52_AREA_IDS, ...S52_LINE_IDS, "s52-info", "s52-date", "s52-sec-arc", "s52-sec-dash", "s52-text"];
   // S-52 text groups: important (10-19: clearances, bearings...) and other (20-: light
   // descriptions, seabed, heights...), each switched by the mariner
   const textGroups = () => {
@@ -416,7 +450,12 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   let viewDate = null, viewTo = null;
   const ymd = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
   // x within lo..hi on the year's circle (a period can run over the new year)
-  const within = (x, lo, hi) => ["case", ["<=", lo, hi], ["all", ["<=", lo, x], [">=", hi, x]], ["any", ["<=", lo, x], [">=", hi, x]]];
+  // (two literal strings compared would read as an old-style filter: decided here instead)
+  const within = (x, lo, hi) => {
+    const inside = ["all", ["<=", lo, x], [">=", hi, x]], wrap = ["any", ["<=", lo, x], [">=", hi, x]];
+    if (typeof lo === "string" && typeof hi === "string") return lo <= hi ? inside : wrap;
+    return ["case", ["<=", lo, hi], inside, wrap];
+  };
   function dateFilter() {
     const a = ymd(viewDate ?? new Date()), b = viewTo && ymd(viewTo) > a ? ymd(viewTo) : a;
     // charted at some time in a..b
@@ -476,10 +515,9 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       map.setFilter(l.id, parts.length > 1 ? ["all", ...parts] : parts[0]);
     }
     if (useS52()) {
-      map.setPaintProperty("s52-fill", "fill-color", s52FillColour());
+      for (const id of S52_FILL_IDS) map.setPaintProperty(id, "fill-color", s52FillColour());
       map.setPaintProperty("s52-sec-arc", "line-color", s52FillColour("tok"));
-      map.setPaintProperty("s52-aline-solid", "line-color", s52FillColour("lc"));
-      map.setPaintProperty("s52-line-solid", "line-color", s52FillColour("lc"));
+      for (const id of S52_SOLID_IDS) map.setPaintProperty(id, "line-color", s52FillColour("lc"));
       map.setPaintProperty("s52-sec-dash", "line-color", s52FillColour("tok"));
     }
     const ind = $("dispcat-ind");
@@ -582,7 +620,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
 
   // ---------- details on a click ----------------------------------------------------------
   const POINTS = ["f-points", "f-lights", "f-light-hit", "f-rot", "s52-info"];
-  const LINES = ["f-line-mag", "f-line-solid", "f-line-dash", "f-tss-line", "f-tss-bnd", "s52-line", "s52-line-solid"];
+  const LINES = ["f-line-mag", "f-line-solid", "f-line-dash", "f-tss-line", "f-tss-bnd", ...S52_LINE_IDS];
   map.on("click", async (e) => {
     if (!enabled || placing()) return;
     // leave clicks on the app's own things (course, routings, fleet, marks, tide stations and
@@ -668,7 +706,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       baseFilter["f-points"] = pointFilter(m); baseFilter["f-labels"] = labelFilter(m); map.setFilter("f-labels", labelFilter(m));
       contour = m;
       applySymbols();
-      map.setLayoutProperty("f-points", "symbol-sort-key", ["case", isolated(m), 3, ["match", ["get", "cls"], ["UWTROC", "WRECKS", "OBSTRN"], 2, 1]]);
+      map.setLayoutProperty("f-points", "symbol-sort-key", pointSortKey(m));
       apply();
     },
     /** Routing options: which charted hazards to keep off. */

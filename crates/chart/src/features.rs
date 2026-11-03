@@ -772,6 +772,9 @@ impl ChartStore {
                                     if crate::s52::entry_lit(e) {
                                         props.push(("lt", Value::UInt(1)));
                                     }
+                                    if let Some(p) = crate::s52::entry_priority(e) {
+                                        props.push(("pp", Value::UInt(p as u64)));
+                                    }
                                     if !sy.is_empty() {
                                         props.push(("sy", Value::Str(sy.into())));
                                     }
@@ -920,6 +923,7 @@ impl ChartStore {
                                     match key {
                                         "slw" | "ct" | "lw" => props.push((key, Value::F64(v.parse().unwrap_or(0.0)))),
                                         "vg" => props.push((key, Value::UInt(v.parse().unwrap_or(3)))),
+                                        "pf" | "pl" => props.push((key, Value::UInt(v.parse().unwrap_or(0)))),
                                         "sy" => centre_symbol = Some(v.to_string()),
                                         "tx" => centre_texts = crate::s52::decode_texts(v),
                                         "si" => centre_info = Some(v.to_string()),
