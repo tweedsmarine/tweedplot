@@ -121,7 +121,7 @@ Drawers slide out from the rail; instrument panels, the time slider and the dock
 | {icon:targets} | **Target list** | Opens the AIS target list over the chart (also **T**) |
 | {icon:view-nav} {icon:view-plan} {icon:view-inst} | **View** | Steps through Navigation, Planning and Instruments; the icon shows the view you are in. Right-click (or hold) to choose a view, or to show or hide the chart in this view |
 | {icon:panels} | **Panels** | Shows or hides the rail, drawers and dock in this view |
-| {icon:day} {icon:night} | **Colours** | Steps through day, dusk, night red and night green. Right-click it (or hold it on a touch screen) for all four and the brightness at once |
+| {icon:day} {icon:night} | **Colours** | Steps through day, dusk, night (IHO), night red and night green. Right-click it (or hold it on a touch screen) for all five and the brightness at once |
 | {icon:clear-track} | **Clear track** | Clears the short trail behind the boat |
 
 **Mouse and touch**
@@ -229,7 +229,7 @@ The display in use is always shown beside the scale bar, bottom right.
 - **IHO (S-52)**, the default: the ECDIS symbols, chosen for each feature by the IHO S-101 portrayal rules (as on an ECDIS: a beacon with its topmark, a light's flare turned the way the rules turn it, a rock or wreck as an isolated danger when it is shallower than your safety contour with deeper water all round it, as above). The rules run in the background when the charts load and whenever the safety contour, safety depth or the shallow water dangers option changes; until they finish, and for any feature the rules don't cover, the paper-chart symbol stands in, and the chart redraws when they are done.
 - **Paper chart**: simplified paper-chart symbols (INT 1), shown below.
 
-With **IHO (S-52)** the rules also draw the lines and areas they cover: cables, pipelines, tracks, leading lines, coastlines and constructions in the IHO line styles (a submarine cable's wave, a recommended track's arrows), and restricted, caution, anchorage and marine farm areas, foul ground and the like with their boundaries, fill patterns and the symbol at their middle (an "i" where the chart has notes on the area). Each shows in the display category the IHO rules give it (Base, Standard or All). Depth areas, contours, land and light sectors are still drawn TweedPlot's way; the IHO dusk and night colours come next.
+With **IHO (S-52)** the rules also draw the lines and areas they cover: cables, pipelines, tracks, leading lines, coastlines and constructions in the IHO line styles (a submarine cable's wave, a recommended track's arrows), and restricted, caution, anchorage and marine farm areas, foul ground and the like with their boundaries, fill patterns and the symbol at their middle (an "i" where the chart has notes on the area). Each shows in the display category the IHO rules give it (Base, Standard or All). Depth areas, contours and land are coloured from the IHO palette too (they are still drawn TweedPlot's way); light sectors come next.
 
 With **Paper chart**, some symbols still come from the ECDIS presentation library (IHO S-52): the isolated danger, the unknown object, tide and weather stations, tidal streams. The commonest:
 
@@ -1058,14 +1058,17 @@ Where the live data comes from and how it is treated: **Signal K** (its connecti
 
 **Colours: day, dusk and night**
 
-The colours button {icon:day} in the toolbar at the top left (or **Settings › Display › Colours**) steps through four sets of colours; it shows a moon {icon:night} while dusk or night colours are on. Right-click it (or hold it on a touch screen) for all four and the brightness in one small panel:
+The colours button {icon:day} in the toolbar at the top left (or **Settings › Display › Colours**) steps through five sets of colours; it shows a moon {icon:night} while dusk or night colours are on. Right-click it (or hold it on a touch screen) for all five and the brightness in one small panel:
 
 | Colours | Use |
 | --- | --- |
 | **Day** | Normal colours |
-| **Dusk** | Dimmer, a little less colour |
+| **Dusk** | With **Symbols: IHO (S-52)**: the chart in the IHO dusk colours, as on an ECDIS (dark background), with dark panels. With the paper chart symbols: dimmer, a little less colour |
+| **Night (IHO)** | With **Symbols: IHO (S-52)**: the chart in the IHO night colours, very dark, as on an ECDIS at night, with dark panels. With the paper chart symbols: dark colours throughout |
 | **Night (red)** | Everything as shades of red on black: chart, GRIB shading, panels and drawers. Keeps night vision best |
 | **Night (green)** | The same in green, if you find it easier to read than red |
+
+With the IHO dusk and night colours, what TweedPlot draws over the chart (routes, tracks, AIS targets, marks, weather) is darkened to match: light colours go dark and dark ones go grey, so nothing glares. The IHO day colours (Symbols: IHO in day colours) are a little brighter and bluer than TweedPlot's own.
 
 **Brightness** sets how bright dusk and night are. Turn the screen's own brightness down at night too: night colours dim what is drawn, not the backlight.
 
@@ -1119,7 +1122,7 @@ Single keys (letters, Space, the brackets) work whenever you aren't typing in a 
 | `F` | Follow the boat on or off |
 | `M` | Measure (ruler); Esc stops |
 | `T` | Target list |
-| `N` | Colours: day, dusk, night red, night green |
+| `N` | Colours: day, dusk, night (IHO), night red, night green |
 | `Space` | Live or paused |
 | **Weather time** | |
 | `[` | Back one step |

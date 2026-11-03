@@ -668,7 +668,14 @@ body.drawer-open #itiles { left: calc(var(--rail-w) + var(--drawer-w) + 49px); }
 /* ---------- day / dusk / night colours (palette.js) ---------- */
 #palette-btn .moon, #palette-btn.night .sun { display: none; }
 #palette-btn.night .moon { display: inline; }
-html[data-palette="dusk"] { filter: brightness(var(--pal-dim, 0.75)) saturate(0.85); }
+html[data-palette="dusk"]:not([data-iho]) { filter: brightness(var(--pal-dim, 0.75)) saturate(0.85); }
+/* IHO dusk and night (with the IHO chart symbols; mappalette.js): the panels go dark
+   (inverted, hues kept), the map is left out of it, drawn in the IHO palette itself.
+   Night (IHO) with the paper chart symbols: the same dark page, map and all. */
+html[data-palette="dusk"][data-iho], html[data-palette="iho-night"] { filter: invert(1) hue-rotate(180deg) brightness(var(--pal-dim, 0.8)); }
+html[data-palette="dusk"][data-iho] body, html[data-palette="iho-night"] body { background: #fff; }
+:is(html[data-palette="dusk"][data-iho], html[data-palette="iho-night"]) :is(#rail, .ipanel, #itiles, .dot, #replay-bar, #tip) { filter: invert(1) hue-rotate(180deg); }
+:is(html[data-palette="dusk"][data-iho], html[data-palette="iho-night"][data-iho]) #map .maplibregl-canvas-container { filter: hue-rotate(180deg) invert(1); }
 /* Night: invert (light chart → dark), then one hue. Things that are already dark
    (the rail, instrument panels) are inverted first so they stay dark. */
 html[data-palette="night-red"] { filter: invert(1) url(#pal-red) brightness(var(--pal-dim, 0.6)); }

@@ -54,13 +54,16 @@ const S52 = { ready: false, imgs: new Map(), colours: {}, lines: {}, fills: {} }
 const S52_PX_MM = 3.78 * 2;
 async function loadS52Symbols(palette = "Day") {
   const [list, styles] = await Promise.all([invoke("s52_symbols", { palette }), invoke("s52_styles", { palette })]);
-  if (styles) Object.assign(S52, { colours: styles.colours || {}, lines: styles.lines || {}, fills: styles.fills || {} });
+  const imgs = new Map();
   await Promise.all(list.map(({ id, svg, vb }) => new Promise((resolve) => {
     const img = new Image();
-    img.onload = () => { S52.imgs.set(id, { img, vb }); resolve(); };
-    img.onerror = () => resolve();
-    img.src = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+    const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+    img.onload = () => { imgs.set(id, { img, vb }); URL.revokeObjectURL(url); resolve(); };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+    img.src = url;
   })));
+  S52.imgs = imgs;
+  if (styles) Object.assign(S52, { palette, colours: styles.colours || {}, lines: styles.lines || {}, fills: styles.fills || {} });
   S52.ready = S52.imgs.size > 0;
   return S52.ready;
 }
@@ -170,7 +173,7 @@ const notReplaced = ["any", ["!", ["has", "maxz"]], ["<", ["zoom"], ["get", "max
 const minz = ["all", notReplaced, ["any", HZ, ["!", ["has", "minz"]], [">=", ["zoom"], ["get", "minz"]]]];
 const minzDeep = ["all", notReplaced, ["any", ["!", ["has", "minz"]], [">=", ["zoom"], ["get", "minz"]]]];
 
-export function setupChartFeatures(map, { before, safetyContour = 5, shallow = false }) {
+export function setupChartFeatures(map, { before, safetyContour = 5, shallow = false, onSymbols = () => {} }) {
   shallowDangers = shallow;
   const $ = (id) => document.getElementById(id);
   const opts = { ...DEFAULTS };
@@ -383,7 +386,9 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     const sel = $("set-symbols");
     if (sel) sel.value = opts.sym;
     apply();
+    if (on !== lastOn) { lastOn = on; onSymbols(on); }
   }
+  let lastOn = null;
   const symSel = $("set-symbols");
   if (symSel) symSel.onchange = () => { opts.sym = symSel.value; save(); applySymbols(); };
   loadS52Symbols().then(applySymbols).catch((e) => console.warn("IHO symbols:", e));
@@ -448,6 +453,15 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
 
   return {
     setEnabled: (on) => { enabled = on; apply(); },
+    /** Whether the IHO symbols are in use (Symbols: IHO, and loaded). */
+    usingS52: () => useS52(),
+    /** Draw the IHO symbols, lines and areas in a palette ("Day", "Dusk", "Night"). */
+    setPalette: async (palette) => {
+      if (S52.palette === palette) return;
+      await loadS52Symbols(palette);
+      for (const id of map.listImages()) if (id.startsWith("s52")) map.removeImage(id);
+      apply();
+    },
     /** Underwater rocks, wrecks and obstructions deeper than this lose their danger symbol.
      *  `shallow`: the isolated danger symbol also for dangers in water shallower than the
      *  safety contour (S-52 "isolated dangers in shallow water", off unless chosen). */

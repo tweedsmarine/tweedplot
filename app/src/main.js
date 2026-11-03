@@ -60,6 +60,7 @@ import { setupPbathy, pbathyAt } from "./pbathy.js";
 import { setupS63 } from "./s63.js";
 import { setupReplay } from "./replay.js";
 import { setupPalette } from "./palette.js";
+import { setupMapPalette } from "./mappalette.js";
 import { setupAlarms } from "./alarms.js";
 import { setupMarine } from "./marine.js";
 import { setupAis } from "./ais.js";
@@ -93,14 +94,29 @@ const TILE_URL = window.RACENAV_TILE_URL
   ?? `${navigator.userAgent.includes("Windows") ? "http://chart.localhost" : "chart://localhost"}/{z}/{x}/{y}.pbf?s=${Date.now().toString(36)}`;
 
 // S-52 style depth shades (day palette).
-const DEPTH = { drying: "#a9c8a0", vshallow: "#7fb8e8", mshallow: "#a6cdf0", mdeep: "#c9e1ee", deep: "#e9f3f6" };
+const DEPTH_DAY = { drying: "#a9c8a0", vshallow: "#7fb8e8", mshallow: "#a6cdf0", mdeep: "#c9e1ee", deep: "#e9f3f6" };
+/** The IHO palette's colours (token → colour) while the chart is drawn in it (IHO symbols
+ *  on: day, dusk or night), else null: TweedPlot's own day colours. */
+let ihoColours = null;
+const iho = (token, fallback) => ihoColours?.[token] ?? fallback;
+/** The chart's base colours: the IHO palette's (S-52 tokens), or TweedPlot's. */
+function chartColours() {
+  return {
+    drying: iho("DEPIT", DEPTH_DAY.drying), vshallow: iho("DEPVS", DEPTH_DAY.vshallow), mshallow: iho("DEPMS", DEPTH_DAY.mshallow),
+    mdeep: iho("DEPMD", DEPTH_DAY.mdeep), deep: iho("DEPDW", DEPTH_DAY.deep), nodata: iho("NODTA", "#93aebb"),
+    land: iho("LANDA", css("--land")), coast: iho("CSTLN", css("--coast")), sea: iho("DEPDW", css("--sea")),
+    contour: iho("DEPCN", "#7d97a6"), safety: iho("DEPSC", "#1d2a33"), grey: iho("CHGRD", "#5b6b75"),
+    soundShallow: iho("SNDG2", "#1d2a33"), soundDeep: iho("SNDG1", "#7d8f99"),
+  };
+}
 function depareColour() {
+  const DEPTH = chartColours();
   const d1 = ["coalesce", ["get", "drval1"], 0];
   return ["case",
     // the chart's own land (under its depth areas: shows where Topo50 has water instead)
-    ["has", "land"], css("--land"),
+    ["has", "land"], DEPTH.land,
     // unsurveyed (S-52 NODTA, as the IHO colour profile has it; patterned in "unsare")
-    ["has", "uns"], "#93aebb",
+    ["has", "uns"], DEPTH.nodata,
     ["has", "lake"], DEPTH.deep,
     // inside a chart's coverage where it charts no depth (chart.rs: "gap"): shallow, to be
     // safe. (S-52 grey no-data read as land where port basins and channels are gaps in
@@ -229,6 +245,46 @@ const map = new maplibregl.Map({
     ],
   },
 });
+// IHO dusk and night: everything on the map that isn't chart is darkened to suit
+const mapPalette = setupMapPalette(map);
+/** Chart layers coloured from the IHO palette here (left alone by mapPalette). */
+const IHO_CHART_LAYERS = new Set(["sea", "depare", "depcnt", "unsare", "unsare-line", "depare-drg", "safety-contour", "land-world", "land-nz",
+  "chart-world-land", "coast-world", "coast-nz", "chart-land", "chart-coast", "chart-wcoast", "soundg"]);
+/** The chart's base layers in the colours of the moment (chartColours). */
+function applyChartColours() {
+  const c = chartColours();
+  const set = (id, prop, v) => { if (map.getLayer(id)) map.setPaintProperty(id, prop, v); };
+  set("sea", "background-color", c.sea);
+  for (const id of ["land-world", "land-nz", "chart-world-land", "chart-land"]) set(id, "fill-color", c.land);
+  for (const id of ["coast-world", "coast-nz", "chart-coast", "chart-wcoast"]) set(id, "line-color", c.coast);
+  set("depare", "fill-color", depareColour());
+  set("depcnt", "line-color", c.contour);
+  set("safety-contour", "line-color", c.safety);
+  set("unsare-line", "line-color", c.grey);
+  set("depare-drg", "line-color", c.grey);
+  set("unsare", "fill-pattern", ihoColours ? "s52f:NODATA03" : "pat:nodata");
+  // soundings are drawn in the palette's colours: drawn again
+  for (const id of map.listImages()) if (/^(sh|dp):/.test(id)) map.removeImage(id);
+}
+/** Day, dusk, night (IHO) with the IHO symbols: the IHO palette for the chart, the rest
+ *  darkened to suit. Otherwise TweedPlot's colours (and the page's filter, style.css). */
+let paletteMode = "day";
+let paletteBusy = Promise.resolve();
+function applyPalette() {
+  paletteBusy = paletteBusy.then(async () => {
+    const on = !!features?.usingS52();
+    const palette = on ? ({ dusk: "Dusk", "iho-night": "Night" }[paletteMode] ?? "Day") : "Day";
+    document.documentElement.toggleAttribute("data-iho", on);
+    try {
+      if (on) await features.setPalette(palette);
+      ihoColours = on ? ((await invoke("s52_styles", { palette }))?.colours ?? null) : null;
+    } catch (e) { console.warn("IHO palette:", e); ihoColours = null; }
+    applyChartColours();
+    mapPalette.apply(on ? palette : null, (id) => IHO_CHART_LAYERS.has(id) || id.startsWith("s52-"));
+  });
+  return paletteBusy;
+}
+
 let hasPositionFix = false;
 let chartPositionChosen = false;
 let initialPositionChosen = false;
@@ -395,13 +451,14 @@ function noteChartsReady(info) {
   finishStartupWhenReady();
 }
 map.on("load", () => {
-  features = setupChartFeatures(map, { before: "track", safetyContour: settings.safetyContour, shallow: !!settings.shallowDangers });
+  features = setupChartFeatures(map, { before: "track", safetyContour: settings.safetyContour, shallow: !!settings.shallowDangers,
+    onSymbols: () => applyPalette() });
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
   window.__weather = weather; // debugging handle
   setupData(map, { toast, reloadTiles: reloadChartTiles });
   setupPbathy(map, { ui });
   setupS63(map, { toast });
-  setupPalette();
+  setupPalette((mode) => { paletteMode = mode; applyPalette(); });
   setupBrand();
   setupWebMap(map);
   layerVis = setupLayerVisibility(map, { ready: () => chartMapLoaded && chartStoreReady });
@@ -1318,7 +1375,8 @@ function soundingIcon(depth, shallow) {
   const w2 = tenth ? g.measureText(String(tenth)).width : 0;
   c.width = Math.ceil(w1 + w2 + pad * 2);
   c.height = big + 8;
-  g.fillStyle = shallow ? "#1d2a33" : "#7d8f99";
+  const cc = chartColours();
+  g.fillStyle = shallow ? cc.soundShallow : cc.soundDeep;
   g.textBaseline = "alphabetic";
   g.font = fBig;
   g.fillText(String(whole), pad, big - 2);
