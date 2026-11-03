@@ -138,7 +138,7 @@ function depareColour() {
 /** The S-52 shallow water pattern (DIAMOND1) over depth areas shallower than the safety
  *  contour, when chosen (for screens where the shades are hard to tell apart). */
 function shallowPatternFilter() {
-  if (!settings.shallowPattern) return ["==", 1, 0];
+  if (!settings.shallowPattern) return ["has", "__never__"];
   return ["all", ["!", ["has", "land"]], ["!", ["has", "uns"]], ["!", ["has", "lake"]],
     ["<", ["coalesce", ["get", "drval1"], 0], settings.safetyContour]];
 }
