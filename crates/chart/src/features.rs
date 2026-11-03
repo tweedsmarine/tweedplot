@@ -1004,7 +1004,13 @@ impl ChartStore {
     /// never stands on the chart without its buoy or beacon.
     fn render_lights(&self, tp: &TileProj, z: u8, tables: &[(usize, &TableInfo)], marks: &[([f64; 2], u8, f64)], fpt: &mut Layer, lsec: &mut Layer) {
         // lights a little outside the tile still throw sectors into it
-        let bbox = tp.lonlat_bbox(LEG_R + 48.0);
+        let mut bbox = tp.lonlat_bbox(LEG_R + 48.0);
+        // full light lines: lights up to about 30 M away reach into the tile
+        if self.s52_full_light_lines() {
+            let dlat = 30.0 * 1852.0 / 111_320.0;
+            let dlon = dlat / ((bbox[1] + bbox[3]) / 2.0).to_radians().cos().max(0.1);
+            bbox = [bbox[0] - dlon, (bbox[1] - dlat).max(-85.0), bbox[2] + dlon, (bbox[3] + dlat).min(85.0)];
+        }
         struct Rec {
             p: [f64; 2],
             band: u8,

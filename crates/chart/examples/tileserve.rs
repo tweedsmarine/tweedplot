@@ -12,6 +12,12 @@ fn main() {
         let s = chart::s52::S52::open(&res.join("s101-pc"), &res.join("s101-fc/101_Feature_Catalogue_2.1.0.20260612_Unsigned.xml")).expect("portrayal");
         store.set_s52(Some(s));
         store.set_s52_context("SafetyContour", "5");
+        // TILESERVE_CTX="FullLightLines=true,ShallowWaterDangers=true": more context
+        for kv in std::env::var("TILESERVE_CTX").unwrap_or_default().split(',').filter(|s| !s.is_empty()) {
+            if let Some((k, v)) = kv.split_once('=') {
+                store.set_s52_context(k, v);
+            }
+        }
         let n = store.s52_warm(&|_, _| {});
         eprintln!("portrayed {n} tables");
     }

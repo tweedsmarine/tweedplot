@@ -60,6 +60,11 @@ impl S52 {
         Ok(s)
     }
 
+    /// A context parameter as TweedPlot has set it.
+    pub fn value(&self, id: &str) -> Option<String> {
+        self.context.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|(k, _)| k == id).map(|(_, v)| v.clone())
+    }
+
     /// Set a context parameter ("SafetyContour", "5"). True when it changed: the next
     /// run portrays everything again. Never waits for a run.
     pub fn set(&self, id: &str, value: &str) -> bool {
@@ -402,6 +407,12 @@ impl ChartStore {
         let s = self.s52.read().unwrap_or_else(|e| e.into_inner()).clone()?;
         let done = s.done.read().unwrap_or_else(|e| e.into_inner());
         done.1.get(&table).cloned()
+    }
+
+    /// Whether light sector limits are drawn to the lights' nominal range (FullLightLines).
+    pub(crate) fn s52_full_light_lines(&self) -> bool {
+        let s = self.s52.read().unwrap_or_else(|e| e.into_inner()).clone();
+        s.is_some_and(|s| s.value("FullLightLines").as_deref() == Some("true"))
     }
 
     /// Whether the portrayal is on.

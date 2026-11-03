@@ -78,6 +78,8 @@ const DEFAULTS = {
   // S-52 mariner option: the isolated danger symbol for dangers in water shallower than the
   // safety contour too (the IHO catalogue's default is on; off keeps the chart clear)
   shallowDangers: false,
+  // S-52 mariner option: light sector limits drawn to the light's nominal range (else 25 mm)
+  fullLightLines: false,
   // own-boat lines: shown, and length in minutes of travel or "inf" (to the edge of the chart)
   hdgLine: true, hdgLen: "inf", cogLine: true, cogLen: "10",
   // damping of Signal K readings, seconds (0 = none)
@@ -745,6 +747,7 @@ function sendPortrayalContextNow() {
   invoke("chart_s52_context", { id: "SafetyContour", value: String(settings.safetyContour) }).catch(() => {});
   invoke("chart_s52_context", { id: "SafetyDepth", value: String(settings.safetyDepth) }).catch(() => {});
   invoke("chart_s52_context", { id: "ShallowWaterDangers", value: String(!!settings.shallowDangers) }).catch(() => {});
+  invoke("chart_s52_context", { id: "FullLightLines", value: String(!!settings.fullLightLines) }).catch(() => {});
 }
 sendPortrayalContextNow();
 // the chart store has portrayed the features (or again, after a change): draw the tiles again
@@ -770,6 +773,12 @@ for (const [id, key] of [["set-safety-depth", "safetyDepth"], ["set-safety-conto
   if (el) {
     el.checked = !!settings.shallowDangers;
     el.onchange = () => { settings.shallowDangers = el.checked; saveSettings(); applyChartSettings(); };
+  }
+  // S-52 mariner option: sector limits drawn out to the light's nominal range
+  const fl = document.getElementById("set-full-light-lines");
+  if (fl) {
+    fl.checked = !!settings.fullLightLines;
+    fl.onchange = () => { settings.fullLightLines = fl.checked; saveSettings(); sendPortrayalContext(); };
   }
 }
 // Chart › Safety: the safety depth against the vessel's draft (Settings › Vessel)
