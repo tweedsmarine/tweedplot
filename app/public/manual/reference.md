@@ -559,10 +559,15 @@ The **Drop** button (bottom right of every window) marks the boat's position now
 
 ## Targets
 
-{icon:fleet} **Targets › AIS** shows ships, aids to navigation, SAR aircraft and AIS distress beacons on the chart, from two sources merged by MMSI:
+{icon:fleet} **Targets › AIS** shows ships, aids to navigation, SAR aircraft and AIS distress beacons on the chart, from these sources merged by MMSI:
 
 - **Signal K**: whatever an AIS receiver or transponder on board passes to the Signal K server.
-- **Online (aisstream.io)**: what volunteer shore stations hear. Get a free API key by signing in at aisstream.io with a GitHub account, paste it in and press **Go online**. **Online area** is the chart view (up to about 6° across), or a **Range** in NM round the chart centre or round your boat (it follows you). Online targets are not for navigation (see the AIS tab): they show in italics, marked "Net", and raise no collision alarm unless **Alarms for internet-only targets too** is ticked.
+- **Online (aisstream.io)**: what volunteer shore stations hear. Get a free API key by signing in at aisstream.io with a GitHub account, paste it in and press **Go online**.
+- **Online (Open Waters)**: a community network of receivers (openwaters.io/ais). Press **Get a token** (free, no account; TweedPlot makes it and fills it in) and then **Go online**. It sends the last known position, name and type of every ship in the area as soon as you connect. It has no class field, so TweedPlot infers it: a ship reporting no status and no rate of turn is shown as class B, and a class B+ ship may show as plain B.
+
+Each online feed has its own section and status light, and you can use either or both. **Online area** (shared by both) is the chart view (up to about 6° across), or a **Range** in NM round the chart centre or round your boat (it follows you); Open Waters limits the area it will send (100 square degrees without a token, 400 with one). Online targets are not for navigation (see the AIS tab): they show in italics, marked "Net", and raise no collision alarm unless **Alarms for internet-only targets too** is ticked. A ship's info window ("Heard by") and the target list's source column say which feed it came from.
+
+[Screenshot: Targets › AIS showing the Signal K status and the two separate online sections]
 
 On the chart, every ship is one colour, and a ship inside the CPA and TCPA alarm limits is red. Class and kind are shown by shape and size:
 
@@ -572,8 +577,9 @@ On the chart, every ship is one colour, and a ship inside the CPA and TCPA alarm
 - <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 4 L15.5 17 L10 14.5 L4.5 17 Z" fill="#1d2a33"/><path d="M3 11 L17 11" stroke="#1d2a33" stroke-width="2"/></svg></span> A fishing vessel (type 30, or "engaged in fishing"): the same, with a bar across, at each size
 - <span class="mi"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="4" fill="#1d2a33"/></svg></span> A dot: stopped, or sending no heading
 - <span class="mi"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.5" fill="none" stroke="#1d2a33" stroke-width="1.6"/></svg></span> A small ring: a sleeping target (Targets › AIS › Sleeping targets)
-- A thin **heading line** from the ship, with a short barb at its end on the side the ship is turning to when it turns at 3° to 10° a minute, and a long barb above 10° a minute (the **rate of turn**, also in the ship's details)
-- A contrasting **dot** on the ship when its track is drawn, and an own-fleet ship has the V at its stern filled in, giving a flat back, in the colour you chose for it. The ship you clicked has brackets round it
+- A thin **heading line** from the ship, with a short barb at its end on the side the ship is turning to when it turns at 3° to 10° a minute, and a long barb above 10° a minute (the **rate of turn**, also in the ship's details). The line is only drawn when it adds something: not while the ship has a course vector (it would say the same thing), and not when the ship is making way astern (a double-ended ferry), where the heading and the course point opposite ways
+- With **Curve course vectors by rate of turn** ticked (on by default), the course vector of a ship turning at 3° a minute or more bends into an arc, as if it held that turn
+- A contrasting **dot** on the ship when its track is drawn (**Target track colour** and **Tracked dot colour** in Targets › AIS set the colours), and an own-fleet ship has the V at its stern filled in, giving a flat back, in the colour you chose for its group. The ship you clicked has thin corner brackets round it
 
 Other AIS targets:
 
@@ -585,7 +591,7 @@ Other AIS targets:
 
 **Not heard: crossed through.** A target that hasn't been heard for a while is drawn crossed through {img:ais-lostx} at its last known position, with no course vector, as radar and ECDIS displays show a lost target (IEC 62288). "A while" is 3 minutes for a moving ship, 10 minutes for one that isn't moving and 20 minutes for an AtoN or base station. Targets go after 20 minutes. In the target list its age shows in red with a ✕.
 
-**Navigational status.** Beside a ship, a small white tag shows the day shape it would show for the status it sends, so it reads as it would on the water (from zoom 8 in):
+**Navigational status.** With **Day shapes for navigational status** ticked in Targets › AIS (off by default: crews set the status by hand and often don't change it, so don't trust it), a small white tag beside a ship shows the day shape it would show for the status it sends, so it reads as it would on the water (from zoom 8 in):
 
 | Tag | Status | Tag | Status |
 | --- | --- | --- | --- |
@@ -596,7 +602,7 @@ Other AIS targets:
 
 Under way using engine or sailing has no tag. The status is set by hand on the ship and is often wrong: trawlers at sea still "at anchor", ships at anchor "under way" (see the AIS tab).
 
-A line ahead of a moving ship shows where it will be in 6 minutes (**Course vectors** sets the time). Click a target and its info window shows its name, type, status, speed and course, size, destination, and the range, bearing, CPA and TCPA from your boat, with **Add to own fleet** and track buttons. The window keeps updating while it is open, and the target is drawn in yellow while selected.
+A line ahead of a moving ship shows where it will be in 6 minutes (**Course vectors** sets the time). Click a target and its info window shows its name, type, status, speed and course, size, destination, and the range, bearing, CPA and TCPA from your boat, with **Add to own fleet** and track buttons. The window keeps updating while it is open, and the target has brackets round it while selected.
 
 **CPA lines** draw, for dangerous targets and the one you clicked (or every target closing within the time limit), dashed lines from your boat and the target to where each will be at the closest point of approach, joined by the CPA line with its distance and time: red inside the alarm limits, amber outside.
 
@@ -608,9 +614,13 @@ A line ahead of a moving ship shows where it will be in 6 minutes (**Course vect
 
 **Your own boat**: put your MMSI in **Settings › Vessel** and your boat is never shown or alarmed as a target, whichever source hears it.
 
-**Tracks**: tick **Track of the selected target** and the boat you last clicked shows where it has been. Tracks are what TweedPlot has heard over the last 6 hours, so they start when the app does.
+**Tracks**: tick **Track** against a target in the target list (or press **Track** in its info window, or tick **Track of the selected target**) and it shows where it has been, with a dot on the ship. Tracks are what TweedPlot has heard over the last 6 hours, so they start when the app does. **Target track colour** sets the colour of the trails (own-fleet boats use their group colour).
 
-**Own fleet** (Targets › Own fleet): a list of boats to pick out, such as friends, your company's vessels or a race fleet. Add an MMSI with a name and a group (Friends, Company, Race fleet, Other), or click a boat on the chart and press **Add to own fleet** in its info window. Own-fleet boats are ringed in their group's colour and named at every zoom; each has a **Track** tick, **Track all** draws them all, and **Only these on the chart** hides every other AIS target. The list shows each boat's speed, distance and how long since it was heard; click one to show it.
+**Tracking, own fleet and groups are set from the target list.** Each row has a **Track** tick and a group menu (No group, Friends, Company, Race fleet, Other). Choosing a group puts the target in your own fleet; tracking a target does not.
+
+[Screenshot: the target list with the Track and Group columns]
+
+**Own fleet** (Targets › Own fleet): a list of boats to pick out, such as friends, your company's vessels or a race fleet. Add an MMSI with a name and a group, set a group from the target list or the info window, or click a boat on the chart and press **Add to own fleet**. Own-fleet boats have a filled stern in their group's colour and are named at every zoom; each has a **Track** tick, **Track all** draws them all, and **Only these on the chart** hides every other AIS target. The list shows each boat's speed, distance and how long since it was heard; click one to show it.
 
 ## Routes, marks and the library
 
@@ -1076,7 +1086,7 @@ The colours button {icon:day} in the toolbar at the top left (or **Settings › 
 | --- | --- |
 | **Day** | Normal colours |
 | **Dusk** | With **Symbols: IHO (S-52)**: the chart in the IHO dusk colours, as on an ECDIS (dark background), with dark panels. With the paper chart symbols: dimmer, a little less colour |
-| **Night (IHO)** | With **Symbols: IHO (S-52)**: the chart in the IHO night colours, very dark, as on an ECDIS at night, with dark panels. With the paper chart symbols: dark colours throughout |
+| **Night (IHO)** | With **Symbols: IHO (S-52)**: the chart in the IHO night colours, very dark, as on an ECDIS at night. The rest of the screen (toolbar icons, MOB and Drop buttons, panels, instrument panels, the status bar, scale, display category label and attribution, the Own soundings card, AIS info window and target list) is shown in the same dim red as Night (red), so nothing bright is left. With the paper chart symbols: dark colours throughout |
 | **Night (red)** | Everything as shades of red on black: chart, GRIB shading, panels and drawers. Keeps night vision best |
 | **Night (green)** | The same in green, if you find it easier to read than red |
 
@@ -1087,6 +1097,10 @@ With the IHO dusk and night colours, what TweedPlot draws over the chart (routes
 **Each window has its own colours.** A monitor window in a lit office can stay on day colours while the one on the fly bridge is on night red. Each window remembers its own setting.
 
 **Night cursors.** In the night modes the mouse pointer is drawn in the night colour (an arrow, a ring over things you can click, a cross while drawing and a four-way mark for dragging the chart), because the system's white pointer would spoil night vision. The pointer is drawn at a fixed brightness; the resize pointers and the text caret stay as Windows draws them. A touch screen has no pointer.
+
+[Screenshot: the Night (IHO) colours with the toolbar, an AIS info window, the target list and the instrument panels, all in dim red]
+
+In Night (IHO), AIS targets are a dim grey with a dark outline, and the selection brackets and course lines are dimmed to match.
 
 With dusk and night colours the window's title bar turns dark as well. To get rid of it altogether, press **F11** (or **Full screen** in Settings › Display) to fill the screen; F11 again switches back. Monitor windows do the same with their own colours and F11.
 
@@ -1170,7 +1184,7 @@ TweedPlot downloads open data from the organisations below. They did not make Tw
 | Chlorophyll-a | NOAA CoastWatch, VIIRS (S-NPP, NOAA-20), DINEOF gap-filled. Free to use and share |
 | Ocean model (HYCOM) | HYCOM ESPC global ocean model, US Navy / HYCOM Consortium (hycom.org), public release. A demonstration service without guarantee |
 | Weather stations | MetService (New Zealand, WIS2 open data); NOAA Aviation Weather Center (METAR); NOAA National Data Buoy Center (NDBC buoys) |
-| Online AIS | aisstream.io, from volunteer shore stations. Needs your own free key. Not for navigation |
+| Online AIS | aisstream.io, from volunteer shore stations (needs your own free key), and Open Waters (openwaters.io/ais, a community network of receivers; free token). Not for navigation |
 | Race tracking | YB Tracking (yb.tl) and the race organiser. Positions may be delayed |
 | Saildocs | Saildocs (saildocs.com) forecasts by email, from NOAA and other sources |
 | Chart symbols, line styles, area patterns, chart colours and portrayal rules (bundled) | IHO S-101 Portrayal Catalogue 2.1.0, from the International Hydrographic Organization (IHO), NOAA and the contributors (github.com/iho-ohi/S-101_Portrayal-Catalogue), included unchanged. Their licence and disclaimer are below |
