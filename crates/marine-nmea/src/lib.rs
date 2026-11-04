@@ -100,19 +100,27 @@ impl Framer {
     }
 
     pub fn push(&mut self, bytes: &[u8]) -> Vec<Result<Sentence, ParseError>> {
+        self.push_with_raw(bytes).into_iter().map(|(_, parsed)| parsed).collect()
+    }
+
+    /// Like [`Framer::push`], but also retains the input bytes for diagnostics when
+    /// parsing fails.
+    pub fn push_with_raw(&mut self, bytes: &[u8]) -> Vec<(Vec<u8>, Result<Sentence, ParseError>)> {
         let mut out = Vec::new();
         for &byte in bytes {
             if byte == b'\n' || byte == b'\r' {
                 if !self.discarding && !self.buffer.is_empty() {
-                    out.push(parse_sentence(&self.buffer, self.max_len));
+                    let raw = std::mem::take(&mut self.buffer);
+                    let parsed = parse_sentence(&raw, self.max_len);
+                    out.push((raw, parsed));
                 }
                 self.buffer.clear();
                 self.discarding = false;
             } else if !self.discarding {
                 if self.buffer.len() >= self.max_len {
-                    self.buffer.clear();
+                    let raw = std::mem::take(&mut self.buffer);
                     self.discarding = true;
-                    out.push(Err(ParseError::TooLong));
+                    out.push((raw, Err(ParseError::TooLong)));
                 } else {
                     self.buffer.push(byte);
                 }
@@ -505,6 +513,18 @@ mod tests {
         assert_eq!(parsed.formatter, "RMC");
         assert!(parse_sentence(b"$GPHDT,123.4,T*00", 1024).is_err());
         assert_eq!(parse_sentence(frame("RMC,field").trim().as_bytes(), 1024), Err(ParseError::Malformed));
+    }
+
+    #[test]
+    fn diagnostic_framing_keeps_invalid_sentence_bytes_and_recovers() {
+        let valid = frame("GPRMC,092750.000,A,5321.6802,N,00630.3372,W,5.5,84.4,230394,3.1,E");
+        let mut f = Framer::default();
+        let input = format!("$GPHDT,123.4,T*00\r\n{valid}");
+        let out = f.push_with_raw(input.as_bytes());
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].0, b"$GPHDT,123.4,T*00");
+        assert_eq!(out[0].1, Err(ParseError::BadChecksum));
+        assert_eq!(out[1].1.as_ref().unwrap().formatter, "RMC");
     }
 
     #[test]

@@ -1998,6 +1998,7 @@ pub fn run() {
             nmea::nmea_ports,
             nmea::nmea_sources_get,
             nmea::nmea_sources_set,
+            nmea::nmea_capture_save,
             polar_files,
             polar_import,
             polar_open_folder,

@@ -56,7 +56,6 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
   const sourceStatus = document.getElementById("nmea-settings-status");
   const nmeaCurrentData = document.getElementById("nmea-current-data");
   const nmeaActiveSources = document.getElementById("nmea-active-sources");
-  const nmeaRawViewer = document.getElementById("nmea-raw-viewer");
   const arbitrationBox = document.getElementById("nmea-arbitration");
   const failoverCheckbox = document.getElementById("nmea-failover-enabled");
   const staleAfterSelect = document.getElementById("nmea-stale-seconds");
@@ -66,7 +65,6 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
   let sourceStatuses = new Map();
   let activeGroupSources = {};
   const latestObservations = new Map();
-  const recentSentences = [];
   let editingId = null;
 
   const showStatus = (text, kind = "") => {
@@ -339,10 +337,6 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
     nmeaCurrentData.textContent = labels.length
       ? labels.map(([label, value]) => `${label} ${value}`).join(" · ")
       : "Waiting for supported data fields from enabled sources.";
-    nmeaRawViewer.textContent = recentSentences.length
-      ? recentSentences.join("\n")
-      : "No NMEA sentences received yet.";
-    nmeaRawViewer.scrollTop = nmeaRawViewer.scrollHeight;
   }
 
   async function saveSources(next, nextArbitration = arbitration) {
@@ -430,12 +424,8 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
   }).catch((error) => showSourceStatus(`Could not subscribe to NMEA status: ${error}`, "bad"));
   // the sentences a source sent since the last event (about twice a second)
   listen("nmea-observation", ({ payload }) => {
-    const raws = payload?.sentences ?? (payload?.sentence?.raw ? [payload.sentence.raw] : []);
-    if (!raws.length || !payload.sourceId) return;
+    if (!payload?.sourceId) return;
     latestObservations.set(payload.sourceId, payload.observation || {});
-    const time = new Date().toLocaleTimeString();
-    for (const raw of raws) recentSentences.push(`${time}  ${payload.sourceName || payload.sourceId}  ${raw}`);
-    if (recentSentences.length > 100) recentSentences.splice(0, recentSentences.length - 100);
     renderNmeaData();
   }).catch((error) => showSourceStatus(`Could not subscribe to NMEA data: ${error}`, "bad"));
   function renderActiveSources() {

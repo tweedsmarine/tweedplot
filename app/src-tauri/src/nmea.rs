@@ -140,8 +140,8 @@ static NEXT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 static VESSEL_DIRTY: AtomicBool = AtomicBool::new(false);
 /// Sources whose status (sentence counts) changed since it was last published.
 static STATUS_DIRTY: Mutex<std::collections::BTreeSet<String>> = Mutex::new(std::collections::BTreeSet::new());
-/// Sentences heard since the last "nmea-observation" event, per source: (name, raw).
-static RECENT: Mutex<BTreeMap<String, (String, Vec<String>)>> = Mutex::new(BTreeMap::new());
+/// Sentences heard since the last "nmea-observation" event, per source.
+static RECENT: Mutex<BTreeMap<String, (String, Vec<MonitorFrame>)>> = Mutex::new(BTreeMap::new());
 /// AIS messages over NMEA are put together and decoded per source.
 static AIS_DECODERS: Mutex<BTreeMap<String, ais::nmea::Decoder>> = Mutex::new(BTreeMap::new());
 /// How often the vessel state goes to the windows when data is coming in.
@@ -150,6 +150,24 @@ const PUBLISH_EVERY: Duration = Duration::from_millis(100);
 const MONITOR_TICKS: u32 = 5;
 /// How many publish ticks between forced publishes (stale data must drop out).
 const FORCE_TICKS: u32 = 10;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MonitorFrame {
+    received_at: String,
+    raw: String,
+    checksum_valid: bool,
+    error: Option<String>,
+}
+
+fn record_monitor_frame(source: &SourceConfig, raw: String, checksum_valid: bool, error: Option<String>) {
+    let mut recent = RECENT.lock().unwrap();
+    let frames = &mut recent.entry(source.id.clone()).or_insert_with(|| (source.name.clone(), Vec::new())).1;
+    frames.push(MonitorFrame { received_at: chrono::Utc::now().to_rfc3339(), raw, checksum_valid, error });
+    if frames.len() > 100 {
+        frames.remove(0);
+    }
+}
 
 fn emit_status(app: &tauri::AppHandle, status: SourceStatus) {
     if let Err(error) = app.emit("nmea-status", status) {
@@ -208,14 +226,16 @@ fn publish_monitor(app: &tauri::AppHandle) {
         return;
     }
     let hub = MULTIPLEXER.lock().unwrap();
-    for (id, (name, sentences)) in recent {
+    for (id, (name, frames)) in recent {
         let observation = hub.sources.get(&id).map(|s| s.observation.clone()).unwrap_or_default();
+        let sentences: Vec<&str> = frames.iter().map(|frame| frame.raw.as_str()).collect();
         if let Err(error) = app.emit(
             "nmea-observation",
             serde_json::json!({
                 "sourceId": id,
                 "sourceName": name,
                 "sentences": sentences,
+                "frames": frames,
                 "observation": observation,
             }),
         ) {
@@ -224,9 +244,9 @@ fn publish_monitor(app: &tauri::AppHandle) {
     }
 }
 
-fn invalid_sentence(app: &tauri::AppHandle, id: &str, generation: u64, error: &marine_nmea::ParseError) {
+fn invalid_sentence(app: &tauri::AppHandle, source: &SourceConfig, generation: u64, raw: String, error: &marine_nmea::ParseError) {
     let mut statuses = STATUSES.lock().unwrap();
-    let Some(status) = statuses.get_mut(id) else {
+    let Some(status) = statuses.get_mut(&source.id) else {
         return;
     };
     if status.generation != generation {
@@ -235,9 +255,11 @@ fn invalid_sentence(app: &tauri::AppHandle, id: &str, generation: u64, error: &m
     status.invalid_sentences += 1;
     status.state = "receiving".into();
     status.detail = error.to_string();
+    status.last_sentence = Some(raw.clone());
     drop(statuses);
+    record_monitor_frame(source, raw, false, Some(error.to_string()));
+    STATUS_DIRTY.lock().unwrap().insert(source.id.clone());
     let _ = app;
-    STATUS_DIRTY.lock().unwrap().insert(id.to_owned());
 }
 
 fn sentence_groups(sentence: &Sentence, observation: &Observation) -> Vec<DataGroup> {
@@ -460,18 +482,10 @@ fn publish_multiplexed(app: &tauri::AppHandle, force: bool) {
 }
 
 fn consume_bytes(app: &tauri::AppHandle, source: &SourceConfig, generation: u64, framer: &mut Framer, observation: &mut Observation, bytes: &[u8]) {
-    for parsed in framer.push(bytes) {
+    for (raw, parsed) in framer.push_with_raw(bytes) {
         match parsed {
             Ok(sentence) => {
-                {
-                    let mut recent = RECENT.lock().unwrap();
-                    let entry = recent.entry(source.id.clone()).or_insert_with(|| (source.name.clone(), Vec::new()));
-                    entry.1.push(sentence.raw.clone());
-                    // the monitor shows the last 100; more than that between ticks is dropped
-                    if entry.1.len() > 100 {
-                        entry.1.remove(0);
-                    }
-                }
+                record_monitor_frame(source, sentence.raw.clone(), sentence.checksum_valid, None);
                 if matches!(sentence.formatter.as_str(), "VDM" | "VDO") {
                     // AIS: a target for the chart, not navigation data
                     let update = AIS_DECODERS.lock().unwrap().entry(source.id.clone()).or_default().push(&sentence.formatter, &sentence.fields);
@@ -490,9 +504,25 @@ fn consume_bytes(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
                 }
                 update_status(app, &source.id, generation, None, None, true, Some(&sentence));
             }
-            Err(error) => invalid_sentence(app, &source.id, generation, &error),
+            Err(error) => invalid_sentence(app, source, generation, String::from_utf8_lossy(&raw).trim().to_owned(), &error),
         }
     }
+}
+
+#[tauri::command]
+pub async fn nmea_capture_save(app: tauri::AppHandle, text: String, suggest: Option<String>) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let mut dialog = app.dialog().file().set_title("Save NMEA capture").add_filter("NMEA text log", &["txt", "log"]);
+    if let Some(name) = suggest {
+        dialog = dialog.set_file_name(&name);
+    }
+    let Some(path) = dialog.blocking_save_file() else { return Ok(None) };
+    let mut path = path.into_path().map_err(|error| error.to_string())?;
+    if path.extension().is_none_or(|extension| !extension.eq_ignore_ascii_case("txt") && !extension.eq_ignore_ascii_case("log")) {
+        path.set_extension("txt");
+    }
+    std::fs::write(&path, text).map_err(|error| format!("Could not write NMEA capture {}: {error}", path.display()))?;
+    Ok(Some(path.to_string_lossy().into_owned()))
 }
 
 fn start_sources(app: &tauri::AppHandle, sources: &[SourceConfig], mut arbitration: ArbitrationConfig) {
@@ -822,6 +852,9 @@ pub fn nmea_sources_set(app: tauri::AppHandle, sources: Vec<SourceConfig>, arbit
     settings.nmea_arbitration = arbitration;
     crate::settings::settings_save(app.clone(), settings.clone())?;
     start_sources(&app, &settings.nmea_sources, settings.nmea_arbitration);
+    if let Err(error) = app.emit("nmea-sources-changed", serde_json::json!({})) {
+        eprintln!("Could not publish changed NMEA sources: {error}");
+    }
     Ok(())
 }
 

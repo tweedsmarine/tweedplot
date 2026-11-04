@@ -25,6 +25,10 @@ export const VIEWS = [
     id: "inst", name: "Instruments", tools: false, map: false,
     icon: '<circle cx="12" cy="13" r="8"/><path d="M12 13l4-4"/><path d="M12 5v2M5 13h2M17 13h2"/>',
   },
+  {
+    id: "nmea", name: "Live data", tools: false, map: false,
+    icon: '<path d="M3 12h3l2.2-6 4.2 12 2.2-6H21"/><path d="M4 5h2M18 19h2"/>',
+  },
 ];
 
 const $ = (id) => document.getElementById(id);

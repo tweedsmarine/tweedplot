@@ -13,6 +13,7 @@
       <filter id="pal-green" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.06 0.12 0.02 0 0  0.299 0.587 0.114 0 0  0.03 0.06 0.01 0 0  0 0 0 1 0"/></filter>
     </defs></svg>
     <div id="map"></div>
+    <main id="nmea-monitor-window" aria-label="Live NMEA monitor"></main>
 
     <!-- Icon rail: one drawer open at a time -->
     <nav id="rail" aria-label="Panels">
@@ -876,7 +877,7 @@
             <h4>Live NMEA data</h4>
             <div id="nmea-active-sources" class="nmea-current-data">No active NMEA sources.</div>
             <div id="nmea-current-data" class="nmea-current-data">Waiting for a valid sentence.</div>
-            <pre id="nmea-raw-viewer" class="nmea-raw-viewer" aria-label="Recent raw NMEA sentences">No NMEA sentences received yet.</pre>
+            <div id="nmea-monitor-inline"></div>
             <form id="nmea-source-form">
               <h4 id="nmea-form-title">Add source</h4>
               <div class="settings-grid">

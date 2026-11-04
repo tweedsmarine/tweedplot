@@ -10,6 +10,8 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 maplibregl.setWorkerUrl(workerUrl);
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { PRIMARY } from "./role.js";
 import * as activity from "./activity.js";
 import { setupWeather, barbImage } from "./weather.js";
 import { setupWeatherPanel } from "./wxpanel.js";
@@ -69,6 +71,7 @@ import { setupStations, stationImage } from "./stations.js";
 import { setupInstruments, waypointData, targetAt } from "./instruments.js";
 import { setupLibrary, labelImage } from "./library.js";
 import { setupSettings } from "./settings.js";
+import { setupNmeaMonitor } from "./nmeamonitor.js";
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
@@ -428,6 +431,16 @@ setupDisclaimer();
 window.addEventListener("racenav-mob", (e) => { inst.update({ mob: e.detail }); });
 const boat = setupBoat();
 setupSettings({ boat, ui, onReferencePosition: useReferencePosition });
+const openNmeaSettings = () => ui.openTab("settings", "conn");
+if (PRIMARY) {
+  listen("nmea-open-settings", () => {
+    const w = getCurrentWindow();
+    w.unminimize().then(() => w.setFocus()).catch(() => {});
+    openNmeaSettings();
+  });
+}
+setupNmeaMonitor(document.getElementById("nmea-monitor-inline"), { openSettings: openNmeaSettings });
+setupNmeaMonitor(document.getElementById("nmea-monitor-window"), { standalone: true, openSettings: openNmeaSettings });
 const dock = setupDock(map);
 let features = null;
 let ruler = null;

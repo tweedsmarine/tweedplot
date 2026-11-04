@@ -363,7 +363,9 @@ TweedPlot can also read NMEA 0183 itself, without Signal K: from a COM port (USB
 - **Several sources:** each kind of data (position, motion, heading, speed through water, wind, depth, water temperature) can come from a different source. If the chosen one goes quiet for longer than **Source stale after**, the next source that has the data takes over (**Automatic failover**), and an alarm says so.
 - **Heading:** a true heading (HDT, or VHW with a true heading) is used when there is one. Otherwise the magnetic heading (HDG, HDM) is corrected with the variation from the compass or the GPS.
 - **AIS:** AIS sentences from an AIS receiver or transponder on any source (`!AIVDM`) become AIS targets, the same as AIS through Signal K. Your own transponder's reports of your own ship (`!AIVDO`) are not shown as a target.
-- **Live NMEA data** shows the sentences as they arrive and what was read from them, for checking the wiring.
+- **Live NMEA data** shows raw sentences with a distinct colour for each input. Filter by input, show receive timestamps, and pause scrolling while data continues to buffer. Bad checksums and malformed sentences are highlighted with their error. **Pop out** opens the monitor in its own window. **Configure inputs** opens the source settings, where a serial input's COM port and baud rate can be changed.
+- **Capture 1 minute and copy** collects the next minute of sentences and copies them, with source names and optional timestamps, ready to paste into a support email. **Capture to file** records for 10, 30 or 60 minutes, or a custom duration, then asks where to save the text log. Either capture can be cancelled.
+- **Selected values** shows up to six live values from the source currently selected for each data group. Choose the fields from the drop-downs; the defaults are latitude, longitude, SOG, COG, depth and true heading.
 
 **Replaying a log**
 
