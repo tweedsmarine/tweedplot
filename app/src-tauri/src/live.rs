@@ -9,7 +9,8 @@ use tauri::{Emitter, Manager};
 
 static TARGETS: Mutex<Option<ais::Targets>> = Mutex::new(None);
 static REPLAY: Mutex<Option<(Arc<signalk::replay::Control>, String)>> = Mutex::new(None);
-static AIS_REQ: std::sync::LazyLock<Mutex<std::collections::HashMap<&'static str, tokio::sync::watch::Sender<ais::stream::Request>>>> = std::sync::LazyLock::new(Default::default);
+static AIS_REQ: std::sync::LazyLock<Mutex<std::collections::HashMap<&'static str, tokio::sync::watch::Sender<ais::stream::Request>>>> =
+    std::sync::LazyLock::new(Default::default);
 static AIS_STATUS: std::sync::LazyLock<Mutex<std::collections::HashMap<&'static str, (bool, String)>>> = std::sync::LazyLock::new(Default::default);
 
 fn now_s() -> i64 {

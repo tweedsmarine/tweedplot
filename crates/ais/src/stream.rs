@@ -34,11 +34,19 @@ impl Request {
         }
     }
     fn name(&self) -> &'static str {
-        if self.provider == "openwaters" { "Open Waters" } else { "aisstream.io" }
+        if self.provider == "openwaters" {
+            "Open Waters"
+        } else {
+            "aisstream.io"
+        }
     }
     /// What a target heard from this feed lists as its source.
     fn source(&self) -> &'static str {
-        if self.provider == "openwaters" { "openwaters" } else { "aisstream" }
+        if self.provider == "openwaters" {
+            "openwaters"
+        } else {
+            "aisstream"
+        }
     }
 }
 
@@ -163,7 +171,9 @@ pub fn parse(text: &str) -> Option<Update> {
         // the envelope's position stands in for a message that has none of its own
         for (k, e) in [("Latitude", "lat"), ("Longitude", "lon")] {
             if m.get(k).is_none() {
-                if let (Some(o), Some(x)) = (m.as_object_mut(), v.get(e)) { o.insert(k.into(), x.clone()); }
+                if let (Some(o), Some(x)) = (m.as_object_mut(), v.get(e)) {
+                    o.insert(k.into(), x.clone());
+                }
             }
         }
         let mmsi = v.get("mmsi").cloned().unwrap_or(Value::Null);
@@ -173,7 +183,11 @@ pub fn parse(text: &str) -> Option<Update> {
         let raw = v.get("nmea").and_then(Value::as_array).is_some_and(|a| !a.is_empty());
         match ty {
             "ShipStaticData" if !raw => u.class = None,
-            "PositionReport" if m.get("NavigationalStatus").and_then(Value::as_u64) == Some(15) && m.get("RateOfTurn").and_then(Value::as_i64) == Some(-128) => u.class = Some("B"),
+            "PositionReport"
+                if m.get("NavigationalStatus").and_then(Value::as_u64) == Some(15) && m.get("RateOfTurn").and_then(Value::as_i64) == Some(-128) =>
+            {
+                u.class = Some("B")
+            }
             _ => {}
         }
         return Some(u);
@@ -304,29 +318,30 @@ mod tests {
         assert_eq!((u.cog, u.heading, u.sog), (None, None, None));
         assert!(parse(r#"{"error":"Api Key Is Not Valid"}"#).is_none());
         assert_eq!(error_of(r#"{"error":"Api Key Is Not Valid"}"#).as_deref(), Some("aisstream.io: Api Key Is Not Valid"));
-        assert!(subscription(&Request { key: "k".into(), boxes: vec![[[-42.0, 172.0], [-40.0, 175.0]]], ..Default::default() }).contains("[[[-42.0,172.0],[-40.0,175.0]]]"));
+        assert!(subscription(&Request { key: "k".into(), boxes: vec![[[-42.0, 172.0], [-40.0, 175.0]]], ..Default::default() })
+            .contains("[[[-42.0,172.0],[-40.0,175.0]]]"));
     }
 
-            #[test]
-            fn open_waters_v1_events_and_subscription() {
-                let e = r#"{"type":"event","id":"x","mmsi":512007447,"msg_type":"StandardClassBPositionReport","lat":-41.285,"lon":174.779,"message":{"MessageID":18,"UserID":512007447,"Valid":true,"Sog":6.5,"Cog":120,"TrueHeading":511,"ClassBUnit":false,"Latitude":-41.285,"Longitude":174.779}}"#;
-                let u = parse(e).unwrap();
-                assert_eq!((u.mmsi, u.pos, u.sog, u.heading), (512007447, Some((-41.285, 174.779)), Some(6.5), None));
-                let s = r#"{"type":"event","mmsi":512000123,"msg_type":"ShipStaticData","lat":-41.2,"lon":173.3,"message":{"UserID":512000123,"Name":"KAITAKI@@","Type":60,"Dimension":{"A":100,"B":50,"C":10,"D":10}}}"#;
-                let u = parse(s).unwrap();
-                assert_eq!((u.name.as_deref(), u.ship_type, u.length), (Some("KAITAKI"), Some(60), Some(150.0)));
-                assert!(parse(r#"{"type":"welcome","role":"personal"}"#).is_none());
+    #[test]
+    fn open_waters_v1_events_and_subscription() {
+        let e = r#"{"type":"event","id":"x","mmsi":512007447,"msg_type":"StandardClassBPositionReport","lat":-41.285,"lon":174.779,"message":{"MessageID":18,"UserID":512007447,"Valid":true,"Sog":6.5,"Cog":120,"TrueHeading":511,"ClassBUnit":false,"Latitude":-41.285,"Longitude":174.779}}"#;
+        let u = parse(e).unwrap();
+        assert_eq!((u.mmsi, u.pos, u.sog, u.heading), (512007447, Some((-41.285, 174.779)), Some(6.5), None));
+        let s = r#"{"type":"event","mmsi":512000123,"msg_type":"ShipStaticData","lat":-41.2,"lon":173.3,"message":{"UserID":512000123,"Name":"KAITAKI@@","Type":60,"Dimension":{"A":100,"B":50,"C":10,"D":10}}}"#;
+        let u = parse(s).unwrap();
+        assert_eq!((u.name.as_deref(), u.ship_type, u.length), (Some("KAITAKI"), Some(60), Some(150.0)));
+        assert!(parse(r#"{"type":"welcome","role":"personal"}"#).is_none());
         let snap = r#"{"type":"event","mmsi":512000706,"msg_type":"PositionReport","lat":-41.2,"lon":173.3,"message":{"UserID":512000706,"NavigationalStatus":15,"RateOfTurn":-128,"Sog":0,"Cog":10,"TrueHeading":511,"Latitude":-41.2,"Longitude":173.3}}"#;
         assert_eq!(parse(snap).unwrap().class, Some("B"));
         let st = r#"{"type":"event","mmsi":512000706,"msg_type":"ShipStaticData","nmea":[],"message":{"UserID":512000706,"Name":"NELSON PILOT"}}"#;
         assert_eq!(parse(st).unwrap().class, None);
         let st = r#"{"type":"event","mmsi":512000706,"msg_type":"ShipStaticData","nmea":["!AIVDM,x"],"message":{"UserID":512000706,"Name":"NELSON PILOT"}}"#;
         assert_eq!(parse(st).unwrap().class, Some("A"));
-                let r = Request { provider: "openwaters".into(), key: "ak1.tok".into(), boxes: vec![[[-42.0, 172.0], [-40.0, 175.0]]] };
-                assert_eq!(r.url(), format!("{URL_OPENWATERS}?key=ak1.tok"));
-                let sub: Value = serde_json::from_str(&subscription(&r)).unwrap();
-                assert_eq!(sub["type"], "subscribe");
-                assert_eq!(sub["snapshot"], true);
-                assert_eq!(sub["bbox"], json!([[-42.0, 172.0, -40.0, 175.0]]));
-            }
-        }
+        let r = Request { provider: "openwaters".into(), key: "ak1.tok".into(), boxes: vec![[[-42.0, 172.0], [-40.0, 175.0]]] };
+        assert_eq!(r.url(), format!("{URL_OPENWATERS}?key=ak1.tok"));
+        let sub: Value = serde_json::from_str(&subscription(&r)).unwrap();
+        assert_eq!(sub["type"], "subscribe");
+        assert_eq!(sub["snapshot"], true);
+        assert_eq!(sub["bbox"], json!([[-42.0, 172.0, -40.0, 175.0]]));
+    }
+}
