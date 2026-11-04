@@ -9,8 +9,8 @@ use tauri::{Emitter, Manager};
 
 static TARGETS: Mutex<Option<ais::Targets>> = Mutex::new(None);
 static REPLAY: Mutex<Option<(Arc<signalk::replay::Control>, String)>> = Mutex::new(None);
-static AIS_REQ: std::sync::OnceLock<tokio::sync::watch::Sender<ais::stream::Request>> = std::sync::OnceLock::new();
-static AIS_STATUS: Mutex<(bool, String)> = Mutex::new((false, String::new()));
+static AIS_REQ: std::sync::LazyLock<Mutex<std::collections::HashMap<&'static str, tokio::sync::watch::Sender<ais::stream::Request>>>> = std::sync::LazyLock::new(Default::default);
+static AIS_STATUS: std::sync::LazyLock<Mutex<std::collections::HashMap<&'static str, (bool, String)>>> = std::sync::LazyLock::new(Default::default);
 
 fn now_s() -> i64 {
     chrono::Utc::now().timestamp()
@@ -79,18 +79,29 @@ pub fn start(app: &tauri::AppHandle) {
         }
     });
 
-    // aisstream.io: idle until the page sends a key and an area
-    let (req_tx, req_rx) = tokio::sync::watch::channel(ais::stream::Request::default());
-    let _ = AIS_REQ.set(req_tx);
-    let (atx, mut arx) = tokio::sync::mpsc::channel(1024);
-    tauri::async_runtime::spawn(ais::stream::run(req_rx, atx));
+    // Online AIS: one feed per provider (aisstream.io, Open Waters), each idle until the page sends a key and an area
+    let (atx, mut arx) = tokio::sync::mpsc::channel::<(&'static str, ais::stream::Event)>(1024);
+    for provider in ["aisstream", "openwaters"] {
+        let (req_tx, req_rx) = tokio::sync::watch::channel(ais::stream::Request::default());
+        AIS_REQ.lock().unwrap().insert(provider, req_tx);
+        let (ptx, mut prx) = tokio::sync::mpsc::channel(1024);
+        tauri::async_runtime::spawn(ais::stream::run(req_rx, ptx));
+        let atx = atx.clone();
+        tauri::async_runtime::spawn(async move {
+            while let Some(ev) = prx.recv().await {
+                if atx.send((provider, ev)).await.is_err() {
+                    return;
+                }
+            }
+        });
+    }
     let h2 = app.clone();
     tauri::async_runtime::spawn(async move {
-        while let Some(ev) = arx.recv().await {
+        while let Some((provider, ev)) = arx.recv().await {
             match ev {
                 ais::stream::Event::Status { connected, detail } => {
-                    *AIS_STATUS.lock().unwrap() = (connected, detail.clone());
-                    let _ = h2.emit("ais-status", serde_json::json!({ "connected": connected, "detail": detail }));
+                    AIS_STATUS.lock().unwrap().insert(provider, (connected, detail.clone()));
+                    let _ = h2.emit("ais-status", serde_json::json!({ "provider": provider, "connected": connected, "detail": detail }));
                 }
                 ais::stream::Event::Update(u) => {
                     if !is_replaying() {
@@ -134,15 +145,41 @@ pub fn ais_targets() -> Vec<ais::Target> {
     with_targets(|t| t.all())
 }
 
-/// Set the aisstream.io key and areas ([[lat, lon], [lat, lon]] each); an empty key stops the feed.
+/// Set one online provider ("aisstream" or "openwaters"), its key and the areas ([[lat, lon], [lat, lon]] each); an empty key stops that feed.
 #[tauri::command]
-pub fn ais_online(key: String, boxes: Vec<[[f64; 2]; 2]>) {
+pub fn ais_online(provider: Option<String>, key: String, boxes: Vec<[[f64; 2]; 2]>) {
+    let provider = if provider.as_deref() == Some("openwaters") { "openwaters" } else { "aisstream" };
     if key.trim().is_empty() {
-        *AIS_STATUS.lock().unwrap() = (false, "off".into());
+        AIS_STATUS.lock().unwrap().insert(provider, (false, "off".into()));
     }
-    if let Some(tx) = AIS_REQ.get() {
-        let _ = tx.send(ais::stream::Request { key, boxes });
+    if let Some(tx) = AIS_REQ.lock().unwrap().get(provider) {
+        let _ = tx.send(ais::stream::Request { provider: provider.into(), key, boxes });
     }
+}
+
+/// Get an Open Waters token. With the same `seed` as before it is the same station again;
+/// without one a new private key is made. Returns { seed, token } for the page to keep.
+#[tauri::command]
+pub async fn ow_register(seed: Option<String>, name: Option<String>) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let seed = match seed.filter(|s| !s.trim().is_empty()) {
+            Some(s) => s,
+            None => ais::openwaters::new_seed()?,
+        };
+        let body = ais::openwaters::key_request(&seed, now_s(), name.as_deref().unwrap_or(""))?;
+        let client = reqwest::blocking::Client::builder().timeout(Duration::from_secs(20)).build().map_err(|e| e.to_string())?;
+        let text = client
+            .post(ais::openwaters::KEYS_URL)
+            .header("Content-Type", "application/json")
+            .body(body)
+            .send()
+            .and_then(|r| r.text())
+            .map_err(|e| format!("Open Waters: {e}"))?;
+        let token = ais::openwaters::token_of(&text)?;
+        Ok(serde_json::json!({ "seed": seed, "token": token }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Our own MMSI (from the Boat panel): never shown as a target.
@@ -159,8 +196,9 @@ pub fn ais_tracks(mmsis: Vec<u32>) -> std::collections::HashMap<u32, Vec<[f64; 3
 
 #[tauri::command]
 pub fn ais_status() -> serde_json::Value {
-    let (c, d) = AIS_STATUS.lock().unwrap().clone();
-    serde_json::json!({ "connected": c, "detail": d })
+    let g = AIS_STATUS.lock().unwrap();
+    let one = |p: &str| g.get(p).map_or(serde_json::json!({ "connected": false, "detail": "" }), |(c, d)| serde_json::json!({ "connected": c, "detail": d }));
+    serde_json::json!({ "aisstream": one("aisstream"), "openwaters": one("openwaters") })
 }
 
 // ---------- replay commands ----------------------------------------------------------

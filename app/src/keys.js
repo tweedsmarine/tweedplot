@@ -54,7 +54,7 @@ export const KEYS = [
   { group: "Marks and library", keys: "Ctrl+F", label: "Find in the library", run: (c) => c.findInLibrary() },
 
   { group: "Safety", keys: "Ctrl+M", label: "Man overboard", btn: "mob-btn", run: click("mob-btn") },
-  { group: "Safety", keys: "Shift+A", label: "Silence the sounding alarms (they stay on the list until cleared)", run: (c) => c.silence() },
+  { group: "Safety", keys: "Shift+A", label: "Silence the sounding alarms (they stay on the Alarms list while their cause lasts)", run: (c) => c.silence() },
 
   { group: "Help", keys: "F1", label: "User manual", own: true },
   { group: "Help", keys: "?", label: "This list of keys", run: (c) => c.sheet() },

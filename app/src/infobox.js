@@ -13,7 +13,7 @@ const boxes = new Set();
  * A box for one kind of information (`kind`: "ais", "rules", ...).
  * `open(content, { title, at })`: content is an element or HTML; `at` [lon, lat] is marked.
  */
-export function createInfoBox(map, kind, { title = "", width = 340, height = 320 } = {}) {
+export function createInfoBox(map, kind, { title = "", width = 340, height = 320, showRing = true } = {}) {
   let st = { w: width, h: height };
   try { Object.assign(st, JSON.parse(localStorage.getItem(KEY + kind) || "{}")); } catch { /* storage unavailable */ }
   const save = () => { try { localStorage.setItem(KEY + kind, JSON.stringify(st)); } catch { /* ignore */ } };
@@ -71,7 +71,7 @@ export function createInfoBox(map, kind, { title = "", width = 340, height = 320
   window.addEventListener("racenav-layout", () => !el.hidden && place());
 
   function mark(at) {
-    if (!at) { ring?.remove(); ring = null; return; }
+    if (!at || !showRing) { ring?.remove(); ring = null; return; }
     if (!ring) {
       const d = document.createElement("div");
       d.className = "ib-ring";

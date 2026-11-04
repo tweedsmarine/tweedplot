@@ -48,7 +48,7 @@ export function setupNightCursor() {
 
   let on = false;
   let lastEl = null, lastInline = "", cur = null, src = "";
-  const night = () => String(root.dataset.palette || "").startsWith("night");
+  const night = () => /^(iho-)?night/.test(String(root.dataset.palette || ""));
 
   // the cursor the page asks for at an element (with the edge rule lifted while reading it)
   function cursorAt(el) {
@@ -71,7 +71,8 @@ export function setupNightCursor() {
     const inline = el.style?.cursor ?? "";
     if (el !== lastEl || inline !== lastInline) { lastEl = el; lastInline = inline; cur = cursorAt(el); }
     if (!cur) { off(); return; } // a system cursor anyway (text caret)
-    const want = recolour(cur.url, root.dataset.palette, Number(getComputedStyle(root).getPropertyValue("--pal-dim")) || 0.6);
+    const dimVar = Number(getComputedStyle(root).getPropertyValue("--pal-dim")) || 0.6;
+    const want = recolour(cur.url, root.dataset.palette, root.dataset.palette === "iho-night" ? dimVar * 0.6 : dimVar);
     if (want !== src) { src = want; img.src = want; }
     img.style.width = img.style.height = `${cur.size}px`;
     img.style.transform = `translate(${x - cur.hx}px, ${y - cur.hy}px)`;

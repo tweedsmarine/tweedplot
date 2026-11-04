@@ -9,6 +9,7 @@
 //! Units: degrees true, knots, metres; times are Unix seconds.
 
 pub mod nmea;
+pub mod openwaters;
 pub mod stream;
 
 use serde::Serialize;
@@ -60,6 +61,17 @@ impl Kind {
     }
 }
 
+/// AIS rate of turn (the signed 8-bit value of messages 1 to 3) in degrees per minute, positive to
+/// starboard; None when not available (-128). ±127 means "more than 5° per minute" and is taken as 5.
+pub fn rot_deg_per_min(raw: i8) -> Option<f64> {
+    match raw {
+        -128 => None,
+        127 => Some(5.0),
+        -127 => Some(-5.0),
+        r => Some((f64::from(r) / 4.733).powi(2).copysign(f64::from(r))),
+    }
+}
+
 /// One AIS target as the app shows it.
 #[derive(Debug, Clone, Default, Serialize, PartialEq)]
 pub struct Target {
@@ -73,11 +85,13 @@ pub struct Target {
     pub cog: Option<f64>,
     pub sog: Option<f64>,
     pub heading: Option<f64>,
+    /// Rate of turn, degrees per minute, positive to starboard.
+    pub rot: Option<f64>,
     /// AIS navigational status code (0 under way using engine, 1 at anchor, 5 moored, 7 fishing, 8 sailing …).
     pub status: Option<u8>,
     /// AIS ship and cargo type (30 fishing, 36 sailing, 37 pleasure, 52 tug, 60–69 passenger, 70–79 cargo, 80–89 tanker …).
     pub ship_type: Option<u16>,
-    /// Class "A", "B", or None (not a ship, or not known yet).
+    /// Class "A", "B", "B+" (class B with SOTDMA, or extended class B), or None (not a ship, or not known yet).
     pub class: Option<String>,
     pub length: Option<f64>,
     pub beam: Option<f64>,
@@ -137,6 +151,7 @@ impl Target {
                 "navigation.courseOverGroundTrue" => self.cog = num().map(|r| norm360(r.to_degrees())),
                 "navigation.speedOverGround" => self.sog = num().map(|v| v * MS_TO_KN),
                 "navigation.headingTrue" => self.heading = num().map(|r| norm360(r.to_degrees())),
+                "navigation.rateOfTurn" => self.rot = num().map(|r| r.to_degrees() * 60.0),
                 "navigation.state" => self.status = val.as_str().and_then(status_code),
                 "navigation.destination.commonName" => self.destination = val.as_str().map(str::to_string),
                 "design.length" => self.length = val.get("overall").and_then(Value::as_f64).or(num()),
@@ -341,6 +356,7 @@ pub struct Update {
     pub cog: Option<f64>,
     pub sog: Option<f64>,
     pub heading: Option<f64>,
+    pub rot: Option<f64>,
     pub status: Option<u8>,
     pub ship_type: Option<u16>,
     pub class: Option<&'static str>,
@@ -366,9 +382,12 @@ impl Update {
         macro_rules! set {
             ($($f:ident),*) => { $( if self.$f.is_some() { t.$f = self.$f; } )* };
         }
-        set!(name, callsign, cog, sog, heading, status, ship_type, length, beam, from_bow, from_centre, draught, destination, aton_type, altitude);
+        set!(name, callsign, cog, sog, heading, rot, status, ship_type, length, beam, from_bow, from_centre, draught, destination, aton_type, altitude);
         if let Some(c) = self.class {
-            t.class = Some(c.to_string());
+            // static data (message 24) says only "B": it must not undo a "B+" seen in a position report
+            if !(c == "B" && t.class.as_deref() == Some("B+")) {
+                t.class = Some(c.to_string());
+            }
         }
         if let Some(v) = self.virtual_aton {
             t.virtual_aton = v;
@@ -419,6 +438,15 @@ mod tests {
         assert!(ts.take_changes(1001).0.len() <= 1);
         let (_, gone) = ts.take_changes(1001 + EXPIRE_S + 1);
         assert_eq!(gone, vec![512000123]);
+    }
+
+    #[test]
+    fn rate_of_turn_decoding() {
+        assert_eq!(rot_deg_per_min(0), Some(0.0));
+        assert_eq!(rot_deg_per_min(-128), None);
+        assert_eq!(rot_deg_per_min(127), Some(5.0));
+        assert!(rot_deg_per_min(-20).unwrap() < -17.0); // to port
+        assert!((rot_deg_per_min(10).unwrap() - 4.46).abs() < 0.05);
     }
 
     #[test]

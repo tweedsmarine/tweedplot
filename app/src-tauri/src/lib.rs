@@ -2009,6 +2009,7 @@ pub fn run() {
             stations_cmd::station_history,
             live::ais_targets,
             live::ais_online,
+            live::ow_register,
             live::ais_status,
             live::ais_set_own,
             live::ais_tracks,

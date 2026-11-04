@@ -709,13 +709,26 @@ html[data-palette="dusk"]:not([data-iho]) { filter: brightness(var(--pal-dim, 0.
 /* IHO dusk and night (with the IHO chart symbols; mappalette.js): the panels go dark
    (inverted, hues kept), the map is left out of it, drawn in the IHO palette itself.
    Night (IHO) with the paper chart symbols: the same dark page, map and all. */
-html[data-palette="dusk"][data-iho], html[data-palette="iho-night"] { filter: invert(1) hue-rotate(180deg) brightness(var(--pal-dim, 0.8)); }
-html[data-palette="dusk"][data-iho] body, html[data-palette="iho-night"] body { background: #fff; }
+html[data-palette="dusk"][data-iho] { filter: invert(1) hue-rotate(180deg) brightness(var(--pal-dim, 0.8)); }
+html[data-palette="dusk"][data-iho] body { background: #fff; }
 /* things already dark (the rail, instrument panels, the title bars of floating boxes, the
    about box, messages) are turned back, so they stay dark rather than going light grey */
-:is(html[data-palette="dusk"][data-iho], html[data-palette="iho-night"]) :is(#rail, .ipanel, #itiles, .dot, #replay-bar, #tip,
+html[data-palette="dusk"][data-iho] :is(#rail, .ipanel, #itiles, .dot, #replay-bar, #tip,
   .float-win header, .about, .toast, .startup-splash, #wx-pop-btn.on) { filter: invert(1) hue-rotate(180deg); }
-:is(html[data-palette="dusk"][data-iho], html[data-palette="iho-night"][data-iho]) #map .maplibregl-canvas-container { filter: hue-rotate(180deg) invert(1); }
+html[data-palette="dusk"][data-iho] #map .maplibregl-canvas-container { filter: hue-rotate(180deg) invert(1); }
+/* Night (IHO): the chart is drawn in the IHO night palette, so it is left out of the colour
+   filter; everything round it (rail, drawers, toolbar, floating boxes, tables, instrument panels,
+   buttons, status bars) gets the same dim red as Night (red). Things already dark are not inverted.
+   With the paper chart symbols the map goes through the dark page filter as before. */
+html[data-palette="iho-night"] body { background: #000; }
+html[data-palette="iho-night"] body > :not(#map) { filter: invert(1) url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
+html[data-palette="iho-night"] body > :is(#rail, #itiles, #replay-bar, #tip) { filter: url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
+html[data-palette="iho-night"] :is(.ipanel, .dot) { filter: invert(1); }
+html[data-palette="iho-night"] #map > :not(.maplibregl-canvas-container, .maplibregl-control-container, .maplibregl-canvas) { filter: invert(1) url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
+html[data-palette="iho-night"] #map :is(.maplibregl-ctrl, .maplibregl-popup) { filter: invert(1) url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
+html[data-palette="iho-night"] #map .maplibregl-canvas-container { filter: brightness(var(--pal-dim, 1)); }
+html[data-palette="iho-night"]:not([data-iho]) #map .maplibregl-canvas-container { filter: invert(1) hue-rotate(180deg) brightness(var(--pal-dim, 1)); }
+
 /* Night: invert (light chart → dark), then one hue. Things that are already dark
    (the rail, instrument panels) are inverted first so they stay dark. */
 html[data-palette="night-red"] { filter: invert(1) url(#pal-red) brightness(var(--pal-dim, 0.6)); }
@@ -729,7 +742,7 @@ html[data-palette^="night"] body { background: #fff; } /* black after the invers
 /* Night cursors. The colour filter does not reach the system cursor, which stays bright white
    and spoils night vision, so night modes draw their own cursors in the palette colour.
    Resize cursors and the text caret are left to the system. */
-html[data-palette="night-red"] {
+html:is([data-palette="night-red"], [data-palette="iho-night"]) {
   --cur-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M3 2v17l4.5-4 3 7 2.5-1-3-7H17z' fill='%23b00000' stroke='%23000' stroke-width='1'/%3E%3C/svg%3E") 3 2, default;
   --cur-ring: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='7' fill='none' stroke='%23b00000' stroke-width='2.5'/%3E%3Ccircle cx='12' cy='12' r='1.5' fill='%23b00000'/%3E%3C/svg%3E") 12 12, pointer;
   --cur-cross: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M12 2v7M12 15v7M2 12h7M15 12h7' stroke='%23b00000' stroke-width='2'/%3E%3C/svg%3E") 12 12, crosshair;
@@ -743,9 +756,9 @@ html[data-palette="night-green"] {
   --cur-grab: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M12 3v18M3 12h18' stroke='%2300a000' stroke-width='2.5'/%3E%3Ccircle cx='12' cy='12' r='4' fill='none' stroke='%2300a000' stroke-width='2'/%3E%3C/svg%3E") 12 12, grab;
   --cur-grabbing: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M12 3v18M3 12h18' stroke='%2300a000' stroke-width='2.5'/%3E%3Ccircle cx='12' cy='12' r='4' fill='%2300a000'/%3E%3C/svg%3E") 12 12, grabbing;
 }
-html[data-palette^="night"], :where(html[data-palette^="night"]) :not(input, textarea) { cursor: var(--cur-arrow); }
+html:is([data-palette^="night"], [data-palette="iho-night"]), :where(html:is([data-palette^="night"], [data-palette="iho-night"])) :not(input, textarea) { cursor: var(--cur-arrow); }
 /* resize cursors: a double arrow in the night colour with a dark edge */
-html[data-palette="night-red"] {
+html:is([data-palette="night-red"], [data-palette="iho-night"]) {
   --cur-nwse: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M5 5l14 14M5 5h6M5 5v6M19 19h-6M19 19v-6' fill='none' stroke='%23000' stroke-width='4.5'/%3E%3Cpath d='M5 5l14 14M5 5h6M5 5v6M19 19h-6M19 19v-6' fill='none' stroke='%23b00000' stroke-width='2'/%3E%3C/svg%3E") 12 12, nwse-resize;
   --cur-ew: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M3 12h18M3 12l5-5M3 12l5 5M21 12l-5-5M21 12l-5 5' fill='none' stroke='%23000' stroke-width='4.5'/%3E%3Cpath d='M3 12h18M3 12l5-5M3 12l5 5M21 12l-5-5M21 12l-5 5' fill='none' stroke='%23b00000' stroke-width='2'/%3E%3C/svg%3E") 12 12, ew-resize;
   --cur-ns: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M12 3v18M12 3l-5 5M12 3l5 5M12 21l-5-5M12 21l5-5' fill='none' stroke='%23000' stroke-width='4.5'/%3E%3Cpath d='M12 3v18M12 3l-5 5M12 3l5 5M12 21l-5-5M12 21l5-5' fill='none' stroke='%23b00000' stroke-width='2'/%3E%3C/svg%3E") 12 12, ns-resize;
@@ -755,32 +768,32 @@ html[data-palette="night-green"] {
   --cur-ew: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M3 12h18M3 12l5-5M3 12l5 5M21 12l-5-5M21 12l-5 5' fill='none' stroke='%23000' stroke-width='4.5'/%3E%3Cpath d='M3 12h18M3 12l5-5M3 12l5 5M21 12l-5-5M21 12l-5 5' fill='none' stroke='%2300a000' stroke-width='2'/%3E%3C/svg%3E") 12 12, ew-resize;
   --cur-ns: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M12 3v18M12 3l-5 5M12 3l5 5M12 21l-5-5M12 21l5-5' fill='none' stroke='%23000' stroke-width='4.5'/%3E%3Cpath d='M12 3v18M12 3l-5 5M12 3l5 5M12 21l-5-5M12 21l5-5' fill='none' stroke='%2300a000' stroke-width='2'/%3E%3C/svg%3E") 12 12, ns-resize;
 }
-html[data-palette^="night"] :is(.prsz, .trsz) { cursor: var(--cur-nwse) !important; }
-html[data-palette^="night"] :is(.seafilter .h, #manual .man-grip) { cursor: var(--cur-ew) !important; }
-html[data-palette^="night"] .dock-grip { cursor: var(--cur-ns) !important; }
+html:is([data-palette^="night"], [data-palette="iho-night"]) :is(.prsz, .trsz) { cursor: var(--cur-nwse) !important; }
+html:is([data-palette^="night"], [data-palette="iho-night"]) :is(.seafilter .h, #manual .man-grip) { cursor: var(--cur-ew) !important; }
+html:is([data-palette^="night"], [data-palette="iho-night"]) .dock-grip { cursor: var(--cur-ns) !important; }
 /* Things to click: the ring, also over the text and icons inside them (the rule for every element
    above would otherwise give those the arrow). Not over a text field or a handle inside one.
    Rules with an id are kept apart: an id inside :is() lifts the whole list above the rules after it. */
-html[data-palette^="night"] :is(button, a, summary, label, select, [role="button"], input[type="checkbox"], input[type="range"],
+html:is([data-palette^="night"], [data-palette="iho-night"]) :is(button, a, summary, label, select, [role="button"], input[type="checkbox"], input[type="range"],
   .list li .main, .ptitle, .tile, .itile, .chip, table.cmp th, table.cmp tr, .seafilter .track, .isel-opt, .ll-body .main, .view-pop .vp-chart),
-html[data-palette^="night"] :is(button, a, summary, label, [role="button"],
+html:is([data-palette^="night"], [data-palette="iho-night"]) :is(button, a, summary, label, [role="button"],
   .list li .main, .ptitle, .tile, .itile, .chip, table.cmp th, table.cmp tr, .seafilter .track, .isel-opt, .ll-body .main, .view-pop .vp-chart)
   :not(input, textarea, .h, .prsz, .trsz, .grip) { cursor: var(--cur-ring) !important; }
-html[data-palette^="night"] :is(#tgt-table th, #tgt-table td, #alarm-banner .txt, #manual figure img, #manual figure.diagram, #manual .man-lightbox),
-html[data-palette^="night"] :is(#tgt-table th, #tgt-table td, #alarm-banner .txt, #manual figure.diagram, #manual .man-lightbox) :not(input, textarea) { cursor: var(--cur-ring) !important; }
+html:is([data-palette^="night"], [data-palette="iho-night"]) :is(#tgt-table th, #tgt-table td, #alarm-banner .txt, #manual figure img, #manual figure.diagram, #manual .man-lightbox),
+html:is([data-palette^="night"], [data-palette="iho-night"]) :is(#tgt-table th, #tgt-table td, #alarm-banner .txt, #manual figure.diagram, #manual .man-lightbox) :not(input, textarea) { cursor: var(--cur-ring) !important; }
 /* inputs that aren't typed into (dates, files, colours) keep the system arrow unless told */
-html[data-palette^="night"] input:not([type="text"], [type="number"], [type="password"], [type="search"], [type="email"], [type="url"], [type="checkbox"], [type="range"], :not([type])) { cursor: var(--cur-arrow); }
-html[data-palette^="night"] .isel-list .isel-opt.off { cursor: var(--cur-arrow) !important; }
+html:is([data-palette^="night"], [data-palette="iho-night"]) input:not([type="text"], [type="number"], [type="password"], [type="search"], [type="email"], [type="url"], [type="checkbox"], [type="range"], :not([type])) { cursor: var(--cur-arrow); }
+html:is([data-palette^="night"], [data-palette="iho-night"]) .isel-list .isel-opt.off { cursor: var(--cur-arrow) !important; }
 /* drag handles, and the plain text in them (the title), but not the controls in them */
-html[data-palette^="night"] :is(.grip, .float-win header, .float-drag, .act-head, .pb-card .pb-head),
-html[data-palette^="night"] :is(.grip, .float-win header, .float-drag, .act-head, .pb-card .pb-head) :not(button, button *, select, input, label, label *) { cursor: var(--cur-grab) !important; }
-html[data-palette^="night"] :is(.dragging, .dragging .float-drag) { cursor: var(--cur-grabbing) !important; }
-html[data-palette^="night"] svg.mg { cursor: var(--cur-cross) !important; }
-html[data-palette^="night"] :is(.maplibregl-canvas-container.maplibregl-interactive, .maplibregl-canvas-container.maplibregl-interactive .maplibregl-canvas) { cursor: var(--cur-grab); }
-html[data-palette^="night"] .maplibregl-map:active :is(.maplibregl-canvas-container.maplibregl-interactive, .maplibregl-canvas-container.maplibregl-interactive .maplibregl-canvas) { cursor: var(--cur-grabbing); }
-html[data-palette^="night"] .maplibregl-canvas[style*="cursor: pointer"] { cursor: var(--cur-ring) !important; }
-html[data-palette^="night"] .maplibregl-canvas[style*="cursor: crosshair"], html[data-palette^="night"] .maplibregl-map.drawing .maplibregl-canvas { cursor: var(--cur-cross) !important; }
-html[data-palette^="night"] .maplibregl-canvas[style*="cursor: grabbing"] { cursor: var(--cur-grabbing) !important; }
+html:is([data-palette^="night"], [data-palette="iho-night"]) :is(.grip, .float-win header, .float-drag, .act-head, .pb-card .pb-head),
+html:is([data-palette^="night"], [data-palette="iho-night"]) :is(.grip, .float-win header, .float-drag, .act-head, .pb-card .pb-head) :not(button, button *, select, input, label, label *) { cursor: var(--cur-grab) !important; }
+html:is([data-palette^="night"], [data-palette="iho-night"]) :is(.dragging, .dragging .float-drag) { cursor: var(--cur-grabbing) !important; }
+html:is([data-palette^="night"], [data-palette="iho-night"]) svg.mg { cursor: var(--cur-cross) !important; }
+html:is([data-palette^="night"], [data-palette="iho-night"]) :is(.maplibregl-canvas-container.maplibregl-interactive, .maplibregl-canvas-container.maplibregl-interactive .maplibregl-canvas) { cursor: var(--cur-grab); }
+html:is([data-palette^="night"], [data-palette="iho-night"]) .maplibregl-map:active :is(.maplibregl-canvas-container.maplibregl-interactive, .maplibregl-canvas-container.maplibregl-interactive .maplibregl-canvas) { cursor: var(--cur-grabbing); }
+html:is([data-palette^="night"], [data-palette="iho-night"]) .maplibregl-canvas[style*="cursor: pointer"] { cursor: var(--cur-ring) !important; }
+html:is([data-palette^="night"], [data-palette="iho-night"]) .maplibregl-canvas[style*="cursor: crosshair"], html:is([data-palette^="night"], [data-palette="iho-night"]) .maplibregl-map.drawing .maplibregl-canvas { cursor: var(--cur-cross) !important; }
+html:is([data-palette^="night"], [data-palette="iho-night"]) .maplibregl-canvas[style*="cursor: grabbing"] { cursor: var(--cur-grabbing) !important; }
 
 /* ---------- alarms ---------- */
 #alarm-banner { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); z-index: 9; display: flex; flex-direction: column; gap: 4px; width: min(560px, 90vw); }
@@ -789,6 +802,9 @@ html[data-palette^="night"] .maplibregl-canvas[style*="cursor: grabbing"] { curs
 #alarm-banner .alarm.alarm { background: #c0392b; animation: alarm-flash 1s steps(2, start) infinite; }
 #alarm-banner .alarm.warn { background: #d08f00; }
 #alarm-banner .alarm.acked { animation: none; opacity: 0.92; }
+#alarm-banner .alarm.summary { padding: 5px 10px; }
+#alarm-banner { max-height: calc(100vh - 120px); overflow-y: auto; }
+#alarm-banner .alarm { flex: none; }
 #alarm-banner .txt { flex: 1; cursor: pointer; display: flex; flex-direction: column; }
 #alarm-banner .txt small { font-size: 11.5px; opacity: 0.9; }
 #alarm-banner button { background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.6); color: #fff; padding: 5px 10px; border-radius: 6px; }
@@ -908,7 +924,11 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 .ais-pop-btns { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
 .ais-pop-btns button { padding: 4px 8px; font-size: 12px; }
 #of-list li { align-items: center; }
+#ais-list li select { width: auto; flex: none; font-size: 12px; padding: 3px; margin-left: 6px; align-self: center; }
+#ais-list li .of-trk { font-size: 12px; white-space: nowrap; align-self: center; margin-left: 6px; }
 #of-list li .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+.of-col { flex: none; width: 26px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer; }
+#of-list li .of-col { margin-right: 6px; }
 #of-list li select { width: auto; flex: none; font-size: 12px; padding: 3px; }
 #of-list .of-trk { font-size: 12px; white-space: nowrap; }
 
@@ -996,6 +1016,8 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 #tgt-table tr.lost td.age { color: #d00000; font-weight: 600; }
 #tgt-table tr.lost td.age::before { content: "✕ "; }
 #tgt-table .sw { margin-right: 4px; }
+#tgt-table td.ctl { cursor: default; padding: 1px 3px; }
+#tgt-table td.ctl select { font-size: 11px; padding: 1px 2px; width: auto; }
 #tgt-table td.empty { cursor: default; color: var(--quiet); white-space: normal; }
 
 /* Boundaries and fishing rules (marine.js) */

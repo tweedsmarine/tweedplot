@@ -162,6 +162,7 @@ fn decode(b: &Bits) -> Option<Update> {
     match ty {
         1..=3 => {
             u.status = b.u(38, 42).map(|s| s as u8);
+            u.rot = b.u(42, 50).and_then(|r| crate::rot_deg_per_min(r as u8 as i8));
             u.sog = sog(b.u(50, 60));
             u.pos = position(b, 61, 89, false);
             u.cog = cog(b.u(116, 128));
@@ -196,7 +197,8 @@ fn decode(b: &Bits) -> Option<Update> {
             u.pos = position(b, 57, 85, false);
             u.cog = cog(b.u(112, 124));
             u.heading = heading(b.u(124, 133));
-            u.class = Some("B");
+            // class B "SO" (SOTDMA, bit 141 clear) and the extended report (19) are "B+"; carrier-sense (CS) is plain B
+            u.class = Some(if ty == 19 || b.u(141, 142) == Some(0) { "B+" } else { "B" });
             if ty == 19 {
                 u.name = b.text(143, 263);
                 u.ship_type = b.u(263, 271).map(|t| t as u16).filter(|t| *t > 0);

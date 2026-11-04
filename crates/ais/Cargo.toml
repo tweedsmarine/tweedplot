@@ -12,6 +12,9 @@ tokio.workspace = true
 tokio-tungstenite = { workspace = true, features = ["native-tls"] }
 futures-util.workspace = true
 chrono.workspace = true
+ed25519-dalek = "2"
+base64 = "0.22"
+getrandom = "0.3"
 
 [lints]
 workspace = true

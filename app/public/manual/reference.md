@@ -526,7 +526,7 @@ The main window does the work that must happen once, whatever the number of wind
 
 ## Alarms and man overboard
 
-Alarms appear in a banner at the top of the chart and sound until silenced. The banner is in every window; **Silence**, accept and **Clear MOB** work from any of them. **Silence** stops the sound; the alarm stays in the banner while its cause lasts. Click an alarm's text to show its place on the chart. They work from live data (or a replay), not in planning.
+Alarms appear in a banner at the top of the chart and sound until silenced. The banner is in every window; **Silence**, accept and **Clear MOB** work from any of them. New alarms stack in the banner, one under another, so none is ever hidden. **Silence** stops the sound only: the alarm moves to the **Active** list in Alarms (a single steady row in the banner shows how many are silenced) and stays while its cause lasts. It clears when the cause ends or you change the limits. **Dismiss** (collision risk) removes it for a minute; it returns if the cause lasts, and an alarm that gets worse sounds again at once. A collision alarm escalates when TCPA or CPA falls to half, then a quarter, of your limit. So do the safety contour ahead, a closed area ahead and the approach to a mark (by the time left), and the off-track alarm (at twice, then four times, your limit). Shallow water, air draft, the anchor watch, man overboard, AIS-SART/MOB/EPIRB alarms, position lost and being inside a closed area don't escalate, but if you silence one and its cause still lasts, it sounds again after the **Watchdog** time (Alarms › Sound; 1 to 20 minutes, 5 by default). Click an alarm's text to show its place on the chart. They work from live data (or a replay), not in planning.
 
 **The Alarms drawer**
 
@@ -564,17 +564,16 @@ The **Drop** button (bottom right of every window) marks the boat's position now
 - **Signal K**: whatever an AIS receiver or transponder on board passes to the Signal K server.
 - **Online (aisstream.io)**: what volunteer shore stations hear. Get a free API key by signing in at aisstream.io with a GitHub account, paste it in and press **Go online**. **Online area** is the chart view (up to about 6° across), or a **Range** in NM round the chart centre or round your boat (it follows you). Online targets are not for navigation (see the AIS tab): they show in italics, marked "Net", and raise no collision alarm unless **Alarms for internet-only targets too** is ticked.
 
-On the chart, ships are triangles pointing along their heading (class B a little smaller), or a dot when a ship is stopped and sends no heading, in solid colours by type:
+On the chart, every ship is one colour, and a ship inside the CPA and TCPA alarm limits is red. Class and kind are shown by shape and size:
 
-- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#27ae60" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Cargo
-- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#c0392b" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Tanker
-- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#2e6fd8" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Passenger
-- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#e8792e" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Fishing
-- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#9b59b6" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Sailing and pleasure craft
-- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#1abc9c" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Tugs, pilots, search and rescue and other special craft
-- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#f1c40f" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> High-speed craft
-- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#5d6d7e" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Military
-- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L16 17 L10 14 L4 17 Z" fill="#56636e" stroke="#1d2a33" stroke-width="1.2" stroke-linejoin="round"/></svg></span> Other or unknown type
+- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L17 18 L10 15 L3 18 Z" fill="#1d2a33"/></svg></span> Class A: the largest triangle, pointing along the heading
+- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 4 L15.5 17 L10 14.5 L4.5 17 Z" fill="#1d2a33"/></svg></span> Class B+ (SOTDMA or extended class B): medium
+- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 6 L14 16 L10 14 L6 16 Z" fill="#1d2a33"/></svg></span> Class B: the smallest
+- <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 4 L15.5 17 L10 14.5 L4.5 17 Z" fill="#1d2a33"/><path d="M3 11 L17 11" stroke="#1d2a33" stroke-width="2"/></svg></span> A fishing vessel (type 30, or "engaged in fishing"): the same, with a bar across, at each size
+- <span class="mi"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="4" fill="#1d2a33"/></svg></span> A dot: stopped, or sending no heading
+- <span class="mi"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.5" fill="none" stroke="#1d2a33" stroke-width="1.6"/></svg></span> A small ring: a sleeping target (Targets › AIS › Sleeping targets)
+- A thin **heading line** from the ship, with a short barb at its end on the side the ship is turning to when it turns at 3° to 10° a minute, and a long barb above 10° a minute (the **rate of turn**, also in the ship's details)
+- A contrasting **dot** on the ship when its track is drawn, and an own-fleet ship has the V at its stern filled in, giving a flat back, in the colour you chose for it. The ship you clicked has brackets round it
 
 Other AIS targets:
 
@@ -1148,7 +1147,7 @@ Single keys (letters, Space, the brackets) work whenever you aren't typing in a 
 | `Ctrl+F` | Find in the library |
 | **Safety** | |
 | `Ctrl+M` | Man overboard |
-| `Shift+A` | Silence the sounding alarms (they stay on the list until cleared) |
+| `Shift+A` | Silence the sounding alarms (they stay on the Alarms list while their cause lasts) |
 | **Help** | |
 | `F1` | User manual |
 | `?` | This list of keys |

@@ -264,27 +264,44 @@
         <div class="tab" data-tab="ais">
           <div class="wx-row"><label class="grow"><input id="ais-show" type="checkbox" /> Show AIS targets</label><label><input id="ais-names" type="checkbox" /> Names</label></div>
           <div class="wx-row"><label class="grow" title="Draw where the target you clicked has been (the last 6 hours this app has heard it)"><input id="ais-sel-track" type="checkbox" /> Track of the selected target</label></div>
+          <div class="wx-row"><label class="grow" for="ais-trk-col" title="Colour of the trails behind tracked targets (own-fleet boats use their group colour)">Target track colour</label><input id="ais-trk-col" type="color" /></div>
+          <div class="wx-row"><label class="grow" for="ais-pin-col" title="Colour of the dot on tracked targets">Tracked dot colour</label><input id="ais-pin-col" type="color" /></div>
           <div class="wx-row"><span class="dot" id="ais-sk-dot"></span><span class="grow wx-note" id="ais-sk-state">Signal K: —</span></div>
-          <div class="wx-row"><span class="dot" id="ais-on-dot"></span><span class="grow wx-note" id="ais-on-state">Online (aisstream.io): off</span></div>
+          <h3>Online: aisstream.io</h3>
+          <div class="wx-row"><span class="dot" id="ais-on-dot"></span><span class="grow wx-note" id="ais-on-state">aisstream.io: off</span></div>
           <div class="wx-row"><input id="ais-key" class="grow" type="password" placeholder="aisstream.io API key" autocomplete="off" spellcheck="false" title="Free: sign in at aisstream.io with a GitHub account and copy the key" />
-            <button id="ais-online" title="Receive AIS from shore stations for the chart area">Go online</button></div>
-          <div class="wx-row"><label class="grow" for="ais-net-mode">Online area</label>
-            <select id="ais-net-mode" title="Which targets to ask the internet for"><option value="view">Chart view</option><option value="centre">Range round the chart centre</option><option value="boat">Range round my boat</option></select></div>
+            <button id="ais-online" title="Receive AIS from aisstream.io's shore stations for the chart area">Go online</button></div>
+          <div class="wx-note"><a href="#" id="ais-key-link">Get a free aisstream.io key</a></div>
+          <h3>Online: Open Waters</h3>
+          <div class="wx-row"><span class="dot" id="ow-on-dot"></span><span class="grow wx-note" id="ow-on-state">Open Waters: off</span></div>
+          <div class="wx-row"><input id="ow-key" class="grow" type="password" placeholder="Open Waters token" autocomplete="off" spellcheck="false" title="Free personal token: press Get a token, or paste one from openwaters.io/ais/token" />
+            <button id="ow-online" title="Receive AIS from Open Waters' network of receivers for the chart area">Go online</button></div>
+          <div class="wx-row"><button id="ow-get" title="Makes a free token for this app (no account) and fills it in">Get a token</button><span class="grow wx-note" id="ow-msg"></span></div>
+          <div class="wx-note">Free, no account. <a href="#" id="ow-link">openwaters.io/ais</a> also lets you share your own receiver's data.</div>
+          <h3>Online area</h3>
+          <div class="wx-row"><label class="grow" for="ais-net-mode">Area to ask for</label>
+            <select id="ais-net-mode" title="Which targets to ask the internet for (both online sources)"><option value="view">Chart view</option><option value="centre">Range round the chart centre</option><option value="boat">Range round my boat</option></select></div>
           <div class="wx-row" id="ais-net-range-row"><label class="grow" for="ais-net-range">Range (NM)</label><input id="ais-net-range" type="number" min="1" max="180" step="1" /></div>
-          <div class="wx-note">Online AIS shows what volunteer shore stations hear (for the chart view, a wider area when zoomed out, up to about 6°). Get a free key at <a href="#" id="ais-key-link">aisstream.io</a>. Not for navigation: coverage has gaps and positions can be minutes old. See Manual › AIS.</div>
+          <div class="wx-note">Online AIS shows what volunteer shore stations hear (for the chart view, a wider area when zoomed out, up to about 6°). Not for navigation: coverage has gaps and positions can be minutes old. See Manual › AIS.</div>
           <div class="wx-note">Collision and distress alarms are set in <a href="#" data-goto="alarms">Alarms</a>.</div>
           <h3>On the chart</h3>
           <div class="wx-row"><label class="grow" for="ais-vec-min">Course vectors (min)</label><input id="ais-vec-min" type="number" min="1" max="60" step="1" title="How far ahead each target's course line reaches" /></div>
+          <div class="wx-row"><label class="grow" for="ais-curve">Curve course vectors by rate of turn</label><input id="ais-curve" type="checkbox" title="Bend the course line into an arc for a ship that is turning" /></div>
+          <div class="wx-row"><label class="grow" for="ais-daysh">Day shapes for navigational status</label><input id="ais-daysh" type="checkbox" title="A small tag beside a ship showing the status it sends (anchored, not under command...). Crews set it by hand and often forget to change it" /></div>
           <div class="wx-row"><label class="grow" for="ais-cpa-draw">CPA lines</label>
             <select id="ais-cpa-draw" title="Where your boat and the target will be at the closest point of approach, joined by the CPA line"><option value="danger">Dangerous and selected targets</option><option value="all">Every target closing within the time limit</option><option value="none">None</option></select></div>
           <h3>Targets <span id="ais-count" class="wx-note"></span><button id="ais-win-open" class="h3-btn" title="Open the target list over the chart (T)">Target list</button></h3>
+          <div class="wx-row"><label class="grow" for="ais-sleep" title="Sleeping: a vessel slower than the speed below, or further away than the range below. Dangerous, selected and own-fleet targets are never asleep">Sleeping targets</label>
+            <select id="ais-sleep"><option value="off">Show all as active</option><option value="small">Small, no vectors</option><option value="hide">Hide</option></select></div>
+          <div class="wx-row"><label class="grow" for="ais-sleep-kn">Asleep when slower than (kn)</label><input id="ais-sleep-kn" type="number" min="0" max="30" step="0.1" /></div>
+          <div class="wx-row"><label class="grow" for="ais-sleep-nm">Asleep when further than (NM, 0 = no limit)</label><input id="ais-sleep-nm" type="number" min="0" max="200" step="1" /></div>
           <div class="wx-row"><label class="grow" for="ais-sort">Sort by</label><select id="ais-sort"><option value="range">Range</option><option value="cpa">CPA</option><option value="name">Name</option></select></div>
           <ul id="ais-list" class="list"></ul>
         </div>
         <div class="tab" data-tab="own" hidden>
           <div class="wx-note">Boats you want to pick out: friends, your company's vessels, a race fleet. They are ringed in their group's colour and named on the chart, and their tracks can be drawn. Your own boat's MMSI goes in Settings.</div>
           <div class="wx-row"><input id="of-mmsi" type="text" inputmode="numeric" placeholder="MMSI" maxlength="9" style="width:90px" title="The 9-digit MMSI" /><input id="of-name" class="grow" type="text" placeholder="Name (optional)" /></div>
-          <div class="wx-row"><select id="of-group" class="grow" title="Group"><option>Friends</option><option>Company</option><option>Race fleet</option><option>Other</option></select><button id="of-add">Add</button></div>
+          <div class="wx-row"><select id="of-group" class="grow" title="Group"><option>Friends</option><option>Company</option><option>Race fleet</option><option>Other</option></select><input id="of-colour" type="color" class="of-col" title="Stern colour on the chart" /><button id="of-add">Add</button></div>
           <div id="of-msg" class="wx-note"></div>
           <div class="wx-row"><label class="grow" title="Draw the tracks of every boat in the list"><input id="of-track-all" type="checkbox" /> Track all</label><label title="Hide every AIS target that is not in this list"><input id="of-only" type="checkbox" /> Only these on the chart</label></div>
           <ul id="of-list" class="list"></ul>
@@ -700,8 +717,9 @@
             <select id="mar-ahead"><option value="5">5 min</option><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option></select></div>
         <div class="wx-note">The closed areas come from the fishing rules in Chart › Layers, for the methods ticked there.</div>
         <h3>Sound</h3>
+        <div class="wx-row"><label class="grow" for="al-watchdog" title="A silenced shallow-water, air-draft, anchor, man-overboard, AIS-SART/EPIRB, position-lost or inside-a-closed-area alarm sounds again after this long if its cause still lasts">Watchdog: sound again after (min, 1 to 20)</label><input id="al-watchdog" type="number" min="1" max="20" step="1" /></div>
         <div class="wx-row"><label class="grow" for="al-volume">Alarm volume</label><input id="al-volume" type="range" min="0" max="100" step="5" /><button id="al-test" title="Play the alarm sound">Test</button></div>
-        <div class="wx-note">Alarms (red) sound until silenced; warnings (amber) chime. Every alarm shows in the banner at the top of the chart in every window, and can be silenced from any of them. They work from live data (or a replay), not while planning.</div>
+        <div class="wx-note">Alarms (red) sound until silenced; warnings (amber) chime. Every alarm shows in the banner at the top of the chart in every window, and can be silenced from any of them. Silencing stops the sound; the alarm then waits in the list below until its cause ends. A collision alarm sounds again if it gets worse (TCPA or CPA at half, then a quarter, of your limit). They work from live data (or a replay), not while planning.</div>
       </section>
     </aside>
 
@@ -787,7 +805,7 @@
         <select id="tgt-filter" title="Which targets to list"><option value="all">All</option><option value="vessels">Vessels</option><option value="moving">Under way</option><option value="closing">Closing</option><option value="danger">Dangerous</option></select>
         <button id="tgt-close" title="Close (T)">✕</button></header>
       <div class="tgt-scroll"><table id="tgt-table"><thead><tr>
-        <th data-k="name">Name</th><th data-k="type">Type</th><th data-k="range" class="n">Rng</th><th data-k="brg" class="n">Brg</th><th data-k="cpa" class="n">CPA</th><th data-k="tcpa" class="n">TCPA</th><th data-k="sog" class="n">SOG</th><th data-k="cog" class="n">COG</th><th data-k="age" class="n">Age</th><th data-k="src">Src</th>
+        <th data-k="name">Name</th><th data-k="type">Type</th><th data-k="range" class="n">Rng</th><th data-k="brg" class="n">Brg</th><th data-k="cpa" class="n">CPA</th><th data-k="tcpa" class="n">TCPA</th><th data-k="sog" class="n">SOG</th><th data-k="cog" class="n">COG</th><th data-k="age" class="n">Age</th><th data-k="src">Src</th><th data-k="trk" title="Draw the track and mark with a pin">Trk</th><th data-k="grp" title="Own fleet group">Group</th>
       </tr></thead><tbody></tbody></table></div>
       <footer class="wx-note">NM · °T · min · kn. <i>Net</i>: internet only, not for navigation.</footer>
     </div>
@@ -952,7 +970,7 @@
           <li>Fishing rules: Ministry for Primary Industries, CC BY 4.0.</li>
           <li>Weather: NOAA NCEP (GFS, GFS-Wave); ECMWF open data, CC BY 4.0, © ECMWF.</li>
           <li>Ocean: NASA JPL MUR SST; JMA Himawari-9 via NOAA STAR; NOAA CoastWatch VIIRS chlorophyll; HYCOM (US Navy / HYCOM Consortium).</li>
-          <li>Observations: MetService (NZ), NOAA Aviation Weather Center, NOAA National Data Buoy Center. AIS: aisstream.io. Race tracking: YB Tracking.</li>
+          <li>Observations: MetService (NZ), NOAA Aviation Weather Center, NOAA National Data Buoy Center. AIS: aisstream.io, Open Waters. Race tracking: YB Tracking.</li>
           <li>Coastline: GSHHG (Wessel and Smith, University of Hawaiʻi and NOAA, LGPL 3). Depths: ETOPO 2022 (NOAA NCEI); Natural Earth (public domain).</li>
           <li>Land: © OpenStreetMap contributors (ODbL), bundled. Optional online maps (off by default): OpenStreetMap tiles and OpenSeaMap seamarks, © OpenStreetMap contributors; OpenSeaMap is not for navigation.</li>
           <li>Chart symbols, colours and portrayal rules: IHO S-101 Portrayal Catalogue and Feature Catalogue 2.1.0, from the International Hydrographic Organization (IHO), NOAA and the contributors, included unchanged under the IHO licence and provided "as is", without warranty or liability (full text: Manual › Reference › Data sources and credits).</li>

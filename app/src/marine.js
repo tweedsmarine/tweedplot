@@ -181,17 +181,27 @@ export function setupMarine(map, { getBoat = () => ({}), getLength = () => 0, al
     try {
       const pts = [b.pos];
       const moving = (b.sog || 0) > 0.5 && b.cog != null;
-      if (moving) pts.push(ahead(b.pos, b.cog, b.sog, s.ahead));
+      // look ahead the full time, then half and a quarter of it, to see how soon an area is reached
+      const marks = [1, 0.5, 0.25];
+      if (moving) for (const f of marks) pts.push(ahead(b.pos, b.cog, b.sog, s.ahead * f));
       const res = await invoke("rules_at", { points: pts });
       const len = getLength() || 0;
       const closed = (hits) => (hits || []).filter((h) => applies(flagsOf(h), { ...s, mine: s.gear.length > 0, restr: false }, len));
       const here = closed(res[0]);
-      const there = moving ? closed(res[1]).filter((h) => !here.some((x) => x.rid === h.rid)) : [];
+      const notHere = (hits) => closed(hits).filter((h) => !here.some((x) => x.rid === h.rid));
+      const there = [];
+      let stage = 0;
+      if (moving) {
+        for (let i = 1; i < pts.length; i++) {
+          for (const h of notHere(res[i])) if (!there.some((x) => x.rid === h.rid)) there.push(h);
+          if (i > 1 && notHere(res[i]).length) stage = Math.max(stage, i - 1);
+        }
+      }
       const names = async (list) => (await Promise.all(list.slice(0, 3).map((h) => info(h.rid)))).map((i) => field(i?.attrs, "Name") || "closed area").join("; ");
       const forGear = s.gear.length ? ` to ${GEAR.filter(([k]) => s.gear.includes(k)).map(([, n]) => n.toLowerCase()).join(", ")}` : "";
-      if (here.length) alarms.raise(ALARM_IN, { level: "warn", text: `Inside an area closed${forGear}`, detail: await names(here) });
+      if (here.length) alarms.raise(ALARM_IN, { level: "warn", watchdog: true, text: `Inside an area closed${forGear}`, detail: await names(here) });
       else alarms.clear(ALARM_IN);
-      if (there.length) alarms.raise(ALARM_AHEAD, { level: "warn", text: `Closed area${forGear} ahead (within ${s.ahead} min)`, detail: await names(there) });
+      if (there.length) alarms.raise(ALARM_AHEAD, { level: "warn", stage, text: `Closed area${forGear} ahead (within ${+(s.ahead * marks[stage]).toFixed(1)} min)`, detail: await names(there) });
       else alarms.clear(ALARM_AHEAD);
     } catch { /* charts not ready */ } finally { busy = false; }
   }

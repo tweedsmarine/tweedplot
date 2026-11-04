@@ -11,15 +11,26 @@ import { PRIMARY } from "./role.js";
 import { createInfoBox } from "./infobox.js";
 
 const KEY = "racenav.ais";
-const DEFAULTS = { show: true, names: true, key: "", online: false, cpaOn: true, cpa: 0.5, tcpa: 12, ignoreMoored: true, sort: "range", selTrack: false,
+const SRC_NAME = { signalk: "Signal K", nmea: "NMEA 0183", aisstream: "aisstream.io", openwaters: "Open Waters" };
+const SRC_SHORT = { signalk: "SK", nmea: "NMEA", aisstream: "aisstream", openwaters: "OpenW" };
+const DEFAULTS = { show: true, names: true, key: "", owKey: "", owSeed: "", owOn: false, online: false, cpaOn: true, cpa: 0.5, tcpa: 12, ignoreMoored: true, sort: "range", selTrack: false, pinCol: "#c98a00", trkCol: "#c98a00",
   // course vector length (min); CPA graphics: "none" | "danger" (dangerous and selected) | "all" (every target closing within the TCPA limit)
-  vecMin: 6, cpaDraw: "danger",
+  vecMin: 6, curve: true, dayShapes: true, cpaDraw: "danger",
+  // sleeping targets (vessels slower than sleepKn, or further than sleepNm if above 0): "off" | "small" (small symbol, no vector) | "hide"
+  sleep: "off", sleepKn: 0.5, sleepNm: 0,
   // internet AIS area: "view" (the chart view) | "centre" (range round the chart centre) | "boat" (range round own boat); range NM
   netMode: "boat", netRange: 30, netAlarms: false,
   // floating target list
   win: { open: false, sort: "cpa", dir: 1, filter: "all", x: null, y: null } };
 const FLEET_KEY = "racenav.ownfleet";
 export const GROUP_COLOURS = { Friends: "#2e86de", Company: "#e67e22", "Race fleet": "#d63031", Other: "#8e44ad" };
+/** One colour for every vessel (the night palettes invert the page, so it follows them); red is only for danger. */
+const TARGET_COL = "#1d2a33", TARGET_HALO = "#ffffff", DANGER_COL = "#d00000";
+/** A turn faster than this (degrees per minute) is marked on the heading line. */
+const ROT_MIN = 3; // °/min: a short barb from here, a long one from ROT_FAST
+const ROT_FAST = 10;
+const fleetColour = (e) => e.colour || GROUP_COLOURS[e.group] || GROUP_COLOURS.Other;
+const isFishing = (t) => t.ship_type === 30 || t.status === 7;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
@@ -61,7 +72,49 @@ export function cpaTcpa(o, t) {
   return { cpa: Math.hypot(c[0], c[1]), tcpa: th * 60, range, own: toLL([vo[0] * th, vo[1] * th]), tgt: toLL([p[0] + vt[0] * th, p[1] + vt[1] * th]) };
 }
 
-export function addIcons(map) {
+/** A white-on-transparent bitmap → a signed distance field, which is what MapLibre needs to colour
+ *  an icon and give it a halo. A plain bitmap marked as SDF has no distances, so its halo comes out
+ *  blocky: this gives the halo a smooth edge at any size. */
+function toSdf(img) {
+  const { width: w, height: h, data } = img;
+  const R = 8, CUT = 0.25;
+  const a = new Float32Array(w * h);
+  for (let i = 0; i < a.length; i++) a[i] = data[i * 4 + 3] / 255;
+  const out = new ImageData(w, h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const v = a[y * w + x], inside = v > 0.5;
+      let d;
+      if (v > 0 && v < 1) d = 0.5 - v; // edge pixel: the coverage says how far the edge is
+      else {
+        let best = R * R;
+        for (let dy = -R; dy <= R; dy++) {
+          const yy = y + dy;
+          if (yy < 0 || yy >= h) continue;
+          for (let dx = -R; dx <= R; dx++) {
+            const xx = x + dx;
+            if (xx < 0 || xx >= w) continue;
+            const o = a[yy * w + xx];
+            if ((o > 0.5) === inside && !(o > 0 && o < 1)) continue;
+            const dd = dx * dx + dy * dy;
+            if (dd < best) best = dd;
+          }
+        }
+        d = Math.sqrt(best) - 0.5;
+        if (inside) d = -d;
+      }
+      const p = Math.max(0, Math.min(255, Math.round(255 - 255 * (d / R + CUT))));
+      const i = (y * w + x) * 4;
+      out.data[i] = out.data[i + 1] = out.data[i + 2] = 255;
+      out.data[i + 3] = p;
+    }
+  }
+  return out;
+}
+
+export function addIcons(realMap) {
+  // every icon drawn white and coloured by its layer goes through toSdf
+  const map = { addImage: (name, img, opts) => realMap.addImage(name, opts?.sdf ? toSdf(img) : img, opts) };
   const make = (draw, size = 32) => {
     const c = document.createElement("canvas");
     c.width = c.height = size;
@@ -73,10 +126,67 @@ export function addIcons(map) {
     g.beginPath(); g.moveTo(s / 2, 3); g.lineTo(s / 2 + 8, s - 5); g.lineTo(s / 2, s - 9); g.lineTo(s / 2 - 8, s - 5); g.closePath();
     if (fill) g.fill(); g.lineWidth = 2.5; g.stroke();
   };
-  // SDF-free: white fill drawn later with icon-color needs sdf; use sdf images
-  map.addImage("ais-a", make((g, s) => { g.fillStyle = g.strokeStyle = "#fff"; ship(g, s, true); }), { sdf: true });
-  map.addImage("ais-b", make((g, s) => { g.fillStyle = g.strokeStyle = "#fff"; g.save(); g.translate(s / 2, s / 2); g.scale(0.8, 0.8); g.translate(-s / 2, -s / 2); ship(g, s, true); g.restore(); }), { sdf: true });
-  map.addImage("ais-still", make((g, s) => { g.fillStyle = g.strokeStyle = "#fff"; g.beginPath(); g.arc(s / 2, s / 2, 6, 0, 2 * Math.PI); g.fill(); }), { sdf: true });
+  // SDF images: drawn white, coloured by the layer. Vessels differ by shape and size, not colour:
+  // class A the largest, B+ (SOTDMA or extended class B) smaller, B the smallest; fishing vessels have a bar across.
+  const hull = (k, fish) => make((g, s) => {
+    g.fillStyle = g.strokeStyle = "#fff";
+    g.save(); g.translate(s / 2, s / 2); g.scale(k, k); g.translate(-s / 2, -s / 2);
+    ship(g, s, true);
+    if (fish) { g.lineWidth = 3; g.lineCap = "round"; g.beginPath(); g.moveTo(s / 2 - 11, 18); g.lineTo(s / 2 + 11, 18); g.stroke(); }
+    g.restore();
+  });
+  for (const [cls, k] of [["a", 1], ["bp", 0.78], ["b", 0.55]]) {
+    map.addImage(`ais-s-${cls}`, hull(k, false), { sdf: true });
+    map.addImage(`ais-f-${cls}`, hull(k, true), { sdf: true });
+  }
+  const dot = (fish, solid) => make((g, s) => {
+    g.fillStyle = g.strokeStyle = "#fff"; g.lineWidth = 2.5; g.lineCap = "round";
+    g.beginPath(); g.arc(s / 2, s / 2, solid ? 6 : 4.5, 0, 2 * Math.PI); if (solid) g.fill(); else g.stroke();
+    if (fish) { g.beginPath(); g.moveTo(s / 2 - 9, s / 2); g.lineTo(s / 2 + 9, s / 2); g.stroke(); }
+  });
+  map.addImage("ais-still", dot(false, true), { sdf: true });
+  map.addImage("ais-still-fish", dot(true, true), { sdf: true });
+  map.addImage("ais-sleep", dot(false, false), { sdf: true });
+  map.addImage("ais-sleep-fish", dot(true, false), { sdf: true });
+  const makeWH = (w, h, draw) => {
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const g = c.getContext("2d");
+    draw(g);
+    return g.getImageData(0, 0, w, h);
+  };
+  // heading line: a fixed length from the target's position (the image is twice the length, so it turns about its centre),
+  // with a barb at the end towards the side it is turning to
+  const HL = 44;
+  // a short barb for a moderate turn, a long one for a fast turn
+  for (const [k, side, len] of [["", 0, 0], ["-s", 1, 7], ["-p", -1, 7], ["-s2", 1, 14], ["-p2", -1, 14]]) {
+    map.addImage(`ais-hdg${k}`, makeWH(32, HL * 2, (g) => {
+      g.strokeStyle = "#fff"; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(16, HL); g.lineTo(16, 3);
+      if (side) { g.moveTo(16, 3); g.lineTo(16 + side * len, 3); }
+      g.stroke();
+    }), { sdf: true });
+  }
+  // selected target: four corner brackets, drawn in the symbol colour with the same halo
+  map.addImage("ais-sel", make((g, s) => {
+    g.strokeStyle = "#fff"; g.lineWidth = 2; g.lineCap = "butt"; g.lineJoin = "miter";
+    const a = 8, b = s - 8, l = 8;
+    g.beginPath();
+    for (const [x, y, dx, dy] of [[a, a, 1, 1], [b, a, -1, 1], [a, b, 1, -1], [b, b, -1, -1]]) {
+      g.moveTo(x + dx * l, y); g.lineTo(x, y); g.lineTo(x, y + dy * l);
+    }
+    g.stroke();
+  }, 48), { sdf: true });
+  // tracked: a contrasting dot on the symbol
+  map.addImage("ais-pin", make((g, s) => { g.fillStyle = "#fff"; g.beginPath(); g.arc(s / 2, s / 2, 4, 0, 2 * Math.PI); g.fill(); }, 16), { sdf: true });
+  // own fleet: the V at the back of the ship is filled in the group's colour, giving a flat stern
+  const notch = (k) => make((g, s) => {
+    g.fillStyle = g.strokeStyle = "#fff"; g.lineWidth = 2.5; g.lineJoin = "round";
+    g.save(); g.translate(s / 2, s / 2); g.scale(k, k); g.translate(-s / 2, -s / 2);
+    g.beginPath(); g.moveTo(s / 2, s - 9); g.lineTo(s / 2 + 8, s - 5); g.lineTo(s / 2 - 8, s - 5); g.closePath(); g.fill(); g.stroke();
+    g.restore();
+  });
+  for (const [cls, k] of [["a", 1], ["bp", 0.78], ["b", 0.55]]) map.addImage(`ais-n-${cls}`, notch(k), { sdf: true });
   map.addImage("ais-aton", make((g, s) => { g.strokeStyle = "#fff"; g.lineWidth = 3; g.beginPath(); g.moveTo(s / 2, 5); g.lineTo(s - 6, s / 2); g.lineTo(s / 2, s - 5); g.lineTo(6, s / 2); g.closePath(); g.stroke();
     g.beginPath(); g.moveTo(s / 2 - 4, s / 2); g.lineTo(s / 2 + 4, s / 2); g.moveTo(s / 2, s / 2 - 4); g.lineTo(s / 2, s / 2 + 4); g.stroke(); }), { sdf: true });
   map.addImage("ais-air", make((g, s) => { g.fillStyle = "#fff"; g.beginPath(); g.moveTo(s / 2, 3); g.lineTo(s / 2 + 2, 12); g.lineTo(s - 3, 18); g.lineTo(s - 3, 21); g.lineTo(s / 2 + 2, 17); g.lineTo(s / 2 + 2, 25); g.lineTo(s / 2 + 6, 28); g.lineTo(s / 2 - 6, 28); g.lineTo(s / 2 - 2, 25);
@@ -139,12 +249,22 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   let s = { ...DEFAULTS };
   try { Object.assign(s, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* storage unavailable */ }
   s.win = { ...DEFAULTS.win, ...(s.win || {}) };
+  // an earlier version had one source chosen from a menu: that one's switch moves to its own
+  if (s.provider === "openwaters") { s.owOn = !!s.online; s.online = false; }
+  delete s.provider;
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* ignore */ } };
   const targets = new Map(); // mmsi → target
-  let online = { connected: false, detail: "off" };
+  const online = { aisstream: { connected: false, detail: "off" }, openwaters: { connected: false, detail: "off" } };
   let selected = null;
-  let fleet = { entries: [], trackAll: false, only: false };
+  let fleet = { entries: [], trackAll: false, only: false, watch: [] };
   try { Object.assign(fleet, JSON.parse(localStorage.getItem(FLEET_KEY) || "{}")); } catch { /* storage unavailable */ }
+  // tracking is separate from the fleet: older saves kept a track flag on each fleet entry
+  for (const e of fleet.entries) if (e.track) { fleet.watch.push(Number(e.mmsi)); delete e.track; }
+  const isWatched = (mmsi) => fleet.watch.includes(Number(mmsi));
+  const setWatched = (mmsi, on) => {
+    fleet.watch = fleet.watch.filter((m) => m !== Number(mmsi));
+    if (on) fleet.watch.push(Number(mmsi));
+  };
   const saveFleet = () => { try { localStorage.setItem(FLEET_KEY, JSON.stringify(fleet)); } catch { /* ignore */ } };
   const inFleet = (mmsi) => fleet.entries.find((e) => Number(e.mmsi) === Number(mmsi));
   let ownMmsi = Number(getOwnMmsi?.() || 0) || null;
@@ -170,14 +290,20 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     paint: { "fill-color": ["get", "col"], "fill-opacity": 0.45 } });
   map.addLayer({ id: "ais-hull-line", type: "line", source: "ais", filter: ["==", ["get", "k"], "hull"],
     paint: { "line-color": ["get", "col"], "line-width": 1.5 } });
-  map.addLayer({ id: "ais-ring", type: "circle", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "ring"]],
-    paint: { "circle-radius": 15, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": ["get", "ring"], "circle-stroke-width": 2.5 } });
+  // heading line (with a barb when turning), then the course vector
+  map.addLayer({ id: "ais-hdg", type: "symbol", source: "ais", filter: ["==", ["get", "k"], "hdg"],
+    layout: { "icon-image": ["get", "icon"], "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true },
+    paint: { "icon-color": ["get", "col"], "icon-halo-color": ["get", "halo"], "icon-halo-width": 0.8 } });
   map.addLayer({ id: "ais-vec", type: "line", source: "ais", filter: ["==", ["get", "k"], "vec"],
     paint: { "line-color": ["get", "col"], "line-width": 1.5 } });
+  map.addLayer({ id: "ais-sel", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["==", ["get", "sel"], true]],
+    layout: { "icon-image": "ais-sel", "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-rotation-alignment": "viewport",
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.7, 12, 1.1] },
+    paint: { "icon-color": TARGET_COL, "icon-halo-color": TARGET_HALO, "icon-halo-width": 1.2 } });
   map.addLayer({ id: "ais-sym", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["!=", ["get", "big"], true]],
     layout: { "icon-image": ["get", "icon"], "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true,
-      "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.6, 12, 0.96] },
-    paint: { "icon-color": ["get", "col"], "icon-halo-color": "#1d2a33", "icon-halo-width": 1.4 } });
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.7, 12, 1.1] },
+    paint: { "icon-color": ["get", "col"], "icon-halo-color": ["get", "halo"], "icon-halo-width": ["get", "hw"] } });
   // not heard for a while: crossed through (IEC 62288 lost target), no course vector
   map.addLayer({ id: "ais-lost", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["get", "lost"]],
     layout: { "icon-image": "ais-lostx", "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-rotation-alignment": "viewport",
@@ -186,9 +312,19 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   map.addLayer({ id: "ais-status", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "st"]], minzoom: 8,
     layout: { "icon-image": ["concat", "ais-st-", ["get", "st"]], "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-rotation-alignment": "viewport",
       "icon-anchor": "bottom-left", "icon-offset": [9, -6] } });
-  map.addLayer({ id: "ais-fleet-names", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "ring"], ["has", "name"]],
+  // tracked: a contrasting dot on the symbol; own fleet: a diamond beside it, in the colour chosen for the boat
+  map.addLayer({ id: "ais-pin", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "pin"]],
+    layout: { "icon-image": "ais-pin", "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-rotation-alignment": "viewport",
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.75, 12, 1] },
+    paint: { "icon-color": ["get", "pin"], "icon-halo-color": ["get", "halo"], "icon-halo-width": 1 } });
+  // tracked: a contrasting dot on the symbol; own fleet: the V at the stern filled in the colour chosen for the boat (above the symbol)
+  map.addLayer({ id: "ais-flag", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "nf"]],
+    layout: { "icon-image": ["get", "nf"], "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true,
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.7, 12, 1.1] },
+    paint: { "icon-color": ["get", "flag"] } });
+  map.addLayer({ id: "ais-fleet-names", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "flag"], ["has", "name"]],
     layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 17], "icon-allow-overlap": true } });
-  map.addLayer({ id: "ais-names", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "name"], ["!", ["has", "ring"]]], minzoom: 10,
+  map.addLayer({ id: "ais-names", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "name"], ["!", ["has", "flag"]]], minzoom: 10,
     layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 14], "icon-allow-overlap": false } });
 
   const isLost = (t) => {
@@ -217,51 +353,107 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   }
   /** Closing inside the alarm limits. */
   const isDanger = (c) => !!(c && c.tcpa != null && c.tcpa > 0 && c.tcpa < s.tcpa && c.cpa < s.cpa);
-  function style(t) {
+  /** A vessel too slow (or, if set, too far) to matter is "sleeping": shown small and without vectors, or hidden.
+   *  Dangerous, selected and own-fleet targets are never asleep. */
+  function isSleeping(t, c, fe) {
+    if (s.sleep === "off" || t.kind !== "vessel" || fe || t.mmsi === selected || isDanger(c)) return false;
+    if ((t.sog ?? 0) < s.sleepKn) return true;
+    return s.sleepNm > 0 && c != null && c.range > s.sleepNm;
+  }
+  /** [icon, colour (null: the standard one), rotation]. */
+  function style(t, sleeping) {
     if (t.kind === "sart" || t.kind === "mob" || t.kind === "epirb") return ["ais-sart", "#d00000", 0];
     if (t.kind === "aton") return ["ais-aton", t.virtual_aton ? "#c2185b" : "#6a1b9a", 0];
     if (t.kind === "aircraft") return ["ais-air", "#e67e22", t.cog ?? 0];
     if (t.kind === "base") return ["ais-base", "#5d6d7e", 0];
-    const col = category(t.ship_type)[1];
+    const fish = isFishing(t);
+    if (sleeping) return [fish ? "ais-sleep-fish" : "ais-sleep", null, 0];
     const dir = t.heading ?? ((t.sog ?? 0) > 0.5 ? t.cog : null);
-    if (dir == null) return ["ais-still", col, 0];
-    return [t.class === "B" ? "ais-b" : "ais-a", col, dir];
+    if (dir == null) return [fish ? "ais-still-fish" : "ais-still", null, 0];
+    const cls = t.class === "B" ? "b" : t.class === "B+" ? "bp" : "a";
+    return [`ais-${fish ? "f" : "s"}-${cls}`, null, dir];
   }
+  // Night (IHO) draws the chart unfiltered, so there the symbol is a dim grey with a black outline instead
+  // of dark with a white one (the other night colours turn the page round, symbols included)
+  let mapCol = TARGET_COL, mapHalo = TARGET_HALO;
+  const rootEl = document.documentElement;
+  function mapTheme() {
+    const raw = rootEl.dataset.palette === "iho-night" && rootEl.hasAttribute("data-iho");
+    const col = raw ? "#575757" : TARGET_COL, halo = raw ? "#000000" : TARGET_HALO;
+    if (col === mapCol && halo === mapHalo) return;
+    mapCol = col; mapHalo = halo;
+    map.setPaintProperty("ais-sel", "icon-color", mapCol);
+    map.setPaintProperty("ais-sel", "icon-halo-color", mapHalo);
+    draw();
+  }
+  new MutationObserver(mapTheme).observe(rootEl, { attributes: true, attributeFilter: ["data-palette", "data-iho"] });
+  mapTheme();
   function draw() {
     const vis = s.show ? "visible" : "none";
-    for (const id of ["ais-hull", "ais-hull-line", "ais-vec", "ais-sym", "ais-lost", "ais-status", "ais-ring", "ais-fleet-names", "ais-track", "ais-cpa-path", "ais-cpa-line", "ais-cpa-pt", "ais-cpa-lbl"]) map.setLayoutProperty(id, "visibility", vis);
+    for (const id of ["ais-hull", "ais-hull-line", "ais-hdg", "ais-vec", "ais-sel", "ais-sym", "ais-lost", "ais-status", "ais-pin", "ais-flag", "ais-fleet-names", "ais-track", "ais-cpa-path", "ais-cpa-line", "ais-cpa-pt", "ais-cpa-lbl"]) map.setLayoutProperty(id, "visibility", vis);
     map.setLayoutProperty("ais-names", "visibility", s.show && s.names ? "visible" : "none");
     const f = [];
     const cpaF = [];
     const own = getOwn();
+    const pinned = new Set(tracked());
     for (const t of targets.values()) {
       if (!shown(t)) continue;
       const fe = inFleet(t.mmsi);
-      const [icon, col, rot] = style(t);
       const lost = isLost(t);
-      const props = { k: "t", mmsi: t.mmsi, icon, col: t.mmsi === selected ? "#ffd400" : col, rot, lost };
-      if (t.kind === "vessel" && STATUS_SHAPE[t.status]) props.st = STATUS_SHAPE[t.status];
+      const c = t.kind === "vessel" && own?.pos ? cpaTcpa(own, t) : null;
+      const danger = !lost && isDanger(c);
+      const sleeping = isSleeping(t, c, fe);
+      if (sleeping && s.sleep === "hide") continue;
+      const [icon, ownCol, rot] = style(t, sleeping);
+      const col = danger ? DANGER_COL : ownCol ?? mapCol;
+      const props = { k: "t", mmsi: t.mmsi, icon, col, halo: mapHalo, hw: danger ? 3.2 : 2.2, rot, lost, sel: t.mmsi === selected };
+      if (s.dayShapes && t.kind === "vessel" && STATUS_SHAPE[t.status]) props.st = STATUS_SHAPE[t.status];
       // to scale when zoomed in far enough, if it has sent its size and we know which way it points
       const dir = t.heading ?? ((t.sog ?? 0) > 1 ? t.cog : null);
-      if (t.kind === "vessel" && t.length > 0 && dir != null && bigEnough(t.length, t.lat, map.getZoom())) {
+      if (t.kind === "vessel" && t.length > 0 && dir != null && !sleeping && bigEnough(t.length, t.lat, map.getZoom())) {
         props.big = true;
-        f.push({ type: "Feature", properties: { k: "hull", col: props.col, lost, mmsi: t.mmsi },
+        f.push({ type: "Feature", properties: { k: "hull", col, lost, mmsi: t.mmsi },
           geometry: { type: "Polygon", coordinates: [hullRing([t.lon, t.lat], dir, { length: t.length, beam: t.beam, fromBow: t.from_bow, fromCentre: t.from_centre })] } });
       }
       const name = fe?.name || t.name;
-      if (name) props.name = name;
-      if (fe) props.ring = GROUP_COLOURS[fe.group] ?? GROUP_COLOURS.Other;
+      if (name && (fe || !sleeping)) props.name = name;
+      if (fe) {
+        props.flag = fleetColour(fe);
+        if (/^ais-[sf]-/.test(icon) && !props.big) props.nf = icon.replace(/^ais-[sf]-/, "ais-n-");
+      }
+      if (pinned.has(Number(t.mmsi))) props.pin = s.pinCol;
       f.push({ type: "Feature", properties: props, geometry: { type: "Point", coordinates: [t.lon, t.lat] } });
+      // The course vector takes over from the heading line while it is drawn (the symbol itself points along the heading, and a
+      // curved vector shows the turn). The line is kept for a ship with no vector, and for a turning ship if the vector is straight.
+      const hasVec = !lost && !sleeping && (t.sog ?? 0) > 0.5 && t.cog != null && t.kind !== "aton";
+      const turning = Math.abs(t.rot ?? 0) >= ROT_MIN;
+      const astern = hasVec && t.heading != null && Math.abs(((t.cog - t.heading + 540) % 360) - 180) > 90;
+      if (t.kind === "vessel" && !lost && !sleeping && t.heading != null && !astern && (!hasVec || (turning && !s.curve))) {
+        const turn = t.rot ?? 0;
+        const a = Math.abs(turn);
+        const hdg = a < ROT_MIN ? "ais-hdg" : `ais-hdg-${turn > 0 ? "s" : "p"}${a >= ROT_FAST ? "2" : ""}`;
+        f.push({ type: "Feature", properties: { k: "hdg", icon: hdg, rot: t.heading, col, halo: mapHalo }, geometry: { type: "Point", coordinates: [t.lon, t.lat] } });
+      }
       // course vector (6 minutes unless set otherwise)
-      if (!lost && (t.sog ?? 0) > 0.5 && t.cog != null && t.kind !== "aton") {
-        const d = (t.sog * (s.vecMin || 6) / 60) / 60; // degrees of latitude in the vector's time
-        const end = [t.lon + (d * Math.sin((t.cog * Math.PI) / 180)) / Math.cos((t.lat * Math.PI) / 180), t.lat + d * Math.cos((t.cog * Math.PI) / 180)];
-        f.push({ type: "Feature", properties: { k: "vec", col }, geometry: { type: "LineString", coordinates: [[t.lon, t.lat], end] } });
+      if (hasVec) {
+        const mins = s.vecMin || 6;
+        const coslat = Math.cos((t.lat * Math.PI) / 180);
+        // a steady turn at the reported rate of turn bends the vector into an arc
+        const curved = s.curve && Math.abs(t.rot ?? 0) >= ROT_MIN;
+        const n = curved ? 12 : 1;
+        const stepNm = (t.sog * mins / 60) / n;
+        const pts = [[t.lon, t.lat]];
+        let [x, y] = pts[0];
+        for (let i = 0; i < n; i++) {
+          const b = ((t.cog + (curved ? t.rot * mins * (i + 0.5) / n : 0)) * Math.PI) / 180;
+          x += (stepNm / 60) * Math.sin(b) / coslat;
+          y += (stepNm / 60) * Math.cos(b);
+          pts.push([x, y]);
+        }
+        f.push({ type: "Feature", properties: { k: "vec", col }, geometry: { type: "LineString", coordinates: pts } });
       }
       // the CPA: dashed tracks of both to where they will be, joined by the CPA line
       if (s.cpaDraw !== "none" && own?.pos && !lost && t.kind === "vessel") {
-        const c = cpaTcpa(own, t);
-        const danger = isDanger(c);
         const want = t.mmsi === selected || danger || (s.cpaDraw === "all" && c?.tcpa > 0 && c.tcpa < s.tcpa);
         if (want && c?.tcpa > 0 && c.tcpa <= 120) {
           const ccol = danger ? "#d00000" : "#e08a00";
@@ -283,7 +475,8 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   // ---------- tracks ----------------------------------------------------------------
   /** MMSIs whose track is drawn: own-fleet boats ticked (or all), and the selected target. */
   function tracked() {
-    const set = new Set(fleet.entries.filter((e) => fleet.trackAll || e.track).map((e) => Number(e.mmsi)));
+    const set = new Set(fleet.watch);
+    if (fleet.trackAll) for (const e of fleet.entries) set.add(Number(e.mmsi));
     if (s.selTrack && selected != null) set.add(selected);
     return [...set];
   }
@@ -297,19 +490,19 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       if (t?.lat != null) pts.push([t.lon, t.lat]);
       if (pts.length < 2) continue;
       const fe = inFleet(m);
-      f.push({ type: "Feature", properties: { col: fe ? GROUP_COLOURS[fe.group] ?? GROUP_COLOURS.Other : "#ffb300" }, geometry: { type: "LineString", coordinates: pts } });
+      f.push({ type: "Feature", properties: { col: fe ? fleetColour(fe) : s.trkCol }, geometry: { type: "LineString", coordinates: pts } });
     }
     map.getSource("ais-tracks").setData({ type: "FeatureCollection", features: f });
   }
   async function loadTracks() {
     const ms = tracked();
-    if (!ms.length) { tracks.clear(); drawTracks(); return; }
+    if (!ms.length) { tracks.clear(); draw(); return; }
     try {
       const r = await invoke("ais_tracks", { mmsis: ms });
       tracks.clear();
       for (const [m, tr] of Object.entries(r || {})) tracks.set(Number(m), tr);
     } catch { /* not in Tauri */ }
-    drawTracks();
+    draw(); // the pins follow the tracked set
   }
   setInterval(loadTracks, 10000);
 
@@ -329,6 +522,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     add("Status", t.status != null ? STATUS[t.status] : null);
     if (t.sog != null || t.cog != null) add("SOG / COG", `${t.sog != null ? t.sog.toFixed(1) + " kn" : "—"} / ${t.cog != null ? Math.round(t.cog) + "°T" : "—"}`);
     if (t.heading != null) add("Heading", `${Math.round(t.heading)}°T`);
+    if (t.rot != null && Math.abs(t.rot) >= 0.1) add("Rate of turn", `${Math.abs(t.rot).toFixed(1)}°/min to ${t.rot > 0 ? "starboard" : "port"}`);
     if (t.length) add("Size", `${t.length} × ${t.beam ?? "?"} m${t.draught ? `, draught ${t.draught} m` : ""}`);
     add("Destination", t.destination);
     if (t.altitude != null) add("Altitude", `${t.altitude} m`);
@@ -338,13 +532,13 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       if (c.tcpa != null) add("CPA / TCPA", c.tcpa > 0 ? `${c.cpa.toFixed(2)} NM in ${Math.round(c.tcpa)} min` : "Moving apart");
     }
     if (t.last_pos) add("Position age", `${Math.round(Date.now() / 1000 - t.last_pos)} s`);
-    add("Heard by", t.source.replace("signalk", "Signal K").replace("nmea", "NMEA 0183").replace("aisstream", "aisstream.io").replace("+", " and ") + (netOnly(t) ? " (internet: may be late or missing, not for navigation)" : ""));
+    add("Heard by", t.source.split("+").map((x) => SRC_NAME[x] || x).join(" and ") + (netOnly(t) ? " (internet: may be late or missing, not for navigation)" : ""));
     const fe = inFleet(t.mmsi);
-    const btns = `<div class="ais-pop-btns">${fe ? `<span class="wx-note">Own fleet: ${esc(fe.group)}</span><button data-act="track">${fe.track || fleet.trackAll ? "Hide track" : "Show track"}</button><button data-act="unfleet">Remove from own fleet</button>`
-      : `<button data-act="fleet">Add to own fleet</button>`}</div>`;
+    const trk = isWatched(t.mmsi) || (fe && fleet.trackAll);
+    const btns = `<div class="ais-pop-btns">${fe ? `<span class="wx-note">Own fleet: ${esc(fe.group)}</span>` : ""}<button data-act="track">${trk ? "Stop tracking" : "Track"}</button>${fe ? `<button data-act="unfleet">Remove from own fleet</button>` : `<button data-act="fleet">Add to own fleet</button>`}</div>`;
     return `<div class="ais-pop">${fe?.name && t.name && fe.name !== t.name ? `<small>AIS name: ${esc(t.name)}</small>` : ""}<table>${rows.join("")}</table>${btns}</div>`;
   }
-  const infoWin = createInfoBox(map, "ais", { width: 320, height: 380 });
+  const infoWin = createInfoBox(map, "ais", { width: 320, height: 380, showRing: false });
   const boxTitle = (t) => inFleet(t.mmsi)?.name || t.name || `MMSI ${t.mmsi}`;
   function openPopup(mmsi) {
     const t = targets.get(mmsi);
@@ -360,17 +554,18 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     if (!el) return;
     el.querySelector('[data-act="fleet"]')?.addEventListener("click", () => {
       const t = targets.get(mmsi);
-      fleet.entries.push({ mmsi: String(mmsi).padStart(9, "0"), name: t?.name ?? "", group: "Friends", track: true });
-      saveFleet(); renderFleet(); refreshPopup(); draw(); loadTracks();
+      fleet.entries.push({ mmsi: String(mmsi).padStart(9, "0"), name: t?.name ?? "",       group: "Friends" });
+            saveFleet(); renderFleet(); renderList(); refreshPopup(); draw();
     });
     el.querySelector('[data-act="unfleet"]')?.addEventListener("click", () => {
       fleet.entries = fleet.entries.filter((e) => Number(e.mmsi) !== mmsi);
-      saveFleet(); renderFleet(); refreshPopup(); draw(); loadTracks();
+      saveFleet(); renderFleet(); renderList(); refreshPopup(); draw();
     });
     el.querySelector('[data-act="track"]')?.addEventListener("click", () => {
-      const fe = inFleet(mmsi);
-      if (fe) { fe.track = !(fe.track || fleet.trackAll); if (!fe.track && fleet.trackAll) { fleet.trackAll = false; $("of-track-all").checked = false; } }
-      saveFleet(); renderFleet(); refreshPopup(); loadTracks();
+      const on = !(isWatched(mmsi) || (inFleet(mmsi) && fleet.trackAll));
+      if (!on && fleet.trackAll) { fleet.trackAll = false; $("of-track-all").checked = false; }
+      setWatched(mmsi, on);
+      saveFleet(); renderFleet(); renderList(); refreshPopup(); loadTracks();
     });
   }
   function refreshPopup() {
@@ -390,7 +585,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     const ul = $("ais-list");
     if ($("ais-list").closest(".pane")?.hidden) return;
     const own = getOwn();
-    const rows = [...targets.values()].filter(shown).map((t) => ({ t, c: cpaTcpa(own, t) }));
+    const rows = [...targets.values()].filter(shown).map((t) => ({ t, c: cpaTcpa(own, t) })).filter(({ t, c }) => !(s.sleep === "hide" && isSleeping(t, c, inFleet(t.mmsi))));
     const key = { range: (r) => r.c?.range ?? 1e9, cpa: (r) => (r.c?.tcpa > 0 ? r.c.cpa : 1e9), name: (r) => (r.t.name ?? "~").toLowerCase() }[s.sort];
     rows.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
     $("ais-count").textContent = rows.length ? `(${rows.length})` : "";
@@ -399,7 +594,21 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       const li = document.createElement("li");
       const danger = c && c.tcpa > 0 && c.cpa < s.cpa && c.tcpa < s.tcpa;
       li.className = danger ? "danger" : "";
-      li.innerHTML = `<div class="main"><b></b><small></small></div>`;
+      li.innerHTML = `<div class="main"><b></b><small></small></div>
+        <label class="of-trk" title="Draw this target's track and mark it with a pin"><input type="checkbox" data-act="trk" /> Track</label>
+        <select data-act="grp" title="Own fleet group (none: not in your fleet)"><option value="">No group</option>${Object.keys(GROUP_COLOURS).map((g) => `<option>${g}</option>`).join("")}</select>`;
+      const trkCb = li.querySelector('[data-act="trk"]'), grp = li.querySelector('[data-act="grp"]');
+      trkCb.checked = isWatched(t.mmsi) || (fleet.trackAll && !!inFleet(t.mmsi));
+      trkCb.disabled = fleet.trackAll && !!inFleet(t.mmsi);
+      grp.value = inFleet(t.mmsi)?.group ?? "";
+      trkCb.onchange = () => { setWatched(t.mmsi, trkCb.checked); saveFleet(); renderFleet(); refreshPopup(); loadTracks(); };
+      grp.onchange = () => {
+        const e = inFleet(t.mmsi);
+        if (!grp.value) fleet.entries = fleet.entries.filter((x) => Number(x.mmsi) !== Number(t.mmsi));
+        else if (e) e.group = grp.value;
+        else fleet.entries.push({ mmsi: String(t.mmsi).padStart(9, "0"), name: t.name ?? "", group: grp.value });
+        saveFleet(); renderFleet(); renderList(); refreshPopup(); draw();
+      };
       li.querySelector("b").textContent = inFleet(t.mmsi)?.name || t.name || `MMSI ${t.mmsi}`;
       const [cat] = t.kind === "vessel" ? category(t.ship_type) : [{ aton: "AtoN", aircraft: "SAR aircraft", base: "Base station", sart: "AIS-SART", mob: "MOB", epirb: "EPIRB" }[t.kind]];
       li.querySelector("small").textContent = [cat, t.sog != null ? `${t.sog.toFixed(1)} kn` : null, c ? `${c.range.toFixed(1)} NM` : null,
@@ -420,7 +629,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       if (["sart", "mob", "epirb"].includes(t.kind)) {
         const c = own?.pos ? cpaTcpa(own, t) : null;
         const what = { sart: "AIS-SART", mob: "MOB DEVICE", epirb: "AIS EPIRB" }[t.kind];
-        alarms.raise(id, { level: "alarm", text: `${what} ${t.name ?? t.mmsi}${c ? ` · ${String(Math.round(bearing(own.pos, [t.lon, t.lat]))).padStart(3, "0")}°T ${c.range.toFixed(1)} NM` : ""}`,
+        alarms.raise(id, { level: "alarm", watchdog: true, text: `${what} ${t.name ?? t.mmsi}${c ? ` · ${String(Math.round(bearing(own.pos, [t.lon, t.lat]))).padStart(3, "0")}°T ${c.range.toFixed(1)} NM` : ""}`,
           detail: `${ddm(t.lat, "N", "S")} ${ddm(t.lon, "E", "W")}${t.status === 14 && t.kind === "sart" && /test/i.test(t.name ?? "") ? " · test transmission" : ""} · click to show`,
           onClick: () => { map.easeTo({ center: [t.lon, t.lat], zoom: Math.max(map.getZoom(), 12) }); openPopup(t.mmsi); } });
         now.add(id);
@@ -432,7 +641,9 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       if (s.ignoreMoored && (t.status === 1 || t.status === 5)) continue;
       const c = cpaTcpa(own, t);
       if (isDanger(c)) {
-        alarms.raise(id, { level: "alarm", text: `COLLISION RISK ${t.name ?? t.mmsi}: CPA ${c.cpa.toFixed(2)} NM in ${Math.round(c.tcpa)} min`,
+        // escalates (and sounds again) at the user's limit, then half, then a quarter of it
+        const stage = Math.max(c.tcpa < s.tcpa / 4 ? 2 : c.tcpa < s.tcpa / 2 ? 1 : 0, c.cpa < s.cpa / 4 ? 2 : c.cpa < s.cpa / 2 ? 1 : 0);
+        alarms.raise(id, { level: "alarm", stage, holdable: true, text: `COLLISION RISK ${t.name ?? t.mmsi}: CPA ${c.cpa.toFixed(2)} NM in ${Math.round(c.tcpa)} min`,
           detail: `${c.range.toFixed(2)} NM at ${String(Math.round(bearing(own.pos, [t.lon, t.lat]))).padStart(3, "0")}°T · ${t.sog?.toFixed(1) ?? "?"} kn ${t.cog != null ? Math.round(t.cog) + "°T" : ""} · click to show`,
           onClick: () => { map.easeTo({ center: [t.lon, t.lat] }); openPopup(t.mmsi); } });
         now.add(id);
@@ -454,7 +665,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     checkAlarms();
     statusUi();
   });
-  listen("ais-status", ({ payload }) => { online = payload; statusUi(); });
+  listen("ais-status", ({ payload }) => { if (online[payload.provider]) online[payload.provider] = payload; statusUi(); });
   invoke("ais_targets").then((list) => { for (const t of list || []) targets.set(t.mmsi, t); draw(); }).catch(() => {});
   setInterval(() => { draw(); renderList(); renderWin(); renderFleet(); checkAlarms(); refreshPopup(); }, 5000);
 
@@ -480,21 +691,29 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     if (lon0 <= lon1) return [[[lat0, lon0], [lat1, lon1]]];
     return [[[lat0, lon0], [lat1, 180]], [[lat0, -180], [lat1, lon1]]]; // across the date line
   }
-  let subTimer = null, lastSub = "";
+  // two online sources, each its own feed with its own key, switch and status (same protocol, different networks)
+  const FEEDS = {
+    aisstream: { name: "aisstream.io", on: "online", key: "key", dot: "ais-on-dot", state: "ais-on-state", input: "ais-key", btn: "ais-online", what: "API key" },
+    openwaters: { name: "Open Waters", on: "owOn", key: "owKey", dot: "ow-on-dot", state: "ow-on-state", input: "ow-key", btn: "ow-online", what: "token" },
+  };
+  const lastSub = {};
+  let subTimer = null;
   function subscribe(force) {
-    if (!PRIMARY) return; // one online AIS subscription, owned by the main window
-    const key = s.online ? s.key.trim() : "";
-    const bx = key ? boxes() : [];
-    const sig = key + JSON.stringify(bx.map((b) => b.map((p) => p.map((x) => Math.round(x * 4) / 4))));
-    if (!force && sig === lastSub) return;
-    lastSub = sig;
-    invoke("ais_online", { key, boxes: bx }).catch(() => {});
+    if (!PRIMARY) return; // one online AIS subscription per source, owned by the main window
+    for (const [id, f] of Object.entries(FEEDS)) {
+      const key = s[f.on] ? String(s[f.key] || "").trim() : "";
+      const bx = key ? boxes() : [];
+      const sig = key + JSON.stringify(bx.map((b) => b.map((p) => p.map((x) => Math.round(x * 4) / 4))));
+      if (!force && sig === lastSub[id]) continue;
+      lastSub[id] = sig;
+      invoke("ais_online", { provider: id, key, boxes: bx }).catch(() => {});
+    }
   }
   map.on("moveend", () => { if (s.netMode === "boat") return; clearTimeout(subTimer); subTimer = setTimeout(() => subscribe(false), 5000); });
   // round own boat: asked again when the boat has moved a fifth of the range
   let subAt = null;
   setInterval(() => {
-    if (!s.online || s.netMode !== "boat") return;
+    if (!(s.online || s.owOn) || s.netMode !== "boat") return;
     const p = getOwn()?.pos;
     if (p && (!subAt || distNm(subAt, p) > s.netRange / 5)) { subAt = p; subscribe(false); }
   }, 5000);
@@ -502,17 +721,41 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   // ---------- settings ----------------------------------------------------------------
   function statusUi() {
     const sk = [...targets.values()].filter((t) => !netOnly(t)).length;
-    const on = [...targets.values()].filter((t) => t.source.includes("aisstream")).length;
     $("ais-sk-dot").className = `dot ${sk ? "on" : "paused"}`;
     $("ais-sk-state").textContent = sk ? `On board (Signal K or NMEA): ${sk} target${sk === 1 ? "" : "s"}` : "On board (Signal K or NMEA): no AIS targets (no receiver, or nothing in range)";
-    $("ais-on-dot").className = `dot ${!s.online ? "paused" : online.connected ? "on" : ""}`;
-    $("ais-on-state").textContent = !s.online ? "Online (aisstream.io): off" : online.connected ? `Online (aisstream.io): connected, ${on} target${on === 1 ? "" : "s"}` : `Online (aisstream.io): ${online.detail || "connecting…"}`;
-    $("ais-online").textContent = s.online ? "Go offline" : "Go online";
-    $("ais-online").classList.toggle("on", s.online);
+    for (const [id, f] of Object.entries(FEEDS)) {
+      const st = online[id];
+      const n = [...targets.values()].filter((t) => String(t.source).split("+").includes(id)).length;
+      $(f.dot).className = `dot ${!s[f.on] ? "paused" : st.connected ? "on" : ""}`;
+      $(f.state).textContent = !s[f.on] ? `${f.name}: off` : st.connected ? `${f.name}: connected, ${n} target${n === 1 ? "" : "s"}` : `${f.name}: ${st.detail || "connecting…"}`;
+      $(f.btn).textContent = s[f.on] ? "Go offline" : "Go online";
+      $(f.btn).classList.toggle("on", !!s[f.on]);
+    }
   }
   $("ais-show").checked = s.show;
   $("ais-names").checked = s.names;
-  $("ais-key").value = s.key;
+  for (const [id, f] of Object.entries(FEEDS)) {
+    $(f.input).value = s[f.key] || "";
+    $(f.input).onchange = (e) => { s[f.key] = e.target.value.trim(); save(); if (s[f.on]) subscribe(true); };
+    $(f.btn).onclick = () => {
+      if (!s[f.on] && !String(s[f.key] || "").trim()) { $(f.state).textContent = `${f.name}: paste your ${f.what} first`; $(f.input).focus(); return; }
+      s[f.on] = !s[f.on]; save(); lastSub[id] = null; subscribe(true); statusUi();
+    };
+  }
+  $("ais-key-link").onclick = (e) => { e.preventDefault(); invoke("open_url", { url: "https://aisstream.io/authenticate" }).catch(() => {}); };
+  $("ow-link").onclick = (e) => { e.preventDefault(); invoke("open_url", { url: "https://openwaters.io/ais/token/" }).catch(() => {}); };
+  // a free personal token, made here: no account (the private key stays in this app's settings, so it stays the same station)
+  $("ow-get").onclick = async () => {
+    const msg = (t) => { $("ow-msg").textContent = t; };
+    if ((s.owKey || "").trim()) { msg("There is a token already: clear the box to get a new one."); return; }
+    msg("Getting a token…");
+    try {
+      const r = await invoke("ow_register", { seed: s.owSeed || null, name: null });
+      s.owSeed = r.seed; s.owKey = r.token; save();
+      $("ow-key").value = r.token;
+      msg("Token saved. Press Go online.");
+    } catch (e) { msg(String(e)); }
+  };
   $("ais-cpa-on").checked = s.cpaOn;
   $("ais-cpa").value = s.cpa;
   $("ais-tcpa").value = s.tcpa;
@@ -520,12 +763,6 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   $("ais-sort").value = s.sort;
   $("ais-show").onchange = (e) => { s.show = e.target.checked; save(); draw(); };
   $("ais-names").onchange = (e) => { s.names = e.target.checked; save(); draw(); };
-  $("ais-key").onchange = (e) => { s.key = e.target.value.trim(); save(); if (s.online) subscribe(true); };
-  $("ais-online").onclick = () => {
-    if (!s.online && !s.key.trim()) { $("ais-on-state").textContent = "Online (aisstream.io): paste your API key first"; $("ais-key").focus(); return; }
-    s.online = !s.online; save(); subscribe(true); statusUi();
-  };
-  $("ais-key-link").onclick = (e) => { e.preventDefault(); invoke("open_url", { url: "https://aisstream.io/authenticate" }).catch(() => {}); };
   $("ais-cpa-on").onchange = (e) => { s.cpaOn = e.target.checked; save(); checkAlarms(); };
   $("ais-cpa").onchange = (e) => { const v = parseFloat(e.target.value); if (v > 0) s.cpa = v; save(); };
   $("ais-tcpa").onchange = (e) => { const v = parseFloat(e.target.value); if (v > 0) s.tcpa = v; save(); };
@@ -537,7 +774,18 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   $("ais-net-range-row").hidden = s.netMode === "view";
   $("ais-net-alarms").checked = s.netAlarms;
   $("ais-vec-min").value = s.vecMin;
+  $("ais-curve").checked = s.curve;
+  $("ais-daysh").checked = s.dayShapes;
+  $("ais-daysh").onchange = (e) => { s.dayShapes = e.target.checked; save(); draw(); };
+  $("ais-curve").onchange = (e) => { s.curve = e.target.checked; save(); draw(); };
   $("ais-cpa-draw").value = s.cpaDraw;
+  $("ais-sleep").value = s.sleep;
+  $("ais-sleep-kn").value = s.sleepKn;
+  $("ais-sleep-nm").value = s.sleepNm;
+  const sleepChanged = () => { save(); draw(); renderList(); renderWin(); };
+  $("ais-sleep").onchange = (e) => { s.sleep = e.target.value; sleepChanged(); };
+  $("ais-sleep-kn").onchange = (e) => { const v = parseFloat(e.target.value); if (v >= 0) s.sleepKn = Math.min(30, v); e.target.value = s.sleepKn; sleepChanged(); };
+  $("ais-sleep-nm").onchange = (e) => { const v = parseFloat(e.target.value); if (v >= 0) s.sleepNm = Math.min(200, v); e.target.value = s.sleepNm; sleepChanged(); };
   $("ais-net-mode").onchange = (e) => { s.netMode = e.target.value; $("ais-net-range-row").hidden = s.netMode === "view"; save(); subAt = null; subscribe(true); draw(); renderList(); };
   $("ais-net-range").onchange = (e) => { const v = parseFloat(e.target.value); if (v >= 1) s.netRange = Math.min(180, v); e.target.value = s.netRange; save(); subscribe(true); draw(); renderList(); };
   $("ais-net-alarms").onchange = (e) => { s.netAlarms = e.target.checked; save(); checkAlarms(); };
@@ -554,11 +802,14 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     for (const t of targets.values()) {
       if (!shown(t)) continue;
       const c = cpaTcpa(own, t);
+      if (s.sleep === "hide" && isSleeping(t, c, inFleet(t.mmsi))) continue;
       const r = { id: t.mmsi, t, c, name: inFleet(t.mmsi)?.name || t.name || `MMSI ${t.mmsi}`, type: typeName(t),
         range: c?.range ?? null, brg: own?.pos ? bearing(own.pos, [t.lon, t.lat]) : null,
         cpa: c?.tcpa > 0 ? c.cpa : null, tcpa: c?.tcpa > 0 ? c.tcpa : null, sog: t.sog ?? null, cog: t.cog ?? null,
-        age: t.last_pos ? Date.now() / 1000 - t.last_pos : null, src: netOnly(t) ? "Net" : t.source.includes("aisstream") ? "AIS+Net" : "AIS",
-        danger: isDanger(c), lost: isLost(t), net: netOnly(t), col: style(t)[1] };
+        age: t.last_pos ? Date.now() / 1000 - t.last_pos : null, src: t.source.split("+").map((x) => SRC_SHORT[x] || x).join("+"),
+        danger: isDanger(c), lost: isLost(t), net: netOnly(t), col: style(t)[1],
+        grp: inFleet(t.mmsi)?.group ?? null, trk: isWatched(t.mmsi) || (fleet.trackAll && inFleet(t.mmsi)) ? 1 : 0 };
+      r.col = r.danger ? DANGER_COL : r.col ?? TARGET_COL;
       const f = s.win.filter;
       if (f === "vessels" && t.kind !== "vessel") continue;
       if (f === "moving" && !((t.sog ?? 0) > 0.5)) continue;
@@ -591,13 +842,30 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       th.classList.toggle("up", th.dataset.k === s.win.sort && s.win.dir < 0);
     }
     const tb = $("tgt-table").tBodies[0];
-    tb.innerHTML = rows.length ? "" : `<tr><td class="empty" colspan="10">No targets${s.win.filter !== "all" ? " for this filter" : ""}. A receiver on board (through Signal K), or online AIS in Targets › AIS.</td></tr>`;
+    tb.innerHTML = rows.length ? "" : `<tr><td class="empty" colspan="12">No targets${s.win.filter !== "all" ? " for this filter" : ""}. A receiver on board (through Signal K), or online AIS in Targets › AIS.</td></tr>`;
     for (const r of rows.slice(0, 300)) {
       const tr = document.createElement("tr");
       tr.className = [r.danger ? "danger" : "", r.net ? "net" : "", r.lost ? "lost" : "", r.id === selected ? "sel" : ""].join(" ");
       if (r.net) tr.title = "Heard over the internet only: may be minutes late or missing. Not for navigation";
       tr.innerHTML = `<td><span class="sw"></span></td><td></td><td class="n">${fmt(r.range, r.range != null && r.range < 10 ? 2 : 1)}</td><td class="n">${deg(r.brg)}</td>
-        <td class="n">${fmt(r.cpa, 2)}</td><td class="n">${r.tcpa == null ? "—" : Math.round(r.tcpa)}</td><td class="n">${fmt(r.sog)}</td><td class="n">${deg(r.cog)}</td><td class="n age">${age(r.age)}</td><td>${r.src}</td>`;
+        <td class="n">${fmt(r.cpa, 2)}</td><td class="n">${r.tcpa == null ? "—" : Math.round(r.tcpa)}</td><td class="n">${fmt(r.sog)}</td><td class="n">${deg(r.cog)}</td><td class="n age">${age(r.age)}</td><td>${r.src}</td><td class="ctl"></td><td class="ctl"></td>`;
+      const locked = fleet.trackAll && !!inFleet(r.id);
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.checked = !!r.trk; cb.disabled = locked;
+      cb.onchange = () => { setWatched(r.id, cb.checked); saveFleet(); renderFleet(); refreshPopup(); loadTracks(); renderWin(); };
+      tr.cells[10].append(cb);
+      const grp = document.createElement("select");
+      grp.innerHTML = `<option value="">—</option>${Object.keys(GROUP_COLOURS).map((g) => `<option>${g}</option>`).join("")}`;
+      grp.value = r.grp ?? "";
+      grp.onchange = () => {
+        const e = inFleet(r.id);
+        if (!grp.value) fleet.entries = fleet.entries.filter((x) => Number(x.mmsi) !== Number(r.id));
+        else if (e) e.group = grp.value;
+        else fleet.entries.push({ mmsi: String(r.id).padStart(9, "0"), name: r.t.name ?? "", group: grp.value });
+        saveFleet(); renderFleet(); renderList(); refreshPopup(); draw(); renderWin();
+      };
+      tr.cells[11].append(grp);
+      for (const c of [cb, grp]) c.onclick = (ev) => ev.stopPropagation();
       tr.cells[0].append(document.createTextNode(r.name));
       tr.cells[0].querySelector(".sw").style.background = r.col;
       tr.cells[1].textContent = r.type + (r.t.kind === "vessel" && STATUS_SHORT[r.t.status] ? ` · ${STATUS_SHORT[r.t.status]}` : "");
@@ -655,8 +923,8 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       const m = Number(e.mmsi);
       const t = targets.get(m);
       const li = document.createElement("li");
-      const col = GROUP_COLOURS[e.group] ?? GROUP_COLOURS.Other;
-      li.innerHTML = `<span class="dot" style="background:${col}"></span><div class="main"><b></b><small></small></div>
+      const col = fleetColour(e);
+      li.innerHTML = `<input type="color" class="of-col" value="${col}" title="Stern colour on the chart" /><div class="main"><b></b><small></small></div>
         <label class="of-trk" title="Draw this boat's track"><input type="checkbox" /> Track</label>
         <select title="Group">${Object.keys(GROUP_COLOURS).map((g) => `<option${g === e.group ? " selected" : ""}>${g}</option>`).join("")}</select><button data-act="del" title="Remove">✕</button>`;
       li.querySelector("b").textContent = e.name || t?.name || `MMSI ${e.mmsi}`;
@@ -664,10 +932,11 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       li.querySelector("small").textContent = [e.mmsi, t ? (t.sog != null ? `${t.sog.toFixed(1)} kn` : null) : "not heard yet",
         c ? `${c.range.toFixed(1)} NM` : null, t?.last_pos ? `${Math.round((Date.now() / 1000 - t.last_pos) / 60)} min ago` : null].filter(Boolean).join(" · ");
       const cb = li.querySelector(".of-trk input");
-      cb.checked = fleet.trackAll || !!e.track;
+      cb.checked = fleet.trackAll || isWatched(e.mmsi);
       cb.disabled = fleet.trackAll;
-      cb.onchange = () => { e.track = cb.checked; saveFleet(); loadTracks(); };
-      li.querySelector("select").onchange = (ev) => { e.group = ev.target.value; saveFleet(); renderFleet(); draw(); drawTracks(); };
+      cb.onchange = () => { setWatched(e.mmsi, cb.checked); saveFleet(); renderList(); loadTracks(); };
+      li.querySelector(".of-col").onchange = (ev) => { e.colour = ev.target.value; saveFleet(); draw(); };
+      li.querySelector("select").onchange = (ev) => { e.group = ev.target.value; saveFleet(); renderFleet(); draw(); };
       li.querySelector('[data-act="del"]').onclick = () => { fleet.entries = fleet.entries.filter((x) => x !== e); saveFleet(); renderFleet(); draw(); loadTracks(); };
       li.querySelector(".main").onclick = () => { if (t?.lat != null) { map.easeTo({ center: [t.lon, t.lat], zoom: Math.max(map.getZoom(), 11) }); openPopup(m); } };
       ul.append(li);
@@ -678,16 +947,24 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     if (mmsi.length !== 9) { $("of-msg").textContent = "An MMSI has 9 digits."; return; }
     if (inFleet(mmsi)) { $("of-msg").textContent = "That MMSI is already in the list."; return; }
     if (Number(mmsi) === ownMmsi) { $("of-msg").textContent = "That is your own MMSI (Settings)."; return; }
-    fleet.entries.push({ mmsi, name: $("of-name").value.trim(), group: $("of-group").value, track: false });
+    const colour = $("of-colour").value;
+    fleet.entries.push({ mmsi, name: $("of-name").value.trim(), group: $("of-group").value,
+      ...(colour.toLowerCase() !== (GROUP_COLOURS[$("of-group").value] ?? GROUP_COLOURS.Other).toLowerCase() ? { colour } : {}) });
     $("of-mmsi").value = ""; $("of-name").value = ""; $("of-msg").textContent = "";
     saveFleet(); renderFleet(); draw();
   };
+  $("of-colour").value = GROUP_COLOURS[$("of-group").value] ?? GROUP_COLOURS.Other;
+  $("of-group").onchange = (e) => { $("of-colour").value = GROUP_COLOURS[e.target.value] ?? GROUP_COLOURS.Other; };
   $("of-track-all").checked = fleet.trackAll;
   $("of-only").checked = fleet.only;
   $("of-track-all").onchange = (e) => { fleet.trackAll = e.target.checked; saveFleet(); renderFleet(); loadTracks(); };
   $("of-only").onchange = (e) => { fleet.only = e.target.checked; saveFleet(); draw(); renderList(); };
   $("ais-sel-track").checked = s.selTrack;
   $("ais-sel-track").onchange = (e) => { s.selTrack = e.target.checked; save(); loadTracks(); };
+  $("ais-trk-col").value = s.trkCol;
+  $("ais-trk-col").oninput = (e) => { s.trkCol = e.target.value; save(); drawTracks(); };
+  $("ais-pin-col").value = s.pinCol;
+  $("ais-pin-col").oninput = (e) => { s.pinCol = e.target.value; save(); draw(); };
   // our own MMSI (Settings) is never a target
   const syncOwn = () => {
     ownMmsi = Number(getOwnMmsi?.() || 0) || null;
@@ -699,6 +976,6 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   renderFleet();
   loadTracks();
   statusUi();
-  if (s.online) setTimeout(() => subscribe(true), 1500);
+  if (s.online || s.owOn) setTimeout(() => subscribe(true), 1500);
   return { targets, openPopup };
 }

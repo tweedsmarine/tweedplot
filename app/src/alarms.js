@@ -20,6 +20,7 @@ const DEFAULTS = {
   contour: true, contourMin: 6,
   xte: false, xteNm: 0.25,
   arrive: true, arriveMin: 2,
+  watchdogMin: 5,
   volume: 0.6,
 };
 const $ = (id) => document.getElementById(id);
@@ -73,25 +74,69 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
   const active = new Map();
   /** what a monitor window shows: the primary's alarms, as plain data */
   let mirror = [];
+  /** Dismissed alarms whose cause still lasts: id → {until, stage}. Quiet for HOLD_MS unless they escalate. */
+  const dismissed = new Map();
+  const HOLD_MS = 60000;
+  /**
+   * Raise (or refresh) an alarm. `stage` (default 0) is how bad the cause is: a higher stage than
+   * before sounds again even if silenced or dismissed. `holdable` adds a Dismiss button.
+   */
   function raise(id, a) {
     if (!PRIMARY) return;
+    const held = dismissed.get(id);
+    if (held) {
+      if (Date.now() < held.until && (a.stage ?? 0) <= held.stage) return;
+      dismissed.delete(id);
+    }
+    const entry = a.holdable
+      ? { ...a, dismiss: () => dismiss(id), dismissLabel: "Dismiss",
+        dismissTitle: "Remove this alarm for a minute; it comes back if the cause lasts or worsens" }
+      : a;
     const old = active.get(id);
     if (old) {
-      Object.assign(old, { ...a, acked: old.acked && old.level === a.level });
+      const worse = (a.stage ?? 0) > (old.stage ?? 0);
+      Object.assign(old, { ...entry, acked: old.acked && old.level === a.level && !worse });
+      if (worse) { if (a.level === "alarm") sound.alarm(); else sound.warn(); }
     } else {
-      active.set(id, { ...a, acked: false, since: Date.now() });
+      active.set(id, { ...entry, acked: false, since: Date.now() });
       if (a.level === "alarm") sound.alarm(); else sound.warn();
     }
     render();
   }
+  /** The cause has ended (or was changed by the user): the alarm goes, and may raise afresh. */
   function clear(id) {
+    dismissed.delete(id);
     if (active.delete(id)) render();
+  }
+  function dismiss(id) {
+    const a = active.get(id);
+    if (!a) return;
+    dismissed.set(id, { until: Date.now() + HOLD_MS, stage: a.stage ?? 0 });
+    active.delete(id);
+    render();
   }
   function ack(id) {
     if (!PRIMARY) { command("ack", id); return; }
     const a = active.get(id);
-    if (a) { a.acked = true; render(); }
+    if (a) { a.acked = true; a.ackedAt = Date.now(); render(); }
   }
+  // Watchdog: a silenced high-priority alarm whose cause still lasts sounds again after the
+  // watchdog time (Alarms › Sound), so it can't be forgotten.
+  if (PRIMARY) setInterval(() => {
+    const ms = Math.min(20, Math.max(1, Number(s.watchdogMin) || 5)) * 60000;
+    let loud = false, any = false;
+    for (const a of active.values()) {
+      if (a.watchdog && a.acked && Date.now() - (a.ackedAt ?? 0) >= ms) {
+        a.acked = false; any = true;
+        if (a.level === "alarm") loud = true;
+      }
+    }
+    if (any) { if (loud) sound.alarm(); else sound.warn(); render(); }
+  }, 5000);
+  /** 0, 1 or 2: how far a falling measure (minutes, depth) is below its limit: under half, under a quarter. */
+  const stageBelow = (v, limit) => (v < limit / 4 ? 2 : v < limit / 2 ? 1 : 0);
+  /** The same for a growing measure (off-track distance): over twice, over four times the limit. */
+  const stageAbove = (v, limit) => (v > limit * 4 ? 2 : v > limit * 2 ? 1 : 0);
   const entries = () => (PRIMARY
     ? [...active.entries()]
     : mirror.map((a) => [a.id, { ...a,
@@ -109,18 +154,30 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
   const banner = $("alarm-banner");
   function render() {
     banner.innerHTML = "";
-    const list = entries().filter(([id, a]) => !a.acked || id === "mob")
-      .sort((a, b) => (a[1].level === b[1].level ? a[1].since - b[1].since : a[1].level === "alarm" ? -1 : 1));
-    banner.hidden = !list.length;
+    const byLevel = (a, b) => (a[1].level === b[1].level ? a[1].since - b[1].since : a[1].level === "alarm" ? -1 : 1);
+    // Unacknowledged alarms (and the MOB) are stacked, never overlapping, so none is hidden.
+    // Once silenced they move to the Alarms list; one steady row keeps them in view.
+    const all = entries();
+    const list = all.filter(([id, a]) => !a.acked || id === "mob").sort(byLevel);
+    const silenced = all.filter(([id, a]) => a.acked && id !== "mob").sort(byLevel);
+    banner.hidden = !list.length && !silenced.length;
     for (const [id, a] of list) {
       const row = document.createElement("div");
       row.className = `alarm ${a.level}${a.acked ? " acked" : ""}`;
       row.innerHTML = `<div class="txt"><b>${esc(a.text)}</b>${a.detail ? `<small>${esc(a.detail)}</small>` : ""}</div>` +
-        (a.acked ? "" : `<button data-act="ack" title="Silence this alarm; it will remain visible until cleared">Silence</button>`) +
+        (a.acked ? "" : `<button data-act="ack" title="Stop the sound; the alarm moves to the Alarms list and stays while its cause lasts">Silence</button>`) +
         (a.dismiss ? `<button data-act="dismiss" title="${esc(a.dismissTitle || "Dismiss")}">${esc(a.dismissLabel || "✕")}</button>` : "");
       row.querySelector(".txt").onclick = () => a.onClick?.();
       row.querySelector('[data-act="ack"]')?.addEventListener("click", () => ack(id));
       row.querySelector('[data-act="dismiss"]')?.addEventListener("click", () => a.dismiss());
+      banner.append(row);
+    }
+    if (silenced.length) {
+      const lvl = silenced.some(([, a]) => a.level === "alarm") ? "alarm" : "warn";
+      const row = document.createElement("div");
+      row.className = `alarm ${lvl} acked summary`;
+      row.innerHTML = `<div class="txt"><b>${silenced.length} silenced ${silenced.length === 1 ? "alarm" : "alarms"} still active</b><small>Click to open the Alarms list</small></div>`;
+      row.querySelector(".txt").onclick = () => document.querySelector('[data-pane="alarms"]')?.click();
       banner.append(row);
     }
     if (PRIMARY) publish();
@@ -138,8 +195,10 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
       li.className = `al-${a.level}${a.acked ? " acked" : ""}`;
       const t = new Date(a.since).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
       li.innerHTML = `<span class="al-lv">${a.level === "alarm" ? "Alarm" : "Warning"}</span><span class="grow"><b>${esc(a.text)}</b>${a.detail ? `<br><small>${esc(a.detail)}</small>` : ""}</span><span class="wx-note">${t}${a.acked ? " · silenced" : ""}</span>` +
-        (a.acked ? "" : '<button data-act="ack">Silence</button>');
+        (a.acked ? "" : '<button data-act="ack">Silence</button>') +
+        (a.dismiss && id !== "mob" ? `<button data-act="dismiss" title="${esc(a.dismissTitle || "Dismiss")}">${esc(a.dismissLabel || "Dismiss")}</button>` : "");
       li.querySelector('[data-act="ack"]')?.addEventListener("click", () => ack(id));
+      li.querySelector('[data-act="dismiss"]')?.addEventListener("click", () => a.dismiss());
       li.querySelector(".grow").onclick = () => a.onClick?.();
       ul.append(li);
     }
@@ -223,7 +282,7 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
     const brg = here ? bearing(here, [mob.lon, mob.lat]) : null;
     const dist = d == null ? "" : d < 0.2 ? `${Math.round(d * 1852)} m` : `${d.toFixed(2)} NM`;
     raise("mob", {
-      level: "alarm",
+      level: "alarm", watchdog: true,
       text: `MAN OVERBOARD ${fmtAgo(Date.now() - mob.t)} ago${brg != null ? ` · ${String(Math.round(brg)).padStart(3, "0")}°T ${dist}` : ""}`,
       detail: `${ddm(mob.lat, "N", "S")} ${ddm(mob.lon, "E", "W")} · click to show on the chart`,
       onClick: () => map.easeTo({ center: [mob.lon, mob.lat], zoom: Math.max(map.getZoom(), 14) }),
@@ -290,20 +349,20 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
     const depth = v.depth_keel ?? v.depth;
     const limit = s.shallowM ?? getSafetyDepth();
     if (s.shallow && b.live && depth != null && limit > 0) {
-      if (depth < limit) raise("shallow", { level: "alarm", text: `SHALLOW ${depth.toFixed(1)} m`, detail: `Below the alarm depth of ${limit} m${v.depth_keel != null ? " (under the keel)" : " (below the transducer)"}` });
+      if (depth < limit) raise("shallow", { level: "alarm", watchdog: true, text: `SHALLOW ${depth.toFixed(1)} m`, detail: `Below the alarm depth of ${limit} m${v.depth_keel != null ? " (under the keel)" : " (below the transducer)"}` });
       else if (depth > limit + 0.5) clear("shallow");
     } else clear("shallow");
     // anchor watch
     if (s.anchor && b.pos) {
       const m = distNm(b.pos, [s.anchor.lon, s.anchor.lat]) * 1852;
       $("anc-state").textContent = `Watching: ${Math.round(m)} m from the anchor, alarm beyond ${s.anchorM} m.`;
-      if (m > s.anchorM) raise("anchor", { level: "alarm", text: `ANCHOR DRAGGING ${Math.round(m)} m`, detail: `Outside the ${s.anchorM} m watch circle`, onClick: () => map.easeTo({ center: [s.anchor.lon, s.anchor.lat] }) });
+      if (m > s.anchorM) raise("anchor", { level: "alarm", watchdog: true, text: `ANCHOR DRAGGING ${Math.round(m)} m`, detail: `Outside the ${s.anchorM} m watch circle`, onClick: () => map.easeTo({ center: [s.anchor.lon, s.anchor.lat] }) });
       else if (m < s.anchorM * 0.9) clear("anchor");
     } else clear("anchor");
     // position lost (live, Signal K connected, no fix for 30 s)
     if (b.live && v.lat != null && b.fresh) lastPosAt = Date.now();
     if (s.posLost && b.live && b.connected && Date.now() - lastPosAt > 30000) {
-      raise("poslost", { level: "warn", text: "POSITION LOST", detail: "No position data for 30 s: check the navigation source" });
+      raise("poslost", { level: "warn", watchdog: true, text: "POSITION LOST", detail: "No position data for 30 s: check the navigation source" });
     } else clear("poslost");
     // air draft: charted clearances ahead, every 10 s
     const air = getAirDraft();
@@ -315,7 +374,7 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
         const low = (list || []).filter((c) => c.clearance_m < air + s.airMargin && (cog == null || Math.abs(((c.bearing - cog + 540) % 360) - 180) < 60 || c.distance_m < 150));
         if (low.length) {
           const c = low[0];
-          raise("air", { level: "alarm", text: `AIR DRAFT: ${c.class} ${c.clearance_m.toFixed(1)} m clearance ${c.distance_m < 1852 ? Math.round(c.distance_m) + " m" : (c.distance_m / 1852).toFixed(1) + " NM"} ahead`,
+          raise("air", { level: "alarm", watchdog: true, text: `AIR DRAFT: ${c.class} ${c.clearance_m.toFixed(1)} m clearance ${c.distance_m < 1852 ? Math.round(c.distance_m) + " m" : (c.distance_m / 1852).toFixed(1) + " NM"} ahead`,
             detail: `${c.name ? c.name + " · " : ""}your air draft ${air} m + ${s.airMargin} m margin; charted clearance is above HAT` });
         } else clear("air");
       }).catch(() => {});
@@ -330,7 +389,7 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
         invoke("chart_shallow_ahead", { lat: b.pos[1], lon: b.pos[0], cog: v.cog, distM, depth: contour }).then((m) => {
           if (m != null) {
             const mins = v.sog > 0 ? (m / 1852 / v.sog) * 60 : 0;
-            raise("contour", { level: "alarm", text: `SAFETY CONTOUR AHEAD: ${m < 1852 ? Math.round(m) + " m" : (m / 1852).toFixed(1) + " NM"} (${mins < 1 ? "under a minute" : Math.round(mins) + " min"})`,
+            raise("contour", { level: "alarm", stage: stageBelow(mins, s.contourMin), text: `SAFETY CONTOUR AHEAD: ${m < 1852 ? Math.round(m) + " m" : (m / 1852).toFixed(1) + " NM"} (${mins < 1 ? "under a minute" : Math.round(mins) + " min"})`,
               detail: `Water shallower than the ${contour} m safety contour, or land, on your course over ground (charted depths; not the high-resolution depths)` });
           } else clear("contour");
         }).catch(() => {});
@@ -339,14 +398,14 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
     // off track and approaching the next mark (Route › Navigate)
     const n = b.live ? getNav() : null;
     if (s.xte && n?.wp?.xte != null && n.nav.from && Math.abs(n.wp.xte) > s.xteNm) {
-      raise("xte", { level: "alarm", text: `OFF TRACK ${Math.abs(n.wp.xte).toFixed(2)} NM ${n.wp.xte > 0 ? "right" : "left"} of the leg`, detail: `Cross-track error over ${s.xteNm} NM on the leg to ${n.nav.next.name}` });
+      raise("xte", { level: "alarm", stage: stageAbove(Math.abs(n.wp.xte), s.xteNm), text: `OFF TRACK ${Math.abs(n.wp.xte).toFixed(2)} NM ${n.wp.xte > 0 ? "right" : "left"} of the leg`, detail: `Cross-track error over ${s.xteNm} NM on the leg to ${n.nav.next.name}` });
     } else if (!(s.xte && n?.wp?.xte != null && Math.abs(n.wp.xte) > s.xteNm * 0.9)) clear("xte");
     if (s.arrive && n?.wp) {
       const key = `${n.nav.index}:${n.nav.next.name}`;
       const soon = (n.wp.ttg != null && n.wp.ttg / 60 <= s.arriveMin) || n.wp.dtw <= (n.arrivalNm ?? 0);
-      if (soon && arrivedKey !== key) {
+      if (soon) {
         arrivedKey = key;
-        raise("arrive", { level: "warn", text: `APPROACHING ${n.nav.next.name.toUpperCase()}`, detail: `${n.wp.dtw.toFixed(2)} NM, bearing ${String(Math.round(n.wp.btw)).padStart(3, "0")}°T${n.wp.ttg != null ? `, about ${Math.max(1, Math.round(n.wp.ttg / 60))} min` : ""}` });
+        raise("arrive", { level: "warn", stage: n.wp.ttg != null ? stageBelow(n.wp.ttg / 60, s.arriveMin) : 0, text: `APPROACHING ${n.nav.next.name.toUpperCase()}`, detail: `${n.wp.dtw.toFixed(2)} NM, bearing ${String(Math.round(n.wp.btw)).padStart(3, "0")}°T${n.wp.ttg != null ? `, about ${Math.max(1, Math.round(n.wp.ttg / 60))} min` : ""}` });
       } else if (arrivedKey !== key) clear("arrive");
     } else clear("arrive");
     if (mob) mobAlarm();
@@ -368,6 +427,7 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
     $("al-xte-nm").value = s.xteNm;
     $("al-arrive").checked = s.arrive;
     $("al-arrive-min").value = s.arriveMin;
+    $("al-watchdog").value = s.watchdogMin;
     $("al-volume").value = Math.round(s.volume * 100);
     $("anc-radius").value = s.anchorM;
     $("anc-drop").textContent = s.anchor ? "Weigh anchor" : "Drop anchor here";
@@ -384,6 +444,7 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
   $("al-contour-min").onchange = (e) => { s.contourMin = +e.target.value || 6; lastContourCheck = 0; save(); };
   $("al-xte").onchange = (e) => { s.xte = e.target.checked; save(); };
   $("al-xte-nm").onchange = (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v) && v > 0) s.xteNm = v; save(); syncUi(); };
+  $("al-watchdog").onchange = (e) => { const v = Math.round(parseFloat(e.target.value)); if (Number.isFinite(v)) s.watchdogMin = Math.min(20, Math.max(1, v)); save(); syncUi(); };
   $("al-arrive").onchange = (e) => { s.arrive = e.target.checked; save(); };
   $("al-arrive-min").onchange = (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v) && v > 0) s.arriveMin = v; save(); syncUi(); };
   $("al-volume").oninput = (e) => { s.volume = +e.target.value / 100; save(); };

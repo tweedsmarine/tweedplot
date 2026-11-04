@@ -12,12 +12,34 @@ use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::tungstenite::Message;
 
 pub const URL: &str = "wss://stream.aisstream.io/v0/stream";
+/// Open Waters (https://openwaters.io/api/ais/): its own stream, which can start with a snapshot of
+/// every vessel's last known position, name and type. Its key is a free token, sent as `?key=`.
+pub const URL_OPENWATERS: &str = "wss://ais.openwaters.io/v1/stream";
 
-/// What to ask for: the API key and the areas, each [[lat, lon], [lat, lon]].
+/// What to ask for: the provider ("aisstream" or "openwaters"), the API key and the areas, each [[lat, lon], [lat, lon]].
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Request {
+    pub provider: String,
     pub key: String,
     pub boxes: Vec<[[f64; 2]; 2]>,
+}
+
+impl Request {
+    fn url(&self) -> String {
+        if self.provider == "openwaters" {
+            let key: String = self.key.trim().chars().filter(|c| c.is_ascii_alphanumeric() || "._-".contains(*c)).collect();
+            format!("{URL_OPENWATERS}?key={key}")
+        } else {
+            URL.to_string()
+        }
+    }
+    fn name(&self) -> &'static str {
+        if self.provider == "openwaters" { "Open Waters" } else { "aisstream.io" }
+    }
+    /// What a target heard from this feed lists as its source.
+    fn source(&self) -> &'static str {
+        if self.provider == "openwaters" { "openwaters" } else { "aisstream" }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -27,6 +49,11 @@ pub enum Event {
 }
 
 fn subscription(r: &Request) -> String {
+    if r.provider == "openwaters" {
+        // boxes are [minLat, minLon, maxLat, maxLon]; the snapshot gives names and types at once
+        let bbox: Vec<[f64; 4]> = r.boxes.iter().map(|b| [b[0][0].min(b[1][0]), b[0][1].min(b[1][1]), b[0][0].max(b[1][0]), b[0][1].max(b[1][1])]).collect();
+        return json!({ "type": "subscribe", "bbox": bbox, "snapshot": true }).to_string();
+    }
     json!({
         "APIKey": r.key,
         "BoundingBoxes": r.boxes,
@@ -50,7 +77,7 @@ pub async fn run(mut req: watch::Receiver<Request>, tx: mpsc::Sender<Event>) {
             }
             continue;
         }
-        match tokio_tungstenite::connect_async(URL).await {
+        match tokio_tungstenite::connect_async(r.url().as_str()).await {
             Ok((mut ws, _)) => {
                 if ws.send(Message::text(subscription(&r))).await.is_err() {
                     continue;
@@ -65,7 +92,7 @@ pub async fn run(mut req: watch::Receiver<Request>, tx: mpsc::Sender<Event>) {
                                 Some(Ok(Message::Binary(b))) => String::from_utf8_lossy(&b).into_owned(),
                                 Some(Ok(Message::Ping(_) | Message::Pong(_) | Message::Frame(_))) => continue,
                                 Some(Ok(Message::Close(c))) => {
-                                    let why = c.map(|c| c.reason.to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| "closed by aisstream.io".into());
+                                    let why = c.map(|c| c.reason.to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| format!("closed by {}", r.name()));
                                     if tx.send(Event::Status { connected: false, detail: why }).await.is_err() { return; }
                                     break;
                                 }
@@ -76,22 +103,23 @@ pub async fn run(mut req: watch::Receiver<Request>, tx: mpsc::Sender<Event>) {
                                 None => break,
                             };
                             if let Some(err) = error_of(&text) {
-                                if tx.send(Event::Status { connected: false, detail: err }).await.is_err() { return; }
+                                if tx.send(Event::Status { connected: false, detail: err.replace("aisstream.io", r.name()) }).await.is_err() { return; }
                                 break;
                             }
                             if !said_up {
                                 said_up = true;
                                 backoff = Duration::from_secs(2);
-                                if tx.send(Event::Status { connected: true, detail: "aisstream.io".into() }).await.is_err() { return; }
+                                if tx.send(Event::Status { connected: true, detail: r.name().into() }).await.is_err() { return; }
                             }
-                            if let Some(u) = parse(&text) {
+                            if let Some(mut u) = parse(&text) {
+                                u.source = r.source();
                                 if tx.send(Event::Update(u)).await.is_err() { return; }
                             }
                         }
                         ch = req.changed() => {
                             if ch.is_err() { return; }
                             let n = req.borrow_and_update().clone();
-                            if n.key != r.key || n.key.trim().is_empty() || n.boxes.is_empty() {
+                            if n.key != r.key || n.provider != r.provider || n.key.trim().is_empty() || n.boxes.is_empty() {
                                 let _ = ws.close(None).await;
                                 break; // reconnect with the new key (or idle)
                             }
@@ -106,7 +134,7 @@ pub async fn run(mut req: watch::Receiver<Request>, tx: mpsc::Sender<Event>) {
                 }
             }
             Err(e) => {
-                if tx.send(Event::Status { connected: false, detail: format!("aisstream.io: {e}") }).await.is_err() {
+                if tx.send(Event::Status { connected: false, detail: format!("{}: {e}", r.name()) }).await.is_err() {
                     return;
                 }
             }
@@ -126,12 +154,35 @@ fn clean(s: Option<&str>) -> Option<String> {
     (!t.is_empty()).then_some(t)
 }
 
-/// Decode one aisstream.io message.
+/// Decode one aisstream.io message, or one Open Waters `event` (same decoded payload, different envelope).
 pub fn parse(text: &str) -> Option<Update> {
     let v: Value = serde_json::from_str(text).ok()?;
+    if v.get("type").and_then(Value::as_str) == Some("event") {
+        let ty = v.get("msg_type")?.as_str()?;
+        let mut m = v.get("message")?.clone();
+        // the envelope's position stands in for a message that has none of its own
+        for (k, e) in [("Latitude", "lat"), ("Longitude", "lon")] {
+            if m.get(k).is_none() {
+                if let (Some(o), Some(x)) = (m.as_object_mut(), v.get(e)) { o.insert(k.into(), x.clone()); }
+            }
+        }
+        let mmsi = v.get("mmsi").cloned().unwrap_or(Value::Null);
+        let mut u = decode(ty, &m, Some(&json!({ "MMSI": mmsi })))?;
+        // Open Waters rebuilds class B reports as class A messages: a static message with no raw NMEA
+        // proves nothing about the class, and a position with both "not available" defaults is a class B.
+        let raw = v.get("nmea").and_then(Value::as_array).is_some_and(|a| !a.is_empty());
+        match ty {
+            "ShipStaticData" if !raw => u.class = None,
+            "PositionReport" if m.get("NavigationalStatus").and_then(Value::as_u64) == Some(15) && m.get("RateOfTurn").and_then(Value::as_i64) == Some(-128) => u.class = Some("B"),
+            _ => {}
+        }
+        return Some(u);
+    }
     let ty = v.get("MessageType")?.as_str()?;
-    let m = v.get("Message")?.get(ty)?;
-    let meta = v.get("MetaData");
+    decode(ty, v.get("Message")?.get(ty)?, v.get("MetaData"))
+}
+
+fn decode(ty: &str, m: &Value, meta: Option<&Value>) -> Option<Update> {
     let mmsi = m.get("UserID").and_then(Value::as_u64).or_else(|| meta.and_then(|x| x.get("MMSI")).and_then(Value::as_u64))? as u32;
     let f = |k: &str| m.get(k).and_then(Value::as_f64);
     let mut u = Update { mmsi, source: "aisstream", ..Default::default() };
@@ -160,16 +211,18 @@ pub fn parse(text: &str) -> Option<Update> {
     match ty {
         "PositionReport" => {
             motion(&mut u);
+            u.rot = f("RateOfTurn").filter(|r| r.abs() <= 128.0).and_then(|r| crate::rot_deg_per_min(r as i8));
             u.status = m.get("NavigationalStatus").and_then(Value::as_u64).map(|s| s as u8);
             u.class = Some("A");
         }
         "StandardClassBPositionReport" => {
             motion(&mut u);
-            u.class = Some("B");
+            // ClassBUnit true: carrier-sense (plain B); false: SOTDMA ("B+")
+            u.class = Some(if m.get("ClassBUnit").and_then(Value::as_bool) == Some(false) { "B+" } else { "B" });
         }
         "ExtendedClassBPositionReport" => {
             motion(&mut u);
-            u.class = Some("B");
+            u.class = Some("B+");
             u.name = clean(m.get("Name").and_then(Value::as_str));
             u.ship_type = m.get("Type").and_then(Value::as_u64).filter(|t| *t > 0).map(|t| t as u16);
             dims(&mut u, m.get("Dimension"));
@@ -251,6 +304,29 @@ mod tests {
         assert_eq!((u.cog, u.heading, u.sog), (None, None, None));
         assert!(parse(r#"{"error":"Api Key Is Not Valid"}"#).is_none());
         assert_eq!(error_of(r#"{"error":"Api Key Is Not Valid"}"#).as_deref(), Some("aisstream.io: Api Key Is Not Valid"));
-        assert!(subscription(&Request { key: "k".into(), boxes: vec![[[-42.0, 172.0], [-40.0, 175.0]]] }).contains("[[[-42.0,172.0],[-40.0,175.0]]]"));
+        assert!(subscription(&Request { key: "k".into(), boxes: vec![[[-42.0, 172.0], [-40.0, 175.0]]], ..Default::default() }).contains("[[[-42.0,172.0],[-40.0,175.0]]]"));
     }
-}
+
+            #[test]
+            fn open_waters_v1_events_and_subscription() {
+                let e = r#"{"type":"event","id":"x","mmsi":512007447,"msg_type":"StandardClassBPositionReport","lat":-41.285,"lon":174.779,"message":{"MessageID":18,"UserID":512007447,"Valid":true,"Sog":6.5,"Cog":120,"TrueHeading":511,"ClassBUnit":false,"Latitude":-41.285,"Longitude":174.779}}"#;
+                let u = parse(e).unwrap();
+                assert_eq!((u.mmsi, u.pos, u.sog, u.heading), (512007447, Some((-41.285, 174.779)), Some(6.5), None));
+                let s = r#"{"type":"event","mmsi":512000123,"msg_type":"ShipStaticData","lat":-41.2,"lon":173.3,"message":{"UserID":512000123,"Name":"KAITAKI@@","Type":60,"Dimension":{"A":100,"B":50,"C":10,"D":10}}}"#;
+                let u = parse(s).unwrap();
+                assert_eq!((u.name.as_deref(), u.ship_type, u.length), (Some("KAITAKI"), Some(60), Some(150.0)));
+                assert!(parse(r#"{"type":"welcome","role":"personal"}"#).is_none());
+        let snap = r#"{"type":"event","mmsi":512000706,"msg_type":"PositionReport","lat":-41.2,"lon":173.3,"message":{"UserID":512000706,"NavigationalStatus":15,"RateOfTurn":-128,"Sog":0,"Cog":10,"TrueHeading":511,"Latitude":-41.2,"Longitude":173.3}}"#;
+        assert_eq!(parse(snap).unwrap().class, Some("B"));
+        let st = r#"{"type":"event","mmsi":512000706,"msg_type":"ShipStaticData","nmea":[],"message":{"UserID":512000706,"Name":"NELSON PILOT"}}"#;
+        assert_eq!(parse(st).unwrap().class, None);
+        let st = r#"{"type":"event","mmsi":512000706,"msg_type":"ShipStaticData","nmea":["!AIVDM,x"],"message":{"UserID":512000706,"Name":"NELSON PILOT"}}"#;
+        assert_eq!(parse(st).unwrap().class, Some("A"));
+                let r = Request { provider: "openwaters".into(), key: "ak1.tok".into(), boxes: vec![[[-42.0, 172.0], [-40.0, 175.0]]] };
+                assert_eq!(r.url(), format!("{URL_OPENWATERS}?key=ak1.tok"));
+                let sub: Value = serde_json::from_str(&subscription(&r)).unwrap();
+                assert_eq!(sub["type"], "subscribe");
+                assert_eq!(sub["snapshot"], true);
+                assert_eq!(sub["bbox"], json!([[-42.0, 172.0, -40.0, 175.0]]));
+            }
+        }
