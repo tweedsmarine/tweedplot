@@ -14,7 +14,7 @@ const COLOURS = { 1: "#ffffff", 2: "#111111", 3: "#d7262b", 4: "#1f9a3a", 5: "#2
 const LIGHT = { r: "#d7262b", g: "#1f9a3a", w: "#f4c20d", o: MAGENTA, m: MAGENTA };
 
 const KEY = "racenav.chartfeatures";
-const DEFAULTS = { screenMm: 50, cat: "all", sectors: true, names: true, soundings: true, avoidDangers: true, avoidFarms: true, symSize: 1.2, sym: "s52", info: false, bounds: "plain",
+const DEFAULTS = { screenMm: 50, cat: "all", sectors: true, names: true, soundings: true, avoidDangers: true, avoidFarms: true, symSize: 1, sym: "s52", info: false, bounds: "plain",
   textImportant: true, textOther: true, dateSym: false };
 /** The standard display (S-Mode): one press back to it. */
 const STANDARD = { cat: "standard", sectors: true, names: true, soundings: true };

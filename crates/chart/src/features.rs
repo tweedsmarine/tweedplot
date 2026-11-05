@@ -394,6 +394,30 @@ pub struct FeatureInfo {
     pub attrs: Vec<(String, String)>,
 }
 
+/// How far from a finer chart's copy of a light a coarser band's copy of it may be placed
+/// (metres): the smaller the scale, the more its positions are generalised.
+fn is_structure(code: &str) -> bool {
+    matches!(code, "LNDMRK" | "BCNSPP" | "BCNLAT" | "BCNCAR" | "BCNISD" | "BCNSAW" | "SILTNK" | "BUISGL")
+}
+
+fn light_match_metres(band: u8) -> f64 {
+    match band {
+        0 | 1 => 3000.0,
+        2 => 1000.0,
+        3 => 500.0,
+        _ => SAME_M,
+    }
+}
+
+/// What identifies a light across scale bands, whatever its position: the character, colour,
+/// range and sectors of each of its records.
+fn light_signature<'a>(lights: impl Iterator<Item = &'a Light>) -> String {
+    let mut parts: Vec<String> = lights.map(|l| format!("{:?}|{:?}|{:?}|{:?}|{:?}", l.litchr, l.siggrp, l.sigper, l.colours, l.range)).collect();
+    parts.sort();
+    parts.dedup();
+    parts.join(";")
+}
+
 fn metres(a: [f64; 2], b: [f64; 2]) -> f64 {
     let k = 111_320.0;
     let dx = (a[0] - b[0]) * k * a[1].to_radians().cos();
@@ -633,6 +657,8 @@ impl ChartStore {
 
         // buoys, beacons and other marks drawn in this tile: (position, band, minz)
         let mut marks: Vec<([f64; 2], u8, f64)> = Vec::new();
+        // named structures (any class) drawn in this tile: (name, position, band, minz)
+        let mut named: Vec<(String, [f64; 2], u8, f64)> = Vec::new();
         // the depth areas, read the first time a danger needs them
         let mut depth_areas: Option<DepthAreas> = None;
         for (class, tables) in &groups {
@@ -663,6 +689,18 @@ impl ChartStore {
                                 // a finer chart's copy of this mark: it stands from its own zoom; this
                                 // coarser copy fills in until then (maxz), so the mark never goes missing
                                 let finer = taken.iter().filter(|(q, b, _)| *b > t.band && metres(p, *q) < SAME_M).map(|(_, _, m)| *m).fold(f64::MAX, f64::min);
+                                // the same named mark (a landmark, a beacon) from a finer chart, even of
+                                // another class and generalised some way off by the smaller-scale chart
+                                let name = a.get("objnam");
+                                let finer = name
+                                    .map_or(f64::MAX, |n| {
+                                        named
+                                            .iter()
+                                            .filter(|(m, q, b, _)| *b > t.band && m.as_str() == n && metres(p, *q) < light_match_metres(t.band))
+                                            .map(|(_, _, _, mz)| *mz)
+                                            .fold(f64::MAX, f64::min)
+                                    })
+                                    .min(finer);
                                 if finer <= z as f64 {
                                     continue;
                                 }
@@ -684,6 +722,9 @@ impl ChartStore {
                                 }
                                 // only a feature actually drawn at this zoom hides a coarser band's copy
                                 mine.push((p, t.band, minz));
+                                if let (Some(n), true) = (name, is_structure(class.code)) {
+                                    named.push((n.to_string(), p, t.band, minz));
+                                }
                                 if !hazard {
                                     marks.push((p, t.band, minz));
                                 }
@@ -1138,14 +1179,22 @@ impl ChartStore {
         }
         let mut keys: Vec<_> = groups.keys().copied().collect();
         keys.sort_by_key(|k| (std::cmp::Reverse(k.2), k.0, k.1));
-        let mut kept: Vec<([f64; 2], u8, f64)> = Vec::new();
+        let mut kept: Vec<([f64; 2], u8, f64, String)> = Vec::new();
         let e = EXTENT as f64;
         let keep = |minz: f64| z >= 16 || (z as f64 + 1.0) > minz;
         for k in keys {
             let idx = &groups[&k];
             let first = &recs[idx[0]];
-            // a finer chart's copy stands from its own zoom; this one until then
-            let finer = kept.iter().filter(|(q, b, _)| *b > first.band && metres(first.p, *q) < SAME_M).map(|(_, _, m)| *m).fold(f64::MAX, f64::min);
+            let sig = light_signature(idx.iter().map(|&i| &recs[i].light));
+            // a finer chart's copy of this light stands from its own zoom; this one until then. Small-scale
+            // charts place a light generalised, up to kilometres off, so the same light (same character,
+            // colour and range) is matched over a distance that grows with the coarser band
+            let reach = light_match_metres(first.band);
+            let finer = kept
+                .iter()
+                .filter(|(q, b, _, s)| *b > first.band && (metres(first.p, *q) < SAME_M || (metres(first.p, *q) < reach && *s == sig)))
+                .map(|(_, _, m, _)| *m)
+                .fold(f64::MAX, f64::min);
             if finer <= z as f64 {
                 continue;
             }
@@ -1159,7 +1208,7 @@ impl ChartStore {
             if !keep(minz) {
                 continue;
             }
-            kept.push((first.p, first.band, minz));
+            kept.push((first.p, first.band, minz, sig));
             let c = tp.px(&first.p);
             // the IHO portrayal of this light (symbols, and its sectors as S-52 draws them)
             let s52 = self.s52_table(first.t).and_then(|m| m.get(&first.fid).cloned()).filter(|e| !e.is_empty());
@@ -1476,6 +1525,26 @@ mod tests {
         assert!(v(&[]).is_empty());
         let i = super::info_props("INFORM01,CHDATD01");
         assert_eq!(i.len(), 2);
+    }
+
+    #[test]
+    fn one_light_in_several_bands_has_one_signature() {
+        let l = |range: f64| Light {
+            litchr: Some(2),
+            siggrp: Some("(1)".into()),
+            sigper: Some(10.0),
+            colours: vec![1],
+            height: None,
+            range: Some(range),
+            sectors: None,
+            orient: None,
+        };
+        let (a, b) = (l(9.0), l(9.0));
+        assert_eq!(light_signature([&a].into_iter()), light_signature([&a, &b].into_iter()));
+        assert_ne!(light_signature([&a].into_iter()), light_signature([&l(7.0)].into_iter()));
+        // Point Durham: 415 m between the 1:1.35M and 1:190k copies, 1.8 km to the 1:1.15M one
+        assert!(415.0 < light_match_metres(2) && 1800.0 < light_match_metres(1));
+        assert_eq!(light_match_metres(5), SAME_M);
     }
 
     use super::*;

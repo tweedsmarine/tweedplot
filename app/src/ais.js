@@ -5,15 +5,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ddm } from "./navmath.js";
+import { floatResize } from "./floatresize.js";
 import { distNm, bearing } from "./instruments.js";
 import { hullRing, bigEnough } from "./hull.js";
 import { PRIMARY } from "./role.js";
 import { createInfoBox } from "./infobox.js";
+import { hullSymbolFeatures, targetSymbolFeatures } from "./ais-symbols.js";
+import { s52PxPerMm } from "./chartfeatures.js";
 
 const KEY = "racenav.ais";
 const SRC_NAME = { signalk: "Signal K", nmea: "NMEA 0183", aisstream: "aisstream.io", openwaters: "Open Waters" };
 const SRC_SHORT = { signalk: "SK", nmea: "NMEA", aisstream: "aisstream", openwaters: "OpenW" };
-const DEFAULTS = { show: true, names: true, key: "", owKey: "", owSeed: "", owOn: false, online: false, cpaOn: true, cpa: 0.5, tcpa: 12, ignoreMoored: true, sort: "range", selTrack: false, pinCol: "#c98a00", trkCol: "#c98a00",
+const DEFAULTS = { show: true, names: true, key: "", owKey: "", owSeed: "", owOn: false, online: false, cpaOn: true, cpa: 0.5, tcpa: 12, ignoreMoored: true, sort: "range", selTrack: false, trkCol: "#c98a00",
   // course vector length (min); CPA graphics: "none" | "danger" (dangerous and selected) | "all" (every target closing within the TCPA limit)
   vecMin: 6, curve: true, dayShapes: true, cpaDraw: "danger",
   // sleeping targets (vessels slower than sleepKn, or further than sleepNm if above 0): "off" | "small" (small symbol, no vector) | "hide"
@@ -122,32 +125,6 @@ export function addIcons(realMap) {
     draw(g, size);
     return g.getImageData(0, 0, size, size);
   };
-  const ship = (g, s, fill) => {
-    g.beginPath(); g.moveTo(s / 2, 3); g.lineTo(s / 2 + 8, s - 5); g.lineTo(s / 2, s - 9); g.lineTo(s / 2 - 8, s - 5); g.closePath();
-    if (fill) g.fill(); g.lineWidth = 2.5; g.stroke();
-  };
-  // SDF images: drawn white, coloured by the layer. Vessels differ by shape and size, not colour:
-  // class A the largest, B+ (SOTDMA or extended class B) smaller, B the smallest; fishing vessels have a bar across.
-  const hull = (k, fish) => make((g, s) => {
-    g.fillStyle = g.strokeStyle = "#fff";
-    g.save(); g.translate(s / 2, s / 2); g.scale(k, k); g.translate(-s / 2, -s / 2);
-    ship(g, s, true);
-    if (fish) { g.lineWidth = 3; g.lineCap = "round"; g.beginPath(); g.moveTo(s / 2 - 11, 18); g.lineTo(s / 2 + 11, 18); g.stroke(); }
-    g.restore();
-  });
-  for (const [cls, k] of [["a", 1], ["bp", 0.78], ["b", 0.55]]) {
-    map.addImage(`ais-s-${cls}`, hull(k, false), { sdf: true });
-    map.addImage(`ais-f-${cls}`, hull(k, true), { sdf: true });
-  }
-  const dot = (fish, solid) => make((g, s) => {
-    g.fillStyle = g.strokeStyle = "#fff"; g.lineWidth = 2.5; g.lineCap = "round";
-    g.beginPath(); g.arc(s / 2, s / 2, solid ? 6 : 4.5, 0, 2 * Math.PI); if (solid) g.fill(); else g.stroke();
-    if (fish) { g.beginPath(); g.moveTo(s / 2 - 9, s / 2); g.lineTo(s / 2 + 9, s / 2); g.stroke(); }
-  });
-  map.addImage("ais-still", dot(false, true), { sdf: true });
-  map.addImage("ais-still-fish", dot(true, true), { sdf: true });
-  map.addImage("ais-sleep", dot(false, false), { sdf: true });
-  map.addImage("ais-sleep-fish", dot(true, false), { sdf: true });
   const makeWH = (w, h, draw) => {
     const c = document.createElement("canvas");
     c.width = w; c.height = h;
@@ -177,23 +154,6 @@ export function addIcons(realMap) {
     }
     g.stroke();
   }, 48), { sdf: true });
-  // tracked: a contrasting dot on the symbol
-  map.addImage("ais-pin", make((g, s) => { g.fillStyle = "#fff"; g.beginPath(); g.arc(s / 2, s / 2, 4, 0, 2 * Math.PI); g.fill(); }, 16), { sdf: true });
-  // own fleet: the V at the back of the ship is filled in the group's colour, giving a flat stern
-  const notch = (k) => make((g, s) => {
-    g.fillStyle = g.strokeStyle = "#fff"; g.lineWidth = 2.5; g.lineJoin = "round";
-    g.save(); g.translate(s / 2, s / 2); g.scale(k, k); g.translate(-s / 2, -s / 2);
-    g.beginPath(); g.moveTo(s / 2, s - 9); g.lineTo(s / 2 + 8, s - 5); g.lineTo(s / 2 - 8, s - 5); g.closePath(); g.fill(); g.stroke();
-    g.restore();
-  });
-  for (const [cls, k] of [["a", 1], ["bp", 0.78], ["b", 0.55]]) map.addImage(`ais-n-${cls}`, notch(k), { sdf: true });
-  map.addImage("ais-aton", make((g, s) => { g.strokeStyle = "#fff"; g.lineWidth = 3; g.beginPath(); g.moveTo(s / 2, 5); g.lineTo(s - 6, s / 2); g.lineTo(s / 2, s - 5); g.lineTo(6, s / 2); g.closePath(); g.stroke();
-    g.beginPath(); g.moveTo(s / 2 - 4, s / 2); g.lineTo(s / 2 + 4, s / 2); g.moveTo(s / 2, s / 2 - 4); g.lineTo(s / 2, s / 2 + 4); g.stroke(); }), { sdf: true });
-  map.addImage("ais-air", make((g, s) => { g.fillStyle = "#fff"; g.beginPath(); g.moveTo(s / 2, 3); g.lineTo(s / 2 + 2, 12); g.lineTo(s - 3, 18); g.lineTo(s - 3, 21); g.lineTo(s / 2 + 2, 17); g.lineTo(s / 2 + 2, 25); g.lineTo(s / 2 + 6, 28); g.lineTo(s / 2 - 6, 28); g.lineTo(s / 2 - 2, 25);
-    g.lineTo(s / 2 - 2, 17); g.lineTo(3, 21); g.lineTo(3, 18); g.lineTo(s / 2 - 2, 12); g.closePath(); g.fill(); }), { sdf: true });
-  map.addImage("ais-base", make((g, s) => { g.strokeStyle = "#fff"; g.lineWidth = 3; g.strokeRect(8, 8, s - 16, s - 16); }), { sdf: true });
-  map.addImage("ais-sart", make((g, s) => { g.strokeStyle = "#fff"; g.lineWidth = 3; g.beginPath(); g.arc(s / 2, s / 2, s / 2 - 4, 0, 2 * Math.PI); g.stroke();
-    g.beginPath(); g.moveTo(9, 9); g.lineTo(s - 9, s - 9); g.moveTo(s - 9, 9); g.lineTo(9, s - 9); g.stroke(); }), { sdf: true });
 }
 
 /** Navigational status → the day shape a vessel shows for it (COLREGs), or a sign where
@@ -285,11 +245,9 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   map.addLayer({ id: "ais-cpa-lbl", type: "symbol", source: "ais-cpa", filter: ["==", ["get", "k"], "lbl"],
     layout: { "icon-image": ["concat", "lbl:", ["get", "text"]], "icon-anchor": "left", "icon-offset": [8, 0], "icon-allow-overlap": true } });
   map.addSource("ais", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-  // ships to scale at harbour scales (from their AIS dimensions and antenna position)
-  map.addLayer({ id: "ais-hull", type: "fill", source: "ais", filter: ["==", ["get", "k"], "hull"],
-    paint: { "fill-color": ["get", "col"], "fill-opacity": 0.45 } });
-  map.addLayer({ id: "ais-hull-line", type: "line", source: "ais", filter: ["==", ["get", "k"], "hull"],
-    paint: { "line-color": ["get", "col"], "line-width": 1.5 } });
+  map.addLayer({ id: "ais-shapes", type: "fill", source: "ais", filter: ["==", ["get", "k"], "shape"],
+    layout: { "fill-sort-key": ["get", "z"] },
+    paint: { "fill-color": ["get", "col"], "fill-opacity": ["get", "opacity"] } });
   // heading line (with a barb when turning), then the course vector
   map.addLayer({ id: "ais-hdg", type: "symbol", source: "ais", filter: ["==", ["get", "k"], "hdg"],
     layout: { "icon-image": ["get", "icon"], "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true },
@@ -300,10 +258,6 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     layout: { "icon-image": "ais-sel", "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-rotation-alignment": "viewport",
       "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.7, 12, 1.1] },
     paint: { "icon-color": TARGET_COL, "icon-halo-color": TARGET_HALO, "icon-halo-width": 1.2 } });
-  map.addLayer({ id: "ais-sym", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["!=", ["get", "big"], true]],
-    layout: { "icon-image": ["get", "icon"], "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true,
-      "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.7, 12, 1.1] },
-    paint: { "icon-color": ["get", "col"], "icon-halo-color": ["get", "halo"], "icon-halo-width": ["get", "hw"] } });
   // not heard for a while: crossed through (IEC 62288 lost target), no course vector
   map.addLayer({ id: "ais-lost", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["get", "lost"]],
     layout: { "icon-image": "ais-lostx", "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-rotation-alignment": "viewport",
@@ -312,16 +266,6 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   map.addLayer({ id: "ais-status", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "st"]], minzoom: 8,
     layout: { "icon-image": ["concat", "ais-st-", ["get", "st"]], "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-rotation-alignment": "viewport",
       "icon-anchor": "bottom-left", "icon-offset": [9, -6] } });
-  // tracked: a contrasting dot on the symbol; own fleet: a diamond beside it, in the colour chosen for the boat
-  map.addLayer({ id: "ais-pin", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "pin"]],
-    layout: { "icon-image": "ais-pin", "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-rotation-alignment": "viewport",
-      "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.75, 12, 1] },
-    paint: { "icon-color": ["get", "pin"], "icon-halo-color": ["get", "halo"], "icon-halo-width": 1 } });
-  // tracked: a contrasting dot on the symbol; own fleet: the V at the stern filled in the colour chosen for the boat (above the symbol)
-  map.addLayer({ id: "ais-flag", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "nf"]],
-    layout: { "icon-image": ["get", "nf"], "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map", "icon-allow-overlap": true, "icon-ignore-placement": true,
-      "icon-size": ["interpolate", ["linear"], ["zoom"], 6, 0.7, 12, 1.1] },
-    paint: { "icon-color": ["get", "flag"] } });
   map.addLayer({ id: "ais-fleet-names", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "flag"], ["has", "name"]],
     layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 17], "icon-allow-overlap": true } });
   map.addLayer({ id: "ais-names", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "name"], ["!", ["has", "flag"]]], minzoom: 10,
@@ -390,12 +334,12 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   mapTheme();
   function draw() {
     const vis = s.show ? "visible" : "none";
-    for (const id of ["ais-hull", "ais-hull-line", "ais-hdg", "ais-vec", "ais-sel", "ais-sym", "ais-lost", "ais-status", "ais-pin", "ais-flag", "ais-fleet-names", "ais-track", "ais-cpa-path", "ais-cpa-line", "ais-cpa-pt", "ais-cpa-lbl"]) map.setLayoutProperty(id, "visibility", vis);
+    for (const id of ["ais-shapes", "ais-hdg", "ais-vec", "ais-sel", "ais-lost", "ais-status", "ais-fleet-names", "ais-track", "ais-cpa-path", "ais-cpa-line", "ais-cpa-pt", "ais-cpa-lbl"]) map.setLayoutProperty(id, "visibility", vis);
     map.setLayoutProperty("ais-names", "visibility", s.show && s.names ? "visible" : "none");
     const f = [];
     const cpaF = [];
     const own = getOwn();
-    const pinned = new Set(tracked());
+    let shapeSortKey = 0;
     for (const t of targets.values()) {
       if (!shown(t)) continue;
       const fe = inFleet(t.mmsi);
@@ -412,16 +356,20 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       const dir = t.heading ?? ((t.sog ?? 0) > 1 ? t.cog : null);
       if (t.kind === "vessel" && t.length > 0 && dir != null && !sleeping && bigEnough(t.length, t.lat, map.getZoom())) {
         props.big = true;
-        f.push({ type: "Feature", properties: { k: "hull", col, lost, mmsi: t.mmsi },
-          geometry: { type: "Polygon", coordinates: [hullRing([t.lon, t.lat], dir, { length: t.length, beam: t.beam, fromBow: t.from_bow, fromCentre: t.from_centre })] } });
+        const ring = hullRing([t.lon, t.lat], dir, { length: t.length, beam: t.beam, fromBow: t.from_bow, fromCentre: t.from_centre });
+        f.push(...hullSymbolFeatures({ ring, color: col, outline: mapHalo, zoom: map.getZoom(), length: t.length, mmsi: t.mmsi, sortKey: shapeSortKey }));
+        shapeSortKey += 5;
       }
       const name = fe?.name || t.name;
       if (name && (fe || !sleeping)) props.name = name;
       if (fe) {
         props.flag = fleetColour(fe);
-        if (/^ais-[sf]-/.test(icon) && !props.big) props.nf = icon.replace(/^ais-[sf]-/, "ais-n-");
       }
-      if (pinned.has(Number(t.mmsi))) props.pin = s.pinCol;
+      if (!props.big) {
+        f.push(...targetSymbolFeatures({ position: [t.lon, t.lat], heading: rot, icon, color: col, outline: mapHalo, zoom: map.getZoom(), pxPerMm: s52PxPerMm(),
+          mmsi: t.mmsi, sortKey: shapeSortKey, fleetColor: fe && /^ais-[sf]-/.test(icon) ? fleetColour(fe) : null }));
+        shapeSortKey += 5;
+      }
       f.push({ type: "Feature", properties: props, geometry: { type: "Point", coordinates: [t.lon, t.lat] } });
       // The course vector takes over from the heading line while it is drawn (the symbol itself points along the heading, and a
       // curved vector shows the turn). The line is kept for a ship with no vector, and for a turning ship if the vector is straight.
@@ -502,7 +450,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       tracks.clear();
       for (const [m, tr] of Object.entries(r || {})) tracks.set(Number(m), tr);
     } catch { /* not in Tauri */ }
-    draw(); // the pins follow the tracked set
+    draw();
   }
   setInterval(loadTracks, 10000);
 
@@ -572,13 +520,14 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     const t = selected != null ? targets.get(selected) : null;
     if (infoWin.isOpen && t) { infoWin.update(describe(t), { title: boxTitle(t), at: t.lat != null ? [t.lon, t.lat] : null }); wirePopup(selected); }
   }
-  for (const l of ["ais-sym", "ais-hull"]) {
+  for (const l of ["ais-shapes"]) {
     map.on("click", l, (e) => { const f = e.features?.[0]; if (f) openPopup(f.properties.mmsi); });
     map.on("mouseenter", l, () => { map.getCanvas().style.cursor = "pointer"; });
     map.on("mouseleave", l, () => { map.getCanvas().style.cursor = ""; });
   }
   // symbols or outlines to scale, by zoom
   map.on("zoomend", () => draw());
+  window.addEventListener("racenav-screen-calibration", () => draw());
 
   // ---------- list ----------------------------------------------------------------
   function renderList() {
@@ -795,6 +744,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   // ---------- floating target list ----------------------------------------------------------------
   // One row per target from any source: AIS now, radar (MARPA) targets later.
   const win = $("tgt-win");
+  floatResize(win);
   const typeName = (t) => (t.kind === "vessel" ? category(t.ship_type)[0] : { aton: "AtoN", aircraft: "SAR aircraft", base: "Base station", sart: "AIS-SART", mob: "MOB", epirb: "EPIRB" }[t.kind] ?? t.kind);
   function winRows() {
     const own = getOwn();
@@ -963,8 +913,6 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   $("ais-sel-track").onchange = (e) => { s.selTrack = e.target.checked; save(); loadTracks(); };
   $("ais-trk-col").value = s.trkCol;
   $("ais-trk-col").oninput = (e) => { s.trkCol = e.target.value; save(); drawTracks(); };
-  $("ais-pin-col").value = s.pinCol;
-  $("ais-pin-col").oninput = (e) => { s.pinCol = e.target.value; save(); draw(); };
   // our own MMSI (Settings) is never a target
   const syncOwn = () => {
     ownMmsi = Number(getOwnMmsi?.() || 0) || null;

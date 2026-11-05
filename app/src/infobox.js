@@ -5,6 +5,7 @@
 // marks the place the box is about while it's open.
 
 import * as maplibregl from "maplibre-gl";
+import { floatResize } from "./floatresize.js";
 
 const KEY = "racenav.infobox.";
 const boxes = new Set();
@@ -23,6 +24,7 @@ export function createInfoBox(map, kind, { title = "", width = 340, height = 320
   el.hidden = true;
   el.innerHTML = `<header><b class="ib-title"></b><span class="grow"></span><button class="ib-close" title="Close (Esc)">✕</button></header><div class="ib-body"></div>`;
   document.body.append(el); // over the map (which fills the window), like the target list
+  floatResize(el);
   const body = el.querySelector(".ib-body"), head = el.querySelector("header"), titleEl = el.querySelector(".ib-title");
   let onClose = null, ring = null;
 

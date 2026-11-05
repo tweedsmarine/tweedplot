@@ -198,7 +198,7 @@ Wharves, breakwaters, jetties, pontoons, floating docks and causeways are drawn 
 | --- | --- |
 | **Safety depth (m)** | The least depth you will sail in: the draft plus a margin for swell, squat and chart error. Routing will not enter water shallower than this, and it is the shallow water alarm's depth unless you set another |
 | **Safety contour (m)** | The contour drawn bold. Water shallower than it is shaded darker blue, as on a paper chart. Set it to the safety depth or the next contour deeper. Where the chart has no contour at exactly that depth, the next deeper contour it has is drawn bold instead (as an ECDIS does), so the bold line never goes missing. The **Safety contour ahead** alarm watches for it |
-| **Chart symbol size** | Scales buoys, beacons, lights, dangers and other chart symbols from 75% to 200% (default 120%) to suit the screen and the viewing distance. Labels grow at half the rate, so they stay clear of each other |
+| **Chart symbol size** | Scales buoys, beacons, lights, dangers and other chart symbols from 75% to 200% (default 100%, the IHO's size) to suit the screen and the viewing distance. Labels grow at half the rate, so they stay clear of each other |
 
 **Display: Base, Standard and All**
 
@@ -579,7 +579,7 @@ On the chart, every ship is one colour, and a ship inside the CPA and TCPA alarm
 - <span class="mi"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.5" fill="none" stroke="#1d2a33" stroke-width="1.6"/></svg></span> A small ring: a sleeping target (Targets › AIS › Sleeping targets)
 - A thin **heading line** from the ship, with a short barb at its end on the side the ship is turning to when it turns at 3° to 10° a minute, and a long barb above 10° a minute (the **rate of turn**, also in the ship's details). The line is only drawn when it adds something: not while the ship has a course vector (it would say the same thing), and not when the ship is making way astern (a double-ended ferry), where the heading and the course point opposite ways
 - With **Curve course vectors by rate of turn** ticked (on by default), the course vector of a ship turning at 3° a minute or more bends into an arc, as if it held that turn
-- A contrasting **dot** on the ship when its track is drawn (**Target track colour** and **Tracked dot colour** in Targets › AIS set the colours), and an own-fleet ship has the V at its stern filled in, giving a flat back, in the colour you chose for its group. The ship you clicked has thin corner brackets round it
+- An own-fleet ship has the V at its stern filled in, giving a flat back, in the colour you chose for its group. The ship you clicked has thin corner brackets round it
 
 Other AIS targets:
 

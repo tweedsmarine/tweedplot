@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { fmt } from "./weather.js";
 import * as activity from "./activity.js";
 import { ask } from "./ask.js";
+import { floatResize } from "./floatresize.js";
 
 const KEY = "racenav.wxpanel";
 const PRESETS = {
@@ -61,6 +62,7 @@ export function setupWeatherPanel(map, weather) {
       <details data-sec="over"><summary>Overlays</summary><div id="wxp-over"></div></details>
     </div>`;
   (($("tgt-win") ?? map.getContainer()).parentElement).append(win);
+  floatResize(win, { widthOnly: true });
   weather.mountControls($("wxp-slider"), { bare: true });
   weather.mountLegend($("wxp-legend"));
   weather.mountFilter($("wxp-filter"));

@@ -520,7 +520,10 @@ map.on("load", () => {
   features = setupChartFeatures(map, { before: "track", safetyContour: settings.safetyContour, shallow: !!settings.shallowDangers,
     onSymbols: () => applyPalette(),
     // a new screen calibration: the images drawn to IHO sizes again
-    onScale: () => { for (const id of map.listImages()) if (/^(cl:|dpat:)/.test(id)) map.removeImage(id); } });
+    onScale: () => {
+      for (const id of map.listImages()) if (/^(cl:|dpat:)/.test(id)) map.removeImage(id);
+      window.dispatchEvent(new Event("racenav-screen-calibration"));
+    } });
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
   window.__weather = weather; // debugging handle
   setupData(map, { toast, reloadTiles: reloadChartTiles });
