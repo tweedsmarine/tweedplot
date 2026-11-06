@@ -7,6 +7,9 @@ import { placing } from "./modes.js";
 import { infoBox } from "./infobox.js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { magneticVariation, fmtVariation } from "./wmm.js";
+
+const OBJECT_NAMES = { MAGVAR: "Magnetic variation" };
 
 const MAGENTA = "#b5359a";
 const INK = "#1d2a33";
@@ -389,6 +392,12 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       paint: { "line-color": "#8a7a4a", "line-width": 0.9 } },
     { id: "f-line-dash", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, cls("RECTRC", "CBLOHD", "PIPOHD", "FSHFAC", "UNKNWN")],
       paint: { "line-color": ["match", ["get", "cls"], "RECTRC", INK, "UNKNWN", MAGENTA, "#5b6b75"], "line-width": 1, "line-dasharray": [5, 3] } },
+    // lines of equal magnetic variation (isogonals), labelled with today's variation
+    { id: "f-line-magvar", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, cls("MAGVAR")],
+      paint: { "line-color": MAGENTA, "line-width": 0.9, "line-dasharray": [1, 3] } },
+    { id: "f-magvar-lbl", type: "symbol", ...src, "source-layer": "fln", filter: ["all", minz, cls("MAGVAR"), ["has", "lbl"]], minzoom: 6,
+      layout: { "icon-image": ["concat", "txt:n:", ["get", "lbl"]], "symbol-placement": "line", "symbol-spacing": 400,
+                "icon-rotation-alignment": "viewport", "icon-allow-overlap": false, "icon-padding": 4 } },
     // the IHO portrayal's areas and lines (Symbols: IHO), in the order of their drawing
     // priorities (S-52 10.3.4.1): s52Layers()
     ...s52Layers(),
@@ -625,6 +634,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   function applyCalibration(redraw = true) {
     const mm = Number(opts.screenMm) > 5 ? Number(opts.screenMm) : 50;
     S52_PX_MM = 3.78 * 2 * (50 / mm);
+    window.dispatchEvent(new Event("racenav-calibration"));
     if (!redraw) return;
     const lineW = ["*", ["get", "slw"], S52_PX_MM / 2], solidW = ["max", 1, ["*", ["get", "lw"], S52_PX_MM / 2]];
     for (const id of S52_AREA_IDS.concat(S52_LINE_IDS)) {
@@ -700,14 +710,14 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
 
   // ---------- details on a click ----------------------------------------------------------
   const POINTS = ["f-points", "f-lights", "f-light-hit", "f-rot", "s52-info"];
-  const LINES = ["f-line-mag", "f-line-solid", "f-line-dash", "f-tss-line", "f-tss-bnd", ...S52_LINE_IDS];
+  const LINES = ["f-line-mag", "f-line-magvar", "f-line-solid", "f-line-dash", "f-tss-line", "f-tss-bnd", ...S52_LINE_IDS];
   map.on("click", async (e) => {
     if (!enabled || placing()) return;
     // leave clicks on the app's own things (course, routings, fleet, marks, tide stations and
     // tidal stream diamonds) to them
     const pad = 6;
     const box = [[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]];
-    const own = map.queryRenderedFeatures(box).some((f) => /^(rt-|lib-|fl-|dl-|boat|tide-|ts-|stn-|ais-|alarm-|ruler-|bar-|trk-|evt-|ovl-)/.test(f.layer.id));
+    const own = map.queryRenderedFeatures(box).some((f) => /^(rt-|lib-|fl-|dl-|boat|tide-|ts-|stn-|ais-|alarm-|ruler-|bar-|trk-|evt-|ovl-|vd-)/.test(f.layer.id));
     if (own) return;
     // inside a fishing rule area, the rules box (marine.js) stands in for chart areas
     const inRule = map.getLayer("mar-rules-fill") && map.getLayoutProperty("mar-rules-fill", "visibility") !== "none"
@@ -735,10 +745,17 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     for (const info of infos) {
       const h = document.createElement("h4");
       const name = info.attrs.find(([k]) => k === "Name")?.[1];
-      h.textContent = name ? `${info.name}: ${name}` : info.name;
+      // the catch-all table for objects without a symbol: name the object by its class
+      const kind = info.code === "CHTOBJ" ? OBJECT_NAMES[info.attrs.find(([k]) => k === "S-57 object class")?.[1]] ?? info.name : info.name;
+      h.textContent = name ? `${kind}: ${name}` : kind;
       el.append(h);
+      const rows = [...info.attrs];
+      if (rows.some(([k]) => k === "Magnetic variation")) {
+        const w = magneticVariation(e.lngLat.lat, e.lngLat.lng);
+        if (w) rows.push([`World Magnetic Model ${Math.floor(w.year)}`, `${fmtVariation(w.variation)} (${w.annualChange >= 0 ? "+" : "−"}${Math.abs(w.annualChange * 60).toFixed(1)}′ a year)`]);
+      }
       const tbl = document.createElement("table");
-      for (const [k, v] of info.attrs) {
+      for (const [k, v] of rows) {
         if (k === "Name") continue;
         const tr = tbl.insertRow();
         tr.insertCell().textContent = k;
@@ -986,6 +1003,10 @@ function small(kind) {
     case "uk": // an object TweedPlot has no symbol for (S-52 QUESMRK1): click it for what it is
       g.fillStyle = MAGENTA; g.font = `700 22px "Segoe UI", system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
       g.lineWidth = 3; g.strokeStyle = "rgba(255,255,255,0.9)"; g.strokeText("?", cx, cy + 1); g.fillText("?", cx, cy + 1); break;
+    case "mv": // magnetic variation: the half arrow of the paper chart's compass rose, pointing to magnetic north
+      g.strokeStyle = MAGENTA; g.lineWidth = 1.8; g.beginPath();
+      g.moveTo(cx, cy + 12); g.lineTo(cx, cy - 12); g.lineTo(cx + 6, cy - 3); g.stroke();
+      g.beginPath(); g.arc(cx, cy + 12, 1.8, 0, 7); g.fillStyle = MAGENTA; g.fill(); break;
     case "ts": // traffic lane direction (S-52 TSSLPT51): an open magenta arrow pointing up, turned to the lane's ORIENT
       g.strokeStyle = MAGENTA; g.lineWidth = 1.8; g.beginPath();
       g.moveTo(cx, cy - 13); g.lineTo(cx + 7, cy - 4); g.lineTo(cx + 3, cy - 4); g.lineTo(cx + 3, cy + 13); g.lineTo(cx - 3, cy + 13); g.lineTo(cx - 3, cy - 4); g.lineTo(cx - 7, cy - 4); g.closePath(); g.stroke(); break;

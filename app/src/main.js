@@ -29,6 +29,8 @@ let tripsTimer = 0;
 // the Library's one-line messages go on activity cards (seen with the drawer closed)
 const libNote = (s) => import("./activity.js").then((a) => a.note(s));
 import { setupRuler } from "./ruler.js";
+import { rhumb } from "./navmath.js";
+import { magneticVariation } from "./wmm.js";
 import { setupGribTools } from "./gribtools.js";
 import { setupRouteWeather } from "./routewx.js";
 import { setupRadar } from "./radar.js";
@@ -36,6 +38,8 @@ import { setupWindArrows } from "./windarrows.js";
 import { poiImage } from "./poi.js";
 import { symImage } from "./marksymbols.js";
 import { setupBarriers } from "./barriers.js";
+import { setupLaylines } from "./laylines.js";
+import { setupVarDiagram } from "./varrose.js";
 import { setupRoute, markImage } from "./route.js";
 import { setupRouting } from "./routing.js";
 import { setupBoat } from "./boat.js";
@@ -447,6 +451,33 @@ let ruler = null;
 let gribTools = null;
 let arrows = null;
 let barriers = null;
+let laylines = null;
+let varRoses = null;
+let ctxRose = false; // right-click was on the variation diagram
+
+// "Go to here": the target for laylines (and later the autopilot); else the route's next mark
+let gotoTarget = null;
+try { gotoTarget = JSON.parse(localStorage.getItem("racenav.goto") || "null"); } catch { /* none */ }
+function setGoto(g) {
+  gotoTarget = g;
+  if (g) localStorage.setItem("racenav.goto", JSON.stringify(g)); else localStorage.removeItem("racenav.goto");
+  laylines?.refresh();
+}
+function layTarget() {
+  if (gotoTarget) return { ...gotoTarget, goto: true };
+  const nav = route?.nav();
+  return nav ? { ...nav.next, from: nav.from, goto: false } : null;
+}
+let layKey = "";
+/** True wind at the target: the live instruments when the boat is live, else the GRIB at the slider time. */
+async function layWind(target) {
+  if (live && signalKActive() && Number.isFinite(vessel.twd)) return { twd: vessel.twd, tws: vessel.tws };
+  const path = weather?.current().path;
+  if (!path) return null;
+  const rows = await invoke("grib_point", { lat: target.lat, lon: target.lon, t: boatTime() }).catch(() => []);
+  const r = (rows || []).find((x) => x.path === path);
+  return r && r.twd != null ? { twd: r.twd, tws: r.tws } : null;
+}
 let tracks = null;
 
 /** A short message at the bottom of the chart ("" hides it); gone after `ms` if given. */
@@ -596,11 +627,20 @@ map.on("load", () => {
   for (const id of ["rt-wx", "crs-wx"]) { const b = document.getElementById(id); if (b) b.onclick = () => routeWx.open(); }
   document.getElementById("wx-verify").onclick = () => gribTools.openVerify();
   setupTides(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn) });
-  ruler = setupRuler(map, { before: "track", ui, library, route, toast, getVariation: () => vessel.variation });
+  ruler = setupRuler(map, { before: "track", ui, library, route, toast, getVariation: variationAt });
   tracks = setupTracks(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn),
     status: (s) => { if (s) libNote(s); } });
   listen("library-changed", () => { clearTimeout(tracksTimer); tracksTimer = setTimeout(() => { tracks.refresh(); barriers?.refresh(); }, 150); });
-  barriers = setupBarriers(map, { before: "track", library, toast });
+  barriers = setupBarriers(map, { before: "track", library, toast, getVariation: variationAt });
+  varRoses = setupVarDiagram(map, { getVariation: variationAt,
+    getAnnualChange: (p) => magneticVariation(p[1], p[0])?.annualChange ?? null });
+  laylines = setupLaylines(map, { before: "track", getVariation: variationAt, getTarget: layTarget, getBoat: () => lastBoat, getWind: layWind,
+    // not for fishing: no laylines or cone (a Go to target still shows)
+    getSettings: () => (use.use() === "fish" ? { ...boat.get(), layShow: false, layConeShow: false } : boat.get()) });
+  window.addEventListener("racenav-boat", () => laylines.refresh());
+  window.addEventListener("racenav-use", () => laylines.refresh());
+  weather.onTime(() => laylines.refresh());
+  setInterval(() => laylines.refresh(), 20000);
   const trips = setupTrips(map, { ui, library, tracks });
   setupOverlays(map, { library });
   setupEvents(map, { ui, getBoat: () => ({ pos: live ? lastBoat : null, v: vessel }) });
@@ -670,6 +710,9 @@ function feed() {
   const target = pts ? targetAt(pts, boatTime()) : null;
   const v = live ? vessel : { ...vessel, lat: pos?.[1], lon: pos?.[0] };
   inst.update({ v, dataAt: live ? lastFeed : 0, nav, wp, target, safetyDepth: settings.safetyDepth });
+  // the route's next mark changed (or the route's start moved): redraw the laylines
+  const key = nav ? `${nav.next.lon},${nav.next.lat},${nav.from}` : "";
+  if (key !== layKey) { layKey = key; laylines?.refresh(); }
 }
 setInterval(feed, 1000);
 
@@ -887,6 +930,13 @@ function setCursor(c) {
     cursorLast = Date.now();
     inst.update({ cursor: cursorNext });
   }, wait);
+}
+/** Magnetic variation (east positive) at [lon, lat]: the instruments' own value near the boat,
+ *  otherwise the World Magnetic Model. */
+function variationAt(pos) {
+  const live = vessel.variation;
+  if (Number.isFinite(live) && lastBoat && rhumb(lastBoat, pos).nm < 100) return live;
+  return magneticVariation(pos[1], pos[0])?.variation ?? null;
 }
 function cursorText(lngLat) {
   const where = `${ddm(lngLat.lat, "N", "S")}  ${ddm(lngLat.lng, "E", "W")}`;
@@ -1184,6 +1234,7 @@ map.on("dblclick", (e) => {
 // ---------- right-click menu ----------------------------------------------------
 const ctx = document.getElementById("ctx");
 let ctxAt = null;
+let ctxPoint = null; // the same place, in map pixels
 let ctxMark = null; // library mark under the right-click, if any
 let ctxRuler = null; // ruler under the right-click: { rid, i, points }
 let ctxBarrier = null; // barrier under the right-click: { id, i, active, name }
@@ -1191,11 +1242,23 @@ let ctxObject = null; // library object under the right-click (Edit in the libra
 map.on("contextmenu", (e) => {
   e.originalEvent.preventDefault();
   ctxAt = [e.lngLat.lng, e.lngLat.lat];
+  ctxPoint = { x: e.point.x, y: e.point.y };
   // right-click on a library mark: start / add use that mark
   ctxMark = library?.markAt(e.point) ?? null;
   ctx.querySelector('[data-act="start"]').textContent = ctxMark ? `Start route at ${ctxMark.name}` : "Start route here";
   ctx.querySelector('[data-act="mark"]').textContent = ctxMark ? `Add ${ctxMark.name} to route` : "Add mark to route here";
   ctx.querySelector('[data-act="libmark"]').hidden = !!ctxMark;
+  ctx.querySelector('[data-act="goto"]').textContent = ctxMark ? `Go to ${ctxMark.name}` : "Go to here";
+  ctx.querySelector('[data-act="goto-clear"]').hidden = !gotoTarget;
+  ctxRose = !!varRoses?.hit();
+  ctx.querySelector('[data-act="rose-add"]').hidden = ctxRose;
+  ctx.querySelector('[data-act="rose-add"]').textContent = varRoses?.shown() ? "Move variation diagram here" : "Magnetic variation diagram here";
+  ctx.querySelector('[data-act="rose-del"]').hidden = !ctxRose;
+  const fishing = use.use() === "fish";
+  ctx.querySelector('[data-act="lay-toggle"]').hidden = fishing;
+  ctx.querySelector('[data-act="cone-toggle"]').hidden = fishing;
+  ctx.querySelector('[data-act="lay-toggle"]').textContent = boat.get().layShow ? "Laylines off" : "Laylines on";
+  ctx.querySelector('[data-act="cone-toggle"]').textContent = boat.get().layConeShow ? "Tacking cone off" : "Tacking cone on";
   // a ruler under the right-click: delete it, a point of it, or save it as a route
   ctxRuler = ruler?.isArmed() ? null : ruler?.hitAt(e.point) ?? null;
   for (const el of ctx.querySelectorAll(".ruler-item")) el.hidden = !ctxRuler;
@@ -1246,6 +1309,12 @@ ctx.addEventListener("click", (e) => {
   if (act === "start") route?.setStart(ctxAt, ctxMark);
   if (act === "mark") route?.addMark(ctxAt, ctxMark);
   if (act === "libmark") library?.newMarkAt(ctxAt);
+  if (act === "goto") setGoto({ name: ctxMark?.name ?? "Go to", lon: ctxMark?.lon ?? ctxAt[0], lat: ctxMark?.lat ?? ctxAt[1] });
+  if (act === "goto-clear") setGoto(null);
+  if (act === "rose-add") varRoses?.place(ctxPoint);
+  if (act === "rose-del") varRoses?.remove();
+  if (act === "lay-toggle") boat.toggle("layShow");
+  if (act === "cone-toggle") boat.toggle("layConeShow");
   if (act === "open-lib") openInLibrary(ctxObject);
   if (act === "centre") map.easeTo({ center: ctxAt });
   if (act === "meteogram") gribTools?.meteogramAt(ctxAt);

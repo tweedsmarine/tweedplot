@@ -103,6 +103,45 @@ export function rhumb(a, b) {
   return { brg, nm };
 }
 
+/** Rhumb-line destination from a ([lon, lat]) on a bearing (°T) for nm, stopping at the edge of the Mercator chart. */
+export function rhumbDestination(a, brg, nm) {
+  const d = nm / R_NM, t = rad(brg), p1 = rad(a[1]);
+  let p2 = p1 + d * Math.cos(t);
+  const lim = rad(85);
+  if (Math.abs(p2) > lim) {
+    const f = (Math.sign(p2) * lim - p1) / (p2 - p1 || 1);
+    return rhumbDestination(a, brg, nm * f);
+  }
+  const dpsi = Math.log(Math.tan(Math.PI / 4 + p2 / 2) / Math.tan(Math.PI / 4 + p1 / 2));
+  const q = Math.abs(dpsi) > 1e-12 ? (p2 - p1) / dpsi : Math.cos(p1);
+  return [a[0] + ((d * Math.sin(t)) / q) * (180 / Math.PI), (p2 * 180) / Math.PI];
+}
+
+/**
+ * A clearing bearing as a barrier zone: a triangle from `origin` (a mark) along the bearing to
+ * `end`, and out the same distance at 90° to that bearing on the danger side. Routings keep out of it.
+ * `danger` is any point on the side to keep off.
+ */
+export function clearingZone(origin, end, danger) {
+  const { brg, nm } = rhumb(origin, end);
+  const toward = rhumb(origin, danger).brg;
+  const side = ((toward - brg + 540) % 360) - 180 >= 0 ? 1 : -1;
+  return [origin, end, rhumbDestination(origin, brg + side * 90, nm)];
+}
+
+/**
+ * The clearing bearing of a clearing zone: the bearing (°T) of the mark as seen from the boat (from
+ * the second point to the first), its length (NM), and which side of that line, looking toward the
+ * mark, the danger is on (+1 right, −1 left).
+ */
+export function clearingInfo(pts) {
+  const { brg, nm } = rhumb(pts[1], pts[0]);
+  const out = rhumb(pts[0], pts[1]).brg;
+  const toward = rhumb(pts[0], pts[2]).brg;
+  const dangerRightOfOutward = ((toward - out + 540) % 360) - 180 >= 0;
+  return { brg, nm, side: dangerRightOfOutward ? -1 : 1 };
+}
+
 /** "045" */
 export const fmtBrg = (b) => String(Math.round(((b % 360) + 360) % 360) % 360).padStart(3, "0");
 

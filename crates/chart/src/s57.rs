@@ -11,7 +11,24 @@ pub use enc_s57::classes::{class_for, FeatureClass, Geo, CHART_OBJECT, CLASSES, 
 pub const TILE_COLS: &[&str] = &[
     "objnam", "colour", "colpat", "boyshp", "bcnshp", "catlam", "catcam", "watlev", "catwrk", "valsou", "litchr", "siggrp", "sigper", "valnmr", "height",
     "sectr1", "sectr2", "orient", "scamin", "catlit", "status", "catspm", "catobs", "datsta", "datend", "persta", "perend",
+    "objl", "valmag", "valacm", "ryrmgv",
 ];
+
+/// Whether a row of the catch-all chart-object tables is a magnetic variation (MAGVAR).
+pub fn is_magvar(code: &str, a: &Attrs) -> bool {
+    code == "MAGVAR" || (code == CHART_OBJECT && a.get("objl") == Some("MAGVAR"))
+}
+
+/// The label of a magnetic variation: today's value, brought up to date from the charted one.
+pub fn magvar_label(valmag: Option<f64>, valacm_min: Option<f64>, ref_year: Option<&str>) -> Option<String> {
+    let v = valmag?;
+    let year = ref_year.and_then(|y| y.get(..4)?.parse::<f64>().ok());
+    let now = match (valacm_min, year) {
+        (Some(c), Some(y)) => variation_at(v, c, y, now_year()),
+        _ => v,
+    };
+    Some(format!("Var {}", fmt_variation(now)))
+}
 
 /// One feature's attributes, indexed like [`TILE_COLS`].
 pub struct Attrs<'a>(pub &'a [Option<String>]);
@@ -42,6 +59,9 @@ pub fn scamin_zoom(scamin: f64, lat: f64) -> f64 {
 
 /// Chart icon for a point feature (drawn by the front end, see `chartfeatures.js`).
 pub fn icon(code: &str, a: &Attrs) -> Option<String> {
+    if is_magvar(code, a) {
+        return Some("mv".into());
+    }
     let cols = a.get("colour").unwrap_or("").replace(' ', "");
     let pat = a.get("colpat").unwrap_or("");
     let top = match code {
@@ -101,6 +121,9 @@ pub fn icon(code: &str, a: &Attrs) -> Option<String> {
 
 /// Short text beside a point feature on the chart.
 pub fn label(code: &str, a: &Attrs) -> Option<String> {
+    if is_magvar(code, a) {
+        return magvar_label(a.num("valmag"), a.num("valacm"), a.get("ryrmgv"));
+    }
     let s = match code {
         "UWTROC" | "WRECKS" | "OBSTRN" => fmt_depth(a.num("valsou")?),
         "SEAARE" | "LNDRGN" => a.get("objnam")?.to_string(),
@@ -360,9 +383,34 @@ pub fn attr_name(a: &str) -> String {
         "catmor" => "Mooring category",
         "catple" => "Pile category",
         "catcto" => "Caution category",
+        "valmag" => "Magnetic variation",
+        "valacm" => "Annual change",
+        "ryrmgv" => "Variation reference year",
         _ => return a.to_ascii_uppercase(),
     };
     s.to_string()
+}
+
+/// Magnetic variation in degrees (east positive) as "3.25°W". S-57 gives west as negative.
+pub fn fmt_variation(deg: f64) -> String {
+    format!("{}°{}", trim_num_n_dp(deg.abs(), 2), if deg < 0.0 { "W" } else { "E" })
+}
+
+/// The charted variation brought up to date: `valmag` (°, east +) at `ref_year`, changing by
+/// `valacm` minutes a year (S-57 VALACM, + when the easterly variation increases).
+pub fn variation_at(valmag: f64, valacm_min: f64, ref_year: f64, year: f64) -> f64 {
+    valmag + valacm_min / 60.0 * (year - ref_year)
+}
+
+/// Today's date as a decimal year.
+pub fn now_year() -> f64 {
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
+    1970.0 + secs / 31_556_952.0
+}
+
+fn trim_num_n_dp(x: f64, dp: usize) -> String {
+    let s = format!("{x:.dp$}");
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
 fn enum_word(attr: &str, code: u32) -> Option<&'static str> {
@@ -802,6 +850,12 @@ pub fn describe(attr: &str, value: &str) -> String {
         return format!("{}-{}-{}", &v[..4], &v[4..6], &v[6..]);
     }
     let codes: Vec<&str> = v.split(',').map(str::trim).collect();
+    match (attr, v.parse::<f64>()) {
+        ("valmag", Ok(x)) => return fmt_variation(x),
+        ("valacm", Ok(x)) => return format!("{}′ a year", trim_num_n_dp(x, 2)),
+        ("ryrmgv", _) => return v.to_string(),
+        _ => {}
+    }
     if codes.iter().all(|c| c.parse::<u32>().is_ok()) {
         let words: Vec<String> = codes
             .iter()
@@ -872,6 +926,18 @@ mod tests {
         let s = [l(2, "(2)", 10.0, &[3], 15.0, 9.0), l(2, "(2)", 10.0, &[1], 15.0, 12.0), l(2, "(2)", 10.0, &[4], 15.0, 9.0)];
         assert_eq!(light_label(&s), "Fl(2) WRG 10s 15m 12-9M");
         assert_eq!(light_label(&[l(4, "()", 0.0, &[1], 8.0, 5.0)]).split(' ').next(), Some("Q"));
+    }
+
+    #[test]
+    fn describes_magnetic_variation() {
+        assert_eq!(describe("valmag", "-3.25"), "3.25°W");
+        assert_eq!(describe("valmag", "19.5"), "19.5°E");
+        assert_eq!(describe("valacm", "0.1"), "0.1′ a year");
+        assert_eq!(describe("ryrmgv", "2019"), "2019");
+        // 19.5°E in 2019, increasing 6′ (0.1°) a year
+        assert!((variation_at(19.5, 6.0, 2019.0, 2026.0) - 20.2).abs() < 1e-9);
+        // west negative: -3° with the west variation decreasing
+        assert!((variation_at(-3.0, 3.0, 2020.0, 2030.0) - -2.5).abs() < 1e-9);
     }
 
     #[test]

@@ -135,7 +135,8 @@ impl Default for Mark {
 pub struct Barrier {
     pub id: String,
     pub name: String,
-    /// "line" or "zone".
+    /// "line", "zone", or "clearing" (a zone of three points: a mark, a point along a clearing
+    /// bearing from it, and the point 90° off on the side to keep off).
     pub kind: String,
     /// [lon, lat] points (a zone is closed implicitly).
     pub points: Vec<[f64; 2]>,

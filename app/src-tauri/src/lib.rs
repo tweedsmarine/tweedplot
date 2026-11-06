@@ -2003,6 +2003,7 @@ pub fn run() {
             polar_import,
             polar_open_folder,
             polar_speed,
+            polar_vmg_angles,
             route_compute,
             sk_status,
             stations_cmd::stations_latest,

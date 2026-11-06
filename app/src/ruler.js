@@ -2,8 +2,8 @@
 //
 // Start from the toolbar's Ruler button or the chart menu, then click points; double-click to finish
 // (the ruler stays on the chart); Esc stops. Each leg is
-// labelled with its rhumb-line bearing (°T, and °M when Signal K gives the
-// variation) and distance, with the total at the end. Points move like course
+// labelled with its rhumb-line bearing (°T, and °M from the instruments' variation
+// near the boat or the World Magnetic Model elsewhere) and distance, with the total at the end. Points move like course
 // marks: click one (amber ring), wait for the ring to turn green, then drag.
 // Right-click a ruler: delete it, delete a point, or save it as a route.
 import { placing } from "./modes.js";
@@ -41,11 +41,11 @@ export function setupRuler(map, { before, ui, library, route, toast, getVariatio
     layout: { "icon-image": ["concat", "txt:r:", ["get", "lbl"]], "icon-anchor": ["get", "anchor"], "icon-offset": ["get", "offset"],
               "icon-allow-overlap": true, "icon-ignore-placement": true } }, before);
 
-  const variation = () => { const v = getVariation?.(); return Number.isFinite(v) ? v : null; };
   function legText(a, b, useGreatCircle = false) {
     const { brg, nm } = useGreatCircle ? greatCircle(a, b) : rhumb(a, b);
-    const v = variation();
-    return `${fmtBrg(brg)}°T${v != null ? ` ${fmtBrg(brg - v)}°M` : ""}  ${fmtNm(nm)}`;
+    const v = getVariation?.([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
+    const mag = Number.isFinite(v) ? ` ${fmtBrg(brg - v)}°M` : "";
+    return `${fmtBrg(brg)}°T${mag}  ${fmtNm(nm)}`;
   }
   const total = (pts, useGreatCircle = false) => pts.slice(1).reduce((s, p, i) => s + (useGreatCircle ? greatCircle(pts[i], p) : rhumb(pts[i], p)).nm, 0);
 

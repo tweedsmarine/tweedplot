@@ -11,6 +11,11 @@ Terms used in TweedPlot and in this manual.
 | Arrival radius | How close counts as reaching a mark |
 | AtoN | Aid to navigation: a buoy, beacon or light; an AIS AtoN broadcasts its own position (a virtual one exists only as a broadcast) |
 | Barrier | A line the routing may not cross, a zone it may not enter, or a mark it must keep a set distance from |
+| Clearing bearing | A bearing line from a mark that you steer not more or not less than, to keep clear of a danger; labelled in true and magnetic |
+| Layline | The line on which a boat can just fetch a mark on one tack; the angle comes from the polar, or a generic tacking angle you set |
+| Magnetic variation (VAR) | The angle between true and magnetic north, east positive; from the World Magnetic Model or the chart's charted value |
+| Tacking cone | The corridor either side of the direct line to a mark, inside which tacking is efficient when cruising |
+| WMM | World Magnetic Model (WMM2025): the standard model of the Earth's magnetic field, used for variation anywhere |
 | Bolt hole | A sheltered harbour or anchorage to run to if conditions turn |
 | Bridge alert management (BAM) | IMO's rules for how navigation equipment raises and handles alerts: alarm, warning and caution, managed from one place |
 | BTW, DTW | Bearing and distance to the next mark |

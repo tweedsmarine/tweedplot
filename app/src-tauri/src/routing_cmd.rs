@@ -34,17 +34,30 @@ pub(crate) fn polar_dirs(app: &tauri::AppHandle) -> Vec<(PathBuf, &'static str)>
     v
 }
 
-/// Boat speed from a polar file (cached) at a TWA and TWS, kn.
-#[tauri::command]
-pub(crate) fn polar_speed(path: String, twa: f64, tws: f64) -> Option<f64> {
+fn cached_polar(path: &str) -> Option<Arc<polar::Polar>> {
     static CACHE: Mutex<Option<(String, Arc<polar::Polar>)>> = Mutex::new(None);
     let mut c = CACHE.lock().unwrap();
     if c.as_ref().map(|x| x.0 != path).unwrap_or(true) {
-        *c = Some((path.clone(), Arc::new(polar::Polar::from_path(&path).ok()?)));
+        *c = Some((path.to_string(), Arc::new(polar::Polar::from_path(path).ok()?)));
     }
-    let p = c.as_ref()?.1.clone();
-    let b = p.bsp(twa.abs(), tws);
+    Some(c.as_ref()?.1.clone())
+}
+
+/// Boat speed from a polar file (cached) at a TWA and TWS, kn.
+#[tauri::command]
+pub(crate) fn polar_speed(path: String, twa: f64, tws: f64) -> Option<f64> {
+    let b = cached_polar(&path)?.bsp(twa.abs(), tws);
     b.is_finite().then_some((b * 100.0).round() / 100.0)
+}
+
+/// The true wind angles (deg) giving the best VMG upwind and downwind at a TWS: what the
+/// laylines are drawn at. None if the polar can't be read or has no useful speed there.
+#[tauri::command]
+pub(crate) fn polar_vmg_angles(path: String, tws: f64) -> Option<serde_json::Value> {
+    let p = cached_polar(&path)?;
+    let up = p.best_vmg_up(tws, 20.0);
+    let down = p.best_vmg_down(tws);
+    (up.vmg > 0.0 && down.vmg > 0.0).then(|| serde_json::json!({ "up": up.twa, "down": down.twa, "upBsp": up.bsp, "downBsp": down.bsp }))
 }
 
 #[tauri::command]
@@ -170,7 +183,7 @@ pub(crate) async fn route_compute(req: RouteRequest) -> Result<serde_json::Value
             if let Ok(l) = lib() {
                 for b in l.barriers().unwrap_or_default().into_iter().filter(|b| b.active && b.points.len() >= 2) {
                     barrier_count += 1;
-                    if b.kind == "zone" && b.points.len() >= 3 {
+                    if matches!(b.kind.as_str(), "zone" | "clearing") && b.points.len() >= 3 {
                         barriers.zones.push(b.points)
                     } else {
                         barriers.lines.push(b.points)

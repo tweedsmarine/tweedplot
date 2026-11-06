@@ -3,16 +3,24 @@
 // the clearance rings of library marks given a barrier radius.
 //
 // Draw line / Draw zone → click points, double-click to finish, Esc to stop.
-// Points move like course marks: click one (amber ring), wait for green, drag.
+// Clearing bearing → click the mark (it snaps to library marks), click out along the line of the
+// bearing, then
+// click on the side to keep off: a triangle zone from the mark (the bearing line and the same
+// distance at 90°). It is
+// labelled in °T and °M. Points move like course marks: click one (amber ring), wait for green, drag.
 // Right-click a barrier: delete a point, delete it, or switch it off/on.
 import { placing } from "./modes.js";
 import { invoke } from "@tauri-apps/api/core";
 import { libList } from "./liblist.js";
+import { fmtBrg, clearingZone, clearingInfo } from "./navmath.js";
 
 const KEY = "racenav.barriers";
 const RED = "#c62828";
 const ARM_MS = 1200;
+const SNAP_PX = 14;
 const empty = { type: "FeatureCollection", features: [] };
+const isArea = (b) => b.kind === "zone" || b.kind === "clearing";
+const KIND_WORD = { line: "Line", zone: "Zone", clearing: "Clearing bearing" };
 
 function ring(c, nm) {
   const out = [];
@@ -24,7 +32,7 @@ function ring(c, nm) {
   return out;
 }
 
-export function setupBarriers(map, { before, library, toast }) {
+export function setupBarriers(map, { before, library, toast, getVariation }) {
   const $ = (id) => document.getElementById(id);
   let list = [];
   let prefs = { show: true };
@@ -34,7 +42,7 @@ export function setupBarriers(map, { before, library, toast }) {
   let cursor = null;
 
   // ---------- chart ----------
-  for (const s of ["bar-shapes", "bar-pts", "bar-rubber", "bar-sel", "bar-discs"]) map.addSource(s, { type: "geojson", data: empty });
+  for (const s of ["bar-shapes", "bar-pts", "bar-rubber", "bar-sel", "bar-discs", "bar-clear", "bar-labels"]) map.addSource(s, { type: "geojson", data: empty });
   map.addLayer({ id: "bar-fill", type: "fill", source: "bar-shapes", filter: ["==", ["geometry-type"], "Polygon"],
     paint: { "fill-color": RED, "fill-opacity": ["case", ["get", "active"], 0.12, 0.04] } }, before);
   map.addLayer({ id: "bar-line", type: "line", source: "bar-shapes",
@@ -42,31 +50,52 @@ export function setupBarriers(map, { before, library, toast }) {
              "line-dasharray": [3, 1.5] } }, before);
   map.addLayer({ id: "bar-hit", type: "line", source: "bar-shapes", paint: { "line-color": "#000", "line-opacity": 0.01, "line-width": 14 } }, before);
   map.addLayer({ id: "bar-discs", type: "line", source: "bar-discs", paint: { "line-color": RED, "line-width": 1.6, "line-dasharray": [2, 2] } }, before);
+  map.addLayer({ id: "bar-clear", type: "line", source: "bar-clear",
+    paint: { "line-color": RED, "line-width": ["case", ["get", "active"], 3, 1.6], "line-opacity": ["case", ["get", "active"], 1, 0.5] } }, before);
+  map.addLayer({ id: "bar-lbl", type: "symbol", source: "bar-labels",
+    layout: { "icon-image": ["concat", "txt:r:", ["get", "lbl"]], "icon-anchor": "bottom-left", "icon-offset": [6, -4],
+              "icon-allow-overlap": true, "icon-ignore-placement": true } }, before);
   map.addLayer({ id: "bar-rubber", type: "line", source: "bar-rubber", paint: { "line-color": RED, "line-width": 1.6, "line-dasharray": [2, 2] } }, before);
   map.addLayer({ id: "bar-sel", type: "circle", source: "bar-sel",
     paint: { "circle-radius": 12, "circle-color": "rgba(0,0,0,0)", "circle-stroke-width": 3.5, "circle-stroke-color": "#f0a500" } }, before);
   map.addLayer({ id: "bar-pt", type: "circle", source: "bar-pts", minzoom: 7,
     paint: { "circle-radius": 3.5, "circle-color": "#fff", "circle-stroke-color": RED, "circle-stroke-width": 1.8 } }, before);
 
+  /** "Clearing bearing 225°T 220°M": the bearing of the mark from the boat. */
+  function clearingText(pts) {
+    const { brg } = clearingInfo(pts);
+    const v = getVariation?.(pts[0]);
+    const mag = Number.isFinite(v) ? ` ${fmtBrg(brg - v)}°M` : "";
+    return `Clearing bearing ${fmtBrg(brg)}°T${mag}`;
+  }
+
   function draw() {
     const vis = prefs.show ? "visible" : "none";
-    for (const id of ["bar-fill", "bar-line", "bar-hit", "bar-discs", "bar-pt", "bar-sel"]) map.setLayoutProperty(id, "visibility", vis);
-    const shapes = [], pts = [];
+    for (const id of ["bar-fill", "bar-line", "bar-hit", "bar-discs", "bar-pt", "bar-sel", "bar-clear", "bar-lbl"]) map.setLayoutProperty(id, "visibility", vis);
+    const shapes = [], pts = [], clears = [], labels = [];
     for (const b of list) {
       if (b.points.length < 2) continue;
-      const geom = b.kind === "zone" && b.points.length >= 3
+      const geom = isArea(b) && b.points.length >= 3
         ? { type: "Polygon", coordinates: [[...b.points, b.points[0]]] }
         : { type: "LineString", coordinates: b.points };
       shapes.push({ type: "Feature", properties: { id: b.id, active: b.active }, geometry: geom });
       b.points.forEach((p, i) => pts.push({ type: "Feature", properties: { id: b.id, i }, geometry: { type: "Point", coordinates: p } }));
+      if (b.kind === "clearing" && b.points.length === 3) {
+        clears.push({ type: "Feature", properties: { id: b.id, active: b.active }, geometry: { type: "LineString", coordinates: [b.points[0], b.points[1]] } });
+        const mid = [(b.points[0][0] + b.points[1][0]) / 2, (b.points[0][1] + b.points[1][1]) / 2];
+        labels.push({ type: "Feature", properties: { lbl: clearingText(b.points) }, geometry: { type: "Point", coordinates: mid } });
+      }
     }
     if (drawing?.pts.length) {
-      const coords = cursor ? [...drawing.pts, cursor] : drawing.pts;
-      if (drawing.kind === "zone" && coords.length >= 3) coords.push(coords[0]);
+      let coords = cursor ? [...drawing.pts, cursor] : drawing.pts;
+      if (drawing.kind === "clearing" && drawing.pts.length === 2 && cursor) coords = clearingZone(drawing.pts[0], drawing.pts[1], cursor);
+      if ((drawing.kind === "zone" || drawing.kind === "clearing") && coords.length >= 3) coords = [...coords, coords[0]];
       map.getSource("bar-rubber").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: coords } });
       drawing.pts.forEach((p, i) => pts.push({ type: "Feature", properties: { id: "", i }, geometry: { type: "Point", coordinates: p } }));
     } else map.getSource("bar-rubber").setData(empty);
     map.getSource("bar-shapes").setData({ type: "FeatureCollection", features: shapes });
+    map.getSource("bar-clear").setData({ type: "FeatureCollection", features: clears });
+    map.getSource("bar-labels").setData({ type: "FeatureCollection", features: labels });
     map.getSource("bar-pts").setData({ type: "FeatureCollection", features: pts });
     const discs = library.marks().filter((m) => m.barrier_nm > 0)
       .map((m) => ({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: ring([m.lon, m.lat], m.barrier_nm) } }));
@@ -102,7 +131,7 @@ export function setupBarriers(map, { before, library, toast }) {
       { key: "new", label: "Newest first", cmp: (a, b) => (b.modified || 0) - (a.modified || 0) },
     ],
     filters: [
-      { key: "kind", label: "Kind", type: "choice", options: () => [["line", "Lines"], ["zone", "Zones"]], test: (b, v) => b.kind === v },
+      { key: "kind", label: "Kind", type: "choice", options: () => [["line", "Lines"], ["zone", "Zones"], ["clearing", "Clearing bearings"]], test: (b, v) => b.kind === v },
       { key: "off", label: "Not used", type: "toggle", title: "Only the barriers routings don't use", test: (b) => !b.active },
       { key: "tz", label: "Imported", type: "toggle", title: "Only the lines, areas and circles brought in from TimeZero or KML", test: (b) => b.id.startsWith("tz-") || b.id.startsWith("kml-") },
     ],
@@ -117,7 +146,7 @@ export function setupBarriers(map, { before, library, toast }) {
         nm.value = b.name;
         nm.onclick = (e) => e.stopPropagation();
         nm.onchange = () => save({ ...b, name: nm.value.trim() });
-        el.querySelector("small").textContent = `${b.kind === "zone" ? "Zone" : "Line"} · ${b.points.length} points${b.active ? "" : " · not used"}`;
+        el.querySelector("small").textContent = `${KIND_WORD[b.kind] ?? "Line"} · ${b.kind === "clearing" && b.points.length === 3 ? clearingText(b.points) : `${b.points.length} points`}${b.active ? "" : " · not used"}`;
       },
       click: (b) => fit(b.points),
     },
@@ -152,13 +181,15 @@ export function setupBarriers(map, { before, library, toast }) {
     cursor = null;
     $("bar-line").classList.toggle("armed", kind === "line");
     $("bar-zone").classList.toggle("armed", kind === "zone");
+    $("bar-clearing").classList.toggle("armed", kind === "clearing");
     map.getCanvas().style.cursor = kind ? "crosshair" : "";
     map.getContainer().classList.toggle("drawing", !!kind);
     if (kind) {
       map.doubleClickZoom.disable();
       deselect();
       prefs.show = true; savePrefs();
-      toast(`${kind === "zone" ? "Zone" : "Line"}: click to set points, double-click to finish, Esc to stop.`);
+      toast(kind === "clearing" ? "Clearing bearing: click the mark, click out to sea along the bearing line, then click on the side to keep off. Esc to stop."
+        : `${kind === "zone" ? "Zone" : "Line"}: click to set points, double-click to finish, Esc to stop.`);
     } else {
       setTimeout(() => map.doubleClickZoom.enable(), 0);
       toast("");
@@ -176,16 +207,45 @@ export function setupBarriers(map, { before, library, toast }) {
       if (q) { const a = map.project(q), b = map.project(p); if (Math.hypot(a.x - b.x, a.y - b.y) < 4) continue; }
       pts.push(p);
     }
+    if (d.kind === "clearing") {
+      if (pts.length < 3) { toast("A clearing bearing needs the mark, a point along the bearing, and a point on the side to keep off.", 4000); return; }
+      const zone = clearingZone(pts[0], pts[1], pts[2]);
+      const s = await save({ id: "", name: `Clearing ${fmtBrg(clearingInfo(zone).brg)}°T`, kind: "clearing", points: zone, active: true, notes: "" });
+      if (s) toast(`Saved “${s.name}”. Routings keep out of it while it is ticked in Library › Barriers.`, 5000);
+      return;
+    }
     if (pts.length < (d.kind === "zone" ? 3 : 2)) { toast(d.kind === "zone" ? "A zone needs at least three corners." : "A line needs at least two points.", 4000); return; }
     const s = await save({ id: "", name: "", kind: d.kind, points: pts, active: true, notes: "" });
     if (s) toast(`Saved “${s.name}”. Routings keep off it while it is ticked in Library › Barriers.`, 5000);
   }
   $("bar-line").onclick = () => (drawing ? finish() : arm("line"));
   $("bar-zone").onclick = () => (drawing ? finish() : arm("zone"));
-  map.on("click", (e) => { if (drawing) { drawing.pts.push([e.lngLat.lng, e.lngLat.lat]); draw(); } });
-  map.on("dblclick", (e) => { if (drawing) { e.preventDefault(); finish(); } });
+  $("bar-clearing").onclick = () => (drawing ? finish() : arm("clearing"));
+  map.on("click", (e) => {
+    if (!drawing) return;
+    let p = [e.lngLat.lng, e.lngLat.lat];
+    if (drawing.kind === "clearing") {
+      const last = drawing.pts.at(-1);
+      if (last) { const a = map.project(last); if (Math.hypot(a.x - e.point.x, a.y - e.point.y) < 4) return; } // a double-click
+      if (!drawing.pts.length) {
+        // the bearing starts at a mark: snap to the nearest library mark
+        let best = SNAP_PX;
+        for (const m of library.marks()) {
+          const q = map.project([m.lon, m.lat]);
+          const d = Math.hypot(q.x - e.point.x, q.y - e.point.y);
+          if (d < best) { best = d; p = [m.lon, m.lat]; }
+        }
+      }
+      drawing.pts.push(p);
+      if (drawing.pts.length === 3) finish(); else draw();
+      return;
+    }
+    drawing.pts.push(p);
+    draw();
+  });
+  map.on("dblclick", (e) => { if (drawing) { e.preventDefault(); if (drawing.kind !== "clearing") finish(); } });
   map.on("mousemove", (e) => { if (drawing?.pts.length) { cursor = [e.lngLat.lng, e.lngLat.lat]; draw(); } });
-  window.addEventListener("keydown", (e) => { if (e.key === "Escape" && drawing) { e.preventDefault(); finish(); } });
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape" && drawing) { e.preventDefault(); if (drawing.kind === "clearing") arm(null); else finish(); } });
 
   // ---------- moving points ----------
   let sel = null, movable = false, armTimer = null, dragging = false;
@@ -245,7 +305,7 @@ export function setupBarriers(map, { before, library, toast }) {
   function deletePoint(id, i) {
     const b = list.find((x) => x.id === id);
     if (!b) return;
-    if (b.points.length <= (b.kind === "zone" ? 3 : 2)) { remove(id); return; }
+    if (b.points.length <= (isArea(b) ? 3 : 2)) { remove(id); return; }
     b.points.splice(i, 1);
     deselect();
     save(b);

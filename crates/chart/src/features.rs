@@ -862,7 +862,7 @@ impl ChartStore {
                             self.query_text(
                                 t,
                                 bbox,
-                                &["objnam", "scamin", "catrea", "restrn", "catmfa", "orient", "watlev", "datsta", "datend", "persta", "perend"],
+                                &["objnam", "scamin", "catrea", "restrn", "catmfa", "orient", "watlev", "datsta", "datend", "persta", "perend", "objl", "valmag", "valacm", "ryrmgv"],
                                 |row| rows.push(row),
                             );
                             rows
@@ -963,6 +963,12 @@ impl ChartStore {
                             if let Some(n) = row.vals[0].as_deref().filter(|s| !s.trim().is_empty()) {
                                 props.push(("name", Value::Str(n.trim().into())));
                             }
+                            if class.code == "MAGVAR" && class.geo == Geo::Line {
+                                let num = |i: usize| row.vals[i].as_deref().and_then(|v| v.trim().parse::<f64>().ok());
+                                if let Some(l) = s57::magvar_label(num(12), num(13), row.vals[14].as_deref().map(str::trim)) {
+                                    props.push(("lbl", Value::Str(l)));
+                                }
+                            }
                             // how the IHO rules draw it (`s5`: they do)
                             let drawn = s52[k].as_ref().and_then(|m| m.get(&row.fid)).filter(|e| !e.is_empty());
                             let mut centre_symbol = None;
@@ -1014,8 +1020,10 @@ impl ChartStore {
                                 }
                             }
                             // an area's symbol at its middle: a traffic lane's direction arrow (S-52
-                            // TSSLPT51, turned to its ORIENT), or the "?" of an object without a symbol
-                            if class.geo == Geo::Area && matches!(class.code, "TSSLPT" | s57::UNKNOWN) {
+                            // TSSLPT51, turned to its ORIENT), a magnetic variation's half arrow, or the
+                            // "?" of an object without a symbol
+                            let magvar = class.code == "MAGVAR" || (class.code == s57::CHART_OBJECT && row.vals[11].as_deref().map(str::trim) == Some("MAGVAR"));
+                            if class.geo == Geo::Area && (magvar || matches!(class.code, "TSSLPT" | s57::UNKNOWN)) {
                                 let g = geom_bounds(geom);
                                 let mid = [(g[0] + g[2]) / 2.0, (g[1] + g[3]) / 2.0];
                                 // the middle of the bounds may fall outside an odd shape: then a vertex
@@ -1039,6 +1047,12 @@ impl ChartStore {
                                     if let Some(o) = orient {
                                         pp.push(("icon", Value::Str("ts".into())));
                                         pp.push(("rot", Value::F64(o)));
+                                    } else if magvar {
+                                        pp.push(("icon", Value::Str("mv".into())));
+                                        let num = |i: usize| row.vals[i].as_deref().and_then(|v| v.trim().parse::<f64>().ok());
+                                        if let Some(l) = s57::magvar_label(num(12), num(13), row.vals[14].as_deref().map(str::trim)) {
+                                            pp.push(("lbl", Value::Str(l)));
+                                        }
                                     } else {
                                         pp.push(("icon", Value::Str("uk".into())));
                                     }
@@ -1431,6 +1445,14 @@ impl ChartStore {
             let lbl = s57::light_label(&[s57::Light::from_attrs(&s57::Attrs(&vals))]);
             if !lbl.is_empty() {
                 attrs.insert(0, ("Characteristic".to_string(), lbl));
+            }
+        }
+        // a magnetic variation area: what the chart's figures give today (they are often years old)
+        if let Some(valmag) = raw.iter().find(|(k, _)| k == "valmag").and_then(|(_, v)| v.parse::<f64>().ok()) {
+            let num = |name: &str| raw.iter().find(|(k, _)| k == name).and_then(|(_, v)| v.parse::<f64>().ok());
+            if let Some(ref_year) = num("ryrmgv") {
+                let now = s57::variation_at(valmag, num("valacm").unwrap_or(0.0), ref_year, s57::now_year());
+                attrs.push(("Charted variation today".to_string(), s57::fmt_variation(now)));
             }
         }
         if let Some(i) = attrs.iter().position(|(k, _)| k == "Name") {

@@ -109,6 +109,10 @@ pub static CLASSES: &[FeatureClass] = &[
     fc!("TSELNE", "Traffic separation line", "traffic_separation_line_polyline", Line),
     fc!("ISTZNE", "Inshore traffic zone", "inshore_traffic_zone_polygon", Area),
     fc!("FAIRWY", "Fairway", "fairway_polygon", Area),
+    // charted magnetic variation (LINZ's own tables; an ENC's comes via the chart-object tables)
+    fc!("MAGVAR", "Magnetic variation", "magnetic_variation_points", Point),
+    fc!("MAGVAR", "Magnetic variation", "magnetic_variation_polyline", Line),
+    fc!("MAGVAR", "Magnetic variation", "magnetic_variation_polygon", Area),
     // any other sea object in an ENC cell: drawn with a magenta "?" (S-52 QUESMRK1) so
     // nothing in the data goes unseen; `objl` holds its S-57 class
     fc!(UNKNOWN, "Other chart object", "other_object_points", Point),

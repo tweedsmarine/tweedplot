@@ -1030,7 +1030,7 @@ Routing is built around a sailing polar, and dedicated power-boat routing (fuel 
 
 **Ruler**
 
-Press {icon:ruler} **Ruler** in the toolbar and click the first point, or right-click the chart › **Start ruler here**; click for each next point, and double-click to finish; Esc stops. Each leg is labelled with its bearing (°T, plus °M when the instruments give the magnetic variation) and distance, and the total shows at the end. Rulers stay on the chart until deleted. Move their points like marks. Right-click a ruler to delete a point, delete it, delete all rulers, **Show ruler as great circle**, or **Save ruler as route** (its points become library marks and a route opens in the Route drawer): a fast way to sketch a passage.
+Press {icon:ruler} **Ruler** in the toolbar and click the first point, or right-click the chart › **Start ruler here**; click for each next point, and double-click to finish; Esc stops. Each leg is labelled with its bearing (°T, plus °M) and distance, and the total shows at the end. The magnetic variation comes from your instruments when the boat is within 100 NM, and from the built-in World Magnetic Model (WMM2025, valid to the end of 2029) anywhere else or when planning with no instruments. Rulers stay on the chart until deleted. Move their points like marks. Right-click a ruler to delete a point, delete it, delete all rulers, **Show ruler as great circle**, or **Save ruler as route** (its points become library marks and a route opens in the Route drawer): a fast way to sketch a passage.
 
 Ruler bearings and distances are rhumb lines: a constant compass course, which is what you steer and what a paper chart's straight line shows. Over a few hundred miles a great circle is shorter: **Show ruler as great circle** draws that ruler's legs as great circles, with each leg's starting bearing and its great-circle distance. The router allows for the curve itself.
 
@@ -1048,6 +1048,14 @@ Targets › YB race: type the race's YB name (as in `yb.tl/<race>`, for example 
 - **Copy course** puts the YB course in the Route drawer; **Route** on a boat starts a routing from its last fix and time: what would the router have them do now?
 
 Positions may be delayed by the race organiser.
+
+**Clearing bearings and laylines**
+
+- **Clearing bearing** (Library › Barriers): click the mark, then a point out to sea along the bearing; the danger side is where you click third. It is labelled "Clearing bearing xxx°T xxx°M" and, as a barrier, the router avoids its danger side.
+- **Go to here** (right-click a mark or any point) sets the target for laylines; **Cancel go to** clears it. With no Go to, the next mark of the route is used.
+- **Laylines** run from the target at the best upwind (or downwind) true wind angles of your polar at the current true wind speed, or without a polar at the tacking and gybing angles in Settings › Performance (default 120° tacking). The wind is live from your instruments, else the GRIB at the weather slider time. Only the pair that applies is drawn: upwind if you are downwind of the mark, else downwind.
+- **Magnetic variation diagram**: right-click the chart › **Magnetic variation diagram here** puts a true north line (25 mm high on your screen at any zoom) on the screen, with the magnetic north vector beside it and the text "Var 19.5°E inc 6′ annually", from the World Magnetic Model (or your instruments near the boat). It is fixed to the screen, not the chart: drag it where you want it, and it turns with the chart and takes the variation of the chart under it. It follows the night palettes. Right-click it › **Remove variation diagram**; right-click the chart › **Move variation diagram here** to relocate it. Its place is kept between runs.
+- The **tacking cone** (off by default; turn it on from the right-click menu or Settings) is a wedge from the mark toward the boat: tack at its edge, so tacks are long far out and short near the mark. It suits cruising; when racing with laylines on it isn't needed. Laylines and the cone switch on and off separately.
 
 ## Settings
 

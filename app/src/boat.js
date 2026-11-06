@@ -4,6 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 const KEY = "racenav.boat";
 const DEFAULTS = { polar: "", eff: 100, tack: 60, gybe: 60, airDraft: 0, mmsi: "",
+  // laylines: shown or not, and the angles used when there is no polar (total angle between the two tacks / gybes, and the cone's half-angle)
+  layShow: true, layConeShow: false, layTack: 120, layGybe: 60, layCone: 20,
   // Legacy profile fields are read once when migrating into Settings.
   length: 0, beam: 0, gpsFromBow: 0, gpsFromCentre: 0,
   name: "", imo: "", callSign: "", draft: 0, referenceLat: null, referenceLon: null };
@@ -14,7 +16,8 @@ export function setupBoat() {
   try { Object.assign(boat, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
   const save = () => {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ polar: boat.polar, eff: boat.eff, tack: boat.tack, gybe: boat.gybe }));
+      localStorage.setItem(KEY, JSON.stringify({ polar: boat.polar, eff: boat.eff, tack: boat.tack, gybe: boat.gybe,
+        layShow: boat.layShow, layConeShow: boat.layConeShow, layTack: boat.layTack, layGybe: boat.layGybe, layCone: boat.layCone }));
     } catch { /* ignore */ }
   };
 
@@ -28,7 +31,7 @@ export function setupBoat() {
     boat.polar = sel.value;
     save();
   }
-  $("boat-polar").onchange = (e) => { boat.polar = e.target.value; save(); };
+  $("boat-polar").onchange = (e) => { boat.polar = e.target.value; save(); window.dispatchEvent(new Event("racenav-boat")); };
   const note = (t, cls = "") => { const n = $("boat-polar-note"); n.textContent = t; n.className = `wx-note ${cls}`; };
   $("boat-polar-import").onclick = () => $("boat-polar-file").click();
   $("boat-polar-file").onchange = async (e) => {
@@ -46,14 +49,28 @@ export function setupBoat() {
   $("boat-polar-folder").onclick = async () => {
     try { note(`Your polars: ${await invoke("polar_open_folder")}`); } catch (err) { note(`Could not open the folder: ${err}`, "bad"); }
   };
-  for (const [id, key] of [["boat-eff", "eff"], ["boat-tack", "tack"], ["boat-gybe", "gybe"]]) {
+  for (const [id, key] of [["boat-eff", "eff"], ["boat-tack", "tack"], ["boat-gybe", "gybe"], ["boat-lay-tack", "layTack"], ["boat-lay-gybe", "layGybe"], ["boat-lay-cone", "layCone"]]) {
     $(id).value = boat[key];
     $(id).onchange = (e) => { const v = Number(e.target.value); if (Number.isFinite(v)) { boat[key] = v; save(); window.dispatchEvent(new Event("racenav-boat")); } };
+  }
+  const showBoxes = { "boat-lay-show": "layShow", "boat-lay-cone-show": "layConeShow" };
+  for (const [id, key] of Object.entries(showBoxes)) {
+    $(id).checked = !!boat[key];
+    $(id).onchange = (e) => { boat[key] = e.target.checked; save(); window.dispatchEvent(new Event("racenav-boat")); };
   }
   loadPolars();
   window.addEventListener("racenav-vessel-profile", ({ detail }) => {
     boat = { ...boat, ...detail };
     window.dispatchEvent(new Event("racenav-boat"));
   });
-  return { get: () => ({ ...boat }) };
+  return {
+    get: () => ({ ...boat }),
+    /** Turn laylines or the tacking cone on or off (the right-click menu): keeps the Settings checkboxes in step. */
+    toggle(key) {
+      boat[key] = !boat[key];
+      for (const [id, k] of Object.entries(showBoxes)) if (k === key) $(id).checked = boat[key];
+      save();
+      window.dispatchEvent(new Event("racenav-boat"));
+    },
+  };
 }
