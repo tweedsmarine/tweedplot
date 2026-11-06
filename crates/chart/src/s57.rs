@@ -10,8 +10,8 @@ pub use enc_s57::classes::{class_for, FeatureClass, Geo, CHART_OBJECT, CLASSES, 
 /// Attribute columns read for the tiles (whichever a table has).
 pub const TILE_COLS: &[&str] = &[
     "objnam", "colour", "colpat", "boyshp", "bcnshp", "catlam", "catcam", "watlev", "catwrk", "valsou", "litchr", "siggrp", "sigper", "valnmr", "height",
-    "sectr1", "sectr2", "orient", "scamin", "catlit", "status", "catspm", "catobs", "datsta", "datend", "persta", "perend",
-    "objl", "valmag", "valacm", "ryrmgv",
+    "sectr1", "sectr2", "orient", "scamin", "catlit", "status", "catspm", "catobs", "datsta", "datend", "persta", "perend", "objl", "valmag", "valacm",
+    "ryrmgv",
 ];
 
 /// Whether a row of the catch-all chart-object tables is a magnetic variation (MAGVAR).

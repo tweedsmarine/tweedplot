@@ -862,7 +862,10 @@ impl ChartStore {
                             self.query_text(
                                 t,
                                 bbox,
-                                &["objnam", "scamin", "catrea", "restrn", "catmfa", "orient", "watlev", "datsta", "datend", "persta", "perend", "objl", "valmag", "valacm", "ryrmgv"],
+                                &[
+                                    "objnam", "scamin", "catrea", "restrn", "catmfa", "orient", "watlev", "datsta", "datend", "persta", "perend", "objl",
+                                    "valmag", "valacm", "ryrmgv",
+                                ],
                                 |row| rows.push(row),
                             );
                             rows
@@ -1022,7 +1025,8 @@ impl ChartStore {
                             // an area's symbol at its middle: a traffic lane's direction arrow (S-52
                             // TSSLPT51, turned to its ORIENT), a magnetic variation's half arrow, or the
                             // "?" of an object without a symbol
-                            let magvar = class.code == "MAGVAR" || (class.code == s57::CHART_OBJECT && row.vals[11].as_deref().map(str::trim) == Some("MAGVAR"));
+                            let magvar =
+                                class.code == "MAGVAR" || (class.code == s57::CHART_OBJECT && row.vals[11].as_deref().map(str::trim) == Some("MAGVAR"));
                             if class.geo == Geo::Area && (magvar || matches!(class.code, "TSSLPT" | s57::UNKNOWN)) {
                                 let g = geom_bounds(geom);
                                 let mid = [(g[0] + g[2]) / 2.0, (g[1] + g[3]) / 2.0];
