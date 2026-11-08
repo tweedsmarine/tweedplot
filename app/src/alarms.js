@@ -74,8 +74,7 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
   const active = new Map();
   /** what a monitor window shows: the primary's alarms, as plain data */
   let mirror = [];
-  /** Dismissed alarms whose cause still lasts: id → {until, stage}. Quiet for HOLD_MS unless they escalate. */
-  const dismissed = new Map();
+  /** How long Dismiss keeps a lasting alarm quiet; it stays on the Active list meanwhile. */
   const HOLD_MS = 60000;
   /**
    * Raise (or refresh) an alarm. `stage` (default 0) is how bad the cause is: a higher stage than
@@ -83,20 +82,20 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
    */
   function raise(id, a) {
     if (!PRIMARY) return;
-    const held = dismissed.get(id);
-    if (held) {
-      if (Date.now() < held.until && (a.stage ?? 0) <= held.stage) return;
-      dismissed.delete(id);
-    }
     const entry = a.holdable
       ? { ...a, dismiss: () => dismiss(id), dismissLabel: "Dismiss",
-        dismissTitle: "Remove this alarm for a minute; it comes back if the cause lasts or worsens" }
+        dismissTitle: "Quiet for a minute: it stays on the Alarms list, and sounds again if the cause lasts or worsens" }
       : a;
     const old = active.get(id);
     if (old) {
       const worse = (a.stage ?? 0) > (old.stage ?? 0);
-      Object.assign(old, { ...entry, acked: old.acked && old.level === a.level && !worse });
-      if (worse) { if (a.level === "alarm") sound.alarm(); else sound.warn(); }
+      // a dismissed alarm whose minute is up and whose cause lasts: back in the banner, sounding
+      const holdOver = old.heldUntil != null && Date.now() >= old.heldUntil;
+      Object.assign(old, { ...entry, acked: old.acked && old.level === a.level && !worse && !holdOver });
+      if (worse || holdOver) {
+        old.heldUntil = null;
+        if (a.level === "alarm") sound.alarm(); else sound.warn();
+      }
     } else {
       active.set(id, { ...entry, acked: false, since: Date.now() });
       if (a.level === "alarm") sound.alarm(); else sound.warn();
@@ -105,14 +104,16 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
   }
   /** The cause has ended (or was changed by the user): the alarm goes, and may raise afresh. */
   function clear(id) {
-    dismissed.delete(id);
     if (active.delete(id)) render();
   }
+  /** Quiet a lasting alarm for HOLD_MS. Unlike a removal it stays on the Active list (and in the
+   *  banner's silenced count), so a live collision risk never vanishes from the screen. */
   function dismiss(id) {
     const a = active.get(id);
     if (!a) return;
-    dismissed.set(id, { until: Date.now() + HOLD_MS, stage: a.stage ?? 0 });
-    active.delete(id);
+    a.acked = true;
+    a.ackedAt = Date.now();
+    a.heldUntil = Date.now() + HOLD_MS;
     render();
   }
   function ack(id) {
@@ -144,7 +145,7 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
       onClick: a.focus ? () => map.easeTo({ center: a.focus, zoom: Math.max(map.getZoom(), 14) }) : null }]));
   function publish() {
     emit("alarm-state", [...active.entries()].map(([id, a]) => ({
-      id, level: a.level, text: a.text, detail: a.detail, acked: a.acked, since: a.since,
+      id, level: a.level, text: a.text, detail: a.detail, acked: a.acked, since: a.since, heldUntil: a.heldUntil ?? null,
       canDismiss: !!a.dismiss, dismissLabel: a.dismissLabel, dismissTitle: a.dismissTitle,
       focus: id === "mob" && mob ? [mob.lon, mob.lat] : id === "anchor" && s.anchor ? [s.anchor.lon, s.anchor.lat] : null,
     }))).catch(() => {});
@@ -194,9 +195,9 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
       const li = document.createElement("li");
       li.className = `al-${a.level}${a.acked ? " acked" : ""}`;
       const t = new Date(a.since).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-      li.innerHTML = `<span class="al-lv">${a.level === "alarm" ? "Alarm" : "Warning"}</span><span class="grow"><b>${esc(a.text)}</b>${a.detail ? `<br><small>${esc(a.detail)}</small>` : ""}</span><span class="wx-note">${t}${a.acked ? " · silenced" : ""}</span>` +
+      li.innerHTML = `<span class="al-lv">${a.level === "alarm" ? "Alarm" : "Warning"}</span><span class="grow"><b>${esc(a.text)}</b>${a.detail ? `<br><small>${esc(a.detail)}</small>` : ""}</span><span class="wx-note">${t}${a.heldUntil ? " · dismissed for a minute" : a.acked ? " · silenced" : ""}</span>` +
         (a.acked ? "" : '<button data-act="ack">Silence</button>') +
-        (a.dismiss && id !== "mob" ? `<button data-act="dismiss" title="${esc(a.dismissTitle || "Dismiss")}">${esc(a.dismissLabel || "Dismiss")}</button>` : "");
+        (a.dismiss && id !== "mob" && !a.heldUntil ? `<button data-act="dismiss" title="${esc(a.dismissTitle || "Dismiss")}">${esc(a.dismissLabel || "Dismiss")}</button>` : "");
       li.querySelector('[data-act="ack"]')?.addEventListener("click", () => ack(id));
       li.querySelector('[data-act="dismiss"]')?.addEventListener("click", () => a.dismiss());
       li.querySelector(".grow").onclick = () => a.onClick?.();

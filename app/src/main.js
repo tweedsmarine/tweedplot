@@ -77,6 +77,8 @@ import { setupLibrary, labelImage } from "./library.js";
 import { setupSettings } from "./settings.js";
 import { setupNmeaMonitor } from "./nmeamonitor.js";
 
+/** A "1"/"0" flag from localStorage; false where storage is unavailable. */
+const storedFlag = (key) => { try { return localStorage.getItem(key) === "1"; } catch { return false; } };
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 // ---------- chart settings (kept per viewer in local storage) ----------------
@@ -229,9 +231,11 @@ const map = new maplibregl.Map({
       { id: "depare", type: "fill", source: "chart", "source-layer": "depare",
         layout: { visibility: "none", "fill-sort-key": ["coalesce", ["get", "sk"], ["get", "band"]] },
         paint: { "fill-color": depareColour(), "fill-antialias": false } },
-      // NIWA grid: under the high-resolution depths, which are finer where they exist
-      { id: "nzbathy", type: "raster", source: "nzbathy", minzoom: 3, layout: { visibility: localStorage.getItem("racenav.nzbathy.show") === "1" ? "visible" : "none" },
-        paint: { "raster-opacity": 0.92, "raster-resampling": "linear" } },
+      // NIWA grid (250 m, not chart datum, not for navigation): the seabed's shape at ocean and
+      // coastal scales. It fades out from z10 and is gone by z12, so at harbour scales it never
+      // hides the chart's own depth shading; contours and the safety contour stay on top
+      { id: "nzbathy", type: "raster", source: "nzbathy", minzoom: 3, maxzoom: 12, layout: { visibility: storedFlag("racenav.nzbathy.show") ? "visible" : "none" },
+        paint: { "raster-opacity": ["interpolate", ["linear"], ["zoom"], 9.5, 0.9, 11.5, 0], "raster-resampling": "linear" } },
       // over the charted depth areas, under the chart's contours (the safety contour stays on top)
       { id: "hires", type: "raster", source: "hires", minzoom: 10, layout: { visibility: localStorage.getItem("racenav.hires.show") === "0" ? "none" : "visible" },
         paint: { "raster-opacity": 0.92, "raster-resampling": "linear" } },
@@ -465,7 +469,7 @@ let gotoTarget = null;
 try { gotoTarget = JSON.parse(localStorage.getItem("racenav.goto") || "null"); } catch { /* none */ }
 function setGoto(g) {
   gotoTarget = g;
-  if (g) localStorage.setItem("racenav.goto", JSON.stringify(g)); else localStorage.removeItem("racenav.goto");
+  try { if (g) localStorage.setItem("racenav.goto", JSON.stringify(g)); else localStorage.removeItem("racenav.goto"); } catch { /* storage unavailable */ }
   laylines?.refresh();
 }
 function layTarget() {

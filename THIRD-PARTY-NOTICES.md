@@ -19,6 +19,7 @@ TweedPlot includes or uses the following. Each keeps its own licence and copyrig
 | Data | Source | Terms |
 | --- | --- | --- |
 | LINZ charts, Topo50, tide predictions and tide constituents | Toitū Te Whenua Land Information New Zealand | CC BY 4.0: © LINZ. Attribute LINZ when you share anything made from it. |
+| NIWA NZ 250 m bathymetry grid (2016), imported by the user from NIWA's zip | National Institute of Water and Atmospheric Research (NIWA) | © NIWA. Cite as "NZ 250m gridded bathymetric data set and imagery, Mitchell et al. 2012, released 2016". Not to be used for navigational purposes. Licence to be confirmed with NIWA before TweedPlot ships anything made from it. |
 | OpenStreetMap tiles (optional, off by default, fetched at run time, not bundled) | © OpenStreetMap contributors; subject to https://operations.osmfoundation.org/policies/tiles/ | ODbL 1.0 (data) |
 | OpenSeaMap seamarks (optional, off by default, fetched at run time, not bundled) | OpenSeaMap contributors (https://www.openseamap.org); not for navigation | ODbL 1.0 (data) |
 | GSHHG coastline 2.3.7 | Wessel and Smith, University of Hawaiʻi and NOAA (https://www.soest.hawaii.edu/pwessel/gshhg) | LGPL 3 |

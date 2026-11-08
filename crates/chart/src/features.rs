@@ -394,12 +394,15 @@ pub struct FeatureInfo {
     pub attrs: Vec<(String, String)>,
 }
 
-/// How far from a finer chart's copy of a light a coarser band's copy of it may be placed
-/// (metres): the smaller the scale, the more its positions are generalised.
+/// Fixed structures that small-scale charts show generalised, sometimes as another class (a
+/// beacon on one chart, a landmark on another): matched across bands by name. Buoys are not:
+/// a buoy named after the same reef as a beacon is a different mark and must never be hidden.
 fn is_structure(code: &str) -> bool {
     matches!(code, "LNDMRK" | "BCNSPP" | "BCNLAT" | "BCNCAR" | "BCNISD" | "BCNSAW" | "SILTNK" | "BUISGL")
 }
 
+/// How far from a finer chart's copy of a light or structure a coarser band's copy of it may be
+/// placed (metres): the smaller the scale, the more its positions are generalised.
 fn light_match_metres(band: u8) -> f64 {
     match band {
         0 | 1 => 3000.0,
@@ -691,7 +694,9 @@ impl ChartStore {
                                 let finer = taken.iter().filter(|(q, b, _)| *b > t.band && metres(p, *q) < SAME_M).map(|(_, _, m)| *m).fold(f64::MAX, f64::min);
                                 // the same named mark (a landmark, a beacon) from a finer chart, even of
                                 // another class and generalised some way off by the smaller-scale chart
-                                let name = a.get("objnam");
+                                // (structures only; classes are read in CLASSES order, so a coarse beacon
+                                // whose finer copy is a landmark is not matched: it shows twice, never not at all)
+                                let name = a.get("objnam").filter(|_| is_structure(class.code));
                                 let finer = name
                                     .map_or(f64::MAX, |n| {
                                         named
@@ -722,7 +727,7 @@ impl ChartStore {
                                 }
                                 // only a feature actually drawn at this zoom hides a coarser band's copy
                                 mine.push((p, t.band, minz));
-                                if let (Some(n), true) = (name, is_structure(class.code)) {
+                                if let Some(n) = name {
                                     named.push((n.to_string(), p, t.band, minz));
                                 }
                                 if !hazard {
@@ -1454,7 +1459,9 @@ impl ChartStore {
         // a magnetic variation area: what the chart's figures give today (they are often years old)
         if let Some(valmag) = raw.iter().find(|(k, _)| k == "valmag").and_then(|(_, v)| v.parse::<f64>().ok()) {
             let num = |name: &str| raw.iter().find(|(k, _)| k == name).and_then(|(_, v)| v.parse::<f64>().ok());
-            if let Some(ref_year) = num("ryrmgv") {
+            // RYRMGV is a year ("2019"); take the first four characters, as the chart label does
+            let ref_year = raw.iter().find(|(k, _)| k == "ryrmgv").and_then(|(_, v)| v.trim().get(..4)?.parse::<f64>().ok());
+            if let Some(ref_year) = ref_year {
                 let now = s57::variation_at(valmag, num("valacm").unwrap_or(0.0), ref_year, s57::now_year());
                 attrs.push(("Charted variation today".to_string(), s57::fmt_variation(now)));
             }

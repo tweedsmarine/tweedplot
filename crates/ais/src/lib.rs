@@ -62,12 +62,13 @@ impl Kind {
 }
 
 /// AIS rate of turn (the signed 8-bit value of messages 1 to 3) in degrees per minute, positive to
-/// starboard; None when not available (-128). ±127 means "more than 5° per minute" and is taken as 5.
+/// starboard; None when not available (-128). ±127 (ITU-R M.1371: "turning faster than 5° per 30 s,
+/// no turn indicator") is taken as its lower bound, 10° a minute.
 pub fn rot_deg_per_min(raw: i8) -> Option<f64> {
     match raw {
         -128 => None,
-        127 => Some(5.0),
-        -127 => Some(-5.0),
+        127 => Some(10.0),
+        -127 => Some(-10.0),
         r => Some((f64::from(r) / 4.733).powi(2).copysign(f64::from(r))),
     }
 }
@@ -444,7 +445,8 @@ mod tests {
     fn rate_of_turn_decoding() {
         assert_eq!(rot_deg_per_min(0), Some(0.0));
         assert_eq!(rot_deg_per_min(-128), None);
-        assert_eq!(rot_deg_per_min(127), Some(5.0));
+        assert_eq!(rot_deg_per_min(127), Some(10.0));
+        assert_eq!(rot_deg_per_min(-127), Some(-10.0));
         assert!(rot_deg_per_min(-20).unwrap() < -17.0); // to port
         assert!((rot_deg_per_min(10).unwrap() - 4.46).abs() < 0.05);
     }

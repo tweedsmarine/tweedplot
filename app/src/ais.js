@@ -502,8 +502,8 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     if (!el) return;
     el.querySelector('[data-act="fleet"]')?.addEventListener("click", () => {
       const t = targets.get(mmsi);
-      fleet.entries.push({ mmsi: String(mmsi).padStart(9, "0"), name: t?.name ?? "",       group: "Friends" });
-            saveFleet(); renderFleet(); renderList(); refreshPopup(); draw();
+      fleet.entries.push({ mmsi: String(mmsi).padStart(9, "0"), name: t?.name ?? "", group: "Friends" });
+      saveFleet(); renderFleet(); renderList(); refreshPopup(); draw();
     });
     el.querySelector('[data-act="unfleet"]')?.addEventListener("click", () => {
       fleet.entries = fleet.entries.filter((e) => Number(e.mmsi) !== mmsi);
@@ -530,9 +530,24 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   window.addEventListener("racenav-screen-calibration", () => draw());
 
   // ---------- list ----------------------------------------------------------------
+  /** A drop-down or text/colour field in `el` is in use: rebuilding the rows now (every AIS update)
+   *  would close it under the user's finger. `again` renders once it is left or changed. */
+  function inUse(el, again) {
+    const a = document.activeElement;
+    if (!el || !a || !el.contains(a)) return false;
+    if (!(a.tagName === "SELECT" || (a.tagName === "INPUT" && /^(color|text|number|search)$/.test(a.type)))) return false;
+    if (!a.dataset.waiting) {
+      a.dataset.waiting = "1";
+      const done = () => { a.removeEventListener("blur", done); a.removeEventListener("change", leave); delete a.dataset.waiting; setTimeout(again, 0); };
+      const leave = () => a.blur(); // a choice made: let go of it so the list updates again
+      a.addEventListener("blur", done);
+      a.addEventListener("change", leave);
+    }
+    return true;
+  }
   function renderList() {
     const ul = $("ais-list");
-    if ($("ais-list").closest(".pane")?.hidden) return;
+    if ($("ais-list").closest(".pane")?.hidden || inUse(ul, renderList)) return;
     const own = getOwn();
     const rows = [...targets.values()].filter(shown).map((t) => ({ t, c: cpaTcpa(own, t) })).filter(({ t, c }) => !(s.sleep === "hide" && isSleeping(t, c, inFleet(t.mmsi))));
     const key = { range: (r) => r.c?.range ?? 1e9, cpa: (r) => (r.c?.tcpa > 0 ? r.c.cpa : 1e9), name: (r) => (r.t.name ?? "~").toLowerCase() }[s.sort];
@@ -784,7 +799,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   const deg = (v) => (v == null ? "—" : String(Math.round(v) % 360).padStart(3, "0"));
   const age = (v) => (v == null ? "—" : v < 90 ? `${Math.round(v)} s` : v < 5400 ? `${Math.round(v / 60)} min` : `${(v / 3600).toFixed(1)} h`);
   function renderWin() {
-    if (win.hidden) return;
+    if (win.hidden || inUse($("tgt-table"), renderWin)) return;
     const rows = winRows();
     $("tgt-count").textContent = `${rows.length}`;
     for (const th of win.querySelectorAll("th")) {
@@ -866,7 +881,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   // ---------- own fleet tab ----------------------------------------------------------------
   function renderFleet() {
     const ul = $("of-list");
-    if (!ul || ul.closest(".pane")?.hidden) return;
+    if (!ul || ul.closest(".pane")?.hidden || inUse(ul, renderFleet)) return;
     const own = getOwn();
     ul.innerHTML = fleet.entries.length ? "" : `<li class="empty">No boats yet. Add an MMSI above, or click a boat on the chart › Add to own fleet.</li>`;
     for (const e of fleet.entries) {
@@ -874,7 +889,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       const t = targets.get(m);
       const li = document.createElement("li");
       const col = fleetColour(e);
-      li.innerHTML = `<input type="color" class="of-col" value="${col}" title="Stern colour on the chart" /><div class="main"><b></b><small></small></div>
+      li.innerHTML = `<input type="color" class="of-col" value="${esc(col)}" title="Stern colour on the chart" /><div class="main"><b></b><small></small></div>
         <label class="of-trk" title="Draw this boat's track"><input type="checkbox" /> Track</label>
         <select title="Group">${Object.keys(GROUP_COLOURS).map((g) => `<option${g === e.group ? " selected" : ""}>${g}</option>`).join("")}</select><button data-act="del" title="Remove">✕</button>`;
       li.querySelector("b").textContent = e.name || t?.name || `MMSI ${e.mmsi}`;

@@ -156,7 +156,7 @@ async fn nzbathy_import(app: tauri::AppHandle, path: String) -> Result<serde_jso
     let r = tauri::async_runtime::spawn_blocking(move || {
         *NZBATHY.write().unwrap() = None; // the old store is replaced
         let progress = |stage: &str, done: u64, total: u64| {
-            let _ = h.emit("data-progress", serde_json::json!({ "stage": format!("NIWA bathymetry: {stage}"), "done": done, "total": total }));
+            let _ = h.emit("data-progress", serde_json::json!({ "stage": stage, "done": done, "total": total }));
         };
         chart::nzbathy::import(std::path::Path::new(&path), &dir, &progress, &DATA_CANCEL).map_err(|e| e.to_string())
     })
@@ -1860,7 +1860,7 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
     if let Some(rest) = path.trim_start_matches('/').strip_prefix("nzbathy/") {
         let p: Vec<u32> = rest.trim_end_matches(".png").split('/').filter_map(|v| v.parse().ok()).collect();
         let png = match (p.as_slice(), nzbathy()) {
-            ([z, x, y], Some(n)) => n.tile_png(*z as u8, *x, *y).map(|t| t.as_ref().clone()),
+            ([z, x, y], Some(n)) if *z <= 22 => n.tile_png(*z as u8, *x, *y).map(|t| t.as_ref().clone()),
             _ => None,
         };
         return Response::builder()
@@ -2095,7 +2095,9 @@ pub fn run() {
             nmea::nmea_ports,
             nmea::nmea_sources_get,
             nmea::nmea_sources_set,
-            nmea::nmea_capture_save,
+            nmea::nmea_capture_begin,
+            nmea::nmea_capture_append,
+            nmea::nmea_capture_end,
             polar_files,
             polar_import,
             polar_open_folder,

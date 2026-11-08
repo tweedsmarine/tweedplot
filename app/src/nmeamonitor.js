@@ -46,30 +46,38 @@ function savePrefs(prefs) {
   window.dispatchEvent(new CustomEvent("racenav-nmea-monitor-prefs", { detail: prefs }));
 }
 
-function localTime(value) {
+function isoTime(value) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? String(value || "") : date.toISOString();
 }
 
 function frameText(frame, sourceName, timestamps) {
-  const prefix = timestamps ? `${localTime(frame.receivedAt)}  ` : "";
+  const prefix = timestamps ? `${isoTime(frame.receivedAt)}  ` : "";
   const invalid = frame.checksumValid ? "" : `  [INVALID${frame.error ? `: ${frame.error}` : ""}]`;
   return `${prefix}${sourceName}  ${frame.raw}${invalid}`;
 }
 
-function captureText(capture) {
-  const started = new Date(capture.startedAt).toISOString();
-  const ended = new Date(capture.endedAt).toISOString();
+function captureHeader(capture) {
   return [
     `TweedPlot NMEA 0183 capture`,
-    `Started: ${started}`,
-    `Ended: ${ended}`,
-    `Duration: ${Math.round((capture.endedAt - capture.startedAt) / 1000)} seconds`,
+    `Started: ${new Date(capture.startedAt).toISOString()}`,
     `Input filter: ${capture.inputName}`,
     `Timestamps: ${capture.timestamps ? "yes" : "no"}`,
     "",
-    ...capture.frames.map((item) => frameText(item.frame, item.sourceName, capture.timestamps)),
-    capture.frames.length ? "" : "No sentences were received during this capture.",
+    "",
+  ].join("\r\n");
+}
+
+function captureLines(capture, frames) {
+  return frames.map((item) => `${frameText(item.frame, item.sourceName, capture.timestamps)}\r\n`).join("");
+}
+
+function captureFooter(capture, endedAt) {
+  return [
+    capture.count ? "" : "No sentences were received during this capture.",
+    `Ended: ${new Date(endedAt).toISOString()}`,
+    `Duration: ${Math.round((endedAt - capture.startedAt) / 1000)} seconds, ${capture.count} sentence${capture.count === 1 ? "" : "s"}`,
+    "",
   ].join("\r\n");
 }
 
@@ -156,6 +164,13 @@ export function setupNmeaMonitor(root, { standalone = false, openSettings = () =
   let pausedDropped = 0;
   let capture = null;
   let timer = 0;
+  // Rows are only built while the monitor is on screen: hidden (a closed drawer, another view) it
+  // just keeps the buffer, and draws it when shown again. A busy bus is many sentences a second.
+  let onScreen = false, dirty = false;
+  new IntersectionObserver((entries) => {
+    onScreen = entries.some((e) => e.isIntersecting);
+    if (onScreen && dirty && !paused) { dirty = false; renderLog(); }
+  }).observe(root);
 
   function applyPrefs(next) {
     prefs.timestamps = next.timestamps !== false;
@@ -240,6 +255,7 @@ export function setupNmeaMonitor(root, { standalone = false, openSettings = () =
   }
 
   function renderLog() {
+    if (!onScreen) { dirty = true; return; }
     const shown = frames.filter(({ frame }) => !filter.value || frame.sourceId === filter.value).slice(-MAX_RENDERED);
     const fragment = document.createDocumentFragment();
     for (const item of shown) fragment.append(makeRow(item));
@@ -261,7 +277,7 @@ export function setupNmeaMonitor(root, { standalone = false, openSettings = () =
     if (frame.error) row.title = frame.error;
     const time = document.createElement("span");
     time.className = "nmea-frame-time";
-    time.textContent = prefs.timestamps ? localTime(frame.receivedAt) : "";
+    time.textContent = prefs.timestamps ? isoTime(frame.receivedAt) : "";
     const source = document.createElement("span");
     source.className = "nmea-frame-source";
     source.textContent = sourceName;
@@ -281,11 +297,12 @@ export function setupNmeaMonitor(root, { standalone = false, openSettings = () =
   function appendFrame(item) {
     frames.push(item);
     if (frames.length > MAX_FRAMES) {
+      pausedDropped += frames.length - MAX_FRAMES;
       frames.splice(0, frames.length - MAX_FRAMES);
-      pausedDropped += 1;
     }
     if (paused) return;
     if (filter.value && filter.value !== item.sourceId) return;
+    if (!onScreen) { dirty = true; return; }
     log.querySelector(".nmea-monitor-empty")?.remove();
     log.append(makeRow(item));
     while (log.childElementCount > MAX_RENDERED) log.firstElementChild.remove();
@@ -293,13 +310,23 @@ export function setupNmeaMonitor(root, { standalone = false, openSettings = () =
   }
 
   function captureItemsFor(payload, receivedFrames) {
-    if (!capture) return;
+    if (!capture || capture.finishing) return;
     for (const frame of receivedFrames) {
       if (!capture.inputId || frame.sourceId === capture.inputId) {
         capture.frames.push({ frame, sourceName: payload.sourceName || sourceNames.get(payload.sourceId) || payload.sourceId });
+        capture.count += 1;
       }
     }
     if (Date.now() >= capture.deadline) finishCapture();
+  }
+
+  /** A file capture's sentences so far go to the file (every few seconds), so a long capture
+   *  never piles up in the page. Writes are chained so they land in order. */
+  function flushCapture(c) {
+    if (!c || c.kind !== "file" || !c.frames.length) return c?.writing ?? Promise.resolve();
+    const text = captureLines(c, c.frames.splice(0));
+    c.writing = (c.writing || Promise.resolve()).then(() => invoke("nmea_capture_append", { text }));
+    return c.writing;
   }
 
   async function finishCapture() {
@@ -310,51 +337,66 @@ export function setupNmeaMonitor(root, { standalone = false, openSettings = () =
     clearInterval(timer);
     timer = 0;
     setCaptureActive(false);
-    const text = captureText({
-      startedAt: done.startedAt,
-      endedAt: Date.now(),
-      inputName: done.inputName,
-      timestamps: done.timestamps,
-      frames: done.frames,
-    });
+    const endedAt = Date.now();
     if (done.kind === "clipboard") {
+      const text = captureHeader(done) + captureLines(done, done.frames) + captureFooter(done, endedAt);
       try {
         await navigator.clipboard.writeText(text);
-        report(`Copied ${done.frames.length} sentence${done.frames.length === 1 ? "" : "s"} to the clipboard.`);
+        report(`Copied ${done.count} sentence${done.count === 1 ? "" : "s"} to the clipboard.`);
       } catch (error) {
-        report(`Could not copy the NMEA capture to the clipboard: ${error}`, true);
+        report(`Could not copy the NMEA capture to the clipboard (click in this window and try again): ${error}`, true);
       }
     } else {
       try {
-        const path = await invoke("nmea_capture_save", {
-          text,
-          suggest: `nmea-capture-${new Date(done.startedAt).toISOString().replaceAll(":", "-")}.txt`,
-        });
-        report(path ? `Saved ${done.frames.length} sentences to ${path}.` : "File capture cancelled; no file was written.");
+        await flushCapture(done);
+        await invoke("nmea_capture_append", { text: captureFooter(done, endedAt) });
+        await invoke("nmea_capture_end", { discard: false });
+        report(`Saved ${done.count} sentence${done.count === 1 ? "" : "s"} to ${done.path}.`);
       } catch (error) {
         report(`Could not save the NMEA capture: ${error}`, true);
+        invoke("nmea_capture_end", { discard: false }).catch(() => {});
       }
     }
   }
 
-  function startCapture(kind, durationMs) {
-    const startedAt = Date.now();
-    capture = {
+  async function startCapture(kind, durationMs) {
+    const inputId = filter.value;
+    const c = {
       kind,
-      startedAt,
-      deadline: startedAt + durationMs,
+      startedAt: Date.now(),
       frames: [],
+      count: 0,
       timestamps: prefs.timestamps,
-      inputId: filter.value,
-      inputName: filter.value ? sourceNames.get(filter.value) || filter.value : "All inputs",
+      inputId,
+      inputName: inputId ? sourceNames.get(inputId) || inputId : "All inputs",
     };
     setCaptureActive(true);
+    if (kind === "file") {
+      // where to, first: the sentences are written to it as they come
+      try {
+        c.path = await invoke("nmea_capture_begin", {
+          header: captureHeader(c),
+          suggest: `nmea-capture-${new Date(c.startedAt).toISOString().replaceAll(":", "-").slice(0, 19)}.txt`,
+        });
+      } catch (error) {
+        setCaptureActive(false);
+        report(`Could not start the NMEA capture: ${error}`, true);
+        return;
+      }
+      if (!c.path) { setCaptureActive(false); report("File capture cancelled; no file was written."); return; }
+      c.startedAt = Date.now(); // the time spent in the dialog doesn't count
+    }
+    c.deadline = c.startedAt + durationMs;
+    capture = c;
     report(`${kind === "clipboard" ? "One-minute clipboard" : "File"} capture started (${Math.ceil(durationMs / 60000)} min).`);
+    let tick = 0;
     timer = setInterval(() => {
       if (!capture) return;
       const remaining = Math.max(0, capture.deadline - Date.now());
-      if (remaining === 0) finishCapture();
-      else report(`Capture in progress: ${Math.ceil(remaining / 1000)} s remaining.`);
+      if (remaining === 0) { finishCapture(); return; }
+      if (++tick % 3 === 0) flushCapture(capture).catch((error) => report(`Could not write the NMEA capture: ${error}`, true));
+      const left = Math.ceil(remaining / 1000);
+      report(`Capture in progress: ${left >= 120 ? `${Math.ceil(left / 60)} min` : `${left} s`} remaining, ${capture.count} sentence${capture.count === 1 ? "" : "s"}${capture.path ? ` to ${capture.path}` : ""}.`);
     }, 1000);
   }
 
@@ -400,11 +442,17 @@ export function setupNmeaMonitor(root, { standalone = false, openSettings = () =
   });
   cancelButton.addEventListener("click", () => {
     if (!capture) return;
+    const was = capture;
     clearInterval(timer);
     timer = 0;
     capture = null;
     setCaptureActive(false);
-    report("Capture cancelled; no output was created.");
+    if (was.kind === "file") {
+      // let any write in flight finish, then delete the file
+      (was.writing || Promise.resolve()).catch(() => {}).then(() => invoke("nmea_capture_end", { discard: true }))
+        .then(() => report("Capture cancelled; the file was deleted."))
+        .catch((error) => report(`Capture cancelled, but the file could not be deleted: ${error}`, true));
+    } else report("Capture cancelled; no output was created.");
   });
   $("[data-edit]").addEventListener("click", () => {
     if (!standalone) { openSettings(); return; }

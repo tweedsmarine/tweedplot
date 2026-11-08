@@ -163,7 +163,7 @@ export function setupData(map, { toast, reloadTiles } = {}) {
     if (map.getLayer("nzbathy")) map.setLayoutProperty("nzbathy", "visibility", on ? "visible" : "none");
   };
   const reloadNz = () => { const src = map.getSource("nzbathy"); if (src?.setTiles) src.setTiles(src.tiles.map((t) => t.replace(/[?&]r=\d+/, "") + `${t.includes("?") ? "&" : "?"}r=${Date.now()}`)); };
-  $("data-nz-show").checked = localStorage.getItem("racenav.nzbathy.show") === "1";
+  try { $("data-nz-show").checked = localStorage.getItem("racenav.nzbathy.show") === "1"; } catch { /* storage unavailable */ }
   $("data-nz-show").onchange = (e) => setNzLayer(e.target.checked);
   $("data-nz").onclick = async () => {
     if (busy) return;

@@ -509,8 +509,13 @@ fn consume_bytes(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
     }
 }
 
+/// The file a capture is being written to (one at a time). Captures can run for hours, so the
+/// page sends its sentences every few seconds and they are appended here, not kept in the page.
+static CAPTURE: Mutex<Option<std::path::PathBuf>> = Mutex::new(None);
+
+/// Start a capture to a file: asks where, writes `header` and returns the path (None if cancelled).
 #[tauri::command]
-pub async fn nmea_capture_save(app: tauri::AppHandle, text: String, suggest: Option<String>) -> Result<Option<String>, String> {
+pub async fn nmea_capture_begin(app: tauri::AppHandle, header: String, suggest: Option<String>) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
     let mut dialog = app.dialog().file().set_title("Save NMEA capture").add_filter("NMEA text log", &["txt", "log"]);
     if let Some(name) = suggest {
@@ -521,8 +526,29 @@ pub async fn nmea_capture_save(app: tauri::AppHandle, text: String, suggest: Opt
     if path.extension().is_none_or(|extension| !extension.eq_ignore_ascii_case("txt") && !extension.eq_ignore_ascii_case("log")) {
         path.set_extension("txt");
     }
-    std::fs::write(&path, text).map_err(|error| format!("Could not write NMEA capture {}: {error}", path.display()))?;
+    std::fs::write(&path, header).map_err(|error| format!("Could not write NMEA capture {}: {error}", path.display()))?;
+    *CAPTURE.lock().unwrap() = Some(path.clone());
     Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+/// Append to the capture started with `nmea_capture_begin` (only that file can be written).
+#[tauri::command]
+pub fn nmea_capture_append(text: String) -> Result<(), String> {
+    use std::io::Write;
+    let guard = CAPTURE.lock().unwrap();
+    let Some(path) = guard.as_ref() else { return Err("No NMEA capture is running".into()) };
+    let mut f = std::fs::OpenOptions::new().append(true).open(path).map_err(|error| format!("Could not write NMEA capture {}: {error}", path.display()))?;
+    f.write_all(text.as_bytes()).map_err(|error| format!("Could not write NMEA capture {}: {error}", path.display()))
+}
+
+/// End the capture: `discard` deletes the file (a cancelled capture leaves nothing behind).
+#[tauri::command]
+pub fn nmea_capture_end(discard: bool) -> Result<(), String> {
+    let Some(path) = CAPTURE.lock().unwrap().take() else { return Ok(()) };
+    if discard {
+        std::fs::remove_file(&path).map_err(|error| format!("Could not delete {}: {error}", path.display()))?;
+    }
+    Ok(())
 }
 
 fn start_sources(app: &tauri::AppHandle, sources: &[SourceConfig], mut arbitration: ArbitrationConfig) {

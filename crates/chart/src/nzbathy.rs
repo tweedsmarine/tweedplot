@@ -1,4 +1,4 @@
-//! NIWA's New Zealand regional bathymetry (2016, 250 m, CC BY): imported from the
+//! NIWA's New Zealand regional bathymetry (Mitchell et al. 2012, released 2016, 250 m, © NIWA): imported from the
 //! GeoTIFF NIWA publishes (`nzbathy_2016.tif`, in a zip or loose), kept as a compact tiled
 //! store with coarser levels, and drawn as shaded depth images with contours for the chart
 //! (`<z>/<x>/<y>` 256-pixel PNG tiles).
