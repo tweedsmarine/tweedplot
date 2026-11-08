@@ -31,6 +31,7 @@ pub mod hires;
 pub mod lerc;
 pub mod marine;
 pub mod mvt;
+pub mod nzbathy;
 pub mod remote;
 pub mod s52;
 pub mod s57;

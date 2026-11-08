@@ -206,6 +206,8 @@ const map = new maplibregl.Map({
       chart: { type: "vector", tiles: [TILE_URL], minzoom: 0, maxzoom: 16 },
       // high-resolution depths (LINZ coastal elevation, 1 m), drawn in Rust as images
       hires: { type: "raster", tiles: [TILE_URL.replace("{z}/{x}/{y}.pbf", "hires/{z}/{x}/{y}.png")], tileSize: 256, minzoom: 10, maxzoom: 18 },
+      // NIWA 2016 bathymetry grid (250 m), imported in Chart data and drawn in Rust as images
+      nzbathy: { type: "raster", tiles: [TILE_URL.replace("{z}/{x}/{y}.pbf", "nzbathy/{z}/{x}/{y}.png")], tileSize: 256, minzoom: 3, maxzoom: 14 },
       // own soundings (from tracks, TimeZero PBG and XYZ imports), drawn in Rust as images
       pbathy: { type: "raster", tiles: [TILE_URL.replace("{z}/{x}/{y}.pbf", "pbathy/{z}/{x}/{y}.png")], tileSize: 256, minzoom: 3, maxzoom: 20 },
       // online maps: off unless turned on in Chart › Layers (webmap.js). Fetched by Rust, which sends nothing while off
@@ -227,6 +229,9 @@ const map = new maplibregl.Map({
       { id: "depare", type: "fill", source: "chart", "source-layer": "depare",
         layout: { visibility: "none", "fill-sort-key": ["coalesce", ["get", "sk"], ["get", "band"]] },
         paint: { "fill-color": depareColour(), "fill-antialias": false } },
+      // NIWA grid: under the high-resolution depths, which are finer where they exist
+      { id: "nzbathy", type: "raster", source: "nzbathy", minzoom: 3, layout: { visibility: localStorage.getItem("racenav.nzbathy.show") === "1" ? "visible" : "none" },
+        paint: { "raster-opacity": 0.92, "raster-resampling": "linear" } },
       // over the charted depth areas, under the chart's contours (the safety contour stays on top)
       { id: "hires", type: "raster", source: "hires", minzoom: 10, layout: { visibility: localStorage.getItem("racenav.hires.show") === "0" ? "none" : "visible" },
         paint: { "raster-opacity": 0.92, "raster-resampling": "linear" } },

@@ -109,6 +109,84 @@ fn hires_dir(app: &tauri::AppHandle) -> PathBuf {
     app.path().app_data_dir().map(|p| p.join("hires")).unwrap_or_else(|_| PathBuf::from("hires"))
 }
 
+/// The NIWA 2016 bathymetry grid (250 m), imported from the zip NIWA supplies.
+static NZBATHY: std::sync::RwLock<Option<Arc<chart::nzbathy::NzBathy>>> = std::sync::RwLock::new(None);
+
+fn nzbathy() -> Option<Arc<chart::nzbathy::NzBathy>> {
+    NZBATHY.read().unwrap().clone()
+}
+
+fn open_nzbathy(app: &tauri::AppHandle) {
+    *NZBATHY.write().unwrap() = chart::nzbathy::NzBathy::open(&nzbathy_dir(app)).map(Arc::new);
+}
+
+/// NIWA bathymetry store: `RACENAV_NZBATHY_DIR`, else `<dev data>\nzbathy`, else `<app data>\nzbathy`.
+fn nzbathy_dir(app: &tauri::AppHandle) -> PathBuf {
+    if let Ok(d) = std::env::var("RACENAV_NZBATHY_DIR") {
+        return PathBuf::from(d);
+    }
+    let dev = dev_root();
+    if dev.is_dir() {
+        return dev.join("nzbathy");
+    }
+    app.path().app_data_dir().map(|p| p.join("nzbathy")).unwrap_or_else(|_| PathBuf::from("nzbathy"))
+}
+
+/// Ask for the NIWA bathymetry zip (or the GeoTIFF inside it).
+#[tauri::command]
+async fn nzbathy_pick_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Import NIWA bathymetry grid")
+        .add_filter("NIWA bathymetry (zip or GeoTIFF)", &["zip", "tif", "tiff"])
+        .add_filter("All files", &["*"])
+        .blocking_pick_file();
+    let Some(p) = picked else { return Ok(None) };
+    Ok(Some(p.into_path().map_err(|e| e.to_string())?.to_string_lossy().into_owned()))
+}
+
+/// Convert the NIWA grid into the store and open it.
+#[tauri::command]
+async fn nzbathy_import(app: tauri::AppHandle, path: String) -> Result<serde_json::Value, String> {
+    data_guard()?;
+    let dir = nzbathy_dir(&app);
+    let h = app.clone();
+    let r = tauri::async_runtime::spawn_blocking(move || {
+        *NZBATHY.write().unwrap() = None; // the old store is replaced
+        let progress = |stage: &str, done: u64, total: u64| {
+            let _ = h.emit("data-progress", serde_json::json!({ "stage": format!("NIWA bathymetry: {stage}"), "done": done, "total": total }));
+        };
+        chart::nzbathy::import(std::path::Path::new(&path), &dir, &progress, &DATA_CANCEL).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string());
+    DATA_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+    open_nzbathy(&app);
+    let s = r??;
+    Ok(serde_json::json!({ "area": s.area, "bytes": s.bytes }))
+}
+
+/// Whether the NIWA grid is imported: its folder, size and area.
+#[tauri::command]
+fn nzbathy_status(app: tauri::AppHandle) -> serde_json::Value {
+    let dir = nzbathy_dir(&app);
+    match nzbathy() {
+        Some(n) => serde_json::json!({ "dir": dir, "have": true, "bytes": n.bytes(), "area": n.area() }),
+        None => serde_json::json!({ "dir": dir, "have": false }),
+    }
+}
+
+#[tauri::command]
+fn nzbathy_delete(app: tauri::AppHandle) -> Result<(), String> {
+    *NZBATHY.write().unwrap() = None; // the file is open
+    let p = nzbathy_dir(&app).join(chart::nzbathy::FILE);
+    let r = if p.exists() { std::fs::remove_file(&p).map_err(|e| e.to_string()) } else { Ok(()) };
+    open_nzbathy(&app);
+    r
+}
+
 /// A clear 256-pixel PNG, for map tiles without high-resolution depths.
 fn clear_png() -> &'static [u8] {
     static PNG: OnceLock<Vec<u8>> = OnceLock::new();
@@ -1505,6 +1583,7 @@ fn data_folders(app: &tauri::AppHandle) -> Vec<(&'static str, String, &'static s
         ("S-63 / ENC charts", dir(enc), "Exchange sets and permits (PERMIT.TXT) for S-63 charts; or use Chart › Encrypted charts (S-63)"),
         ("LINZ charts (NZ)", dir(chart_dir(app)), "LINZ chart data (.gpkg) for New Zealand"),
         ("High-resolution depths", dir(hires_dir(app)), "LINZ coastal elevation GeoTIFFs"),
+        ("NIWA bathymetry", dir(nzbathy_dir(app)), "NIWA 2016 250 m grid"),
         ("Coastline", dir(coast_dir(app)), "GSHHG coastline zip or GSHHS_shp folder"),
         ("Bathymetry", dir(bathy_dir(app)), "Downloaded ETOPO areas"),
         ("Marine boundaries", dir(marine_dir(app)), "Maritime boundaries and fishing rules"),
@@ -1777,6 +1856,20 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
             .body(png.unwrap_or_else(|| clear_png().to_vec()))
             .expect("valid response");
     }
+    // NIWA bathymetry images: /nzbathy/<z>/<x>/<y>.png
+    if let Some(rest) = path.trim_start_matches('/').strip_prefix("nzbathy/") {
+        let p: Vec<u32> = rest.trim_end_matches(".png").split('/').filter_map(|v| v.parse().ok()).collect();
+        let png = match (p.as_slice(), nzbathy()) {
+            ([z, x, y], Some(n)) => n.tile_png(*z as u8, *x, *y).map(|t| t.as_ref().clone()),
+            _ => None,
+        };
+        return Response::builder()
+            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .header(header::CACHE_CONTROL, "no-store")
+            .header(header::CONTENT_TYPE, "image/png")
+            .body(png.unwrap_or_else(|| clear_png().to_vec()))
+            .expect("valid response");
+    }
     let parts: Vec<&str> = path.trim_start_matches('/').trim_end_matches(".pbf").split('/').collect();
     let parsed = match parts.as_slice() {
         [z, x, y] => z.parse::<u8>().ok().zip(x.parse::<u32>().ok()).zip(y.parse::<u32>().ok()),
@@ -1952,6 +2045,10 @@ pub fn run() {
             hires_status,
             hires_delete,
             hires_height,
+            nzbathy_pick_file,
+            nzbathy_import,
+            nzbathy_status,
+            nzbathy_delete,
             webmap::webmap_set,
             webmap::webmap_status,
             webmap::webmap_clear_cache,
@@ -2214,6 +2311,7 @@ pub fn run() {
             std::thread::spawn(move || {
                 s63_cmd::load(&h);
                 open_hires(&h);
+                open_nzbathy(&h);
                 pbathy::open(&h);
                 open_charts(h);
             });

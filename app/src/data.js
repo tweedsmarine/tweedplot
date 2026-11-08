@@ -148,6 +148,44 @@ export function setupData(map, { toast, reloadTiles } = {}) {
     refreshHires(); planHires();
   };
 
+  // ---------- NIWA bathymetry grid (imported from NIWA's zip) ------------------------------
+  async function refreshNz() {
+    let n = null;
+    try { n = await invoke("nzbathy_status"); } catch { return; }
+    if (!n) return;
+    dot("data-nz-dot", n.have ? "ok" : "");
+    $("data-nz-state").textContent = n.have ? `imported, ${fmtMB(n.bytes)}` : "not imported (NIWA 2016 grid)";
+    $("data-nz-del").hidden = !n.have;
+  }
+  const setNzLayer = (on) => {
+    try { localStorage.setItem("racenav.nzbathy.show", on ? "1" : "0"); } catch { /* ignore */ }
+    $("data-nz-show").checked = on;
+    if (map.getLayer("nzbathy")) map.setLayoutProperty("nzbathy", "visibility", on ? "visible" : "none");
+  };
+  const reloadNz = () => { const src = map.getSource("nzbathy"); if (src?.setTiles) src.setTiles(src.tiles.map((t) => t.replace(/[?&]r=\d+/, "") + `${t.includes("?") ? "&" : "?"}r=${Date.now()}`)); };
+  $("data-nz-show").checked = localStorage.getItem("racenav.nzbathy.show") === "1";
+  $("data-nz-show").onchange = (e) => setNzLayer(e.target.checked);
+  $("data-nz").onclick = async () => {
+    if (busy) return;
+    let path = null;
+    try { path = await invoke("nzbathy_pick_file"); } catch (e) { say(`Could not open the file dialog: ${e}`, "bad"); return; }
+    if (!path) return;
+    setBusy(true);
+    say("Importing the NIWA bathymetry grid…");
+    try {
+      await invoke("nzbathy_import", { path });
+      say("NIWA bathymetry imported. Shown in Chart › Layers (not for navigation).", "good");
+      setNzLayer(true);
+      reloadNz();
+    } catch (e) {
+      say(String(e) === "cancelled" ? "Import cancelled." : `Import failed: ${e}`, String(e) === "cancelled" ? "warn" : "bad");
+    } finally { setBusy(false); refreshNz(); }
+  };
+  $("data-nz-del").onclick = async () => {
+    try { await invoke("nzbathy_delete"); say("NIWA bathymetry deleted."); reloadNz(); } catch (e) { say(`Could not delete: ${e}`, "bad"); }
+    refreshNz();
+  };
+
   async function plan() {
     planHires();
     const area = viewArea();
@@ -161,7 +199,7 @@ export function setupData(map, { toast, reloadTiles } = {}) {
 
   function setBusy(on) {
     busy = on;
-    for (const id of ["data-gshhg", "data-etopo", "data-mb", "data-mpi", "data-hr"]) $(id).disabled = on;
+    for (const id of ["data-gshhg", "data-etopo", "data-mb", "data-mpi", "data-hr", "data-nz"]) $(id).disabled = on;
     $("data-cancel").disabled = !on;
     if (!on) { $("data-progress").hidden = true; if (job) { job.done(""); job = null; } }
   }
@@ -304,6 +342,7 @@ export function setupData(map, { toast, reloadTiles } = {}) {
   window.addEventListener("racenav-charts", refresh);
   refresh();
   refreshHires();
+  refreshNz();
 
   return { refresh };
 }

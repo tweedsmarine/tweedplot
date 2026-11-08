@@ -524,6 +524,7 @@
         <h4>Chart layers</h4>
         <div class="wx-row checks"><label title="The high-resolution depths you downloaded in Chart data, shown from about 2 NM range in"><input id="data-hr-show" type="checkbox" /> High-resolution depths</label>
           <label title="The finer ETOPO depth shading and contours, where downloaded (Chart data)"><input id="lv-etopo" type="checkbox" checked /> Detailed depths (ETOPO)</label></div>
+        <div class="wx-row checks"><label title="The NIWA 250 m seabed grid you imported in Chart data. Not for navigation"><input id="data-nz-show" type="checkbox" /> NIWA bathymetry (250 m)</label></div>
         <div class="wx-row checks"><label title="The coarse Natural Earth depth shading drawn under the charts"><input id="lv-wdepth" type="checkbox" checked /> World depths</label>
           <label title="The GSHHG world coastline, where downloaded (Chart data)"><input id="lv-wcoast" type="checkbox" checked /> World coastline</label></div>
         <div class="wx-note">Layers can overlap: with OpenStreetMap on, the coarse world depths show as pale water that doesn't match its coastline. Switch off any layer you don't want.</div>
@@ -586,6 +587,9 @@
           <div class="wx-row"><span id="data-hr-plan" class="grow wx-note"></span>
             <button id="data-hr" title="Download LINZ's coastal elevation tiles (aerial laser surveys, to about 25 m depth) for the area shown on the chart">Get for chart view</button>
             <button id="data-hr-del" title="Delete all the downloaded high-resolution depths">✕ All</button></div>
+          <div class="data-item"><span class="dot" id="data-nz-dot"></span><span class="grow"><b>NIWA bathymetry</b> (NZ region, 250 m): <span id="data-nz-state">—</span></span>
+            <button id="data-nz" title="Import the NIWA 2016 bathymetry grid (nzbathy2016.zip, from NIWA, CC BY-NZ 3.0) as a map layer. Takes a minute or two. Not for navigation">Import…</button>
+            <button id="data-nz-del" hidden title="Delete the imported NIWA bathymetry">✕</button></div>
           <div class="data-item"><span class="dot" id="pb-dot"></span><span class="grow"><b>Own soundings</b> (your soundings as a seabed): <span id="pb-state">—</span></span>
             <button id="pb-zoom" hidden title="Turn the own soundings on and zoom to where nearly all of them are">Show</button></div>
           <div class="wx-row checks"><label title="Add depths to own soundings as they come in from the depth source selected in Settings (Signal K, NMEA 0183, or NMEA 2000 through Signal K): about one a second, checked as tracks are, added a minute at a time. Depth below the transducer plus the transducer depth set in Settings › Vessel"><input id="pb-live" type="checkbox" /> Add soundings live</label>

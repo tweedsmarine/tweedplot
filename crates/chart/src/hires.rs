@@ -237,7 +237,7 @@ impl Hires {
         if heights.iter().all(|h| h.is_nan() || *h > 0.0) {
             return None;
         }
-        Some(shade(&heights, G, res, contour_step(z)))
+        Some(shade(&heights, G, res, contour_step(z), colour, 3.0))
     }
 
     /// Bilinear height at NZTM point `p` from level `li` of file `fi` (nearest where a
@@ -307,14 +307,14 @@ fn colour(h: f32) -> [f32; 3] {
 }
 
 /// The image: depth colours, lit from the north-west, with contours every `step` m;
-/// clear above 0 m and where there is no data. `h` is `g` × `g` with a border of one.
-fn shade(h: &[f32], g: usize, res: f64, step: f32) -> Vec<u8> {
+/// clear above 0 m and where there is no data. `h` is `g` × `g` with a border of one;
+/// `colour` gives the RGB of a height and `exaggerate` scales the slopes for the lighting.
+pub(crate) fn shade(h: &[f32], g: usize, res: f64, step: f32, colour: fn(f32) -> [f32; 3], exaggerate: f32) -> Vec<u8> {
     let n = g - 2;
     let mut rgba = vec![0u8; n * n * 4];
     let at = |x: usize, y: usize| h[y * g + x];
     let (az, alt) = (315f32.to_radians(), 45f32.to_radians());
     let (lx, ly, lz) = (alt.cos() * az.sin(), alt.cos() * az.cos(), alt.sin());
-    let exaggerate = 3.0f32;
     for y in 0..n {
         for x in 0..n {
             let c = at(x + 1, y + 1);
