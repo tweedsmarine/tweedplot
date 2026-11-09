@@ -99,6 +99,14 @@ pub struct Mark {
     /// "event" for marks dropped with a plotter's event or quick-mark button.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub tags: String,
+    /// A kind's own details, as JSON: an anchor's swing radius, scope, bottom type and holding
+    /// ({"radius_m": 45, "scope_m": 30, "bottom": "mud", "holding": 4, "dropped": 1794190000}).
+    #[serde(skip_serializing_if = "is_empty_json")]
+    pub data: serde_json::Value,
+}
+
+fn is_empty_json(v: &serde_json::Value) -> bool {
+    v.is_null() || v.as_object().is_some_and(|o| o.is_empty())
 }
 
 fn is_zero(v: &i64) -> bool {
@@ -125,6 +133,7 @@ impl Default for Mark {
             temp: None,
             sog: None,
             tags: String::new(),
+            data: serde_json::Value::Null,
         }
     }
 }
@@ -262,7 +271,7 @@ const SAME_UNNAMED_NM: f64 = 0.002;
 /// their date is the day of that import, not when they were made.
 const BULK_SAME_SECOND: usize = 20;
 
-const MARK_COLS: &str = "id, name, lat, lon, kind, notes, grp, barrier_nm, modified, created, date_unknown, colour, symbol, depth, temp, sog, tags";
+const MARK_COLS: &str = "id, name, lat, lon, kind, notes, grp, barrier_nm, modified, created, date_unknown, colour, symbol, depth, temp, sog, tags, data";
 const TRACK_COLS: &str =
     "id, name, notes, colour, source, modified, points, start, \"end\", distance_nm, max_sog, west, south, east, north, has_depth, has_temp";
 
@@ -285,6 +294,7 @@ fn mark_row(r: &rusqlite::Row) -> rusqlite::Result<Mark> {
         temp: r.get(14)?,
         sog: r.get(15)?,
         tags: r.get(16)?,
+        data: serde_json::from_str(&r.get::<_, String>(17)?).unwrap_or(serde_json::Value::Null),
     })
 }
 
@@ -320,13 +330,13 @@ fn depth_refs(c: &Connection) -> std::collections::HashMap<String, (String, Opti
 
 fn insert_mark(c: &Connection, m: &Mark, import_id: Option<i64>) -> Result<()> {
     c.prepare_cached(
-        "INSERT INTO marks (geom, id, name, lat, lon, kind, notes, grp, barrier_nm, modified, created, date_unknown, colour, symbol, import_id, depth, temp, sog, tags)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+        "INSERT INTO marks (geom, id, name, lat, lon, kind, notes, grp, barrier_nm, modified, created, date_unknown, colour, symbol, import_id, depth, temp, sog, tags, data)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
          ON CONFLICT(id) DO UPDATE SET geom = excluded.geom, name = excluded.name, lat = excluded.lat, lon = excluded.lon,
            kind = excluded.kind, notes = excluded.notes, grp = excluded.grp, barrier_nm = excluded.barrier_nm,
            modified = excluded.modified, created = excluded.created, date_unknown = excluded.date_unknown,
            colour = excluded.colour, symbol = excluded.symbol, depth = excluded.depth, temp = excluded.temp,
-           sog = excluded.sog, tags = excluded.tags, deleted_at = NULL",
+           sog = excluded.sog, tags = excluded.tags, data = excluded.data, deleted_at = NULL",
     )?
     .execute(params![
         store::gpkg_point(m.lon, m.lat),
@@ -347,7 +357,8 @@ fn insert_mark(c: &Connection, m: &Mark, import_id: Option<i64>) -> Result<()> {
         m.depth,
         m.temp,
         m.sog,
-        m.tags
+        m.tags,
+        if is_empty_json(&m.data) { "{}".to_string() } else { m.data.to_string() }
     ])?;
     Ok(())
 }
@@ -1488,6 +1499,7 @@ impl Library {
                     }
                     t.join(",")
                 },
+                data: serde_json::Value::Null,
             };
             if let Some(k) = symbol_kinds.get(&m.symbol) {
                 m.kind = k.clone();

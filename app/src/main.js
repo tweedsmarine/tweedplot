@@ -38,6 +38,7 @@ import { setupWindArrows } from "./windarrows.js";
 import { poiImage } from "./poi.js";
 import { symImage } from "./marksymbols.js";
 import { setupBarriers } from "./barriers.js";
+import { setupAnchor } from "./anchor.js";
 import { setupLaylines } from "./laylines.js";
 import { setupVarDiagram } from "./varrose.js";
 import { setupRoute, markImage } from "./route.js";
@@ -460,6 +461,7 @@ let ruler = null;
 let gribTools = null;
 let arrows = null;
 let barriers = null;
+let anchor = null;
 let laylines = null;
 let varRoses = null;
 let ctxRose = false; // right-click was on the variation diagram
@@ -641,6 +643,9 @@ map.on("load", () => {
     status: (s) => { if (s) libNote(s); } });
   listen("library-changed", () => { clearTimeout(tracksTimer); tracksTimer = setTimeout(() => { tracks.refresh(); barriers?.refresh(); }, 150); });
   barriers = setupBarriers(map, { before: "track", library, toast, getVariation: variationAt });
+  anchor = setupAnchor(map, { library, alarms, before: "track", toast,
+    getBoat: () => ({ pos: lastBoat, v: vessel }), getVessel: () => boat.get() });
+  document.getElementById("anchor-btn").onclick = () => (anchor.watching() ? window.dispatchEvent(new Event("racenav-anchor-open")) : anchor.drop());
   varRoses = setupVarDiagram(map, { getVariation: variationAt,
     getAnnualChange: (p) => magneticVariation(p[1], p[0])?.annualChange ?? null });
   laylines = setupLaylines(map, { before: "track", getVariation: variationAt, getTarget: layTarget, getBoat: () => lastBoat, getWind: layWind,
@@ -1245,6 +1250,7 @@ const ctx = document.getElementById("ctx");
 let ctxAt = null;
 let ctxPoint = null; // the same place, in map pixels
 let ctxMark = null; // library mark under the right-click, if any
+let ctxAnchor = null; // anchor mark under the right-click, if any
 let ctxRuler = null; // ruler under the right-click: { rid, i, points }
 let ctxBarrier = null; // barrier under the right-click: { id, i, active, name }
 let ctxObject = null; // library object under the right-click (Edit in the library)
@@ -1258,6 +1264,12 @@ map.on("contextmenu", (e) => {
   ctx.querySelector('[data-act="mark"]').textContent = ctxMark ? `Add ${ctxMark.name} to route` : "Add mark to route here";
   ctx.querySelector('[data-act="libmark"]').hidden = !!ctxMark;
   ctx.querySelector('[data-act="goto"]').textContent = ctxMark ? `Go to ${ctxMark.name}` : "Go to here";
+  // the anchor: drop here, again at an anchor mark, or weigh the one watched
+  ctxAnchor = anchor?.at(e.point) ?? (ctxMark?.kind === "anchor" ? ctxMark : null);
+  const watching = !!anchor?.watching();
+  ctx.querySelector('[data-act="anc-drop"]').hidden = watching || !!ctxAnchor;
+  ctx.querySelector('[data-act="anc-again"]').hidden = watching || !ctxAnchor;
+  ctx.querySelector('[data-act="anc-weigh"]').hidden = !watching;
   ctx.querySelector('[data-act="goto-clear"]').hidden = !gotoTarget;
   ctxRose = !!varRoses?.hit();
   ctx.querySelector('[data-act="rose-add"]').hidden = ctxRose;
@@ -1318,6 +1330,9 @@ ctx.addEventListener("click", (e) => {
   if (act === "start") route?.setStart(ctxAt, ctxMark);
   if (act === "mark") route?.addMark(ctxAt, ctxMark);
   if (act === "libmark") library?.newMarkAt(ctxAt);
+  if (act === "anc-drop") anchor?.drop(ctxAt);
+  if (act === "anc-again" && ctxAnchor) anchor?.again(ctxAnchor);
+  if (act === "anc-weigh") anchor?.weigh();
   if (act === "goto") setGoto({ name: ctxMark?.name ?? "Go to", lon: ctxMark?.lon ?? ctxAt[0], lat: ctxMark?.lat ?? ctxAt[1] });
   if (act === "goto-clear") setGoto(null);
   if (act === "rose-add") varRoses?.place(ctxPoint);

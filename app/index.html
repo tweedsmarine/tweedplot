@@ -710,7 +710,7 @@
         <div class="wx-row"><label class="grow" title="A warning when the next mark is this many minutes away at the speed made good towards it, or the boat is inside its arrival radius"><input id="al-arrive" type="checkbox" /> Approaching the next mark, minutes before</label><input id="al-arrive-min" type="number" min="0.5" step="0.5" /></div>
         <div class="wx-row"><label class="grow"><input id="al-poslost" type="checkbox" /> Position lost (no GPS for 30 s)</label></div>
         <h3>Anchor watch</h3>
-        <div class="wx-row"><label class="grow" for="anc-radius">Anchor watch, radius (m)</label><input id="anc-radius" type="number" min="10" step="5" /><button id="anc-drop">Drop anchor here</button></div>
+        <div class="wx-row"><label class="grow" for="anc-radius" title="The swing radius a new anchor starts with; set each anchor's own on its card">Default swing radius (m)</label><input id="anc-radius" type="number" min="10" step="5" /><button id="anc-drop">Drop anchor</button></div>
         <div id="anc-state" class="wx-note"></div>
         <h3>Targets (AIS)</h3>
           <div class="wx-row"><label class="grow"><input id="ais-cpa-on" type="checkbox" /> CPA under (NM)</label><input id="ais-cpa" type="number" min="0.05" step="0.05" /></div>
@@ -738,6 +738,8 @@
       <span id="rp-time">—</span>
       <button id="rp-stop" title="Stop the replay and go back to live data">✕</button>
     </div>
+    <button id="anchor-btn" title="Drop anchor at the bow and watch it (then drag the anchor to where it lies). When anchored: open the anchor's card">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><path d="M12 7v13M8 10h8M5 14a7 7 0 0 0 14 0"/></svg><span>Anchor</span></button>
     <button id="drop-btn" title="Drop a mark at the boat's position now, stamped with the time (no alarm)">Drop</button>
     <button id="mob-btn" title="Man overboard: mark the boat's position now, with bearing, distance and time from it until cleared">MOB</button>
     <div id="zoom-btns" aria-label="Zoom">
@@ -792,6 +794,9 @@
       <button data-act="start">Start route here</button>
       <button data-act="mark">Add mark to route here</button>
       <button data-act="libmark">New library mark here</button>
+      <button data-act="anc-drop">Drop anchor here</button>
+      <button data-act="anc-again" hidden>Anchor here again</button>
+      <button data-act="anc-weigh" hidden>Weigh anchor</button>
       <button data-act="goto">Go to here</button>
       <button data-act="goto-clear" hidden>Cancel go to</button>
       <button data-act="rose-add">Magnetic variation diagram here</button>

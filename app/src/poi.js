@@ -3,6 +3,7 @@
 
 /** kind → [label, ring colour] (the order is the menu order). */
 export const POI_KINDS = {
+  anchor: ["Anchor (where I anchored)", "#c45500"],
   anchorage: ["Good anchorage", "#1f4e79"],
   mooring: ["Mooring", "#1f4e79"],
   shelter: ["Shelter", "#1f4e79"],
@@ -44,6 +45,7 @@ function drawPoi(kind) {
   const poly = (pts) => { g.beginPath(); g.moveTo(...pts[0]); for (const p of pts.slice(1)) g.lineTo(...p); g.closePath(); g.fill(); };
   const circle = (x, y, r, fill) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); fill ? g.fill() : g.stroke(); };
   switch (kind) {
+    case "anchor": // the anchor dropped (anchor.js): the same pictogram in the mariner's orange
     case "anchorage":
       circle(0, -11, 3);
       line([[0, -8], [0, 12]]); line([[-6, -4], [6, -4]]);

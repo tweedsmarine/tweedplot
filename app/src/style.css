@@ -812,6 +812,11 @@ html:is([data-palette^="night"], [data-palette="iho-night"]) .maplibregl-canvas[
 #alarm-banner button { background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.6); color: #fff; padding: 5px 10px; border-radius: 6px; }
 @keyframes alarm-flash { 50% { background: #7d1d14; } }
 #drop-btn { position: absolute; right: 10px; bottom: calc(var(--dock-h) + 44px); z-index: 7; height: 40px; min-width: 64px; padding: 0 14px; border-radius: 6px; border: 0; background: #1f6f8b; color: #fff; font-weight: 700; box-shadow: 0 0 0 2px #000, 0 0 0 4px rgba(255,255,255,0.85); cursor: pointer; }
+#anchor-btn { position: absolute; right: 10px; bottom: calc(var(--dock-h) + 96px); z-index: 7; height: 40px; min-width: 64px; padding: 0 10px; border-radius: 6px; border: 0;
+  background: #fff; color: #c45500; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 0 0 2px #000, 0 0 0 4px rgba(255,255,255,0.85); cursor: pointer; }
+#anchor-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+#anchor-btn.on { background: #c45500; color: #fff; }
+html.ui-large #anchor-btn { height: 52px; min-width: 80px; font-size: 16px; bottom: calc(var(--dock-h) + 116px); }
 #mob-btn { position: absolute; top: 10px; right: 10px; z-index: 7; height: 48px; min-width: 80px; padding: 0 14px; border-radius: 6px; border: 0; background: #d00000; color: #fff; font-size: 17px; font-weight: 700; letter-spacing: 0.5px; box-shadow: 0 0 0 2px #000, 0 0 0 4px rgba(255,255,255,0.85); cursor: pointer; }
 #mob-btn.on { background: #ffcc00; color: #d00000; }
 #alarm-banner button { flex: none; }
@@ -1449,3 +1454,17 @@ html.cur-edge:not(#n1):not(#n2):not(#n3), html.cur-edge:not(#n1):not(#n2):not(#n
   #man-print code { font-size: 9pt; background: none; }
   #man-print .man-foot { display: none; }
 }
+
+/* the anchor's card (anchor.js) */
+.anc-card fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 6px 0; padding: 4px 8px 6px; }
+.anc-card legend { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--quiet); padding: 0 4px; }
+.anc-card .anc-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 4px 0; font-size: 13px; }
+.anc-card .anc-row input[type="number"] { width: 62px; }
+.anc-card .anc-row label { display: inline-flex; align-items: center; gap: 6px; }
+.anc-card .anc-row input[type="text"] { width: 190px; }
+.anc-card .anc-notes { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.anc-card .anc-notes textarea { width: 100%; box-sizing: border-box; }
+.anc-card .anc-state { margin: 2px 0 6px; font-size: 13px; padding: 4px 8px; border-radius: 5px; background: #f3f6f8; }
+.anc-card .anc-state.on { background: #fdebd8; color: #7a3500; }
+.anc-card .anc-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.anc-card .anc-btns .primary { background: #c45500; color: #fff; border-color: #c45500; }

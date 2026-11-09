@@ -22,7 +22,7 @@ use crate::tracks::TrackPoint;
 use crate::Result;
 
 pub const FILE: &str = "library.gpkg";
-pub const SCHEMA_VERSION: i64 = 6;
+pub const SCHEMA_VERSION: i64 = 8;
 /// Days a deleted object stays in the Trash.
 pub const TRASH_DAYS: i64 = 30;
 
@@ -99,6 +99,10 @@ fn migrate(c: &Connection) -> Result<()> {
              UPDATE meta SET value = '7' WHERE key = 'schema';
              COMMIT;",
         )?;
+    }
+    if v < 8 {
+        // a mark's own details as JSON (an anchor's swing radius, bottom type and holding)
+        c.execute_batch("BEGIN; ALTER TABLE marks ADD COLUMN data TEXT NOT NULL DEFAULT '{}'; UPDATE meta SET value = '8' WHERE key = 'schema'; COMMIT;")?;
     }
     Ok(())
 }

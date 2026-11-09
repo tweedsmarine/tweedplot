@@ -79,6 +79,8 @@ export function setupLibrary(map, { ui, toast = () => {}, getBoat = () => null }
   const empty = { type: "FeatureCollection", features: [] };
   addMarkLayers(map, "lib", "track");
   let hidden = new Set();
+  let excluded = new Set(); // drawn by another module (the watched anchor: anchor.js)
+  let onAnchorClick = null; // anchor.js: a click on an anchor mark opens its anchor card
   let markList = null; // made below (draw() can run before)
   function draw() {
     const vis = prefs.show ? "visible" : "none";
@@ -91,7 +93,7 @@ export function setupLibrary(map, { ui, toast = () => {}, getBoat = () => null }
     let shown = prefs.chartFiltered && markList ? markList.filtered() : sharedActive() ? marks.filter((m) => sharedTest(m, SHARED_MARK_CHART)) : marks;
     // groups hidden in Marks > Groups stay off the chart
     if (prefs.hiddenGroups?.length) { const h = new Set(prefs.hiddenGroups); shown = shown.filter((m) => !h.has(m.group || "")); }
-    map.getSource("lib-marks").setData({ type: "FeatureCollection", features: shown.filter((m) => !hidden.has(m.id)).map((m) => ({
+    map.getSource("lib-marks").setData({ type: "FeatureCollection", features: shown.filter((m) => !hidden.has(m.id) && !excluded.has(m.id)).map((m) => ({
       type: "Feature", properties: m.colour ? { id: m.id, name: m.name, kind: m.kind, colour: m.colour } : { id: m.id, name: m.name, kind: m.kind }, geometry: { type: "Point", coordinates: [m.lon, m.lat] } })) });
   }
   map.on("mouseenter", "lib-marks", () => { if (!dragging) map.getCanvas().style.cursor = "pointer"; });
@@ -125,6 +127,7 @@ export function setupLibrary(map, { ui, toast = () => {}, getBoat = () => null }
   map.on("click", (e) => {
     if (busy() || !prefs.show) return;
     const f = map.queryRenderedFeatures([[e.point.x - 6, e.point.y - 6], [e.point.x + 6, e.point.y + 6]], { layers: ["lib-marks"] })[0];
+    if (f && f.properties.kind === "anchor" && onAnchorClick) { if (sel) deselectMark(); onAnchorClick(byId(f.properties.id)); return; }
     if (f) { if (f.properties.id !== sel) selectMark(f.properties.id); }
     else if (sel) deselectMark();
   });
@@ -1120,6 +1123,10 @@ export function setupLibrary(map, { ui, toast = () => {}, getBoat = () => null }
     newMarkAt(p) { newMark(p); },
     /** The Add mark dialogue. */
     newMark: () => newMark(),
+    /** Marks another module draws itself (not drawn here). */
+    exclude(ids) { excluded = new Set(ids); draw(); },
+    /** What a click on an anchor mark does (anchor.js). */
+    onAnchorClick(f) { onAnchorClick = f; },
   };
 }
 

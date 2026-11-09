@@ -14,7 +14,7 @@ import { ddm } from "./navmath.js";
 const KEY = "racenav.alarms";
 const DEFAULTS = {
   shallow: true, shallowM: null, // null = the safety depth
-  anchorM: 50, anchor: null, // {lon, lat}
+  anchorM: 50, anchor: null, // the watched anchor: {lon, lat, id (its library mark), radius (m), name}; anchorM is the default radius
   air: true, airMargin: 2,
   posLost: true,
   contour: true, contourMin: 6,
@@ -56,7 +56,7 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
   try { mob = JSON.parse(localStorage.getItem(KEY + ".mob") || "null"); } catch { /* ignore */ }
   // The primary window does the alarm work and keeps the MOB and anchor; the other windows
   // show the alarms it publishes and send it their button presses (silence, MOB, anchor).
-  const command = (act, id) => emit("alarm-cmd", { act, id }).catch(() => {});
+  const command = (act, id, extra) => emit("alarm-cmd", { act, id, extra }).catch(() => {});
   const save = () => {
     try {
       if (PRIMARY) {
@@ -211,10 +211,8 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
     else if (loud.length && Date.now() % 12000 < 3000) sound.warn();
   }, 3000);
   if (!PRIMARY) listen("alarm-state", ({ payload }) => { mirror = payload || []; render(); });
-  // ---------- chart: anchor circle and MOB --------------------------------------------
+  // ---------- chart: MOB (the anchor and its swing circle: anchor.js) --------------------------------------------
   map.addSource("alarm-geo", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-  map.addLayer({ id: "alarm-anchor", type: "line", source: "alarm-geo", filter: ["==", ["get", "k"], "anchor"],
-    paint: { "line-color": "#c0392b", "line-width": 1.5, "line-dasharray": [3, 2] } });
   map.addLayer({ id: "alarm-mob-line", type: "line", source: "alarm-geo", filter: ["==", ["get", "k"], "mobline"],
     paint: { "line-color": "#d00000", "line-width": 2, "line-dasharray": [2, 1.5] } });
   map.addLayer({ id: "alarm-mob", type: "circle", source: "alarm-geo", filter: ["==", ["get", "k"], "mob"],
@@ -229,7 +227,6 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
   }
   function drawGeo() {
     const f = [];
-    if (s.anchor) f.push({ type: "Feature", properties: { k: "anchor" }, geometry: { type: "LineString", coordinates: circle(s.anchor, s.anchorM) } });
     if (mob) {
       f.push({ type: "Feature", properties: { k: "mob" }, geometry: { type: "Point", coordinates: [mob.lon, mob.lat] } });
       const b = getBoat();
@@ -356,9 +353,10 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
     // anchor watch
     if (s.anchor && b.pos) {
       const m = distNm(b.pos, [s.anchor.lon, s.anchor.lat]) * 1852;
-      $("anc-state").textContent = `Watching: ${Math.round(m)} m from the anchor, alarm beyond ${s.anchorM} m.`;
-      if (m > s.anchorM) raise("anchor", { level: "alarm", watchdog: true, text: `ANCHOR DRAGGING ${Math.round(m)} m`, detail: `Outside the ${s.anchorM} m watch circle`, onClick: () => map.easeTo({ center: [s.anchor.lon, s.anchor.lat] }) });
-      else if (m < s.anchorM * 0.9) clear("anchor");
+      const r = anchorRadius();
+      $("anc-state").textContent = `Watching ${s.anchor.name || "the anchor"}: the boat is ${Math.round(m)} m from it, alarm beyond ${r} m.`;
+      if (m > r) raise("anchor", { level: "alarm", watchdog: true, text: `ANCHOR DRAGGING ${Math.round(m)} m`, detail: `Outside the ${r} m swing circle of ${s.anchor.name || "the anchor"} · click to show`, onClick: () => { map.easeTo({ center: [s.anchor.lon, s.anchor.lat] }); window.dispatchEvent(new Event("racenav-anchor-open")); } });
+      else if (m < r * 0.9) clear("anchor");
     } else clear("anchor");
     // position lost (live, Signal K connected, no fix for 30 s)
     if (b.live && v.lat != null && b.fresh) lastPosAt = Date.now();
@@ -431,8 +429,10 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
     $("al-watchdog").value = s.watchdogMin;
     $("al-volume").value = Math.round(s.volume * 100);
     $("anc-radius").value = s.anchorM;
-    $("anc-drop").textContent = s.anchor ? "Weigh anchor" : "Drop anchor here";
-    if (!s.anchor) $("anc-state").textContent = "Off. Drop anchor at the boat's position, then set the swing radius.";
+    $("anc-drop").textContent = s.anchor ? "Weigh anchor" : "Drop anchor";
+    if (!s.anchor) $("anc-state").textContent = "Off. Drop anchor (here, the Anchor button on the chart, or right-click the chart), then drag the anchor to where it lies and set its swing radius on its card.";
+    $("anchor-btn")?.classList.toggle("on", !!s.anchor);
+    window.dispatchEvent(new Event("racenav-anchor-watch"));
     const air = getAirDraft();
     $("al-air-note").textContent = air > 0 ? `Air draft ${air} m (Settings).` : "Set the air draft in Settings first.";
   }
@@ -451,27 +451,28 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
   $("al-volume").oninput = (e) => { s.volume = +e.target.value / 100; save(); };
   $("al-test").onclick = () => sound.alarm();
   $("anc-radius").onchange = (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v) && v > 5) s.anchorM = v; save(); drawGeo(); };
-  function anchorToggle() {
-    if (s.anchor) { s.anchor = null; clear("anchor"); }
-    else {
-      const b = getBoat();
-      if (!b.pos) { $("anc-state").textContent = "No boat position yet."; return; }
-      s.anchor = { lon: b.pos[0], lat: b.pos[1] };
-    }
+  // ---------- anchor watch: the anchor itself (a library mark, dragged into place, with its
+  // card) is anchor.js; the watch on it lives here, in the primary window ----------------
+  const anchorRadius = () => Math.max(5, Number(s.anchor?.radius) || s.anchorM);
+  /** Watch an anchor ({lon, lat, id, radius, name}), or change the one watched; null weighs it. */
+  function anchorSet(a) {
+    if (!PRIMARY) { command("anchor-set", null, a); return; }
+    s.anchor = a ? { lon: a.lon, lat: a.lat, id: a.id ?? null, radius: Number(a.radius) || s.anchorM, name: a.name ?? "" } : null;
+    if (!s.anchor) clear("anchor");
     save(); syncUi(); drawGeo();
   }
-  $("anc-drop").onclick = () => (PRIMARY ? anchorToggle() : command("anchor"));
+  $("anc-drop").onclick = () => window.dispatchEvent(new Event(s.anchor ? "racenav-anchor-weigh" : "racenav-anchor-drop"));
   syncUi();
   renderDrawer();
   window.addEventListener("racenav-boat", syncUi);
 
   if (PRIMARY) {
-    listen("alarm-cmd", ({ payload: { act, id } }) => {
+    listen("alarm-cmd", ({ payload: { act, id, extra } }) => {
       if (act === "ack") ack(id);
       else if (act === "dismiss") active.get(id)?.dismiss?.();
       else if (act === "mob") pressMob();
       else if (act === "clearmob") clearMob();
-      else if (act === "anchor") anchorToggle();
+      else if (act === "anchor-set") anchorSet(extra ?? null);
     });
     // a monitor window changed the alarm settings
     window.addEventListener("storage", (e) => {
@@ -499,5 +500,7 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
     for (const id of ids) ack(id);
     return ids.length;
   }
-  return { raise, clear, ack, ackAll, sound, list, active: () => [...active.keys()], sync: syncUi };
+  return { raise, clear, ack, ackAll, sound, list, active: () => [...active.keys()], sync: syncUi,
+    /** The anchor watch: get() the watched anchor or null, set(a) to watch one, weigh() to stop. */
+    anchor: { get: () => (s.anchor ? { ...s.anchor, radius: anchorRadius() } : null), set: anchorSet, weigh: () => anchorSet(null), defaultRadius: () => s.anchorM } };
 }
