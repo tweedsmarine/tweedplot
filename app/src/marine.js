@@ -34,7 +34,7 @@ function ahead(pos, cog, sog, min) {
   return [pos[0] + (nm * Math.sin(a)) / (60 * Math.cos((pos[1] * Math.PI) / 180)), pos[1] + (nm * Math.cos(a)) / 60];
 }
 
-export function setupMarine(map, { getBoat = () => ({}), getLength = () => 0, alarms = null } = {}) {
+export function setupMarine(map, { getBoat = () => ({}), getLength = () => 0, alarms = null, ui = null } = {}) {
   let s = { ...DEFAULTS };
   try { Object.assign(s, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* storage unavailable */ }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* ignore */ } };
@@ -95,7 +95,14 @@ export function setupMarine(map, { getBoat = () => ({}), getLength = () => 0, al
     $("mar-alarm").checked = s.alarm;
     $("mar-ahead").value = String(s.ahead);
     for (const cb of $("mar-gear").querySelectorAll("input")) cb.checked = s.gear.includes(cb.value);
-    $("mar-gear").classList.toggle("dim", !s.mine);
+    // Layers › Fishing closures: All methods / My methods, and which they are (Settings › Vessel › Fishing)
+    const methods = GEAR.filter(([k]) => s.gear.includes(k)).map(([, n]) => n.toLowerCase());
+    $("mar-mine-sel").value = s.mine ? "mine" : "all";
+    $("mar-mine-row").hidden = !s.mine;
+    $("mar-mine-note").textContent = methods.length ? `My methods: ${methods.join(", ")}` : "My methods: none set yet, so every closure shows";
+    $("mar-mine-change").textContent = methods.length ? "change" : "set them";
+    const an = $("mar-alarm-note");
+    if (an) an.textContent = methods.length ? `For my methods: ${methods.join(", ")}` : "For every closure (no fishing methods set)";
     $("mar-len").textContent = len > 0
       ? `Vessel length ${len} m (Settings): ${len > 46 ? "the trawl rules for vessels over 46 m apply" : "the trawl rules for vessels over 46 m are left out"}.`
       : "Vessel length not set (Settings › Vessel): the trawl rules for vessels over 46 m are shown too.";
@@ -112,6 +119,14 @@ export function setupMarine(map, { getBoat = () => ({}), getLength = () => 0, al
     $(id).onchange = (e) => { s[key] = e.target.checked; save(); apply(); check(); };
   }
   $("mar-ahead").onchange = (e) => { s.ahead = +e.target.value || 10; save(); check(); };
+  $("mar-mine-sel").onchange = (e) => { s.mine = e.target.value === "mine"; save(); apply(); check(); };
+  // the methods are the boat's: Settings › Vessel › Fishing
+  const toMethods = (e) => { e.preventDefault(); ui?.openTab?.("settings", "vessel"); setTimeout(() => {
+    const card = [...document.querySelectorAll("details.dcard")].find((d) => d.dataset.title === "Fishing");
+    if (card) { card.open = true; card.scrollIntoView({ block: "start", behavior: "smooth" }); }
+  }, 60); };
+  $("mar-mine-change").onclick = toMethods;
+  for (const el of document.querySelectorAll(".mar-methods-link")) el.onclick = toMethods;
   window.addEventListener("racenav-boat", apply);
 
   // ---------- details on a click ------------------------------------------------------

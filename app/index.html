@@ -501,6 +501,78 @@
       </section>
 
       <section class="pane" data-pane="chart" data-title="Chart">
+        <h3>Layers</h3>
+        <div class="ly-head">
+          <label for="ly-dispcat" title="What the chart shows, as on an ECDIS: Base, Standard or All (the same as Chart display below)">Chart</label>
+          <select id="ly-dispcat" data-mirror="set-dispcat"><option value="base">Base</option><option value="standard">Standard</option><option value="all">All</option></select>
+          <button type="button" data-click="set-std" title="Back to the standard display: Standard, with light sectors, names and soundings">Standard</button>
+          <span class="grow"></span>
+          <button class="ly-gear" type="button" data-go="chart|Chart display" title="Chart symbols, text, light sectors, chart date">⚙</button>
+        </div>
+        <div class="ly-group"><h4>Depths and land</h4>
+          <div class="ly-row"><label title="LINZ coastal elevation (1 m), shown from about 2 NM range in. Get it in Get data"><input id="data-hr-show" type="checkbox" /> High-resolution depths</label><button class="ly-get" type="button" data-dot="data-hr-dot" data-go="chart|Get data|data-hr" hidden title="Not downloaded yet: get it in Chart › Get data">Get…</button><button class="ly-gear" type="button" data-go="chart|Get data|data-hr" title="Its settings">⚙</button></div>
+          <div class="ly-row"><label title="NIWA's 250 m seabed grid for the NZ region, at ocean and coastal scales. Not for navigation"><input id="data-nz-show" type="checkbox" /> NIWA bathymetry (250 m)</label><button class="ly-get" type="button" data-dot="data-nz-dot" data-go="chart|Get data|data-nz" hidden title="Not downloaded yet: get it in Chart › Get data">Get…</button><button class="ly-gear" type="button" data-go="chart|Get data|data-nz" title="Its settings">⚙</button></div>
+          <div class="ly-row"><label title="Your own soundings as a seabed (this view: Planning and Navigation keep their own choice). Not for navigation"><input id="pb-show" type="checkbox" /> Own soundings</label><button class="ly-gear" type="button" data-go="chart|Get data|pb-live" title="Its settings">⚙</button></div>
+          <div class="ly-row"><label title="The finer ETOPO depth shading and contours, where downloaded"><input id="lv-etopo" type="checkbox" /> Detailed depths (ETOPO)</label><button class="ly-get" type="button" data-dot="data-etopo-dot" data-go="chart|Get data|data-etopo" hidden title="Not downloaded yet: get it in Chart › Get data">Get…</button><button class="ly-gear" type="button" data-go="chart|Get data|data-etopo" title="Its settings">⚙</button></div>
+          <div class="ly-row"><label title="The coarse Natural Earth depth shading drawn under the charts"><input id="lv-wdepth" type="checkbox" /> World depths</label></div>
+          <div class="ly-row"><label title="The GSHHG world coastline"><input id="lv-wcoast" type="checkbox" /> World coastline</label><button class="ly-get" type="button" data-dot="data-gshhg-dot" data-go="chart|Get data|data-gshhg" hidden title="Not downloaded yet: get it in Chart › Get data">Get…</button><button class="ly-gear" type="button" data-go="chart|Get data|data-gshhg" title="Its settings">⚙</button></div>
+        </div>
+        <div class="ly-group"><h4>Tides and observations</h4>
+          <div class="ly-row"><label title="Click a station for the day's curve"><input id="ly-tide" type="checkbox" data-mirror="tide-show" /> Tide stations</label><button class="ly-gear" type="button" data-go="weather|Tides" title="Its settings">⚙</button></div>
+          <div class="ly-row"><label title="Live tide gauges"><input id="ly-gauges" type="checkbox" data-mirror="tide-gauges" /> Tide gauges</label><button class="ly-gear" type="button" data-go="weather|Tides" title="Its settings">⚙</button></div>
+          <div class="ly-row"><label title="The chart's tidal diamonds, as arrows for the time shown"><input id="ly-ts" type="checkbox" data-mirror="ts-show" /> Tidal streams</label><button class="ly-gear" type="button" data-go="weather|Tides" title="Its settings">⚙</button></div>
+          <div class="ly-row"><label title="Wind at weather stations, airports and buoys, every 10 minutes"><input id="ly-stn" type="checkbox" data-mirror="stn-show" /> Weather stations and buoys</label><button class="ly-gear" type="button" data-go="weather|Weather stations and buoys" title="Its settings">⚙</button></div>
+        </div>
+        <div class="ly-group" id="ly-wx"><h4>Weather and ocean <small>the loaded GRIB</small></h4>
+          <div class="ly-row"><label for="ly-wxlayer" title="What the colour shading shows">Shading</label><select id="ly-wxlayer" data-mirror="wx-layer"></select><button class="ly-gear" type="button" data-go="weather|" title="Weather: GRIB files, time, shading and arrows">⚙</button></div>
+          <div class="ly-row" data-row-of="wx-arrows-row"><label title="Wind barbs or arrows"><input id="ly-arrows" type="checkbox" data-mirror="wx-arrows" /> Wind barbs</label></div>
+          <div class="ly-row" data-row-of="wx-wavearrows-row"><label title="Arrows for the wave direction"><input id="ly-wave" type="checkbox" data-mirror="wx-wavearrows" /> Wave direction</label></div>
+          <div class="ly-row" data-row-of="wx-currarrows-row"><label title="Arrows for the current"><input id="ly-curr" type="checkbox" data-mirror="wx-currarrows" /> Current direction</label></div>
+          <div class="ly-row" data-row-of="wx-isobars-row"><label title="Pressure contours"><input id="ly-iso" type="checkbox" data-mirror="wx-isobars" /> Isobars</label></div>
+          <div class="ly-row" data-row-of="wx-isotherms-row"><label title="Contours over sea temperature or salinity"><input id="ly-isot" type="checkbox" data-mirror="wx-isotherms" /> Temperature contours</label></div>
+        </div>
+        <div class="ly-group" id="mar-box"><h4>Boundaries and fishing</h4>
+          <div class="ly-row"><label title="Territorial sea (12 NM), contiguous zone (24 NM), EEZ (200 NM) and the boundaries agreed with Australia (LINZ)"><input id="mar-bounds" type="checkbox" /> Maritime boundaries</label><button class="ly-get" type="button" data-dot="data-mb-dot" data-go="chart|Get data|data-mb" hidden title="Not downloaded yet: get it in Chart › Get data">Get…</button></div>
+          <div class="ly-row"><label title="Areas closed to commercial fishing, from MPI. Click an area for the rule"><input id="mar-rules" type="checkbox" /> Fishing closures</label><select id="mar-mine-sel" title="Which closures: to every method, or only those that close the methods you fish (Settings › Vessel › Fishing)"><option value="all">All methods</option><option value="mine">My methods</option></select><button class="ly-get" type="button" data-dot="data-mpi-dot" data-go="chart|Get data|data-mpi" hidden title="Not downloaded yet: get it in Chart › Get data">Get…</button></div>
+          <div class="ly-sub" id="mar-mine-row"><span id="mar-mine-note" class="wx-note"></span> <a href="#" id="mar-mine-change">change</a><input id="mar-mine" type="checkbox" hidden /></div>
+          <div class="ly-row"><label title="Also show restrictions: species, mesh sizes, seasons, gear limits (orange; they cover large areas, often the whole EEZ)"><input id="mar-restr" type="checkbox" /> Restrictions too</label></div>
+          <div class="ly-row"><label title="MPI's fisheries management and statistical areas, with their codes (for catch reporting)"><input id="mar-fareas" type="checkbox" /> Fisheries areas</label></div>
+          <div class="ly-row"><label title="Mātaitai, taiāpure and other customary areas"><input id="mar-cust" type="checkbox" /> Customary areas</label></div>
+          <div class="ly-row"><label title="Areas closed by industry agreement (MPI: boundaries approximate, a guide only)"><input id="mar-vol" type="checkbox" /> Voluntary closures</label></div>
+          <div class="wx-note">Fishing rules are MPI's maps of the regulations: a guide only, the regulations are the law, and temporary closures change. Update them before a trip (Get data). The closed-area alarm is in Alarms › Areas.</div>
+        </div>
+        <div class="ly-group"><h4>My things</h4>
+          <div class="ly-row"><label title="Library marks on the chart"><input id="ly-marks" type="checkbox" data-mirror="lib-show" /> Marks</label><button class="ly-gear" type="button" data-go="library|" title="Its settings">⚙</button></div>
+          <div class="ly-row"><label title="Lines and zones routings keep out of"><input id="ly-bar" type="checkbox" data-mirror="bar-show" /> Barriers</label><button class="ly-gear" type="button" data-go="library|barriers" title="Its settings">⚙</button></div>
+          <div class="ly-row"><label title="AIS targets from on board and online"><input id="ly-ais" type="checkbox" data-mirror="ais-show" /> AIS targets</label><button class="ly-gear" type="button" data-go="fleet|" title="Its settings">⚙</button></div>
+          <div class="ly-row"><label title="Laylines to the next mark or the Go to mark"><input id="ly-lay" type="checkbox" data-mirror="boat-lay-show" /> Laylines</label><button class="ly-gear" type="button" data-go="settings|Laylines" title="Its settings">⚙</button></div>
+          <div class="ly-row"><label title="A wedge from the mark toward the boat"><input id="ly-cone" type="checkbox" data-mirror="boat-lay-cone-show" /> Tacking cone</label><button class="ly-gear" type="button" data-go="settings|Laylines" title="Its settings">⚙</button></div>
+        </div>
+        <div class="ly-group"><h4>Own ship</h4>
+          <div class="wx-row"><label class="grow"><input id="set-hdg-line" type="checkbox" /> Heading line</label><select id="set-hdg-len" title="Length: time at boat speed, or to the edge of the chart"></select></div>
+        <div class="wx-row"><label class="grow"><input id="set-cog-line" type="checkbox" /> COG line</label><select id="set-cog-len" title="Length: time at SOG, or to the edge of the chart"></select></div>
+        <div class="wx-note">Heading line (solid) uses boat speed through the water, else SOG; COG line (dashed orange) uses SOG.</div>
+                <div class="wx-row"><label class="grow" title="Live: true (blue) and apparent (orange) wind on the boat. Planning: on the cursor, from the GRIB shown"><input id="inst-arrows" type="checkbox" /> Wind arrows (on the boat when live, at the cursor when planning)</label></div>
+        </div>
+        <div class="ly-group"><h4>Online maps</h4>
+        <div id="wm-box">
+          <div class="wx-row checks"><label title="Off (the default): TweedPlot sends no map requests at all. On: OpenStreetMap and OpenSeaMap tiles are fetched from their servers as you pan and zoom, and kept on this computer"><input id="wm-on" type="checkbox" /> Allow online maps (uses the internet)</label></div>
+          <div class="wx-row checks"><label title="OpenStreetMap as the base map, in place of the bundled land. Its servers are for light use: for heavy use, give your own tile server below"><input id="wm-osm" type="checkbox" /> OpenStreetMap (replaces the bundled land)</label>
+            <label title="OpenSeaMap seamarks (buoys, lights, marks) drawn over the charts. Volunteer data: not for navigation"><input id="wm-sea" type="checkbox" /> OpenSeaMap seamarks</label></div>
+          <div class="wx-row checks"><label title="Show only the map tiles already saved on this computer, and send nothing"><input id="wm-cached" type="checkbox" /> Saved tiles only (no internet)</label></div>
+          <details>
+            <summary>Tile servers and saved tiles</summary>
+            <div class="wx-row"><label class="grow" for="wm-osm-url">Base map server</label></div>
+            <div class="wx-row"><input id="wm-osm-url" class="grow" type="text" spellcheck="false" placeholder="https://tile.openstreetmap.org/{z}/{x}/{y}.png" /></div>
+            <div class="wx-row"><label class="grow" for="wm-sea-url">Seamark server</label></div>
+            <div class="wx-row"><input id="wm-sea-url" class="grow" type="text" spellcheck="false" placeholder="https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png" /></div>
+            <div class="wx-row"><label class="grow" for="wm-credit">Credit for your own server (shown on the chart)</label></div>
+            <div class="wx-row"><input id="wm-credit" class="grow" type="text" placeholder="© your provider" /></div>
+            <div class="wx-row"><span id="wm-cache" class="grow wx-note"></span><button id="wm-clear" title="Delete the map tiles saved on this computer">Clear saved tiles</button></div>
+          </details>
+          <div id="wm-note" class="wx-note"></div>
+        </div>
+        </div>
         <h3>Safety</h3>
         <div class="wx-row"><label class="grow" for="set-safety-depth">Safety depth (m)</label><input id="set-safety-depth" type="number" min="0" step="0.5" /></div>
         <div class="wx-row"><label class="grow" for="set-safety-contour">Safety contour (m)</label><input id="set-safety-contour" type="number" min="0" step="1" /></div>
@@ -522,54 +594,7 @@
           <select id="set-boundaries"><option value="plain">Plain</option><option value="symbolised">Symbolised</option></select></div>
         <div class="wx-row"><label class="grow" for="set-symsize" title="Size of buoys, beacons, lights, dangers and other chart symbols. Labels grow at half the rate">Chart symbol size</label><input id="set-symsize" type="range" min="0.75" max="2" step="0.05" /><span id="set-symsize-v" class="val"></span></div>
         <div class="wx-note">From the LINZ hydrographic layers in the linz folder (any scale band). Click a light, mark or area for its details. Not for navigation.</div>
-                <h3>Layers</h3>
-        <h4>Chart layers</h4>
-        <div class="wx-row checks"><label title="The high-resolution depths you downloaded in Chart data, shown from about 2 NM range in"><input id="data-hr-show" type="checkbox" /> High-resolution depths</label>
-          <label title="The finer ETOPO depth shading and contours, where downloaded (Chart data)"><input id="lv-etopo" type="checkbox" checked /> Detailed depths (ETOPO)</label></div>
-        <div class="wx-row checks"><label title="The NIWA 250 m seabed grid you imported in Chart data. Not for navigation"><input id="data-nz-show" type="checkbox" /> NIWA bathymetry (250 m)</label></div>
-        <div class="wx-row checks"><label title="The coarse Natural Earth depth shading drawn under the charts"><input id="lv-wdepth" type="checkbox" checked /> World depths</label>
-          <label title="The GSHHG world coastline, where downloaded (Chart data)"><input id="lv-wcoast" type="checkbox" checked /> World coastline</label></div>
-        <div class="wx-note">Layers can overlap: with OpenStreetMap on, the coarse world depths show as pale water that doesn't match its coastline. Switch off any layer you don't want.</div>
-        <h4>Own soundings</h4>
-        <div class="wx-row checks"><label title="Your own soundings (from your tracks, and TimeZero PBG or XYZ files imported in Chart data) as a depth image. Planning and Navigation each remember their own choice: on in Planning, off in Navigation to begin with. The toolbar button does the same. Not for navigation"><input id="pb-show" type="checkbox" /> Show own soundings</label></div>
-        <div class="wx-note">Planning and Navigation keep separate choices, so this applies to the view you are in now.</div>
-        <h4>Online maps</h4>
-        <div id="wm-box">
-          <div class="wx-row checks"><label title="Off (the default): TweedPlot sends no map requests at all. On: OpenStreetMap and OpenSeaMap tiles are fetched from their servers as you pan and zoom, and kept on this computer"><input id="wm-on" type="checkbox" /> Allow online maps (uses the internet)</label></div>
-          <div class="wx-row checks"><label title="OpenStreetMap as the base map, in place of the bundled land. Its servers are for light use: for heavy use, give your own tile server below"><input id="wm-osm" type="checkbox" /> OpenStreetMap (replaces the bundled land)</label>
-            <label title="OpenSeaMap seamarks (buoys, lights, marks) drawn over the charts. Volunteer data: not for navigation"><input id="wm-sea" type="checkbox" /> OpenSeaMap seamarks</label></div>
-          <div class="wx-row checks"><label title="Show only the map tiles already saved on this computer, and send nothing"><input id="wm-cached" type="checkbox" /> Saved tiles only (no internet)</label></div>
-          <details>
-            <summary>Tile servers and saved tiles</summary>
-            <div class="wx-row"><label class="grow" for="wm-osm-url">Base map server</label></div>
-            <div class="wx-row"><input id="wm-osm-url" class="grow" type="text" spellcheck="false" placeholder="https://tile.openstreetmap.org/{z}/{x}/{y}.png" /></div>
-            <div class="wx-row"><label class="grow" for="wm-sea-url">Seamark server</label></div>
-            <div class="wx-row"><input id="wm-sea-url" class="grow" type="text" spellcheck="false" placeholder="https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png" /></div>
-            <div class="wx-row"><label class="grow" for="wm-credit">Credit for your own server (shown on the chart)</label></div>
-            <div class="wx-row"><input id="wm-credit" class="grow" type="text" placeholder="© your provider" /></div>
-            <div class="wx-row"><span id="wm-cache" class="grow wx-note"></span><button id="wm-clear" title="Delete the map tiles saved on this computer">Clear saved tiles</button></div>
-          </details>
-          <div id="wm-note" class="wx-note"></div>
-        </div>
-        <h4>Boundaries and fishing rules</h4>
-        <div id="mar-box">
-          <div class="wx-row checks"><label title="Territorial sea (12 NM), contiguous zone (24 NM), EEZ (200 NM) and the boundaries agreed with Australia (LINZ)"><input id="mar-bounds" type="checkbox" /> Maritime boundaries</label>
-            <label title="Areas closed to commercial fishing (red: to all, or to the methods ticked below), from MPI. Click an area for the rule"><input id="mar-rules" type="checkbox" /> Fishing rules</label>
-            <label title="MPI's fisheries management areas and statistical areas, with their codes (for catch reporting)"><input id="mar-fareas" type="checkbox" /> Fisheries areas</label></div>
-          <div class="wx-row checks"><label title="Mātaitai, taiāpure and other customary areas"><input id="mar-cust" type="checkbox" /> Customary areas</label>
-            <label title="Areas closed by industry agreement (MPI: boundaries approximate, a guide only)"><input id="mar-vol" type="checkbox" /> Voluntary closures</label></div>
-          <div class="wx-row checks"><label title="Show only the areas closed to the fishing methods ticked below (and to all fishing), for this vessel's length"><input id="mar-mine" type="checkbox" /> Only closures for my boat's methods</label>
-            <label title="Also show restrictions: species, mesh sizes, seasons, gear limits (orange; they cover large areas, often the whole EEZ)"><input id="mar-restr" type="checkbox" /> Restrictions too</label></div>
-          <div id="mar-gear" class="mar-gear"></div>
-          <div id="mar-len" class="wx-note"></div>
-                    <div class="wx-note">Download the boundaries and rules in Chart data below; the closed-area alarm is in Alarms. Fishing rules are MPI's maps of the regulations: a guide only, the regulations themselves are the law, and temporary closures change; update the rules before a trip.</div>
-        </div>
-<h3>Own ship</h3>
-        <div class="wx-row"><label class="grow"><input id="set-hdg-line" type="checkbox" /> Heading line</label><select id="set-hdg-len" title="Length: time at boat speed, or to the edge of the chart"></select></div>
-        <div class="wx-row"><label class="grow"><input id="set-cog-line" type="checkbox" /> COG line</label><select id="set-cog-len" title="Length: time at SOG, or to the edge of the chart"></select></div>
-        <div class="wx-note">Heading line (solid) uses boat speed through the water, else SOG; COG line (dashed orange) uses SOG.</div>
-                <div class="wx-row"><label class="grow" title="Live: true (blue) and apparent (orange) wind on the boat. Planning: on the cursor, from the GRIB shown"><input id="inst-arrows" type="checkbox" /> Wind arrows (on the boat when live, at the cursor when planning)</label></div>
-        <h3>Chart data</h3>
+        <h3>Get data</h3>
         <div id="data-box">
           <div class="data-item"><span class="dot" id="data-wd-dot"></span><span class="grow"><b>World depths</b>: Natural Earth, bundled (0, 200, 1000 … 10000 m)</span></div>
           <div class="data-item"><span class="dot" id="data-gshhg-dot"></span><span class="grow"><b>World coastline</b>: <span id="data-gshhg-state">—</span></span>
@@ -719,9 +744,9 @@
           <div class="wx-row"><label class="grow" title="Internet AIS can be minutes late or missing: an alarm from it can come late, and no alarm doesn't mean no danger"><input id="ais-net-alarms" type="checkbox" /> Alarms for internet-only targets too</label></div>
           <div class="wx-note">An AIS-SART, MOB device or EPIRB always raises an alarm. CPA alarms work from live data (or a replay).</div>
         <h3>Areas</h3>
-<div class="wx-row"><label class="grow" title="A warning when the boat is inside, or heading into, an area closed to the methods ticked above (all closed areas if none are ticked)"><input id="mar-alarm" type="checkbox" /> Closed-area alarm, looking ahead</label>
+<div class="wx-row"><label class="grow" title="A warning when the boat is inside, or heading into, an area closed to the fishing methods in Settings › Vessel › Fishing (every closed area if none are set)"><input id="mar-alarm" type="checkbox" /> Closed-area alarm, looking ahead</label>
             <select id="mar-ahead"><option value="5">5 min</option><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option></select></div>
-        <div class="wx-note">The closed areas come from the fishing rules in Chart › Layers, for the methods ticked there.</div>
+        <div class="wx-note"><span id="mar-alarm-note"></span> · <a href="#" class="mar-methods-link">change</a>. The closed areas come from MPI's fishing rules (Chart › Get data).</div>
         <h3>Sound</h3>
         <div class="wx-row"><label class="grow" for="al-watchdog" title="A silenced shallow-water, air-draft, anchor, man-overboard, AIS-SART/EPIRB, position-lost or inside-a-closed-area alarm sounds again after this long if its cause still lasts">Watchdog: sound again after (min, 1 to 20)</label><input id="al-watchdog" type="number" min="1" max="20" step="1" /></div>
         <div class="wx-row"><label class="grow" for="al-volume">Alarm volume</label><input id="al-volume" type="range" min="0" max="100" step="5" /><button id="al-test" title="Play the alarm sound">Test</button></div>
@@ -879,6 +904,10 @@
             <div class="wx-row"><label class="grow" for="boat-lay-gybe" title="Used when no polar is chosen: the angle between the two gybes downwind">Gybing angle without a polar (°)</label><input id="boat-lay-gybe" type="number" min="10" max="120" step="5" /></div>
             <div class="wx-row"><label class="grow" for="boat-lay-cone" title="The tacking cone's half-angle either side of the straight line to the mark: tack when you reach its edge, so tacks are long far out and short near the mark">Tacking cone half-angle (°)</label><input id="boat-lay-cone" type="number" min="5" max="60" step="1" /></div>
             <div class="wx-note">With a polar chosen above, the laylines use its best upwind and downwind angles for the current true wind speed. The tacking angle is the total between the two tacks (120° is a cruising boat; a race boat is nearer 90°).</div>
+          <h3>Fishing</h3>
+            <p class="settings-note">The methods this boat fishes. Chart › Layers › Fishing closures can show only the areas closed to them (with My methods), and the closed-area alarm (Alarms › Areas) uses them.</p>
+            <div id="mar-gear" class="mar-gear"></div>
+            <div id="mar-len" class="wx-note"></div>
           </div>
           <div class="tab" data-tab="display" hidden>
 <h3>Colours</h3>

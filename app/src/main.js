@@ -39,6 +39,7 @@ import { poiImage } from "./poi.js";
 import { symImage } from "./marksymbols.js";
 import { setupBarriers } from "./barriers.js";
 import { setupAnchor } from "./anchor.js";
+import { setupLayers } from "./layers.js";
 import { setupLaylines } from "./laylines.js";
 import { setupVarDiagram } from "./varrose.js";
 import { setupRoute, markImage } from "./route.js";
@@ -463,6 +464,7 @@ let arrows = null;
 let barriers = null;
 let anchor = null;
 let pbathy = null;
+let layersPanel = null;
 let laylines = null;
 let varRoses = null;
 let ctxRose = false; // right-click was on the variation diagram
@@ -594,6 +596,7 @@ map.on("load", () => {
     getBoat: () => ({ pos: lastBoat, cog: vessel?.cog, sog: vessel?.sog, live: live && liveDataConnected() }),
     getLength: () => Number(boat.get().length) || 0,
     alarms,
+    ui,
   });
   setupStations(map, { weather });
   // marks, routes and routings changed in any window (the backend announces every save and delete)
@@ -646,6 +649,7 @@ map.on("load", () => {
   barriers = setupBarriers(map, { before: "track", library, toast, getVariation: variationAt });
   anchor = setupAnchor(map, { library, alarms, before: "track", toast,
     getBoat: () => ({ pos: lastBoat, v: vessel }), getVessel: () => boat.get() });
+  layersPanel = setupLayers({ ui });
   document.getElementById("anchor-btn").onclick = () => (anchor.watching() ? window.dispatchEvent(new Event("racenav-anchor-open")) : anchor.drop());
   varRoses = setupVarDiagram(map, { getVariation: variationAt,
     getAnnualChange: (p) => magneticVariation(p[1], p[0])?.annualChange ?? null });
