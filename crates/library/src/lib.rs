@@ -2086,6 +2086,31 @@ mod tests {
     }
 
     #[test]
+    fn a_mark_keeps_its_own_details() {
+        // an anchor's swing radius, bottom and holding (anchor.js) round-trip; a plain mark has none
+        let lib = temp_lib("markdata");
+        let a = lib
+            .save_mark(Mark {
+                name: "Anchor".into(),
+                kind: "anchor".into(),
+                group: "Anchorages".into(),
+                lat: -41.25,
+                lon: 173.27,
+                data: serde_json::json!({ "radius_m": 45, "bottom": "mud", "holding": 4 }),
+                ..Default::default()
+            })
+            .unwrap();
+        let plain = lib.save_mark(Mark { name: "WP".into(), lat: -41.0, lon: 173.0, ..Default::default() }).unwrap();
+        let marks = lib.marks().unwrap();
+        let back = marks.iter().find(|m| m.id == a.id).unwrap();
+        assert_eq!(back.data["radius_m"], 45);
+        assert_eq!(back.data["bottom"], "mud");
+        let p = marks.iter().find(|m| m.id == plain.id).unwrap();
+        assert!(is_empty_json(&p.data));
+        assert!(serde_json::to_value(p).unwrap().get("data").is_none());
+    }
+
+    #[test]
     fn daily_backup_is_a_whole_library() {
         let lib = temp_lib("backup");
         lib.save_mark(Mark { name: "A".into(), lat: -36.0, lon: 174.0, ..Default::default() }).unwrap();

@@ -177,7 +177,7 @@ On the day, look again: the latest forecast, a fresh GRIB, the actual conditions
 *A yacht leaves Nelson for a night at anchor on the Abel Tasman coast.*
 
 1. **Appraise.** Load the forecast (Weather > Download, GFS or ECMWF, Tasman Bay, 3 days). The cruising guide notes which bays shelter from which winds; the chart shows the Boulder Bank, the harbour entrance and the shoals off the river mouths.
-2. **Set margins.** Chart › Safety: safety depth = draft 1.9 m + 1 m = 3 m; safety contour 5 m. In Routing › Limits and barriers, turn on Route round dangers and Route round marine farms (there are farms in the bay).
+2. **Set margins.** Chart › Safety: safety depth = draft 1.9 m + 1 m = 3 m; safety contour 5 m. In Wx routing › Limits and barriers, turn on Route round dangers and Route round marine farms (there are farms in the bay).
 3. **Sketch the route.** Ruler from the harbour entrance across the bay to the anchorage, double-click, right-click > Save ruler as route. In the Route drawer name it "Nelson to Torrent Bay" and set the anchorage mark to As close as possible.
 4. **Mark the bolt holes.** Add points of interest for one or two sheltered bays you could reach if the wind turns onshore, with notes on which winds they suit.
 5. **Choose the day and time.** Close the drawers, scrub the time slider and watch the GRIB-at-cursor panel at mid-bay: you want 8–18 kn from a reaching angle, not a building sea breeze on the nose for the last hours. A meteogram at the anchorage shows whether the night will stay settled.

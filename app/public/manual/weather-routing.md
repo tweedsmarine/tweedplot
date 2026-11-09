@@ -209,7 +209,7 @@ To see when the engine pays, make a copy of your polar with a minimum speed at e
 **Days before**
 
 - [ ] Route drawer: the route with every mark's rounding and radius; barriers for exclusion zones and reserves.
-- [ ] Chart › Safety: safety depth and contour; Routing › Limits and barriers: route round dangers and farms on.
+- [ ] Chart › Safety: safety depth and contour; Wx routing › Limits and barriers: route round dangers and farms on.
 - [ ] Settings › Vessel › Performance: polar, efficiency, tack and gybe costs.
 - [ ] Weather: download GFS and ECMWF (and waves) for the whole area and longer than the trip; then each new run.
 - [ ] Look at the weather before the routing: isobars, fronts, the meteogram at key points, the agreement displays.

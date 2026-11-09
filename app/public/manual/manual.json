@@ -3,6 +3,12 @@
   "updated": "2026-11-09",
   "tabs": [
     {
+      "id": "start",
+      "title": "Quick start",
+      "file": "getting-started.md",
+      "print": "a5"
+    },
+    {
       "id": "reference",
       "title": "Reference",
       "file": "reference.md"
