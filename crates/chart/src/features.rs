@@ -646,10 +646,12 @@ impl ChartStore {
         };
         type Props = Vec<(&'static str, Value)>;
         let mut hz_pts: HashMap<(i64, i64), (f64, [i32; 2], Props)> = HashMap::new();
-        let mut put_hazard = |px: [f64; 2], rank: f64, props: Props, fpt: &mut Layer| {
+        // unthinned hazards (zoom 12 in), written with the thinned ones at the end
+        let mut hz_all: Vec<([i32; 2], Props)> = Vec::new();
+        let mut put_hazard = |px: [f64; 2], rank: f64, props: Props| {
             let q = [px[0].round() as i32, px[1].round() as i32];
             if thin == 0.0 {
-                fpt.add(&TileGeom::Points(vec![q]), &props);
+                hz_all.push((q, props));
                 return;
             }
             let k = ((px[0] / thin).floor() as i64, (px[1] / thin).floor() as i64);
@@ -828,6 +830,12 @@ impl ChartStore {
                                     }
                                     if !sy.is_empty() {
                                         props.push(("sy", Value::Str(sy.into())));
+                                        // its depth in a circle, or the plain symbol where there's no room (below)
+                                        if matches!(class.code, "UWTROC" | "WRECKS" | "OBSTRN") {
+                                            if let Some(c) = crate::s52::compact_danger(class.code, sy) {
+                                                props.push(("syc", Value::Str(c)));
+                                            }
+                                        }
                                     }
                                     if !si.is_empty() {
                                         props.extend(info_props(si));
@@ -838,7 +846,7 @@ impl ChartStore {
                                 }
                                 if hazard {
                                     props.push(("hz", Value::UInt(1)));
-                                    put_hazard(px, hazard_rank(class.code, &a), props, &mut fpt);
+                                    put_hazard(px, hazard_rank(class.code, &a), props);
                                 } else {
                                     fpt.add(&TileGeom::Points(vec![[px[0].round() as i32, px[1].round() as i32]]), &props);
                                 }
@@ -1023,7 +1031,7 @@ impl ChartStore {
                                             // the IHO symbol at its middle stands in for it (below)
                                             pp.push(("po", Value::UInt(1)));
                                         }
-                                        put_hazard(c, 500.0, pp, &mut fpt);
+                                        put_hazard(c, 500.0, pp);
                                     }
                                 }
                             }
@@ -1142,7 +1150,27 @@ impl ChartStore {
                 }
             }
         }
-        for (_, (_, q, props)) in hz_pts {
+        hz_all.extend(hz_pts.into_values().map(|(_, q, props)| (q, props)));
+        // the room round a danger whose depth is written in a circle: how far (tile units) to
+        // the nearest other hazard or mark drawn in this tile, so the app can draw the plain
+        // symbol where the circle would crowd its neighbours
+        let others: Vec<[i32; 2]> = hz_all
+            .iter()
+            .map(|(q, _)| *q)
+            .chain(
+                marks
+                    .iter()
+                    .filter(|(_, _, mz)| keep(*mz))
+                    .map(|(p, _, _)| tp.px(p))
+                    .filter(|q| inside(*q))
+                    .map(|q| [q[0].round() as i32, q[1].round() as i32]),
+            )
+            .collect();
+        let rooms = room_around(&hz_all, &others);
+        for ((q, mut props), rm) in hz_all.into_iter().zip(rooms) {
+            if let Some(rm) = rm {
+                props.push(("rm", Value::UInt(rm as u64)));
+            }
             fpt.add(&TileGeom::Points(vec![q]), &props);
         }
         if let Some((_, tables)) = groups.iter().find(|(c, _)| c.code == "LIGHTS") {
@@ -1625,6 +1653,16 @@ mod tests {
     }
 
     #[test]
+    fn room_round_depth_circles() {
+        let d = |x, y| ([x, y], vec![("syc", Value::Str("UWTROC03".into()))]);
+        let plain = ([5000, 5000], vec![]);
+        let hz = vec![d(100, 100), d(130, 140), d(3000, 3000), plain];
+        let others: Vec<[i32; 2]> = hz.iter().map(|(q, _)| *q).collect();
+        let r = super::room_around(&hz, &others);
+        assert_eq!(r, vec![Some(50), Some(50), Some(1024), None]);
+    }
+
+    #[test]
     fn dangers() {
         let v = attrs(&[("watlev", "4")]);
         assert!(is_danger("UWTROC", &Attrs(&v), 3.0));
@@ -1719,4 +1757,36 @@ fn info_props(si: &str) -> Vec<(&'static str, Value)> {
         out.push(("sd", Value::Str(date.join(","))));
     }
     out
+}
+
+/// For each hazard with a depth circle (`syc`), the distance in tile units to the nearest
+/// point of `others` (hazards and marks, itself left out), up to ROOM_MAX.
+fn room_around(hz: &[([i32; 2], Vec<(&'static str, Value)>)], others: &[[i32; 2]]) -> Vec<Option<u32>> {
+    const ROOM_MAX: i32 = 1024;
+    const CELL: i32 = 256;
+    let mut grid: HashMap<(i32, i32), Vec<[i32; 2]>> = HashMap::new();
+    for q in others {
+        grid.entry((q[0].div_euclid(CELL), q[1].div_euclid(CELL))).or_default().push(*q);
+    }
+    let reach = ROOM_MAX / CELL;
+    hz.iter()
+        .map(|(q, props)| {
+            if !props.iter().any(|(k, _)| *k == "syc") {
+                return None;
+            }
+            let (cx, cy) = (q[0].div_euclid(CELL), q[1].div_euclid(CELL));
+            let mut best = (ROOM_MAX as i64).pow(2);
+            for gx in cx - reach..=cx + reach {
+                for gy in cy - reach..=cy + reach {
+                    for o in grid.get(&(gx, gy)).into_iter().flatten() {
+                        let d = ((o[0] - q[0]) as i64).pow(2) + ((o[1] - q[1]) as i64).pow(2);
+                        if d > 0 && d < best {
+                            best = d;
+                        }
+                    }
+                }
+            }
+            Some((best as f64).sqrt().round() as u32)
+        })
+        .collect()
 }

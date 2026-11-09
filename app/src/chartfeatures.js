@@ -643,6 +643,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     }
     map.setPaintProperty("s52-sec-dash", "line-width", 0.32 * S52_PX_MM / 2);
     for (const id of map.listImages()) if (id.startsWith("s52")) map.removeImage(id);
+    map.setLayoutProperty("f-points", "icon-image", pointImage(useS52()));
     onScale();
   }
   const calIn = $("set-screen-mm");
@@ -666,13 +667,28 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     map.setLayoutProperty("f-labels", "icon-offset", ["match", ["get", "cls"], "LIGHTS", ["literal", [12 * k / kl, 8 * k / kl]], ["literal", [8 * k / kl, -6 * k / kl]]]);
     const v = $("set-symsize-v");
     if (v) v.textContent = `${Math.round(k * 100)}%`;
+    map.setLayoutProperty("f-points", "icon-image", pointImage(useS52()));
   }
   // which symbols: the IHO's (S-52) where the chart store has them, else TweedPlot's
   let contour = safetyContour;
+  /** The point symbols' image. A rock, wreck or obstruction of known depth has the depth
+   *  written in a dotted circle twice the size of the plain symbol (S-52 DANGER01/02/03):
+   *  where the nearest other symbol in its tile (`rm`, tile units, 8 to a pixel) is closer
+   *  than that circle needs, it gets the plain symbol of its kind without the depth (`syc`)
+   *  until zoomed in far enough. Past the tiles' last zoom (16) the room only grows. */
+  function pointImage(on) {
+    const has = ["has", "sy"];
+    if (!on) return pointIcon(contour);
+    // the circle's half-width (4.2 mm) and a neighbour's (2.2 mm), with a little gap
+    const need = 7 * (S52_PX_MM / 2) * (opts.symSize || 1) * 8;
+    const full = ["concat", "s52:", ["get", "sy"]];
+    const roomy = ["case", ["all", ["has", "syc"], ["<", ["coalesce", ["get", "rm"], 1e9], need]], ["concat", "s52:", ["get", "syc"]], full];
+    return ["step", ["zoom"], ["case", has, roomy, pointIcon(contour)], 17, ["case", has, full, pointIcon(contour)]];
+  }
   function applySymbols() {
     const on = useS52();
     const has = ["has", "sy"];
-    map.setLayoutProperty("f-points", "icon-image", on ? ["case", has, ["concat", "s52:", ["get", "sy"]], pointIcon(contour)] : pointIcon(contour));
+    map.setLayoutProperty("f-points", "icon-image", pointImage(on));
     map.setLayoutProperty("f-points", "icon-anchor", on ? ["case", has, "center", ["match", ["slice", ["get", "icon"], 0, 2], ["b|", "c|"], "bottom", "center"]]
       : ["match", ["slice", ["get", "icon"], 0, 2], ["b|", "c|"], "bottom", "center"]);
     map.setLayoutProperty("f-lights", "icon-image", on ? ["case", has, ["concat", "s52:", ["get", "sy"]], ["concat", "s57:", ["get", "icon"]]] : ["concat", "s57:", ["get", "icon"]]);

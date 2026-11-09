@@ -114,6 +114,41 @@ pub fn point_symbols(instructions: &str) -> String {
 }
 
 /// `sy` and the information symbols (`si`) from [`point_symbols`].
+/// A rock, wreck or obstruction of known depth draws its depth in a dotted circle
+/// (DANGER01/02/03 and the SOUNDS figures), twice the size of the plain symbol. Where
+/// there's no room for it, the plain symbol of its kind without the depth (TweedPlot's
+/// decluttering, not S-52's): rock UWTROC03 (UWTROC04 if it covers), obstruction OBSTRN01
+/// (OBSTRN03), wreck WRECKS05. None when the symbols hold no depth.
+pub fn compact_danger(class: &str, sy: &str) -> Option<String> {
+    let parts: Vec<&str> = sy.split(',').filter(|p| !p.is_empty()).collect();
+    let id = |p: &str| p.split('@').next().unwrap_or("").to_string();
+    if !parts.iter().any(|p| p.starts_with("SOUNDS")) {
+        return None;
+    }
+    let mut found = false;
+    let out: Vec<String> = parts
+        .iter()
+        .filter(|p| !p.starts_with("SOUNDS"))
+        .map(|p| {
+            let i = id(p);
+            if !matches!(i.as_str(), "DANGER01" | "DANGER02" | "DANGER03") {
+                return p.to_string();
+            }
+            found = true;
+            let covers = i == "DANGER03";
+            match (class, covers) {
+                ("UWTROC", false) => "UWTROC03",
+                ("UWTROC", true) => "UWTROC04",
+                ("OBSTRN", false) => "OBSTRN01",
+                ("OBSTRN", true) => "OBSTRN03",
+                _ => "WRECKS05",
+            }
+            .to_string()
+        })
+        .collect();
+    found.then(|| out.join(","))
+}
+
 pub(crate) fn split_info(s: &str) -> (&str, &str) {
     let mut f = s.splitn(4, '|');
     (f.next().unwrap_or(""), f.next().unwrap_or(""))
@@ -1049,6 +1084,15 @@ mod tests {
         assert_eq!(i, "ViewingGroup:26050;Dash:0,3.6;LineStyle:_simple_,5.4,0.64,CHMGD;LineInstruction:_simple_;ColorFill:DEPVS,0.5");
         let t = super::texts(&super::symins("TX('V-AIS',3,2,2,'15110',2,0,CHMGD,11)").unwrap());
         assert_eq!((t[0].text.as_str(), t[0].h, t[0].v, t[0].dx, t[0].colour.as_str(), t[0].group), ("V-AIS", 'S', 'C', 7.02, "CHMGD", 11));
+    }
+
+    #[test]
+    fn compact_dangers() {
+        assert_eq!(super::compact_danger("UWTROC", "DANGER01,SOUNDSB14,SOUNDSC25").as_deref(), Some("UWTROC03"));
+        assert_eq!(super::compact_danger("OBSTRN", "DANGER03,SOUNDSA11,LOWACC01").as_deref(), Some("OBSTRN03,LOWACC01"));
+        assert_eq!(super::compact_danger("WRECKS", "DANGER02,SOUNDSB13").as_deref(), Some("WRECKS05"));
+        assert_eq!(super::compact_danger("UWTROC", "UWTROC03"), None);
+        assert_eq!(super::compact_danger("UWTROC", "ISODGR01"), None);
     }
 
     #[test]
