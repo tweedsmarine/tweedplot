@@ -128,8 +128,14 @@ pub async fn s63_import_exchange_set(app: tauri::AppHandle) -> Result<Value, Str
     .map_err(|e| e.to_string())?;
     let Some(picked) = picked else { return Ok(json!({ "cancelled": true })) };
     let from = picked.into_path().map_err(|e| e.to_string())?;
+    // the chart notes (text files) aren't encrypted: keep them whatever the cells do
+    let (a, f) = (app.clone(), from.clone());
+    let notes = tauri::async_runtime::spawn_blocking(move || crate::chart_texts::import_from(&a, &f)).await.map_err(|e| e.to_string())?.unwrap_or((0, 0));
     let a = app.clone();
-    let r = blocking(move || plugin::call(&a, "import", json!({ "path": from }))).await?;
+    let mut r = blocking(move || plugin::call(&a, "import", json!({ "path": from }))).await?;
+    if let Some(o) = r.as_object_mut() {
+        o.insert("notes".into(), json!(notes.0 + notes.1));
+    }
     crate::open_charts(app);
     Ok(r)
 }

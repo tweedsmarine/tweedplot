@@ -273,6 +273,21 @@ export function setupS63(map, { toast } = {}) {
     refresh();
   };
 
+  // ---------- chart notes (the ENCs' text files): no plugin or permits needed ----------
+  const ctBase = $("ct-note")?.textContent || "";
+  const ctStatus = () => invoke("chart_texts_status").then((s) => {
+    if ($("ct-note")) $("ct-note").textContent = `${ctBase} ${s.stored ? `${s.stored} notes kept.` : "None added yet."}`;
+  }).catch(() => {});
+  ctStatus();
+  if ($("ct-import")) $("ct-import").onclick = async () => {
+    $("ct-import").disabled = true;
+    try {
+      const r = await invoke("chart_texts_import");
+      if (!r.cancelled) toast?.(r.texts + r.pictures ? `${r.texts} chart notes${r.pictures ? ` and ${r.pictures} pictures` : ""} added (${r.stored} kept)` : "No chart notes in that folder: choose the folder with ENC_ROOT in it", 5000);
+    } catch (e) { toast?.(`Could not add the chart notes: ${e}`, 6000); } finally { $("ct-import").disabled = false; }
+    ctStatus();
+  };
+
   $("s63-import").onclick = async () => {
     $("s63-import").disabled = true;
     report("Choose the exchange set's folder…");
@@ -281,7 +296,8 @@ export function setupS63(map, { toast } = {}) {
       if (r.cancelled) { report([]); return; }
       const lines = r.report;
       const errs = count(lines, "error"), warns = count(lines, "warn");
-      report(lines, `Imported: ${count(lines, "ok")} cells installed or updated${errs ? `, ${errs} errors` : ""}${warns ? `, ${warns} warnings` : ""}. Opening the charts again…`);
+      report(lines, `Imported: ${count(lines, "ok")} cells installed or updated${errs ? `, ${errs} errors` : ""}${warns ? `, ${warns} warnings` : ""}${r.notes ? `, ${r.notes} chart notes` : ""}. Opening the charts again…`);
+      ctStatus();
       if (errs || warns) toast?.(`ENC import: ${errs} errors, ${warns} warnings. See Chart › Encrypted charts`, 6000);
     } catch (e) { report([{ cell: "", level: "error", text: String(e) }]); } finally { $("s63-import").disabled = false; }
     refresh();

@@ -11,6 +11,7 @@ pub mod classes;
 pub mod files;
 pub mod gpkg;
 pub mod iso8211;
+pub mod texts;
 
 pub use files::{find_cells, find_cells_except, CellFiles};
 pub use gpkg::{band_for, write_gpkg, write_into, GpkgTable};

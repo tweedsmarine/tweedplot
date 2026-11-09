@@ -88,6 +88,27 @@ async function loadS52Symbols(palette = "Day") {
   if (S52.ready) setTimeout(() => { for (const p of ["Dusk", "Night"]) loadS52Palette(p).catch(() => {}); }, 10000);
   return S52.ready;
 }
+/** A chart note (an ENC's text file, TXTDSC) for a feature's card: its text once read, or
+ *  where to get it. */
+function chartNote(name) {
+  const box = document.createElement("div");
+  box.className = "feat-text";
+  box.textContent = `${name}…`;
+  invoke("chart_text", { name }).then((r) => {
+    if (r?.text != null) {
+      box.textContent = r.text;
+      box.title = r.name;
+    } else if (r?.picture) {
+      box.className = "wx-note";
+      box.textContent = `Picture ${name}: pictures aren't shown yet.`;
+    } else {
+      box.className = "wx-note";
+      box.textContent = `${name} is a note that comes with the ENC charts (LINZ's NZ ENC service). Chart › Get data › Chart notes adds them from an ENC folder.`;
+    }
+  }).catch(() => { box.className = "wx-note"; box.textContent = `${name} not available.`; });
+  return box;
+}
+
 /** The image for "s52:<sy>", or null while the symbols are loading. */
 function s52Image(sy) {
   if (!S52.ready) return null;
@@ -778,6 +799,11 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
         tr.insertCell().textContent = v;
       }
       el.append(tbl);
+      // the chart notes the feature names (TXTDSC, NTXTDS), from the ENC exchange sets
+      for (const [k, v] of rows) {
+        if (!["Text file", "Text file (local)", "Picture"].includes(k) || !v) continue;
+        el.append(chartNote(String(v)));
+      }
     }
     const note = document.createElement("div");
     note.className = "wx-note";

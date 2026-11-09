@@ -8,6 +8,7 @@
 //! The `chart` URI scheme serves vector tiles: `chart://localhost/{z}/{x}/{y}.pbf`
 //! (`http://chart.localhost/...` on Windows).
 
+mod chart_texts;
 mod grib_cmd;
 mod library_cmd;
 mod live;
@@ -2215,6 +2216,9 @@ pub fn run() {
             data_etopo_delete,
             data_cancel,
             chart_land_detail,
+            chart_texts::chart_text,
+            chart_texts::chart_texts_status,
+            chart_texts::chart_texts_import,
             s63_cmd::s63_status,
             s63_cmd::s63_activate,
             s63_cmd::s63_deactivate,
