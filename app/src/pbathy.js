@@ -444,16 +444,27 @@ function makeCard(opts) {
   parent.append(el);
   floatDrag(el, "own-soundings", el.querySelector(".pb-head"));
   const track = el.querySelector(".track");
-  let max = 0; // the track runs 0..max m
-  const nice = (v) => { const p = 10 ** Math.floor(Math.log10(Math.max(v, 1))); return [1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10].map((m) => m * p).find((x) => x >= v) ?? v; };
-  const fitScale = () => { const s = opts.get(); max = nice(Math.max(50, s.deep * 1.25)); };
+  // The track runs min..max m. After each drag it is refitted around the shallow and deep
+  // pointers (a quarter of the range either side), so drawing them together zooms the scale
+  // in and drawing them apart (or to an end) zooms it out.
+  let min = 0, max = 0;
+  const refit = (shallow, deep) => {
+    const span = Math.max(deep - shallow, 1);
+    const pad = Math.max(span * 0.25, 1);
+    const lo0 = Math.max(0, shallow - pad), hi0 = deep + pad;
+    const u = 10 ** Math.floor(Math.log10(Math.max(hi0 - lo0, 1))) / 2;
+    min = Math.max(0, Math.floor(lo0 / u) * u);
+    max = Math.ceil(hi0 / u) * u;
+    if (max - min < 5) { min = Math.max(0, Math.floor((shallow + deep) / 2 - 2.5)); max = min + 5; }
+  };
+  const fitScale = () => { const s = opts.get(); refit(s.shallow, s.deep); };
   let live = null; // the values while dragging
   function draw() {
     const s = { ...opts.get(), ...(live || {}) };
-    if (!max || s.deep > max) fitScale();
+    if (!max || s.deep > max || s.shallow < min) fitScale();
     el.querySelector(".pal").value = s.palette;
     el.querySelector(".rev-cb").checked = !!s.reverse;
-    const pc = (v) => `${Math.min(100, Math.max(0, (v / max) * 100))}%`;
+    const pc = (v) => `${Math.min(100, Math.max(0, ((v - min) / (max - min)) * 100))}%`;
     const tg = s.target != null && s.target > s.shallow && s.target < s.deep ? s.target : null;
     const sc = scaleFor(s);
     const w = Math.max(s.deep - s.shallow, 1e-6);
@@ -466,16 +477,18 @@ function makeCard(opts) {
     const th = el.querySelector(".h.tg");
     th.style.left = pc(tg ?? (s.shallow + s.deep) / 2);
     th.classList.toggle("off", tg == null);
-    el.querySelector(".v.min").textContent = "0";
-    el.querySelector(".v.lo").textContent = `${Math.round(s.shallow)} m`;
-    el.querySelector(".v.tg").textContent = tg == null ? "no target" : `target ${Math.round(tg)} m`;
-    el.querySelector(".v.hi").textContent = `${Math.round(s.deep)} m`;
-    el.querySelector(".v.max").textContent = `${max} m`;
+    el.querySelector(".v.min").textContent = `${fmtM(min)} m`;
+    el.querySelector(".v.lo").textContent = `${fmtM(s.shallow)} m`;
+    el.querySelector(".v.tg").textContent = tg == null ? "no target" : `target ${fmtM(tg)} m`;
+    el.querySelector(".v.hi").textContent = `${fmtM(s.deep)} m`;
+    el.querySelector(".v.max").textContent = `${fmtM(max)} m`;
   }
   // which pointer, and dragging it
   let drag = null;
-  const valueAt = (e) => ((e.clientX - drag.rect.left) / drag.rect.width) * max;
-  const step = () => (max > 500 ? 5 : max > 100 ? 1 : 0.5);
+  const valueAt = (e) => min + ((e.clientX - drag.rect.left) / drag.rect.width) * (max - min);
+  const step = () => { const r = max - min; return r > 500 ? 5 : r > 100 ? 1 : r > 20 ? 0.5 : 0.1; };
+  // whole metres, or one decimal on a fine scale
+  const fmtM = (v) => (max - min > 20 || Number.isInteger(v) ? String(Math.round(v)) : v.toFixed(1));
   track.addEventListener("pointerdown", (e) => {
     const s = opts.get();
     drag = { rect: track.getBoundingClientRect() };
@@ -490,7 +503,7 @@ function makeCard(opts) {
   const move = (e) => {
     if (!drag) return;
     const q = step();
-    const v = Math.min(max, Math.max(0, Math.round(valueAt(e) / q) * q));
+    const v = Math.min(max, Math.max(min, Math.round(valueAt(e) / q) * q));
     if (drag.k === "lo") live.shallow = Math.min(v, live.deep - q);
     else if (drag.k === "hi") live.deep = Math.max(v, live.shallow + q);
     else live.target = Math.min(Math.max(v, live.shallow + q), live.deep - q);
@@ -501,12 +514,17 @@ function makeCard(opts) {
   track.addEventListener("pointermove", move);
   track.addEventListener("pointerup", () => {
     if (!drag) return;
-    const atEnd = drag.k === "hi" && live.deep >= max;
+    const r = max - min;
+    const atHi = drag.k === "hi" && live.deep >= max;
+    const atLo = drag.k === "lo" && live.shallow <= min && min > 0;
     drag = null;
     const s = live; live = null;
+    // refit the scale to the new range; a pointer pushed to an end gives room to go further
+    refit(s.shallow, s.deep);
+    if (atHi) max = Math.max(max, Math.ceil((s.deep + r * 0.6) / step()) * step());
+    if (atLo) min = Math.max(0, Math.min(min, Math.floor((s.shallow - r * 0.6) / step()) * step()));
     opts.set(s);
-    // the deep pointer pushed to the end: room to go deeper
-    if (atEnd) { max = nice(max * 1.6); draw(); }
+    draw();
   });
   // the track captures the pointer while dragging, so a double-click arrives at the track, not at the pointer
   track.addEventListener("dblclick", (e) => {

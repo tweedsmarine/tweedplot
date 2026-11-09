@@ -108,13 +108,17 @@ export function setupAlarms(map, { getBoat, getBow = () => null, getSafetyDepth,
   /**
    * Raise (or refresh) an alarm. `stage` (default 0) is how bad the cause is: a higher stage than
    * before sounds again even if silenced or dismissed. `holdable` adds a Dismiss button.
+   * `clearable` is for an event with no lasting cause (a source changed): its Clear button
+   * removes it.
    */
   function raise(id, a) {
     if (!PRIMARY) return;
     const entry = a.holdable
       ? { ...a, dismiss: () => dismiss(id), dismissLabel: "Dismiss",
         dismissTitle: "Quiet for a minute: it stays on the Alarms list, and sounds again if the cause lasts or worsens" }
-      : a;
+      : a.clearable
+        ? { ...a, dismiss: () => clear(id), dismissLabel: "Clear", dismissTitle: "Remove this alarm: it has no lasting cause to clear it" }
+        : a;
     const old = active.get(id);
     if (old) {
       const worse = (a.stage ?? 0) > (old.stage ?? 0);

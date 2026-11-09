@@ -6,7 +6,7 @@ TweedPlot plans and sails passages: charts, weather, routing, AIS, alarms and fi
 
 - **The rail** (left edge): the drawers. {icon:weather} Weather, {icon:course} Route, {icon:routing} Wx routing, {icon:fleet} Targets & fleets, {icon:library} Library, {icon:chart} Chart, {icon:inst} Instruments, {icon:alarms} Alarms. {icon:settings} Settings is at the bottom. Click one to open it; click it again (or **Esc**) to close it.
 - **The toolbar** (top left of the chart): {icon:north} north up, live or paused, {icon:follow} follow the boat, {icon:ruler} ruler, the **View** list, {icon:panels} panels, {icon:day} colours (day, dusk, night).
-- **On the chart**: **MOB** (top right). Bottom right, from the top: **Anchor**, **Drop** (a mark at the boat).
+- **On the chart**: **MOB** (top right). Bottom right: **Drop** (a mark at the boat), and above it the optional anchor button (Settings › Display › **Anchor button on the chart**).
 - **Right-click the chart** (or hold a finger on it): move the boat, start a route, new mark, drop anchor, go to, meteogram, ruler… Most things start here.
 - **The ?** in a drawer's title bar opens the manual at that drawer.
 
@@ -73,10 +73,10 @@ Your own depth soundings build up into a seabed, as on Olex or TimeZero.
 
 ## Anchoring
 
-1. Press **Anchor** (or **K**, or right-click › **Drop anchor here**). It goes at the bow, with its swing circle.
+1. Right-click › **Drop anchor here** (or **K**, or the anchor button if you've turned it on). It goes at the bow, with its swing circle.
 2. During the pull test, **drag the anchor** to where it lies: the readout says how far it is from the bow. Or type "30 m at 012°T from the bow" on its card.
 3. On the card: the **swing radius** (or the scope and **Radius = scope**), the bottom, how it held, notes. The **anchor alarm** sounds if the bow leaves the circle; choose its sound in Alarms › Sound.
-4. **Weigh anchor** ends the watch. The anchor stays in Library › Marks › **Anchorages** for next time: click it › **Anchor here again**.
+4. **Weigh anchor** (on the card, right-click, or the red anchor button pressed twice) ends the watch. The anchor stays in Library › Marks › **Anchorages** for next time: click it › **Anchor here again**.
 
 ## Useful keys
 
@@ -91,7 +91,7 @@ Your own depth soundings build up into a seabed, as on Olex or TimeZero.
 | N | Colours (day, dusk, night) |
 | E | Drop a mark at the boat |
 | D | Record soundings on or off |
-| K | Drop anchor |
+| K | Drop anchor (twice: weigh it) |
 | Ctrl+M | Man overboard |
 | Shift+A | Silence the alarms |
 

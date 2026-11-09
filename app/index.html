@@ -771,8 +771,8 @@
       <span id="rp-time">—</span>
       <button id="rp-stop" title="Stop the replay and go back to live data">✕</button>
     </div>
-    <button id="anchor-btn" title="Drop anchor at the bow and watch it (then drag the anchor to where it lies). When anchored: open the anchor's card">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><path d="M12 7v13M8 10h8M5 14a7 7 0 0 0 14 0"/></svg><span>Anchor</span></button>
+    <button id="anchor-btn" aria-label="Drop anchor" title="Drop anchor at the bow and watch it (then drag the anchor to where it lies)">
+      <svg viewBox="0 0 34 24"><path class="arr-dn" d="M5 4v15M1.5 15.5 5 19l3.5-3.5"/><path class="arr-up" d="M5 20V5M1.5 8.5 5 5l3.5 3.5"/><circle cx="22" cy="5" r="2"/><path d="M22 7v13M18 10h8M15 14a7 7 0 0 0 14 0"/></svg></button>
     <button id="drop-btn" title="Drop a mark at the boat's position now, stamped with the time (no alarm)">Drop</button>
     <button id="mob-btn" title="Man overboard: mark the boat's position now, with bearing, distance and time from it until cleared">MOB</button>
     <div id="zoom-btns" aria-label="Zoom">
@@ -935,6 +935,7 @@
             <div class="wx-row"><label class="grow" for="set-use" title="What the boat is mostly for: Fishing shows the shoot and haul buttons and own soundings in the toolbar">Use</label>
               <select id="set-use"><option value="" disabled hidden>Choose…</option><option value="cruise">Cruising</option><option value="fish">Fishing</option><option value="race">Racing</option></select></div>
             <div class="wx-row"><label class="grow" title="The Record soundings button shows in the toolbar in Fishing; tick to show it whatever the use"><input id="set-rec-all" type="checkbox" /> Record soundings button in every use</label></div>
+            <div class="wx-row"><label class="grow" title="A button above Drop that drops anchor, and weighs it when anchored. Without it: right-click the chart, the K key, or Alarms › Anchor watch"><input id="set-anchor-btn" type="checkbox" /> Anchor button on the chart</label></div>
             <div class="wx-row"><span class="grow">Start-up questions</span><button id="set-welcome" type="button">Show the welcome screen</button></div>
             <h3>Screen calibration</h3>
             <div class="wx-row" title="So the IHO symbols, lines and text are their true size (S-52): measure the bar on your screen with a ruler and enter its length. Uncalibrated, it is 50 mm on a typical screen"><label for="set-screen-mm">Screen calibration</label> <span id="cal-bar" style="display:inline-block;height:6px;background:currentColor;vertical-align:middle;width:189px"></span> measures <input id="set-screen-mm" type="number" min="10" max="200" step="0.5" style="width:4.5em" /> mm</div>

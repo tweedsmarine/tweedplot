@@ -51,7 +51,7 @@ export const KEYS = [
   { group: "Weather time", keys: "Home", label: "Now", run: click("wx-now") },
 
   { group: "Marks and library", keys: "D", label: "Record own soundings on or off", btn: "pb-rec", map: true, run: click("pb-rec") },
-  { group: "Marks and library", keys: "K", label: "Drop anchor (or open the anchor's card when anchored)", btn: "anchor-btn", map: true, run: click("anchor-btn") },
+  { group: "Marks and library", keys: "K", label: "Drop anchor, or weigh it when anchored (press twice)", btn: "anchor-btn", map: true, run: click("anchor-btn") },
   { group: "Marks and library", keys: "E", label: "Drop a mark at the boat (event mark, no alarm)", btn: "drop-btn", run: click("drop-btn") },
   { group: "Marks and library", keys: "Ctrl+F", label: "Find in the library", run: (c) => c.findInLibrary() },
 

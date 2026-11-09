@@ -653,7 +653,7 @@ map.on("load", () => {
   anchor = setupAnchor(map, { library, alarms, before: "track", toast,
     getBoat: () => ({ pos: lastBoat, v: vessel }), getVessel: () => boat.get(), getAntenna: () => antennas.offsets(boat.get()) });
   layersPanel = setupLayers({ ui });
-  document.getElementById("anchor-btn").onclick = () => (anchor.watching() ? window.dispatchEvent(new Event("racenav-anchor-open")) : anchor.drop());
+  setupAnchorButton(anchor);
   varRoses = setupVarDiagram(map, { getVariation: variationAt,
     getAnnualChange: (p) => magneticVariation(p[1], p[0])?.annualChange ?? null });
   laylines = setupLaylines(map, { before: "track", getVariation: variationAt, getTarget: layTarget, getBoat: () => lastBoat, getWind: layWind,
@@ -1162,6 +1162,7 @@ listen("nmea-failover", ({ payload }) => {
   const id = `nmea-failover-${payload.group}`;
   const detail = {
     level: "alarm",
+    clearable: true,
     text: `${payload.label || payload.group} source changed`,
     detail: `Using ${payload.to} instead of ${payload.from}. Check the preferred source and connection.`,
   };
@@ -1616,4 +1617,37 @@ function soundingIcon(depth, shallow) {
   if (tenth) { g.font = fSmall; g.fillText(String(tenth), pad + w1, big + 3); }
   if (dry) { g.fillRect(pad, big + 4, w1 + w2, 2); }
   return g.getImageData(0, 0, c.width, c.height);
+}
+
+/** The optional Anchor button (Settings › Display): drops anchor, or weighs it when anchored.
+ * Weighing ends the anchor watch, so it takes a second press within 4 s (the button flashes). */
+function setupAnchorButton(anchor) {
+  const b = document.getElementById("anchor-btn");
+  const KEY = "racenav.anchorBtn";
+  const showBtn = (on) => { if (on) document.documentElement.dataset.anchorBtn = ""; else delete document.documentElement.dataset.anchorBtn; };
+  try { showBtn(localStorage.getItem(KEY) === "1"); } catch { /* storage unavailable */ }
+  const cb = document.getElementById("set-anchor-btn");
+  if (cb) {
+    cb.checked = "anchorBtn" in document.documentElement.dataset;
+    cb.onchange = () => { showBtn(cb.checked); try { localStorage.setItem(KEY, cb.checked ? "1" : "0"); } catch { /* storage unavailable */ } };
+  }
+  let armed = null;
+  const disarm = () => { clearTimeout(armed); armed = null; b.classList.remove("armed"); sync(); };
+  const sync = () => {
+    const on = anchor.watching();
+    b.classList.toggle("on", on);
+    const label = armed ? "Press again to weigh anchor" : on ? "Weigh anchor" : "Drop anchor";
+    b.setAttribute("aria-label", label);
+    b.title = armed ? "Press again to weigh anchor and stop the anchor watch (the anchor mark stays)"
+      : on ? "Weigh anchor: stops the anchor watch; the anchor mark stays in the Library. Press twice"
+        : "Drop anchor at the bow and watch it (then drag the anchor to where it lies)";
+  };
+  b.onclick = () => {
+    if (!anchor.watching()) { disarm(); anchor.drop(); return; }
+    if (!armed) { armed = setTimeout(disarm, 4000); b.classList.add("armed"); sync(); return; }
+    disarm();
+    window.dispatchEvent(new Event("racenav-anchor-weigh"));
+  };
+  window.addEventListener("racenav-anchor-watch", () => { if (!anchor.watching()) disarm(); else sync(); });
+  sync();
 }
