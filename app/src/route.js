@@ -3,7 +3,7 @@
 import * as maplibregl from "maplibre-gl";
 import { invoke } from "@tauri-apps/api/core";
 import { distNm } from "./instruments.js";
-import { greatCircleGeometry } from "./navmath.js";
+import { greatCircleGeometry, greatCircle as gcInitial, rhumb } from "./navmath.js";
 
 const WORK_KEY = "racenav.route.work"; // the route being edited survives a restart
 
@@ -30,7 +30,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
   let legsHidden = false;
 
   // The route being edited. Marks: { id (library id, or null until saved), name, lon, lat, rounding }.
-  const work = load(WORK_KEY, { routeId: null, name: "", start: null, startRef: null, marks: [], dirty: false, nav: 0, greatCircle: false });
+  const work = load(WORK_KEY, { routeId: null, name: "", start: null, startRef: null, marks: [], dirty: false, nav: 0, greatCircle: false, startRings: null });
   let start = work.start; // [lon, lat]
   let startRef = work.startRef; // { id, name } when the start is a library mark
   let marks = work.marks;
@@ -38,6 +38,10 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
   let dirty = work.dirty;
   let navIndex = work.nav || 0;
   let greatCircle = Boolean(work.greatCircle);
+  // range rings of a start that isn't a library mark (marks keep theirs: m.rings, or the library's)
+  let startRings = work.startRings || null;
+  // the IHO look (S-52 planned route), with the IHO symbols (mariner.js colours)
+  let iho = null; // null, or { colour(token) }
   let mode = null; // "start" | "marks" | null
 
   // ---------- layers ----------------------------------------------------------
@@ -54,9 +58,13 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     layout: { "icon-image": ["get", "icon"], "icon-allow-overlap": true, "icon-ignore-placement": true } });
   map.addLayer({ id: "rt-labels", type: "symbol", source: "rt-marks", filter: ["!=", ["get", "name"], ""],
     layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 12], "icon-allow-overlap": true } });
+  // with the IHO symbols: each leg's course and distance (S-52 planned route), beside its middle
+  map.addSource("s52-rt-leglbl", { type: "geojson", data: empty });
+  map.addLayer({ id: "s52-rt-leglbl", type: "symbol", source: "s52-rt-leglbl",
+    layout: { "icon-image": ["get", "img"], "icon-anchor": ["get", "anc"], "icon-offset": ["get", "off"], "icon-allow-overlap": false, "icon-padding": 2 } });
 
   function persist() {
-    save(WORK_KEY, { routeId, name: $("rt-name").value, start, startRef, marks, dirty, nav: navIndex, greatCircle });
+    save(WORK_KEY, { routeId, name: $("rt-name").value, start, startRef, marks, dirty, nav: navIndex, greatCircle, startRings });
   }
   function changed() {
     dirty = true;
@@ -65,11 +73,36 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     for (const f of listeners) f();
   }
 
+  /** With the IHO symbols: each leg's course (°T) and distance beside its middle. */
+  function drawLegLabels() {
+    const ll = [];
+    if (iho && !legsHidden) {
+      const ps = [start, ...marks.map((m) => [m.lon, m.lat])].filter(Boolean);
+      for (let i = 1; i < ps.length; i++) {
+        const a = ps[i - 1], b = ps[i];
+        // a great-circle leg: its initial course
+        const r = greatCircle ? gcInitial(a, b) : rhumb(a, b);
+        if (r.nm <= 0) continue;
+        // beside the line: to the right of a steep leg, above a flat one
+        const pa = map.project(a), pb = map.project(b);
+        const steep = Math.abs(pb.y - pa.y) > Math.abs(pb.x - pa.x);
+        const brg = String(Math.round(r.brg) % 360).padStart(3, "0");
+        ll.push(pt(rhumbMid(a, b), { img: `s52m:t:PLRTE:${brg}° ${r.nm < 10 ? r.nm.toFixed(2) : r.nm.toFixed(1)} NM`, anc: steep ? "left" : "bottom", off: steep ? [8, 0] : [0, -5] }));
+      }
+    }
+    map.getSource("s52-rt-leglbl").setData({ type: "FeatureCollection", features: ll });
+  }
+  map.on("moveend", () => { if (iho) drawLegLabels(); }); // the side of the leg depends on the view
+
   function drawMarks() {
     const f = [];
-    if (start) f.push(pt(start, { icon: "mk:S", sel: -1, name: startRef?.name || "" }));
-    marks.forEach((m, i) => f.push(pt([m.lon, m.lat], { icon: `mk:${i + 1}`, sel: i, name: m.name || "" })));
+    // IHO: waypoint circles (the next one doubled), numbers and names in the route colour
+    const ihoLabel = (n, name) => `s52m:t:PLRTE:${n}${name ? ` ${name}` : ""}`;
+    if (start) f.push(pt(start, iho ? { icon: "s52m:wp:PLRTE", sel: -1, name: "", lbl: ihoLabel("S", startRef?.name) } : { icon: "mk:S", sel: -1, name: startRef?.name || "" }));
+    marks.forEach((m, i) => f.push(pt([m.lon, m.lat], iho ? { icon: i === navIndex ? "s52m:wpn:PLRTE" : "s52m:wp:PLRTE", sel: i, name: "", lbl: ihoLabel(i + 1, m.name) }
+      : { icon: `mk:${i + 1}`, sel: i, name: m.name || "" })));
     map.getSource("rt-marks").setData({ type: "FeatureCollection", features: f });
+    drawLegLabels();
     // legs, the one being sailed drawn heavier
     const pts = [start, ...marks.map((m) => [m.lon, m.lat])].filter(Boolean);
     const legs = [];
@@ -290,8 +323,10 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       for (const m of marks) {
         const known = m.id && lib.find((x) => x.id === m.id);
         if (!known) {
-          const saved = await invoke("mark_save", { mark: { name: m.name, lat: m.lat, lon: m.lon, kind: "mark", group: name, notes: "" } });
-          for (const x of marks) if (x === m || (m.id && x.id === m.id)) { x.id = saved.id; x.name = saved.name; }
+          // its range rings go with it into the library
+          const data = m.rings ? { rings: m.rings } : {};
+          const saved = await invoke("mark_save", { mark: { name: m.name, lat: m.lat, lon: m.lon, kind: "mark", group: name, notes: "", data } });
+          for (const x of marks) if (x === m || (m.id && x.id === m.id)) { x.id = saved.id; x.name = saved.name; delete x.rings; }
         } else if (known.lat !== m.lat || known.lon !== m.lon) {
           await invoke("mark_save", { mark: { ...known, lat: m.lat, lon: m.lon } });
         }
@@ -309,7 +344,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     } catch (e) { status(`Could not save: ${e}`); }
   };
   $("rt-new").onclick = () => {
-    start = null; startRef = null; marks = []; routeId = null; dirty = false; navIndex = 0; $("rt-name").value = "";
+    start = null; startRef = null; startRings = null; marks = []; routeId = null; dirty = false; navIndex = 0; $("rt-name").value = "";
     arm(null); deselect(); persist(); drawMarks();
     for (const f of listeners) f();
   };
@@ -344,6 +379,43 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       return map.queryRenderedFeatures([[point.x - 5, point.y - 5], [point.x + 5, point.y + 5]], { layers: ["rt-legs", "rt-marks"] }).length > 0;
     },
     current: () => ({ routeId, dirty }),
+    /** The waypoint under a map point: -1 the start, 0.. a mark; null if none. */
+    waypointAt(point) {
+      const f = map.queryRenderedFeatures([[point.x - 8, point.y - 8], [point.x + 8, point.y + 8]], { layers: ["rt-marks"] })[0];
+      return f ? Number(f.properties.sel) : null;
+    },
+    /** A waypoint: { id (library mark, if any), name, pos, rings }. */
+    waypoint(k) {
+      if (k === -1) return start ? { id: startRef?.id ?? null, name: startRef?.name || "start", pos: start, rings: startRings } : null;
+      const m = marks[k];
+      return m ? { id: m.id, name: m.name, pos: [m.lon, m.lat], rings: m.rings ?? null } : null;
+    },
+    /** Range rings of a waypoint that isn't a library mark ({ n, step } or null). */
+    setRings(k, r) {
+      if (k === -1) startRings = r; else if (marks[k]) { if (r) marks[k].rings = r; else delete marks[k].rings; }
+      persist();
+    },
+    /** Waypoints with range rings of their own (not library marks): [{ id, pos, rings }]. */
+    ringCentres() {
+      const out = [];
+      if (start && startRings && !startRef) out.push({ id: null, pos: start, rings: startRings });
+      for (const m of marks) if (m.rings && !m.id) out.push({ id: null, pos: [m.lon, m.lat], rings: m.rings });
+      return out;
+    },
+    /** The IHO look on or off (S-52 planned route colours, waypoint circles, leg courses). */
+    setIho(on, colour) {
+      iho = on ? { colour } : null;
+      const c = on ? colour("PLRTE") : "#c2185b";
+      map.setPaintProperty("rt-legs", "line-color", c);
+      map.setPaintProperty("rt-legs", "line-opacity", on ? 1 : 0.8);
+      map.setPaintProperty("rt-legs", "line-dasharray", on ? ["literal", [1, 0]] : ["literal", [4, 3]]);
+      map.setPaintProperty("rt-legs", "line-width", ["case", ["get", "active"], on ? 3 : 2.5, on ? 1.6 : 1.2]);
+      map.setLayoutProperty("rt-labels", "icon-image", on ? ["get", "lbl"] : ["concat", "lbl:", ["get", "name"]]);
+      map.setLayoutProperty("rt-labels", "icon-anchor", on ? "left" : "top");
+      map.setLayoutProperty("rt-labels", "icon-offset", on ? ["literal", [14, 0]] : ["literal", [0, 12]]);
+      map.setFilter("rt-labels", on ? ["has", "lbl"] : ["!=", ["get", "name"], ""]);
+      drawMarks();
+    },
     addLibraryMark(m) { marks.push({ id: m.id, name: m.name, lon: m.lon, lat: m.lat, rounding: "" }); changed(); },
     libraryMarkChanged(m) {
       let hit = false;
@@ -363,6 +435,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       if (!points.length) return;
       start = [points[0].lon, points[0].lat];
       startRef = null;
+      startRings = null;
       marks = points.slice(1).map((p) => ({ id: null, name: p.name || "", lon: p.lon, lat: p.lat, rounding: "" }));
       routeId = null;
       $("rt-name").value = name || "";
@@ -396,6 +469,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     detach() { routeId = null; dirty = true; persist(); drawMarks(); },
     loadRoute(r, lib) {
       routeId = r.id;
+      startRings = null;
       $("rt-name").value = r.name;
       const sm = r.start_mark && lib.find((m) => m.id === r.start_mark);
       start = sm ? [sm.lon, sm.lat] : r.start ?? null;
@@ -448,6 +522,8 @@ export function markImage(id) {
   return g.getImageData(0, 0, s, s);
 }
 
+/** The middle of a leg (near enough for a label). */
+function rhumbMid(a, b) { return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; }
 function pt(c, props) { return { type: "Feature", properties: props, geometry: { type: "Point", coordinates: c } }; }
 function cap(s) { return s[0].toUpperCase() + s.slice(1); }
 function ddm(deg, pos, neg) {

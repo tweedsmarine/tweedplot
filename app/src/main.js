@@ -44,6 +44,7 @@ import { setupLayers } from "./layers.js";
 import { setupLaylines } from "./laylines.js";
 import { setupVarDiagram } from "./varrose.js";
 import { setupRoute, markImage } from "./route.js";
+import { setupMariner, marinerImage, tokenColour } from "./mariner.js";
 import { setupRouting } from "./routing.js";
 import { setupBoat } from "./boat.js";
 import { setupDock } from "./dock.js";
@@ -98,6 +99,8 @@ const DEFAULTS = {
   fourShades: true, shallowPattern: false, contourLabels: false,
   // own-boat lines: shown, and length in minutes of travel or "inf" (to the edge of the chart)
   hdgLine: true, hdgLen: "inf", cogLine: true, cogLen: "10",
+  // beam bearing line through own ship; range rings round own ship (count, spacing NM)
+  beamLine: false, ownRings: false, ownRingN: 3, ownRingStep: 0.5,
   // damping of Signal K readings, seconds (0 = none)
   dampMotion: 2, dampWind: 5, dampDepth: 0,
 };
@@ -311,7 +314,9 @@ const map = new maplibregl.Map({
 const mapPalette = setupMapPalette(map);
 /** Chart layers coloured from the IHO palette here (left alone by mapPalette). */
 const IHO_CHART_LAYERS = new Set(["sea", "depare", "depcnt", "unsare", "unsare-line", "depare-drg", "safety-contour", "land-world", "land-nz",
-  "chart-world-land", "coast-world", "coast-nz", "chart-land", "chart-coast", "chart-wcoast", "soundg"]);
+  "chart-world-land", "coast-world", "coast-nz", "chart-land", "chart-coast", "chart-wcoast", "soundg",
+  // own ship, past track and route: in the IHO mariner colours with the IHO symbols (mariner.js)
+  "track", "hdgline", "boat-hull", "boat-hull-line", "boat-gps", "rt-legs"]);
 /** The chart's base layers in the colours of the moment (chartColours). */
 function applyChartColours() {
   const c = chartColours();
@@ -351,6 +356,9 @@ function applyPalette() {
     document.documentElement.toggleAttribute("data-iho", live);
     applyChartColours();
     mapPalette.apply(live ? palette : null, (id) => IHO_CHART_LAYERS.has(id) || id.startsWith("s52-"));
+    // own ship, track, route, rings and EBLs in the palette's mariner colours (or TweedPlot's)
+    route?.setIho(live, tokenColour);
+    mariner?.restyle();
   });
   return paletteBusy;
 }
@@ -413,7 +421,7 @@ map.setMissingStyleImageResolver((id) => {
   if (m) { map.addImage(id, soundingIcon(parseFloat(m[2]), m[1] === "sh"), { pixelRatio: 2 }); return; }
   const cl = /^cl:(-?[0-9.]+)$/.exec(id);
   if (cl) { map.addImage(id, contourLabelIcon(parseFloat(cl[1])), { pixelRatio: 2 }); return; }
-  const img = barbImage(id) || markImage(id) || labelImage(id) || featureImage(id) || tideImage(id) || poiImage(id) || symImage(id) || stationImage(id) || tidalImage(id);
+  const img = barbImage(id) || markImage(id) || marinerImage(id) || labelImage(id) || featureImage(id) || tideImage(id) || poiImage(id) || symImage(id) || stationImage(id) || tidalImage(id);
   if (img) map.addImage(id, img, { pixelRatio: 2 });
 });
 
@@ -432,7 +440,7 @@ const use = setupUse();
 const manual = setupManual({
   // the symbols in the manual come from the chart's own drawing code
   image: (id) => {
-    const im = barbImage(id) || markImage(id) || featureImage(id) || tideImage(id) || poiImage(id) || symImage(id) || stationImage(id) || tidalImage(id);
+    const im = barbImage(id) || markImage(id) || marinerImage(id) || featureImage(id) || tideImage(id) || poiImage(id) || symImage(id) || stationImage(id) || tidalImage(id);
     if (im) return { data: im, pixelRatio: 2 };
     const m = map.hasImage(id) ? map.getImage(id) : null;
     return m && !m.sdf ? { data: m.data, pixelRatio: m.pixelRatio } : null;
@@ -462,6 +470,7 @@ setupNmeaMonitor(document.getElementById("nmea-monitor-window"), { standalone: t
 const dock = setupDock(map);
 let features = null;
 let ruler = null;
+let mariner = null; // own ship, vectors, range rings, EBL/VRM, scale bar (mariner.js)
 let gribTools = null;
 let arrows = null;
 let barriers = null;
@@ -635,6 +644,10 @@ map.on("load", () => {
   } });
   library = setupLibrary(map, { ui, toast, getBoat: () => lastBoat });
   route = setupRoute(map, { library, getBoat: () => lastBoat, getArrivalNm: () => Number(document.getElementById("rt-radius").value) || 0.1 });
+  mariner = setupMariner(map, { settings, saveSettings, colours: () => ihoColours, usingS52: () => features?.usingS52(), library, route, toast, getVariation: variationAt });
+  route.setIho(!!ihoColours, tokenColour);
+  if (lastBoat) drawBoat();
+  mariner.track(track, trackT);
   routing = setupRouting(map, { weather, course: route, library, dock, ui, getBoat: () => lastBoat,
     getSafetyDepth: () => settings.safetyDepth, getAvoid: () => features.avoid(), getBoatSettings: boat.get });
   library.attach(route, routing);
@@ -1010,8 +1023,17 @@ const followOffset = () => {
 };
 const saveFollowFrac = () => { try { localStorage.setItem(FOLLOW_KEY, JSON.stringify(followFrac)); } catch { /* ignore */ } };
 let boatDrag = false;
-const onBoat = (point) => !!lastBoat && map.getLayer("boat") && map.queryRenderedFeatures(point, { layers: ["boat", "boat-hull"].filter((l) => map.getLayer(l)) }).length > 0;
+const onBoat = (point) => {
+  if (!lastBoat || !map.getLayer("boat")) return false;
+  if (map.queryRenderedFeatures(point, { layers: ["boat", "boat-hull"].filter((l) => map.getLayer(l)) }).length > 0) return true;
+  // the IHO own ship symbol (a double circle, mariner.js): within its 3 mm radius
+  if (!features?.usingS52()) return false;
+  const p = map.project(lastBoat);
+  return Math.hypot(p.x - point.x, p.y - point.y) <= 3.2 * s52PxPerMm();
+};
 function startBoatDrag(e) {
+  // the left button (or a touch) drags; a right-click on the boat opens the menu
+  if (e.originalEvent?.button > 0) return;
   if (!follow || !onBoat(e.point)) return;
   e.preventDefault(); // not a chart pan
   map.stop();
@@ -1076,7 +1098,8 @@ setupKeys(map, {
 
 const TRACK_MAX = 20000;
 let track = [];
-document.getElementById("clear-track").onclick = () => { track = []; setData("track", line(track)); };
+let trackT = []; // the time of each track point (Unix seconds), for the time marks
+document.getElementById("clear-track").onclick = () => { track = []; trackT = []; setData("track", line(track)); mariner?.track(track, trackT); };
 
 // ---------- Signal K events -------------------------------------------------
 // ---------- Signal K status, live / planning ----------------------------------
@@ -1138,6 +1161,7 @@ function setNmeaNavigationSource(payload) {
       lastBoat = null;
       setData("boat", emptyFC());
       setData("boat-hull", emptyFC());
+      mariner?.boat(null);
       drawLines(null);
       arrows?.clear();
     }
@@ -1194,6 +1218,7 @@ document.getElementById("sk-state").onclick = () => {
   document.getElementById(nmeaNavigationSourceId ? "nmea-settings-section" : "sk-section")?.scrollIntoView({ block: "start", behavior: "smooth" });
 };
 // the toolbar's ruler: one press to measure (the chart menu has "Start ruler here" too)
+document.getElementById("ebl-btn").onclick = () => mariner?.startEbl();
 document.getElementById("ruler-btn").onclick = () => { if (!ruler) return; if (ruler.isArmed()) ruler.finish(); else ruler.start(); };
 const liveBtn = document.getElementById("sk-live");
 liveBtn.onclick = () => {
@@ -1224,6 +1249,7 @@ function drawBoat() {
     f.push({ type: "Feature", properties: { k: "gps" }, geometry: { type: "Point", coordinates: lastBoat } });
   }
   setData("boat-hull", { type: "FeatureCollection", features: f });
+  mariner?.boat(lastBoat, boatDir, live ? vessel : null, big);
 }
 map.on("zoomend", drawBoat);
 window.addEventListener("racenav-boat", drawBoat);
@@ -1279,6 +1305,8 @@ let ctxAnchor = null; // anchor mark under the right-click, if any
 let ctxRuler = null; // ruler under the right-click: { rid, i, points }
 let ctxBarrier = null; // barrier under the right-click: { id, i, active, name }
 let ctxObject = null; // library object under the right-click (Edit in the library)
+let ctxRings = null; // what range rings would go round (mariner.js ringTarget)
+let ctxEbl = null; // EBL/VRM under the right-click (index)
 map.on("contextmenu", (e) => {
   e.originalEvent.preventDefault();
   ctxAt = [e.lngLat.lng, e.lngLat.lat];
@@ -1307,6 +1335,19 @@ map.on("contextmenu", (e) => {
   ctx.querySelector('[data-act="cone-toggle"]').hidden = fishing;
   ctx.querySelector('[data-act="lay-toggle"]').textContent = boat.get().layShow ? "Laylines off" : "Laylines on";
   ctx.querySelector('[data-act="cone-toggle"]').textContent = boat.get().layConeShow ? "Tacking cone off" : "Tacking cone on";
+  // range rings: a library mark or route waypoint under the right-click, or own ship
+  ctxRings = mariner?.ringTarget(e.point) ?? (onBoat(e.point) ? mariner?.ownRingTarget() : null) ?? null;
+  const ringsBtn = ctx.querySelector('[data-act="rings"]');
+  ringsBtn.hidden = !ctxRings;
+  if (ctxRings) ringsBtn.textContent = `Range rings round ${ctxRings.name}…`;
+  // EBL/VRM: a new one from here; one under the right-click: adjust or delete it
+  ctxEbl = mariner?.eblAt(e.point) ?? null;
+  ctx.querySelector('[data-act="ebl-here"]').hidden = ctxEbl != null;
+  for (const el of ctx.querySelectorAll(".ebl-item")) el.hidden = ctxEbl == null;
+  if (ctxEbl != null) {
+    ctx.querySelector('[data-act="ebl-adj"]').textContent = `Adjust EBL/VRM ${ctxEbl + 1}`;
+    ctx.querySelector('[data-act="ebl-del"]').textContent = `Delete EBL/VRM ${ctxEbl + 1}`;
+  }
   // a ruler under the right-click: delete it, a point of it, or save it as a route
   ctxRuler = ruler?.isArmed() ? null : ruler?.hitAt(e.point) ?? null;
   for (const el of ctx.querySelectorAll(".ruler-item")) el.hidden = !ctxRuler;
@@ -1369,6 +1410,10 @@ ctx.addEventListener("click", (e) => {
   if (act === "cone-toggle") boat.toggle("layConeShow");
   if (act === "open-lib") openInLibrary(ctxObject);
   if (act === "centre") map.easeTo({ center: ctxAt });
+  if (act === "rings" && ctxRings) mariner?.openRings(ctxRings);
+  if (act === "ebl-here") mariner?.startEbl(ctxAt);
+  if (act === "ebl-adj" && ctxEbl != null) mariner?.adjustEbl(ctxEbl);
+  if (act === "ebl-del" && ctxEbl != null) mariner?.deleteEbl(ctxEbl);
   if (act === "meteogram") gribTools?.meteogramAt(ctxAt);
   if (act === "ruler-toggle") {
     if (ruler.isArmed()) ruler.finish();
@@ -1421,6 +1466,7 @@ listen("vessel", ({ payload }) => {
       lastBoat = null;
       setData("boat", emptyFC());
       setData("boat-hull", emptyFC());
+      mariner?.boat(null);
       drawLines(null);
       arrows?.clear();
     }
@@ -1438,8 +1484,10 @@ listen("vessel", ({ payload }) => {
   const last = track.at(-1);
   if (!last || Math.abs(last[0] - pos[0]) > 1e-5 || Math.abs(last[1] - pos[1]) > 1e-5) {
     track.push(pos);
-    if (track.length > TRACK_MAX) track.shift();
+    trackT.push(boatTime());
+    if (track.length > TRACK_MAX) { track.shift(); trackT.shift(); }
     setData("track", line(track));
+    mariner?.track(track, trackT);
   }
   if (follow && ctx.hidden && !boatDrag) map.easeTo({ center: pos, offset: followOffset(), duration: 200 }); // the menu stays where it was opened
   arrows?.live(pos, v);

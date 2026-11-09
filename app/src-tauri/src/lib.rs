@@ -1643,6 +1643,39 @@ fn open_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
     std::process::Command::new(prog).arg(&p).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// The compilation scale of the chart shown at a place (the largest-scale chart with a depth
+/// area there), for the overscale indication: `{ band, scale, enc }`. LINZ's open data gives
+/// each band's scale range (the largest scale is taken); ENC bands use the usual largest
+/// scale of their navigational purpose.
+#[tauri::command]
+async fn chart_scale_at(lon: f64, lat: f64) -> Option<serde_json::Value> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (band, table, ..) = charts()?.depth_area_at(lon, lat)?;
+        let enc = table.to_ascii_lowercase().contains("_enc_b");
+        let scale: u32 = if enc {
+            match band {
+                0..=2 => 1_500_000,
+                3 => 350_000,
+                4 => 90_000,
+                5 => 22_000,
+                _ => 8_000,
+            }
+        } else {
+            match band {
+                5 => 14_000,
+                4 => 122_000,
+                3 => 190_000,
+                2 => 1_350_000,
+                _ => 11_500_000,
+            }
+        };
+        Some(serde_json::json!({ "band": band, "scale": scale, "enc": enc }))
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
 /// The charted depth at a place (a click on open water): the depth area or dredged area of the
 /// largest-scale chart there, as a feature report.
 #[tauri::command]
@@ -2031,6 +2064,7 @@ pub fn run() {
             chart_info,
             chart_feature,
             chart_depth_at,
+            chart_scale_at,
             chart_s52_context,
             s52_symbols,
             s52_styles,

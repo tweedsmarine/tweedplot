@@ -1566,3 +1566,22 @@ html.cur-edge:not(#n1):not(#n2):not(#n3), html.cur-edge:not(#n1):not(#n2):not(#n
 #manual .man-print-menu[hidden] { display: none; }
 #manual .man-print-menu button { white-space: nowrap; text-align: left; }
 @page a5:first { @bottom-center { content: none; } @top-right { content: none; } }
+
+/* mariner's symbols (mariner.js): the S-52 scale bar and north arrow at the left of the chart,
+   the overscale indication beside the display category */
+#mar-scale { position: absolute; left: calc(var(--rail-w) + 58px); top: 14px; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none; }
+body.drawer-open #mar-scale { left: calc(var(--rail-w) + var(--drawer-w) + 58px); }
+#mar-scale[hidden] { display: none; }
+#mar-scale .mar-north { display: block; stroke-linecap: butt; }
+#mar-scale .mar-bar { display: flex; flex-direction: column; align-items: center; gap: 3px; pointer-events: auto; }
+#mar-scale .mar-bar canvas { display: block; }
+#mar-scale .mar-bar span { font-size: 11px; font-weight: 600; white-space: nowrap; text-shadow: 0 0 3px var(--panel, #fff), 0 0 3px var(--panel, #fff); }
+.overscale-ind { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); z-index: 3; padding: 2px 10px; border-radius: 4px;
+  background: #fff4d6; color: #7a4b00; border: 1px solid #e0a63a; font-size: 12px; font-weight: 600; pointer-events: auto; }
+.overscale-ind[hidden] { display: none; }
+.rings-card .rg-out.bad { color: var(--bad); }
+.rings-card input.bad, #set-own-ring-step.bad { outline: 2px solid var(--bad); }
+/* the S-52 scale bar and north arrow are drawn in the IHO palette's own colours: left out of
+   the dusk and night filters, like the chart */
+html[data-palette="dusk"][data-iho] #mar-scale { filter: hue-rotate(180deg) invert(1); }
+html[data-palette="iho-night"][data-iho] #map > #mar-scale { filter: brightness(var(--pal-dim, 1)); }

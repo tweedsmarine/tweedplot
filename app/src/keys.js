@@ -40,6 +40,7 @@ export const KEYS = [
   { group: "Chart", keys: "B", label: "Centre on the boat (and follow it)", map: true, run: (c) => c.centreBoat() },
   { group: "Chart", keys: "F", label: "Follow the boat on or off", btn: "follow", map: true, run: click("follow") },
   { group: "Chart", keys: "M", label: "Measure (ruler); Esc stops", btn: "ruler-btn", map: true, run: click("ruler-btn") },
+  { group: "Chart", keys: "V", label: "EBL/VRM from the boat (click fixes it, Esc cancels)", btn: "ebl-btn", map: true, run: click("ebl-btn") },
   { group: "Chart", keys: "T", label: "Target list", btn: "targets-btn", run: click("targets-btn") },
   { group: "Chart", keys: "N", label: "Colours: day, dusk, night red, night green", btn: "palette-btn", run: click("palette-btn") },
   { group: "Chart", keys: "Space", label: "Live or paused", btn: "sk-live", run: click("sk-live") },
