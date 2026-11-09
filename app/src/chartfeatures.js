@@ -6,6 +6,7 @@
 import { placing } from "./modes.js";
 import { infoBox } from "./infobox.js";
 import { invoke } from "@tauri-apps/api/core";
+import { linkPublications } from "./publications.js";
 import { listen } from "@tauri-apps/api/event";
 import { magneticVariation, fmtVariation } from "./wmm.js";
 
@@ -96,7 +97,8 @@ function chartNote(name) {
   box.textContent = `${name}…`;
   invoke("chart_text", { name }).then((r) => {
     if (r?.text != null) {
-      box.textContent = r.text;
+      // references to the Annual Notices to Mariners and the Almanac open them
+      box.replaceChildren(...linkPublications(r.text));
       box.title = r.name;
     } else if (r?.picture) {
       box.className = "wx-note";

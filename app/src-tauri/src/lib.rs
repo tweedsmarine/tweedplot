@@ -15,6 +15,7 @@ mod live;
 mod nmea;
 mod pbathy;
 mod plugin;
+mod publications;
 mod radar_sim;
 mod routing_cmd;
 mod s63_cmd;
@@ -2217,6 +2218,9 @@ pub fn run() {
             data_cancel,
             chart_land_detail,
             chart_texts::chart_text,
+            publications::pubs_status,
+            publications::pubs_download,
+            publications::pub_open,
             chart_texts::chart_texts_status,
             chart_texts::chart_texts_import,
             s63_cmd::s63_status,

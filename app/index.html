@@ -708,6 +708,14 @@
         <h3 id="ct-head">Chart notes</h3>
         <div class="wx-row"><span id="ct-note" class="grow wx-note">The texts chart features refer to (cautions, chart notes), shown on their cards. They come with ENC exchange sets, unencrypted.</span>
           <button id="ct-import" title="Copy the chart notes from an ENC folder: an exchange set, a chart DVD, or another program's ENC folder (no permits needed)">Add from an ENC folder…</button></div>
+        <h3>Nautical publications</h3>
+        <div class="wx-row"><span class="grow wx-note">LINZ's Annual New Zealand Notices to Mariners and the New Zealand Nautical Almanac (NZ 204), as PDFs. References to them in chart notes open them. A new edition comes out each 1 July.</span></div>
+        <div class="wx-row"><span id="pub-note" class="grow wx-note"></span>
+          <button id="pub-get" title="Download the current Annual Notices to Mariners (about 4 MB) from linz.govt.nz">Download</button></div>
+        <div class="wx-row"><label class="grow" title="The whole Almanac: tides, lights, maritime contacts and the Annual Notices in one book"><input id="pub-alm" type="checkbox" /> With the full Almanac (about 9 MB)</label>
+          <button id="pub-open-alm" hidden title="Open the New Zealand Nautical Almanac">Open Almanac</button></div>
+        <details id="pub-list-d" hidden><summary>Annual Notices to Mariners</summary><ul id="pub-list" class="pub-list"></ul></details>
+        <div class="wx-note">Sourced from Land Information New Zealand, Crown Copyright Reserved. Changes during the year come in the fortnightly Notices to Mariners (<a href="#" id="pub-site">linz.govt.nz</a>). Not a replacement for the nautical publications required by Maritime Rules Part 25.</div>
       </section>
 
       <section class="pane" data-pane="inst" data-title="Instruments">

@@ -67,6 +67,7 @@ import { setupManual } from "./manual.js";
 import { setupData } from "./data.js";
 import { setupPbathy, pbathyAt } from "./pbathy.js";
 import { setupS63 } from "./s63.js";
+import { setupPublications } from "./publications.js";
 import { setupReplay } from "./replay.js";
 import { setupPalette } from "./palette.js";
 import { setupMapPalette } from "./mappalette.js";
@@ -576,6 +577,7 @@ map.on("load", () => {
   setupData(map, { toast, reloadTiles: reloadChartTiles });
   pbathy = setupPbathy(map, { ui });
   setupS63(map, { toast });
+  setupPublications({ toast });
   setupPalette((mode) => { paletteMode = mode; applyPalette(); });
   setupBrand();
   setupWebMap(map);
