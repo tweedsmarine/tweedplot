@@ -56,6 +56,12 @@ export function dateTest(t, range) {
   return (!range.from || d >= range.from) && (!range.to || d <= range.to);
 }
 
+/** A filter's choices A to Z (numbers in number order: "Set 9" before "Set 10"), unless it keeps its own order. */
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+function byLabel(opts, f) {
+  return f.keepOrder ? opts : [...opts].sort((a, b) => collator.compare(String(a[1] ?? ""), String(b[1] ?? "")));
+}
+
 export function libList(root, cfg) {
   const ROW = cfg.rowHeight ?? 50;
   const [one, many] = cfg.noun ?? ["item", "items"];
@@ -251,7 +257,7 @@ export function libList(root, cfg) {
     pop.dataset.key = f.key;
     const v = state.f[f.key];
     if (f.type === "choice") {
-      const opts = f.options(items);
+      const opts = byLabel(f.options(items), f);
       for (const [val, label, count] of opts) {
         const o = document.createElement("button");
         o.className = "ll-opt";
@@ -267,7 +273,7 @@ export function libList(root, cfg) {
       const grid = document.createElement("div");
       grid.className = "ll-months";
       const cur = new Set(v ?? []);
-      (f.months ? MONTHS.map((m, i) => [i, m]) : f.options(items)).forEach(([val, label]) => {
+      (f.months ? MONTHS.map((m, i) => [i, m]) : byLabel(f.options(items), f)).forEach(([val, label]) => {
         const o = document.createElement("button");
         o.textContent = label;
         o.classList.toggle("on", cur.has(val));

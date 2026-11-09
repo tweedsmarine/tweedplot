@@ -161,3 +161,14 @@ export function ddm(deg, pos, neg) {
   if (m >= 59.9995) { d += 1; m = 0; }
   return `${d}°${m.toFixed(3).padStart(6, "0")}'${h}`;
 }
+
+/**
+ * The bow's position: the GPS position moved forward along the heading by the antenna's distance
+ * from the bow (Settings › Vessel). The heading is the compass's, else the COG when moving; with
+ * neither, or no distance set, the GPS position itself.
+ */
+export function bowOf(pos, v = {}, gpsFromBow = 0) {
+  if (!pos) return null;
+  const hdg = Number.isFinite(v.heading) ? v.heading : Number.isFinite(v.cog) && (v.sog ?? 0) > 0.3 ? v.cog : null;
+  return { pos: hdg != null && gpsFromBow > 0 ? rhumbDestination(pos, hdg, gpsFromBow / 1852) : pos, heading: hdg };
+}

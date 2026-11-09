@@ -5,7 +5,7 @@
 // antenna's distance from the bow, along the heading). Then, during the pull test, drag the
 // anchor to where it really lies: the readout gives its distance and bearing from the bow.
 // Or type them on its card ("30 m dead ahead"). The swing circle follows; its radius is set on
-// the card (Scope + boat length gives the usual one).
+// the card (Radius = scope gives the usual one, both from the bow).
 //
 // The card also keeps the bottom, the holding and notes. Weigh anchor ends the watch but keeps
 // the mark, so the Anchorages group becomes a record of where you've anchored and how it held;
@@ -15,7 +15,7 @@
 // and edits, in any window.
 import { invoke } from "@tauri-apps/api/core";
 import { createInfoBox } from "./infobox.js";
-import { rhumb, rhumbDestination, fmtBrg, ddm } from "./navmath.js";
+import { rhumb, rhumbDestination, fmtBrg, ddm, bowOf } from "./navmath.js";
 
 export const ANCHOR_GROUP = "Anchorages";
 const ORANGE = "#c45500";
@@ -63,15 +63,14 @@ export function setupAnchor(map, { library, alarms, getBoat, getVessel, toast = 
     layout: { "icon-image": "anc:sym", "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-rotation-alignment": "viewport" } }, before);
 
   let drag = null; // [lon, lat] while dragging the anchor
+  let preview = null; // a radius being typed or spun on the card, drawn before it is saved
+  const timers = {};
 
   /** The bow: the GPS position moved forward along the heading by the antenna's distance from the bow. */
+  // (the same bow as the anchor alarm measures from: navmath.bowOf)
   function bow() {
     const b = getBoat();
-    if (!b.pos) return null;
-    const v = b.v || {};
-    const hdg = Number.isFinite(v.heading) ? v.heading : Number.isFinite(v.cog) && (v.sog ?? 0) > 0.3 ? v.cog : null;
-    const fromBow = Number(getVessel().gpsFromBow) || 0;
-    return { pos: hdg != null && fromBow > 0 ? rhumbDestination(b.pos, hdg, fromBow / 1852) : b.pos, heading: hdg };
+    return bowOf(b.pos, b.v || {}, Number(getVessel().gpsFromBow) || 0);
   }
   /** "34 m at 012°T from the bow". */
   function fromBow(p) {
@@ -91,7 +90,8 @@ export function setupAnchor(map, { library, alarms, getBoat, getVessel, toast = 
     }
     const p = drag ?? [a.lon, a.lat];
     map.getSource("anc-pt").setData({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: p } });
-    map.getSource("anc-circle").setData({ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [ring(p, a.radius)] } });
+    const radius = preview ?? a.radius;
+    map.getSource("anc-circle").setData({ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [ring(p, radius)] } });
     const b = bow();
     const feats = [];
     if (b) {
@@ -99,7 +99,7 @@ export function setupAnchor(map, { library, alarms, getBoat, getVessel, toast = 
       // while dragging, and close in, say where it is from the bow
       if (drag) feats.push({ type: "Feature", properties: { lbl: fromBow(p) }, geometry: { type: "Point", coordinates: p } });
     }
-    feats.push({ type: "Feature", properties: { lbl: `${Math.round(a.radius)} m` }, geometry: { type: "Point", coordinates: rhumbDestination(p, 0, a.radius / 1852) } });
+    feats.push({ type: "Feature", properties: { lbl: `${Math.round(radius)} m` }, geometry: { type: "Point", coordinates: rhumbDestination(p, 0, radius / 1852) } });
     map.getSource("anc-line").setData({ type: "FeatureCollection", features: feats });
   }
   window.addEventListener("racenav-anchor-watch", () => { draw(); refreshCard(); });
@@ -225,7 +225,6 @@ export function setupAnchor(map, { library, alarms, getBoat, getVessel, toast = 
     const radius = watched ? a.radius : Number(d.radius_m) || alarms.anchor.defaultRadius();
     const b = bow();
     const rel = b ? rhumb(b.pos, [m.lon, m.lat]) : null;
-    const len = Number(getVessel().length) || 0;
     const opt = (list, v) => list.map(([k, t]) => `<option value="${k}"${String(v ?? "") === k ? " selected" : ""}>${esc(t)}</option>`).join("");
     const dropped = d.dropped ? new Date(d.dropped * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "";
     return `<div class="anc-card">
@@ -238,7 +237,8 @@ export function setupAnchor(map, { library, alarms, getBoat, getVessel, toast = 
       <fieldset><legend>Swing circle</legend>
         <div class="anc-row"><label>Radius <input data-k="radius" type="number" min="5" step="1" value="${Math.round(radius)}"> m</label></div>
         <div class="anc-row"><label>Scope <input data-k="scope" type="number" min="0" step="1" value="${d.scope_m ?? ""}"> m</label>
-          <button data-act="fromscope" title="Radius = scope (chain or rode out) + the boat's length${len ? ` (${len} m)` : ""}">Scope + boat length</button></div></fieldset>
+          <button data-act="fromscope" title="The bow can't swing further from the anchor than the scope (chain or rode out), so the radius is the scope">Radius = scope</button></div>
+        <p class="wx-note">Measured from the bow, as the alarm is.</p></fieldset>
       <fieldset><legend>The anchorage</legend>
         <div class="anc-row"><label>Name <input data-k="name" type="text" value="${esc(m.name)}"></label></div>
         <div class="anc-row"><label>Bottom <select data-k="bottom">${opt(BOTTOMS, d.bottom)}</select></label></div>
@@ -271,22 +271,30 @@ export function setupAnchor(map, { library, alarms, getBoat, getVessel, toast = 
     q("notes")?.addEventListener("change", (e) => saveMark({ notes: e.target.value }));
     q("bottom")?.addEventListener("change", (e) => saveMark({}, { bottom: e.target.value }));
     q("holding")?.addEventListener("change", (e) => saveMark({}, { holding: e.target.value ? Number(e.target.value) : "" }));
-    q("radius")?.addEventListener("change", (e) => { const v = Number(e.target.value); if (v >= 5) saveMark({}, { radius_m: Math.round(v) }).then(draw); });
-    q("scope")?.addEventListener("change", (e) => { const v = Number(e.target.value); saveMark({}, { scope_m: v > 0 ? Math.round(v) : "" }); });
+    // number fields: the spinner sends a change on every click, so the circle follows at once but
+    // the save waits until the clicking stops (saving refreshes the whole library)
+    const later = (k, f) => (e) => { clearTimeout(timers[k]); timers[k] = setTimeout(() => f(e), 800); };
+    q("radius")?.addEventListener("input", (e) => { const v = Number(e.target.value); if (v >= 5) { preview = v; draw(); } });
+    q("radius")?.addEventListener("change", later("radius", (e) => { const v = Number(e.target.value); if (v >= 5) saveMark({}, { radius_m: Math.round(v) }).then(() => { preview = null; draw(); }); }));
+    q("scope")?.addEventListener("change", later("scope", (e) => { const v = Number(e.target.value); saveMark({}, { scope_m: v > 0 ? Math.round(v) : "" }); }));
     act("fromscope", () => {
       const scope = Number(q("scope").value);
       if (!(scope > 0)) { toast("Enter the scope (chain or rode out) first.", 4000); return; }
-      const r = Math.round(scope + (Number(getVessel().length) || 0));
+      const r = Math.round(scope);
       q("radius").value = r;
       saveMark({}, { radius_m: r, scope_m: Math.round(scope) }).then(draw);
     });
     act("ahead", () => { const b = bow(); if (b?.heading != null) q("brg").value = Math.round(b.heading) % 360; else toast("No heading yet: enter the bearing.", 4000); });
-    act("place", () => {
+    const place = () => {
       const b = bow();
       const dist = Number(q("dist").value), brg = Number(q("brg").value);
       if (!b || !(dist >= 0) || !Number.isFinite(brg)) return;
       moveTo(rhumbDestination(b.pos, brg, dist / 1852));
-    });
+    };
+    act("place", place);
+    // typed or spun: the anchor moves once the clicking stops, not on every click
+    q("dist")?.addEventListener("change", later("place", place));
+    q("brg")?.addEventListener("change", later("place", place));
     act("weigh", () => { weigh(); refreshCard(); });
     act("again", () => again(m()));
     act("centre", () => map.easeTo({ center: [m().lon, m().lat], zoom: Math.max(map.getZoom(), 15) }));

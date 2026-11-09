@@ -417,10 +417,10 @@ export function setupPbathy(map, { ui } = {}) {
       try { localStorage.setItem("racenav.recAll", recAll.checked ? "1" : "0"); } catch { /* storage unavailable */ }
     };
   }
-  return { record, recording: () => recording };
 
   showForm();
   invoke("pbathy_style", { style }).catch(() => {}).finally(() => { reload(); refresh(); });
+  return { record, recording: () => recording };
 }
 
 /** The floating card: title (drag to move), palette, Fit, settings, close; and the three-pointer
@@ -434,7 +434,7 @@ function makeCard(opts) {
   el.innerHTML = `<div class="pb-head"><b>Own soundings</b><select class="pal" title="${PALETTE_HELP}">${PALETTE_OPTIONS}</select>
       <label class="rev" title="Reverse the colours: deep takes the shallow end of the palette"><input type="checkbox" class="rev-cb"> ⇅</label>
       <button class="fit" title="Fit the depth range to the soundings in the chart view">Fit</button>
-      <button class="more" title="All the own soundings settings (Chart › Chart data)">⚙</button>
+      <button class="more" title="All the own soundings settings (Chart › Get data)">⚙</button>
       <button class="close" title="Hide own soundings in this view">✕</button></div>
     <div class="seafilter"><div class="track"><div class="grad"></div><span class="h lo"></span><span class="h tg"></span><span class="h hi"></span></div>
       <div class="vals"><span class="v min"></span><span class="v lo"></span><span class="v tg"></span><span class="v hi"></span><span class="v max"></span></div></div>

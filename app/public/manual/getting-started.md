@@ -75,7 +75,7 @@ Your own depth soundings build up into a seabed, as on Olex or TimeZero.
 
 1. Press **Anchor** (or **K**, or right-click › **Drop anchor here**). It goes at the bow, with its swing circle.
 2. During the pull test, **drag the anchor** to where it lies: the readout says how far it is from the bow. Or type "30 m at 012°T from the bow" on its card.
-3. On the card: the **swing radius** (or scope + **Scope + boat length**), the bottom, how it held, notes.
+3. On the card: the **swing radius** (or the scope and **Radius = scope**), the bottom, how it held, notes. The **anchor alarm** sounds if the bow leaves the circle; choose its sound in Alarms › Sound.
 4. **Weigh anchor** ends the watch. The anchor stays in Library › Marks › **Anchorages** for next time: click it › **Anchor here again**.
 
 ## Useful keys

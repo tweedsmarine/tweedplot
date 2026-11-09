@@ -755,6 +755,9 @@
         <h3>Sound</h3>
         <div class="wx-row"><label class="grow" for="al-watchdog" title="A silenced shallow-water, air-draft, anchor, man-overboard, AIS-SART/EPIRB, position-lost or inside-a-closed-area alarm sounds again after this long if its cause still lasts">Watchdog: sound again after (min, 1 to 20)</label><input id="al-watchdog" type="number" min="1" max="20" step="1" /></div>
         <div class="wx-row"><label class="grow" for="al-volume">Alarm volume</label><input id="al-volume" type="range" min="0" max="100" step="5" /><button id="al-test" title="Play the alarm sound">Test</button></div>
+        <div class="wx-row"><label class="grow" for="al-snd-alarm" title="The sound of red alarms (shallow water, collision risk, MOB…)">Alarm sound</label><select id="al-snd-alarm"></select><button id="al-snd-alarm-test" title="Play it">▶</button></div>
+        <div class="wx-row"><label class="grow" for="al-snd-warn" title="The sound of amber warnings (approaching a mark, a closed area ahead, position lost…)">Warning sound</label><select id="al-snd-warn"></select><button id="al-snd-warn-test" title="Play it">▶</button></div>
+        <div class="wx-row"><label class="grow" for="al-snd-anchor" title="The sound of the anchor alarm, different from the others so it's known at once in the night">Anchor alarm sound</label><select id="al-snd-anchor"></select><button id="al-snd-anchor-test" title="Play it">▶</button></div>
         <div class="wx-note">Alarms (red) sound until silenced; warnings (amber) chime. Every alarm shows in the banner at the top of the chart in every window, and can be silenced from any of them. Silencing stops the sound; the alarm then waits in the list below until its cause ends. A collision alarm sounds again if it gets worse (TCPA or CPA at half, then a quarter, of your limit). They work from live data (or a replay), not while planning.</div>
       </section>
     </aside>

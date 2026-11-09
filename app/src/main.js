@@ -29,7 +29,7 @@ let tripsTimer = 0;
 // the Library's one-line messages go on activity cards (seen with the drawer closed)
 const libNote = (s) => import("./activity.js").then((a) => a.note(s));
 import { setupRuler } from "./ruler.js";
-import { rhumb } from "./navmath.js";
+import { rhumb, bowOf } from "./navmath.js";
 import { magneticVariation } from "./wmm.js";
 import { setupGribTools } from "./gribtools.js";
 import { setupRouteWeather } from "./routewx.js";
@@ -580,6 +580,7 @@ map.on("load", () => {
   layerVis = setupLayerVisibility(map, { ready: () => chartMapLoaded && chartStoreReady });
   alarms = setupAlarms(map, {
     getBoat: () => ({ pos: lastBoat, v: vessel, live: live && signalKActive(), connected: liveDataConnected(), fresh: Date.now() - lastFeed < 5000 }),
+    getBow: () => bowOf(lastBoat, vessel, Number(boat.get().gpsFromBow) || 0)?.pos ?? null,
     getSafetyDepth: () => settings.safetyDepth,
     getSafetyContour: () => settings.safetyContour,
     getAirDraft: () => Number(boat.get().airDraft) || 0,

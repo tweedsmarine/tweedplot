@@ -21,35 +21,60 @@ const DEFAULTS = {
   xte: false, xteNm: 0.25,
   arrive: true, arriveMin: 2,
   watchdogMin: 5,
+  // sounds (Alarms › Sound): alarms, warnings, the anchor alarm
+  soundAlarm: "triple", soundWarn: "chime", soundAnchor: "siren",
   volume: 0.6,
 };
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 /** Tones with Web Audio: no sound files needed. */
+/** The sounds to choose from (Alarms › Sound): name → [label, notes]. Made here, so no sound files. */
+export const SOUNDS = {
+  triple: "Triple tone (high, low, high)",
+  chime: "Chime (two rising notes)",
+  siren: "Siren (rising and falling)",
+  pulse: "Fast pulses",
+  whoop: "Whoop (rising sweep)",
+  bell: "Bell (ringing)",
+  low: "Low two-tone (less shrill)",
+  horn: "Horn (long low blasts)",
+};
+
 function makeSound(getVolume) {
   let ctx = null;
-  const beep = (f, at, dur) => {
+  /** One tone from f1 to f2 (Hz) at `at` s for `dur` s; `decay`: fades out like a bell. */
+  const tone = (f1, f2, at, dur, type = "square", decay = false, level = 1) => {
     ctx ||= new (window.AudioContext || window.webkitAudioContext)();
     const o = ctx.createOscillator(), g = ctx.createGain();
-    o.type = "square";
-    o.frequency.value = f;
-    const v = getVolume() * 0.25;
-    g.gain.setValueAtTime(0, ctx.currentTime + at);
-    g.gain.linearRampToValueAtTime(v, ctx.currentTime + at + 0.01);
-    g.gain.setValueAtTime(v, ctx.currentTime + at + dur - 0.02);
-    g.gain.linearRampToValueAtTime(0, ctx.currentTime + at + dur);
+    o.type = type;
+    const t0 = ctx.currentTime + at;
+    o.frequency.setValueAtTime(f1, t0);
+    if (f2 !== f1) o.frequency.linearRampToValueAtTime(f2, t0 + dur);
+    const v = getVolume() * 0.25 * level;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(v, t0 + 0.01);
+    if (decay) g.gain.exponentialRampToValueAtTime(0.0005, t0 + dur);
+    else { g.gain.setValueAtTime(v, t0 + dur - 0.02); g.gain.linearRampToValueAtTime(0, t0 + dur); }
     o.connect(g).connect(ctx.destination);
-    o.start(ctx.currentTime + at);
-    o.stop(ctx.currentTime + at + dur + 0.02);
+    o.start(t0);
+    o.stop(t0 + dur + 0.02);
   };
-  return {
-    alarm() { try { beep(880, 0, 0.18); beep(660, 0.22, 0.18); beep(880, 0.44, 0.18); } catch { /* no audio */ } },
-    warn() { try { beep(740, 0, 0.12); beep(988, 0.16, 0.2); } catch { /* no audio */ } },
+  const PLAY = {
+    triple: () => { tone(880, 880, 0, 0.18); tone(660, 660, 0.22, 0.18); tone(880, 880, 0.44, 0.18); },
+    chime: () => { tone(740, 740, 0, 0.12); tone(988, 988, 0.16, 0.2); },
+    siren: () => { tone(600, 1200, 0, 0.45, "sawtooth", false, 0.7); tone(1200, 600, 0.45, 0.45, "sawtooth", false, 0.7); },
+    pulse: () => { for (let i = 0; i < 6; i++) tone(1000, 1000, i * 0.12, 0.07); },
+    whoop: () => { tone(400, 1100, 0, 0.6, "square", false, 0.8); },
+    bell: () => { tone(1320, 1320, 0, 1.2, "sine", true, 1.4); tone(1980, 1980, 0, 0.8, "sine", true, 0.5); tone(1320, 1320, 0.6, 1.2, "sine", true, 1.4); },
+    low: () => { tone(440, 440, 0, 0.25, "triangle", false, 1.4); tone(330, 330, 0.3, 0.25, "triangle", false, 1.4); },
+    horn: () => { tone(220, 220, 0, 0.5, "sawtooth", false, 0.8); tone(220, 220, 0.65, 0.5, "sawtooth", false, 0.8); },
   };
+  const play = (name) => { try { (PLAY[name] ?? PLAY.triple)(); } catch { /* no audio */ } };
+  return { play };
 }
 
-export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = () => 0, getAirDraft, getNav = () => null, onMobMarkDeleted = () => {}, toast = () => {} }) {
+export function setupAlarms(map, { getBoat, getBow = () => null, getSafetyDepth, getSafetyContour = () => 0, getAirDraft, getNav = () => null, onMobMarkDeleted = () => {}, toast = () => {} }) {
   let s = { ...DEFAULTS };
   try { Object.assign(s, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* storage unavailable */ }
   let mob = null;
@@ -68,7 +93,11 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
       }
     } catch { /* ignore */ }
   };
-  const sound = makeSound(() => s.volume);
+  const snd = makeSound(() => s.volume);
+  /** The sound for each kind of alarm (Alarms › Sound): red alarms, amber warnings, the anchor. */
+  const sound = { play: snd.play, alarm: () => snd.play(s.soundAlarm), warn: () => snd.play(s.soundWarn) };
+  /** An alarm's own sound: the anchor has its own; else by level. */
+  const ring = (a) => (a.sound ? snd.play(s[a.sound] ?? a.sound) : a.level === "alarm" ? sound.alarm() : sound.warn());
 
   /** id → {level: "alarm"|"warn", text, detail, acked, since, onClick} */
   const active = new Map();
@@ -94,11 +123,11 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
       Object.assign(old, { ...entry, acked: old.acked && old.level === a.level && !worse && !holdOver });
       if (worse || holdOver) {
         old.heldUntil = null;
-        if (a.level === "alarm") sound.alarm(); else sound.warn();
+        ring(a);
       }
     } else {
       active.set(id, { ...entry, acked: false, since: Date.now() });
-      if (a.level === "alarm") sound.alarm(); else sound.warn();
+      ring(a);
     }
     render();
   }
@@ -125,14 +154,14 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
   // watchdog time (Alarms › Sound), so it can't be forgotten.
   if (PRIMARY) setInterval(() => {
     const ms = Math.min(20, Math.max(1, Number(s.watchdogMin) || 5)) * 60000;
-    let loud = false, any = false;
+    let first = null;
     for (const a of active.values()) {
       if (a.watchdog && a.acked && Date.now() - (a.ackedAt ?? 0) >= ms) {
-        a.acked = false; any = true;
-        if (a.level === "alarm") loud = true;
+        a.acked = false;
+        if (!first || (a.level === "alarm" && first.level !== "alarm")) first = a;
       }
     }
-    if (any) { if (loud) sound.alarm(); else sound.warn(); render(); }
+    if (first) { ring(first); render(); }
   }, 5000);
   /** 0, 1 or 2: how far a falling measure (minutes, depth) is below its limit: under half, under a quarter. */
   const stageBelow = (v, limit) => (v < limit / 4 ? 2 : v < limit / 2 ? 1 : 0);
@@ -207,8 +236,9 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
   // sound again every few seconds until silenced
   if (PRIMARY) setInterval(() => {
     const loud = [...active.values()].filter((a) => !a.acked);
-    if (loud.some((a) => a.level === "alarm")) sound.alarm();
-    else if (loud.length && Date.now() % 12000 < 3000) sound.warn();
+    const top = loud.find((a) => a.level === "alarm");
+    if (top) ring(top);
+    else if (loud.length && Date.now() % 12000 < 3000) ring(loud[0]);
   }, 3000);
   if (!PRIMARY) listen("alarm-state", ({ payload }) => { mirror = payload || []; render(); });
   // ---------- chart: MOB (the anchor and its swing circle: anchor.js) --------------------------------------------
@@ -351,11 +381,13 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
       else if (depth > limit + 0.5) clear("shallow");
     } else clear("shallow");
     // anchor watch
-    if (s.anchor && b.pos) {
-      const m = distNm(b.pos, [s.anchor.lon, s.anchor.lat]) * 1852;
+    // measured from the bow, as the anchor is placed and its swing circle drawn (anchor.js)
+    const bowPos = b.pos ? (getBow() ?? b.pos) : null;
+    if (s.anchor && bowPos) {
+      const m = distNm(bowPos, [s.anchor.lon, s.anchor.lat]) * 1852;
       const r = anchorRadius();
-      $("anc-state").textContent = `Watching ${s.anchor.name || "the anchor"}: the boat is ${Math.round(m)} m from it, alarm beyond ${r} m.`;
-      if (m > r) raise("anchor", { level: "alarm", watchdog: true, text: `ANCHOR DRAGGING ${Math.round(m)} m`, detail: `Outside the ${r} m swing circle of ${s.anchor.name || "the anchor"} · click to show`, onClick: () => { map.easeTo({ center: [s.anchor.lon, s.anchor.lat] }); window.dispatchEvent(new Event("racenav-anchor-open")); } });
+      $("anc-state").textContent = `Watching ${s.anchor.name || "the anchor"}: the bow is ${Math.round(m)} m from it, alarm beyond ${r} m.`;
+      if (m > r) raise("anchor", { level: "alarm", watchdog: true, sound: "soundAnchor", text: `ANCHOR DRAGGING: bow ${Math.round(m)} m from the anchor`, detail: `Outside the ${r} m swing circle of ${s.anchor.name || "the anchor"} · click to show`, onClick: () => { map.easeTo({ center: [s.anchor.lon, s.anchor.lat] }); window.dispatchEvent(new Event("racenav-anchor-open")); } });
       else if (m < r * 0.9) clear("anchor");
     } else clear("anchor");
     // position lost (live, Signal K connected, no fix for 30 s)
@@ -450,7 +482,16 @@ export function setupAlarms(map, { getBoat, getSafetyDepth, getSafetyContour = (
   $("al-arrive-min").onchange = (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v) && v > 0) s.arriveMin = v; save(); syncUi(); };
   $("al-volume").oninput = (e) => { s.volume = +e.target.value / 100; save(); };
   $("al-test").onclick = () => sound.alarm();
-  $("anc-radius").onchange = (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v) && v > 5) s.anchorM = v; save(); drawGeo(); };
+  for (const [id, key] of [["al-snd-alarm", "soundAlarm"], ["al-snd-warn", "soundWarn"], ["al-snd-anchor", "soundAnchor"]]) {
+    const sel = $(id);
+    if (!sel) continue;
+    sel.innerHTML = Object.entries(SOUNDS).map(([k, label]) => `<option value="${k}">${esc(label)}</option>`).join("");
+    sel.value = s[key];
+    sel.onchange = () => { s[key] = sel.value; save(); snd.play(sel.value); };
+    $(`${id}-test`).onclick = () => snd.play(s[key]);
+  }
+  let ancTimer = 0; // the spinner sends a change on every click: save once it stops
+  $("anc-radius").onchange = (e) => { clearTimeout(ancTimer); ancTimer = setTimeout(() => { const v = parseFloat(e.target.value); if (Number.isFinite(v) && v > 5) s.anchorM = v; save(); drawGeo(); }, 800); };
   // ---------- anchor watch: the anchor itself (a library mark, dragged into place, with its
   // card) is anchor.js; the watch on it lives here, in the primary window ----------------
   const anchorRadius = () => Math.max(5, Number(s.anchor?.radius) || s.anchorM);

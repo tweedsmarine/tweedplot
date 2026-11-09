@@ -1127,7 +1127,11 @@ export function setupLibrary(map, { ui, toast = () => {}, getBoat = () => null }
     /** The Add mark dialogue. */
     newMark: () => newMark(),
     /** Marks another module draws itself (not drawn here). */
-    exclude(ids) { excluded = new Set(ids); draw(); },
+    exclude(ids) {
+      // only when it changes: redrawing every mark (tens of thousands) each second never lets the chart catch up
+      if (ids.length === excluded.size && ids.every((id) => excluded.has(id))) return;
+      excluded = new Set(ids); draw();
+    },
     /** What a click on an anchor mark does (anchor.js). */
     onAnchorClick(f) { onAnchorClick = f; },
   };
