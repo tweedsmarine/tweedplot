@@ -92,6 +92,32 @@ cargo run --release -p chart --example chart_info -- C:\dev\racenav-data\linz
 cargo run --release -p chart --example tileserve -- C:\dev\racenav-data\linz 7070
 ```
 
+## Survey depth packages (LINZ depth models)
+
+LINZ's published multibeam and lidar depth models (LDS, Hydrographic & Maritime › Bathymetric
+Surfaces; 64 grid layers, CC BY 4.0, approximate LAT, UTM) reach users as **depth packages**
+(`.tpdepth`, `crates/chart/src/depthpack.rs`: SQLite, Web Mercator tiles of 256 × 256 heights in cm,
+delta + byte-plane + zlib coded, shoal-biased pyramid, survey outlines). The app reads every package
+in `<data>\depth` (`app/src-tauri/src/depthpacks.rs`, `app/src/surveydepths.js`).
+
+Making an edition (every six months or so), on a PC with an LDS API key (free LDS account, a key
+with export access):
+
+```
+cargo run --release -p depthpack-tool -- catalogue --dir D:\depthpack
+cargo run --release -p depthpack-tool -- export    --dir D:\depthpack --key <KEY>      # or LDS_API_KEY
+cargo run --release -p depthpack-tool -- build     --dir D:\depthpack --edition 2027-05
+cargo run --release -p depthpack-tool -- check     --dir D:\depthpack --at 173.12,-41.24 --png 12/4017/2563
+```
+
+`export` keeps each survey in `D\src\<layer id>` and only fetches it again when LINZ publishes a new
+version; it also saves LINZ's survey index (outlines) as `src\index.geojson`. `build` writes
+`D\out\nz-national-<edition>.tpdepth` (zooms 8–14), `region-<id>-<edition>.tpdepth` (full detail,
+zoom 15 up; regions in `crates/depthpack-tool/src/regions.rs`) and `manifest.json` (sizes, SHA-256,
+surveys). Hand out the `out` folder; Get data › Import folder… checks each file against the manifest.
+Tests run on synthetic GeoTIFFs; `tileserve` serves packages with `TILESERVE_DEPTH=<folder>` at
+/depthpack/z/x/y.png.
+
 ## World coastline and depths
 
 Chart panel > **Chart data** shows what is installed and downloads the rest. Nothing here is used by routing except the GSHHG land; world and ETOPO depths are for orientation only.

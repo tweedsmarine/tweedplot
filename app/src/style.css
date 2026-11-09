@@ -1585,3 +1585,13 @@ body.drawer-open #mar-scale { left: calc(var(--rail-w) + var(--drawer-w) + 58px)
    the dusk and night filters, like the chart */
 html[data-palette="dusk"][data-iho] #mar-scale { filter: hue-rotate(180deg) invert(1); }
 html[data-palette="iho-night"][data-iho] #map > #mar-scale { filter: brightness(var(--pal-dim, 1)); }
+
+/* survey depths (surveydepths.js): the packages in Get data, and a survey's card */
+.sd-list { list-style: none; margin: 2px 0 4px; padding: 0; }
+.sd-list li { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 12px; }
+.sd-list li small { color: var(--quiet); }
+.sd-list li.bad { color: var(--bad); }
+.sd-list li button { padding: 0 6px; }
+.sd-card { border-collapse: collapse; width: 100%; font-size: 12px; margin-bottom: 6px; }
+.sd-card td { padding: 2px 6px 2px 0; vertical-align: top; }
+.sd-card td:first-child { color: var(--quiet); white-space: nowrap; }

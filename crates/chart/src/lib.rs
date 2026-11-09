@@ -23,6 +23,7 @@ pub mod bathy;
 pub mod clip;
 pub mod coast;
 pub mod cog;
+pub mod depthpack;
 pub mod enc;
 pub mod features;
 pub mod geom;

@@ -30,6 +30,7 @@ portrayal.workspace = true
 plugin-api.workspace = true
 png = "0.17"
 base64 = "0.22"
+sha2 = "0.10"
 reqwest = { version = "0.13", default-features = false, features = ["native-tls", "blocking"] }
 grib.workspace = true
 routing.workspace = true

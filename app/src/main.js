@@ -67,6 +67,7 @@ import { setupSelectPop } from "./selectpop.js";
 import { setupManual } from "./manual.js";
 import { setupData } from "./data.js";
 import { setupPbathy, pbathyAt } from "./pbathy.js";
+import { setupSurveyDepths, surveyDepthAt } from "./surveydepths.js";
 import { setupS63 } from "./s63.js";
 import { setupPublications } from "./publications.js";
 import { setupReplay } from "./replay.js";
@@ -215,6 +216,7 @@ const map = new maplibregl.Map({
       chart: { type: "vector", tiles: [TILE_URL], minzoom: 0, maxzoom: 16 },
       // high-resolution depths (LINZ coastal elevation, 1 m), drawn in Rust as images
       hires: { type: "raster", tiles: [TILE_URL.replace("{z}/{x}/{y}.pbf", "hires/{z}/{x}/{y}.png")], tileSize: 256, minzoom: 10, maxzoom: 18 },
+      depthpack: { type: "raster", tiles: [TILE_URL.replace("{z}/{x}/{y}.pbf", "depthpack/{z}/{x}/{y}.png")], tileSize: 256, minzoom: 8, maxzoom: 19 },
       // NIWA 2016 bathymetry grid (250 m), imported in Chart data and drawn in Rust as images
       nzbathy: { type: "raster", tiles: [TILE_URL.replace("{z}/{x}/{y}.pbf", "nzbathy/{z}/{x}/{y}.png")], tileSize: 256, minzoom: 3, maxzoom: 14 },
       // own soundings (from tracks, TimeZero PBG and XYZ imports), drawn in Rust as images
@@ -245,6 +247,10 @@ const map = new maplibregl.Map({
         paint: { "raster-opacity": ["interpolate", ["linear"], ["zoom"], 9.5, 0.9, 11.5, 0], "raster-resampling": "linear" } },
       // over the charted depth areas, under the chart's contours (the safety contour stays on top)
       { id: "hires", type: "raster", source: "hires", minzoom: 10, layout: { visibility: localStorage.getItem("racenav.hires.show") === "0" ? "none" : "visible" },
+        paint: { "raster-opacity": 0.92, "raster-resampling": "linear" } },
+      // LINZ's survey depths (multibeam and lidar, approximate LAT; surveydepths.js): over the
+      // coastal elevation where both have data, under the chart's contours
+      { id: "depthpack", type: "raster", source: "depthpack", minzoom: 8, layout: { visibility: localStorage.getItem("racenav.surveydepths.show") === "0" ? "none" : "visible" },
         paint: { "raster-opacity": 0.92, "raster-resampling": "linear" } },
       // over the charted depths too: it's what the skipper surveyed (not for navigation)
       { id: "pbathy", type: "raster", source: "pbathy", minzoom: 3, layout: { visibility: "none" }, // per view: pbathy.js
@@ -584,6 +590,7 @@ map.on("load", () => {
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
   window.__weather = weather; // debugging handle
   setupData(map, { toast, reloadTiles: reloadChartTiles });
+  setupSurveyDepths(map, { toast });
   pbathy = setupPbathy(map, { ui });
   setupS63(map, { toast });
   setupPublications({ toast });
@@ -993,11 +1000,14 @@ function cursorText(lngLat) {
   const leg = inst.legTo([lngLat.lng, lngLat.lat]);
   return leg ? `${where}  ·  ${leg}` : where;
 }
+let cursorOwn = "", cursorSurvey = "", cursorWhere = "";
+const showCursor = () => { document.getElementById("cursor").textContent = [cursorWhere, cursorSurvey, cursorOwn].filter(Boolean).join("  ·  "); };
 map.on("mousemove", (e) => {
-  const where = cursorText(e.lngLat);
-  document.getElementById("cursor").textContent = where;
-  // with own soundings shown: the sounding under the cursor
-  pbathyAt(e.lngLat.lng, e.lngLat.lat, (t, s) => { document.getElementById("cursor").textContent = t ? `${where}  ·  ${t}` : where; inst.update({ sounding: s }); });
+  cursorWhere = cursorText(e.lngLat);
+  showCursor();
+  // with own soundings shown: the sounding under the cursor; with survey depths, theirs
+  pbathyAt(e.lngLat.lng, e.lngLat.lat, (t, s) => { cursorOwn = t || ""; showCursor(); inst.update({ sounding: s }); });
+  surveyDepthAt(map, e.lngLat.lng, e.lngLat.lat, (t) => { cursorSurvey = t; showCursor(); });
   setCursor([e.lngLat.lng, e.lngLat.lat]);
 });
 // touch screens have no hover: a tap sets the cursor

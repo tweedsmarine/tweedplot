@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing", "crates/library", "crates/tracking", "crates/gribdl", "crates/tides", "crates/ais", "crates/stations", "crates/marine-nmea", "crates/bathy", "app/src-tauri", "crates/enc-s57", "crates/plugin-api", "crates/portrayal"]
+members = ["crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing", "crates/library", "crates/tracking", "crates/gribdl", "crates/tides", "crates/ais", "crates/stations", "crates/marine-nmea", "crates/bathy", "app/src-tauri", "crates/enc-s57", "crates/plugin-api", "crates/portrayal", "crates/depthpack-tool"]
 # `cargo test` at the root skips the GUI app; build it with `npm run tauri dev` in app/.
-default-members = ["crates/portrayal", "crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing", "crates/library", "crates/tracking", "crates/gribdl", "crates/tides", "crates/ais", "crates/stations", "crates/bathy", "crates/enc-s57", "crates/plugin-api"]
+default-members = ["crates/portrayal", "crates/nav-core", "crates/polar", "crates/signalk", "crates/chart", "crates/grib", "crates/routing", "crates/library", "crates/tracking", "crates/gribdl", "crates/tides", "crates/ais", "crates/stations", "crates/bathy", "crates/enc-s57", "crates/plugin-api", "crates/depthpack-tool"]
 
 [workspace.package]
 edition = "2021"

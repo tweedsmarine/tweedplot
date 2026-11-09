@@ -1,0 +1,24 @@
+[package]
+name = "depthpack-tool"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "tweedplot-depthpack: builds TweedPlot survey depth packages from LINZ's published depth models"
+
+[[bin]]
+name = "tweedplot-depthpack"
+path = "src/main.rs"
+
+[dependencies]
+chart.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+zip.workspace = true
+rayon.workspace = true
+lru.workspace = true
+tiff = "0.9"
+sha2 = "0.10"
+reqwest = { version = "0.13", default-features = false, features = ["native-tls", "blocking", "json"] }
+
+[lints]
+workspace = true

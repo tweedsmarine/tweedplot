@@ -9,6 +9,7 @@
 //! (`http://chart.localhost/...` on Windows).
 
 mod chart_texts;
+mod depthpacks;
 mod grib_cmd;
 mod library_cmd;
 mod live;
@@ -1585,6 +1586,7 @@ fn data_folders(app: &tauri::AppHandle) -> Vec<(&'static str, String, &'static s
         ("S-63 / ENC charts", dir(enc), "Exchange sets and permits (PERMIT.TXT) for S-63 charts; or use Chart › Encrypted charts (S-63)"),
         ("LINZ charts (NZ)", dir(chart_dir(app)), "LINZ chart data (.gpkg) for New Zealand"),
         ("High-resolution depths", dir(hires_dir(app)), "LINZ coastal elevation GeoTIFFs"),
+        ("Survey depths", dir(depthpacks::dir(app)), "TweedPlot depth packages (.tpdepth) from LINZ's multibeam and lidar surveys"),
         ("NIWA bathymetry", dir(nzbathy_dir(app)), "NIWA 2016 250 m grid"),
         ("Coastline", dir(coast_dir(app)), "GSHHG coastline zip or GSHHS_shp folder"),
         ("Bathymetry", dir(bathy_dir(app)), "Downloaded ETOPO areas"),
@@ -1891,6 +1893,20 @@ fn tile_response(path: &str) -> Response<Vec<u8>> {
             .body(png.unwrap_or_else(|| clear_png().to_vec()))
             .expect("valid response");
     }
+    // survey depth images: /depthpack/<z>/<x>/<y>.png
+    if let Some(rest) = path.trim_start_matches('/').strip_prefix("depthpack/") {
+        let p: Vec<u32> = rest.trim_end_matches(".png").split('/').filter_map(|v| v.parse().ok()).collect();
+        let png = match p.as_slice() {
+            [z, x, y] if *z <= 22 => depthpacks::tile_png(*z as u8, *x, *y),
+            _ => None,
+        };
+        return Response::builder()
+            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .header(header::CACHE_CONTROL, "no-store")
+            .header(header::CONTENT_TYPE, "image/png")
+            .body(png.unwrap_or_else(|| clear_png().to_vec()))
+            .expect("valid response");
+    }
     // NIWA bathymetry images: /nzbathy/<z>/<x>/<y>.png
     if let Some(rest) = path.trim_start_matches('/').strip_prefix("nzbathy/") {
         let p: Vec<u32> = rest.trim_end_matches(".png").split('/').filter_map(|v| v.parse().ok()).collect();
@@ -2081,6 +2097,11 @@ pub fn run() {
             hires_status,
             hires_delete,
             hires_height,
+            depthpacks::depthpack_status,
+            depthpacks::depthpack_surveys,
+            depthpacks::depthpack_height,
+            depthpacks::depthpack_import,
+            depthpacks::depthpack_delete,
             nzbathy_pick_file,
             nzbathy_import,
             nzbathy_status,
@@ -2356,6 +2377,7 @@ pub fn run() {
             std::thread::spawn(move || {
                 s63_cmd::load(&h);
                 open_hires(&h);
+                depthpacks::open(&h);
                 open_nzbathy(&h);
                 pbathy::open(&h);
                 open_charts(h);

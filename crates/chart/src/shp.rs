@@ -110,8 +110,41 @@ pub fn read_dbf(b: &[u8]) -> Vec<Vec<(String, String)>> {
 /// NZ Transverse Mercator 2000 (GRS80, central meridian 173°E, scale 0.9996, false
 /// easting 1 600 000 m, false northing 10 000 000 m) to longitude and latitude.
 pub fn nztm_to_lonlat(p: Pt) -> Pt {
+    tm_to_lonlat(p, Tm::NZTM)
+}
+
+/// A transverse Mercator projection on GRS80/WGS84: central meridian (°), scale, false
+/// easting and northing. NZTM2000 and the UTM zones LINZ's depth models come in.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Tm {
+    pub lon0: f64,
+    pub k0: f64,
+    pub fe: f64,
+    pub fn_: f64,
+}
+
+impl Tm {
+    /// NZ Transverse Mercator 2000 (EPSG:2193).
+    pub const NZTM: Tm = Tm { lon0: 173.0, k0: 0.9996, fe: 1_600_000.0, fn_: 10_000_000.0 };
+    /// UTM zone `zone`, south (EPSG:327xx) or north (326xx).
+    pub fn utm(zone: u8, south: bool) -> Tm {
+        Tm { lon0: zone as f64 * 6.0 - 183.0, k0: 0.9996, fe: 500_000.0, fn_: if south { 10_000_000.0 } else { 0.0 } }
+    }
+    /// The projection of an EPSG code TweedPlot knows: 2193, 32601–32660, 32701–32760.
+    pub fn from_epsg(code: u32) -> Option<Tm> {
+        match code {
+            2193 => Some(Tm::NZTM),
+            32601..=32660 => Some(Tm::utm((code - 32600) as u8, false)),
+            32701..=32760 => Some(Tm::utm((code - 32700) as u8, true)),
+            _ => None,
+        }
+    }
+}
+
+/// Transverse Mercator (easting, northing) to longitude and latitude.
+pub fn tm_to_lonlat(p: Pt, tm: Tm) -> Pt {
     let (a, f) = (6_378_137.0_f64, 1.0_f64 / 298.257_222_101);
-    let (k0, lon0, fe, fn_) = (0.9996, 173.0_f64.to_radians(), 1_600_000.0, 10_000_000.0);
+    let (k0, lon0, fe, fn_) = (tm.k0, tm.lon0.to_radians(), tm.fe, tm.fn_);
     let e2 = f * (2.0 - f);
     let ep2 = e2 / (1.0 - e2);
     let x = p[0] - fe;
@@ -141,11 +174,23 @@ pub fn nztm_to_lonlat(p: Pt) -> Pt {
 
 /// Longitude and latitude to NZ Transverse Mercator 2000 (easting, northing).
 pub fn lonlat_to_nztm(p: Pt) -> Pt {
+    lonlat_to_tm(p, Tm::NZTM)
+}
+
+/// Longitude and latitude to transverse Mercator (easting, northing).
+pub fn lonlat_to_tm(p: Pt, tm: Tm) -> Pt {
     let (a, f) = (6_378_137.0_f64, 1.0_f64 / 298.257_222_101);
-    let (k0, lon0, fe, fn_) = (0.9996, 173.0_f64.to_radians(), 1_600_000.0, 10_000_000.0);
+    let (k0, lon0, fe, fn_) = (tm.k0, tm.lon0.to_radians(), tm.fe, tm.fn_);
     let e2 = f * (2.0 - f);
     let ep2 = e2 / (1.0 - e2);
-    let lon = if p[0] < 0.0 { p[0] + 360.0 } else { p[0] };
+    // the longitude on the same side of the date line as the central meridian
+    let mut lon = p[0];
+    while lon - tm.lon0 > 180.0 {
+        lon -= 360.0;
+    }
+    while lon - tm.lon0 < -180.0 {
+        lon += 360.0;
+    }
     let (phi, lam) = (p[1].to_radians(), lon.to_radians());
     let (s, c) = (phi.sin(), phi.cos());
     let n = a / (1.0 - e2 * s * s).sqrt();

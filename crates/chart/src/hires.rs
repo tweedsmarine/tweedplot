@@ -274,7 +274,7 @@ impl Hires {
 }
 
 /// Contour interval (m) at a zoom.
-fn contour_step(z: u8) -> f32 {
+pub(crate) fn contour_step(z: u8) -> f32 {
     match z {
         16.. => 1.0,
         14 | 15 => 2.0,
@@ -284,7 +284,7 @@ fn contour_step(z: u8) -> f32 {
 }
 
 /// Depth colour for a height (negative below the datum).
-fn colour(h: f32) -> [f32; 3] {
+pub(crate) fn colour(h: f32) -> [f32; 3] {
     const STOPS: &[(f32, [f32; 3])] = &[
         (0.0, [205.0, 240.0, 236.0]),
         (2.0, [170.0, 222.0, 236.0]),
