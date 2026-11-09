@@ -360,7 +360,8 @@ export function setupPbathy(map, { ui } = {}) {
   syncNight();
 
   // ---------- live soundings ----------
-  async function liveRefresh() {
+  // (wrapped below to update the Record soundings button too)
+  let liveRefresh = async function () {
     let st = null;
     try { st = await invoke("pbathy_live_status"); } catch { return; }
     $("pb-live").checked = !!st.on;
@@ -380,8 +381,43 @@ export function setupPbathy(map, { ui } = {}) {
   $("pb-live").onchange = liveSet;
   $("pb-live-sog").onchange = liveSet;
   listen("pbathy-live", () => { reload(); liveRefresh(); });
+  setInterval(() => liveRefresh(), 15000);
+
+  // ---------- Record soundings: one click on the toolbar (Fishing; any use if set) ----------
+  // Skippers switch recording on over ground they trust and off over ground they don't, so it's
+  // a toolbar switch, with a count while it runs, as TimeZero's and Olex's record buttons are.
+  let recording = false;
+  async function record(on) {
+    try { await invoke("pbathy_live_set", { on, maxSog: +$("pb-live-sog").value || 0 }); } catch (e) { note(`Could not change live soundings: ${e}`, "bad"); return; }
+    await liveRefresh();
+    import("./activity.js").then((a) => a.note(on ? "Recording own soundings from the depth sounder." : "Own soundings recording stopped."));
+  }
+  const recSync = (st) => {
+    recording = !!st?.on;
+    const b = $("pb-rec");
+    if (!b) return;
+    b.classList.toggle("rec", recording);
+    b.querySelector(".tb-count").textContent = recording ? shortCount(st.added || 0) : "";
+    b.title = recording
+      ? `Recording own soundings: ${fmt(st.added || 0)} added today${(st.warnings || []).length ? ` (${st.warnings.join(" ")})` : ""}. Click to stop (D)`
+      : "Record own soundings from the depth sounder (D). Right-click or hold for the speed limit and settings";
+  };
+  const shortCount = (n) => (n >= 10000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+  const liveRefreshPlain = liveRefresh;
+  liveRefresh = async () => { await liveRefreshPlain(); try { recSync(await invoke("pbathy_live_status")); } catch { /* not in Tauri */ } };
   liveRefresh();
-  setInterval(liveRefresh, 15000);
+  $("pb-rec")?.addEventListener("click", () => record(!recording));
+  $("pb-rec")?.addEventListener("contextmenu", (e) => { e.preventDefault(); ui?.openTab?.("chart", null); document.getElementById("pb-live")?.scrollIntoView({ block: "center" }); });
+  try { if (localStorage.getItem("racenav.recAll") === "1") document.documentElement.dataset.recAll = ""; } catch { /* storage unavailable */ }
+  const recAll = $("set-rec-all");
+  if (recAll) {
+    recAll.checked = "recAll" in document.documentElement.dataset;
+    recAll.onchange = () => {
+      if (recAll.checked) document.documentElement.dataset.recAll = ""; else delete document.documentElement.dataset.recAll;
+      try { localStorage.setItem("racenav.recAll", recAll.checked ? "1" : "0"); } catch { /* storage unavailable */ }
+    };
+  }
+  return { record, recording: () => recording };
 
   showForm();
   invoke("pbathy_style", { style }).catch(() => {}).finally(() => { reload(); refresh(); });

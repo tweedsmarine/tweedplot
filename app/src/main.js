@@ -462,6 +462,7 @@ let gribTools = null;
 let arrows = null;
 let barriers = null;
 let anchor = null;
+let pbathy = null;
 let laylines = null;
 let varRoses = null;
 let ctxRose = false; // right-click was on the variation diagram
@@ -569,7 +570,7 @@ map.on("load", () => {
   weather = setupWeather(map, { landTop: "land-world", coastTop: "coast-world", top: "track" });
   window.__weather = weather; // debugging handle
   setupData(map, { toast, reloadTiles: reloadChartTiles });
-  setupPbathy(map, { ui });
+  pbathy = setupPbathy(map, { ui });
   setupS63(map, { toast });
   setupPalette((mode) => { paletteMode = mode; applyPalette(); });
   setupBrand();
@@ -1267,6 +1268,8 @@ map.on("contextmenu", (e) => {
   // the anchor: drop here, again at an anchor mark, or weigh the one watched
   ctxAnchor = anchor?.at(e.point) ?? (ctxMark?.kind === "anchor" ? ctxMark : null);
   const watching = !!anchor?.watching();
+  ctx.querySelector('[data-act="rec-toggle"]').textContent = pbathy?.recording() ? "Stop recording soundings" : "Record soundings";
+  ctx.querySelector('[data-act="rec-toggle"]').hidden = !pbathy?.recording() && use.use() !== "fish" && !("recAll" in document.documentElement.dataset);
   ctx.querySelector('[data-act="anc-drop"]').hidden = watching || !!ctxAnchor;
   ctx.querySelector('[data-act="anc-again"]').hidden = watching || !ctxAnchor;
   ctx.querySelector('[data-act="anc-weigh"]').hidden = !watching;
@@ -1330,6 +1333,7 @@ ctx.addEventListener("click", (e) => {
   if (act === "start") route?.setStart(ctxAt, ctxMark);
   if (act === "mark") route?.addMark(ctxAt, ctxMark);
   if (act === "libmark") library?.newMarkAt(ctxAt);
+  if (act === "rec-toggle") pbathy?.record(!pbathy.recording());
   if (act === "anc-drop") anchor?.drop(ctxAt);
   if (act === "anc-again" && ctxAnchor) anchor?.again(ctxAnchor);
   if (act === "anc-weigh") anchor?.weigh();

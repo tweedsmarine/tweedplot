@@ -1302,7 +1302,14 @@ button.on.warn { background: #b03a2e; color: #fff; border-color: #b03a2e; }
 .lib-backup-dir { word-break: break-all; font-family: ui-monospace, Consolas, monospace; font-size: 11px; }
 
 /* the toolbar's Shoot and Haul (events.js): a letter for the gear in use */
-.tb-fish { position: relative; }
+.tb-fish, #pb-rec { position: relative; }
+/* Record soundings: in Fishing (or every use, Settings › Display); red dot and a count while recording */
+html:not([data-use="fish"]):not([data-rec-all]) #pb-rec:not(.rec) { display: none; }
+#pb-rec .rec-dot { fill: none; stroke: currentColor; }
+#pb-rec.rec { color: #d00000; }
+#pb-rec.rec .rec-dot { fill: #d00000; stroke: #d00000; animation: rec-blink 2s steps(2) infinite; }
+@keyframes rec-blink { 50% { opacity: 0.35; } }
+#pb-rec .tb-count { position: absolute; right: 0; bottom: -1px; font-size: 9px; font-weight: 700; line-height: 1; color: #d00000; }
 html:not([data-use="fish"]) .tb-fish { display: none; }
 .tb-fish .tb-gear { position: absolute; right: 1px; bottom: 0; font-size: 9px; font-weight: 700; line-height: 1; color: var(--accent, #1f6fb2); }
 .gear-pop { position: fixed; z-index: 30; min-width: 170px; }
