@@ -12,7 +12,7 @@
 
 pub use enc_s57::files::{find_cells, find_cells_except, CellFiles};
 pub use enc_s57::gpkg::{band_for, table_for, write_gpkg, MERGE_VERSION, VERSION};
-pub use enc_s57::{catalogue, cell, iso8211, texts};
+pub use enc_s57::{catalogue, cell, iso8211, picture, texts};
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

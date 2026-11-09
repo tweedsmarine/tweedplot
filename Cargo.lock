@@ -1060,6 +1060,8 @@ checksum = "4ef6b89e5b37196644d8796de5268852ff179b44e96276cf4290264843743bb7"
 name = "enc-s57"
 version = "0.1.0"
 dependencies = [
+ "flate2",
+ "png 0.17.16",
  "rusqlite",
  "serde",
  "thiserror 1.0.69",
@@ -3274,6 +3276,7 @@ name = "racenav-app"
 version = "1.0.0-alpha"
 dependencies = [
  "ais",
+ "base64 0.22.1",
  "bathy",
  "chart",
  "chrono",

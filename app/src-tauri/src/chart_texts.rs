@@ -5,7 +5,8 @@
 //! open data names the same files but doesn't carry them: those are found here too.
 //! Plain ENC folders (enc, s63 in the data folders) are searched as well.
 
-use chart::enc::texts;
+use base64::Engine;
+use chart::enc::{picture, texts};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -13,6 +14,9 @@ use std::sync::Mutex;
 
 /// Name → file, built on first use and again after an import.
 static INDEX: Mutex<Option<HashMap<String, PathBuf>>> = Mutex::new(None);
+
+/// Pictures already turned into PNG (name → the reply), cleared with the index.
+static PICTURES: Mutex<Option<HashMap<String, Value>>> = Mutex::new(None);
 
 /// Where imported notes are kept.
 pub fn store_dir(app: &tauri::AppHandle) -> PathBuf {
@@ -39,6 +43,7 @@ fn build_index(app: &tauri::AppHandle) -> HashMap<String, PathBuf> {
 pub fn import_from(app: &tauri::AppHandle, from: &Path) -> Result<(usize, usize), String> {
     let n = texts::copy_ancillary(from, &store_dir(app)).map_err(|e| e.to_string())?;
     *INDEX.lock().unwrap() = None;
+    *PICTURES.lock().unwrap() = None;
     Ok(n)
 }
 
@@ -47,8 +52,9 @@ fn stored(app: &tauri::AppHandle) -> usize {
     std::fs::read_dir(store_dir(app)).map(|rd| rd.flatten().count()).unwrap_or(0)
 }
 
-/// A note by its file name (as the feature gives it): `{ name, text }`, `{ name, picture: true }`
-/// for a picture (not shown yet), or null when TweedPlot doesn't have it.
+/// A note by its file name (as the feature gives it): `{ name, text }`; for a picture
+/// (PICREP, TIFF in ENC sets) `{ name, picture: "data:image/png;base64,…", width, height }`, or
+/// `{ name, picture: null, error }` when it can't be read; null when TweedPlot doesn't have it.
 #[tauri::command]
 pub async fn chart_text(app: tauri::AppHandle, name: String) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -63,7 +69,15 @@ pub async fn chart_text(app: tauri::AppHandle, name: String) -> Result<Value, St
         };
         let Some(path) = path else { return Value::Null };
         if !key.ends_with(".TXT") {
-            return json!({ "name": key, "picture": true });
+            if let Some(v) = PICTURES.lock().unwrap().as_ref().and_then(|m| m.get(&key)) {
+                return v.clone();
+            }
+            let v = match std::fs::read(&path).map_err(|e| e.to_string()).and_then(|b| picture_reply(&b)) {
+                Ok((url, w, h)) => json!({ "name": key, "picture": url, "width": w, "height": h }),
+                Err(e) => return json!({ "name": key, "picture": null, "error": e }),
+            };
+            PICTURES.lock().unwrap().get_or_insert_with(HashMap::new).insert(key, v.clone());
+            return v;
         }
         match std::fs::read(&path) {
             Ok(b) => json!({ "name": key, "text": texts::decode_text(&b) }),
@@ -72,6 +86,17 @@ pub async fn chart_text(app: tauri::AppHandle, name: String) -> Result<Value, St
     })
     .await
     .map_err(|e| e.to_string())
+}
+
+/// A picture file as a data URL for an <img>, with its size (0 × 0 when passed through).
+fn picture_reply(b: &[u8]) -> Result<(String, u32, u32), String> {
+    let (bytes, mime) = picture::picture_for_display(b).map_err(|e| e.to_string())?;
+    let (w, h) = if mime == "image/png" && bytes.len() > 24 {
+        (u32::from_be_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]), u32::from_be_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]))
+    } else {
+        (0, 0)
+    };
+    Ok((format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)), w, h))
 }
 
 /// How many chart notes TweedPlot has (Chart › Chart notes).

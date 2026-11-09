@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 fn is_ancillary(p: &Path) -> bool {
     p.extension().is_some_and(|e| {
         let e = e.to_string_lossy().to_ascii_uppercase();
-        e == "TXT" || e == "TIF" || e == "TIFF"
+        e == "TXT" || e == "TIF" || e == "TIFF" || e == "PNG" || e == "JPG" || e == "JPEG" || e == "GIF"
     })
 }
 

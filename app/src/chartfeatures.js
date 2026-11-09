@@ -100,15 +100,43 @@ function chartNote(name) {
       // references to the Annual Notices to Mariners and the Almanac open them
       box.replaceChildren(...linkPublications(r.text));
       box.title = r.name;
-    } else if (r?.picture) {
-      box.className = "wx-note";
-      box.textContent = `Picture ${name}: pictures aren't shown yet.`;
+    } else if (r && "picture" in r) {
+      if (!r.picture) {
+        box.className = "wx-note";
+        box.textContent = `Picture ${name} can't be shown: ${r.error}`;
+        return;
+      }
+      // a picture (PICREP), e.g. the leading marks of a harbour: click for a larger view
+      box.className = "feat-pic";
+      const img = document.createElement("img");
+      img.src = r.picture;
+      img.alt = `Chart picture ${r.name}`;
+      img.title = `${r.name}: click to enlarge`;
+      img.onclick = () => showPicture(r);
+      box.replaceChildren(img);
     } else {
       box.className = "wx-note";
       box.textContent = `${name} is a note that comes with the ENC charts (LINZ's NZ ENC service). Chart › Get data › Chart notes adds them from an ENC folder.`;
     }
   }).catch(() => { box.className = "wx-note"; box.textContent = `${name} not available.`; });
   return box;
+}
+
+/** A chart picture over the whole window; a click or Escape closes it. */
+function showPicture(r) {
+  const lb = document.createElement("div");
+  lb.className = "feat-lightbox";
+  const img = document.createElement("img");
+  img.src = r.picture;
+  img.alt = r.name;
+  const cap = document.createElement("p");
+  cap.textContent = `${r.name}, from the ENC charts. Not for navigation.`;
+  lb.append(img, cap);
+  const close = () => { lb.remove(); document.removeEventListener("keydown", key, true); };
+  const key = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } };
+  lb.onclick = close;
+  document.addEventListener("keydown", key, true);
+  document.body.append(lb);
 }
 
 /** The image for "s52:<sy>", or null while the symbols are loading. */

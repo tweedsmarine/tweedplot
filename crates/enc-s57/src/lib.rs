@@ -11,6 +11,7 @@ pub mod classes;
 pub mod files;
 pub mod gpkg;
 pub mod iso8211;
+pub mod picture;
 pub mod texts;
 
 pub use files::{find_cells, find_cells_except, CellFiles};
