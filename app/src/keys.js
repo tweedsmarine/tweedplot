@@ -25,7 +25,7 @@ export const KEYS = [
 
   { group: "Drawers (the same key again closes it)", keys: "W", label: "Weather and tides", pane: "weather" },
   { group: "Drawers (the same key again closes it)", keys: "R", label: "Route", pane: "course" },
-  { group: "Drawers (the same key again closes it)", keys: "G", label: "Routing", pane: "routing" },
+  { group: "Drawers (the same key again closes it)", keys: "G", label: "Weather routing", pane: "routing" },
   { group: "Drawers (the same key again closes it)", keys: "L", label: "Library", pane: "library" },
   { group: "Drawers (the same key again closes it)", keys: "C", label: "Chart", pane: "chart" },
   { group: "Drawers (the same key again closes it)", keys: "I", label: "Instrument panels", pane: "inst" },

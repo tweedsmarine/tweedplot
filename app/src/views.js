@@ -67,7 +67,9 @@ export function setupViews(map) {
     requestAnimationFrame(() => map.resize());
   }
 
-  $("view-btn").onclick = () => api.set(VIEWS[(VIEWS.findIndex((v) => v.id === s.current) + 1) % VIEWS.length].id);
+  // a click lists the views by name (a new user can't guess what a cycling button will do next);
+  // F2–F4 and the keys list switch directly
+  $("view-btn").onclick = () => (pop.hidden ? openPop() : (pop.hidden = true));
   $("tools-btn").onclick = () => { s.tools[s.current] = !toolsOn(s.current); apply(); };
 
   // right-click (or hold) the view button: pick a view, and show or hide the chart in this one

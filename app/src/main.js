@@ -657,6 +657,19 @@ map.on("load", () => {
     // not for fishing: no laylines or cone (a Go to target still shows)
     getSettings: () => (use.use() === "fish" ? { ...boat.get(), layShow: false, layConeShow: false } : boat.get()) });
   window.addEventListener("racenav-boat", () => laylines.refresh());
+  // Weather routing says which boat it routes: polar and efficiency (Settings › Vessel)
+  const rtBoat = () => {
+    const b = boat.get();
+    const polar = String(b.polar || "").split(/[\\/]/).pop();
+    const el = document.getElementById("rt-polar");
+    if (el) el.textContent = polar ? `Boat: ${polar}, ${b.eff || 100} %, tack ${b.tack ?? 60} s, gybe ${b.gybe ?? 60} s` : "Boat: no polar chosen yet";
+  };
+  window.addEventListener("racenav-boat", rtBoat);
+  rtBoat();
+  document.getElementById("rt-polar-change").onclick = (e) => {
+    e.preventDefault(); ui.openTab("settings", "vessel");
+    setTimeout(() => { const c = [...document.querySelectorAll("details.dcard")].find((d) => d.dataset.title === "Performance (polar)"); if (c) { c.open = true; c.scrollIntoView({ block: "start" }); } }, 60);
+  };
   window.addEventListener("racenav-use", () => laylines.refresh());
   weather.onTime(() => laylines.refresh());
   setInterval(() => laylines.refresh(), 20000);

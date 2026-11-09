@@ -1513,3 +1513,5 @@ html.cur-edge:not(#n1):not(#n2):not(#n3), html.cur-edge:not(#n1):not(#n2):not(#n
 .lib-manage { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; margin: 4px 0 8px; background: #fbfcfd; }
 .lib-manage[hidden] { display: none; }
 #mark-edit:not([hidden]) { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.12); background: var(--panel, #fff); }
+/* two-word rail labels ("Targets & fleets", "Wx routing") wrap to two short lines */
+#rail button > span { max-width: 60px; text-align: center; line-height: 1.1; }
