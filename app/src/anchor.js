@@ -51,7 +51,7 @@ function anchorImage() {
   return g.getImageData(0, 0, S, S);
 }
 
-export function setupAnchor(map, { library, alarms, getBoat, getVessel, toast = () => {}, before }) {
+export function setupAnchor(map, { library, alarms, getBoat, getVessel, getAntenna = null, toast = () => {}, before }) {
   map.addImage("anc:sym", anchorImage(), { pixelRatio: 2 });
   for (const id of ["anc-circle", "anc-line", "anc-pt"]) map.addSource(id, { type: "geojson", data: empty });
   map.addLayer({ id: "anc-fill", type: "fill", source: "anc-circle", paint: { "fill-color": ORANGE, "fill-opacity": 0.07 } }, before);
@@ -70,7 +70,8 @@ export function setupAnchor(map, { library, alarms, getBoat, getVessel, toast = 
   // (the same bow as the anchor alarm measures from: navmath.bowOf)
   function bow() {
     const b = getBoat();
-    return bowOf(b.pos, b.v || {}, Number(getVessel().gpsFromBow) || 0);
+    const o = getAntenna?.() ?? { fromBow: Number(getVessel().gpsFromBow) || 0, fromCentre: Number(getVessel().gpsFromCentre) || 0 };
+    return bowOf(b.pos, b.v || {}, o.fromBow, o.fromCentre);
   }
   /** "34 m at 012°T from the bow". */
   function fromBow(p) {

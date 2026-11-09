@@ -397,6 +397,11 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
 .nmea-gps li.in-use { font-weight: 600; }
 .nmea-gps label { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
 .nmea-gps select { width: auto; }
+.gps-antennas { margin-top: 8px; }
+.gps-ant { display: grid; grid-template-columns: 1fr 1fr auto; align-items: end; gap: 4px 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+.gps-ant-name { grid-column: 1 / -1; font-weight: 600; overflow-wrap: anywhere; }
+.gps-ant label { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 0.9em; }
+.gps-ant input { width: 100%; min-width: 0; box-sizing: border-box; }
 .nmea-settings h4 { margin: 18px 0 8px; font-size: 13px; }
 .nmea-current-data { min-height: 34px; padding: 8px; margin-bottom: 8px; background: var(--panel-raised, #f1f4f6); border-radius: 4px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .nmea-monitor { display: flex; flex-direction: column; gap: 8px; min-height: 260px; color: var(--ink); }
@@ -427,6 +432,9 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
 .nmea-frame code { flex: none; color: inherit; white-space: pre; }
 .nmea-frame.invalid { background: #532526; color: #fff; }
 .nmea-frame-invalid { flex: none; white-space: nowrap; color: #ffb1a8; font-size: 10px; }
+.nmea-frame-gps { flex: none; white-space: nowrap; color: #ffd27a; font-size: 10px; font-weight: 700; }
+.nmea-frame.ignored code { opacity: 0.45; text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.35); }
+.nmea-frame-ignored { flex: none; white-space: nowrap; color: #a9bac2; font-size: 10px; text-transform: uppercase; }
 #nmea-monitor-window { display: none; }
 html[data-view="nmea"] #nmea-monitor-window { position: absolute; z-index: 20; inset: 0; display: flex; padding: 16px; background: var(--panel-bg); }
 html[data-view="nmea"] #nmea-monitor-window .nmea-monitor { width: 100%; min-height: 0; }

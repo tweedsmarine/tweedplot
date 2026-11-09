@@ -173,12 +173,18 @@ struct MonitorFrame {
     raw: String,
     checksum_valid: bool,
     error: Option<String>,
+    /// With two GPS receivers on the input: which one sent it ("A", "B" …).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    gps: Option<String>,
+    /// A fix from the receiver not in use (or out of time order), left out.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    ignored: bool,
 }
 
-fn record_monitor_frame(source: &SourceConfig, raw: String, checksum_valid: bool, error: Option<String>) {
+fn record_monitor_frame(source: &SourceConfig, raw: String, checksum_valid: bool, error: Option<String>, gps: Option<String>, ignored: bool) {
     let mut recent = RECENT.lock().unwrap();
     let frames = &mut recent.entry(source.id.clone()).or_insert_with(|| (source.name.clone(), Vec::new())).1;
-    frames.push(MonitorFrame { received_at: chrono::Utc::now().to_rfc3339(), raw, checksum_valid, error });
+    frames.push(MonitorFrame { received_at: chrono::Utc::now().to_rfc3339(), raw, checksum_valid, error, gps, ignored });
     if frames.len() > 100 {
         frames.remove(0);
     }
@@ -276,7 +282,7 @@ fn invalid_sentence(app: &tauri::AppHandle, source: &SourceConfig, generation: u
     status.detail = error.to_string();
     status.last_sentence = Some(raw.clone());
     drop(statuses);
-    record_monitor_frame(source, raw, false, Some(error.to_string()));
+    record_monitor_frame(source, raw, false, Some(error.to_string()), None, false);
     STATUS_DIRTY.lock().unwrap().insert(source.id.clone());
     let _ = app;
 }
@@ -504,14 +510,16 @@ fn consume_bytes(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
     for (raw, parsed) in framer.push_with_raw(bytes) {
         match parsed {
             Ok(sentence) => {
-                record_monitor_frame(source, sentence.raw.clone(), sentence.checksum_valid, None);
-                if matches!(sentence.formatter.as_str(), "VDM" | "VDO") {
+                let ais = matches!(sentence.formatter.as_str(), "VDM" | "VDO");
+                let (verdict, gps) = if ais { (Verdict::Use, None) } else { fix_verdict(app, source, &sentence) };
+                record_monitor_frame(source, sentence.raw.clone(), sentence.checksum_valid, None, gps, verdict == Verdict::Ignore);
+                if ais {
                     // AIS: a target for the chart, not navigation data
                     let update = AIS_DECODERS.lock().unwrap().entry(source.id.clone()).or_default().push(&sentence.formatter, &sentence.fields);
                     if let Some(update) = update {
                         crate::live::merge_ais(update);
                     }
-                } else if fix_verdict(app, source, &sentence) == Verdict::Ignore {
+                } else if verdict == Verdict::Ignore {
                     // a fix from the other GPS receiver on this input (or out of time order)
                 } else {
                     observation.apply(&sentence);
@@ -532,15 +540,18 @@ fn consume_bytes(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
 
 /// Sort a position sentence into its receiver's stream and say whether it is the one in use.
 /// A change of stream is reported as a source change (an alarm), as a change of input is.
-fn fix_verdict(app: &tauri::AppHandle, source: &SourceConfig, sentence: &Sentence) -> Verdict {
-    let (verdict, switch) = {
+/// Also which receiver it was ("A", "B" …), when there is more than one on the input.
+fn fix_verdict(app: &tauri::AppHandle, source: &SourceConfig, sentence: &Sentence) -> (Verdict, Option<String>) {
+    let (verdict, switch, gps) = {
         let mut all = FIX_STREAMS.lock().unwrap();
         let fs = all.entry(source.id.clone()).or_insert_with(|| {
             let mut fs = FixStreams::default();
             fs.set_pinned(source.gps_stream.clone());
             fs
         });
-        (fs.accept(sentence, clock()), fs.take_switch())
+        let verdict = fs.accept(sentence, clock());
+        let gps = if fs.count() > 1 { fs.last_letter().map(String::from) } else { None };
+        (verdict, fs.take_switch(), gps)
     };
     if let Some((from, to)) = switch {
         let payload = serde_json::json!({ "group": format!("gps-{}", source.id), "label": format!("GPS on {}", source.name), "from": from, "to": to });
@@ -548,7 +559,7 @@ fn fix_verdict(app: &tauri::AppHandle, source: &SourceConfig, sentence: &Sentenc
             eprintln!("Could not publish GPS stream change: {error}");
         }
     }
-    verdict
+    (verdict, gps)
 }
 
 /// Use this GPS receiver's fixes on this input (`key` as in its stream summary; None: the best

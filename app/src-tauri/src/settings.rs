@@ -36,8 +36,25 @@ pub struct VesselProfile {
     /// Depth of the sounder's transducer below the waterline (m): added to the depth below the
     /// transducer for own soundings.
     pub transducer_depth_m: Option<f64>,
+    /// Where each receiver's antenna is, when there is more than one: an NMEA input, or one of
+    /// the receivers told apart on an input (marine_nmea::fixstreams). The two fields above are
+    /// the default, for any receiver not listed.
+    pub gps_antennas: Vec<GpsAntenna>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GpsAntenna {
+    /// The NMEA input's id.
+    pub source_id: String,
+    /// The receiver's stream key on that input ("GP-5-2"), or empty for the whole input.
+    pub stream: String,
+    /// How it was shown when saved ("GPS A on Masthead mux (GP, 5 decimals)").
+    pub label: String,
+    pub from_bow_m: Option<f64>,
+    pub from_centerline_m: Option<f64>,
 }
 
 fn settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -108,6 +125,18 @@ fn validate(s: &Settings) -> Result<(), String> {
     }
     if v.gps_antenna_from_centerline_m.is_some_and(|n| !n.is_finite() || !(-500.0..=500.0).contains(&n)) {
         return Err("GPS antenna offset from centreline must be between -500 and 500 metres.".into());
+    }
+    if v.gps_antennas.len() > 64 {
+        return Err("At most 64 GPS antennas can be set.".into());
+    }
+    for a in &v.gps_antennas {
+        let name = if a.label.is_empty() { "a GPS antenna" } else { a.label.as_str() };
+        if a.from_bow_m.is_some_and(|n| !n.is_finite() || !(0.0..=1000.0).contains(&n)) {
+            return Err(format!("The distance from the bow of {name} must be between 0 and 1000 metres."));
+        }
+        if a.from_centerline_m.is_some_and(|n| !n.is_finite() || !(-500.0..=500.0).contains(&n)) {
+            return Err(format!("The offset from the centreline of {name} must be between -500 and 500 metres."));
+        }
     }
     if s.nmea_sources.len() > 32 {
         return Err("At most 32 NMEA sources can be configured.".into());

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { rhumb, rhumbDestination, clearingZone, clearingInfo } from "./navmath.js";
+import { rhumb, rhumbDestination, clearingZone, clearingInfo, bowOf } from "./navmath.js";
 
 test("rhumbDestination is the inverse of rhumb", () => {
   const a = [174.8, -36.8];
@@ -22,4 +22,17 @@ test("a clearing zone puts the third point 90° off on the danger side", () => {
   const left = clearingZone(mark, end, rhumbDestination(mark, 350, 1));
   assert.equal(clearingInfo(left).side, 1);
   assert.ok(Math.abs(rhumb(mark, left[2]).brg - 315) < 1e-6);
+});
+
+test("the bow is found from the antenna's distance aft and its offset off the centreline", () => {
+  const p = [173.27, -41.26];
+  const m = (a, b) => [((b[0] - a[0]) * 111120 * Math.cos((a[1] * Math.PI) / 180)), (b[1] - a[1]) * 111120];
+  // heading north, antenna 10 m aft and 2 m to starboard: the bow is 10 m north and 2 m west
+  const [e, n] = m(p, bowOf(p, { heading: 0 }, 10, 2).pos);
+  assert.ok(Math.abs(n - 10) < 0.05 && Math.abs(e + 2) < 0.05, `${e}, ${n}`);
+  // heading east, antenna 1.5 m to port: the bow is 1.5 m south of the antenna's line
+  const [e2, n2] = m(p, bowOf(p, { heading: 90 }, 0, -1.5).pos);
+  assert.ok(Math.abs(e2) < 0.05 && Math.abs(n2 + 1.5) < 0.05, `${e2}, ${n2}`);
+  // no heading: the antenna itself
+  assert.deepEqual(bowOf(p, {}, 10, 2).pos, p);
 });

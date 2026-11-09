@@ -41,6 +41,7 @@ function applyToBoat(profile) {
     referenceLon: profile.referenceLon,
     gpsFromBow: profile.gpsAntennaFromBowM ?? 0,
     gpsFromCentre: profile.gpsAntennaFromCenterlineM ?? 0,
+    gpsAntennas: profile.gpsAntennas || [],
   } }));
 }
 
@@ -81,6 +82,96 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       const input = form.elements.namedItem(key);
       input.value = values[key] ?? "";
     }
+    renderAntennas(true);
+  }
+
+  // ---- one antenna position per receiver (Settings › Vessel › Position and GPS antenna) ----
+  const knownStreams = new Map(); // "input id|stream key" → a receiver told apart on an input
+  let antennaKeys = "";
+  function antennaRows() {
+    const rows = new Map();
+    const enabled = sources.filter((s) => s.enabled);
+    for (const src of enabled) {
+      const streams = [...knownStreams.values()].filter((k) => k.sourceId === src.id);
+      if (streams.length > 1) {
+        for (const st of streams) {
+          rows.set(`${src.id}|${st.key}`, { sourceId: src.id, stream: st.key, label: `GPS ${st.letter} on ${src.name} (${st.talker}, ${st.latDecimals} decimals)` });
+        }
+      } else if (enabled.length > 1) {
+        rows.set(`${src.id}|`, { sourceId: src.id, stream: "", label: src.name });
+      }
+    }
+    for (const a of saved?.vessel?.gpsAntennas || []) {
+      const id = `${a.sourceId}|${a.stream || ""}`;
+      if (!rows.has(id)) rows.set(id, { ...a, stale: true });
+    }
+    return rows;
+  }
+  /** Draw the receivers' rows, keeping what's been typed; `force` redraws from the saved values. */
+  function renderAntennas(force = false) {
+    const wrap = document.getElementById("gps-antennas");
+    const box = document.getElementById("gps-antenna-rows");
+    if (!wrap || !box) return;
+    const rows = antennaRows();
+    const keys = [...rows.keys()].join(",");
+    if (!force && keys === antennaKeys) return;
+    antennaKeys = keys;
+    const typed = force ? new Map() : new Map([...box.querySelectorAll(".gps-ant")].map((r) => [r.dataset.id, {
+      bow: r.querySelector('[data-f="bow"]').value, centre: r.querySelector('[data-f="centre"]').value }]));
+    const savedById = new Map((saved?.vessel?.gpsAntennas || []).map((a) => [`${a.sourceId}|${a.stream || ""}`, a]));
+    box.replaceChildren();
+    for (const [id, row] of rows) {
+      const was = savedById.get(id);
+      const el = document.createElement("div");
+      el.className = "gps-ant";
+      el.dataset.id = id;
+      el.dataset.sourceId = row.sourceId;
+      el.dataset.stream = row.stream || "";
+      el.dataset.label = row.label || "";
+      const name = document.createElement("span");
+      name.className = "gps-ant-name";
+      name.textContent = row.label || id;
+      if (row.stale) {
+        const note = document.createElement("span");
+        note.className = "wx-note";
+        note.textContent = " (not heard now)";
+        name.append(note);
+      }
+      const field = (f, text, attrs, value) => {
+        const label = document.createElement("label");
+        label.textContent = text;
+        const input = document.createElement("input");
+        input.type = "number";
+        input.dataset.f = f;
+        Object.assign(input, attrs);
+        input.value = value ?? "";
+        label.append(input);
+        return label;
+      };
+      const t = typed.get(id);
+      el.append(name,
+        field("bow", "Aft of bow (m)", { min: 0, max: 1000, step: 0.1, placeholder: "default" }, t ? t.bow : was?.fromBowM),
+        field("centre", "Off centreline (m)", { min: -500, max: 500, step: 0.1, placeholder: "port −" }, t ? t.centre : was?.fromCenterlineM));
+      if (row.stale) {
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "Remove";
+        remove.title = "Forget this antenna (when you save the vessel details)";
+        remove.onclick = () => { el.remove(); };
+        el.append(remove);
+      }
+      box.append(el);
+    }
+    wrap.hidden = !rows.size;
+  }
+  function antennasFromForm() {
+    return [...document.querySelectorAll("#gps-antenna-rows .gps-ant")].map((r) => ({
+      sourceId: r.dataset.sourceId,
+      stream: r.dataset.stream,
+      label: r.dataset.label,
+      fromBowM: optionalNumber(r.querySelector('[data-f="bow"]').value),
+      fromCenterlineM: optionalNumber(r.querySelector('[data-f="centre"]').value),
+    })).filter((a) => a.fromBowM != null || a.fromCenterlineM != null);
   }
   function applyReferencePosition(profile) {
     if (Number.isFinite(profile.referenceLat) && Number.isFinite(profile.referenceLon)) {
@@ -99,6 +190,7 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       const input = form.elements.namedItem(key);
       profile[key] = input.type === "number" ? optionalNumber(input.value) : input.value.trim();
     }
+    profile.gpsAntennas = antennasFromForm();
     const next = { ...saved, vessel: { ...saved.vessel, ...profile } };
     saveButton.disabled = true;
     showStatus("Saving…");
@@ -427,6 +519,7 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       await invoke("nmea_sources_set", { sources: next, arbitration: nextArbitration });
       sources = next;
       arbitration = nextArbitration;
+      renderAntennas();
       if (saved) {
         saved.nmeaSources = next;
         saved.nmeaArbitration = nextArbitration;
@@ -484,6 +577,7 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
         saved.nmeaArbitration = arbitration;
       }
       renderSources();
+      renderAntennas(true);
       renderActiveSources();
       renderNmeaData();
     } catch (error) {
@@ -494,6 +588,8 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
     if (payload?.id) {
       sourceStatuses.set(payload.id, payload);
       updateSourceStatus(payload);
+      for (const st of payload.gpsStreams || []) knownStreams.set(`${payload.id}|${st.key}`, { ...st, sourceId: payload.id });
+      renderAntennas();
     }
   }).catch((error) => showSourceStatus(`Could not subscribe to NMEA status: ${error}`, "bad"));
   // the sentences a source sent since the last event (about twice a second)

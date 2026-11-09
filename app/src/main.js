@@ -39,6 +39,7 @@ import { poiImage } from "./poi.js";
 import { symImage } from "./marksymbols.js";
 import { setupBarriers } from "./barriers.js";
 import { setupAnchor } from "./anchor.js";
+import { setupAntennas } from "./antennas.js";
 import { setupLayers } from "./layers.js";
 import { setupLaylines } from "./laylines.js";
 import { setupVarDiagram } from "./varrose.js";
@@ -445,6 +446,7 @@ setupWelcome({ use, inst });
 setupDisclaimer();
 window.addEventListener("racenav-mob", (e) => { inst.update({ mob: e.detail }); });
 const boat = setupBoat();
+const antennas = setupAntennas(); // which receiver's antenna the position is from
 setupSettings({ boat, ui, onReferencePosition: useReferencePosition });
 const openNmeaSettings = () => ui.openTab("settings", "conn");
 if (PRIMARY) {
@@ -580,7 +582,7 @@ map.on("load", () => {
   layerVis = setupLayerVisibility(map, { ready: () => chartMapLoaded && chartStoreReady });
   alarms = setupAlarms(map, {
     getBoat: () => ({ pos: lastBoat, v: vessel, live: live && signalKActive(), connected: liveDataConnected(), fresh: Date.now() - lastFeed < 5000 }),
-    getBow: () => bowOf(lastBoat, vessel, Number(boat.get().gpsFromBow) || 0)?.pos ?? null,
+    getBow: () => { const o = antennas.offsets(boat.get()); return bowOf(lastBoat, vessel, o.fromBow, o.fromCentre)?.pos ?? null; },
     getSafetyDepth: () => settings.safetyDepth,
     getSafetyContour: () => settings.safetyContour,
     getAirDraft: () => Number(boat.get().airDraft) || 0,
@@ -649,7 +651,7 @@ map.on("load", () => {
   listen("library-changed", () => { clearTimeout(tracksTimer); tracksTimer = setTimeout(() => { tracks.refresh(); barriers?.refresh(); }, 150); });
   barriers = setupBarriers(map, { before: "track", library, toast, getVariation: variationAt });
   anchor = setupAnchor(map, { library, alarms, before: "track", toast,
-    getBoat: () => ({ pos: lastBoat, v: vessel }), getVessel: () => boat.get() });
+    getBoat: () => ({ pos: lastBoat, v: vessel }), getVessel: () => boat.get(), getAntenna: () => antennas.offsets(boat.get()) });
   layersPanel = setupLayers({ ui });
   document.getElementById("anchor-btn").onclick = () => (anchor.watching() ? window.dispatchEvent(new Event("racenav-anchor-open")) : anchor.drop());
   varRoses = setupVarDiagram(map, { getVariation: variationAt,
@@ -1214,7 +1216,8 @@ function drawBoat() {
   setData("boat", { type: "FeatureCollection", features: [{ type: "Feature", properties: { rot: boatDir, big }, geometry: { type: "Point", coordinates: lastBoat } }] });
   const f = [];
   if (big) {
-    f.push({ type: "Feature", properties: { k: "hull" }, geometry: { type: "Polygon", coordinates: [hullRing(lastBoat, boatDir, { length: b.length, beam: b.beam, fromBow: b.gpsFromBow || null, fromCentre: b.gpsFromCentre || 0 })] } });
+    const ant = antennas.offsets(b);
+    f.push({ type: "Feature", properties: { k: "hull" }, geometry: { type: "Polygon", coordinates: [hullRing(lastBoat, boatDir, { length: b.length, beam: b.beam, fromBow: ant.fromBow || null, fromCentre: ant.fromCentre })] } });
     f.push({ type: "Feature", properties: { k: "gps" }, geometry: { type: "Point", coordinates: lastBoat } });
   }
   setData("boat-hull", { type: "FeatureCollection", features: f });

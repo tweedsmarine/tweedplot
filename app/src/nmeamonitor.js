@@ -54,7 +54,8 @@ function isoTime(value) {
 function frameText(frame, sourceName, timestamps) {
   const prefix = timestamps ? `${isoTime(frame.receivedAt)}  ` : "";
   const invalid = frame.checksumValid ? "" : `  [INVALID${frame.error ? `: ${frame.error}` : ""}]`;
-  return `${prefix}${sourceName}  ${frame.raw}${invalid}`;
+  const gps = frame.gps ? `  [GPS ${frame.gps}${frame.ignored ? ", ignored" : ""}]` : frame.ignored ? "  [ignored]" : "";
+  return `${prefix}${sourceName}  ${frame.raw}${invalid}${gps}`;
 }
 
 function captureHeader(capture) {
@@ -272,7 +273,7 @@ export function setupNmeaMonitor(root, { standalone = false, openSettings = () =
   function makeRow(item) {
     const { frame, sourceId, sourceName } = item;
     const row = document.createElement("div");
-    row.className = `nmea-frame${frame.checksumValid ? "" : " invalid"}`;
+    row.className = `nmea-frame${frame.checksumValid ? "" : " invalid"}${frame.ignored ? " ignored" : ""}`;
     row.style.setProperty("--stream-colour", sourceColour(sourceId, sources));
     if (frame.error) row.title = frame.error;
     const time = document.createElement("span");
@@ -282,9 +283,25 @@ export function setupNmeaMonitor(root, { standalone = false, openSettings = () =
     source.className = "nmea-frame-source";
     source.textContent = sourceName;
     source.title = sourceName;
+    // two GPS receivers on one input: which one sent it, and whether it was left out
+    const gps = document.createElement("span");
+    gps.className = "nmea-frame-gps";
+    gps.textContent = frame.gps ? `GPS ${frame.gps}` : "";
+    if (frame.gps || frame.ignored) {
+      gps.title = frame.ignored
+        ? `${frame.gps ? `GPS ${frame.gps}: ` : ""}not used (another receiver on this input is in use, or the fix is out of time order)`
+        : `GPS ${frame.gps}: the receiver in use on this input`;
+    }
     const raw = document.createElement("code");
     raw.textContent = frame.raw;
     row.append(time, source, raw);
+    if (frame.gps) row.append(gps);
+    if (frame.ignored) {
+      const badge = document.createElement("b");
+      badge.className = "nmea-frame-ignored";
+      badge.textContent = "ignored";
+      row.append(badge);
+    }
     if (!frame.checksumValid) {
       const badge = document.createElement("b");
       badge.className = "nmea-frame-invalid";
@@ -476,6 +493,8 @@ export function setupNmeaMonitor(root, { standalone = false, openSettings = () =
         raw: frame.raw || "",
         checksumValid: frame.checksumValid !== false,
         error: frame.error || null,
+        gps: frame.gps || null,
+        ignored: !!frame.ignored,
       }))
       : (payload.sentences || []).map((raw) => ({
         sourceId: payload.sourceId,

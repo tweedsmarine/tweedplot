@@ -96,11 +96,13 @@ pub struct FixStreams {
     pub stale_after: f64,
     started: Option<f64>,
     switch: Option<(String, String)>,
+    /// The receiver the last sentence was put down to (for the NMEA monitor).
+    last: Option<char>,
 }
 
 impl Default for FixStreams {
     fn default() -> Self {
-        Self { streams: Vec::new(), in_use: None, pinned: None, stale_after: 10.0, started: None, switch: None }
+        Self { streams: Vec::new(), in_use: None, pinned: None, stale_after: 10.0, started: None, switch: None, last: None }
     }
 }
 
@@ -229,6 +231,7 @@ impl FixStreams {
 
     /// Decide about one sentence heard at `now` (seconds, any steady clock).
     pub fn accept(&mut self, s: &Sentence, now: f64) -> Verdict {
+        self.last = None;
         if s.formatter == "VTG" {
             return self.accept_vtg(s, now);
         }
@@ -264,6 +267,7 @@ impl FixStreams {
         };
         self.started.get_or_insert(now);
         let st = &mut self.streams[index];
+        self.last = Some(st.letter);
         let t = seconds_of_day(time);
         if let (Some(t), Some(last)) = (t, st.last_time) {
             let back = last - t;
@@ -300,7 +304,7 @@ impl FixStreams {
 
     /// A VTG has no position to fingerprint, but its mode letter usually says which receiver sent
     /// it: left out when only streams not in use (with that talker) have that quality.
-    fn accept_vtg(&self, s: &Sentence, now: f64) -> Verdict {
+    fn accept_vtg(&mut self, s: &Sentence, now: f64) -> Verdict {
         let Some(rank) = s.fields.get(8).and_then(|m| rank_from_mode(m)) else {
             return Verdict::Use;
         };
@@ -309,11 +313,16 @@ impl FixStreams {
             return Verdict::Use;
         }
         let matching: Vec<&&Stream> = same.iter().filter(|st| st.quality == Some(rank)).collect();
-        if !matching.is_empty() && matching.iter().all(|st| Some(st.key.as_str()) != self.in_use.as_deref()) {
-            Verdict::Ignore
-        } else {
-            Verdict::Use
-        }
+        let last = (matching.len() == 1).then(|| matching[0].letter);
+        let verdict =
+            if !matching.is_empty() && matching.iter().all(|st| Some(st.key.as_str()) != self.in_use.as_deref()) { Verdict::Ignore } else { Verdict::Use };
+        self.last = last;
+        verdict
+    }
+
+    /// The receiver ("A", "B" …) the last sentence was put down to, if it could be told.
+    pub fn last_letter(&self) -> Option<char> {
+        self.last
     }
 
     fn fresh(&self, st: &Stream, now: f64) -> bool {
@@ -456,7 +465,9 @@ mod tests {
         fs.accept(&sentence("GPGGA,105018.00,4152.53048,S,07331.44018,W,2,07,1.10,0.9,M,15.8,M,,"), 0.0);
         fs.accept(&sentence("GPGGA,105017,4152.5317,S,07331.4405,W,1,8,1.00,3.30,M,,M"), 0.5);
         assert_eq!(fs.accept(&sentence("GPVTG,,T,,M,0.087,N,0.161,K,D"), 1.0), Verdict::Use);
+        assert_eq!(fs.last_letter(), Some('A'));
         assert_eq!(fs.accept(&sentence("GPVTG,309.5,T,,M,0.1,N,0.2,K,A"), 1.0), Verdict::Ignore);
+        assert_eq!(fs.last_letter(), Some('B'));
         // another talker's VTG (the instruments) is not ours to judge
         assert_eq!(fs.accept(&sentence("IIVTG,309.5,T,,M,0.0,N,0.1,K,A"), 1.0), Verdict::Use);
     }
