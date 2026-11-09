@@ -107,6 +107,7 @@ export function setupManual({ image = null } = {}) {
         <input type="search" class="man-search" placeholder="Search the manual" aria-label="Search the manual">
         <button class="man-toc-btn" title="Show or hide the contents">Contents</button>
         <button class="man-wide" title="Give the manual most of the window">Wide</button>
+        <button class="man-print" title="Print the whole manual, or save it as a PDF (A4)">Print</button>
         <button class="man-close" title="Close (Esc)">✕</button>
       </div>
       <nav class="man-tabs"></nav>
@@ -160,7 +161,59 @@ export function setupManual({ image = null } = {}) {
     if (svg && fig) { fig.classList.add("diagram"); img.outerHTML = svg; }
   }
 
-  function render(t) {
+  /** The whole manual laid out for paper (A4): a cover, the contents, then every tab as a
+   *  chapter starting on a new page. Printed with the system print dialog, which can also save a
+   *  PDF. Day colours whatever this window's palette (style.css @media print). */
+  async function printManual() {
+    await load();
+    for (const t of book.tabs) toHtml(t);
+    document.getElementById("man-print")?.remove();
+    const doc = document.createElement("div");
+    doc.id = "man-print";
+    const version = await invoke("app_info").then((i) => i?.version ?? "").catch(() => "");
+    const contents = book.tabs.map((t) => {
+      const heads = [...t.html.matchAll(/<h2 id="([^"]+)">([\s\S]*?)<\/h2>/g)].map((m) => `<li>${m[2].replace(/<(?!\/?(b|i|em|strong)\b)[^>]+>/g, "")}</li>`).join("");
+      return `<li class="ch"><b>${esc(t.title)}</b>${heads ? `<ol>${heads}</ol>` : ""}</li>`;
+    }).join("");
+    doc.innerHTML = `
+      <section class="mp-cover">
+        <img src="/tweedplot-logo-light.svg" alt="TweedPlot">
+        <h1>${esc(book.title)}</h1>
+        <p class="mp-ed">${version ? `For TweedPlot ${esc(version)} · ` : ""}manual updated ${esc(book.updated)}</p>
+        <p class="mp-warn">TweedPlot is an aid to navigation. It does not replace official charts, a proper lookout or good seamanship.</p>
+        <p class="mp-by">TweedsMarine · Nelson, New Zealand · tweedsmarine.nz</p>
+      </section>
+      <section class="mp-contents"><h1>Contents</h1><ol class="mp-toc">${contents}</ol></section>
+      ${book.tabs.map((t) => {
+        // each tab's own first heading becomes the chapter title (the tab's name)
+        const html = /^\s*<h1[^>]*>[\s\S]*?<\/h1>/.test(t.html) ? t.html.replace(/^\s*<h1[^>]*>[\s\S]*?<\/h1>/, "") : t.html;
+        return `<section class="mp-chapter" data-tab="${t.id}"><h1 class="mp-ch-title">${esc(t.title)}</h1>${html}</section>`;
+      }).join("")}`;
+    document.body.append(doc);
+    for (const p of doc.querySelectorAll("p > figure:only-child")) p.replaceWith(p.firstChild);
+    // pictures: from the manual folder, loaded now (not lazily), diagrams drawn inline
+    await Promise.all([...doc.querySelectorAll('.mp-chapter img[src$=".svg"]')].map(async (img) => {
+      const src = img.getAttribute("src");
+      if (!svgCache.has(src)) svgCache.set(src, fetch(BASE + src).then((r) => r.text()).catch(() => ""));
+      const svg = await svgCache.get(src);
+      const fig = img.closest("figure");
+      if (svg && fig) { fig.classList.add("diagram"); img.outerHTML = svg; }
+    }));
+    const pics = [...doc.querySelectorAll(".mp-chapter img:not(.mi-img)")];
+    for (const img of pics) { img.loading = "eager"; img.src = BASE + img.getAttribute("src"); }
+    await Promise.all([...doc.querySelectorAll("img")].map((img) => (img.complete ? null : new Promise((r) => { img.onload = img.onerror = r; }))));
+    // links inside the manual can't be followed on paper: plain text, web links keep their address
+    for (const a of doc.querySelectorAll("a[href]")) {
+      const href = a.getAttribute("href");
+      if (/^https?:/.test(href) && a.textContent.trim() !== href) a.insertAdjacentText("afterend", ` (${href})`);
+      a.replaceWith(...a.childNodes);
+    }
+    const done = () => { doc.remove(); window.removeEventListener("afterprint", done); };
+    window.addEventListener("afterprint", done);
+    window.print();
+  }
+
+  function toHtml(t) {
     if (!t.html) {
       const renderer = new marked.Renderer();
       renderer.heading = ({ tokens, depth }) => {
@@ -172,6 +225,11 @@ export function setupManual({ image = null } = {}) {
       const md = t.md.replace(TOKENS, (m, kind, id) => (kind === "icon" ? iconHtml(id) : imgHtml(id, image)));
       t.html = marked.parse(md, { renderer, gfm: true });
     }
+    return t.html;
+  }
+
+  function render(t) {
+    toHtml(t);
     body.innerHTML = t.html + `<p class="man-foot">${esc(book.title)} · updated ${esc(book.updated)} · bundled with this version of TweedPlot</p>`;
     // a picture alone in a paragraph: lift the figure out of the <p>
     for (const p of body.querySelectorAll("p > figure:only-child")) p.replaceWith(p.firstChild);
@@ -263,6 +321,7 @@ export function setupManual({ image = null } = {}) {
   $(".man-tabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-tab]"); if (b) { search.value = ""; show(b.dataset.tab); } });
   $(".man-close").onclick = () => close();
   $(".man-wide").onclick = () => { state.wide = !state.wide; layout(); save(); };
+  $(".man-print").onclick = () => printManual().catch((err) => { body.insertAdjacentHTML("afterbegin", `<p class="bad">Could not print the manual: ${esc(String(err))}</p>`); });
   $(".man-toc-btn").onclick = () => { state.toc = !state.toc; layout(); save(); };
   toc.addEventListener("click", (e) => {
     const a = e.target.closest("a[href^='#']");
@@ -338,5 +397,6 @@ export function setupManual({ image = null } = {}) {
     /** Open at the section that explains a drawer. */
     help: (pane) => { const [t, h] = PANE_HELP[pane] ?? ["reference", null]; return open(t, h); },
     onToggle: (f) => listeners.push(f),
+    print: () => printManual(),
   };
 }

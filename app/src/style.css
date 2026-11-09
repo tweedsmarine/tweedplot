@@ -507,8 +507,10 @@ html[data-view="nmea"] #nmea-monitor-window .nmea-variable-grid { grid-template-
 #lib-tracks li input[type="checkbox"] { flex: none; margin: 0 4px 0 0; }
 
 /* Startup stays branded until the chart source has rendered a tile. */
-.startup-splash { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: var(--brand-navy); }
-.startup-splash img { width: 96px; height: 112px; object-fit: contain; }
+.startup-splash { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+  background: radial-gradient(ellipse at 50% 45%, #0b2f57 0%, var(--brand-navy) 55%, #001a35 100%); }
+.startup-splash img { width: min(560px, 72vw); height: auto; }
+.startup-splash .splash-by { color: #8fb3c9; font-size: 13px; letter-spacing: 0.04em; }
 .startup-splash[hidden] { display: none; }
 
 /* short messages at the bottom of the chart (ruler hints …) */
@@ -722,7 +724,7 @@ html[data-palette="dusk"][data-iho] #map .maplibregl-canvas-container { filter: 
    With the paper chart symbols the map goes through the dark page filter as before. */
 html[data-palette="iho-night"] body { background: #000; }
 html[data-palette="iho-night"] body > :not(#map) { filter: invert(1) url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
-html[data-palette="iho-night"] body > :is(#rail, #itiles, #replay-bar, #tip) { filter: url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
+html[data-palette="iho-night"] body > :is(#rail, #itiles, #replay-bar, #tip, .startup-splash) { filter: url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
 html[data-palette="iho-night"] :is(.ipanel, .dot) { filter: invert(1); }
 html[data-palette="iho-night"] #map > :not(.maplibregl-canvas-container, .maplibregl-control-container, .maplibregl-canvas) { filter: invert(1) url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
 html[data-palette="iho-night"] #map :is(.maplibregl-ctrl, .maplibregl-popup) { filter: invert(1) url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
@@ -734,7 +736,7 @@ html[data-palette="iho-night"]:not([data-iho]) #map .maplibregl-canvas-container
 html[data-palette="night-red"] { filter: invert(1) url(#pal-red) brightness(var(--pal-dim, 0.6)); }
 html[data-palette="night-green"] { filter: invert(1) url(#pal-green) brightness(var(--pal-dim, 0.6)); }
 html[data-palette^="night"] #rail, html[data-palette^="night"] .ipanel, html[data-palette^="night"] #itiles, html[data-palette^="night"] .dot,
-html[data-palette^="night"] #replay-bar, html[data-palette^="night"] #tip { filter: invert(1); }
+html[data-palette^="night"] #replay-bar, html[data-palette^="night"] #tip, html[data-palette^="night"] .startup-splash { filter: invert(1); }
 #tip { position: fixed; z-index: 100; max-width: 320px; padding: 5px 9px; border-radius: 5px; background: #1d2a33; color: #fff; font-size: 12.5px; line-height: 1.35; pointer-events: none; box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
 #tip[hidden] { display: none; }
 html[data-palette^="night"] body { background: #fff; } /* black after the inversion */
@@ -1404,3 +1406,46 @@ html.cur-edge:not(#n1):not(#n2):not(#n3), html.cur-edge:not(#n1):not(#n2):not(#n
 #disclaimer .dc-go { display: flex; justify-content: flex-end; margin-top: 14px; }
 #disclaimer .dc-ok { padding: 9px 24px; border: 0; border-radius: 7px; background: var(--accent); color: #fff; font-size: 14px; cursor: pointer; }
 .about-warn { padding: 6px 8px; border-left: 4px solid #c0392b; background: rgba(192, 57, 43, .08); }
+
+/* ---------- the printed manual (Manual › Print): A4, day colours whatever the palette ---------- */
+#man-print { display: none; }
+@media print {
+  @page { size: A4; margin: 16mm 15mm 18mm 18mm;
+    @bottom-center { content: counter(page); font: 9pt "Atkinson Hyperlegible Next", system-ui, sans-serif; color: #555; }
+    @top-right { content: "TweedPlot User Manual"; font: 8pt "Atkinson Hyperlegible Next", system-ui, sans-serif; color: #777; } }
+  @page :first { @bottom-center { content: none; } @top-right { content: none; } }
+  html, html *, body, body > * { filter: none !important; }
+  html, body { background: #fff !important; color: #111 !important; height: auto !important; overflow: visible !important; }
+  body > :not(#man-print) { display: none !important; }
+  #man-print { display: block; font: 10.5pt/1.45 "Atkinson Hyperlegible Next", system-ui, sans-serif; color: #111; }
+  #man-print .mp-cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; break-after: page; }
+  #man-print .mp-cover img { width: 130mm; margin-bottom: 18mm; }
+  #man-print .mp-cover h1 { font-size: 26pt; margin: 0 0 4mm; color: #1a3d65; }
+  #man-print .mp-ed { font-size: 11pt; color: #444; margin: 0 0 30mm; }
+  #man-print .mp-warn { font-size: 10pt; border-left: 3px solid #b8860b; padding-left: 4mm; max-width: 120mm; }
+  #man-print .mp-by { margin-top: auto; font-size: 9pt; color: #555; }
+  #man-print .mp-contents { break-after: page; }
+  #man-print .mp-toc { padding-left: 0; list-style: none; columns: 2; column-gap: 10mm; font-size: 9.5pt; }
+  #man-print .mp-toc > li { break-inside: avoid; margin-bottom: 3mm; }
+  #man-print .mp-toc ol { padding-left: 5mm; margin: 1mm 0 0; list-style: none; color: #333; }
+  #man-print .mp-chapter { break-before: page; }
+  #man-print h1 { font-size: 20pt; color: #1a3d65; margin: 0 0 5mm; border-bottom: 2px solid #b8860b; padding-bottom: 2mm; }
+  #man-print h2 { font-size: 14pt; color: #1a3d65; margin: 7mm 0 2mm; break-after: avoid; }
+  #man-print h3 { font-size: 11.5pt; margin: 5mm 0 1.5mm; break-after: avoid; }
+  #man-print h4 { break-after: avoid; }
+  #man-print p, #man-print li { orphans: 3; widows: 3; }
+  #man-print table { border-collapse: collapse; width: 100%; font-size: 9pt; margin: 2mm 0 4mm; }
+  #man-print th, #man-print td { border: 0.5pt solid #999; padding: 1.2mm 2mm; text-align: left; vertical-align: top; }
+  #man-print th { background: #eef2f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #man-print tr, #man-print figure, #man-print pre { break-inside: avoid; }
+  #man-print thead { display: table-header-group; }
+  #man-print figure { margin: 3mm 0; text-align: center; }
+  #man-print figure img, #man-print figure svg { max-width: 100%; max-height: 120mm; height: auto; }
+  #man-print figcaption { font-size: 8.5pt; color: #555; margin-top: 1mm; }
+  #man-print .mi { display: inline-block; width: 4mm; height: 4mm; vertical-align: -0.8mm; }
+  #man-print .mi svg { width: 100%; height: 100%; display: block; fill: none; stroke: #111; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  #man-print .mi .fill { fill: #111; stroke: none; }
+  #man-print .mi-img, #man-print .mi svg { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #man-print code { font-size: 9pt; background: none; }
+  #man-print .man-foot { display: none; }
+}
