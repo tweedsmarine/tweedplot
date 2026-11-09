@@ -2095,6 +2095,7 @@ pub fn run() {
             nmea::nmea_ports,
             nmea::nmea_sources_get,
             nmea::nmea_sources_set,
+            nmea::nmea_gps_stream_set,
             nmea::nmea_capture_begin,
             nmea::nmea_capture_append,
             nmea::nmea_capture_end,

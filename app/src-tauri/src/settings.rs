@@ -232,6 +232,7 @@ mod tests {
             enabled: true,
             use_for_navigation: true,
             transport: crate::nmea::SourceTransport::Serial { port: "COM4".into(), baud_rate: 4800 },
+            gps_stream: None,
         });
         assert!(validate(&settings).is_ok());
         settings.nmea_sources.push(crate::nmea::SourceConfig {
@@ -240,6 +241,7 @@ mod tests {
             enabled: true,
             use_for_navigation: true,
             transport: crate::nmea::SourceTransport::Serial { port: "COM5".into(), baud_rate: 4800 },
+            gps_stream: None,
         });
         assert!(validate(&settings).is_ok());
         settings.nmea_arbitration.preferred_sources.insert("position".into(), "missing-source".into());
@@ -253,6 +255,7 @@ mod tests {
             enabled: true,
             use_for_navigation: false,
             transport: crate::nmea::SourceTransport::Serial { port: "COM4".into(), baud_rate: 9600 },
+            gps_stream: None,
         });
         assert!(validate(&settings).is_err());
         settings.nmea_sources.pop();

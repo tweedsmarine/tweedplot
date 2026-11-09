@@ -3,6 +3,8 @@
 //! Every valid sentence, including sentences not decoded yet, is retained as
 //! a frame so catalog coverage can be extended without losing source data.
 
+pub mod fixstreams;
+
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 

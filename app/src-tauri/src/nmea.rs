@@ -1,3 +1,4 @@
+use marine_nmea::fixstreams::{FixStreams, StreamSummary, Verdict};
 use marine_nmea::{Framer, Observation, Sentence};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -27,6 +28,10 @@ pub struct SourceConfig {
     #[serde(default)]
     pub use_for_navigation: bool,
     pub transport: SourceTransport,
+    /// With two GPS receivers mixed on this input: the fix stream to use (its key, as
+    /// "GP-5-2"); None picks the best one automatically.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gps_stream: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -124,6 +129,9 @@ pub struct SourceStatus {
     pub invalid_sentences: u64,
     pub last_sentence: Option<String>,
     pub last_seen: Option<String>,
+    /// The GPS receivers told apart on this input (see marine_nmea::fixstreams).
+    #[serde(default, skip_deserializing)]
+    pub gps_streams: Vec<StreamSummary>,
 }
 
 static SOURCES: Mutex<Vec<watch::Sender<bool>>> = Mutex::new(Vec::new());
@@ -135,6 +143,13 @@ static MULTIPLEXER: Mutex<Multiplexer> = Mutex::new(Multiplexer {
     source_configs: Vec::new(),
     arbitration: ArbitrationConfig { failover_enabled: true, stale_after_seconds: 10, preferred_sources: BTreeMap::new() },
 });
+/// The position fix streams heard on each input (two GPS receivers mixed on one input).
+static FIX_STREAMS: Mutex<BTreeMap<String, FixStreams>> = Mutex::new(BTreeMap::new());
+/// The clock fix streams are timed by.
+fn clock() -> f64 {
+    static EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    EPOCH.get_or_init(Instant::now).elapsed().as_secs_f64()
+}
 static NEXT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 /// New navigation data since the vessel state was last published (at most 10 a second).
 static VESSEL_DIRTY: AtomicBool = AtomicBool::new(false);
@@ -218,7 +233,11 @@ fn publish_monitor(app: &tauri::AppHandle) {
         let all = STATUSES.lock().unwrap();
         dirty.iter().filter_map(|id| all.get(id).cloned()).collect()
     };
-    for status in statuses {
+    let now = clock();
+    for mut status in statuses {
+        if let Some(fs) = FIX_STREAMS.lock().unwrap().get(&status.id) {
+            status.gps_streams = if fs.count() > 1 { fs.summary(now) } else { Vec::new() };
+        }
         emit_status(app, status);
     }
     let recent = std::mem::take(&mut *RECENT.lock().unwrap());
@@ -492,6 +511,8 @@ fn consume_bytes(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
                     if let Some(update) = update {
                         crate::live::merge_ais(update);
                     }
+                } else if fix_verdict(app, source, &sentence) == Verdict::Ignore {
+                    // a fix from the other GPS receiver on this input (or out of time order)
                 } else {
                     observation.apply(&sentence);
                     let mut hub = MULTIPLEXER.lock().unwrap();
@@ -507,6 +528,45 @@ fn consume_bytes(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
             Err(error) => invalid_sentence(app, source, generation, String::from_utf8_lossy(&raw).trim().to_owned(), &error),
         }
     }
+}
+
+/// Sort a position sentence into its receiver's stream and say whether it is the one in use.
+/// A change of stream is reported as a source change (an alarm), as a change of input is.
+fn fix_verdict(app: &tauri::AppHandle, source: &SourceConfig, sentence: &Sentence) -> Verdict {
+    let (verdict, switch) = {
+        let mut all = FIX_STREAMS.lock().unwrap();
+        let fs = all.entry(source.id.clone()).or_insert_with(|| {
+            let mut fs = FixStreams::default();
+            fs.set_pinned(source.gps_stream.clone());
+            fs
+        });
+        (fs.accept(sentence, clock()), fs.take_switch())
+    };
+    if let Some((from, to)) = switch {
+        let payload = serde_json::json!({ "group": format!("gps-{}", source.id), "label": format!("GPS on {}", source.name), "from": from, "to": to });
+        if let Err(error) = app.emit("nmea-failover", payload) {
+            eprintln!("Could not publish GPS stream change: {error}");
+        }
+    }
+    verdict
+}
+
+/// Use this GPS receiver's fixes on this input (`key` as in its stream summary; None: the best
+/// one automatically). Takes effect at once, without restarting the inputs, and is saved.
+#[tauri::command]
+pub fn nmea_gps_stream_set(app: tauri::AppHandle, source_id: String, key: Option<String>) -> Result<(), String> {
+    let key = key.filter(|k| !k.is_empty());
+    let mut settings = crate::settings::settings_get(app.clone())?;
+    let source = settings.nmea_sources.iter_mut().find(|s| s.id == source_id).ok_or("No such NMEA input")?;
+    source.gps_stream.clone_from(&key);
+    crate::settings::settings_save(app, settings)?;
+    if let Some(cfg) = MULTIPLEXER.lock().unwrap().source_configs.iter_mut().find(|s| s.id == source_id) {
+        cfg.gps_stream.clone_from(&key);
+    }
+    if let Some(fs) = FIX_STREAMS.lock().unwrap().get_mut(&source_id) {
+        fs.set_pinned(key);
+    }
+    Ok(())
 }
 
 /// The file a capture is being written to (one at a time). Captures can run for hours, so the
@@ -568,6 +628,14 @@ fn start_sources(app: &tauri::AppHandle, sources: &[SourceConfig], mut arbitrati
         AIS_DECODERS.lock().unwrap().clear();
         hub.active_sources.clear();
         hub.source_configs = sources.to_vec();
+        let mut streams = FIX_STREAMS.lock().unwrap();
+        streams.clear();
+        for source in sources.iter().filter(|s| s.enabled) {
+            let mut fs = FixStreams::default();
+            fs.stale_after = arbitration.stale_after_seconds.max(2) as f64;
+            fs.set_pinned(source.gps_stream.clone());
+            streams.insert(source.id.clone(), fs);
+        }
         hub.arbitration = arbitration;
     }
     if let Err(error) = app.emit("nmea-navigation-source", navigation_source) {
@@ -621,6 +689,7 @@ fn start_sources(app: &tauri::AppHandle, sources: &[SourceConfig], mut arbitrati
             invalid_sentences: 0,
             last_sentence: None,
             last_seen: None,
+            gps_streams: Vec::new(),
         };
         statuses.insert(source.id.clone(), status.clone());
         initial_statuses.push(status);
@@ -902,6 +971,7 @@ mod tests {
             enabled: true,
             use_for_navigation: false,
             transport: SourceTransport::Tcp { address: "127.0.0.1:10110".into() },
+            gps_stream: None,
         }
     }
 

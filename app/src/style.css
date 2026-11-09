@@ -392,6 +392,11 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
 .nmea-source-description { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
 .nmea-source-description .wx-note { overflow-wrap: anywhere; }
 .nmea-source-row button { min-width: 0; padding: 4px 8px; }
+.nmea-gps { grid-column: 1 / -1; grid-row: auto; margin-top: 2px; padding: 6px 8px; border-left: 3px solid var(--accent, #3b82f6); background: color-mix(in srgb, currentColor 5%, transparent); border-radius: 3px; font-size: 0.92em; }
+.nmea-gps ul { margin: 4px 0; padding-left: 18px; }
+.nmea-gps li.in-use { font-weight: 600; }
+.nmea-gps label { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+.nmea-gps select { width: auto; }
 .nmea-settings h4 { margin: 18px 0 8px; font-size: 13px; }
 .nmea-current-data { min-height: 34px; padding: 8px; margin-bottom: 8px; background: var(--panel-raised, #f1f4f6); border-radius: 4px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .nmea-monitor { display: flex; flex-direction: column; gap: 8px; min-height: 260px; color: var(--ink); }

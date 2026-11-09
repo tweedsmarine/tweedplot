@@ -211,7 +211,11 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       detail.classList.add("nmea-source-status");
       row.dataset.sourceId = source.id;
       detail.textContent = sourceStatusText(source, endpoint, state);
+      const gps = document.createElement("div");
+      gps.className = "nmea-gps";
+      gps.hidden = true;
       description.append(name, detail);
+      renderGpsStreams(gps, source, state);
       const edit = document.createElement("button");
       edit.type = "button";
       edit.textContent = "Edit";
@@ -235,7 +239,7 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
         saveSources(sources.filter((item) => item.id !== source.id));
         if (editingId === source.id) resetSourceForm();
       });
-      row.append(toggle, description, up, down, edit, remove);
+      row.append(toggle, description, up, down, edit, remove, gps);
       sourceList.append(row);
     }
     renderArbitration();
@@ -303,6 +307,75 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       ? `${transport.port} · ${transport.baudRate} baud`
       : transport.type === "tcp" ? transport.address : `UDP ${transport.bindAddress}`;
     label.textContent = sourceStatusText(source, endpoint, payload);
+    renderGpsStreams(row.querySelector(".nmea-gps"), source, payload);
+  }
+
+  // Two (or more) GPS receivers mixed on one input: the backend tells them apart by how they
+  // format their fixes and uses one (marine_nmea::fixstreams); here they are listed, with a choice.
+  const WORDS = ["", "One", "Two", "Three", "Four", "Five"];
+  function renderGpsStreams(box, source, state) {
+    if (!box) return;
+    const streams = state?.gpsStreams || [];
+    if (streams.length < 2 && !source.gpsStream) { box.hidden = true; return; }
+    box.hidden = false;
+    const name = (st) => `GPS ${st.letter} (${st.talker}, ${st.latDecimals} decimals)`;
+    const keys = streams.map((st) => `${st.key}:${st.letter}`).join(",") + `|${source.gpsStream || ""}`;
+    if (box.dataset.keys !== keys) {
+      box.dataset.keys = keys;
+      box.replaceChildren();
+      const head = document.createElement("b");
+      head.textContent = streams.length > 1
+        ? `${WORDS[streams.length] || streams.length} GPS receivers on this input`
+        : "GPS receiver choice";
+      const list = document.createElement("ul");
+      const label = document.createElement("label");
+      label.textContent = "Position from ";
+      const select = document.createElement("select");
+      select.add(new Option("Automatic (the best one)", ""));
+      for (const st of streams) select.add(new Option(name(st), st.key));
+      if (source.gpsStream && !streams.some((st) => st.key === source.gpsStream)) {
+        select.add(new Option(`${source.gpsStream} (not heard now)`, source.gpsStream));
+      }
+      select.value = source.gpsStream || "";
+      select.addEventListener("change", async () => {
+        try {
+          await invoke("nmea_gps_stream_set", { sourceId: source.id, key: select.value || null });
+          source.gpsStream = select.value || undefined;
+          sources = sources.map((item) => (item.id === source.id ? { ...item, gpsStream: source.gpsStream } : item));
+          if (saved) saved.nmeaSources = sources;
+          box.dataset.keys = "";
+          showSourceStatus(select.value ? `${source.name}: position from ${select.selectedOptions[0].textContent}.` : `${source.name}: position from the best GPS.`, "good");
+        } catch (error) {
+          showSourceStatus(`Could not choose the GPS: ${error}`, "bad");
+        }
+      });
+      label.append(select);
+      const apart = document.createElement("span");
+      apart.className = "wx-note nmea-gps-apart";
+      box.append(head, list, label, apart);
+    }
+    const list = box.querySelector("ul");
+    list.replaceChildren(...streams.map((st) => {
+      const li = document.createElement("li");
+      const bits = [
+        st.qualityName,
+        st.satellites != null ? `${st.satellites} sats` : "",
+        st.hdop != null ? `HDOP ${st.hdop}` : "",
+        st.rate ? `${st.rate}/s` : "",
+        st.backwards ? `${st.backwards} out of time order` : "",
+      ].filter(Boolean);
+      li.textContent = `${name(st)}: ${bits.join(" · ")} — ${!st.fresh ? "not heard" : st.inUse ? "in use" : "ignored"}`;
+      li.classList.toggle("in-use", st.inUse);
+      return li;
+    }));
+    // how far apart the two antennas' fixes are (a check on which is which)
+    const [a, b] = streams.filter((st) => st.fresh && st.lat != null);
+    const apart = box.querySelector(".nmea-gps-apart");
+    if (a && b) {
+      const dy = (a.lat - b.lat) * 111_120;
+      const dx = (a.lon - b.lon) * 111_120 * Math.cos((a.lat * Math.PI) / 180);
+      apart.textContent = `GPS ${a.letter} and ${b.letter} are ${Math.hypot(dx, dy).toFixed(1)} m apart.`;
+    } else apart.textContent = "";
   }
 
   function renderNmeaData() {
@@ -389,6 +462,7 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       enabled: prior?.enabled ?? true,
       useForNavigation: prior?.useForNavigation ?? !sources.some((item) => item.enabled && item.useForNavigation),
       transport,
+      gpsStream: prior?.gpsStream,
     };
     const next = prior
       ? sources.map((item) => item.id === editingId ? source : item)
