@@ -342,19 +342,21 @@
           <label title="Show library marks on the chart"><input id="lib-show" type="checkbox" /> Marks on chart</label>
         </div>
         <div id="lib-menu" class="lib-menu" role="menu" hidden></div>
-        <div id="lib-shared"></div>
-        <div class="tabs">
+        <div class="tabs lib-tabs">
           <button data-tab="marks" class="on">Marks</button>
           <button data-tab="routes">Routes</button>
           <button data-tab="tracks">Tracks</button>
           <button data-tab="trips">Trips</button>
-          <button data-tab="log" title="The fishing log: net shot and hauled, lines and pots set and hauled, catch, notes">Log</button>
-          <button data-tab="routings">Routings</button>
+          <button data-tab="log" title="The catch log: net shot and hauled, lines and pots set and hauled, catch, notes">Catch log</button>
+          <button data-tab="routings" title="Saved weather routings">Wx routings</button>
           <button data-tab="barriers">Barriers</button>
         </div>
+        <div id="lib-shared"></div>
         <div class="tab" data-tab="marks">
-          <div class="wx-row"><button id="lib-add" class="on" title="Add a mark: type its position, or take the boat's, the chart centre's or a click on the chart">Add mark</button><label class="grow" title="Draw only the marks the search and filters list (else every mark)"><input id="lib-f-chart" type="checkbox" /> Chart shows only the marks listed</label><button id="lib-box" title="Drag a box on the chart to select the marks in it (Esc stops)">Select on chart</button></div>
-          <details id="lib-groups" class="sub" title="Each group (a TimeZero layer, a season, a mate's marks) shown or hidden on the chart, and locked so it can't be deleted or moved by accident">
+          <div class="wx-row lib-acts"><button id="lib-add" class="on" title="Add a mark: type its position, or take the boat's, the chart centre's or a click on the chart">+ Add mark</button><button id="lib-box" title="Drag a box on the chart to select the marks in it (Esc stops)">Select on chart</button><span class="grow"></span><button id="lib-manage-btn" title="Manage groups (show, hide, lock) and TimeZero symbols" aria-expanded="false">Groups…</button></div>
+          <div id="lib-manage" class="lib-manage" hidden>
+          <div class="wx-row"><b class="grow">Groups and symbols</b><button id="lib-manage-done" class="on">Done</button></div>
+          <details id="lib-groups" class="sub" open title="Each group (a TimeZero layer, a season, a mate's marks) shown or hidden on the chart, and locked so it can't be deleted or moved by accident">
             <summary>Groups</summary>
             <div class="wx-note">Untick a group to hide its marks on the chart. A locked group's marks can't be deleted or moved (on the chart or to another group) until it's unlocked.</div>
             <ul id="lib-grp-list" class="list"></ul>
@@ -364,6 +366,7 @@
             <div class="wx-note">Show draws only the marks with that symbol, to see what it was used for; then pick its type. The meanings are the same in all your libraries.</div>
             <ul id="lib-sym-list" class="list sym-list"></ul>
           </details>
+          </div>
           <form id="mark-edit" class="edit" hidden>
             <b id="mark-edit-title" class="edit-title">Mark</b>
             <div class="wx-row"><label class="grow">Name</label><input name="name" type="text" /></div>
@@ -386,6 +389,7 @@
               <button type="button" data-act="start" title="Make this mark the start of the route being edited">Route start</button>
               <button type="button" data-act="delete" class="warn" title="Delete this mark (taken out of any routes)">Delete</button></div>
           </form>
+          <div class="wx-row lib-chartonly"><label class="grow" title="Draw only the marks the search and filters list (else every mark)"><input id="lib-f-chart" type="checkbox" /> Chart shows only the marks listed</label></div>
           <div id="lib-marks-list"></div>
         </div>
         <div class="tab" data-tab="routes" hidden>

@@ -76,7 +76,7 @@ export function libList(root, cfg) {
 
   root.classList.add("ll");
   root.innerHTML = `
-    <div class="ll-top"><input class="ll-search grow" type="search" placeholder="Find" /><select class="ll-sort" title="Order"></select></div>
+    <div class="ll-top"><input class="ll-search grow" type="search" placeholder="Find" /><select class="ll-sort" title="Order"></select><button class="ll-ftog" title="Show every filter (the ones in use always show, with ✕ to clear them)">Filters <span class="ll-fn"></span>▾</button></div>
     <div class="ll-chips"></div>
     <div class="ll-count"><span class="ll-n grow"></span><button class="ll-all" title="Tick every one listed">Select all</button></div>
     <div class="ll-bar" hidden><span class="ll-sel"></span><span class="ll-acts"></span><button class="ll-none" title="Untick them all">✕</button></div>
@@ -84,6 +84,22 @@ export function libList(root, cfg) {
     <div class="ll-scroll"><div class="ll-space"></div></div>`;
   const $ = (s) => root.querySelector(s);
   const search = $(".ll-search"), sortSel = $(".ll-sort"), chips = $(".ll-chips"), scroll = $(".ll-scroll"), space = $(".ll-space");
+  // Filters: closed, only the filters in use show (so it's always clear why something isn't
+  // listed); open, every filter, the Whole library ones above the tabs too. One state for every
+  // list in the drawer.
+  const ftog = $(".ll-ftog");
+  const pane = root.closest(".pane");
+  const filtersOpen = () => !!pane?.classList.contains("ll-fopen");
+  const syncFtog = () => {
+    const n = (cfg.filters ?? []).filter(active).length + (cfg.shared && sharedActive() ? 1 : 0);
+    ftog.querySelector(".ll-fn").textContent = n ? `(${n}) ` : "";
+    ftog.classList.toggle("on", filtersOpen());
+    ftog.hidden = !(cfg.filters?.length || cfg.shared);
+  };
+  ftog.onclick = () => {
+    pane?.classList.toggle("ll-fopen");
+    for (const t of pane?.querySelectorAll(".ll-ftog") ?? []) t.classList.toggle("on", filtersOpen());
+  };
   search.placeholder = cfg.searchPlaceholder ?? `Find a ${one}`;
   for (const s of cfg.sorts ?? []) sortSel.append(new Option(s.label, s.key));
   sortSel.hidden = !(cfg.sorts?.length > 1);
@@ -184,6 +200,7 @@ export function libList(root, cfg) {
 
   function renderChips() {
     chips.innerHTML = "";
+    queueMicrotask(syncFtog);
     // (saved filters are now one list for the whole library, on the shared bar: libfilter.js)
     if (cfg.filters?.length && cfg.saved === true) {
       const b = document.createElement("button");

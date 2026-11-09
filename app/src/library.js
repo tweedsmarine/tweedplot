@@ -503,6 +503,9 @@ export function setupLibrary(map, { ui, toast = () => {}, getBoat = () => null }
     editMark({ name: "", kind: prefs.lastKind || "mark", group: prefs.lastGroup || "", notes: "", lat: at[1], lon: at[0] });
   }
   $("lib-add").onclick = () => newMark();
+  const manage = (on) => { $("lib-manage").hidden = !on; $("lib-manage-btn").setAttribute("aria-expanded", String(on)); $("lib-manage-btn").classList.toggle("on", on); };
+  $("lib-manage-btn").onclick = () => manage($("lib-manage").hidden);
+  $("lib-manage-done").onclick = () => manage(false);
   function editMark(m) {
     editing = { ...m };
     if (picking) pick(false);
