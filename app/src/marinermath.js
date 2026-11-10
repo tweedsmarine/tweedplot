@@ -65,13 +65,17 @@ export function displayScale(lat, zoom, pxPerMm) {
 
 /** S-52 scale bar (PresLib 8.5.3): SCALEB10, a one-mile bar in tenths, at display scales larger
  *  than 1:80,000; SCALEB11, a ten-mile latitude scale in miles, at smaller scales. Where a mile
- *  would be taller than `maxPx` (zoomed right in), a tenth of a mile in hundredths.
+ *  would be taller than `maxPx` (zoomed right in), a tenth of a mile in hundredths. The ten-mile
+ *  scale is used only where it fits in `roomPx` (the chart's height below the north arrow).
  *  { symbol, nm, segments, px } (px: the bar's length on the screen). */
-export function scaleBar(lat, zoom, pxPerMm, maxPx) {
+export function scaleBar(lat, zoom, pxPerMm, maxPx, roomPx = Infinity) {
   const mpp = metresPerPixel(lat, zoom);
   const n = displayScale(lat, zoom, pxPerMm);
   const pxOf = (nm) => (nm * 1852) / mpp;
-  if (n < 80000) {
+  // Just smaller than 1:80,000 the ten-mile scale is some 23 cm long: taller than most chart
+  // windows. Rather than run it off the screen (S-52 wants it drawn whole, at the chart's left
+  // edge), the one-mile bar takes over until ten miles fit in `roomPx`.
+  if (n < 80000 || pxOf(10) > roomPx) {
     let nm = 1;
     while (pxOf(nm) > maxPx && nm > 0.002) nm /= 10;
     return { symbol: "SCALEB10", nm: Math.round(nm * 1000) / 1000, segments: 10, px: pxOf(nm) };

@@ -44,6 +44,13 @@ test("display scale and the S-52 scale bar", () => {
   assert.equal(scaleBar(-41, 13, 3.78, 600).symbol, "SCALEB10");
   assert.equal(scaleBar(-41, 9, 3.78, 600).symbol, "SCALEB11");
   assert.equal(scaleBar(-41, 9, 3.78, 600).nm, 10);
+  // just smaller than 1:80,000 (1:109,000 at zoom 11, 41°S) ten miles are 642 px: on a 600 px
+  // chart the one-mile bar instead, and the ten-mile scale again once it fits
+  assert.ok(scaleBar(-41, 11, 3.78, 300).px > 600);
+  const fit = scaleBar(-41, 11, 3.78, 300, 600);
+  assert.equal(fit.symbol, "SCALEB10");
+  assert.equal(fit.nm, 1);
+  assert.equal(scaleBar(-41, 10, 3.78, 300, 600).symbol, "SCALEB11");
   // zoomed right in: a tenth, then a hundredth of a mile
   assert.equal(scaleBar(-41, 16, 3.78, 600).nm, 0.1);
   assert.equal(scaleBar(-41, 18, 3.78, 600).nm, 0.01);

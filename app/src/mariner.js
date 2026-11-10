@@ -444,18 +444,23 @@ export function setupMariner(map, { settings, saveSettings, colours, usingS52, l
   ovr.hidden = true;
   ovr.title = "Overscale: the chart is shown at a larger scale than it was made for. Detail and positions are no better than at the chart's own scale";
   map.getContainer().append(ovr);
+  // The scale bar and north arrow are part of the IMO display base: always shown, with either set
+  // of chart symbols (the map's own scale at the bottom right is gone)
   function drawScale() {
-    const on = iho();
-    box.hidden = !on;
-    if (!on) return;
+    box.hidden = false;
     const k = pxmm();
     north.setAttribute("width", String(4.19 * k)); north.setAttribute("height", String(15.64 * k));
     north.style.stroke = north.style.fill = tokenColour("SCLBR");
     north.style.transformOrigin = `${(2.25 / 4.19) * 100}% ${(8.57 / 15.64) * 100}%`;
     north.style.transform = `rotate(${-map.getBearing()}deg)`;
     const c = map.getCenter();
-    const maxPx = map.getContainer().clientHeight * 0.45;
-    const sb = scaleBar(c.lat, map.getZoom(), k, maxPx);
+    const H = map.getContainer().clientHeight;
+    const maxPx = H * 0.45;
+    // room for the ten-mile scale: from the bar's top (under the north arrow) to just above the
+    // chart's bottom edge, leaving its label and the attribution clear
+    const top = bar.offsetTop || 15.64 * k + 24;
+    const room = Math.max(60, H - top - 44);
+    const sb = scaleBar(c.lat, map.getZoom(), k, maxPx, room);
     const wPx = 1.2 * k, hPx = Math.max(8, sb.px);
     const dpr = window.devicePixelRatio || 1;
     barCan.width = Math.ceil(wPx * dpr); barCan.height = Math.ceil(hPx * dpr);

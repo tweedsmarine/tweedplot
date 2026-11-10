@@ -517,27 +517,9 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   // labels only once there is room
   map.setLayerZoomRange("f-labels", 11, 24);
 
-  // the display category, always on screen just left of the scale bar (IMO ECDIS
-  // performance standard: the display mode is part of the display base). Beside it, not
-  // above it: above, the Drop button covered it
-  if (!$("dispcat-ind")) {
-    const ind = document.createElement("div");
-    ind.id = "dispcat-ind";
-    ind.className = "dispcat-ind";
-    ind.title = "Chart display category (Chart › Display)";
-    ind.hidden = true;
-    map.getContainer().append(ind);
-    const place = () => {
-      const scale = map.getContainer().querySelector(".maplibregl-ctrl-scale");
-      if (!scale) return;
-      const m = map.getContainer().getBoundingClientRect(), r = scale.getBoundingClientRect();
-      ind.style.right = `${m.right - r.left + 6}px`;
-      ind.style.bottom = `${m.bottom - r.bottom}px`;
-    };
-    map.on("moveend", place);
-    map.on("resize", place);
-    setTimeout(place, 500);
-  }
+  // The display category (IMO ECDIS PS App. 2: the display mode is part of the display base, so
+  // always shown) is in the data panel's display row (sidepanel.js), with its Base / Standard /
+  // All buttons: "racenav-dispcat" tells it the state, "racenav-set-dispcat" sets it.
 
   const SECTOR = ["f-sec-leg", "f-sec-arc", "s52-sec-img", "s52-sec-dash"];
   const NAMES = ["f-names", "f-pnames", "f-labels"];
@@ -637,13 +619,15 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       for (const id of S52_SOLID_IDS) map.setPaintProperty(id, "line-color", s52FillColour("lc"));
       map.setPaintProperty("s52-sec-dash", "line-color", s52FillColour("tok"));
     }
-    const ind = $("dispcat-ind");
-    if (ind) {
-      ind.hidden = !enabled;
+    {
       const fmt = (d) => d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-      ind.textContent = ({ base: "Display: Base", standard: "Display: Standard", all: "Display: All" }[cat] ?? "")
-        + (viewDate ? ` · Chart date ${fmt(viewDate)}${viewTo ? ` to ${fmt(viewTo)}` : ""}` : "");
-      ind.classList.toggle("dated", !!viewDate);
+      // the standard display exactly (S-Mode), or the standard category changed by the mariner,
+      // which must be indicated (IMO ECDIS PS 10.5)
+      const isStd = Object.entries(STANDARD).every(([k, v]) => opts[k] === v);
+      window.dispatchEvent(new CustomEvent("racenav-dispcat", { detail: {
+        enabled, cat, standard: isStd,
+        dated: viewDate ? `Chart date ${fmt(viewDate)}${viewTo ? ` to ${fmt(viewTo)}` : ""}` : "",
+      } }));
     }
     for (const id of MAIN_ALL) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", enabled && cat === "all" ? "visible" : "none");
     if (map.getLayer("soundg")) map.setLayoutProperty("soundg", "visibility", enabled && cat !== "base" && (cat === "all" || opts.soundings) ? "visible" : "none");
@@ -658,6 +642,15 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   if (sel) sel.onchange = () => { opts.cat = sel.value; save(); apply(); };
   const std = $("set-std");
   if (std) std.onclick = () => { Object.assign(opts, STANDARD); save(); apply(); };
+  // the data panel's buttons: Standard is the one-press standard display (S-Mode); Base and All
+  // change only the category, as Chart › Display does
+  window.addEventListener("racenav-set-dispcat", (e) => {
+    const c = e.detail?.cat;
+    if (c === "standard") Object.assign(opts, STANDARD);
+    else if (c === "base" || c === "all") opts.cat = c;
+    else return;
+    save(); apply();
+  });
   for (const [id, key] of [["set-sectors", "sectors"], ["set-featnames", "names"], ["set-soundings", "soundings"], ["set-info", "info"], ["set-text-important", "textImportant"], ["set-text-other", "textOther"], ["set-datesym", "dateSym"], ["set-avoid-dangers", "avoidDangers"], ["set-avoid-farms", "avoidFarms"]]) {
     const el = $(id);
     if (!el) continue;
