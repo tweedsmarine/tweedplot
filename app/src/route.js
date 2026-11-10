@@ -488,7 +488,9 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       const next = marks[navIndex];
       if (!next) return null;
       const from = navIndex > 0 ? [marks[navIndex - 1].lon, marks[navIndex - 1].lat] : start;
-      return { next: { name: next.name || `Mark ${navIndex + 1}`, lon: next.lon, lat: next.lat }, from, index: navIndex, count: marks.length };
+      // the marks after the next one, for the data panel's list of marks ahead
+      const ahead = marks.slice(navIndex + 1).map((m, j) => ({ name: m.name || `Mark ${navIndex + j + 2}`, lon: m.lon, lat: m.lat, n: navIndex + j + 2 }));
+      return { next: { name: next.name || `Mark ${navIndex + 1}`, lon: next.lon, lat: next.lat, n: navIndex + 1 }, from, index: navIndex, count: marks.length, ahead };
     },
     /** Boat moved: step on to the next mark once inside the arrival circle. */
     boatAt(pos) {

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { preset, clean, fromFloating, PRESETS, OWN_SHIP, snapWidth, WIDTHS_MM } from "./sidepresets.js";
+import { preset, clean, fromFloating, PRESETS, OWN_SHIP, snapWidth, WIDTHS_MM, upgrade } from "./sidepresets.js";
 
 // a stand-in for the readings list: every key named in the presets, plus a few
 const keys = new Set(OWN_SHIP);
@@ -51,4 +51,25 @@ test("width snaps to the nearest of narrow, normal and wide", () => {
   assert.equal(snapWidth(WIDTHS_MM.narrow * px + 5, px), "narrow");
   assert.equal(snapWidth(WIDTHS_MM.wide * px * 1.5, px, 1.5), "wide");
   assert.equal(snapWidth(10, px), "narrow");
+});
+
+test("Navigation · Fishing starts without the sounder", () => {
+  assert.ok(!preset("nav", "fish").some((s) => s.item === "SOUNDER"));
+});
+
+test("upgrade: untouched layouts take the new preset; the user's own keep their sections", () => {
+  const data = { v: 1, layouts: {
+    "nav.cruise": [{ id: "route", kind: "readings", items: ["NEXT"], collapsed: true }, { id: "wind", kind: "readings", items: [] }],
+    "nav.fish": [{ id: "fish", kind: "readings", items: [] }, { id: "snd", kind: "graphic", item: "SOUNDER" }, { id: "sx1", kind: "readings", items: ["SOG"] }],
+  } };
+  assert.ok(upgrade(data));
+  assert.deepEqual(data.layouts["nav.cruise"].map((s) => s.id), preset("nav", "cruise").map((s) => s.id));
+  assert.equal(data.layouts["nav.cruise"][0].collapsed, true);
+  assert.deepEqual(data.layouts["nav.fish"].map((s) => s.id), ["fish", "sx1"]);
+  assert.equal(upgrade(data), false);
+});
+
+test("clean keeps marks and targets sections, with a bounded count", () => {
+  const out = clean([{ id: "m", kind: "marks", n: 40 }, { id: "t", kind: "targets" }], ITEMS);
+  assert.deepEqual(out.map((s) => [s.kind, s.n]), [["marks", 12], ["targets", 5]]);
 });

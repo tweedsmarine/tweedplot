@@ -1,39 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { columns, spanFromDrag, cleanSpan, moveReading, dropIndex, fits, clampTile, snapBelow, placeTile, firstFree } from "./gridmath.js";
-
-test("columns follow width and size", () => {
-  assert.equal(columns(330, "m"), 3);
-  assert.equal(columns(10, "m"), 1);
-  assert.equal(columns(492, "s"), 6);
-});
-
-test("span from a drag is snapped and limited", () => {
-  assert.equal(spanFromDrag(110, 120, 110), 2);
-  assert.equal(spanFromDrag(110, -500, 110), 1);
-  assert.equal(spanFromDrag(110, 5000, 110), 6);
-  assert.equal(spanFromDrag(110, 10, 0), 1);
-});
-
-test("saved spans are cleaned", () => {
-  assert.deepEqual(cleanSpan(undefined), [1, 1]);
-  assert.deepEqual(cleanSpan([2, 9]), [2, 6]);
-  assert.deepEqual(cleanSpan(["x", 0]), [1, 1]);
-});
-
-test("moving a reading takes its span along", () => {
-  const r = moveReading(["A", "B", "C"], [null, [2, 1], null], 1, 0);
-  assert.deepEqual(r.tiles, ["B", "A", "C"]);
-  assert.deepEqual(r.spans, [[2, 1], null, null]);
-  const e = moveReading(["A", "B", "C"], undefined, 0, 3);
-  assert.deepEqual(e.tiles, ["B", "C", "A"]);
-});
-
-test("drop position is before or after the target", () => {
-  assert.equal(dropIndex(2, 0.2, 0.9), 2);
-  assert.equal(dropIndex(2, 0.8, 0.1), 3);
-  assert.equal(dropIndex(2, 0.8, 0.1, false), 2);
-});
+import { fits, clampTile, snapBelow, placeTile, firstFree } from "./gridmath.js";
 
 const T = (id, c, r, w = 2, h = 2) => ({ id, k: "SOG", c, r, w, h });
 

@@ -51,6 +51,7 @@ body {
 body.drawer-open { --drawer-x: var(--drawer-w); }
 html.side-on:not(.side-left) body { --side-rx: var(--side-w); }
 html.side-on.side-left body { --side-lx: var(--side-w); }
+html.side-narrow body { --side-rx: 0px !important; --side-lx: 0px !important; }
 html.side-strip body { --strip-h: calc(7.5mm * var(--pxmm, 3.78) / 3.78 * var(--sp-k, 1)); }
 html.ui-large body { --tb-w: 48px; }
 #map { position: absolute; top: 0; left: var(--chart-l); right: var(--chart-r); bottom: var(--chart-b); }
@@ -224,54 +225,14 @@ details.sub summary { cursor: pointer; font-size: 11px; color: var(--quiet); tex
 }
 .attribution { position: absolute; left: calc(var(--chart-l) + 10px); bottom: calc(var(--chart-b) + 6px); font-size: 11px; color: var(--quiet); }
 
-/* ---------- instrument panels ---------- */
-#inst { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
-.ipanel {
-  position: absolute; pointer-events: auto; display: flex; gap: 3px; padding: 3px; border-radius: 8px;
-  background: rgba(0, 0, 0, 0.25); touch-action: none; user-select: none;
-  will-change: transform; /* its own layer: the chart redrawing underneath never re-renders the text */
-}
-.ipanel.row { flex-direction: row; }
-.ipanel.column { flex-direction: column; }
-.ipanel .grip {
-  flex: none; display: flex; align-items: center; justify-content: center; color: #cfd9de; cursor: grab;
-  font-size: 14px; letter-spacing: -3px; background: rgba(16, 28, 36, 0.6); border-radius: 6px;
-}
-.ipanel.row .grip { width: 16px; }
-.ipanel.column .grip { height: 14px; letter-spacing: 0; writing-mode: vertical-lr; }
-.locked .ipanel .grip { cursor: default; opacity: 0.55; }
-.locked .ipanel .prsz { display: none; }
-
-/* free layout: a grid whose columns follow the panel's width; readings span cells and re-flow */
-.ipanel.free { display: grid; box-sizing: border-box; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); grid-template-rows: auto; grid-auto-rows: minmax(var(--rh, 70px), 1fr); grid-auto-flow: row dense; }
-.ipanel.free .grip { grid-column: 1 / -1; width: auto; height: 14px; writing-mode: horizontal-tb; letter-spacing: -3px; }
-.ipanel.free .tile { min-width: 0; min-height: 0; overflow: hidden; }
-.ipanel.free .tile:not(.graphic) .v { line-height: 1; } /* font-size is fitted to the tile by instruments.js */
-.ipanel .prsz, .tile .trsz { position: absolute; width: 16px; height: 16px; cursor: nwse-resize; touch-action: none; }
-.ipanel .prsz { right: 0; bottom: 0; border-radius: 0 0 8px 0; background: linear-gradient(135deg, transparent 50%, rgba(207, 217, 222, 0.9) 50% 58%, transparent 58% 72%, rgba(207, 217, 222, 0.9) 72% 80%, transparent 80%); }
+/* ---------- reading tiles (the Instruments view) ---------- */
 .tile { position: relative; }
+.tile .trsz { position: absolute; width: 16px; height: 16px; cursor: nwse-resize; touch-action: none; }
 .tile .trsz { right: 0; bottom: 0; opacity: 0; background: linear-gradient(135deg, transparent 55%, var(--tile-quiet) 55% 68%, transparent 68%); }
 .tile:hover .trsz, .tile .trsz:active { opacity: 0.8; }
-.ipanel.free .tile.highway-card { width: auto; min-height: 0; padding: 2px; }
-.ipanel.free .highway-card .v { position: relative; overflow: hidden; contain: strict; }
-.ipanel.free .highway-card .hw-dashboard { position: absolute; left: 0; top: 0; width: 680px; height: 470px; transform-origin: 0 0; }
-.ipanel.free { overflow: hidden; }
-.ipanel.free { grid-auto-rows: var(--rh, 70px); }
 .tile.dragging { opacity: 0.45; }
 .tile.drop-before { box-shadow: inset 4px 0 0 #ffb000; }
 .tile.drop-after { box-shadow: inset -4px 0 0 #ffb000; }
-.ipanel.collapsed { align-items: stretch; }
-.ipanel.collapsed .grip { width: 22px; height: 26px; }
-/* The handle shows only while the pointer is over the panel (cleaner). It sits over the panel's edge
-   rather than taking space. Touch screens without hover keep the handle in place, always shown. */
-@media (hover: hover) {
-  .ipanel:not(.collapsed) .grip { position: absolute; z-index: 2; opacity: 0; transition: opacity 0.15s; background: rgba(16, 28, 36, 0.85); }
-  .ipanel.row:not(.collapsed) .grip { left: 3px; top: 3px; bottom: 3px; }
-  .ipanel.column:not(.collapsed) .grip, .ipanel.free:not(.collapsed) .grip { left: 3px; right: 3px; top: 3px; }
-  .ipanel:not(.collapsed):hover .grip, .ipanel .grip:active { opacity: 1; }
-  .locked .ipanel:not(.collapsed):hover .grip { opacity: 0.55; }
-}
-.ipanel .ptitle { color: var(--tile-ink); background: var(--tile-bg); border-radius: 6px; padding: 4px 9px; font-size: 12px; line-height: 18px; white-space: nowrap; cursor: pointer; }
 .tile {
   background: var(--tile-bg); color: var(--tile-ink); border-radius: 6px; padding: 4px 8px 5px;
   display: flex; flex-direction: column; justify-content: space-between; cursor: pointer; box-sizing: border-box;
@@ -311,9 +272,6 @@ details.sub summary { cursor: pointer; font-size: 11px; color: var(--quiet); tex
 .ctx .items small { color: var(--quiet); }
 .ctx .sizes { display: flex; gap: 4px; padding: 4px 6px; }
 .ctx .sizes button { flex: 1; text-align: center; border: 1px solid #b8c4cc; }
-.ipanel.column .tile { width: 100%; }
-.ipanel.column { min-width: 0; }
-.ipanel.column.s { width: 150px; } .ipanel.column.m { width: 200px; } .ipanel.column.l { width: 270px; }
 
 /* ---------- GRIB loading ---------- */
 .progress { position: relative; height: 18px; border-radius: 4px; background: #e6edf1; overflow: hidden; margin: 4px 0; }
@@ -752,7 +710,7 @@ html[data-palette="dusk"][data-iho] { filter: invert(1) hue-rotate(180deg) brigh
 html[data-palette="dusk"][data-iho] body { background: #fff; }
 /* things already dark (the rail, instrument panels, the title bars of floating boxes, the
    about box, messages) are turned back, so they stay dark rather than going light grey */
-html[data-palette="dusk"][data-iho] :is(#rail, .ipanel, #itiles, #side, #side-strip, .hist-float, .dot, #replay-bar, #tip,
+html[data-palette="dusk"][data-iho] :is(#rail, #itiles, #side, #side-strip, .hist-float, .dot, #replay-bar, #tip,
   .float-win header, .about, .toast, .startup-splash, #wx-pop-btn.on) { filter: invert(1) hue-rotate(180deg); }
 html[data-palette="dusk"][data-iho] #map .maplibregl-canvas-container { filter: hue-rotate(180deg) invert(1); }
 /* Night (IHO): the chart is drawn in the IHO night palette, so it is left out of the colour
@@ -762,7 +720,7 @@ html[data-palette="dusk"][data-iho] #map .maplibregl-canvas-container { filter: 
 html[data-palette="iho-night"] body { background: #000; }
 html[data-palette="iho-night"] body > :not(#map) { filter: invert(1) url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
 html[data-palette="iho-night"] body > :is(#rail, #itiles, #side, #side-strip, .hist-float, #replay-bar, #tip, .startup-splash) { filter: url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
-html[data-palette="iho-night"] :is(.ipanel, .dot) { filter: invert(1); }
+html[data-palette="iho-night"] .dot { filter: invert(1); }
 html[data-palette="iho-night"] #map > :not(.maplibregl-canvas-container, .maplibregl-control-container, .maplibregl-canvas) { filter: invert(1) url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
 html[data-palette="iho-night"] #map :is(.maplibregl-ctrl, .maplibregl-popup) { filter: invert(1) url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
 html[data-palette="iho-night"] #map .maplibregl-canvas-container { filter: brightness(var(--pal-dim, 1)); }
@@ -772,7 +730,7 @@ html[data-palette="iho-night"]:not([data-iho]) #map .maplibregl-canvas-container
    (the rail, instrument panels) are inverted first so they stay dark. */
 html[data-palette="night-red"] { filter: invert(1) url(#pal-red) brightness(var(--pal-dim, 0.6)); }
 html[data-palette="night-green"] { filter: invert(1) url(#pal-green) brightness(var(--pal-dim, 0.6)); }
-html[data-palette^="night"] #rail, html[data-palette^="night"] .ipanel, html[data-palette^="night"] #itiles, html[data-palette^="night"] #side, html[data-palette^="night"] #side-strip, html[data-palette^="night"] .hist-float, html[data-palette^="night"] .dot,
+html[data-palette^="night"] #rail, html[data-palette^="night"] #itiles, html[data-palette^="night"] #side, html[data-palette^="night"] #side-strip, html[data-palette^="night"] .hist-float, html[data-palette^="night"] .dot,
 html[data-palette^="night"] #replay-bar, html[data-palette^="night"] #tip, html[data-palette^="night"] .startup-splash { filter: invert(1); }
 #tip { position: fixed; z-index: 100; max-width: 320px; padding: 5px 9px; border-radius: 5px; background: #1d2a33; color: #fff; font-size: 12.5px; line-height: 1.35; pointer-events: none; box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
 #tip[hidden] { display: none; }
@@ -807,17 +765,17 @@ html[data-palette="night-green"] {
   --cur-ew: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M3 12h18M3 12l5-5M3 12l5 5M21 12l-5-5M21 12l-5 5' fill='none' stroke='%23000' stroke-width='4.5'/%3E%3Cpath d='M3 12h18M3 12l5-5M3 12l5 5M21 12l-5-5M21 12l-5 5' fill='none' stroke='%2300a000' stroke-width='2'/%3E%3C/svg%3E") 12 12, ew-resize;
   --cur-ns: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M12 3v18M12 3l-5 5M12 3l5 5M12 21l-5-5M12 21l5-5' fill='none' stroke='%23000' stroke-width='4.5'/%3E%3Cpath d='M12 3v18M12 3l-5 5M12 3l5 5M12 21l-5-5M12 21l5-5' fill='none' stroke='%2300a000' stroke-width='2'/%3E%3C/svg%3E") 12 12, ns-resize;
 }
-html:is([data-palette^="night"], [data-palette="iho-night"]) :is(.prsz, .trsz, .fw-rsz:not(.fw-rsz-w)) { cursor: var(--cur-nwse) !important; }
+html:is([data-palette^="night"], [data-palette="iho-night"]) :is(.trsz, .fw-rsz:not(.fw-rsz-w)) { cursor: var(--cur-nwse) !important; }
 html:is([data-palette^="night"], [data-palette="iho-night"]) :is(.seafilter .h, #manual .man-grip, .fw-rsz-w) { cursor: var(--cur-ew) !important; }
 html:is([data-palette^="night"], [data-palette="iho-night"]) .dock-grip { cursor: var(--cur-ns) !important; }
 /* Things to click: the ring, also over the text and icons inside them (the rule for every element
    above would otherwise give those the arrow). Not over a text field or a handle inside one.
    Rules with an id are kept apart: an id inside :is() lifts the whole list above the rules after it. */
 html:is([data-palette^="night"], [data-palette="iho-night"]) :is(button, a, summary, label, select, [role="button"], input[type="checkbox"], input[type="range"],
-  .list li .main, .ptitle, .tile, .itile, .chip, table.cmp th, table.cmp tr, .seafilter .track, .isel-opt, .ll-body .main, .view-pop .vp-chart),
+  .list li .main, .tile, .itile, .chip, table.cmp th, table.cmp tr, .seafilter .track, .isel-opt, .ll-body .main, .view-pop .vp-chart),
 html:is([data-palette^="night"], [data-palette="iho-night"]) :is(button, a, summary, label, [role="button"],
-  .list li .main, .ptitle, .tile, .itile, .chip, table.cmp th, table.cmp tr, .seafilter .track, .isel-opt, .ll-body .main, .view-pop .vp-chart)
-  :not(input, textarea, .h, .prsz, .trsz, .fw-rsz, .grip) { cursor: var(--cur-ring) !important; }
+  .list li .main, .tile, .itile, .chip, table.cmp th, table.cmp tr, .seafilter .track, .isel-opt, .ll-body .main, .view-pop .vp-chart)
+  :not(input, textarea, .h, .trsz, .fw-rsz, .grip) { cursor: var(--cur-ring) !important; }
 html:is([data-palette^="night"], [data-palette="iho-night"]) :is(#tgt-table th, #tgt-table td, #alarm-banner .txt, #manual figure img, #manual figure.diagram, #manual .man-lightbox),
 html:is([data-palette^="night"], [data-palette="iho-night"]) :is(#tgt-table th, #tgt-table td, #alarm-banner .txt, #manual figure.diagram, #manual .man-lightbox) :not(input, textarea) { cursor: var(--cur-ring) !important; }
 /* inputs that aren't typed into (dates, files, colours) keep the system arrow unless told */
@@ -908,7 +866,6 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 .dial .hull { fill: none; stroke: var(--tile-quiet); stroke-width: 1.2; }
 .tile.highway-card { min-height: 470px; }
 .tile.highway-card > .lbl { display: none; }
-.ipanel .tile.highway-card { width: min(680px, calc(100vw - var(--rail-w) - 28px)); }
 .tile.highway-card .v { flex: 1; min-height: 0; }
 .hw-dashboard { display: grid; grid-template-rows: auto 48px minmax(130px, 1fr) 60px auto; gap: 7px; width: 100%; height: 100%; min-height: 0; text-align: left; }
 .hw-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
@@ -927,7 +884,6 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 .hw-ribbon-marker { fill: var(--hw-good); }
 .hw-canvas { min-height: 0; overflow: hidden; border: 1px solid color-mix(in srgb, var(--tile-quiet) 18%, transparent); border-radius: 7px; background: linear-gradient(180deg, color-mix(in srgb, var(--tile-bg) 78%, transparent), color-mix(in srgb, var(--hw-road) 92%, transparent)); }
 .hw-canvas svg { display: block; width: 100%; height: 100%; }
-.ipanel .tile.graphic.highway-card .v .hw-canvas svg { width: 100%; height: 100%; }
 .hw-road { fill: color-mix(in srgb, var(--hw-road) 88%, transparent); }
 .hw-rail { fill: none; stroke: var(--hw-grid); stroke-width: 2; opacity: 0.72; }
 .hw-centerline { fill: none; stroke: var(--hw-grid); stroke-dasharray: 5 7; stroke-width: 1.2; opacity: 0.8; }
@@ -963,12 +919,9 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 .dial .card { font-size: 8px; fill: var(--tile-ink); text-anchor: middle; font-weight: 700; } .dial .card.n { fill: #e74c3c; }
 .dial .m-cog { fill: #f0932b; } .dial .m-btw { fill: #2ecc71; } .dial .lubber { fill: var(--tile-ink); }
 /* in resizable tiles a dial fills what is left under its label, whatever the tile's shape */
-.ipanel.free .tile.graphic:not(.highway-card) .v, .itile.graphic:not(.highway-card) .v { flex: 1 1 0; min-height: 0; min-width: 0; overflow: hidden; contain: size layout; }
-.ipanel.free .tile.graphic:not(.highway-card) .v svg, .itile.graphic:not(.highway-card) .v svg { width: 100%; height: 100%; display: block; }
 /* sounder history: a canvas filling the tile, with its two small buttons over a corner */
 .tile.sounder-card { padding: 2px; }
 .tile.sounder-card > .lbl { display: none; }
-.ipanel:not(.free) .tile.sounder-card { width: 340px; min-height: 170px; }
 .tile.sounder-card .v { position: relative; flex: 1; min-height: 0; overflow: hidden; contain: size layout; padding: 0; }
 .snd-cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; border-radius: 4px; }
 .snd-ctl { position: absolute; right: 4px; top: 4px; display: flex; gap: 3px; opacity: 0.55; }
@@ -977,7 +930,6 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 
 /* history plots (history.js): in a tile, the latest value and its note over a canvas */
 .tile.hist-card { padding: 3px 6px 4px; }
-.ipanel:not(.free) .tile.hist-card { width: 340px; min-height: 150px; }
 .tile.hist-card .v { position: relative; flex: 1 1 0; min-height: 0; overflow: hidden; contain: size layout; padding: 0; }
 .hist-host { display: flex; flex-direction: column; font-size: 12px; line-height: 1.2; text-align: left; align-items: stretch; }
 .hist-host .hh, .hist-float .hh { display: flex; align-items: baseline; gap: 4px; white-space: nowrap; overflow: hidden; color: var(--tile-quiet); }
@@ -1004,7 +956,6 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 @keyframes hist-flash { 50% { box-shadow: 0 0 0 3px var(--wind-true), 0 3px 14px rgba(0,0,0,.45); } }
 
 @media (max-width: 600px) {
-  .ipanel .tile.highway-card { width: calc(100vw - var(--rail-w) - 20px); min-height: 470px; }
   .hw-metrics.hw-top { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -1746,3 +1697,35 @@ html.side-on body:has(.sp-alerts .alarm.alarm:not(.acked)) #map::after {
 #side-strip :is(#mob-btn, #drop-btn, #anchor-btn) { height: calc(5.8 * var(--u)); flex: none; min-width: calc(14 * var(--u)); }
 #side-strip .ss-show { flex: none; width: auto; min-height: 0; padding: 2px 8px; background: #22343f; color: var(--tile-ink); border: 1px solid #3a4f5c; font-size: calc(2.8 * var(--u)); }
 html.no-map #side-strip { display: none; }
+
+/* the cursor readout, in the panel above the alerts (or on the line under the chart) */
+.sp-cursor { flex: none; padding: calc(0.6 * var(--u)) calc(1.5 * var(--u)); border-top: 1px solid #2c3d48; min-height: calc(3.4 * var(--u)); }
+.sp-cursor .cursor, .ss-cursor .cursor { position: static; padding: 0; background: none; color: var(--tile-quiet); font-size: calc(2.7 * var(--u)); border-radius: 0; white-space: normal; }
+.ss-cursor { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ss-cursor .cursor { white-space: nowrap; }
+.sp-cursor:not(:has(.cursor)) { display: none; }
+/* lists: marks ahead and targets */
+.sp-list { padding: calc(0.6 * var(--u)) calc(1.5 * var(--u)); }
+.sp-li { display: flex; align-items: baseline; gap: calc(1.2 * var(--u)); padding: calc(0.4 * var(--u)) 0; border-bottom: 1px solid rgba(255,255,255,.05); cursor: pointer; font-size: calc(3.2 * var(--u)); }
+.sp-li:hover { background: rgba(255,255,255,.05); }
+.sp-li .no { flex: none; min-width: calc(3 * var(--u)); color: #5c7382; font-size: calc(2.6 * var(--u)); text-align: right; }
+.sp-li .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-li .d, .sp-li .t { flex: none; font-weight: 700; text-align: right; }
+.sp-li .t { min-width: calc(9 * var(--u)); color: var(--tile-quiet); }
+.sp-li small { font-size: .7em; font-weight: 500; color: var(--tile-quiet); margin-left: .15em; }
+.sp-li.next .nm { font-weight: 700; }
+.sp-li .sw { flex: none; width: calc(2.2 * var(--u)); height: calc(2.2 * var(--u)); border-radius: 50%; align-self: center; }
+.sp-li.danger { color: #ff6b5e; } .sp-li.danger .d { color: #ff6b5e; }
+.sp-li.lost .nm { text-decoration: line-through; opacity: .7; }
+.sp-empty { font-size: calc(2.6 * var(--u)); color: #5c7382; padding: calc(0.4 * var(--u)) 0; }
+/* trend lines under readings (the last 3 hours) */
+.sp-row.trend { flex-wrap: wrap; row-gap: 0; }
+.sp-spark { flex-basis: 100%; width: 100%; height: calc(3 * var(--u)); display: block; overflow: visible; }
+.sp-spark polyline { fill: none; stroke: #4fd1c5; stroke-width: 1.4; vector-effect: non-scaling-stroke; stroke-linejoin: round; opacity: .85; }
+.sp-row.wt-t .sp-spark polyline { stroke: var(--wind-true); } .sp-row.wt-a .sp-spark polyline { stroke: var(--wind-app); }
+.sp-row.act { cursor: pointer; }
+.sp-row.act:hover { background: rgba(255,255,255,.05); }
+.sp-tools button.on { background: var(--accent); border-color: var(--accent); }
+/* narrow screens: the panel slides over the chart's edge, with a shadow to say it is on top */
+html.side-narrow #side { z-index: 12; box-shadow: -4px 0 16px rgba(0,0,0,.45); max-width: 92vw; }
+html.side-narrow.side-left #side { box-shadow: 4px 0 16px rgba(0,0,0,.45); }

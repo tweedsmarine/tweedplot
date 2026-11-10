@@ -78,7 +78,7 @@ The chart fills the window. Everything else floats over it or slides out from th
 
 ![The main window: Weather drawer open, an ECMWF AIFS forecast over the top of the South Island, GRIB and cursor panels floating, time slider at the bottom](img/01-main-weather.jpg)
 
-![screen layout · rail, drawer, floating panels, dock](fig/layout.svg)
+![screen layout · rail, drawer, toolbar, chart, data panel, dock](fig/layout.svg)
 
 Drawers slide out from the rail and narrow the chart rather than covering it. The toolbar is a strip down the chart's left edge and the data panel a column beside it (right by default): neither covers the chart. The time slider floats over the chart and can be hidden; the dock sits under the chart.
 
@@ -496,12 +496,24 @@ From top to bottom:
 - **MOB**, **Drop** and (when switched on) the **anchor** button.
 - **Own ship**, always shown, in the order IMO's S-Mode guidelines give: HDG (°T), COG, SOG, STW (boat speed through the water), depth, position, and the date and time, local and UTC. A reading with no data shows a dash, and one from live data that has stopped greys out after 10 seconds, so a failed sensor is seen, not hidden.
 - **Man overboard**, while a MOB is set: bearing, range and time since, and where and when it was pressed, in red, whatever the layout.
-- **Sections** that change with the view and the Use: Navigation and Planning each have a layout for Cruising, Fishing and Racing. Navigation · Cruising starts with Route, Wind and Weather; Racing with Performance (boat speed against target, % of target, TWA against target, VMG, VMC), the wind dial, Route and Weather; Fishing with Sea, the sounder history, Wind and Route. Planning starts with the cursor (position, bearing and range from the boat, own sounding) and the forecast at the cursor, then Route (and, for Racing, the routing's targets; for Fishing, the sea at the cursor). Click a section's title to fold it.
+- **Sections** that change with the view and the Use: Navigation and Planning each have a layout for Cruising, Fishing and Racing.
+  - Navigation · Cruising starts with Route (BTW, DTW, XTE, VMC), Marks ahead, Targets, Wind and Weather.
+  - Navigation · Racing starts with Performance (boat speed against target, % of target, TWA against target, VMG, VMC), the wind dial, Route, Marks ahead, Weather and Targets.
+  - Navigation · Fishing starts with Sea (water temperature, trip, pressure and its 3-hour change), Wind, Route and Targets.
+  - Planning starts with the cursor (position, bearing and range from the boat, own sounding) and the forecast at the cursor, then Route and the marks of the route (and, for Racing, the routing's targets; for Fishing, the sea at the cursor instead of the route).
+  - Click a section's title to fold it.
+- **Marks ahead**: the route's next marks, in order, with the distance to each along the route (from the boat to the next mark, then mark to mark) and the time you would get there at the present speed over ground. "and 3 more" says how many are left. Click a mark to show it on the chart.
+- **Targets**: the AIS targets that matter most: distress beacons (SART, MOB, EPIRB) first, then dangerous targets (inside your CPA and TCPA limits, in red), then targets closing on you by CPA (CPA and TCPA shown), then the rest by range. A lost target is crossed out. Click one to show it on the chart and open its card. The full list is still the target list (T).
+- **Trend lines**: in sections with ∿ switched on (Wind and Weather to begin with), a reading that has a history gets a thin line under it: the last 3 hours from the history record, so a rising wind, a veer or a falling barometer can be seen at a glance. Right-click the reading for its full history.
+- **Clicks**: outside editing, clicking a reading can show its place on the chart: Position centres on the boat (and follows it); the next mark's readings (BTW, DTW, TTG, ETA) show the mark; XTE shows the leg being sailed; the MOB readings show the MOB position; the cursor's position shows the cursor. Showing a place turns Follow off; B or Position brings the boat back.
+- **Cursor readout**: the position under the cursor, its depth, and bearing and range from the boat, on one line above the alerts (on the line under the chart when the panel is hidden).
 - **Alerts**, always at the bottom. New alarms appear here with **Silence** and the other buttons, and the edge of the chart flashes red while an alarm is unacknowledged. Silenced alarms are one steady line; click it for the Alarms list.
+
+**Narrow screens.** On a screen under 1000 pixels wide (a tablet, or a small window) a panel beside the chart would leave too little chart, so the line under the chart stays and **O** (or **⟨ Panel**) slides the panel over the chart's edge; ⟩ or O puts it away again. That is the only time the panel covers the chart.
 
 **Hide it** with **O**, the panel button in the toolbar or **⟩**. Hidden, the panel leaves one line under the chart: HDG, COG, SOG, depth, position and time, with MOB and Drop, and **⟨ Panel** to bring it back. Each window remembers for each view whether its panel is shown. A new MOB brings the panel back. In a view without a chart (Instruments, Live data) there is no data panel, and the alarms appear over the screen as before.
 
-**Edit it** with **✎** (or **Instruments › Edit the data panel**). Each section gets ▲ ▼ to move it, **1 col / 2 col** for one or two columns, **＋ −** for a graphic's height, ✕ to remove it, and a box for its name. Click a reading to change it, move it or remove it; **+ Add a reading** adds one at the end. At the bottom, **+ Add a section** adds a section of readings, a graphic (wind dial, compass, highway, sounder history) or a history plot. **Reset** goes back to the starting layout for this view and Use. **Done** finishes. Your changes are kept for that view and Use, and are shared by every window.
+**Edit it** with **✎** (or **Instruments › Edit the data panel**). Each section gets ▲ ▼ to move it, **1 col / 2 col** for one or two columns, **∿** for trend lines, **＋ −** for a graphic's height (or how many marks or targets a list shows), ✕ to remove it, and a box for its name. Click a reading to change it, move it or remove it; **+ Add a reading** adds one at the end. At the bottom, **+ Add a section** adds a section of readings, the marks ahead, the AIS targets, a graphic (wind dial, compass, highway, sounder history) or a history plot. **Reset** goes back to the starting layout for this view and Use. **Done** finishes. Your changes are kept for that view and Use, and are shared by every window.
 
 **Right-click** (or hold) a reading for its history in a card (see *History plots*).
 

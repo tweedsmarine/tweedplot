@@ -82,7 +82,7 @@ import { setupInstruments, waypointData, targetAt } from "./instruments.js";
 import { setupLibrary, labelImage } from "./library.js";
 import { setupSettings } from "./settings.js";
 import { setupSidePanel } from "./sidepanel.js";
-import { setupHistorySettings, restoreHistoryCards } from "./history.js";
+import { setupHistorySettings, restoreHistoryCards, recorder as histRecorder } from "./history.js";
 import { setupNmeaMonitor } from "./nmeamonitor.js";
 
 /** A "1"/"0" flag from localStorage; false where storage is unavailable. */
@@ -438,6 +438,7 @@ let weather = null;
 let lastBoat = null; // [lon, lat] from Signal K, or placed by hand when planning
 let route = null; // the course being edited
 let routing = null;
+let aisApi = null; // AIS targets (ais.js), for the data panel's Targets section
 let library = null;
 const ui = setupRail(map);
 const views = setupViews(map);
@@ -460,8 +461,17 @@ document.getElementById("drawer-help").onclick = () => manual.help(ui.current())
 const inst = setupInstruments();
 setupHints();
 setupWelcome({ use, inst });
-const sidePanel = setupSidePanel({ inst, views, use, map });
-window.__inst = inst; window.__side = sidePanel; // debugging handles
+const sidePanel = setupSidePanel({ inst, views, use, map,
+  getAis: () => aisApi,
+  // show a place (a mark, a target, the MOB): Follow off so the chart stays there
+  centreOn: (ll) => { if (follow) { follow = false; followBtn.classList.remove("on"); } map.easeTo({ center: ll, duration: 400 }); },
+  centreBoat: () => {
+    if (!lastBoat) { toast("No boat position yet", 2500); return; }
+    follow = true;
+    followBtn.classList.add("on");
+    map.easeTo({ center: lastBoat, offset: followOffset(), duration: 300 });
+  } });
+window.__inst = inst; window.__side = sidePanel; window.__ais = () => aisApi; window.__rec = histRecorder; // debugging handles
 setupDisclaimer();
 window.addEventListener("racenav-mob", (e) => { inst.update({ mob: e.detail }); });
 const boat = setupBoat();
@@ -649,7 +659,7 @@ map.on("load", () => {
   activity.setupActivityLog();
   activity.setupSystemInfo().catch(() => {});
   setupWindowState();
-  setupAis(map, { alarms, ui, getOwnMmsi: () => boat.get().mmsi, getOwn: () => ({ pos: lastBoat, cog: live ? vessel?.cog : null, sog: live ? vessel?.sog : 0, live: live && signalKActive() }) });
+  aisApi = setupAis(map, { alarms, ui, getOwnMmsi: () => boat.get().mmsi, getOwn: () => ({ pos: lastBoat, cog: live ? vessel?.cog : null, sog: live ? vessel?.sog : 0, live: live && signalKActive() }) });
   setupReplay({ onState: (on) => {
     replayOn = on;
     if (on && !live) liveBtn.click(); // a replay plays live

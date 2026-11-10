@@ -15,9 +15,10 @@
 // screen calibration (Settings › Display), like the S-52 symbols, so text is the same size in
 // millimetres on every screen. The chart's container is narrowed by the panel (style.css,
 // --side-w), so the chart is never under it.
-import { ITEMS, readingState, paintGraphic, historyKey } from "./instruments.js";
-import { preset, clean, fromFloating, OWN_SHIP, PANEL_VIEWS, WIDTHS_MM, snapWidth } from "./sidepresets.js";
-import { CHANNELS as HIST, openHistoryCard } from "./history.js";
+import { ITEMS, readingState, paintGraphic, historyKey, distNm } from "./instruments.js";
+import { preset, clean, fromFloating, upgrade, OWN_SHIP, PANEL_VIEWS, WIDTHS_MM, snapWidth } from "./sidepresets.js";
+import { CHANNELS as HIST, openHistoryCard, recorder } from "./history.js";
+import { unwrap } from "./histcore.js";
 import { s52PxPerMm } from "./chartfeatures.js";
 import { displayScale } from "./marinermath.js";
 import { VIEWS } from "./views.js";
@@ -32,10 +33,11 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 function load(key, d) { try { const v = JSON.parse(localStorage.getItem(key) || "null"); return v ?? d; } catch { return d; } }
 function store(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* ignore */ } }
 
-export function setupSidePanel({ inst, views, use, map }) {
+export function setupSidePanel({ inst, views, use, map, getAis = () => null, centreOn = () => {}, centreBoat = () => {} }) {
   const side = $("side"), strip = $("side-strip"), root = document.documentElement;
   const body = side.querySelector(".sp-body"), ownEl = side.querySelector(".sp-own"), mobEl = side.querySelector(".sp-mob");
   const statusEl = side.querySelector(".sp-status"), actions = side.querySelector(".sp-actions"), alerts = side.querySelector(".sp-alerts");
+  const cursorSlot = side.querySelector(".sp-cursor");
   const menu = $("tile-menu");
 
   const prefs = { side: "right", text: 1, width: "normal", ...load(PKEY, {}) };
@@ -56,6 +58,8 @@ export function setupSidePanel({ inst, views, use, map }) {
     }
     store(KEY, data);
   }
+  // layouts saved by an earlier version: up to the current starting layouts (sidepresets.js)
+  if (upgrade(data)) store(KEY, data);
 
   const view = () => root.dataset.view || "nav";
   const useNow = () => use.use() || "cruise";
@@ -96,24 +100,37 @@ export function setupSidePanel({ inst, views, use, map }) {
   $("sp-text")?.addEventListener("change", (e) => setPref("text", Number(e.target.value)));
 
   // ---------- shown, hidden (a line under the chart) or not at all (no chart) ----------
+  // On a narrow screen (a tablet, a small window) a panel beside the chart would leave too little
+  // chart: the line under the chart stays, and the panel slides over the chart's edge when asked
+  // for (O, ⟨ Panel), until it is put away again. That is the one time it covers the chart.
+  const NARROW_PX = 1000;
+  const narrow = () => window.innerWidth < NARROW_PX;
+  let sheet = false;
   const hasPanel = () => PANEL_VIEWS.includes(view());
   function visibility() {
-    const on = hasPanel() && !hidden[view()];
-    const line = hasPanel() && !!hidden[view()];
+    const n = narrow();
+    const on = hasPanel() && (n ? sheet : !hidden[view()]);
+    const line = hasPanel() && (n || !!hidden[view()]);
     side.hidden = !on;
-    strip.hidden = !line;
+    strip.hidden = !line || (n && on);
+    root.classList.toggle("side-narrow", n);
     root.classList.toggle("side-on", on);
     root.classList.toggle("side-strip", line);
     $("side-btn")?.classList.toggle("on", on);
-    placeChrome(on, line);
+    placeChrome(on, line && !(n && on));
     requestAnimationFrame(() => map.resize());
   }
   function toggle() {
     if (!hasPanel()) return;
-    hidden = { ...hidden, [view()]: !hidden[view()] };
-    store(HKEY, hidden);
+    if (narrow()) sheet = !sheet;
+    else {
+      hidden = { ...hidden, [view()]: !hidden[view()] };
+      store(HKEY, hidden);
+    }
     visibility();
   }
+  let wasNarrow = narrow();
+  window.addEventListener("resize", () => { if (narrow() !== wasNarrow) { wasNarrow = narrow(); sheet = false; visibility(); } });
   $("side-btn")?.addEventListener("click", toggle);
   side.querySelector(".sp-hide").onclick = toggle;
   strip.querySelector(".ss-show").onclick = toggle;
@@ -122,18 +139,35 @@ export function setupSidePanel({ inst, views, use, map }) {
   // chart, or back over the screen in the views without a chart
   const chrome = ["mob-btn", "drop-btn", "anchor-btn"].map($).filter(Boolean);
   const banner = $("alarm-banner");
+  const cursorEl = $("cursor");
   const home = document.body;
+  const put = (el, where) => { if (el && el.parentElement !== where) where.append(el); };
   function placeChrome(on, line) {
-    const where = on ? actions : line ? strip.querySelector(".ss-actions") : null;
-    for (const b of chrome) {
-      if (where) { if (b.parentElement !== where) where.append(b); } else if (b.parentElement !== home) home.append(b);
-    }
-    if (on) { if (banner.parentElement !== alerts) alerts.append(banner); } else if (banner.parentElement !== home) home.append(banner);
+    const where = on ? actions : line ? strip.querySelector(".ss-actions") : home;
+    for (const b of chrome) put(b, where);
+    put(banner, on ? alerts : home);
+    // the cursor's position, depth and bearing and range from the boat: off the chart too
+    put(cursorEl, on ? cursorSlot : line ? strip.querySelector(".ss-cursor") : home);
   }
 
   // ---------- rows ----------
   // the own-ship block uses S-Mode's names (STW for boat speed through the water)
   const OWN_LABEL = { BSP: "STW", DPT: "Depth", POS: "Position" };
+  // what a click on a reading does outside edit mode
+  const ACTIONS = {
+    POS: { tip: "centre the chart on the boat", run: () => centreBoat() },
+    NEXT: { tip: "show the next mark", run: (c) => c.nav?.next && centreOn([c.nav.next.lon, c.nav.next.lat]) },
+    BTW: { tip: "show the next mark", run: (c) => c.nav?.next && centreOn([c.nav.next.lon, c.nav.next.lat]) },
+    DTW: { tip: "show the next mark", run: (c) => c.nav?.next && centreOn([c.nav.next.lon, c.nav.next.lat]) },
+    TTG: { tip: "show the next mark", run: (c) => c.nav?.next && centreOn([c.nav.next.lon, c.nav.next.lat]) },
+    ETA: { tip: "show the next mark", run: (c) => c.nav?.next && centreOn([c.nav.next.lon, c.nav.next.lat]) },
+    XTE: { tip: "show the leg being sailed", run: (c) => c.nav?.next && c.nav.from && centreOn([(c.nav.from[0] + c.nav.next.lon) / 2, (c.nav.from[1] + c.nav.next.lat) / 2]) },
+    MOBBRG: { tip: "show the MOB position", run: (c) => c.mob && centreOn([c.mob.lon, c.mob.lat]) },
+    MOBRNG: { tip: "show the MOB position", run: (c) => c.mob && centreOn([c.mob.lon, c.mob.lat]) },
+    MOBPOS: { tip: "show the MOB position", run: (c) => c.mob && centreOn([c.mob.lon, c.mob.lat]) },
+    CPOS: { tip: "show the cursor's place", run: (c) => c.cursor && centreOn(c.cursor) },
+  };
+  let trend = false; // set while a trend section's rows are made
   function rowHtml(k, cls = "") {
     const it = ITEMS[k];
     if (!it) return "";
@@ -141,7 +175,10 @@ export function setupSidePanel({ inst, views, use, map }) {
     const tint = it.tint ? ` wt-${it.tint}` : "";
     const hist = historyKey(k) ? " has-hist" : "";
     const tip = `${it.label}${it.unit ? ` (${it.unit})` : ""}${hist ? " · right-click for its history" : ""}`;
-    return `<div class="sp-row${wide}${tint}${hist}${cls}" data-k="${k}" title="${esc(tip)}"><span class="l">${esc((cls.includes("own") && OWN_LABEL[k]) || it.short || it.label)}</span><span class="sd"></span><span class="v">—</span></div>`;
+    const act = ACTIONS[k] ? " act" : "";
+    const tipAct = ACTIONS[k] ? ` · click: ${ACTIONS[k].tip}` : "";
+    const spark = trend && historyKey(k) ? `<svg class="sp-spark" viewBox="0 0 100 10" preserveAspectRatio="none" data-h="${historyKey(k)}"><polyline/></svg>` : "";
+    return `<div class="sp-row${wide}${tint}${hist}${act}${spark ? " trend" : ""}${cls}" data-k="${k}" title="${esc(tip + tipAct)}"><span class="l">${esc((cls.includes("own") && OWN_LABEL[k]) || it.short || it.label)}</span><span class="sd"></span><span class="v">—</span>${spark}</div>`;
   }
   function paintRow(el, ctx) {
     const it = ITEMS[el.dataset.k];
@@ -171,14 +208,25 @@ export function setupSidePanel({ inst, views, use, map }) {
       sec.className = `sp-sec${s.collapsed && !editing ? " collapsed" : ""}${s.kind === "readings" && s.cols === 2 ? " c2" : ""}`;
       sec.dataset.i = i;
       const tools = editing
-        ? `<span class="sp-tools"><button data-act="up" title="Move up">▲</button><button data-act="down" title="Move down">▼</button>${s.kind === "readings" ? `<button data-act="cols" title="One or two columns">${s.cols === 2 ? "2 col" : "1 col"}</button>` : `<button data-act="taller" title="Taller">＋</button><button data-act="shorter" title="Shorter">−</button>`}<button data-act="del" title="Remove this section">✕</button></span>`
+        ? `<span class="sp-tools"><button data-act="up" title="Move up">▲</button><button data-act="down" title="Move down">▼</button>${s.kind === "readings"
+          ? `<button data-act="cols" title="One or two columns">${s.cols === 2 ? "2 col" : "1 col"}</button><button data-act="trend" class="${s.trend ? "on" : ""}" title="Trend lines: the last 3 hours under each reading that has a history">∿</button>`
+          : s.kind === "graphic" ? `<button data-act="taller" title="Taller">＋</button><button data-act="shorter" title="Shorter">−</button>`
+          : `<button data-act="more" title="Show more">＋</button><button data-act="fewer" title="Show fewer">−</button>`}<button data-act="del" title="Remove this section">✕</button></span>`
         : "";
       const title = editing ? `<input class="sp-title" value="${esc(s.title)}" placeholder="Section name" maxlength="30">` : `<span class="sp-title">${esc(s.title || " ")}</span>`;
       sec.innerHTML = `<h4 title="${editing ? "" : "Click to fold or open"}">${editing ? "" : `<span class="chev">${s.collapsed ? "▸" : "▾"}</span>`}${title}${tools}</h4>`;
       if (s.kind === "readings") {
         const g = document.createElement("div");
         g.className = "sp-rows";
+        trend = !!s.trend;
         g.innerHTML = s.items.map((k) => rowHtml(k)).join("") + (editing ? `<button class="sp-addrow" data-act="add">+ Add a reading</button>` : "");
+        trend = false;
+        sec.append(g);
+      } else if (s.kind === "marks" || s.kind === "targets") {
+        const g = document.createElement("div");
+        g.className = `sp-list sp-${s.kind}`;
+        g.dataset.kind = s.kind;
+        g.dataset.n = s.n;
         sec.append(g);
       } else {
         const g = document.createElement("div");
@@ -197,6 +245,7 @@ export function setupSidePanel({ inst, views, use, map }) {
     }
     strip.querySelector(".ss-rows").innerHTML = ["HDG", "COG", "SOG", "DPT", "POS", "TIME"].map((k) => rowHtml(k)).join("");
     geometry();
+    listsAt = 0; sparksAt = 0;
     paint();
   }
   const viewName = () => VIEWS.find((v) => v.id === view())?.name ?? "";
@@ -231,10 +280,67 @@ export function setupSidePanel({ inst, views, use, map }) {
         if (it && g.clientHeight) paintGraphic(g, it, ctx);
       }
       mob(ctx);
+      if (Date.now() - listsAt > 1000) { listsAt = Date.now(); for (const g of side.querySelectorAll(".sp-sec:not(.collapsed) .sp-list")) paintList(g, ctx); }
+      if (Date.now() - sparksAt > 30_000) { sparksAt = Date.now(); paintSparks(); }
     }
     if (!strip.hidden) for (const el of strip.querySelectorAll(".sp-row")) paintRow(el, ctx);
   }
+  let listsAt = 0, sparksAt = 0;
   setInterval(paint, 250);
+
+  // ---------- lists: the marks ahead, and the targets that matter ----------
+  const hhmm = (t) => new Date(t).toLocaleTimeString("en-NZ", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const nm = (x) => (x == null ? "—" : x < 10 ? x.toFixed(2) : x.toFixed(1));
+  function paintList(g, ctx) {
+    const n = Number(g.dataset.n) || 5;
+    let html = "";
+    if (g.dataset.kind === "marks") {
+      const nav = ctx.nav;
+      const pos = ctx.v?.lat != null && ctx.v?.lon != null ? [ctx.v.lon, ctx.v.lat] : null;
+      if (!nav?.next) html = `<div class="sp-empty">No route being sailed (Route › Navigate)</div>`;
+      else {
+        const marks = [nav.next, ...(nav.ahead ?? [])].slice(0, n);
+        const sog = ctx.v?.sog > 0.3 ? ctx.v.sog : null;
+        let d = ctx.wp?.dtw ?? (pos ? distNm(pos, [nav.next.lon, nav.next.lat]) : null);
+        marks.forEach((m, i) => {
+          if (i > 0 && d != null) d += distNm([marks[i - 1].lon, marks[i - 1].lat], [m.lon, m.lat]);
+          const eta = d != null && sog ? hhmm(Date.now() + (d / sog) * 3600e3) : "—";
+          html += `<div class="sp-li${i === 0 ? " next" : ""}" data-lon="${m.lon}" data-lat="${m.lat}" title="Click to show ${esc(m.name)} on the chart. ETA at the present speed over ground"><span class="no">${m.n ?? ""}</span><span class="nm">${esc(m.name)}</span><span class="d">${nm(d)}<small>NM</small></span><span class="t">${eta}</span></div>`;
+        });
+        const more = (nav.ahead?.length ?? 0) + 1 - marks.length;
+        if (more > 0) html += `<div class="sp-empty">and ${more} more</div>`;
+      }
+    } else {
+      const ais = getAis();
+      const list = ais?.closest?.(n) ?? [];
+      if (!list.length) html = `<div class="sp-empty">No AIS targets</div>`;
+      for (const t of list) {
+        const cpa = t.cpa != null ? `${nm(t.cpa)}<small>NM</small> ${Math.round(t.tcpa)}<small>min</small>` : `<small>not closing</small>`;
+        html += `<div class="sp-li tgt${t.danger ? " danger" : ""}${t.lost ? " lost" : ""}" data-id="${esc(t.id)}" title="Click to show ${esc(t.name)} and open its card. CPA and TCPA, then range"><span class="sw" style="background:${esc(t.col)}"></span><span class="nm">${esc(t.name)}</span><span class="d">${cpa}</span><span class="t">${nm(t.range)}<small>NM</small></span></div>`;
+      }
+    }
+    if (g._html !== html) { g.innerHTML = html; g._html = html; }
+  }
+
+  // ---------- trend lines (the last three hours from the history recorder) ----------
+  function paintSparks() {
+    const now = Date.now();
+    for (const sv of side.querySelectorAll(".sp-sec:not(.collapsed) .sp-spark")) {
+      const k = sv.dataset.h;
+      const pts = recorder.series(k, now - 3 * 3600e3, now);
+      const pl = sv.querySelector("polyline");
+      // no history yet: no empty line taking up room
+      sv.style.display = pts.length < 2 ? "none" : "";
+      if (pts.length < 2) { pl.setAttribute("points", ""); continue; }
+      let ys = pts.map((p) => p.m);
+      if (HIST[k]?.dir) ys = unwrap(ys);
+      let lo = Math.min(...ys), hi = Math.max(...ys);
+      const minSpan = { PRES: 2, TWS: 4, AWS: 4, TWD: 20, AWA: 20 }[k] ?? 1;
+      if (hi - lo < minSpan) { const c = (hi + lo) / 2; lo = c - minSpan / 2; hi = c + minSpan / 2; }
+      const t0 = now - 3 * 3600e3;
+      pl.setAttribute("points", pts.map((p, i) => `${(((p.t - t0) / (3 * 3600e3)) * 100).toFixed(1)},${(9.5 - ((ys[i] - lo) / (hi - lo)) * 9).toFixed(2)}`).join(" "));
+    }
+  }
 
   // a MOB: its own section under the own-ship block, whatever the view or layout
   let mobShown = false;
@@ -263,7 +369,12 @@ export function setupSidePanel({ inst, views, use, map }) {
     if (!sec) return;
     const i = Number(sec.dataset.i), s = L[i];
     if (!editing) {
-      if (e.target.closest("h4")) { s.collapsed = !s.collapsed; save(); build(); }
+      if (e.target.closest("h4")) { s.collapsed = !s.collapsed; save(); build(); return; }
+      const li = e.target.closest(".sp-li");
+      if (li?.dataset.id) getAis()?.select?.(li.dataset.id);
+      else if (li?.dataset.lon) centreOn([Number(li.dataset.lon), Number(li.dataset.lat)]);
+      const row = e.target.closest(".sp-row");
+      if (row && ACTIONS[row.dataset.k]) ACTIONS[row.dataset.k].run(inst.ctx());
       return;
     }
     if (b) {
@@ -271,6 +382,9 @@ export function setupSidePanel({ inst, views, use, map }) {
       if (a === "up" && i > 0) [L[i - 1], L[i]] = [L[i], L[i - 1]];
       else if (a === "down" && i < L.length - 1) [L[i + 1], L[i]] = [L[i], L[i + 1]];
       else if (a === "cols") s.cols = s.cols === 2 ? 1 : 2;
+      else if (a === "trend") s.trend = !s.trend;
+      else if (a === "more") s.n = Math.min(12, (s.n || 5) + 1);
+      else if (a === "fewer") s.n = Math.max(1, (s.n || 5) - 1);
       else if (a === "taller") s.h = Math.min(120, s.h + 5);
       else if (a === "shorter") s.h = Math.max(20, s.h - 5);
       else if (a === "del") L.splice(i, 1);
@@ -285,6 +399,8 @@ export function setupSidePanel({ inst, views, use, map }) {
       rowMenu(row.getBoundingClientRect(), s, j);
     }
   });
+  ownEl.addEventListener("click", (e) => { const row = e.target.closest(".sp-row"); if (row && ACTIONS[row.dataset.k]) ACTIONS[row.dataset.k].run(inst.ctx()); });
+  mobEl.addEventListener("click", (e) => { const row = e.target.closest(".sp-row"); if (row && ACTIONS[row.dataset.k]) ACTIONS[row.dataset.k].run(inst.ctx()); });
   body.addEventListener("change", (e) => {
     const t = e.target.closest("input.sp-title");
     if (!t) return;
@@ -348,7 +464,7 @@ export function setupSidePanel({ inst, views, use, map }) {
   }
   function addSection(rect) {
     const graphics = [["WDIAL", "Wind dial", 48], ["COMPASS", "Compass", 48], ["HIGHWAY", "Highway", 70], ["SOUNDER", "Sounder history", 40]];
-    let html = `<div class="grp">Add a section</div><button data-kind="readings">Readings</button><div class="grp">Graphics</div><div class="items">`;
+    let html = `<div class="grp">Add a section</div><button data-kind="readings">Readings</button><button data-kind="marks">Marks ahead (route)</button><button data-kind="targets">AIS targets (closest by CPA)</button><div class="grp">Graphics</div><div class="items">`;
     for (const [k, n] of graphics) if (ITEMS[k]) html += `<button data-g="${k}">${n}</button>`;
     html += `</div><div class="grp">History plot</div><div class="items">`;
     for (const [k, ch] of Object.entries(HIST)) if (ITEMS[`H_${k}`]) html += `<button data-g="H_${k}">${esc(ch.label)}</button>`;
@@ -356,7 +472,9 @@ export function setupSidePanel({ inst, views, use, map }) {
     showMenu(html, rect, (b) => {
       const L = layout();
       const id = `s${Date.now().toString(36)}`;
-      if (b.dataset.kind) L.push({ id, kind: "readings", title: "", cols: 2, items: [] });
+      if (b.dataset.kind === "readings") L.push({ id, kind: "readings", title: "", cols: 2, items: [] });
+      else if (b.dataset.kind === "marks") L.push({ id, kind: "marks", title: "Marks ahead", n: 5 });
+      else if (b.dataset.kind === "targets") L.push({ id, kind: "targets", title: "Targets", n: 4 });
       else if (b.dataset.g) {
         const g = graphics.find((x) => x[0] === b.dataset.g);
         L.push({ id, kind: "graphic", title: g ? g[1] : ITEMS[b.dataset.g].label, item: b.dataset.g, h: g ? g[2] : 35 });

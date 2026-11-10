@@ -3,8 +3,10 @@
 // panels into it. No screen here, so it can be tested (sidepresets.test.js).
 //
 // A layout is a list of sections:
-//   { id, kind: "readings", title, cols: 1 | 2, items: [reading keys] }
+//   { id, kind: "readings", title, cols: 1 | 2, items: [reading keys], trend: show a 3-hour trend line under readings that have a history }
 //   { id, kind: "graphic", title, item: "WDIAL" | "HIGHWAY" | "SOUNDER" | "H_<history>" | "COMPASS", h: mm }
+//   { id, kind: "marks", title, n }   the route's next n marks, with distance and ETA
+//   { id, kind: "targets", title, n } the n AIS targets that matter most (distress, danger, CPA)
 // The own-ship block (top), the MOB section and the alerts (bottom) are not in the list: they
 // are always there.
 
@@ -14,34 +16,38 @@ export const USES = ["cruise", "fish", "race"];
 /** The fixed own-ship block, in S-Mode's order (MSC.1/Circ.1609 App. 3), plus depth. */
 export const OWN_SHIP = ["HDG", "COG", "SOG", "BSP", "DPT", "POS", "TIME"];
 
-const R = (id, title, items, cols = 1) => ({ id, kind: "readings", title, cols, items });
+const R = (id, title, items, cols = 1, trend = false) => ({ id, kind: "readings", title, cols, items, ...(trend ? { trend: true } : {}) });
 const G = (id, title, item, h = 45) => ({ id, kind: "graphic", title, item, h });
+const M = (n = 5) => ({ id: "marks", kind: "marks", title: "Marks ahead", n });
+const T = (n = 4) => ({ id: "targets", kind: "targets", title: "Targets", n });
 
-const ROUTE = () => R("route", "Route", ["NEXT", "BTW", "DTW", "XTE", "TTG", "ETA", "VMC"], 2);
-const WIND = () => R("wind", "Wind", ["TWS", "TWD", "AWS", "AWA", "TWA", "VMG"], 2);
-const WEATHER = () => R("wx", "Weather", ["PRES", "PTEND", "AIRT", "WTEMP"], 2);
+const ROUTE = () => R("route", "Route", ["BTW", "DTW", "XTE", "VMC"], 2);
+const WIND = () => R("wind", "Wind", ["TWS", "TWD", "AWS", "AWA", "TWA", "VMG"], 2, true);
+const WEATHER = () => R("wx", "Weather", ["PRES", "PTEND", "AIRT", "WTEMP"], 2, true);
 const CURSOR = () => R("cursor", "Cursor", ["CPOS", "CBRG", "CRNG", "CSND"], 2);
 const GRIB = () => R("grib", "Forecast at the cursor", ["GTIME", "GTWS", "GTWD", "GGUST", "GMSLP", "GHS", "GTP", "GRAIN"], 2);
 
 export const PRESETS = {
   nav: {
-    cruise: () => [ROUTE(), WIND(), WEATHER()],
+    cruise: () => [ROUTE(), M(5), T(4), WIND(), WEATHER()],
     race: () => [
       R("perf", "Performance", ["BSP", "TBSP", "PERF", "TWA", "TTWA", "VMG", "VMC", "THDG"], 2),
       G("dial", "Wind", "WDIAL", 48),
-      R("route", "Route", ["NEXT", "BTW", "DTW", "TTG"], 2),
-      R("wx", "Weather", ["TWD", "PRES", "PTEND"], 2),
+      R("route", "Route", ["BTW", "DTW", "TTG"], 2),
+      M(3),
+      R("wx", "Weather", ["TWD", "PRES", "PTEND"], 2, true),
+      T(3),
     ],
     fish: () => [
-      R("fish", "Sea", ["WTEMP", "TRIP", "PRES", "PTEND"], 2),
-      G("snd", "Sounder", "SOUNDER", 40),
-      R("wind", "Wind", ["TWS", "TWD"], 2),
+      R("fish", "Sea", ["WTEMP", "TRIP", "PRES", "PTEND"], 2, true),
+      R("wind", "Wind", ["TWS", "TWD"], 2, true),
       R("route", "Route", ["NEXT", "BTW", "DTW", "TTG"], 2),
+      T(5),
     ],
   },
   plan: {
-    cruise: () => [CURSOR(), GRIB(), R("route", "Route", ["NEXT", "BTW", "DTW", "TTG", "ETA"], 2)],
-    race: () => [CURSOR(), GRIB(), R("route", "Route", ["NEXT", "BTW", "DTW", "TTG", "ETA"], 2), R("perf", "Targets", ["TTWA", "TBSP", "THDG"], 2)],
+    cruise: () => [CURSOR(), GRIB(), R("route", "Route", ["BTW", "DTW", "TTG"], 2), M(8)],
+    race: () => [CURSOR(), GRIB(), R("route", "Route", ["BTW", "DTW", "TTG"], 2), M(8), R("perf", "Routing targets", ["TTWA", "TBSP", "THDG"], 2)],
     fish: () => [CURSOR(), R("sea", "Sea at the cursor", ["GSST", "GSKIN", "GCHL", "GCUR", "GSET", "GSUBT"], 2), GRIB()],
   },
 };
@@ -59,7 +65,10 @@ export function clean(sections, items) {
     if (!s || typeof s !== "object") continue;
     if (s.kind === "readings") {
       const list = (Array.isArray(s.items) ? s.items : []).filter((k) => items[k]);
-      out.push({ id: String(s.id || `s${out.length}`), kind: "readings", title: String(s.title ?? ""), cols: s.cols === 2 ? 2 : 1, items: list, collapsed: !!s.collapsed });
+      out.push({ id: String(s.id || `s${out.length}`), kind: "readings", title: String(s.title ?? ""), cols: s.cols === 2 ? 2 : 1, items: list, collapsed: !!s.collapsed, ...(s.trend ? { trend: true } : {}) });
+    } else if (s.kind === "marks" || s.kind === "targets") {
+      const n = Math.round(Number(s.n));
+      out.push({ id: String(s.id || `s${out.length}`), kind: s.kind, title: String(s.title ?? ""), n: Number.isFinite(n) ? Math.max(1, Math.min(12, n)) : 5, collapsed: !!s.collapsed });
     } else if (s.kind === "graphic" && items[s.item]) {
       const h = Number(s.h);
       out.push({ id: String(s.id || `s${out.length}`), kind: "graphic", title: String(s.title ?? ""), item: s.item, h: Number.isFinite(h) ? Math.max(20, Math.min(120, h)) : 45, collapsed: !!s.collapsed });
@@ -105,4 +114,31 @@ export function snapWidth(px, pxPerMm, scale = 1) {
     if (dd < d) { d = dd; best = k; }
   }
   return best;
+}
+
+// ---------- upgrading saved layouts ----------
+// the section ids the starting layouts have used (a layout made only of these hasn't had sections added)
+const PRESET_IDS = new Set(["route", "wind", "wx", "perf", "dial", "fish", "snd", "cursor", "grib", "sea", "marks", "targets"]);
+export const PRESETS_VERSION = 2;
+/**
+ * Bring saved layouts up to the current presets (v2: no sounder in Navigation · Fishing; marks
+ * ahead, targets and trend lines added). A layout the user hasn't added sections to is replaced by
+ * the new preset, keeping which sections were folded; one with sections of their own only loses
+ * the old preset's sounder section from Navigation · Fishing. Returns true if anything changed.
+ */
+export function upgrade(data) {
+  if (!data || (data.presetsVersion ?? 1) >= PRESETS_VERSION) return false;
+  for (const [k, L] of Object.entries(data.layouts ?? {})) {
+    if (!Array.isArray(L)) continue;
+    const [view, use] = k.split(".");
+    const own = L.some((sec) => !PRESET_IDS.has(sec?.id));
+    if (!own && PRESETS[view]) {
+      const folded = new Set(L.filter((sec) => sec?.collapsed).map((sec) => sec.id));
+      data.layouts[k] = preset(view, use).map((sec) => (folded.has(sec.id) ? { ...sec, collapsed: true } : sec));
+    } else if (k === "nav.fish") {
+      data.layouts[k] = L.filter((sec) => !(sec?.id === "snd" && sec.item === "SOUNDER"));
+    }
+  }
+  data.presetsVersion = PRESETS_VERSION;
+  return true;
 }

@@ -940,5 +940,31 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   loadTracks();
   statusUi();
   if (s.online || s.owOn) setTimeout(() => subscribe(true), 1500);
-  return { targets, openPopup };
+  /** The targets that matter most, for the data panel: distress first, then dangerous ones,
+   *  then closing targets by CPA, then the rest by range. Each: { id, name, range, brg, cpa,
+   *  tcpa, danger, lost, col, kind }. */
+  function closest(n = 5) {
+    const own = getOwn();
+    const out = [];
+    for (const t of targets.values()) {
+      if (!shown(t) || t.lat == null) continue;
+      const c = cpaTcpa(own, t);
+      if (s.sleep === "hide" && isSleeping(t, c, inFleet(t.mmsi))) continue;
+      out.push({ id: t.mmsi, name: inFleet(t.mmsi)?.name || t.name || `MMSI ${t.mmsi}`, kind: t.kind,
+        range: c?.range ?? null, brg: own?.pos ? bearing(own.pos, [t.lon, t.lat]) : null,
+        cpa: c?.tcpa > 0 ? c.cpa : null, tcpa: c?.tcpa > 0 ? c.tcpa : null,
+        danger: isDanger(c), lost: isLost(t), col: isDanger(c) ? DANGER_COL : style(t)[1] ?? TARGET_COL, lon: t.lon, lat: t.lat });
+    }
+    const rank = (r) => (["sart", "mob", "epirb"].includes(r.kind) ? 0 : r.danger ? 1 : r.tcpa != null ? 2 : 3);
+    out.sort((a, b) => rank(a) - rank(b) || (rank(a) === 2 ? a.cpa - b.cpa : (a.range ?? 1e9) - (b.range ?? 1e9)));
+    return out.slice(0, n);
+  }
+  /** Show a target on the chart and open its card. */
+  function select(id) {
+    const t = targets.get(id) ?? targets.get(Number(id)) ?? targets.get(String(id));
+    if (!t) return;
+    map.easeTo({ center: [t.lon, t.lat] });
+    openPopup(t.mmsi);
+  }
+  return { targets, openPopup, closest, select };
 }

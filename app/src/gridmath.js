@@ -1,56 +1,5 @@
-// Layout maths for instrument panels, kept free of the DOM so it can be tested.
-// A panel is a grid: its width decides the number of columns, each reading can
-// span several columns and rows, and readings are reordered by dragging.
-
-export const CELL = { s: 82, m: 110, l: 150 };
-export const ROW = { s: 54, m: 70, l: 96 };
-export const MAX_SPAN = 6;
-
-/** Number of grid columns for a panel `w` px wide. */
-export function columns(w, size = "m") {
-  return Math.max(1, Math.round(w / (CELL[size] ?? CELL.m)));
-}
-
-/** A span (1..MAX_SPAN cells) after dragging a resize handle `delta` px from a `start` px extent. */
-export function spanFromDrag(start, delta, pitch, max = MAX_SPAN) {
-  if (!(pitch > 0)) return 1;
-  return Math.max(1, Math.min(max, Math.round((start + delta) / pitch)));
-}
-
-/** Normalise a saved span to [columns, rows], each 1..MAX_SPAN. */
-export function cleanSpan(s) {
-  if (!Array.isArray(s)) return [1, 1];
-  const c = (n) => Math.max(1, Math.min(MAX_SPAN, Math.round(Number(n)) || 1));
-  return [c(s[0]), c(s[1])];
-}
-
-/**
- * Move reading `from` in `tiles` to index `to` (the position it should have afterwards),
- * taking its span with it. Returns new arrays; the inputs are not changed.
- */
-export function moveReading(tiles, spans, from, to) {
-  const t = tiles.slice();
-  const s = tiles.map((_, i) => spans?.[i] ?? null);
-  const [tt] = t.splice(from, 1);
-  const [ss] = s.splice(from, 1);
-  const at = Math.max(0, Math.min(t.length, to));
-  t.splice(at, 0, tt);
-  s.splice(at, 0, ss);
-  return { tiles: t, spans: s };
-}
-
-/**
- * Where a dragged reading lands when dropped on reading `target` at pointer fraction
- * (`fx`, `fy`) across it: before it in the first half (reading order), after it in the second.
- */
-export function dropIndex(target, fx, fy, wide = true) {
-  const after = wide ? fx > 0.5 : fy > 0.5;
-  return target + (after ? 1 : 0);
-}
-
-// ---------- the Instruments view: one screen of tiles on a fixed grid ----------
-// A tile is { id, k, c, r, w, h }: its reading, its first column and row (from 1) and its
-// size in cells. The grid always fits the screen, so a tile can never end up off it.
+// Layout maths for the Instruments view's screen of tiles (insttiles.js), kept free of the DOM
+// so it can be tested.
 
 export const GRID = { cols: 12, rows: 8 };
 
@@ -111,9 +60,4 @@ export function firstFree(tiles, w, h, id = "", g = GRID) {
     }
   }
   return null;
-}
-
-/** A size in cells for a tile `px` wide on a grid of `cols` cells across `total` px. */
-export function cellsFromPx(px, total, cols) {
-  return Math.max(1, Math.round((px / total) * cols));
 }
