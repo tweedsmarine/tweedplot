@@ -836,6 +836,12 @@
     <aside id="side" aria-label="Data panel" hidden>
       <div class="sp-grip" title="Drag for a narrow, normal or wide panel"></div>
       <header class="sp-head"><span class="sp-status"></span><button class="sp-edit" title="Edit the panel: add, move and remove readings">✎</button><button class="sp-hide" title="Hide the panel to a line under the chart (O)">⟩</button></header>
+      <div class="sp-disp" role="group" aria-label="Chart display">
+        <button data-cat="base" title="Display base: land, depth areas, the safety contour and dangers. Not enough for safe navigation on its own (IHO S-52 2.3.3a): use it briefly to declutter">Base</button>
+        <button data-cat="standard" title="The standard display, in one press (IMO S-Mode): Standard with light sectors, names and soundings. The display to use as a minimum for planning and monitoring">Standard</button>
+        <button data-cat="all" title="All other information as well: soundings, other contours, cables and pipelines, names and other detail">All</button>
+        <span class="sp-disp-note"></span>
+      </div>
       <div class="sp-actions"></div>
       <div class="sp-own"></div>
       <div class="sp-mob" hidden></div>
@@ -843,7 +849,7 @@
       <div class="sp-cursor" title="The cursor: position, depth and bearing and range from the boat"></div>
       <div class="sp-alerts"><div class="sp-noalert">No active alerts</div></div>
     </aside>
-    <div id="side-strip" hidden><div class="ss-rows"></div><div class="ss-cursor"></div><div class="ss-alerts"></div><div class="ss-actions"></div><button class="ss-show" title="Show the data panel (O)">⟨ Panel</button></div>
+    <div id="side-strip" hidden><span class="ss-disp" title="Chart display category (O shows the panel and its Base / Standard / All buttons)"></span><div class="ss-rows"></div><div class="ss-cursor"></div><div class="ss-alerts"></div><div class="ss-actions"></div><button class="ss-show" title="Show the data panel (O)">⟨ Panel</button></div>
     <div id="tile-menu" class="ctx" hidden></div>
     <div id="cmp-menu" class="ctx checks" hidden></div>
 

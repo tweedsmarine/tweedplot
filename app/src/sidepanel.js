@@ -506,6 +506,33 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
     grip.addEventListener("pointerup", up);
   });
 
+  // ---------- chart display: Base, Standard, All (from chartfeatures.js) ----------
+  // The display mode is part of the IMO display base (always shown); Standard is the S-Mode one
+  // press back to the standard display. A standard category the mariner has changed is "changed"
+  // (IMO ECDIS PS 10.5: permanently indicated). Base alone isn't enough to navigate by (S-52).
+  const disp = side.querySelector(".sp-disp"), dispNote = side.querySelector(".sp-disp-note"), ssDisp = strip.querySelector(".ss-disp");
+  disp.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-cat]");
+    if (b) window.dispatchEvent(new CustomEvent("racenav-set-dispcat", { detail: { cat: b.dataset.cat } }));
+  });
+  window.addEventListener("racenav-dispcat", (e) => {
+    const d = e.detail || {};
+    disp.hidden = !d.enabled;
+    for (const b of disp.querySelectorAll("button[data-cat]")) {
+      const on = b.dataset.cat === d.cat;
+      b.classList.toggle("on", on);
+      b.classList.toggle("changed", on && d.cat === "standard" && !d.standard);
+      b.setAttribute("aria-pressed", String(on));
+    }
+    const note = [d.cat === "standard" && !d.standard ? "Standard changed" : d.cat === "base" ? "Base only: not enough to navigate by" : "", d.dated].filter(Boolean).join(" · ");
+    dispNote.textContent = note;
+    dispNote.classList.toggle("warn", d.cat === "base" || !!d.dated);
+    disp.classList.toggle("has-note", !!note);
+    ssDisp.hidden = !d.enabled;
+    ssDisp.textContent = { base: "BASE", standard: d.standard ? "STD" : "STD*", all: "ALL" }[d.cat] ?? "";
+    ssDisp.classList.toggle("warn", d.cat === "base" || !!d.dated);
+  });
+
   // ---------- follow the view and the Use ----------
   views.onChange(() => { editing = false; visibility(); build(); });
   window.addEventListener("racenav-use", () => build());

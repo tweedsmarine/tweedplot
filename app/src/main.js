@@ -391,7 +391,7 @@ function useInitialPosition([lon, lat]) {
   map.jumpTo(startupCamera);
 }
 window.__map = map; // handy for debugging in devtools
-map.addControl(new maplibregl.ScaleControl({ unit: "nautical" }), "bottom-right");
+// (no map scale at the bottom right: the S-52 scale bar or latitude scale at the left edge, mariner.js, is the scale)
 setupUiPrefs();
 setupTooltips();
 setupSelectPop();
