@@ -821,6 +821,7 @@ name = "depthpack-tool"
 version = "0.1.0"
 dependencies = [
  "chart",
+ "flate2",
  "lru",
  "rayon",
  "reqwest",
@@ -828,6 +829,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tiff",
+ "weezl",
  "zip",
 ]
 

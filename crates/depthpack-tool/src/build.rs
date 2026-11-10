@@ -61,6 +61,10 @@ fn paint_survey(w: &Writer, s: &Survey, files: &[PathBuf], z: u8) -> Result<usiz
         // the file's own GeoKeys, else the CRS it was exported in, else the catalogue's
         let exported = path.parent().and_then(|d| std::fs::read_to_string(d.join("crs.txt")).ok()).and_then(|t| t.trim().parse().ok());
         let epsg = g.epsg.or(exported).unwrap_or(s.epsg);
+        if k == 0 && g.band_names.len() > 1 {
+            let names: Vec<String> = g.band_names.iter().enumerate().map(|(i, n)| if n.is_empty() { format!("band {}", i + 1) } else { n.clone() }).collect();
+            println!("  {} bands ({}): depths from {}", names.len(), names.join(", "), names[g.band]);
+        }
         let geographic = epsg == 4326 || epsg == 4167;
         let tm = if geographic { None } else { Some(Tm::from_epsg(epsg).ok_or(format!("{}: projection EPSG:{epsg} not known", path.display()))?) };
         let to_ll = |x: f64, y: f64| -> [f64; 2] { tm.map_or([x, y], |t| tm_to_lonlat([x, y], t)) };

@@ -17,6 +17,8 @@ zip.workspace = true
 rayon.workspace = true
 lru.workspace = true
 tiff = "0.9"
+weezl = "0.1"
+flate2 = "1"
 sha2 = "0.10"
 reqwest = { version = "0.13", default-features = false, features = ["native-tls", "blocking", "json"] }
 
