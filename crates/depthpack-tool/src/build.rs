@@ -58,7 +58,9 @@ fn paint_survey(w: &Writer, s: &Survey, files: &[PathBuf], z: u8) -> Result<usiz
                 continue;
             }
         };
-        let epsg = g.epsg.unwrap_or(s.epsg);
+        // the file's own GeoKeys, else the CRS it was exported in, else the catalogue's
+        let exported = path.parent().and_then(|d| std::fs::read_to_string(d.join("crs.txt")).ok()).and_then(|t| t.trim().parse().ok());
+        let epsg = g.epsg.or(exported).unwrap_or(s.epsg);
         let geographic = epsg == 4326 || epsg == 4167;
         let tm = if geographic { None } else { Some(Tm::from_epsg(epsg).ok_or(format!("{}: projection EPSG:{epsg} not known", path.display()))?) };
         let to_ll = |x: f64, y: f64| -> [f64; 2] { tm.map_or([x, y], |t| tm_to_lonlat([x, y], t)) };

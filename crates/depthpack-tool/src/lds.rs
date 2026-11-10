@@ -175,17 +175,33 @@ pub fn export_all(dir: &Path, key: &str, only: Option<&[i64]>) -> Result<(), Str
 /// One model: an LDS export (GeoTIFF, in its own projection), waited for, downloaded and
 /// unzipped. The number of GeoTIFFs.
 fn export_one(c: &reqwest::blocking::Client, key: &str, m: &Model, sdir: &Path) -> Result<usize, String> {
-    let body = json!({
-        "name": format!("tweedplot-depthpack {}", m.survey.id),
-        "crs": format!("EPSG:{}", m.survey.epsg),
-        "items": [{ "item": format!("{API}/layers/{}/", m.survey.id) }],
-        "formats": { "grid": "image/tiff;subtype=geotiff" },
-    });
-    let r = c.post(format!("{API}/exports/")).header("Authorization", format!("key {key}")).json(&body).send().map_err(|e| e.to_string())?;
-    let status = r.status();
-    let j: Value = r.json().map_err(|e| format!("export reply: {e}"))?;
+    let post = |epsg: &str| -> Result<(reqwest::StatusCode, Value), String> {
+        let body = json!({
+            "name": format!("tweedplot-depthpack {}", m.survey.id),
+            "crs": epsg,
+            "items": [{ "item": format!("{API}/layers/{}/", m.survey.id) }],
+            "formats": { "grid": "image/tiff;subtype=geotiff" },
+        });
+        let r = c.post(format!("{API}/exports/")).header("Authorization", format!("key {key}")).json(&body).send().map_err(|e| e.to_string())?;
+        let status = r.status();
+        let j: Value = r.json().map_err(|e| format!("export reply: {e}"))?;
+        Ok((status, j))
+    };
+    let mut crs = format!("EPSG:{}", m.survey.epsg);
+    let (mut status, mut j) = post(&crs)?;
+    // LINZ sometimes lists a layer in one UTM zone but exports it only in another (Shipping
+    // Lane 6: listed 32760, exported 32759): take the CRS it suggests that TweedPlot reads
     if !status.is_success() {
-        return Err(format!("export refused ({status}): {j}"));
+        if let Some(alt) = alternative_crs(&j) {
+            if alt != crs {
+                println!("  LINZ won't export it in {crs}: using {alt}");
+                crs = alt;
+                (status, j) = post(&crs)?;
+            }
+        }
+    }
+    if !status.is_success() {
+        return Err(format!("export refused ({status}): {}", refusal(&j)));
     }
     let url = j["url"].as_str().ok_or("export reply without url")?.to_string();
     // wait for it: LINZ makes the file, which can take minutes for a big survey
@@ -220,7 +236,43 @@ fn export_one(c: &reqwest::blocking::Client, key: &str, m: &Model, sdir: &Path) 
     drop(f);
     let n = unzip_tiffs(&zip_path, sdir)?;
     let _ = std::fs::remove_file(&zip_path);
+    // the coordinate system it came in (the build's fallback when a file doesn't say)
+    std::fs::write(sdir.join("crs.txt"), crs.trim_start_matches("EPSG:")).map_err(|e| e.to_string())?;
     Ok(n)
+}
+
+/// From a refused export, a coordinate system LINZ suggests that the build can read: a WGS 84
+/// UTM zone, else NZTM2000, else plain longitude and latitude. None unless the refusal is
+/// about the coordinate system.
+pub fn alternative_crs(j: &Value) -> Option<String> {
+    let about_crs = j["items"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|i| i["invalid_reasons"].as_array().into_iter().flatten().any(|r| r.as_str().is_some_and(|r| r.contains("crs"))));
+    if !about_crs {
+        return None;
+    }
+    let ids: Vec<&str> = j["suggested_crs"].as_array().into_iter().flatten().filter_map(|c| c["id"].as_str()).collect();
+    let code = |id: &&str| id.strip_prefix("EPSG:").and_then(|c| c.parse::<u32>().ok());
+    ids.iter()
+        .find(|id| code(id).is_some_and(|c| (32701..=32760).contains(&c) || (32601..=32660).contains(&c)))
+        .or_else(|| ids.iter().find(|id| **id == "EPSG:2193"))
+        .or_else(|| ids.iter().find(|id| **id == "EPSG:4326"))
+        .map(|s| s.to_string())
+}
+
+/// A refusal in a line: the reasons, not LINZ's whole list of coordinate systems.
+fn refusal(j: &Value) -> String {
+    let mut reasons: Vec<String> = j["invalid_reasons"].as_array().into_iter().flatten().filter_map(|r| r.as_str().map(String::from)).collect();
+    for i in j["items"].as_array().into_iter().flatten() {
+        reasons.extend(i["invalid_reasons"].as_array().into_iter().flatten().filter_map(|r| r.as_str().map(String::from)));
+    }
+    if reasons.is_empty() {
+        j.to_string().chars().take(400).collect()
+    } else {
+        reasons.join(", ")
+    }
 }
 
 /// The GeoTIFFs in an export zip, flat into `to`.
@@ -307,6 +359,22 @@ mod tests {
         assert!(m.survey.accuracy.contains("Vertical accuracy is +/- 0") && m.survey.accuracy.contains("Horizontal"), "{}", m.survey.accuracy);
         assert_eq!(m.version, 414395);
         assert_eq!(m.survey.published, "2025-03-02");
+    }
+
+    #[test]
+    fn a_crs_refusal_gives_one_the_build_reads() {
+        // as LINZ refused Shipping Lane 6 (116674) in EPSG:32760
+        let j = json!({ "invalid_reasons": [], "is_valid": false,
+            "items": [{ "invalid_reasons": ["invalid-for-given-crs"], "is_valid": false }],
+            "suggested_crs": [{ "id": "EPSG:4326" }, { "id": "EPSG:2134" }, { "id": "EPSG:2193" }, { "id": "EPSG:27200" }, { "id": "EPSG:32359" }, { "id": "EPSG:32759" }, { "id": "EPSG:3857" }] });
+        assert_eq!(alternative_crs(&j).as_deref(), Some("EPSG:32759"));
+        assert_eq!(refusal(&j), "invalid-for-given-crs");
+        // without a UTM zone: NZTM
+        let j2 = json!({ "items": [{ "invalid_reasons": ["invalid-for-given-crs"] }], "suggested_crs": [{ "id": "EPSG:4326" }, { "id": "EPSG:2193" }] });
+        assert_eq!(alternative_crs(&j2).as_deref(), Some("EPSG:2193"));
+        // some other refusal: no retry
+        let j3 = json!({ "items": [{ "invalid_reasons": ["too-big"] }], "suggested_crs": [{ "id": "EPSG:32759" }] });
+        assert_eq!(alternative_crs(&j3), None);
     }
 
     #[test]
