@@ -81,6 +81,7 @@ import { setupStations, stationImage } from "./stations.js";
 import { setupInstruments, waypointData, targetAt } from "./instruments.js";
 import { setupLibrary, labelImage } from "./library.js";
 import { setupSettings } from "./settings.js";
+import { setupSidePanel } from "./sidepanel.js";
 import { setupHistorySettings, restoreHistoryCards } from "./history.js";
 import { setupNmeaMonitor } from "./nmeamonitor.js";
 
@@ -459,6 +460,8 @@ document.getElementById("drawer-help").onclick = () => manual.help(ui.current())
 const inst = setupInstruments();
 setupHints();
 setupWelcome({ use, inst });
+const sidePanel = setupSidePanel({ inst, views, use, map });
+window.__inst = inst; window.__side = sidePanel; // debugging handles
 setupDisclaimer();
 window.addEventListener("racenav-mob", (e) => { inst.update({ mob: e.detail }); });
 const boat = setupBoat();
@@ -1400,8 +1403,10 @@ map.on("contextmenu", (e) => {
   boatBtn.disabled = signalKActive();
   boatBtn.title = boatBtn.disabled ? "Signal K is plotting the boat: press Live to pause it first" : "";
   ctx.hidden = false;
-  ctx.style.left = `${Math.max(4, Math.min(e.point.x, window.innerWidth - ctx.offsetWidth - 4))}px`;
-  ctx.style.top = `${Math.max(4, Math.min(e.point.y, window.innerHeight - ctx.offsetHeight - 4))}px`;
+  // the menu is on the page; e.point is within the chart, which no longer starts at the window's edge
+  const cr = map.getContainer().getBoundingClientRect();
+  ctx.style.left = `${Math.max(4, Math.min(cr.left + e.point.x, window.innerWidth - ctx.offsetWidth - 4))}px`;
+  ctx.style.top = `${Math.max(4, Math.min(cr.top + e.point.y, window.innerHeight - ctx.offsetHeight - 4))}px`;
 });
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 ctx.addEventListener("click", (e) => {

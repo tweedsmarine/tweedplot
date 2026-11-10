@@ -38,9 +38,22 @@
 }
 
 html, body { margin: 0; height: 100%; overflow: hidden; color: var(--ink); background: var(--sea); }
-#map { position: absolute; inset: 0; }
-.maplibregl-ctrl-top-left { left: var(--rail-w); }
-body.drawer-open .maplibregl-ctrl-top-left { left: calc(var(--rail-w) + var(--drawer-w)); }
+/* ---------- the chart's place: nothing is laid over it (IMO MSC.191(79) 5.1.3) ----------
+   Left to right: rail, drawer (when open), data panel (when on the left), toolbar strip, CHART,
+   data panel (when on the right). Under the chart: the data panel's one-line strip (when the
+   panel is hidden) and the dock. The chart's box is narrowed, so MapLibre redraws to fit it. */
+body {
+  --tb-w: 33px; --drawer-x: 0px; --side-lx: 0px; --side-rx: 0px; --strip-h: 0px;
+  --chart-l: calc(var(--rail-w) + var(--drawer-x) + var(--side-lx) + var(--tb-w));
+  --chart-r: var(--side-rx);
+  --chart-b: calc(var(--dock-h, 0px) + var(--strip-h));
+}
+body.drawer-open { --drawer-x: var(--drawer-w); }
+html.side-on:not(.side-left) body { --side-rx: var(--side-w); }
+html.side-on.side-left body { --side-lx: var(--side-w); }
+html.side-strip body { --strip-h: calc(7.5mm * var(--pxmm, 3.78) / 3.78 * var(--sp-k, 1)); }
+html.ui-large body { --tb-w: 48px; }
+#map { position: absolute; top: 0; left: var(--chart-l); right: var(--chart-r); bottom: var(--chart-b); }
 
 button {
   flex: 1; padding: 8px 6px; font-size: 13px; border-radius: 6px;
@@ -175,11 +188,13 @@ details.sub summary { cursor: pointer; font-size: 11px; color: var(--quiet); tex
 .edit input[type="text"] { width: 170px; }
 
 /* ---------- toolbar (top left, beside the rail or open drawer) ---------- */
+/* the toolbar: a strip down the chart's left edge, outside the chart */
 .ctl-col {
-  position: absolute; top: 10px; left: calc(var(--rail-w) + 10px); z-index: 3; display: flex; flex-direction: column;
-  background: #fff; border-radius: 4px; box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1); overflow: hidden;
+  position: absolute; top: 0; bottom: 0; left: calc(var(--chart-l) - var(--tb-w)); width: var(--tb-w); z-index: 5; box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; padding: 2px 0; background: #fff; border-right: 1px solid var(--line);
+  overflow-y: auto; overflow-x: hidden; scrollbar-width: none;
 }
-body.drawer-open .ctl-col { left: calc(var(--rail-w) + var(--drawer-w) + 10px); }
+.ctl-col::-webkit-scrollbar { display: none; }
 .ctl-col button {
   flex: none; box-sizing: border-box; width: 29px; height: 29px; min-height: 29px; padding: 0; margin: 0; line-height: 0; border: 0; border-radius: 0; background: transparent;
   display: grid; place-items: center; color: #333; cursor: pointer;
@@ -204,11 +219,10 @@ body.drawer-open .ctl-col { left: calc(var(--rail-w) + var(--drawer-w) + 10px); 
 #sk-live.on, #follow.on { color: var(--accent, #1f6fb2); }
 
 .cursor {
-  position: absolute; left: calc(var(--rail-w) + 10px); bottom: 26px; padding: 4px 8px; border-radius: 6px;
+  position: absolute; left: calc(var(--chart-l) + 10px); bottom: calc(var(--chart-b) + 26px); padding: 4px 8px; border-radius: 6px;
   background: var(--panel-bg); font-size: 13px; font-variant-numeric: tabular-nums; z-index: 1;
 }
-.attribution { position: absolute; left: calc(var(--rail-w) + 10px); bottom: 6px; font-size: 11px; color: var(--quiet); }
-body.drawer-open .cursor, body.drawer-open .attribution { left: calc(var(--rail-w) + var(--drawer-w) + 10px); }
+.attribution { position: absolute; left: calc(var(--chart-l) + 10px); bottom: calc(var(--chart-b) + 6px); font-size: 11px; color: var(--quiet); }
 
 /* ---------- instrument panels ---------- */
 #inst { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
@@ -328,11 +342,10 @@ input[type="datetime-local"][hidden] { display: none; }
 /* ---------- dock ---------- */
 :root { --dock-h: 0px; }
 #dock {
-  position: absolute; left: var(--rail-w); right: 0; bottom: 0; z-index: 4; background: var(--panel-bg);
+  position: absolute; left: var(--chart-l); right: var(--chart-r); bottom: 0; z-index: 4; background: var(--panel-bg);
   box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.2); display: flex; flex-direction: column; font-size: 13px;
 }
 #dock[hidden] { display: none; }
-body.drawer-open #dock { left: calc(var(--rail-w) + var(--drawer-w)); }
 .dock-grip { height: 6px; cursor: ns-resize; flex: none; }
 .dock-grip:hover { background: #dce6ec; }
 #dock header { display: flex; align-items: center; gap: 6px; padding: 0 8px 4px 10px; border-bottom: 1px solid var(--line); }
@@ -341,7 +354,6 @@ body.drawer-open #dock { left: calc(var(--rail-w) + var(--drawer-w)); }
 .dock-tools button, .dock-close { flex: none; padding: 4px 9px; }
 .dock-close { border: none; background: none; font-size: 15px; }
 .dock-body { flex: 1; overflow: auto; padding: 4px 10px 10px; }
-body.dock-open .cursor { bottom: calc(var(--dock-h) + 26px); }
 body.dock-open .attribution { bottom: calc(var(--dock-h) + 6px); }
 table.cmp { border-collapse: collapse; font-variant-numeric: tabular-nums; white-space: nowrap; }
 table.cmp th { position: sticky; top: 0; background: #f4f7f9; font-weight: 600; font-size: 12px; color: var(--quiet); text-align: right; padding: 5px 8px; cursor: pointer; user-select: none; }
@@ -440,8 +452,7 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
 .nmea-frame-ignored { flex: none; white-space: nowrap; color: #a9bac2; font-size: 10px; text-transform: uppercase; }
 #nmea-monitor-window { display: none; }
 /* the toolbar stays usable beside it (View, Live, colours…), as in the Instruments view */
-html[data-view="nmea"] #nmea-monitor-window { position: absolute; z-index: 20; inset: 0 0 0 calc(var(--rail-w) + 49px); display: flex; padding: 16px; background: var(--panel-bg); }
-html[data-view="nmea"] body.drawer-open #nmea-monitor-window { left: calc(var(--rail-w) + var(--drawer-w) + 49px); }
+html[data-view="nmea"] #nmea-monitor-window { position: absolute; z-index: 20; inset: 0 0 0 var(--chart-l); display: flex; padding: 16px; background: var(--panel-bg); }
 html[data-view="nmea"] body { background: var(--panel-bg); }
 html[data-view="nmea"] #nmea-monitor-window .nmea-monitor { width: 100%; min-height: 0; }
 html[data-view="nmea"] #nmea-monitor-window .nmea-monitor-log { flex: 1; max-height: none; }
@@ -541,7 +552,7 @@ html[data-view="nmea"] #nmea-monitor-window .nmea-variable-grid { grid-template-
 .startup-splash[hidden] { display: none; }
 
 /* short messages at the bottom of the chart (ruler hints …) */
-.toast { position: absolute; left: 50%; top: 86px; transform: translateX(-50%); z-index: 50; max-width: 70vw;
+.toast { position: absolute; left: calc(var(--chart-l) + (100vw - var(--chart-l) - var(--chart-r)) / 2); top: 86px; transform: translateX(-50%); z-index: 50; max-width: 70vw;
   background: var(--tile-bg); color: var(--tile-ink); padding: 6px 12px; border-radius: 6px; font-size: 13px; pointer-events: none; }
 .toast[hidden] { display: none; }
 .ctx hr[hidden], .ctx button[hidden] { display: none; }
@@ -696,7 +707,7 @@ table.gt-table tr.gt-best td.nm { font-weight: 700; }
 #data-etopo-list button.warn { border-color: #d08f00; background: #fff3cc; color: #7a5200; }
 
 /* ---------- replay bar (top centre) ---------- */
-#replay-bar { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 8; display: flex; align-items: center; gap: 6px;
+#replay-bar { position: absolute; top: 10px; left: calc(var(--chart-l) + (100vw - var(--chart-l) - var(--chart-r)) / 2); transform: translateX(-50%); z-index: 8; display: flex; align-items: center; gap: 6px;
   background: #fff3cc; border: 1px solid #d8b24a; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.18); padding: 4px 6px; font-size: 12px; }
 #replay-bar[hidden] { display: none; }
 #replay-bar input[type="range"] { width: 220px; }
@@ -714,14 +725,13 @@ html.no-map body { background: #0f1a21; }
 
 /* ---------- Instruments view: a screen of single readings on a 12 × 8 grid (insttiles.js) ---------- */
 #itiles {
-  position: absolute; left: calc(var(--rail-w) + 49px); right: 10px; top: 70px; bottom: calc(var(--dock-h, 0px) + 96px); z-index: 5;
+  position: absolute; left: calc(var(--chart-l) + 10px); right: calc(var(--chart-r) + 10px); top: 70px; bottom: calc(var(--dock-h, 0px) + 96px); z-index: 5;
   display: none; box-sizing: border-box; padding: 6px; gap: 4px;
   grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-rows: repeat(8, minmax(0, 1fr));
   touch-action: none; user-select: none;
 }
 html[data-view="inst"] #itiles { display: grid; }
 /* the panels shown in the Instruments view: the readings sit beside the open drawer, not over it */
-body.drawer-open #itiles { left: calc(var(--rail-w) + var(--drawer-w) + 49px); }
 .itile { min-width: 0; min-height: 0; overflow: hidden; }
 .itile:not(.graphic) .v { line-height: 1; }
 .itile.highway-card { padding: 2px; }
@@ -742,7 +752,7 @@ html[data-palette="dusk"][data-iho] { filter: invert(1) hue-rotate(180deg) brigh
 html[data-palette="dusk"][data-iho] body { background: #fff; }
 /* things already dark (the rail, instrument panels, the title bars of floating boxes, the
    about box, messages) are turned back, so they stay dark rather than going light grey */
-html[data-palette="dusk"][data-iho] :is(#rail, .ipanel, #itiles, .hist-float, .dot, #replay-bar, #tip,
+html[data-palette="dusk"][data-iho] :is(#rail, .ipanel, #itiles, #side, #side-strip, .hist-float, .dot, #replay-bar, #tip,
   .float-win header, .about, .toast, .startup-splash, #wx-pop-btn.on) { filter: invert(1) hue-rotate(180deg); }
 html[data-palette="dusk"][data-iho] #map .maplibregl-canvas-container { filter: hue-rotate(180deg) invert(1); }
 /* Night (IHO): the chart is drawn in the IHO night palette, so it is left out of the colour
@@ -751,7 +761,7 @@ html[data-palette="dusk"][data-iho] #map .maplibregl-canvas-container { filter: 
    With the paper chart symbols the map goes through the dark page filter as before. */
 html[data-palette="iho-night"] body { background: #000; }
 html[data-palette="iho-night"] body > :not(#map) { filter: invert(1) url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
-html[data-palette="iho-night"] body > :is(#rail, #itiles, .hist-float, #replay-bar, #tip, .startup-splash) { filter: url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
+html[data-palette="iho-night"] body > :is(#rail, #itiles, #side, #side-strip, .hist-float, #replay-bar, #tip, .startup-splash) { filter: url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
 html[data-palette="iho-night"] :is(.ipanel, .dot) { filter: invert(1); }
 html[data-palette="iho-night"] #map > :not(.maplibregl-canvas-container, .maplibregl-control-container, .maplibregl-canvas) { filter: invert(1) url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
 html[data-palette="iho-night"] #map :is(.maplibregl-ctrl, .maplibregl-popup) { filter: invert(1) url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
@@ -762,7 +772,7 @@ html[data-palette="iho-night"]:not([data-iho]) #map .maplibregl-canvas-container
    (the rail, instrument panels) are inverted first so they stay dark. */
 html[data-palette="night-red"] { filter: invert(1) url(#pal-red) brightness(var(--pal-dim, 0.6)); }
 html[data-palette="night-green"] { filter: invert(1) url(#pal-green) brightness(var(--pal-dim, 0.6)); }
-html[data-palette^="night"] #rail, html[data-palette^="night"] .ipanel, html[data-palette^="night"] #itiles, html[data-palette^="night"] .hist-float, html[data-palette^="night"] .dot,
+html[data-palette^="night"] #rail, html[data-palette^="night"] .ipanel, html[data-palette^="night"] #itiles, html[data-palette^="night"] #side, html[data-palette^="night"] #side-strip, html[data-palette^="night"] .hist-float, html[data-palette^="night"] .dot,
 html[data-palette^="night"] #replay-bar, html[data-palette^="night"] #tip, html[data-palette^="night"] .startup-splash { filter: invert(1); }
 #tip { position: fixed; z-index: 100; max-width: 320px; padding: 5px 9px; border-radius: 5px; background: #1d2a33; color: #fff; font-size: 12.5px; line-height: 1.35; pointer-events: none; box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
 #tip[hidden] { display: none; }
@@ -825,7 +835,7 @@ html:is([data-palette^="night"], [data-palette="iho-night"]) .maplibregl-canvas[
 html:is([data-palette^="night"], [data-palette="iho-night"]) .maplibregl-canvas[style*="cursor: grabbing"] { cursor: var(--cur-grabbing) !important; }
 
 /* ---------- alarms ---------- */
-#alarm-banner { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); z-index: 9; display: flex; flex-direction: column; gap: 4px; width: min(560px, 90vw); }
+#alarm-banner { position: absolute; top: 52px; left: calc(var(--chart-l) + (100vw - var(--chart-l) - var(--chart-r)) / 2); transform: translateX(-50%); z-index: 9; display: flex; flex-direction: column; gap: 4px; width: min(560px, 90vw); }
 #alarm-banner[hidden] { display: none; }
 #alarm-banner .alarm { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.3); color: #fff; font-size: 14px; }
 #alarm-banner .alarm.alarm { background: #c0392b; animation: alarm-flash 1s steps(2, start) infinite; }
@@ -838,10 +848,10 @@ html:is([data-palette^="night"], [data-palette="iho-night"]) .maplibregl-canvas[
 #alarm-banner .txt small { font-size: 11.5px; opacity: 0.9; }
 #alarm-banner button { background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.6); color: #fff; padding: 5px 10px; border-radius: 6px; }
 @keyframes alarm-flash { 50% { background: #7d1d14; } }
-#drop-btn { position: absolute; right: 10px; bottom: calc(var(--dock-h) + 44px); z-index: 7; height: 40px; min-width: 64px; padding: 0 14px; border-radius: 6px; border: 0; background: #1f6f8b; color: #fff; font-weight: 700; box-shadow: 0 0 0 2px #000, 0 0 0 4px rgba(255,255,255,0.85); cursor: pointer; }
+#drop-btn { position: absolute; right: calc(var(--chart-r) + 10px); bottom: calc(var(--dock-h) + 44px); z-index: 7; height: 40px; min-width: 64px; padding: 0 14px; border-radius: 6px; border: 0; background: #1f6f8b; color: #fff; font-weight: 700; box-shadow: 0 0 0 2px #000, 0 0 0 4px rgba(255,255,255,0.85); cursor: pointer; }
 /* Anchor button (optional, Settings › Display): Drop's colour with ↓ anchor when not anchored;
    red with ↑ anchor (weigh) when anchored. A weigh needs a second press while it flashes. */
-#anchor-btn { position: absolute; right: 10px; bottom: calc(var(--dock-h) + 96px); z-index: 7; height: 40px; min-width: 64px; padding: 0 10px; border-radius: 6px; border: 0;
+#anchor-btn { position: absolute; right: calc(var(--chart-r) + 10px); bottom: calc(var(--dock-h) + 96px); z-index: 7; height: 40px; min-width: 64px; padding: 0 10px; border-radius: 6px; border: 0;
   background: #1f6f8b; color: #fff; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px #000, 0 0 0 4px rgba(255,255,255,0.85); cursor: pointer; }
 html:not([data-anchor-btn]) #anchor-btn { display: none; }
 #anchor-btn svg { width: 30px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
@@ -851,12 +861,12 @@ html:not([data-anchor-btn]) #anchor-btn { display: none; }
 #anchor-btn.armed { animation: alarm-flash 0.6s steps(2) infinite; }
 html.ui-large #anchor-btn { height: 52px; min-width: 80px; bottom: calc(var(--dock-h) + 116px); }
 html.ui-large #anchor-btn svg { width: 38px; height: 28px; }
-#mob-btn { position: absolute; top: 10px; right: 10px; z-index: 7; height: 48px; min-width: 80px; padding: 0 14px; border-radius: 6px; border: 0; background: #d00000; color: #fff; font-size: 17px; font-weight: 700; letter-spacing: 0.5px; box-shadow: 0 0 0 2px #000, 0 0 0 4px rgba(255,255,255,0.85); cursor: pointer; }
+#mob-btn { position: absolute; top: 10px; right: calc(var(--chart-r) + 10px); z-index: 7; height: 48px; min-width: 80px; padding: 0 14px; border-radius: 6px; border: 0; background: #d00000; color: #fff; font-size: 17px; font-weight: 700; letter-spacing: 0.5px; box-shadow: 0 0 0 2px #000, 0 0 0 4px rgba(255,255,255,0.85); cursor: pointer; }
 #mob-btn.on { background: #ffcc00; color: #d00000; }
 #alarm-banner button { flex: none; }
 
 /* zoom buttons: bottom centre, well apart; touch screens only unless chosen in Settings */
-#zoom-btns { display: none; position: absolute; left: 50%; bottom: calc(var(--dock-h) + 16px); transform: translateX(-50%); z-index: 3; gap: 72px; }
+#zoom-btns { display: none; position: absolute; left: calc(var(--chart-l) + (100vw - var(--chart-l) - var(--chart-r)) / 2); bottom: calc(var(--chart-b) + 16px); transform: translateX(-50%); z-index: 3; gap: 72px; }
 html.ui-zoom #zoom-btns { display: flex; }
 #zoom-btns button { flex: none; width: 52px; height: 52px; padding: 0; border-radius: 50%; font-size: 28px; line-height: 1; box-shadow: 0 1px 6px rgba(0,0,0,0.35); }
 html.no-map #zoom-btns { display: none; }
@@ -1038,7 +1048,7 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 #s63-notes li { margin: 2px 0; }
 #s63-box button.warn { border-color: #d08f00; background: #fff3cc; color: #7a5200; }
 /* S-63 permanent warnings for ENCs in view (expired permit, not up to date) */
-.s63-banner { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); z-index: 29; max-width: min(720px, 80vw);
+.s63-banner { position: absolute; left: calc(var(--chart-l) + (100vw - var(--chart-l) - var(--chart-r)) / 2); bottom: calc(var(--chart-b) + 34px); transform: translateX(-50%); z-index: 29; max-width: min(720px, 80vw);
   background: #fff3cc; color: #5c3d00; border: 1px solid #d08f00; padding: 5px 12px; border-radius: 6px; font-size: 12.5px; pointer-events: none; }
 .s63-banner[hidden] { display: none; }
 .s63-banner div + div { margin-top: 2px; }
@@ -1047,7 +1057,7 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 .maplibregl-map.drawing .maplibregl-canvas-container, .maplibregl-map.drawing .maplibregl-canvas { cursor: crosshair !important; }
 /* AIS target list over the chart (later also MARPA) */
 .pane h3 .h3-btn, .dcard > summary .h3-btn { float: right; padding: 1px 8px; font-size: 11px; font-weight: normal; text-transform: none; letter-spacing: 0; }
-.float-win { position: absolute; z-index: 8; top: 70px; right: 70px; width: 560px; height: 300px; min-width: 300px; min-height: 140px; max-width: calc(100vw - 80px);
+.float-win { position: absolute; z-index: 8; top: 70px; right: calc(var(--chart-r) + 70px); width: 560px; height: 300px; min-width: 300px; min-height: 140px; max-width: calc(100vw - 80px);
   display: flex; flex-direction: column; background: #fff; color: var(--ink); border: 1px solid #b8c4cc; border-radius: 8px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22); overflow: hidden; font-size: 12px; }
 /* the corner handle (floatresize.js) */
@@ -1172,7 +1182,7 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 #lib-f-count { flex-basis: 100%; }
 
 /* colour-by scale for tracks, bottom left of the chart */
-.trk-legend { position: absolute; right: 10px; bottom: 180px; z-index: 3; width: 200px; padding: 6px 8px; border-radius: 6px;
+.trk-legend { position: absolute; right: calc(var(--chart-r) + 10px); bottom: calc(var(--chart-b) + 150px); z-index: 3; width: 200px; padding: 6px 8px; border-radius: 6px;
   background: var(--panel-bg); color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.3); font-size: 11px; }
 .trk-legend[hidden] { display: none; }
 .trk-legend .bar { height: 10px; border-radius: 3px; margin: 4px 0 2px; }
@@ -1186,9 +1196,8 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 .sym-list li.active { background: color-mix(in srgb, var(--accent, #2a7ab0) 12%, transparent); }
 
 /* activity cards (activity.js): above the dock, over the chart, clear of the drawer */
-#activity { position: absolute; left: var(--rail-w); right: 0; bottom: calc(var(--dock-h) + 180px); z-index: 45;
+#activity { position: absolute; left: var(--chart-l); right: var(--chart-r); bottom: calc(var(--chart-b) + 180px); z-index: 45;
   display: flex; flex-direction: column-reverse; align-items: center; gap: 6px; pointer-events: none; }
-body.drawer-open #activity { left: calc(var(--rail-w) + var(--drawer-w)); }
 .act-card { pointer-events: auto; width: min(420px, 92%); background: var(--panel-bg); color: var(--ink); border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0,0,0,.3); padding: 8px 10px; font-size: 13px; border-left: 5px solid #2a7ab0; }
 .act-card.ok { border-left-color: #2e8b57; }
@@ -1397,7 +1406,7 @@ html:not([data-use="fish"]) .tb-fish { display: none; }
 .haul-list { list-style: none; margin: 0; padding: 0; font-size: 12px; color: var(--quiet); max-height: 120px; overflow: auto; }
 
 /* own soundings: the card over the chart with the depth range (pbathy.js) */
-.pb-card { position: absolute; right: 10px; bottom: 120px; z-index: 4; width: 330px; max-width: calc(100vw - 40px); box-sizing: border-box; padding: 6px 8px 4px; border-radius: 6px;
+.pb-card { position: absolute; right: calc(var(--chart-r) + 10px); bottom: calc(var(--chart-b) + 120px); z-index: 4; width: 330px; max-width: calc(100vw - 40px); box-sizing: border-box; padding: 6px 8px 4px; border-radius: 6px;
   background: var(--panel, #fff); color: var(--ink, #1d2a33); box-shadow: 0 2px 8px rgba(0, 0, 0, .25); font-size: 12px; }
 .pb-card[hidden] { display: none; }
 .pb-card .pb-head { display: flex; align-items: center; gap: 4px; cursor: move; margin-bottom: 2px; }
@@ -1611,8 +1620,7 @@ html.cur-edge:not(#n1):not(#n2):not(#n3), html.cur-edge:not(#n1):not(#n2):not(#n
 
 /* mariner's symbols (mariner.js): the S-52 scale bar and north arrow at the left of the chart,
    the overscale indication beside the display category */
-#mar-scale { position: absolute; left: calc(var(--rail-w) + 58px); top: 14px; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none; }
-body.drawer-open #mar-scale { left: calc(var(--rail-w) + var(--drawer-w) + 58px); }
+#mar-scale { position: absolute; left: calc(var(--chart-l) + 10px); top: 14px; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none; }
 #mar-scale[hidden] { display: none; }
 #mar-scale .mar-north { display: block; stroke-linecap: butt; }
 #mar-scale .mar-bar { display: flex; flex-direction: column; align-items: center; gap: 3px; pointer-events: auto; }
@@ -1637,3 +1645,104 @@ html[data-palette="iho-night"][data-iho] #map > #mar-scale { filter: brightness(
 .sd-card { border-collapse: collapse; width: 100%; font-size: 12px; margin-bottom: 6px; }
 .sd-card td { padding: 2px 6px 2px 0; vertical-align: top; }
 .sd-card td:first-child { color: var(--quiet); white-space: nowrap; }
+
+
+/* ---------- the data panel (sidepanel.js): beside the chart, never over it ----------
+   Sizes in millimetres from the screen calibration (--pxmm, CSS px per mm), times the text
+   size chosen for the viewing distance (--sp-k): --u is one millimetre at that size. */
+#side, #side-strip { --u: calc(var(--pxmm, 3.78) * var(--sp-k, 1) * 1px); }
+#side {
+  position: absolute; top: 0; bottom: 0; right: 0; width: var(--side-w); z-index: 5; box-sizing: border-box;
+  display: flex; flex-direction: column; background: #14222b; color: var(--tile-ink); border-left: 1px solid #2c3d48;
+  font-variant-numeric: tabular-nums; user-select: none;
+}
+html.side-left #side { right: auto; left: calc(var(--rail-w) + var(--drawer-x)); border-left: 0; border-right: 1px solid #2c3d48; }
+#side[hidden], #side-strip[hidden] { display: none; }
+.sp-grip { position: absolute; top: 0; bottom: 0; left: -3px; width: 6px; cursor: ew-resize; z-index: 2; touch-action: none; }
+html.side-left .sp-grip { left: auto; right: -3px; }
+.sp-grip:hover { background: rgba(120, 170, 200, .35); }
+.sp-head { display: flex; align-items: center; gap: calc(1 * var(--u)); padding: calc(1 * var(--u)) calc(1.5 * var(--u)); background: #0e1920; font-size: calc(2.6 * var(--u)); color: var(--tile-quiet); white-space: nowrap; }
+.sp-status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sp-status b { color: var(--tile-ink); }
+.sp-status .st-live { color: #3fb950; font-weight: 700; } .sp-status .st-paused { color: #e3b341; font-weight: 700; } .sp-status .st-replay { color: #58a6ff; font-weight: 700; }
+.sp-head button { flex: none; width: auto; padding: 0 calc(1 * var(--u)); min-height: 0; background: none; border: 0; color: var(--tile-quiet); font-size: calc(3.2 * var(--u)); line-height: 1.2; }
+.sp-head button:hover { color: var(--tile-ink); }
+#side.editing .sp-edit { color: #e3b341; }
+/* MOB, Drop and Anchor live here while the panel is shown (sidepanel.js moves them) */
+.sp-actions { display: flex; gap: calc(1.2 * var(--u)); padding: calc(1.2 * var(--u)) calc(1.5 * var(--u)); border-bottom: 1px solid #2c3d48; }
+.sp-actions:empty { display: none; }
+:is(.sp-actions, .ss-actions) :is(#mob-btn, #drop-btn, #anchor-btn) { position: static; flex: 1; min-width: 0; height: calc(8 * var(--u)); min-height: 0; padding: 0 4px; font-size: calc(3.4 * var(--u)); }
+:is(.sp-actions, .ss-actions) #mob-btn { flex: 1.4; }
+:is(.sp-actions, .ss-actions) #anchor-btn svg { width: calc(6 * var(--u)); height: calc(4.4 * var(--u)); }
+/* rows: label, side, value and unit; two columns where asked; a wide reading spans both */
+.sp-own, .sp-rows { display: grid; grid-template-columns: 1fr; column-gap: calc(2.5 * var(--u)); padding: calc(0.8 * var(--u)) calc(1.5 * var(--u)); }
+.sp-own { grid-template-columns: 1fr 1fr; border-bottom: 2px solid #2c3d48; }
+.sp-sec.c2 .sp-rows { grid-template-columns: 1fr 1fr; }
+.sp-row { display: flex; align-items: baseline; gap: calc(0.8 * var(--u)); min-width: 0; padding: calc(0.25 * var(--u)) 0; border-bottom: 1px solid rgba(255,255,255,.05); }
+.sp-row.wide { grid-column: 1 / -1; }
+.sp-row .l { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(2.7 * var(--u)); color: var(--tile-quiet); text-transform: uppercase; letter-spacing: .03em; }
+.sp-row .sd { flex: none; font-size: calc(2.4 * var(--u)); font-weight: 700; }
+.sp-row .sd.port { color: #e5534b; } .sp-row .sd.stbd { color: #3fb950; }
+.sp-row .v { flex: 1 0 auto; text-align: right; font-size: calc(4.2 * var(--u)); font-weight: 700; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-row.wide .v { white-space: normal; }
+.sp-row .v .u { font-size: 0.55em; font-weight: 500; color: var(--tile-quiet); margin-left: 0.15em; }
+.sp-row.own .v { font-size: calc(5 * var(--u)); }
+.sp-row.own.wide .v { font-size: calc(4.2 * var(--u)); }
+.sp-row[data-k="TIME"] .v { font-size: calc(3.6 * var(--u)) !important; }
+.sp-row.wt-t .l { color: var(--wind-true); font-weight: 700; } .sp-row.wt-a .l { color: var(--wind-app); font-weight: 700; }
+.sp-row.stale .v { color: var(--tile-quiet); opacity: .6; }
+.sp-row.warn .v { color: #ffb347; } .sp-row.alarm .v { color: #ff6b5e; }
+.sp-row.alarm { animation: alarm-flash 1s steps(2, start) infinite; }
+.sp-row.has-hist { cursor: context-menu; }
+/* sections in between scroll; the own ship above and the alerts below stay put */
+.sp-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.sp-sec { border-bottom: 1px solid #2c3d48; }
+.sp-sec h4, .sp-mob h4 { display: flex; align-items: center; gap: calc(0.8 * var(--u)); margin: 0; padding: calc(0.8 * var(--u)) calc(1.5 * var(--u)) 0; font-size: calc(2.5 * var(--u)); font-weight: 700; color: #7f97a6; text-transform: uppercase; letter-spacing: .06em; cursor: pointer; }
+.sp-sec h4 .sp-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-sec h4 .chev { width: calc(2.5 * var(--u)); color: #5c7382; }
+.sp-sec.collapsed .sp-rows, .sp-sec.collapsed .sp-g { display: none; }
+.sp-sec.collapsed h4 { padding-bottom: calc(0.8 * var(--u)); }
+.sp-g { position: relative; overflow: hidden; contain: size layout; margin: calc(0.6 * var(--u)) calc(1.5 * var(--u)) calc(1 * var(--u)); }
+.sp-g > svg, .sp-g > .dial { width: 100%; height: 100%; display: block; }
+.sp-g.hist-host { display: flex; flex-direction: column; }
+/* the MOB section: red, at the top, whatever the layout */
+.sp-mob { background: #4a0f0b; border-bottom: 2px solid #d00000; }
+.sp-mob h4 { color: #fff; cursor: default; padding-bottom: 0; }
+.sp-mob[hidden] { display: none; }
+/* editing (✎) */
+#side.editing .sp-sec { outline: 1px dashed rgba(227,179,65,.35); outline-offset: -2px; }
+#side.editing .sp-row { cursor: pointer; }
+#side.editing .sp-row:hover { background: rgba(255,255,255,.06); }
+.sp-tools { display: flex; gap: 2px; flex: none; }
+.sp-tools button, .sp-addrow, .sp-addsec button { flex: none; width: auto; min-height: 0; padding: 1px 6px; font-size: calc(2.4 * var(--u)); background: #22343f; color: var(--tile-ink); border: 1px solid #3a4f5c; border-radius: 4px; }
+input.sp-title { flex: 1; min-width: 0; font-size: calc(2.6 * var(--u)); padding: 1px 4px; background: #0e1920; color: var(--tile-ink); border: 1px solid #3a4f5c; border-radius: 4px; text-transform: none; }
+.sp-addrow { grid-column: 1 / -1; margin: 4px 0; }
+.sp-addsec { display: flex; gap: 6px; padding: calc(1.5 * var(--u)); }
+.sp-addsec button { flex: 1; padding: 4px 6px; }
+.sp-addsec button.on { background: var(--accent); border-color: var(--accent); }
+/* the alerts: always at the bottom of the panel (the banner moves in here) */
+.sp-alerts { flex: none; max-height: 40%; overflow-y: auto; border-top: 2px solid #2c3d48; padding: calc(1 * var(--u)) calc(1.2 * var(--u)); background: #0e1920; }
+.sp-noalert { font-size: calc(2.5 * var(--u)); color: #5c7382; }
+.sp-alerts:has(#alarm-banner:not([hidden])) .sp-noalert { display: none; }
+.sp-alerts #alarm-banner { position: static; transform: none; width: auto; max-height: none; overflow: visible; }
+.sp-alerts #alarm-banner .alarm { padding: calc(1 * var(--u)) calc(1.2 * var(--u)); font-size: calc(3 * var(--u)); box-shadow: none; border-radius: 4px; }
+.sp-alerts #alarm-banner .txt small { font-size: calc(2.5 * var(--u)); }
+.sp-alerts #alarm-banner button { flex: none; width: auto; padding: 2px 8px; font-size: calc(2.6 * var(--u)); }
+/* an unacknowledged alarm while the alerts are in the panel: the chart's edge flashes red */
+html.side-on body:has(.sp-alerts .alarm.alarm:not(.acked)) #map::after {
+  content: ""; position: absolute; inset: 0; z-index: 4; pointer-events: none; box-shadow: inset 0 0 0 4px #d00000; animation: alarm-flash 1s steps(2, start) infinite;
+}
+/* hidden: one line of own-ship data under the chart */
+#side-strip {
+  position: absolute; left: var(--chart-l); right: 0; bottom: var(--dock-h, 0px); height: var(--strip-h); z-index: 5; box-sizing: border-box;
+  display: flex; align-items: center; gap: calc(2 * var(--u)); padding: 0 calc(1.5 * var(--u)); background: #14222b; color: var(--tile-ink); border-top: 1px solid #2c3d48;
+  font-variant-numeric: tabular-nums; overflow: hidden;
+}
+#side-strip .ss-rows { flex: 1; min-width: 0; display: flex; gap: calc(3 * var(--u)); overflow: hidden; }
+#side-strip .sp-row { border: 0; padding: 0; flex: none; }
+#side-strip .sp-row .v { flex: none; font-size: calc(3.8 * var(--u)); white-space: nowrap; }
+#side-strip .sp-row .v br { display: none; }
+#side-strip .ss-actions { display: flex; gap: 6px; flex: none; }
+#side-strip :is(#mob-btn, #drop-btn, #anchor-btn) { height: calc(5.8 * var(--u)); flex: none; min-width: calc(14 * var(--u)); }
+#side-strip .ss-show { flex: none; width: auto; min-height: 0; padding: 2px 8px; background: #22343f; color: var(--tile-ink); border: 1px solid #3a4f5c; font-size: calc(2.8 * var(--u)); }
+html.no-map #side-strip { display: none; }

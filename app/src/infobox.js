@@ -23,7 +23,7 @@ export function createInfoBox(map, kind, { title = "", width = 340, height = 320
   el.className = "float-win info-box";
   el.hidden = true;
   el.innerHTML = `<header><b class="ib-title"></b><span class="grow"></span><button class="ib-close" title="Close (Esc)">✕</button></header><div class="ib-body"></div>`;
-  document.body.append(el); // over the map (which fills the window), like the target list
+  document.body.append(el); // over the chart, placed within the chart's box, like the target list
   floatResize(el);
   const body = el.querySelector(".ib-body"), head = el.querySelector("header"), titleEl = el.querySelector(".ib-title");
   let onClose = null, ring = null;
@@ -35,8 +35,9 @@ export function createInfoBox(map, kind, { title = "", width = 340, height = 320
     el.style.width = `${w}px`;
     el.style.height = `${h}px`;
     el.style.right = "auto";
-    el.style.left = `${Math.max(4, Math.min(r.width - w - 4, st.x ?? r.width - w - 70))}px`;
-    el.style.top = `${Math.max(4, Math.min(r.height - h - 4, st.y ?? 70))}px`;
+    // st.x, st.y are within the chart; the box is on the page, and the chart starts after the toolbar
+    el.style.left = `${r.left + Math.max(4, Math.min(r.width - w - 4, st.x ?? r.width - w - 70))}px`;
+    el.style.top = `${r.top + Math.max(4, Math.min(r.height - h - 4, st.y ?? 70))}px`;
   }
 
   // first time: beside the point (not on it), on the side with room

@@ -851,8 +851,8 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   function place() {
     if (s.win.x == null) return;
     const r = map.getContainer().getBoundingClientRect();
-    win.style.left = `${Math.max(0, Math.min(r.width - 120, s.win.x))}px`;
-    win.style.top = `${Math.max(0, Math.min(r.height - 40, s.win.y))}px`;
+    win.style.left = `${r.left + Math.max(0, Math.min(r.width - 120, s.win.x))}px`;
+    win.style.top = `${r.top + Math.max(0, Math.min(r.height - 40, s.win.y))}px`;
     win.style.right = "auto";
   }
   function showWin(on) {

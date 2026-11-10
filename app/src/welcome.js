@@ -21,8 +21,7 @@ const TASKS = {
     screen: [T("SOUNDER", 1, 1, 8, 4), T("WDIAL", 9, 1, 4, 4), T("DPT", 1, 5, 4, 4), T("COG", 5, 5, 4, 4), T("SOG", 9, 5, 4, 4)],
   },
   race: {
-    name: "Racing", icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 21V4"/><path d="M5 4h13v9H5"/><path d="M5 4h4v3H5zM13 4h5v3h-5M9 7h4v3H9zM5 10h4v3H5zM13 10h5v3h-5z" class="fill"/></svg>', note: "wind instruments, polars, routing",
-    panels: [{ id: "prace", x: 0.3, y: 0.74, dir: "row", size: "m", views: ["nav"], name: "Sailing", tiles: ["BSP", "HDG", "AWS", "AWA", "TWS", "TWA", "VMG"] }],
+    name: "Racing", icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 21V4"/><path d="M5 4h13v9H5"/><path d="M5 4h4v3H5zM13 4h5v3h-5M9 7h4v3H9zM5 10h4v3H5zM13 10h5v3h-5z" class="fill"/></svg>', note: "wind instruments, polars, routing", panels: [],
     screen: [T("HIGHWAY", 1, 1, 8, 4), T("WDIAL", 9, 1, 4, 4), T("COG", 1, 5, 6, 4), T("SOG", 7, 5, 6, 4)],
   },
 };
@@ -67,26 +66,15 @@ export function setupWelcome({ use, inst }) {
   });
   window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !el.hidden) { done(); el.hidden = true; } });
 
-  // a Use choice adds its instrument panels and takes away the other uses' ones, but only while they
-  // are as the choice made them: a panel the user has changed (tiles added or taken out) is theirs now
+  // the Instruments screen is seeded once, by the first Use chosen; later changes never touch it
+  // (the data panel beside the chart has its own layout for each Use: sidepanel.js)
   const addPanels = (u) => {
-    const keep = new Set((TASKS[u]?.panels || []).map((p) => p.id));
-    for (const k of Object.keys(TASKS)) {
-      if (k === u) continue;
-      for (const p of TASKS[k].panels) if (!keep.has(p.id)) inst.removePanel(p.id, p.tiles);
-    }
-    // the panels of earlier test versions
-    inst.removePanel("pfish", null);
-    inst.removePanel("pdepth", null);
-    inst.removePanel("psounder", ["SOUNDER"]); // from a test build that put the sounder in Navigation
-    // the Instruments screen is seeded once, by the first choice; later changes never touch it
     try {
       if (localStorage.getItem(SEEDED) !== "1") {
         inst.setScreen(TASKS[u]?.screen || []);
         localStorage.setItem(SEEDED, "1");
       }
     } catch { /* ignore */ }
-    for (const p of TASKS[u]?.panels || []) inst.ensurePanel(p);
   };
   window.addEventListener("racenav-use", (e) => { if (e.detail.use) addPanels(e.detail.use); });
 

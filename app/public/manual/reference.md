@@ -80,7 +80,7 @@ The chart fills the window. Everything else floats over it or slides out from th
 
 ![screen layout · rail, drawer, floating panels, dock](fig/layout.svg)
 
-Drawers slide out from the rail; instrument panels, the time slider and the dock float over the chart and can each be hidden.
+Drawers slide out from the rail and narrow the chart rather than covering it. The toolbar is a strip down the chart's left edge and the data panel a column beside it (right by default): neither covers the chart. The time slider floats over the chart and can be hidden; the dock sits under the chart.
 
 | Where | What | How to use it |
 | --- | --- | --- |
@@ -369,7 +369,7 @@ TweedPlot shows your own boat from live instruments, or wherever you put it when
 
 **Signal K**
 
-TweedPlot reads live data (position, heading, speed, wind, depth) from a [Signal K](https://signalk.org) server, normally running on the same PC. Signal K takes NMEA 0183 and NMEA 2000 from your GPS and instruments through a USB adapter or gateway and serves it to any number of apps. TweedPlot connects to `ws://localhost:3000` (set `RACENAV_SK_URL` for another address). The live data button in the toolbar at the top left shows the connection at all times: green {icon:sk} when data is arriving, amber when connected but nothing has arrived for 10 seconds, red with a slash {icon:sk-off} when there is no connection (blinking while it first tries). Hover it for the server address, the time of the last update and what is arriving; click it for **Settings › Connections**.
+TweedPlot reads live data (position, heading, speed, wind, depth) from a [Signal K](https://signalk.org) server, normally running on the same PC. Signal K takes NMEA 0183 and NMEA 2000 from your GPS and instruments through a USB adapter or gateway and serves it to any number of apps. TweedPlot connects to `ws://localhost:3000` (set `RACENAV_SK_URL` for another address). The live data button in the toolbar (the strip down the chart's left edge) shows the connection at all times: green {icon:sk} when data is arriving, amber when connected but nothing has arrived for 10 seconds, red with a slash {icon:sk-off} when there is no connection (blinking while it first tries). Hover it for the server address, the time of the last update and what is arriving; click it for **Settings › Connections**.
 
 No instruments? A GPS dongle into Signal K is enough for position, course and speed. With no Signal K at all, TweedPlot works fully in planning mode.
 
@@ -392,7 +392,7 @@ TweedPlot logs every Signal K session, AIS targets included, while it runs. **Se
 
 **Live and planning**
 
-| Mode | Button (toolbar, top left) | The boat | Time used by the instruments and routing |
+| Mode | Button (toolbar) | The boat | Time used by the instruments and routing |
 | --- | --- | --- | --- |
 | Live | {icon:live} **Live** | Follows Signal K (or NMEA) | Now (GPS time) |
 | Planning | {icon:paused} **Paused** | Stays where you put it: right-click > **Move boat here** | The weather slider time |
@@ -486,11 +486,30 @@ For a power boat, see *Making a power polar* in the Route planning tutorial.
 
 ## Instruments
 
-Instrument panels are rows or columns of readings that float over the chart. Make as many as you like, put them anywhere, and keep a different layout on each PC (chart table, laptop, helm screen).
+The boat's numbers are in the **data panel**, a column beside the chart that never covers it. ECDIS and professional chart systems lay their screens out this way (IMO MSC.191(79): the chart kept apart from the data and menus). The toolbar is a strip down the chart's left edge, also outside the chart. When a drawer opens, the chart narrows to make room rather than being covered. The floating instrument panels of earlier versions are gone: on the first start of this version, any panels you had made yourself were moved into the data panel, keeping their names.
+
+**The data panel**
+
+From top to bottom:
+
+- **Status line**: the view, **LIVE**, **PAUSED** or **REPLAY**, the orientation (**N UP**, or **ROT 045°** when the chart is turned), the motion (**RM**: Follow is on and the chart moves under the boat; **TM**: the boat moves across the chart) and the display scale on this screen. **✎** edits the panel; **⟩** hides it.
+- **MOB**, **Drop** and (when switched on) the **anchor** button.
+- **Own ship**, always shown, in the order IMO's S-Mode guidelines give: HDG (°T), COG, SOG, STW (boat speed through the water), depth, position, and the date and time, local and UTC. A reading with no data shows a dash, and one from live data that has stopped greys out after 10 seconds, so a failed sensor is seen, not hidden.
+- **Man overboard**, while a MOB is set: bearing, range and time since, and where and when it was pressed, in red, whatever the layout.
+- **Sections** that change with the view and the Use: Navigation and Planning each have a layout for Cruising, Fishing and Racing. Navigation · Cruising starts with Route, Wind and Weather; Racing with Performance (boat speed against target, % of target, TWA against target, VMG, VMC), the wind dial, Route and Weather; Fishing with Sea, the sounder history, Wind and Route. Planning starts with the cursor (position, bearing and range from the boat, own sounding) and the forecast at the cursor, then Route (and, for Racing, the routing's targets; for Fishing, the sea at the cursor). Click a section's title to fold it.
+- **Alerts**, always at the bottom. New alarms appear here with **Silence** and the other buttons, and the edge of the chart flashes red while an alarm is unacknowledged. Silenced alarms are one steady line; click it for the Alarms list.
+
+**Hide it** with **O**, the panel button in the toolbar or **⟩**. Hidden, the panel leaves one line under the chart: HDG, COG, SOG, depth, position and time, with MOB and Drop, and **⟨ Panel** to bring it back. Each window remembers for each view whether its panel is shown. A new MOB brings the panel back. In a view without a chart (Instruments, Live data) there is no data panel, and the alarms appear over the screen as before.
+
+**Edit it** with **✎** (or **Instruments › Edit the data panel**). Each section gets ▲ ▼ to move it, **1 col / 2 col** for one or two columns, **＋ −** for a graphic's height, ✕ to remove it, and a box for its name. Click a reading to change it, move it or remove it; **+ Add a reading** adds one at the end. At the bottom, **+ Add a section** adds a section of readings, a graphic (wind dial, compass, highway, sounder history) or a history plot. **Reset** goes back to the starting layout for this view and Use. **Done** finishes. Your changes are kept for that view and Use, and are shared by every window.
+
+**Right-click** (or hold) a reading for its history in a card (see *History plots*).
+
+**Sizes.** The panel's text is sized in millimetres from the screen calibration (Settings › Display), as the chart symbols are, so it is the same size on every screen. **Instruments › Text size** makes it larger for reading from further away: **Normal** (for about 1 m), **Large** (1.3 m) or **Extra large** (1.6 m). Drag the panel's inner edge for **narrow**, **normal** or **wide**; it snaps to the nearest. **Side** (Instruments, or Settings › Display › **Data panel side**) puts it to the right of the chart (the default) or the left, between the drawers and the chart.
 
 **Views and monitor windows**
 
-A **view** is an arrangement of the same screen. The **View** button in the toolbar (top left) lists them by name; click one:
+A **view** is an arrangement of the same screen. The **View** button in the toolbar lists them by name; click one:
 
 | View | Shows |
 | --- | --- |
@@ -499,8 +518,6 @@ A **view** is an arrangement of the same screen. The **View** button in the tool
 | {icon:view-inst} **Instruments** | A screen of single readings, with no chart |
 
 Every option is still available in every view; a view only decides what is shown to begin with. {icon:panels} **Panels** shows or hides the rail, drawers and dock in the current view. The view button's list also has **Show the chart in this view**: the Instruments view starts without the chart, for a second screen or a helm display.
-
-Each panel (group of instruments) has a name you can edit in the {icon:inst} Instruments drawer (the text box in its list entry), and a tick for each view, which says whether the group floats over the chart in that view.
 
 **Monitor windows.** **Instruments › New monitor window** opens another full TweedPlot window for another screen, showing any view you choose. Open as many as you like: the Navigation view on two bridge displays, the Instruments view at the helm, Planning at the chart table. Drag each window to its screen and press **Full screen** (F11).
 
@@ -511,7 +528,7 @@ Each panel (group of instruments) has a name you can edit in the {icon:inst} Ins
 
 **The Instruments view**
 
-The Instruments view is one screen of tiles, each a single reading, on a grid of 12 columns by 8 rows. It uses the same readings as the floating panels (including the graphic Wind, Compass and Highway), but its tiles are not grouped.
+The Instruments view is one screen of tiles, each a single reading, on a grid of 12 columns by 8 rows. It uses the same readings as the data panel (including the graphic Wind, Compass, Highway, Sounder history and the history plots).
 
 - **Move**: drag a tile. A tile dropped under another locks to that tile's column; it does not shuffle to the left. Tiles snap to the grid and cannot overlap or leave the screen.
 - **Resize**: drag the handle in a tile's bottom right corner. Text and dials scale to fill the tile.
@@ -519,19 +536,14 @@ The Instruments view is one screen of tiles, each a single reading, on a grid of
 - **Instruments drawer › Add an instrument** puts a new tile in the first free space. **Reset Instruments screen** returns to the default arrangement.
 - Night colours show red (or green) readings on black.
 
-**Working with panels**
-
-- **Move**: point at a panel and its grip (⋮⋮) appears along the edge; drag it. Panels snap to the screen edges and keep clear of the dock. (On a touch screen without a mouse the grip is always shown.)
-- **Fold**: double-click (or double-tap) the grip to shrink a panel to a small title; again to open it.
-- **Change a reading**: click (tap) it to choose what it shows, add another beside it, remove it, change the panel's size (small, medium, large) or lay it out across or down.
-- **Missing data**: a panel of the boat's own readings (position, speed, depth, wind) is always on screen and shows a dash for a reading with no data, so a sensor that has failed is seen, not hidden. Panels that need something first (a route, a GRIB, the cursor on the chart, an ocean file, a MOB) only appear once they have something to show.
-- **Instruments drawer**: **Add panel**, **Fold all**, **Lock layout** (stops accidental moves), **Reset**, **Show instrument panels** (hide or show them all at once), and a tick beside each panel to hide just that one. The alarms have their own drawer, {icon:alarms} **Alarms**, and the wind arrows are in **Chart › Own ship**.
+- **Lock layout** (Instruments drawer) stops the screen being changed by accident.
 
 **What can be shown**
 
 | Group | Readings |
 | --- | --- |
-| Navigation | SOG, COG, heading (°T and °M), boat speed, depth, position, log, trip, UTC and local time |
+| Navigation | SOG, COG, heading (°T and °M), boat speed, depth, position, log, trip, UTC and local time, and both together |
+| Weather | Barometric pressure and its change over 3 hours, air temperature, humidity, water temperature |
 | Wind | AWS, AWA, TWS, TWA, TWD, VMG |
 | Route | Next mark, BTW, DTW, VMC, TTG, ETA, XTE; the active routing's target TWA, boat speed and heading, and % of target speed |
 | Cursor | Cursor position, bearing and range from the boat to the cursor (rhumb line) |
@@ -541,7 +553,7 @@ Port and starboard are marked on wind angles. Readings from Signal K grey out af
 
 **The floating time slider**
 
-A bar with the GRIB choice, step back and forward, play, **Now**, what the shading shows, the slider and the time. Drag it anywhere. With it and the GRIB-at-cursor panel you can close every drawer and still scrub the forecast and read values anywhere on the chart, which is the most useful layout for planning or talking a route through with crew. Hide it with ×; bring it back with Weather and tides › **Floating time slider**.
+A bar with the GRIB choice, step back and forward, play, **Now**, what the shading shows, the slider and the time. Drag it anywhere. With it and the data panel's forecast at the cursor (Planning) you can close every drawer and still scrub the forecast and read values anywhere on the chart, which is the most useful layout for planning or talking a route through with crew. Hide it with ×; bring it back with Weather and tides › **Floating time slider**.
 
 ![Drawers closed: only the floating time slider and the GRIB-at-cursor and cursor panels over an ECMWF AIFS forecast for New Zealand](img/03-slider-grib-panel.jpg)
 
@@ -551,7 +563,7 @@ Some readings are drawn rather than written, in the Graphic group of any tile's 
 
 - **Wind**: a dial with the boat pointing up, true wind (blue) and apparent wind (orange) needles pointing to where each wind comes from, and close-hauled sectors red to port and green to starboard. True wind is in the two top corners (TWS left, TWA right) and apparent wind in the two bottom corners (AWS left, AWA right), each in its needle's colour; the angles carry a red P or green S for the side. The chart's wind arrows and the TWS, TWA, TWD, AWS and AWA readings use the same two colours.
 - **Compass**: heading at the top of a turning card, with course over ground (orange) and the bearing to the next mark (green) on its rim.
-- **Sounder history**: a record of the depth under the boat, drawn like a fish-finder's screen. Time runs left to right with now at the right edge, and the depth scale on the right; the bottom is drawn as a hard return, a yellow line over orange bands on a brown body, so a ledge, a drop-off or a hump shows as a shape rather than a number. The depth is big at the top left, with the water temperature under it when the boat reports it. A dashed red line marks the safety depth (Chart › Safety). Two small buttons in the corner set **how much history** fits across the screen (5, 15, 30 minutes, 1 or 2 hours: click to step through) and **how deep** the screen goes (Auto follows the bottom, or fixed at 10, 20, 50, 100, 200 or 500 m). A break in the data (the sounder drops out) leaves a gap, not a made-up line. It records from the Signal K depth (below transducer, or below surface when that is all there is), one point a second for up to two hours, and keeps those two hours when TweedPlot is closed and opened again (the time it was closed shows as a gap). It draws the bottom only: it is a record of depth, not a fish-finder's sonar picture, so it does not show fish, bait or the bottom's hardness. Give it a wide tile; in a panel it makes the panel a free grid, as the Highway does.
+- **Sounder history**: a record of the depth under the boat, drawn like a fish-finder's screen. Time runs left to right with now at the right edge, and the depth scale on the right; the bottom is drawn as a hard return, a yellow line over orange bands on a brown body, so a ledge, a drop-off or a hump shows as a shape rather than a number. The depth is big at the top left, with the water temperature under it when the boat reports it. A dashed red line marks the safety depth (Chart › Safety). Two small buttons in the corner set **how much history** fits across the screen (5, 15, 30 minutes, 1 or 2 hours: click to step through) and **how deep** the screen goes (Auto follows the bottom, or fixed at 10, 20, 50, 100, 200 or 500 m). A break in the data (the sounder drops out) leaves a gap, not a made-up line. It records from the Signal K depth (below transducer, or below surface when that is all there is), one point a second for up to two hours, and keeps those two hours when TweedPlot is closed and opened again (the time it was closed shows as a gap). It draws the bottom only: it is a record of depth, not a fish-finder's sonar picture, so it does not show fish, bait or the bottom's hardness. Give it a wide tile, or a section of its own in the data panel.
 - **Highway**: a stacked navigation display with heading, course to steer (CTS), speed over ground (SOG), waypoint distance (DTW), a full-width heading-following compass ribbon, a perspective track grid, cross-track error (XTE), time to go (TTG) and estimated arrival (ETA). The heading is marked at the ribbon centre and the bearing graduations scroll continuously. The perspective lane shifts with XTE while the vessel stays fixed. CTS steers back toward the active route leg, with the correction limited to 30°. When both heading and course over ground (COG) are available, their signed difference estimates the combined track offset; the target heading compensates for that offset. A horizontal arrow below the highway shows the direction and size of the required heading change. Values ease toward new readings at 4 Hz. During MOB the display switches to direct bearing and range to the MOB position. Without a heading sensor it works from course over ground (COG), and says so.
 
 **History plots**
@@ -593,7 +605,7 @@ Alarms appear in a banner at the top of the chart and sound until silenced. The 
 
 Press the red **MOB** button at the top right the moment someone goes over. It is alone in that corner, in the same place and size in every view and in every window, and works with one press and no confirmation: a mistaken press costs little, a delayed one may not. Clearing a MOB asks twice.
 
-TweedPlot marks the boat's position (or where it was put when planning) and raises an alarm that shows the time since, and the bearing and distance back to the position, updated every second, with a line from the boat to it on the chart. A large red **Man overboard** instrument panel comes up below the alarms with **Brg to MOB** (°T), **Rng to MOB** (metres under 0.2 NM, then NM), **Since MOB** (minutes and seconds) and **MOB at** (the position and the time it was pressed, local and UTC, for the log and a distress call), big enough to read from the helm; it comes up even if it was folded or hidden, can be dragged like any panel, and goes when the MOB is cleared. The Highway switches to direct bearing and range to the MOB position. Every window has the MOB button and shows the same readings for as long as the MOB is set, and the MOB can be cleared in any window. The position is also saved as a library mark in the group "MOB". **Clear MOB** in the banner, pressed twice, ends it.
+TweedPlot marks the boat's position (or where it was put when planning) and raises an alarm that shows the time since, and the bearing and distance back to the position, updated every second, with a line from the boat to it on the chart. A red **Man overboard** section comes up in the data panel, under the own-ship readings, with **Brg to MOB** (°T), **Rng to MOB** (metres under 0.2 NM, then NM), **Since MOB** (minutes and seconds) and **MOB at** (the position and the time it was pressed, local and UTC, for the log and a distress call); the panel is shown again if it was hidden, and the section goes when the MOB is cleared. The Highway switches to direct bearing and range to the MOB position. Every window has the MOB button and shows the same readings for as long as the MOB is set, and the MOB can be cleared in any window. The position is also saved as a library mark in the group "MOB". **Clear MOB** in the banner, pressed twice, ends it.
 
 **Drop mark**
 
@@ -968,7 +980,7 @@ Area, length and step work as for GRIBs; an area across 180° isn't offered yet 
 
 Ocean data is shown under whatever weather GRIB is on the chart: choose **Sea temperature**, **Sea temperature, satellite hourly (Himawari)**, **Salinity**, their **at depth** versions, **Sea surface height**, **Chlorophyll-a** or **Current** under **Show** and the shading comes from the loaded ocean file while the wind barbs stay on. Under the colour bar, three pointers set a **filter**: drag the outer two to the lowest and highest temperature (or salinity) you want to see, and nothing outside them is shaded; drag the red middle one to your **target**. The colours run from the low limit to the target over the cool half of the scale and from the target to the high limit over the warm half, so the target water is always the green-yellow middle and stands out, and it gets its own bold contour. The track spans the whole loaded file's range; **Fit** puts the pointers back to it. The colours depend only on the filter, never on the zoom, and each layer keeps its own filter between sessions. **Contours** draws lines within the filter at a spacing that suits it: bunched lines are a front. Chlorophyll spans a hundredfold (0.05 to 5 mg/m³ is usual), so its colours, filter and contours run on a log scale: each step along the colour bar multiplies the value, and the contours sit at tidy values (0.1, 0.2, 0.3, 0.5, 1, 2 …).
 
-Values at the cursor show under the GRIB table, one line for each ocean file (its name, then sea temperature, satellite temperature, salinity, at depth, current and set, chlorophyll). The same values are on the **Sea at cursor** instrument panel, which appears when an ocean file is loaded and hides again when none is; tap a reading to swap it for another (*Sea at cursor* group: Sea temp, Sea temp sat, Salinity, Temp at depth, Salinity at depth, Current, Current set, Chlorophyll), as with any panel.
+Values at the cursor show under the GRIB table, one line for each ocean file (its name, then sea temperature, satellite temperature, salinity, at depth, current and set, chlorophyll). The same values can be shown in the data panel (Planning · Fishing has them to begin with): **✎**, then add the readings of the *Sea at cursor* group (Sea temp, Sea temp sat, Salinity, Temp at depth, Salinity at depth, Current, Current set, Chlorophyll).
 
 A daily MUR analysis stands for four days after its date, so it still shows at the slider's "now". Remember what each is: MUR is an analysis of the satellites' skin temperature (the top millimetre, smoothed where cloud hid the sea); HYCOM is a model, good for the big picture and the days ahead but not for a 1 km eddy. Where they disagree, MUR is the better guide to today's surface. Himawari is the freshest of all (a couple of hours old) and the most detailed in time, but it only sees through clear sky and reads the top skin of the sea, which a calm sunny afternoon warms by a degree or more; MUR smooths that out. An hourly view stands for half a day after its time; a daily chlorophyll analysis for six days after its date.
 
@@ -1158,13 +1170,13 @@ Where the live data comes from and how it is treated: **Signal K** (its connecti
 
 **Colours: day, dusk and night**
 
-The colours button {icon:day} in the toolbar at the top left (or **Settings › Display › Colours**) steps through five sets of colours; it shows a moon {icon:night} while dusk or night colours are on. Right-click it (or hold it on a touch screen) for all five and the brightness in one small panel:
+The colours button {icon:day} in the toolbar (or **Settings › Display › Colours**) steps through five sets of colours; it shows a moon {icon:night} while dusk or night colours are on. Right-click it (or hold it on a touch screen) for all five and the brightness in one small panel:
 
 | Colours | Use |
 | --- | --- |
 | **Day** | Normal colours |
 | **Dusk** | With **Symbols: IHO (S-52)**: the chart in the IHO dusk colours, as on an ECDIS (dark background), with dark panels. With the paper chart symbols: dimmer, a little less colour |
-| **Night (IHO)** | With **Symbols: IHO (S-52)**: the chart in the IHO night colours, very dark, as on an ECDIS at night. The rest of the screen (toolbar icons, MOB and Drop buttons, panels, instrument panels, the status bar, scale, display category label and attribution, the Own soundings card, AIS info window and target list) is shown in the same dim red as Night (red), so nothing bright is left. With the paper chart symbols: dark colours throughout |
+| **Night (IHO)** | With **Symbols: IHO (S-52)**: the chart in the IHO night colours, very dark, as on an ECDIS at night. The rest of the screen (toolbar icons, MOB and Drop buttons, panels, the data panel, the status bar, scale, display category label and attribution, the Own soundings card, AIS info window and target list) is shown in the same dim red as Night (red), so nothing bright is left. With the paper chart symbols: dark colours throughout |
 | **Night (red)** | Everything as shades of red on black: chart, GRIB shading, panels and drawers. Keeps night vision best |
 | **Night (green)** | The same in green, if you find it easier to read than red |
 
@@ -1176,7 +1188,7 @@ With the IHO dusk and night colours, what TweedPlot draws over the chart (routes
 
 **Night cursors.** In the night modes the mouse pointer is drawn in the night colour (an arrow, a ring over things you can click, a cross while drawing and a four-way mark for dragging the chart), because the system's white pointer would spoil night vision. The pointer is drawn at a fixed brightness; the resize pointers and the text caret stay as Windows draws them. A touch screen has no pointer.
 
-[Screenshot: the Night (IHO) colours with the toolbar, an AIS info window, the target list and the instrument panels, all in dim red]
+[Screenshot: the Night (IHO) colours with the toolbar, an AIS info window, the target list and the data panel, all in dim red]
 
 In Night (IHO), AIS targets are a dim grey with a dark outline, and the selection brackets and course lines are dimmed to match.
 
@@ -1315,7 +1327,7 @@ TweedPlot is free software, licensed GPL-3.0-or-later. The licence, the full lis
 | The routing hugs a point | A mark without its own radius uses the arrival radius: give offshore waypoints a radius of a mile or more |
 | ECMWF download slow or huge | ECMWF publishes whole-globe fields: choose fewer fields, a shorter forecast or a longer time step. 0.1° is much larger per field than 0.25°; requested global fields are cached (up to 5 GiB) and reused for later area requests |
 | Saildocs reply too big | Coarser grid, fewer fields, shorter forecast, smaller area |
-| A panel or the time slider has gone | Instruments drawer: **Show instrument panels** or the tick beside the panel; the time slider: Weather and tides › **Floating time slider** |
+| The data panel or the time slider has gone | The data panel: **O**, or **⟨ Panel** on the line under the chart; the time slider: Weather and tides › **Floating time slider** |
 | Soundings, contours or cables have gone | **Chart › Chart display**: the display is on Base or Standard. Choose All, or tick Soundings |
 | An info window is off where I can't see it | It is kept on the screen, but may be behind a drawer: close the drawer, or drag the window by its title bar |
 | An AIS target is crossed through | It hasn't been heard for a while (see Targets): out of range, behind land, its set switched off, or (online AIS) no shore station in reach |

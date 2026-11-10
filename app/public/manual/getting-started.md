@@ -5,7 +5,7 @@ TweedPlot plans and sails passages: charts, weather, routing, AIS, alarms and fi
 ## The screen
 
 - **The rail** (left edge): the drawers. {icon:weather} Weather, {icon:course} Route, {icon:routing} Wx routing, {icon:fleet} Targets & fleets, {icon:library} Library, {icon:chart} Chart, {icon:inst} Instruments, {icon:alarms} Alarms. {icon:settings} Settings is at the bottom. Click one to open it; click it again (or **Esc**) to close it.
-- **The toolbar** (top left of the chart): {icon:north} north up, live or paused, {icon:follow} follow the boat, {icon:ruler} ruler, the **View** list, {icon:panels} panels, {icon:day} colours (day, dusk, night).
+- **The toolbar** (the strip down the chart's left edge): {icon:north} north up, live or paused, {icon:follow} follow the boat, {icon:ruler} ruler, the **View** list, {icon:panels} panels, the data panel (**O**), {icon:day} colours (day, dusk, night).
 - **On the chart**: **MOB** (top right). Bottom right: **Drop** (a mark at the boat), and above it the optional anchor button (Settings › Display › **Anchor button on the chart**).
 - **Right-click the chart** (or hold a finger on it): move the boat, start a route, new mark, drop anchor, go to, meteogram, ruler… Most things start here.
 - **The ?** in a drawer's title bar opens the manual at that drawer.

@@ -1,14 +1,12 @@
-// Floating instrument panels: rows or columns of readings, dragged anywhere,
-// always on top of the chart. Each reading can show a state ("stale", "warn",
-// "alarm") that styles the tile, ready for user-set warnings and alarms later.
+// The readings TweedPlot can show (ITEMS), drawn in the data panel beside the chart
+// (sidepanel.js) and on the Instruments view's screen (insttiles.js). Each reading can show
+// a state ("stale", "warn", "alarm") that styles it.
 
 import { rhumb } from "./navmath.js";
 import { ask } from "./ask.js";
-import { VIEWS } from "./views.js";
 import { own } from "./role.js";
 import { setupTiles } from "./insttiles.js";
 import { CHANNELS as HIST, sample as histSample, renderHistoryTile, openHistoryCard, recorder as histRec } from "./history.js";
-import { columns, spanFromDrag, cleanSpan, moveReading, dropIndex, CELL, ROW } from "./gridmath.js";
 
 const KEY = "racenav.instruments";
 const STALE_S = 10;
@@ -37,6 +35,9 @@ export const ITEMS = {
   POS: { label: "Position", unit: "", group: "Navigation", live: true, wide: true, get: (c) => (c.v.lat != null && c.v.lon != null ? [c.v.lat, c.v.lon] : null), fmt: (p) => `${ddm(p[0], "N", "S")}<br>${ddm(p[1], "E", "W")}` },
   LOG: { label: "Log", unit: "NM", group: "Navigation", live: true, get: (c) => c.v.log, fmt: (x) => x.toFixed(0) },
   TRIP: { label: "Trip", unit: "NM", group: "Navigation", live: true, get: (c) => c.v.trip, fmt: f1 },
+  // local and UTC time together (the data panel's own-ship block)
+  TIME: { label: "Time", unit: "", group: "Navigation", wide: true, get: (c) => c.now,
+    fmt: (t) => { const d = new Date(t); return `${d.toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "short" })} ${d.toLocaleTimeString("en-NZ", { hour12: false })}<span class="u">local</span> ${d.toISOString().slice(11, 19)}<span class="u">UTC</span>`; } },
   UTC: { label: "UTC", unit: "", group: "Navigation", get: (c) => c.now, fmt: (t) => new Date(t).toISOString().slice(11, 19) },
   LOCAL: { label: "Local", unit: "", group: "Navigation", get: (c) => c.now, fmt: (t) => new Date(t).toLocaleTimeString("en-NZ", { hour12: false }) },
 
@@ -48,10 +49,10 @@ export const ITEMS = {
   VMG: { label: "VMG", unit: "kn", group: "Wind", live: true, get: (c) => (c.v.twa != null && (c.v.stw ?? c.v.sog) != null ? (c.v.stw ?? c.v.sog) * Math.cos((c.v.twa * Math.PI) / 180) : null), fmt: (x) => f1(Math.abs(x)) },
 
   // the weather station (Signal K environment.outside, or NMEA MDA / XDR)
-  PRES: { label: "Pressure", unit: "hPa", group: "Weather", live: true, get: (c) => c.v.pressure, fmt: f1 },
-  AIRT: { label: "Air temp", unit: "°C", group: "Weather", live: true, get: (c) => c.v.air_temp, fmt: f1 },
-  HUM: { label: "Humidity", unit: "%", group: "Weather", live: true, get: (c) => c.v.humidity, fmt: (x) => x.toFixed(0) },
-  WTEMP: { label: "Water temp", unit: "°C", group: "Weather", live: true, get: (c) => c.v.water_temp, fmt: f1 },
+  PRES: { short: "Baro", label: "Pressure", unit: "hPa", group: "Weather", live: true, get: (c) => c.v.pressure, fmt: f1 },
+  AIRT: { short: "Air", label: "Air temp", unit: "°C", group: "Weather", live: true, get: (c) => c.v.air_temp, fmt: f1 },
+  HUM: { short: "RH", label: "Humidity", unit: "%", group: "Weather", live: true, get: (c) => c.v.humidity, fmt: (x) => x.toFixed(0) },
+  WTEMP: { short: "Water", label: "Water temp", unit: "°C", group: "Weather", live: true, get: (c) => c.v.water_temp, fmt: f1 },
 
   NEXT: { label: "To mark", unit: "", group: "Route", wide: true, get: (c) => c.nav?.next?.name ?? null, fmt: (s) => esc(s) },
   BTW: { label: "BTW", unit: "°T", group: "Route", get: (c) => c.wp?.btw, fmt: deg3 },
@@ -332,7 +333,7 @@ for (const [k, ch] of Object.entries(HIST)) {
     get: () => true, fmt: () => "", render: renderHistoryTile(k) };
 }
 // the pressure tendency as a single reading: change over three hours, with the words for it
-ITEMS.PTEND = { label: "Pressure 3 h", unit: "hPa", group: "Weather", live: true,
+ITEMS.PTEND = { short: "Baro 3 h", label: "Pressure 3 h", unit: "hPa", group: "Weather", live: true,
   get: () => histChange("PRES"), fmt: (d) => `${d > 0 ? "+" : d < 0 ? "−" : "±"}${Math.abs(d).toFixed(1)}`,
   state: (d) => (d <= -6 ? "alarm" : d <= -3.6 ? "warn" : "") };
 for (const [k, it] of Object.entries(ITEMS)) it.key = k;
@@ -551,43 +552,19 @@ function cursorLeg(c) {
   return rhumb([c.v.lon, c.v.lat], c.cursor);
 }
 
-const CURSOR_PANEL = { id: "pc", x: 0.45, y: 0.02, dir: "row", size: "s", tiles: ["CPOS", "CBRG", "CRNG"] };
-const GRIB_PANEL = { id: "pg", x: 0.45, y: 0.11, dir: "row", size: "s", tiles: ["GTWS", "GTWD", "GGUST", "GMSLP", "GHS"] };
-// shown only while an ocean file is loaded (`sea`)
-// shown only while a man overboard is set (`mob`): big, near the top, below the alarm banner
-const MOB_PANEL = { id: "pm", x: 0.4, y: 0.25, dir: "row", size: "l", mob: true, name: "Man overboard", tiles: ["MOBBRG", "MOBRNG", "MOBAGO", "MOBPOS"] };
-const HIGHWAY_PANEL = { id: "phw", x: 0.35, y: 0.48, dir: "row", size: "l", mob: true, name: "Highway", tiles: ["HIGHWAY"] };
-const SEA_PANEL = { id: "ps", x: 0.36, y: 0.2, dir: "row", size: "s", sea: true, name: "Sea at cursor", tiles: ["GSST", "GSKIN", "GSSS", "GCUR", "GSET", "GCHL"] };
-
-const DEFAULT_LAYOUT = {
-  v: 1,
-  locked: false,
-  panels: [
-    // Navigation: course, speed, depth, position and time at least; Planning is left to the user
-    { id: "p1", x: 0.3, y: 0.86, dir: "row", size: "m", views: ["nav"], tiles: ["SOG", "COG", "DPT", "POS", "UTC"] },
-    { id: "p2", x: 0.86, y: 0.12, dir: "column", size: "s", tiles: ["NEXT", "BTW", "DTW", "TTG", "XTE"] },
-    GRIB_PANEL,
-    SEA_PANEL,
-    MOB_PANEL,
-    HIGHWAY_PANEL,
-  ],
-  // the cursor's bearing and range live in the status bar now; the panel is still in the Instrument list
-  added: ["cursor", "grib", "sea", "mob", "highway"],
-};
-
+/**
+ * The Instruments view's screen of readings (insttiles.js), the readings' shared state (ctx),
+ * the history recording, and right-click for a reading's history. The floating instrument panels
+ * of earlier versions are retired: their readings live in the data panel (sidepanel.js), which
+ * takes the user's own panels over once (floatingPanels()).
+ */
 export function setupInstruments() {
-  const root = document.getElementById("inst");
-  const rail = document.getElementById("rail");
   const menu = document.getElementById("tile-menu");
   let layout = loadLayout();
   const tiles = setupTiles({ host: document.getElementById("itiles"), menu, items: ITEMS, getLayout: () => layout, save, paint: (t, it, fit) => paintTile(t, it, fit), historyKey });
   let ctx = { v: {}, now: Date.now(), age: Infinity, safetyDepth: 3 };
 
   function save() { try { localStorage.setItem(KEY, JSON.stringify(layout)); } catch { /* ignore */ } }
-  const view = () => document.documentElement.dataset.view || "plan";
-  // a panel without a list of views shows in every view; a man overboard shows everywhere
-  // the Instruments view has no groups: it is one screen of single readings (insttiles.js)
-  const inView = (p) => p.mob || (view() !== "inst" && (!p.views || p.views.includes(view())));
   window.addEventListener("racenav-view", () => build());
   // another window (a monitor, or the main window) changed the shared layout
   window.addEventListener("storage", (e) => {
@@ -595,327 +572,18 @@ export function setupInstruments() {
     layout = loadLayout();
     build();
   });
-  // position and size are kept per view: the chart overlay and the instruments screen differ
-  const geo = (p) => p.vp?.[view()] ?? p;
-  const own = (p) => { p.vp ??= {}; return (p.vp[view()] ??= { x: p.x, y: p.y }); };
 
-  // ---------- build ----------------------------------------------------------
   function build() {
     tiles.build();
-    root.innerHTML = "";
-    root.classList.toggle("locked", !!layout.locked);
-    root.hidden = !!layout.hideAll;
-    for (const p of layout.panels) {
-      if (p.hidden || !inView(p)) continue;
-      const el = document.createElement("div");
-      const g = geo(p);
-      // a panel holding the highway is always a free grid: its fixed size would be far too big
-      const hasHw = p.tiles.some((k) => ITEMS[k]?.highway || ITEMS[k]?.sounder || ITEMS[k]?.history);
-      const avail = Math.max(120, window.innerHeight - (parseInt(getComputedStyle(document.documentElement).getPropertyValue("--dock-h")) || 0) - 8);
-      const gw = g.w > 0 ? g.w : hasHw ? 420 : 0;
-      const free = !p.collapsed && gw > 0;
-      el.className = `ipanel ${p.collapsed ? "row collapsed" : free ? "free" : p.dir} ${p.size}`;
-      if (free) {
-        const maxW = Math.max(80, window.innerWidth - rail.getBoundingClientRect().right);
-        const w = Math.min(gw, maxW);
-        const cols = columns(w, p.size);
-        const base = ROW[p.size] ?? ROW.m;
-        // default spans: the highway fills the panel's width, three rows tall
-        p.span = p.tiles.map((k, i) => p.span?.[i] ?? (ITEMS[k]?.highway ? [cols, 3] : ITEMS[k]?.sounder || ITEMS[k]?.history ? [cols, 2] : null));
-        const area = p.tiles.reduce((n, _, i) => { const [c, r] = cleanSpan(p.span[i]); return n + Math.min(c, cols) * r; }, 0);
-        const rows = Math.max(1, Math.ceil(area / cols));
-        // too many rows for the screen: make the rows shorter, never taller than the screen
-        const rh = Math.max(28, Math.min(base, Math.floor((avail - 24 - rows * 3) / rows)));
-        el.style.width = `${w}px`;
-        el.style.maxHeight = `${avail}px`;
-        if (g.h > 0) el.style.minHeight = `${Math.min(g.h, avail)}px`;
-        el.style.setProperty("--cols", cols);
-        el.style.setProperty("--rh", `${rh}px`);
-      }
-      el.dataset.id = p.id;
-      const grip = document.createElement("div");
-      grip.className = "grip";
-      grip.textContent = "⋮⋮";
-      grip.title = p.collapsed ? "Double-click (or double-tap) to open this panel; drag to move it"
-        : "Drag to move this panel; double-click (or double-tap) to fold it away";
-      el.append(grip);
-      if (p.collapsed) {
-        const t = document.createElement("div");
-        t.className = "ptitle";
-        t.textContent = panelTitle(p);
-        t.title = "Double-click to open";
-        t.ondblclick = () => toggleCollapsed(p);
-        el.append(t);
-      }
-      if (!p.collapsed) p.tiles.forEach((key, i) => {
-        const it = ITEMS[key];
-        const t = document.createElement("div");
-        t.className = `tile ${p.size}${it?.tint ? ` wt-${it.tint}` : ""}${it?.wide ? " wide" : ""}${it?.graphic ? " graphic" : ""}${it?.highway ? " highway-card" : ""}${it?.sounder ? " sounder-card" : ""}${it?.history ? " hist-card" : ""}`;
-        t.dataset.i = i;
-        t.dataset.k = key;
-        t.innerHTML = `<div class="lbl"><span>${it ? it.label : key}</span><span class="sd"></span></div><div class="v">—</div>`;
-        const sp = cleanSpan(p.span?.[i]);
-        if (free) {
-          const cs = Math.min(sp[0], Number(el.style.getPropertyValue("--cols")) || sp[0]);
-          if (cs > 1) t.style.gridColumn = `span ${cs}`;
-          if (sp[1] > 1) t.style.gridRow = `span ${sp[1]}`;
-          if (!layout.locked) {
-            const h = document.createElement("div");
-            h.className = "trsz";
-            h.title = "Drag to make this reading span more or fewer cells";
-            h.addEventListener("click", (e) => e.stopPropagation());
-            t.append(h);
-          }
-        }
-        el.append(t);
-      });
-      if (!p.collapsed && !layout.locked) {
-        const h = document.createElement("div");
-        h.className = "prsz";
-        h.title = "Drag to resize this panel; the readings re-flow to fit";
-        el.append(h);
-        resizePanel(el, h, p);
-      }
-      root.append(el);
-      place(el, p);
-      dragByGrip(el, grip, p);
+    const lockBtn = document.getElementById("inst-lock");
+    if (lockBtn) {
+      lockBtn.classList.toggle("on", !!layout.locked);
+      lockBtn.textContent = layout.locked ? "Layout locked" : "Lock layout";
     }
-    renderList();
-    render();
   }
-
-  function place(el, p) {
-    const W = window.innerWidth, H = window.innerHeight;
-    const w = el.offsetWidth, h = el.offsetHeight;
-    const minX = rail.getBoundingClientRect().right;
-    // keep clear of the dock at the bottom when it is open
-    const dockH = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--dock-h")) || 0;
-    const gg = geo(p);
-    const x = Math.max(minX, Math.min(Math.max(minX, W - w), gg.x * W));
-    const y = Math.max(0, Math.min(H - dockH - h, gg.y * H));
-    el.style.left = `${x}px`;
-    el.style.top = `${y}px`;
-  }
-  const replace = () => { for (const el of root.children) place(el, panel(el.dataset.id)); };
-  window.addEventListener("resize", replace);
-  window.addEventListener("racenav-layout", replace);
-  const panel = (id) => layout.panels.find((p) => p.id === id);
-  const panelTitle = (p) => p.name || p.tiles.slice(0, 3).map((t) => ITEMS[t]?.label ?? t).join(" · ") + (p.tiles.length > 3 ? " …" : "");
-  function toggleCollapsed(p) { p.collapsed = !p.collapsed; save(); build(); }
-
-  function dragByGrip(el, grip, p) {
-    // A tap that doesn't move is a tap; two taps close together fold or open
-    // the panel (works with a mouse double-click and a finger double-tap).
-    let lastTap = 0;
-    grip.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      grip.setPointerCapture(e.pointerId);
-      const r = el.getBoundingClientRect();
-      const dx = e.clientX - r.left, dy = e.clientY - r.top;
-      const x0 = e.clientX, y0 = e.clientY;
-      let moved = false;
-      if (!layout.locked) grip.style.cursor = "grabbing";
-      const move = (ev) => {
-        if (Math.abs(ev.clientX - x0) + Math.abs(ev.clientY - y0) > 6) moved = true;
-        if (layout.locked || !moved) return;
-        const W = window.innerWidth, H = window.innerHeight;
-        let x = ev.clientX - dx, y = ev.clientY - dy;
-        const minX = rail.getBoundingClientRect().right;
-        // snap to the screen edges
-        if (x - minX < 12) x = minX;
-        if (y < 12) y = 0;
-        if (W - (x + r.width) < 12) x = W - r.width;
-        if (H - (y + r.height) < 12) y = H - r.height;
-        x = Math.max(minX, Math.min(Math.max(minX, W - r.width), x));
-        const o = own(p);
-        o.x = x / W; o.y = y / H;
-        place(el, p);
-      };
-      const up = () => {
-        grip.removeEventListener("pointermove", move);
-        grip.removeEventListener("pointerup", up);
-        grip.style.cursor = "";
-        if (moved) { save(); return; }
-        const now = Date.now();
-        if (now - lastTap < 400) { lastTap = 0; toggleCollapsed(p); } else lastTap = now;
-      };
-      grip.addEventListener("pointermove", move);
-      grip.addEventListener("pointerup", up);
-    });
-  }
-
-  // Resize a panel from its corner: the width sets how many columns of readings fit.
-  function resizePanel(el, handle, p) {
-    handle.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      handle.setPointerCapture(e.pointerId);
-      const r = el.getBoundingClientRect();
-      const x0 = e.clientX, y0 = e.clientY;
-      el.classList.add("free");
-      el.style.setProperty("--rh", `${ROW[p.size] ?? ROW.m}px`);
-      const limit = () => ({
-        w: Math.max(60, Math.min(window.innerWidth - r.left, r.width + (lastX - x0))),
-        h: Math.max(40, Math.min(window.innerHeight - 8 - r.top, r.height + (lastY - y0))),
-      });
-      let lastX = x0, lastY = y0;
-      const move = (ev) => {
-        lastX = ev.clientX; lastY = ev.clientY;
-        const s = limit();
-        el.style.width = `${s.w}px`;
-        el.style.minHeight = `${s.h}px`;
-        el.style.setProperty("--cols", columns(s.w, p.size));
-      };
-      const up = () => {
-        handle.removeEventListener("pointermove", move);
-        handle.removeEventListener("pointerup", up);
-        const s = limit();
-        const o = own(p);
-        o.w = Math.round(s.w); o.h = Math.round(s.h);
-        save(); build();
-      };
-      handle.addEventListener("pointermove", move);
-      handle.addEventListener("pointerup", up);
-    });
-  }
-
-  // A reading's corner handle sets how many columns and rows it covers; dragging
-  // the reading itself moves it to another place in this panel or in another one.
-  let swallowClick = false;
-  root.addEventListener("click", (e) => { if (swallowClick) { swallowClick = false; e.stopPropagation(); e.preventDefault(); } }, true);
-  root.addEventListener("pointerdown", (e) => {
-    if (layout.locked || e.button > 0) return;
-    const t = e.target.closest(".tile");
-    if (!t) return;
-    const p = panel(t.parentElement.dataset.id);
-    const i = Number(t.dataset.i);
-    if (!p) return;
-    if (e.target.closest(".trsz")) return startTileResize(e, t, p, i);
-    startTileDrag(e, t, p, i);
-  });
-
-  function startTileResize(e, t, p, i) {
-    e.preventDefault();
-    e.stopPropagation();
-    const h = e.target;
-    h.setPointerCapture(e.pointerId);
-    const r = t.getBoundingClientRect();
-    const [c0, r0] = cleanSpan(p.span?.[i]);
-    const x0 = e.clientX, y0 = e.clientY;
-    let cur = [c0, r0];
-    const move = (ev) => {
-      cur = [spanFromDrag(r.width, ev.clientX - x0, r.width / c0), spanFromDrag(r.height, ev.clientY - y0, r.height / r0)];
-      t.style.gridColumn = `span ${cur[0]}`;
-      t.style.gridRow = `span ${cur[1]}`;
-    };
-    const up = () => {
-      h.removeEventListener("pointermove", move);
-      h.removeEventListener("pointerup", up);
-      p.span = p.tiles.map((_, k) => (k === i ? cur : cleanSpan(p.span?.[k])));
-      save(); build();
-    };
-    h.addEventListener("pointermove", move);
-    h.addEventListener("pointerup", up);
-  }
-
-  function startTileDrag(e, t, p, i) {
-    const x0 = e.clientX, y0 = e.clientY;
-    let dragging = false, mark = null, place_ = null;
-    const clear = () => { mark?.classList.remove("drop-before", "drop-after"); mark = null; };
-    const target = (ev) => {
-      const u = document.elementFromPoint(ev.clientX, ev.clientY);
-      const tt = u?.closest?.(".tile");
-      if (tt && root.contains(tt) && tt !== t) {
-        const q = panel(tt.parentElement.dataset.id);
-        const b = tt.getBoundingClientRect();
-        const wide = !tt.parentElement.classList.contains("column");
-        return { el: tt, q, idx: dropIndex(Number(tt.dataset.i), (ev.clientX - b.left) / b.width, (ev.clientY - b.top) / b.height, wide) };
-      }
-      const pe = u?.closest?.(".ipanel");
-      if (pe && root.contains(pe) && !tt) {
-        const q = panel(pe.dataset.id);
-        return q && !q.collapsed ? { el: null, q, idx: q.tiles.length } : null;
-      }
-      return null;
-    };
-    const move = (ev) => {
-      if (!dragging) {
-        if (Math.abs(ev.clientX - x0) + Math.abs(ev.clientY - y0) < 8) return;
-        dragging = true;
-        t.classList.add("dragging");
-      }
-      clear();
-      place_ = target(ev);
-      if (place_?.el) {
-        mark = place_.el;
-        mark.classList.add(place_.idx > Number(mark.dataset.i) ? "drop-after" : "drop-before");
-      }
-    };
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
-      clear();
-      t.classList.remove("dragging");
-      if (!dragging) return;
-      swallowClick = true;
-      setTimeout(() => { swallowClick = false; }, 50);
-      if (!place_) return;
-      const { q, idx } = place_;
-      if (q === p) {
-        const to = idx > i ? idx - 1 : idx;
-        if (to === i) return;
-        const m = moveReading(p.tiles, p.span, i, to);
-        p.tiles = m.tiles; p.span = m.spans;
-      } else {
-        const key = p.tiles[i], sp = p.span?.[i] ?? null;
-        p.tiles.splice(i, 1);
-        if (p.span) p.span.splice(i, 1);
-        q.span = q.tiles.map((_, k) => q.span?.[k] ?? null);
-        q.tiles.splice(idx, 0, key);
-        q.span.splice(idx, 0, sp);
-        if (!p.tiles.length) layout.panels = layout.panels.filter((x) => x !== p);
-      }
-      save(); build();
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
-  }
-
-  // ---------- values ----------------------------------------------------------
   function render() {
     ctx.now = Date.now();
-    for (const el of root.children) {
-      const p = panel(el.dataset.id);
-      if (!p) continue;
-      // the sea panel: only while an ocean file is loaded; the MOB panel: only during a MOB
-      // A panel of the boat's own readings (position, depth, wind…) is always shown, with a dash
-      // for a reading with no data (IEC 62288: missing data is shown, not hidden). A panel that only
-      // has readings that need something first (a route, a GRIB, the cursor on the chart) stays out
-      // of the way until it has had a reading; then it stays and shows dashes if the data stops.
-      if (!seen.has(p) && (!contextOnly(p) || p.tiles.some((i) => ITEMS[i] && hasValue(ITEMS[i])))) seen.add(p);
-      const idle = !seen.has(p);
-      const off = (!!p.sea && !ctx.seaLoaded) || (!!p.mob && !ctx.mob) || idle;
-      if ((el.style.display === "none") !== off) {
-        el.style.display = off ? "none" : "";
-        if (!off) place(el, p);
-      }
-      for (const t of el.querySelectorAll(".tile")) {
-        const it = ITEMS[p.tiles[Number(t.dataset.i)]];
-        if (it) paintTile(t, it, el.classList.contains("free"));
-      }
-    }
     tiles.render();
-  }
-  const seen = new WeakSet(); // panels that have had a reading this session (not saved)
-  const CONTEXT_GROUPS = new Set(["Cursor", "GRIB at cursor", "Route", "Sea at cursor", "Man overboard"]);
-  const contextOnly = (p) => p.tiles.every((i) => !ITEMS[i] || CONTEXT_GROUPS.has(ITEMS[i].group));
-  function hasValue(it) {
-    try {
-      const v = it.get(ctx);
-      return v !== null && v !== undefined && !(typeof v === "number" && !Number.isFinite(v));
-    } catch { return false; }
   }
   /** Show one reading in its tile; `fit` scales the text (or the highway) to fill the tile. */
   function paintTile(t, it, fit) {
@@ -941,29 +609,6 @@ export function setupInstruments() {
     if (it.highway && fit) fitHighway(v);
     else if (!it.graphic && fit) fitText(t, v);
   }
-  /** Grow or shrink a reading's text to fill its tile (measured at 100 px, then scaled). */
-  function fitText(t, v) {
-    const key = `${v.innerHTML}|${t.clientWidth}|${t.clientHeight}`;
-    if (t._fit === key) return;
-    const lbl = t.querySelector(".lbl");
-    const availW = t.clientWidth - 18;
-    const availH = t.clientHeight - (lbl ? lbl.offsetHeight : 0) - 10;
-    if (availW <= 0 || availH <= 0) return;
-    v.style.fontSize = "100px";
-    v.style.width = "max-content";
-    const r = v.getBoundingClientRect();
-    v.style.width = "";
-    const k = Math.min(availW / Math.max(1, r.width), availH / Math.max(1, r.height));
-    v.style.fontSize = `${Math.max(8, Math.min(400, Math.floor(k * 100)))}px`;
-    t._fit = key;
-  }
-  /** Scale the highway's drawing, laid out at its design size, to fill its cell. */
-  function fitHighway(v) {
-    const d = v.querySelector(".hw-dashboard");
-    if (!d || !v.clientWidth || !v.clientHeight) return;
-    const k = Math.min(v.clientWidth / 680, v.clientHeight / 470);
-    d.style.transform = `translate(${((v.clientWidth - 680 * k) / 2).toFixed(1)}px, ${((v.clientHeight - 470 * k) / 2).toFixed(1)}px) scale(${k.toFixed(4)})`;
-  }
   setInterval(() => {
     ctx.age = (Date.now() - (ctx.dataAt ?? 0)) / 1000;
     sampleDepth(ctx);
@@ -974,7 +619,7 @@ export function setupInstruments() {
 
   // right-click (or hold) a reading: its history in a floating card
   const histFrom = (el) => {
-    const t = el?.closest?.("#inst .tile, #itiles .itile");
+    const t = el?.closest?.("#itiles .itile, #side .sp-row, #side-strip .sp-row");
     if (!t) return null;
     let k = t.dataset.k;
     if (!k && t.classList.contains("itile")) k = layout.tiles?.find((x) => x.id === t.dataset.id)?.k;
@@ -997,144 +642,28 @@ export function setupInstruments() {
   });
   document.addEventListener("pointerup", () => { if (hold && hold !== "done") clearTimeout(hold); setTimeout(() => { hold = null; }, 0); });
   document.addEventListener("click", (e) => { if (hold === "done" && histFrom(e.target)) { e.stopPropagation(); e.preventDefault(); } }, true);
-
-  // ---------- tile menu ----------------------------------------------------------
-  root.addEventListener("click", (e) => {
-    const t = e.target.closest(".tile");
-    if (!t) return;
-    const p = panel(t.parentElement.dataset.id);
-    openMenu(p, Number(t.dataset.i), t.getBoundingClientRect());
-  });
-  function openMenu(p, i, rect) {
-    const cur = p.tiles[i];
-    const groups = {};
-    for (const [k, it] of Object.entries(ITEMS)) (groups[it.group] ??= []).push([k, it]);
-    let html = "";
-    for (const [g, items] of Object.entries(groups)) {
-      html += `<div class="grp">${g}</div><div class="items">`;
-      for (const [k, it] of items) html += `<button data-set="${k}" class="${k === cur ? "cur" : ""}">${it.label}${it.unit ? ` <small>${it.unit}</small>` : ""}</button>`;
-      html += "</div>";
-    }
-    const hk = historyKey(cur);
-    if (hk) html += `<hr><button data-act="hist">Show ${HIST[hk].label} history (right-click a reading)</button>`;
-    html += `<hr><button data-act="add">Add a reading after this one</button><button data-act="remove">Remove this reading</button>`;
-    html += `<hr><div class="grp">This panel</div><div class="sizes">${["s", "m", "l"].map((s) => `<button data-size="${s}" class="${p.size === s ? "cur" : ""}">${{ s: "Small", m: "Medium", l: "Large" }[s]}</button>`).join("")}</div>`;
-    html += `<button data-act="dir">${p.dir === "row" ? "Stack vertically" : "Lay out horizontally"}</button>`;
-    if (geo(p).w > 0 || p.span?.some(Boolean)) html += `<button data-act="auto">Automatic size and spans</button>`;
-    html += `<button data-act="delpanel">Remove panel</button>`;
-    menu.innerHTML = html;
-    menu.hidden = false;
-    // keep it on screen
-    const mw = 300, mh = Math.min(menu.scrollHeight, window.innerHeight * 0.8);
-    let x = rect.right + 6, y = rect.top;
-    if (x + mw > window.innerWidth) x = rect.left - mw - 6;
-    if (y + mh > window.innerHeight) y = window.innerHeight - mh - 8;
-    menu.style.left = `${Math.max(4, x)}px`;
-    menu.style.top = `${Math.max(4, y)}px`;
-    menu.onclick = (e) => {
-      const b = e.target.closest("button");
-      if (!b) return;
-      if (b.dataset.set) p.tiles[i] = b.dataset.set;
-      if (b.dataset.size) p.size = b.dataset.size;
-      if (b.dataset.act === "hist") { menu.hidden = true; openHistoryCard(hk, [rect.right, rect.top]); return; }
-      if (b.dataset.act === "add") { p.tiles.splice(i + 1, 0, cur); p.span?.splice(i + 1, 0, null); }
-      if (b.dataset.act === "remove") { p.tiles.splice(i, 1); p.span?.splice(i, 1); if (!p.tiles.length) layout.panels = layout.panels.filter((x) => x !== p); }
-      if (b.dataset.act === "dir") { p.dir = p.dir === "row" ? "column" : "row"; if (p.vp?.[view()]) { delete p.vp[view()].w; delete p.vp[view()].h; } }
-      if (b.dataset.act === "auto") { const o = p.vp?.[view()]; if (o) { delete o.w; delete o.h; } p.span = undefined; }
-      if (b.dataset.act === "delpanel") layout.panels = layout.panels.filter((x) => x !== p);
-      menu.hidden = true;
-      save();
-      build();
-    };
-  }
-  document.addEventListener("pointerdown", (e) => { if (!menu.hidden && !menu.contains(e.target) && !e.target.closest(".tile")) menu.hidden = true; });
+  document.addEventListener("pointerdown", (e) => { if (!menu.hidden && !menu.contains(e.target) && !e.target.closest(".itile")) menu.hidden = true; });
   window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !menu.hidden) { menu.hidden = true; e.preventDefault(); } });
 
   // ---------- drawer controls ----------------------------------------------------------
-  const lockBtn = document.getElementById("inst-lock");
-  function renderList() {
-    document.getElementById("inst-fold").textContent = layout.panels.some((p) => !p.collapsed) ? "Fold all" : "Open all";
-    lockBtn.classList.toggle("on", !!layout.locked);
-    lockBtn.textContent = layout.locked ? "Layout locked" : "Lock layout";
-    document.getElementById("inst-all").checked = !layout.hideAll;
-    const ul = document.getElementById("inst-panels");
-    ul.innerHTML = "";
-    if (!layout.panels.length) ul.innerHTML = `<li class="empty">No panels. Add one.</li>`;
-    layout.panels.forEach((p, k) => {
-      const li = document.createElement("li");
-      li.innerHTML = `<input type="checkbox" title="Show this panel"><div class="main"><input type="text" class="pname" maxlength="40" title="Rename this group of instruments"><small></small><div class="pviews"></div></div><button data-act="fold">${p.collapsed ? "Open" : "Fold"}</button><button data-act="dir">${p.dir === "row" ? "Vertical" : "Horizontal"}</button><button data-act="del">Remove</button>`;
-      const nm = li.querySelector(".pname");
-      nm.value = p.name || "";
-      nm.placeholder = `Panel ${k + 1}`;
-      nm.onclick = (e) => e.stopPropagation();
-      nm.onchange = () => { p.name = nm.value.trim() || undefined; save(); build(); };
-      const pv = li.querySelector(".pviews");
-      for (const v of VIEWS.filter((x) => x.id !== "inst")) {
-        const lab = document.createElement("label");
-        lab.title = `Show this group in the ${v.name} view`;
-        const c = document.createElement("input");
-        c.type = "checkbox";
-        c.checked = !p.views || p.views.includes(v.id);
-        c.onchange = () => {
-          const set = new Set(p.views ?? VIEWS.map((x) => x.id));
-          if (c.checked) set.add(v.id); else set.delete(v.id);
-          p.views = VIEWS.map((x) => x.id).filter((id) => set.has(id));
-          save(); build();
-        };
-        lab.append(c, ` ${v.name}`);
-        pv.append(lab);
-      }
-      li.querySelector('[data-act="fold"]').onclick = () => toggleCollapsed(p);
-      const cb = li.querySelector("input");
-      cb.checked = !p.hidden;
-      cb.onchange = () => { p.hidden = !cb.checked; save(); build(); };
-      li.querySelector("small").textContent = p.tiles.map((t) => ITEMS[t]?.label ?? t).join(", ");
-      li.querySelector('[data-act="dir"]').onclick = () => { p.dir = p.dir === "row" ? "column" : "row"; const o = p.vp?.[view()]; if (o) { delete o.w; delete o.h; } save(); build(); };
-      li.querySelector('[data-act="del"]').onclick = () => { layout.panels.splice(k, 1); save(); build(); };
-      ul.append(li);
-    });
-  }
-  document.getElementById("inst-add").onclick = () => {
-    layout.panels.push({ id: `p${Date.now().toString(36)}`, x: 0.45, y: 0.4, dir: "row", size: "m", tiles: ["SOG", "TWS"] });
-    save(); build();
-  };
-  document.getElementById("inst-fold").onclick = () => {
-    const fold = layout.panels.some((p) => !p.collapsed);
-    for (const p of layout.panels) p.collapsed = fold;
-    save(); build();
-  };
   document.getElementById("it-add").onclick = () => { if (!tiles.add()) ask({ title: "The Instruments screen is full", note: "Make a tile smaller or remove one first.", cancel: "", fields: [] }); };
   document.getElementById("it-reset").onclick = () => tiles.reset();
-  lockBtn.onclick = () => { layout.locked = !layout.locked; save(); build(); };
-  document.getElementById("inst-all").onchange = (e) => { layout.hideAll = !e.target.checked; save(); build(); };
-  document.getElementById("inst-reset").onclick = () => { layout = structuredClone(DEFAULT_LAYOUT); save(); build(); };
+  const lockBtn = document.getElementById("inst-lock");
+  if (lockBtn) lockBtn.onclick = () => { layout.locked = !layout.locked; save(); build(); };
 
   build();
 
   return {
-    /** Add a panel (once, by id) to the layout, e.g. from the welcome screen's choice. */
-    ensurePanel(p) {
-      if (layout.panels.some((x) => x.id === p.id)) return;
-      layout.panels.push(structuredClone(p));
-      save();
-      build();
-    },
-    /** Remove a panel by id (the panels a "Use" choice added). With `ifTiles`, only while it
-     *  still holds exactly those tiles (not one the user has changed). */
-    removePanel(id, ifTiles = null) {
-      const i = layout.panels.findIndex((x) => x.id === id);
-      if (i < 0) return;
-      if (ifTiles && layout.panels[i].tiles.join() !== ifTiles.join()) return;
-      layout.panels.splice(i, 1);
-      save();
-      build();
-    },
     /** Replace the Instruments screen's tiles with a preset: [{k, c, r, w, h}] on the 12 x 8 grid. */
     setScreen(list) {
       layout.tiles = list.filter((t) => ITEMS[t.k]).map((t, i) => ({ id: `t${i + 1}`, ...t }));
       save();
       build();
     },
+    /** The floating panels of earlier versions (for the data panel to take over once). */
+    floatingPanels: () => layout.panels ?? [],
+    /** The readings' shared state: vessel, route, targets, cursor, GRIB, MOB… and its age. */
+    ctx: () => ctx,
     /** "042°T · 3.2 NM" from the boat to a chart point (the cursor read-out), or "" without a boat position. */
     legTo(pt) {
       const l = pt ? cursorLeg({ cursor: pt, v: ctx.v }) : null;
@@ -1143,63 +672,74 @@ export function setupInstruments() {
     },
     /** New data: vessel state, route/waypoint and routing targets. */
     update(next) {
-      // a new man overboard: its panel comes up even if it was folded or hidden
       const newMob = next.mob && !ctx.mob;
       ctx = { ...ctx, ...next, now: Date.now() };
-      if (newMob) {
-        let p = layout.panels.find((x) => x.mob);
-        if (!p) { p = structuredClone(MOB_PANEL); layout.panels.push(p); }
-        p.hidden = false;
-        p.collapsed = false;
-        if (!p.tiles.includes("MOBPOS")) p.tiles.push("MOBPOS");
-        let highwayPanel = layout.panels.find((x) => x.id === HIGHWAY_PANEL.id);
-        if (!highwayPanel) { highwayPanel = structuredClone(HIGHWAY_PANEL); layout.panels.push(highwayPanel); }
-        highwayPanel.hidden = false;
-        highwayPanel.collapsed = false;
-        if (layout.hideAll) layout.hideAll = false;
-        save();
-        build();
-      }
       ctx.age = (Date.now() - (ctx.dataAt ?? 0)) / 1000;
+      if (newMob) window.dispatchEvent(new Event("racenav-mob-panel"));
       render();
     },
   };
+}
+
+/** Grow or shrink a reading's text to fill its tile (measured at 100 px, then scaled). */
+function fitText(t, v) {
+  const key = `${v.innerHTML}|${t.clientWidth}|${t.clientHeight}`;
+  if (t._fit === key) return;
+  const lbl = t.querySelector(".lbl");
+  const availW = t.clientWidth - 18;
+  const availH = t.clientHeight - (lbl ? lbl.offsetHeight : 0) - 10;
+  if (availW <= 0 || availH <= 0) return;
+  v.style.fontSize = "100px";
+  v.style.width = "max-content";
+  const r = v.getBoundingClientRect();
+  v.style.width = "";
+  const k = Math.min(availW / Math.max(1, r.width), availH / Math.max(1, r.height));
+  v.style.fontSize = `${Math.max(8, Math.min(400, Math.floor(k * 100)))}px`;
+  t._fit = key;
+}
+/** Scale the highway's drawing, laid out at its design size, to fill its cell. */
+function fitHighway(v) {
+  const d = v.querySelector(".hw-dashboard");
+  if (!d || !v.clientWidth || !v.clientHeight) return;
+  const k = Math.min(v.clientWidth / 680, v.clientHeight / 470);
+  d.style.transform = `translate(${((v.clientWidth - 680 * k) / 2).toFixed(1)}px, ${((v.clientHeight - 470 * k) / 2).toFixed(1)}px) scale(${k.toFixed(4)})`;
+}
+
+/** A graphic reading (dial, highway, sounder, history plot) drawn into `host`, sized by its box. */
+export function paintGraphic(host, it, ctx) {
+  let val = null;
+  try { val = it.get(ctx); } catch { val = null; }
+  if (it.render) it.render(host, val, ctx);
+  else {
+    const html = val != null ? it.fmt(val) : "—";
+    if (host._html !== html) { host.innerHTML = html; host._html = html; }
+  }
+  if (it.highway) fitHighway(host);
+}
+
+/** Paint one reading's value: { html, stale, state, side } (the data panel's rows). */
+export function readingState(it, ctx) {
+  let val = null;
+  try { val = it.get(ctx); } catch { val = null; }
+  const has = val !== null && val !== undefined && !(typeof val === "number" && !Number.isFinite(val));
+  const stale = Boolean(it.live) && ctx.age > STALE_S;
+  const state = has && !stale && it.state ? it.state(val, ctx) : "";
+  const side = has && it.side ? it.side(val) : "";
+  let html = "—";
+  if (has) { try { html = it.fmt(val); } catch { html = "—"; } }
+  return { html, unit: has ? it.unit : "", stale, state, side };
 }
 
 function loadLayout() {
   let l = null;
   try {
     l = JSON.parse(localStorage.getItem(KEY) || "null");
-    if (l && l.v === 1 && Array.isArray(l.panels)) {
-      // panels added in later versions appear once in an existing layout
-      l.added ??= [];
-      if (!l.added.includes("cursor")) { l.panels.push(structuredClone(CURSOR_PANEL)); l.added.push("cursor"); }
-      if (!l.added.includes("grib")) { l.panels.push(structuredClone(GRIB_PANEL)); l.added.push("grib"); }
-      if (!l.added.includes("sea")) { l.panels.push(structuredClone(SEA_PANEL)); l.added.push("sea"); }
-      if (!l.added.includes("mob")) { l.panels.push(structuredClone(MOB_PANEL)); l.added.push("mob"); }
-      if (!l.added.includes("highway")) { l.panels.push(structuredClone(HIGHWAY_PANEL)); l.added.push("highway"); }
-    } else l = null;
+    if (!l || l.v !== 1) l = null;
   } catch { l = null; }
-  l ??= structuredClone(DEFAULT_LAYOUT);
-  addCockpitGroup(l);
+  l ??= { v: 1, locked: false };
+  // the floating panels of earlier versions are kept only for the data panel to take over
+  if (!Array.isArray(l.panels)) l.panels = [];
   return l;
-}
-
-/** The old cockpit window's readings become a group for the Instruments view, once. */
-function addCockpitGroup(l) {
-  l.added ??= [];
-  if (l.added.includes("cockpit")) return;
-  l.added.push("cockpit");
-  try {
-    const old = JSON.parse(localStorage.getItem("racenav.cockpit") || "null");
-    const tiles = (old?.tiles ?? []).filter((k) => ITEMS[k]);
-    if (!tiles.length) return;
-    const cols = Math.max(1, Math.min(5, Number(old.cols) || 3));
-    l.panels.push({
-      id: "pck", x: 0.03, y: 0.04, dir: "row", size: "l", name: "Cockpit", views: ["inst"], tiles,
-      vp: { inst: { x: 0.03, y: 0.04, w: Math.round(cols * CELL.l) } },
-    });
-  } catch { /* ignore */ }
 }
 
 function hm(s) {

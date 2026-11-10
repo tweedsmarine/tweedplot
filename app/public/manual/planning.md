@@ -144,7 +144,7 @@ The common guide is the *rule of thirds*: a third of the fuel to get there, a th
 A window is a period when wind and sea stay inside your limits for the whole trip, return included, with margin either side for delay. To find one in TweedPlot:
 
 1. Download a GRIB for the area (wind, gusts and waves; a wave GRIB as well if the wind GRIB has none).
-2. Close the drawers and use the time slider with the GRIB-at-cursor panel: scrub through the trip at the places that matter (the exposed headland, the bar, the fishing spot).
+2. Close the drawers and use the time slider with the forecast at the cursor in the data panel (Planning view): scrub through the trip at the places that matter (the exposed headland, the bar, the fishing spot).
 3. Right-click > **Meteogram here** at the most exposed point: when does the wind ease, when does it build again, do the models agree?
 4. Load a second model, or a newer run, and compare. If they disagree about the timing of a front, your window is the time both agree is safe.
 5. For a sailing boat, run routings at several start times and compare them (Routing > Compare table).
@@ -180,7 +180,7 @@ On the day, look again: the latest forecast, a fresh GRIB, the actual conditions
 2. **Set margins.** Chart › Safety: safety depth = draft 1.9 m + 1 m = 3 m; safety contour 5 m. In Wx routing › Limits and barriers, turn on Route round dangers and Route round marine farms (there are farms in the bay).
 3. **Sketch the route.** Ruler from the harbour entrance across the bay to the anchorage, double-click, right-click > Save ruler as route. In the Route drawer name it "Nelson to Torrent Bay" and set the anchorage mark to As close as possible.
 4. **Mark the bolt holes.** Add points of interest for one or two sheltered bays you could reach if the wind turns onshore, with notes on which winds they suit.
-5. **Choose the day and time.** Close the drawers, scrub the time slider and watch the GRIB-at-cursor panel at mid-bay: you want 8–18 kn from a reaching angle, not a building sea breeze on the nose for the last hours. A meteogram at the anchorage shows whether the night will stay settled.
+5. **Choose the day and time.** Close the drawers, scrub the time slider and watch the forecast at the cursor in the data panel at mid-bay: you want 8–18 kn from a reaching angle, not a building sea breeze on the nose for the last hours. A meteogram at the anchorage shows whether the night will stay settled.
 6. **Route it.** Settings › Vessel › Performance: your polar at 85 % efficiency. Routing > Compute at the departure time. Then With each GRIB if you have two models: if both give a similar route and ETA, the plan is robust.
 7. **Check the anchorage.** Click the tide station nearest the anchorage for the evening's low water; the depth where you plan to anchor must still be enough at low tide.
 8. **Go, and monitor.** Record the track; in live mode watch XTE and TTG. If the breeze builds onshore, the bolt holes are on the chart.

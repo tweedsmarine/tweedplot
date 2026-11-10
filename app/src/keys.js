@@ -21,6 +21,7 @@ export const KEYS = [
   { group: "Views", keys: "F3", label: "Planning view", run: (c) => c.views.set("plan") },
   { group: "Views", keys: "F4", label: "Instruments view", run: (c) => c.views.set("inst") },
   { group: "Views", keys: "P", label: "Show or hide the panels (rail, drawers and dock)", btn: "tools-btn", run: click("tools-btn") },
+  { group: "Views", keys: "O", label: "Show the data panel beside the chart, or hide it to a line under the chart", btn: "side-btn", run: click("side-btn") },
   { group: "Views", keys: "F11", label: "Full screen", own: true },
 
   { group: "Drawers (the same key again closes it)", keys: "W", label: "Weather and tides", pane: "weather" },

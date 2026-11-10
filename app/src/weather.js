@@ -644,12 +644,13 @@ export function setupWeather(map, layers) {
   float.innerHTML = `<div class="grip" title="Drag to move">⋮⋮</div><div class="body"></div><button class="x" title="Hide (Weather and tides › Floating time slider brings it back)">×</button>`;
   document.body.append(float);
   mountControls(float.querySelector(".body"), { compact: true });
+  // kept over the chart (not over the toolbar, the data panel or the dock)
+  const chartBox = () => document.getElementById("map").getBoundingClientRect();
   function placeFloat() {
-    const W = window.innerWidth, H = window.innerHeight;
-    const minX = document.getElementById("rail").getBoundingClientRect().right;
-    const dockH = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--dock-h")) || 0;
-    float.style.left = `${Math.max(minX, Math.min(Math.max(minX, W - float.offsetWidth), fl.x * W))}px`;
-    float.style.top = `${Math.max(0, Math.min(H - dockH - float.offsetHeight, fl.y * H))}px`;
+    const W = window.innerWidth, H = window.innerHeight, c = chartBox();
+    const minX = c.left, maxX = Math.max(minX, c.right - float.offsetWidth);
+    float.style.left = `${Math.max(minX, Math.min(maxX, fl.x * W))}px`;
+    float.style.top = `${Math.max(0, Math.min(c.bottom - float.offsetHeight, fl.y * H))}px`;
   }
   function showFloat() {
     float.hidden = !fl.on || !loaded.size; // nothing to scrub without a GRIB
@@ -667,8 +668,8 @@ export function setupWeather(map, layers) {
       const r = float.getBoundingClientRect();
       const dx = e.clientX - r.left, dy = e.clientY - r.top;
       const move = (ev) => {
-        const minX = document.getElementById("rail").getBoundingClientRect().right;
-        const x = Math.max(minX, Math.min(Math.max(minX, window.innerWidth - float.offsetWidth), ev.clientX - dx));
+        const c = chartBox();
+        const x = Math.max(c.left, Math.min(Math.max(c.left, c.right - float.offsetWidth), ev.clientX - dx));
         fl.x = x / window.innerWidth;
         fl.y = (ev.clientY - dy) / window.innerHeight;
         placeFloat();
@@ -680,6 +681,8 @@ export function setupWeather(map, layers) {
   }
   window.addEventListener("resize", () => fl.on && placeFloat());
   window.addEventListener("racenav-layout", () => fl.on && placeFloat());
+  // the chart narrows when a drawer or the data panel opens
+  new ResizeObserver(() => fl.on && !float.hidden && placeFloat()).observe(document.getElementById("map"));
   document.getElementById("inst-slider")?.addEventListener("change", (e) => { fl.on = e.target.checked; saveFl(); showFloat(); });
   requestAnimationFrame(showFloat);
 

@@ -26,7 +26,7 @@
       <button data-pane="fleet" title="Targets and fleets: AIS targets, your own fleet, and race tracking (YB)"><svg viewBox="0 0 24 24"><path d="M6 4l3 7H3z"/><path d="M17 9l3 7h-6z"/><path d="M9 15l3 6H6z"/></svg><span>Targets &amp; fleets</span></button>
       <button data-pane="library" title="Library: marks, routes, tracks, trips, catch log, saved weather routings, barriers"><svg viewBox="0 0 24 24"><path d="M6 21V4"/><path d="M6 4h11l-3 4 3 4H6"/></svg><span>Library</span></button>
       <button data-pane="chart" title="Chart: layers (what's shown), safety, display, getting chart data"><svg viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></svg><span>Chart</span></button>
-      <button data-pane="inst" title="Instrument panels"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 13l4-4"/><path d="M12 5v2M5 13h2M17 13h2"/></svg><span>Instr.</span></button>
+      <button data-pane="inst" title="Instruments: the data panel beside the chart, the Instruments view, monitor windows and history"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 13l4-4"/><path d="M12 5v2M5 13h2M17 13h2"/></svg><span>Instr.</span></button>
       <button data-pane="alarms" title="Alarms: depth, clearance, navigation, anchor watch, AIS collision and distress, closed areas"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span>Alarms</span></button>
       <button id="manual-btn" class="rail-action" title="User manual (F1)"><svg viewBox="0 0 24 24"><path d="M4 5.5C6.5 4.5 9.5 4.5 12 6c2.5-1.5 5.5-1.5 8-.5v13c-2.5-1-5.5-1-8 .5-2.5-1.5-5.5-1.5-8-.5z"/><path d="M12 6v13.5"/></svg><span>Manual</span></button>
       <button id="settings-btn" class="rail-action" data-pane="settings" title="Settings: vessel and data setup" aria-label="Settings"><svg viewBox="0 0 24 24"><path d="M19.14 12.94a7.5 7.5 0 0 0 .06-.94c0-.32-.02-.63-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.3 7.3 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.3 7.3 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.54 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.5 7.5 0 0 0-.06.94c0 .32.02.63.07.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.49.39 1.04.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54a7.3 7.3 0 0 0 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58z"/><circle cx="12" cy="12" r="3.25"/></svg><span>Settings</span></button>
@@ -731,27 +731,21 @@
       </section>
 
       <section class="pane" data-pane="inst" data-title="Instruments">
-        <div class="wx-row">
-          <button id="inst-add" title="Add a new instrument panel">Add panel</button>
-          <button id="inst-fold" title="Fold every panel down to its handle, or open them all">Fold all</button>
-          <button id="inst-lock" title="Stop panels being moved by accident">Lock layout</button>
-          <button id="inst-reset" title="Back to the default panels">Reset</button>
-        </div>
-        <div class="wx-row"><button id="it-add" title="Add a reading to the Instruments view">Add an instrument</button><button id="it-reset" title="Back to the default Instruments screen">Reset Instruments screen</button></div>
-        <div class="wx-note">The Instruments view is one screen of single readings from the same list as the groups. Drag a tile to move it (under another tile it lines up with that tile's column), drag its corner to size it, click it to change the reading. Groups below are for the chart views.</div>
+        <h3>Data panel</h3>
+        <div class="wx-row"><button id="sp-edit-btn" title="Add, move and remove the readings in the data panel beside the chart">Edit the data panel</button><button id="sp-reset-btn" title="Back to the starting layout for this view and Use">Reset this layout</button></div>
+        <div class="wx-row"><label class="grow" title="Which side of the chart the data panel is on">Side</label><select id="sp-side"><option value="right">Right</option><option value="left">Left</option></select></div>
+        <div class="wx-row"><label class="grow" title="Text size in the data panel, to suit how far you sit from the screen. Sizes follow the screen calibration (Settings › Display), so they are the same on every screen">Text size</label><select id="sp-text"><option value="1">Normal (1 m)</option><option value="1.25">Large (1.3 m)</option><option value="1.5">Extra large (1.6 m)</option></select></div>
+        <div class="wx-note">The data panel sits beside the chart and never covers it. HDG, COG, SOG, STW, depth, position and the time are always at its top, and the alerts at its bottom; what is in between has its own layout for each view (Navigation, Planning) and each Use (Cruising, Fishing, Racing). Drag its inner edge for narrow, normal or wide. <b>O</b> (or the panel button in the toolbar) hides it to a single line under the chart.</div>
+        <h3>Instruments view</h3>
+        <div class="wx-row"><button id="it-add" title="Add a reading to the Instruments view">Add an instrument</button><button id="it-reset" title="Back to the default Instruments screen">Reset Instruments screen</button><button id="inst-lock" title="Stop the Instruments screen being changed by accident">Lock layout</button></div>
+        <div class="wx-note">The Instruments view is one screen of single readings. Drag a tile to move it (under another tile it lines up with that tile's column), drag its corner to size it, click it to change the reading.</div>
         <div class="wx-row"><select id="mon-new-view" title="What the new window shows"></select><button id="mon-new" title="Open another window for another screen (drag it there, then Full screen). Open as many as you like.">New monitor window</button></div>
         <ul id="mon-list" class="list"></ul>
         <div class="wx-note">A monitor window is another copy of TweedPlot for another screen. It can show any view, and keeps its own colours (day, dusk or night), view and position, so each screen can suit where it is. Alarms show in every window and can be silenced in any; MOB, Drop and the anchor watch work from any window. Monitor windows reopen where you left them when TweedPlot starts.</div>
-        <div class="wx-row">
-          <label class="grow" title="Hide or show every instrument panel (the floating time slider has its own box)"><input id="inst-all" type="checkbox" /> Show instrument panels</label>
-          
-        </div>
-        <ul id="inst-panels" class="list"></ul>
         <h3>History</h3>
         <div class="wx-row"><label class="grow" title="How long the history of each reading is kept (wind, pressure, temperatures, speeds, depth)">Keep history for</label><select id="hist-keep"></select><button id="hist-clear" title="Forget the history recorded so far">Clear</button></div>
         <div id="hist-info" class="wx-note"></div>
         <div class="wx-note">Right-click (or hold) any reading — TWS, TWD, pressure… — for its history in a card you can move and size anywhere, or choose a plot from the History group of a tile's menu. Pressure shows its three-hour tendency (Falling quickly is 3.6 to 6 hPa in 3 hours). The history is recorded from live data while TweedPlot runs, and kept when it is closed.</div>
-        <div class="wx-note">Drag a panel by its grip (⋮⋮); double-click or double-tap the grip to fold it down to a small title, and again to open it. Tap a reading to change what it shows, add one next to it, resize or remove it. The layout is kept on this PC and shared by all windows; each group has its own position and size in each view. In the list, type a name for each group and tick the views (Navigation, Planning, Instruments) it appears in; a man overboard shows in every view.</div>
       </section>
       <section class="pane" data-pane="alarms" data-title="Alarms">
         <h3>Active <span id="al-count" class="wx-note"></span></h3>
@@ -827,6 +821,8 @@
       <button id="wx-pop-btn" aria-label="Weather panel" title="Weather panel: time slider, what to show from the loaded GRIBs, the filter and the readout at the cursor"><svg viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .6-7.95A5.5 5.5 0 0 0 7 9.5 4.3 4.3 0 0 0 7 18z"/><path d="M8 21l1-2M12 21l1-2M16 21l1-2"/></svg></button>
       <button id="view-btn" aria-label="View" title="View: choose Navigation, Planning, Instruments or Live data, and whether the chart shows (F2, F3, F4)">
         <svg viewBox="0 0 24 24"></svg></button>
+      <button id="side-btn" aria-label="Data panel" title="Show or hide the data panel beside the chart (O)">
+        <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M15 4.5v15M17 8h1.5M17 11h1.5M17 14h1.5"/></svg></button>
       <button id="tools-btn" aria-label="Show or hide the panels" title="Show or hide the panels and dock in this view">
         <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M9 4.5v15"/></svg></button>
       <button id="palette-btn" aria-label="Day or night colours" title="Colours: day (click for dusk, night red, night green)">
@@ -837,7 +833,16 @@
 
     <!-- Floating instrument panels -->
     <div id="itiles"></div>
-    <div id="inst"></div>
+    <aside id="side" aria-label="Data panel" hidden>
+      <div class="sp-grip" title="Drag for a narrow, normal or wide panel"></div>
+      <header class="sp-head"><span class="sp-status"></span><button class="sp-edit" title="Edit the panel: add, move and remove readings">✎</button><button class="sp-hide" title="Hide the panel to a line under the chart (O)">⟩</button></header>
+      <div class="sp-actions"></div>
+      <div class="sp-own"></div>
+      <div class="sp-mob" hidden></div>
+      <div class="sp-body"></div>
+      <div class="sp-alerts"><div class="sp-noalert">No active alerts</div></div>
+    </aside>
+    <div id="side-strip" hidden><div class="ss-rows"></div><div class="ss-actions"></div><button class="ss-show" title="Show the data panel (O)">⟨ Panel</button></div>
     <div id="tile-menu" class="ctx" hidden></div>
     <div id="cmp-menu" class="ctx checks" hidden></div>
 
@@ -965,7 +970,8 @@
                   <section id="ui-settings" class="ui-settings">
             <h3>Use</h3>
             <p class="settings-note">What the boat is mostly for. Fishing shows the shoot and haul buttons and the own soundings button in the toolbar; the first choice also sets up the Instruments screen. Everything else is the same for every use.</p>
-            <div class="wx-row"><label class="grow" for="set-use" title="What the boat is mostly for: Fishing shows the shoot and haul buttons and own soundings in the toolbar">Use</label>
+            <div class="wx-row"><label class="grow" title="Which side of the chart the data panel (own ship, route, wind… and the alerts) is on">Data panel side</label><select id="set-side"><option value="right">Right</option><option value="left">Left</option></select></div>
+        <div class="wx-row"><label class="grow" for="set-use" title="What the boat is mostly for: Fishing shows the shoot and haul buttons and own soundings in the toolbar">Use</label>
               <select id="set-use"><option value="" disabled hidden>Choose…</option><option value="cruise">Cruising</option><option value="fish">Fishing</option><option value="race">Racing</option></select></div>
             <div class="wx-row"><label class="grow" title="The Record soundings button shows in the toolbar in Fishing; tick to show it whatever the use"><input id="set-rec-all" type="checkbox" /> Record soundings button in every use</label></div>
             <div class="wx-row"><label class="grow" title="A button above Drop that drops anchor, and weighs it when anchored. Without it: right-click the chart, the K key, or Alarms › Anchor watch"><input id="set-anchor-btn" type="checkbox" /> Anchor button on the chart</label></div>

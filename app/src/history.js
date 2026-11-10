@@ -260,7 +260,13 @@ export function openHistoryCard(k, at = null, { hours = 6, w = 380, h = 220, pos
     el.style.left = `${Math.max(0, Math.min(window.innerWidth - 60, x))}px`;
     el.style.top = `${Math.max(0, Math.min(window.innerHeight - 30, y))}px`;
   };
-  if (at) put(Math.min(window.innerWidth - w - 4, at[0] + 12), Math.min(window.innerHeight - h - 4, at[1] - 20));
+  // opened from the data panel: beside the panel, over the chart's edge, not over the panel
+  const panel = document.getElementById("side");
+  const pr = panel && !panel.hidden ? panel.getBoundingClientRect() : null;
+  if (at && pr && at[0] >= pr.left && at[0] <= pr.right) {
+    const x = pr.left > window.innerWidth / 2 ? pr.left - w - 8 : pr.right + 8;
+    put(x, Math.min(window.innerHeight - h - 4, Math.max(4, at[1] - 20)));
+  } else if (at) put(Math.min(window.innerWidth - w - 4, at[0] + 12), Math.min(window.innerHeight - h - 4, at[1] - 20));
   else if (pos) put(pos[0], pos[1]);
   else put(window.innerWidth / 2 - w / 2, window.innerHeight / 3);
   // drag by the title
