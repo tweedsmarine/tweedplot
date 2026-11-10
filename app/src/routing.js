@@ -106,9 +106,8 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
       map.getSource("rt-line").setData({ type: "Feature", properties: { colour: a.colour }, geometry: { type: "LineString", coordinates: a.r.points.map((p) => [p.lon, p.lat]) } });
       map.getSource("rt-pts").setData({ type: "FeatureCollection", features: a.r.points.map((p, i) => ({ type: "Feature", properties: { i, colour: a.colour }, geometry: { type: "Point", coordinates: [p.lon, p.lat] } })) });
       const isos = a.r.isochrones ?? [];
-      const every = Math.max(1, Math.ceil(isos.length / 40));
       map.getSource("rt-iso").setData({ type: "FeatureCollection", features: $("rt-iso-show").checked
-        ? isos.filter((_, k) => k % every === 0).map((lines) => ({ type: "Feature", properties: {}, geometry: { type: "MultiLineString", coordinates: lines } })) : [] });
+        ? isos.map((lines) => ({ type: "Feature", properties: {}, geometry: { type: "MultiLineString", coordinates: lines } })) : [] });
     } else {
       for (const id of ["rt-line", "rt-pts", "rt-iso"]) map.getSource(id).setData(empty);
     }

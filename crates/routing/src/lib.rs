@@ -149,7 +149,8 @@ pub struct Params {
     pub cell_nm: f64,
     /// Drop points whose start→point→mark distance exceeds this multiple of the direct distance.
     pub max_detour: f64,
-    /// Isochrones returned for display (thinned evenly; 0 = all).
+    /// Isochrones returned for display (0 = all). At least one per leg is kept,
+    /// even if that exceeds the limit.
     pub max_isochrones: usize,
     /// Headings tried: within ± this of the bearing to the mark (180 = all round).
     pub fan_deg: f64,
@@ -499,7 +500,9 @@ pub fn route_marks(
     let disc = |m: &MarkSpec| -> Option<([f64; 2], f64)> {
         matches!(m.rounding, Rounding::Port | Rounding::Starboard).then(|| ([m.pos.lon, m.pos.lat], m.radius_nm.unwrap_or(p.arrival_nm).max(0.005)))
     };
+    let mut isochrones_per_leg = Vec::new();
     for (i, mark) in marks.iter().enumerate() {
+        let iso_start = res.isochrones.len();
         // the course point before this mark (not where the last leg ended): sets the side of a rounding
         let prev = if i == 0 { start } else { marks[i - 1].pos };
         let goal = match mark.rounding {
@@ -599,6 +602,7 @@ pub fn route_marks(
             }
             Goal::Circle { .. } => route_leg(from, t, mark.pos, goal, polar, wind, obstacles, &leg_barriers, p, &mut res),
         };
+        isochrones_per_leg.push(res.isochrones.len() - iso_start);
         let n = res.legs.len();
         res.legs.push(leg.leg);
         // drop the duplicate join point between legs
@@ -620,14 +624,46 @@ pub fn route_marks(
         res.arrival = None;
     }
     res.distance_nm = res.legs.iter().map(|l| l.distance_nm).sum();
-    // Thin the isochrones for display: at most `max_isochrones` of them.
-    if p.max_isochrones > 0 && res.isochrones.len() > p.max_isochrones {
-        let k = res.isochrones.len().div_ceil(p.max_isochrones);
-        res.isochrones = res.isochrones.iter().step_by(k).cloned().collect();
-    }
+    thin_isochrones(&mut res.isochrones, &isochrones_per_leg, p.max_isochrones);
 
     res.compute_ms = clock.elapsed().as_millis();
     res
+}
+
+fn thin_isochrones(isochrones: &mut Vec<Vec<Vec<[f64; 2]>>>, per_leg: &[usize], max: usize) {
+    if max == 0 || isochrones.len() <= max {
+        return;
+    }
+    let mut keep: Vec<usize> = per_leg.iter().map(|&n| usize::from(n > 0)).collect();
+    let mut left = max.max(keep.iter().sum()).min(isochrones.len()) - keep.iter().sum::<usize>();
+    while left > 0 {
+        for (n, k) in per_leg.iter().zip(&mut keep) {
+            if left == 0 {
+                break;
+            }
+            if *k < *n {
+                *k += 1;
+                left -= 1;
+            }
+        }
+    }
+    let mut all = std::mem::take(isochrones).into_iter();
+    for (&n, &count) in per_leg.iter().zip(&keep) {
+        let mut selected = 0;
+        for (i, iso) in all.by_ref().take(n).enumerate() {
+            let target = if count == 1 {
+                n - 1
+            } else if count > 1 {
+                selected * (n - 1) / (count - 1)
+            } else {
+                n
+            };
+            if i == target && selected < count {
+                isochrones.push(iso);
+                selected += 1;
+            }
+        }
+    }
 }
 
 struct LegOut {
@@ -874,7 +910,10 @@ fn route_leg(
                 if grid_mode {
                     res.isochrones.extend(contour_isochrones(&reached, cell_deg, kx, obstacles, leg_steps, step_s));
                 } else {
-                    res.isochrones.push(front_lines(&nodes, &front, start, obstacles));
+                    let lines = front_lines(&nodes, &front, start, obstacles);
+                    if !lines.is_empty() {
+                        res.isochrones.push(lines);
+                    }
                 }
             }
             let mut out = finish(start, dest, t0, chain, Some((arrive_pt.lat, arrive_pt.lon, ta)), "arrived".into(), String::new());
@@ -966,10 +1005,16 @@ fn route_leg(
             break;
         }
         if !grid_mode && p.keep_isochrones_every > 0 && step % p.keep_isochrones_every == 0 {
-            res.isochrones.push(front_lines(&nodes, &front, start, obstacles));
+            let lines = front_lines(&nodes, &front, start, obstacles);
+            if !lines.is_empty() {
+                res.isochrones.push(lines);
+            }
         }
     }
 
+    if grid_mode && p.keep_isochrones_every > 0 {
+        res.isochrones.extend(contour_isochrones(&reached, cell_deg, kx, obstacles, leg_steps, step_s));
+    }
     let _ = no_wind;
     let mut chain = trace(&nodes, best_approach.1);
     let grib_end = status == "grib end";
@@ -1613,6 +1658,72 @@ mod tests {
         assert_eq!(last.t, 3600);
         let left = LatLon::new(last.lat, last.lon).distance_to(&dest);
         assert!(left < 20.0 - 4.0, "{left}");
+    }
+
+    #[test]
+    fn unfinished_grid_leg_keeps_isochrones() {
+        struct Short;
+        impl WindSource for Short {
+            fn wind(&self, _: f64, _: f64, t: i64) -> Option<(f64, f64)> {
+                (t <= 10_800).then_some((10.0, 0.0))
+            }
+            fn end_time(&self) -> Option<i64> {
+                Some(10_800)
+            }
+        }
+        let start = LatLon::new(-41.0, 173.0);
+        let first = start.destination(90.0, 5.0);
+        let finish = first.destination(90.0, 30.0);
+        let p = Params { step_s: 600.0, pruning: "grid".into(), max_isochrones: 2, ..Params::default() };
+        let r = route(start, 0, &[first, finish], &test_polar(), &Short, None, &p);
+        assert_eq!(r.status, "grib end", "{}", r.message);
+        assert_eq!(r.legs.len(), 2);
+        assert!(r.legs[0].arrival.is_some());
+        assert!(r.legs[1].arrival.is_none());
+        assert_eq!(r.isochrones.len(), 2, "one isochrone from each leg");
+        let farthest_lon = |iso: &Vec<Vec<[f64; 2]>>| iso.iter().flatten().map(|p| p[0]).fold(f64::NEG_INFINITY, f64::max);
+        assert!(farthest_lon(&r.isochrones[0]) < first.lon + 0.02);
+        assert!(farthest_lon(&r.isochrones[1]) > first.lon + 0.05);
+
+        let disabled = route(start, 0, &[first, finish], &test_polar(), &Short, None, &Params { keep_isochrones_every: 0, ..p });
+        assert!(disabled.isochrones.is_empty());
+    }
+
+    #[test]
+    fn grid_step_limit_keeps_isochrones() {
+        let start = LatLon::new(-41.0, 173.0);
+        let p = Params { step_s: 600.0, max_steps: 10, pruning: "grid".into(), ..Params::default() };
+        let r = route(start, 0, &[start.destination(90.0, 30.0)], &test_polar(), &SteadyWind { tws: 10.0, twd: 0.0 }, None, &p);
+        assert_eq!(r.status, "too many steps");
+        assert!(!r.isochrones.is_empty());
+
+        let sectors = route(
+            start,
+            0,
+            &[start.destination(90.0, 30.0)],
+            &test_polar(),
+            &SteadyWind { tws: 10.0, twd: 0.0 },
+            None,
+            &Params { pruning: "sectors".into(), ..p },
+        );
+        assert_eq!(sectors.status, "too many steps");
+        assert!(!sectors.isochrones.is_empty());
+    }
+
+    #[test]
+    fn thinning_preserves_each_leg_and_respects_the_limit() {
+        let make = || (0..10).map(|i| vec![vec![[i as f64, 0.0], [i as f64, 1.0]]]).collect::<Vec<_>>();
+        let values = |isos: &[Vec<Vec<[f64; 2]>>]| isos.iter().map(|iso| iso[0][0][0] as usize).collect::<Vec<_>>();
+
+        let mut isos = make();
+        thin_isochrones(&mut isos, &[7, 0, 1, 2], 4);
+        assert_eq!(values(&isos), vec![0, 6, 7, 9]);
+        let mut isos = make();
+        thin_isochrones(&mut isos, &[7, 0, 1, 2], 2);
+        assert_eq!(values(&isos), vec![6, 7, 9]);
+        let mut isos = make();
+        thin_isochrones(&mut isos, &[7, 0, 1, 2], 0);
+        assert_eq!(values(&isos), (0..10).collect::<Vec<_>>());
     }
 
     #[test]

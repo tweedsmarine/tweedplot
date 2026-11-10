@@ -135,7 +135,7 @@ TweedPlot uses the isochrone method, the standard for sailing routers. An *isoch
 - **Heading step and search angle**: fewer headings is faster but can miss a narrow gap or a small shift.
 - **Arrival radius**: the router must reach the mark's circle; a tiny circle offshore forces the route through one point.
 
-Isochrones are drawn on the chart for the active routing (untick Isochrones to hide them). Closely spaced isochrones mean slow progress (light wind or upwind); widely spaced, fast.
+Isochrones are drawn on the chart for the active routing (untick Isochrones to hide them), including the reached part of an unfinished leg when the forecast ends or routing stops. They are thinned for display while retaining lines from each leg where available. Closely spaced isochrones mean slow progress (light wind or upwind); widely spaced, fast.
 
 ## Reading a routing
 
