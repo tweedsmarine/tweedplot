@@ -471,7 +471,7 @@ const sidePanel = setupSidePanel({ inst, views, use, map,
     followBtn.classList.add("on");
     map.easeTo({ center: lastBoat, offset: followOffset(), duration: 300 });
   } });
-window.__inst = inst; window.__side = sidePanel; window.__ais = () => aisApi; window.__rec = histRecorder; // debugging handles
+window.__inst = inst; window.__side = sidePanel; window.__ais = () => aisApi; window.__rec = histRecorder; window.__map = map; // debugging handles
 setupDisclaimer();
 window.addEventListener("racenav-mob", (e) => { inst.update({ mob: e.detail }); });
 const boat = setupBoat();

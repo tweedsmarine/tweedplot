@@ -341,7 +341,12 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     const f = [];
     const cpaF = [];
     const own = getOwn();
-    let shapeSortKey = 0;
+    // Drawing order (fill-sort-key): true-scale hulls at the bottom, then target symbols, then
+    // dangerous targets, then distress transmitters (often on board a big ship, whose hull would
+    // otherwise cover them), and the selected one on top. Each band is far apart (fleet tags are
+    // lifted 1e6 within their band: ais-symbols.js), and targets take turns within a band.
+    const BAND = 1e7;
+    let n = 0;
     for (const t of targets.values()) {
       if (!shown(t)) continue;
       const fe = inFleet(t.mmsi);
@@ -359,8 +364,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       if (t.kind === "vessel" && t.length > 0 && dir != null && !sleeping && bigEnough(t.length, t.lat, map.getZoom())) {
         props.big = true;
         const ring = hullRing([t.lon, t.lat], dir, { length: t.length, beam: t.beam, fromBow: t.from_bow, fromCentre: t.from_centre });
-        f.push(...hullSymbolFeatures({ ring, color: col, outline: mapHalo, zoom: map.getZoom(), length: t.length, mmsi: t.mmsi, sortKey: shapeSortKey }));
-        shapeSortKey += 5;
+        f.push(...hullSymbolFeatures({ ring, color: col, outline: mapHalo, zoom: map.getZoom(), length: t.length, mmsi: t.mmsi, sortKey: n++ * 5 }));
       }
       const name = fe?.name || t.name;
       if (name && (fe || !sleeping)) props.name = name;
@@ -369,8 +373,8 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       }
       if (!props.big) {
         f.push(...targetSymbolFeatures({ position: [t.lon, t.lat], heading: rot, icon, color: col, outline: mapHalo, zoom: map.getZoom(), pxPerMm: s52PxPerMm(),
-          mmsi: t.mmsi, sortKey: shapeSortKey, fleetColor: fe && /^ais-[sf]-/.test(icon) ? fleetColour(fe) : null }));
-        shapeSortKey += 5;
+          mmsi: t.mmsi, sortKey: BAND * (1 + (danger ? 1 : 0) + (["sart", "mob", "epirb"].includes(t.kind) ? 2 : 0) + (t.mmsi === selected ? 4 : 0)) + n++ * 5,
+          fleetColor: fe && /^ais-[sf]-/.test(icon) ? fleetColour(fe) : null }));
       }
       f.push({ type: "Feature", properties: props, geometry: { type: "Point", coordinates: [t.lon, t.lat] } });
       // The course vector takes over from the heading line while it is drawn (the symbol itself points along the heading, and a
