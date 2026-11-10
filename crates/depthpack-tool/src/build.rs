@@ -213,28 +213,42 @@ pub fn build(dir: &Path, edition: &str, national_max: u8, only: Option<&[i64]>, 
         ]
     };
     let mut packages = Vec::new();
-    let mut make = |file: String, zooms: std::ops::RangeInclusive<u8>, keep: &dyn Fn(f64, f64) -> bool, meta: Vec<(String, String)>| -> Result<(), String> {
+    let mut make = |file: String,
+                    zooms: std::ops::RangeInclusive<u8>,
+                    within: Option<[f64; 4]>,
+                    keep: &dyn Fn(f64, f64) -> bool,
+                    meta: Vec<(String, String)>|
+     -> Result<(), String> {
         let path = out.join(&file);
         let m: Vec<(&str, &str)> = meta.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-        let n = extract_where(&master, &path, zooms, keep, &m).map_err(|e| e.to_string())?;
+        let t0 = std::time::Instant::now();
+        let n = extract_where(&master, &path, zooms, within, keep, &m).map_err(|e| e.to_string())?;
         if n == 0 {
             let _ = std::fs::remove_file(&path);
             return Ok(());
         }
         let info = depthpack::read_info(&path)?;
         let surveys = depthpack::survey_ids(&path).map_err(|e| e.to_string())?;
-        println!("{file}: {n} tiles, {:.1} MB", info.bytes as f64 / 1e6);
+        println!("{file}: {n} tiles, {:.1} MB ({:.0} s)", info.bytes as f64 / 1e6, t0.elapsed().as_secs_f64());
         packages.push(json!({
             "file": file, "tier": info.tier, "region": info.region, "region_name": info.region_name,
             "min_zoom": info.min_zoom, "max_zoom": info.max_zoom, "bytes": info.bytes, "sha256": sha256(&path)?, "surveys": surveys,
         }));
         Ok(())
     };
-    make(format!("nz-national-{edition}.tpdepth"), MIN_ZOOM..=national_max, &|_, _| true, common("national", "nz", "New Zealand"))?;
+    make(format!("nz-national-{edition}.tpdepth"), MIN_ZOOM..=national_max, None, &|_, _| true, common("national", "nz", "New Zealand"))?;
     if max_z > national_max {
         for r in REGIONS.iter().chain(std::iter::once(&OFFSHORE)) {
             let id = r.id;
-            make(format!("region-{id}-{edition}.tpdepth"), national_max + 1..=max_z, &move |lon, lat| region_of(lon, lat) == id, common("region", id, r.name))?;
+            // a region reads only the tiles in its box; offshore, what's left anywhere
+            let within = (id != OFFSHORE.id).then_some(r.bbox);
+            make(
+                format!("region-{id}-{edition}.tpdepth"),
+                national_max + 1..=max_z,
+                within,
+                &move |lon, lat| region_of(lon, lat) == id,
+                common("region", id, r.name),
+            )?;
         }
     }
     let manifest = json!({
