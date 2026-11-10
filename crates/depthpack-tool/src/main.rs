@@ -5,8 +5,9 @@
 //! tweedplot-depthpack catalogue  --dir D                 list the depth models (no key needed)
 //! tweedplot-depthpack export     --dir D --key KEY [--only 122423,116625]
 //!                                                         export and download them, and the survey index
-//! tweedplot-depthpack build      --dir D --edition 2026-11 [--national-max-zoom 14] [--only ...]
+//! tweedplot-depthpack build      --dir D --edition 2026-11 [--national-max-zoom 14] [--only ...] [--repack]
 //!                                                         make the packages and manifest.json in D/out
+//!                                                         (--repack: cut them again from last build's master, quickly)
 //! tweedplot-depthpack all        --dir D --key KEY --edition 2026-11
 //! tweedplot-depthpack check      --dir D [--at LON,LAT] [--png Z/X/Y]
 //!                                                         check D/out against its manifest; depth at a place; draw a tile
@@ -26,7 +27,7 @@ fn usage() -> ! {
     eprintln!(
         "tweedplot-depthpack: TweedPlot depth packages from LINZ's depth models\n\n\
          usage:\n  tweedplot-depthpack catalogue --dir D\n  tweedplot-depthpack export --dir D --key KEY [--only id,id]\n  \
-         tweedplot-depthpack build --dir D --edition YYYY-MM [--national-max-zoom 14] [--only id,id]\n  \
+         tweedplot-depthpack build --dir D --edition YYYY-MM [--national-max-zoom 14] [--only id,id] [--repack]\n  \
          tweedplot-depthpack all --dir D --key KEY --edition YYYY-MM\n  \
          tweedplot-depthpack check --dir D [--at LON,LAT] [--png Z/X/Y]\n\n\
          The key can also be in LDS_API_KEY. D holds catalogue.json, src/ (downloads) and out/ (packages)."
@@ -42,6 +43,7 @@ fn main() {
     let key = opt("--key").or_else(|| std::env::var("LDS_API_KEY").ok());
     let only: Option<Vec<i64>> = opt("--only").map(|s| s.split(',').filter_map(|x| x.trim().parse().ok()).collect());
     let edition = opt("--edition");
+    let repack = args.iter().any(|a| a == "--repack");
     let nat_max: u8 = opt("--national-max-zoom").and_then(|s| s.parse().ok()).unwrap_or(14);
     if let Err(e) = std::fs::create_dir_all(&dir) {
         eprintln!("{}: {e}", dir.display());
@@ -54,13 +56,13 @@ fn main() {
             None => Err("export needs --key (or LDS_API_KEY)".into()),
         },
         "build" => match edition {
-            Some(ed) => build::build(&dir, &ed, nat_max, only.as_deref()),
+            Some(ed) => build::build(&dir, &ed, nat_max, only.as_deref(), repack),
             None => Err("build needs --edition, e.g. 2026-11".into()),
         },
         "all" => match (key, edition) {
             (Some(k), Some(ed)) => lds::catalogue(&dir, Some(&k))
                 .and_then(|_| lds::export_all(&dir, &k, only.as_deref()))
-                .and_then(|_| build::build(&dir, &ed, nat_max, only.as_deref())),
+                .and_then(|_| build::build(&dir, &ed, nat_max, only.as_deref(), repack)),
             _ => Err("all needs --key and --edition".into()),
         },
         "check" => build::check(&dir, opt("--at").as_deref(), opt("--png").as_deref()),

@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 static PACKS: RwLock<Option<Arc<DepthPacks>>> = RwLock::new(None);
 
@@ -75,38 +75,83 @@ pub async fn depthpack_height(lon: f64, lat: f64) -> Option<f32> {
     tauri::async_runtime::spawn_blocking(move || packs()?.height_at(lon, lat)).await.ok().flatten()
 }
 
-fn sha256(path: &Path) -> Result<String, String> {
+/// How an import is getting on: the file it is on (1-based) of `count`, what it is doing
+/// with it ("checking" the checksum, "copying"), and the bytes done of all there are to read.
+pub struct Progress<'a> {
+    pub file: &'a str,
+    pub index: usize,
+    pub count: usize,
+    pub stage: &'static str,
+    pub done: u64,
+    pub total: u64,
+}
+
+/// Read `path` in large blocks, telling `each` how many bytes each block was.
+fn read_blocks(path: &Path, mut each: impl FnMut(&[u8]) -> Result<(), String>) -> Result<(), String> {
     let mut f = std::fs::File::open(path).map_err(|e| e.to_string())?;
-    let mut h = Sha256::new();
-    std::io::copy(&mut f, &mut h).map_err(|e| e.to_string())?;
-    Ok(h.finalize().iter().map(|b| format!("{b:02x}")).collect())
+    let mut buf = vec![0u8; 4 << 20];
+    loop {
+        let n = std::io::Read::read(&mut f, &mut buf).map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Ok(());
+        }
+        each(&buf[..n])?;
+    }
 }
 
 /// Copy packages in: `files` (from the picker), each checked (readable, and against the
 /// manifest.json beside it when there is one). A package replaces another of the same tier
-/// and region with an older edition; one older than the one here is skipped.
-pub fn import_files(to: &Path, files: &[PathBuf]) -> Result<Value, String> {
+/// and region with an older edition; one older than the one here is skipped. `progress` is
+/// told as it goes (files can be hundreds of MB, from a USB stick).
+pub fn import_files(to: &Path, files: &[PathBuf], progress: &mut dyn FnMut(Progress)) -> Result<Value, String> {
     std::fs::create_dir_all(to).map_err(|e| e.to_string())?;
     let mut added = Vec::new();
     let mut skipped = Vec::new();
-    for f in files {
-        let name = f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    // the manifest beside the files, if any, and what there is to read: each file once to
+    // copy, and once more to check where the manifest has its checksum
+    let manifest_of = |f: &Path| -> Option<Value> {
+        f.parent().map(|p| p.join("manifest.json")).and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| serde_json::from_str::<Value>(&t).ok())
+    };
+    let entry_for = |m: &Option<Value>, name: &str| -> Option<String> {
+        m.as_ref()?["packages"].as_array()?.iter().find(|p| p["file"] == name)?["sha256"].as_str().map(String::from)
+    };
+    let names: Vec<String> = files.iter().map(|f| f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()).collect();
+    let manifests: Vec<Option<Value>> = files.iter().map(|f| manifest_of(f)).collect();
+    let size = |f: &Path| std::fs::metadata(f).map(|m| m.len()).unwrap_or(0);
+    let total: u64 = files.iter().enumerate().map(|(i, f)| size(f) * if entry_for(&manifests[i], &names[i]).is_some() { 2 } else { 1 }).sum();
+    let mut done = 0u64;
+    let count = files.len();
+    for (k, f) in files.iter().enumerate() {
+        let name = names[k].clone();
+        let len = size(f);
+        let want_sum = entry_for(&manifests[k], &name);
+        let mut report = |stage: &'static str, done: u64| progress(Progress { file: &name, index: k + 1, count, stage, done, total });
+        let skip_bytes = len * if want_sum.is_some() { 2 } else { 1 };
+        report("checking", done);
         let info = match depthpack::read_info(f) {
             Ok(i) => i,
             Err(e) => {
                 skipped.push(json!({ "file": name, "why": e }));
+                done += skip_bytes;
                 continue;
             }
         };
-        // the manifest beside it, if any: size and checksum
-        if let Some(m) =
-            f.parent().map(|p| p.join("manifest.json")).and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| serde_json::from_str::<Value>(&t).ok())
-        {
-            if let Some(entry) = m["packages"].as_array().and_then(|a| a.iter().find(|p| p["file"] == name.as_str())) {
-                if entry["sha256"].as_str() != Some(sha256(f)?.as_str()) {
-                    skipped.push(json!({ "file": name, "why": "damaged: its checksum differs from the manifest (copy it again)" }));
-                    continue;
-                }
+        // its checksum against the manifest's
+        if let Some(sum) = want_sum {
+            let mut h = Sha256::new();
+            let mut d = done;
+            read_blocks(f, |b| {
+                h.update(b);
+                d += b.len() as u64;
+                report("checking", d);
+                Ok(())
+            })?;
+            done += len;
+            let got: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
+            if got != sum {
+                skipped.push(json!({ "file": name, "why": "damaged: its checksum differs from the manifest (copy it again)" }));
+                done += len;
+                continue;
             }
         }
         // the same package already here
@@ -130,11 +175,27 @@ pub fn import_files(to: &Path, files: &[PathBuf]) -> Result<Value, String> {
         }
         if let Some(ed) = newer {
             skipped.push(json!({ "file": name, "why": format!("edition {} is older than the {ed} here", info.edition) }));
+            done += len;
             continue;
         }
         let dest = to.join(&name);
         let tmp = to.join(format!("{name}.part"));
-        std::fs::copy(f, &tmp).map_err(|e| format!("{name}: {e}"))?;
+        {
+            let mut out = std::fs::File::create(&tmp).map_err(|e| format!("{name}: {e}"))?;
+            let mut d = done;
+            let r = read_blocks(f, |b| {
+                std::io::Write::write_all(&mut out, b).map_err(|e| format!("{name}: {e}"))?;
+                d += b.len() as u64;
+                report("copying", d);
+                Ok(())
+            });
+            if let Err(e) = r {
+                drop(out);
+                let _ = std::fs::remove_file(&tmp);
+                return Err(e);
+            }
+        }
+        done += len;
         for p in older {
             if p != dest {
                 let _ = std::fs::remove_file(p);
@@ -172,9 +233,30 @@ pub async fn depthpack_import(app: tauri::AppHandle, folder: bool) -> Result<Val
         return Err("no depth packages (.tpdepth) there".into());
     }
     let to = dir(&app);
+    // the page shows the import from here (it can take minutes from a USB stick)
+    let total: u64 = files.iter().map(|f| std::fs::metadata(f).map(|m| m.len()).unwrap_or(0)).sum();
+    let _ = app.emit("depthpack-import", json!({ "stage": "start", "count": files.len(), "bytes": total }));
     *PACKS.write().unwrap() = None; // files being replaced are open
-    let r = tauri::async_runtime::spawn_blocking(move || import_files(&to, &files)).await.map_err(|e| e.to_string());
+    let a = app.clone();
+    let r = tauri::async_runtime::spawn_blocking(move || {
+        let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
+        let mut last_file = 0;
+        import_files(&to, &files, &mut |p| {
+            // a few times a second, and at each new file
+            if p.index != last_file || last.elapsed() >= std::time::Duration::from_millis(200) {
+                last = std::time::Instant::now();
+                last_file = p.index;
+                let _ = a.emit(
+                    "depthpack-import",
+                    json!({ "stage": p.stage, "file": p.file, "index": p.index, "count": p.count, "done": p.done, "total": p.total }),
+                );
+            }
+        })
+    })
+    .await
+    .map_err(|e| e.to_string());
     open(&app);
+    let _ = app.emit("depthpack-import", json!({ "stage": "end" }));
     r?
 }
 
@@ -224,25 +306,30 @@ mod tests {
         let (src, to) = (base.join("usb"), base.join("depth"));
         std::fs::create_dir_all(&src).unwrap();
         let a = pack(&src, "region-cook-strait-2026-05.tpdepth", "2026-05", "cook-strait");
-        let r = import_files(&to, &[a]).unwrap();
+        let mut seen = Vec::new();
+        let r = import_files(&to, &[a], &mut |p| seen.push((p.stage, p.done, p.total))).unwrap();
         assert_eq!(r["added"].as_array().unwrap().len(), 1);
+        // told it was checking, then copying, ending with every byte done
+        assert_eq!(seen.first().map(|s| s.0), Some("checking"));
+        let last = *seen.last().unwrap();
+        assert_eq!((last.0, last.1), ("copying", last.2));
         // the newer edition replaces it
         let b = pack(&src, "region-cook-strait-2026-11.tpdepth", "2026-11", "cook-strait");
-        import_files(&to, std::slice::from_ref(&b)).unwrap();
+        import_files(&to, std::slice::from_ref(&b), &mut |_| {}).unwrap();
         let names: Vec<String> = std::fs::read_dir(&to).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
         assert_eq!(names, vec!["region-cook-strait-2026-11.tpdepth"]);
         // the older one again: skipped
         let a2 = pack(&src, "old-copy.tpdepth", "2026-05", "cook-strait");
-        let r = import_files(&to, &[a2]).unwrap();
+        let r = import_files(&to, &[a2], &mut |_| {}).unwrap();
         assert_eq!(r["skipped"].as_array().unwrap().len(), 1);
         // a damaged one (checksum in the manifest differs): skipped
         std::fs::write(src.join("manifest.json"), json!({ "packages": [{ "file": "region-cook-strait-2026-11.tpdepth", "sha256": "00" }] }).to_string())
             .unwrap();
-        let r = import_files(&to, &[b]).unwrap();
+        let r = import_files(&to, &[b], &mut |_| {}).unwrap();
         assert!(r["skipped"][0]["why"].as_str().unwrap().contains("damaged"));
         // not a package
         std::fs::write(src.join("x.tpdepth"), b"nope").unwrap();
-        let r = import_files(&to, &[src.join("x.tpdepth")]).unwrap();
+        let r = import_files(&to, &[src.join("x.tpdepth")], &mut |_| {}).unwrap();
         assert_eq!(r["skipped"].as_array().unwrap().len(), 1);
         let _ = std::fs::remove_dir_all(&base);
     }
