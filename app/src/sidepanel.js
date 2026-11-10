@@ -145,7 +145,8 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
   function placeChrome(on, line) {
     const where = on ? actions : line ? strip.querySelector(".ss-actions") : home;
     for (const b of chrome) put(b, where);
-    put(banner, on ? alerts : home);
+    // the alerts: in the panel, or on the line under the chart (never over the chart)
+    put(banner, on ? alerts : line ? strip.querySelector(".ss-alerts") : home);
     // the cursor's position, depth and bearing and range from the boat: off the chart too
     put(cursorEl, on ? cursorSlot : line ? strip.querySelector(".ss-cursor") : home);
   }

@@ -117,7 +117,7 @@ export function setupAlarms(map, { getBoat, getBow = () => null, getSafetyDepth,
       ? { ...a, dismiss: () => dismiss(id), dismissLabel: "Dismiss",
         dismissTitle: "Quiet for a minute: it stays on the Alarms list, and sounds again if the cause lasts or worsens" }
       : a.clearable
-        ? { ...a, dismiss: () => clear(id), dismissLabel: "Clear", dismissTitle: "Remove this alarm: it has no lasting cause to clear it" }
+        ? { ...a, dismiss: () => { clear(id); a.onClear?.(); }, dismissLabel: "Clear", dismissTitle: "Remove this alarm: it has no lasting cause to clear it" }
         : a;
     const old = active.get(id);
     if (old) {

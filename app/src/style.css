@@ -1681,7 +1681,7 @@ input.sp-title { flex: 1; min-width: 0; font-size: calc(2.6 * var(--u)); padding
 .sp-alerts #alarm-banner button { flex: none; width: auto; padding: 2px 8px; font-size: calc(2.6 * var(--u)); }
 /* an unacknowledged alarm while the alerts are in the panel: the chart's edge flashes red */
 html.side-on body:has(.sp-alerts .alarm.alarm:not(.acked)) #map::after {
-  content: ""; position: absolute; inset: 0; z-index: 4; pointer-events: none; box-shadow: inset 0 0 0 4px #d00000; animation: alarm-flash 1s steps(2, start) infinite;
+  content: ""; position: absolute; inset: 0; z-index: 4; pointer-events: none; box-shadow: inset 0 0 0 4px #d00000; animation: edge-flash 1s steps(2, start) infinite;
 }
 /* hidden: one line of own-ship data under the chart */
 #side-strip {
@@ -1729,3 +1729,21 @@ html.no-map #side-strip { display: none; }
 /* narrow screens: the panel slides over the chart's edge, with a shadow to say it is on top */
 html.side-narrow #side { z-index: 12; box-shadow: -4px 0 16px rgba(0,0,0,.45); max-width: 92vw; }
 html.side-narrow.side-left #side { box-shadow: 4px 0 16px rgba(0,0,0,.45); }
+
+/* the alerts on the line under the chart (panel hidden): the newest one, one line, with its
+   buttons; the rest are counted. Click the text for its place, or show the panel for them all. */
+.ss-alerts { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; }
+.ss-alerts #alarm-banner { position: static; transform: none; width: auto; max-height: none; overflow: hidden; flex-direction: row; gap: 4px; }
+.ss-alerts #alarm-banner .alarm { padding: 1px 6px; font-size: calc(2.8 * var(--u)); box-shadow: none; border-radius: 4px; max-width: 46vw; white-space: nowrap; }
+.ss-alerts #alarm-banner .alarm ~ .alarm { display: none; }
+.ss-alerts #alarm-banner .alarm .txt { flex-direction: row; gap: 6px; overflow: hidden; text-overflow: ellipsis; }
+.ss-alerts #alarm-banner .alarm .txt small { display: none; }
+.ss-alerts #alarm-banner button { flex: none; width: auto; padding: 0 6px; font-size: calc(2.6 * var(--u)); min-height: 0; }
+.ss-alerts #alarm-banner:has(.alarm ~ .alarm)::after { content: "+ more · ⟨ Panel"; align-self: center; font-size: calc(2.5 * var(--u)); color: var(--tile-quiet); white-space: nowrap; }
+/* an unacknowledged alarm with the panel hidden: the chart's edge flashes too */
+html.side-strip body:has(.ss-alerts .alarm.alarm:not(.acked)) #map::after {
+  content: ""; position: absolute; inset: 0; z-index: 4; pointer-events: none; box-shadow: inset 0 0 0 4px #d00000; animation: edge-flash 1s steps(2, start) infinite;
+}
+
+/* the chart-edge flash: only the red frame blinks (alarm-flash would fill the chart red) */
+@keyframes edge-flash { 50% { opacity: 0; } }

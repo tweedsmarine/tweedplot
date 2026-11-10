@@ -275,6 +275,8 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     if (t.last_pos == null) return true;
     const age = Date.now() / 1000 - t.last_pos;
     const moving = (t.sog ?? 0) > 2;
+    // a distress transmitter sends every minute: lost after six minutes (as its alarm, below)
+    if (["sart", "mob", "epirb"].includes(t.kind)) return age > 6 * 60;
     return t.kind === "aton" || t.kind === "base" ? age > 20 * 60 : age > (moving ? 3 : 10) * 60;
   };
   /** Heard only over the internet (no receiver on board heard it). */
@@ -584,6 +586,16 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
 
   // ---------- alarms ----------------------------------------------------------------
   const raised = new Set();
+  // A distress transmitter (AIS-SART, MOB device, EPIRB) sends a burst every minute while active.
+  // Not heard for DISTRESS_LOST_MIN minutes it is lost: its alarm becomes a warning that can be
+  // cleared. A test transmission (navigational status 15) is a caution only.
+  const DISTRESS_LOST_MIN = 6;
+  const distressLost = (t) => {
+    const heard = t.last_pos ?? t.last_seen;
+    return heard == null || Date.now() / 1000 - heard > DISTRESS_LOST_MIN * 60;
+  };
+  const isTest = (t) => t.status === 15 || /\bTEST\b/i.test(String(t.name ?? ""));
+  const clearedDistress = new Map(); // alarm id → time last heard when the user cleared it
   function checkAlarms() {
     const own = getOwn();
     const now = new Set();
@@ -591,11 +603,33 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       if (t.lat == null || t.mmsi === ownMmsi) continue;
       const id = `ais-${t.mmsi}`;
       if (["sart", "mob", "epirb"].includes(t.kind)) {
-        const c = own?.pos ? cpaTcpa(own, t) : null;
         const what = { sart: "AIS-SART", mob: "MOB DEVICE", epirb: "AIS EPIRB" }[t.kind];
-        alarms.raise(id, { level: "alarm", watchdog: true, text: `${what} ${t.name ?? t.mmsi}${c ? ` · ${String(Math.round(bearing(own.pos, [t.lon, t.lat]))).padStart(3, "0")}°T ${c.range.toFixed(1)} NM` : ""}`,
-          detail: `${ddm(t.lat, "N", "S")} ${ddm(t.lon, "E", "W")}${t.status === 14 && t.kind === "sart" && /test/i.test(t.name ?? "") ? " · test transmission" : ""} · click to show`,
-          onClick: () => { map.easeTo({ center: [t.lon, t.lat], zoom: Math.max(map.getZoom(), 12) }); openPopup(t.mmsi); } });
+        const heard = t.last_pos ?? t.last_seen ?? null;
+        // cleared by the user while lost or in test: stays cleared until it is heard again
+        if (clearedDistress.has(id) && (heard == null || heard <= clearedDistress.get(id))) continue;
+        clearedDistress.delete(id);
+        const c = own?.pos ? cpaTcpa(own, t) : null;
+        const where = c ? ` · ${String(Math.round(bearing(own.pos, [t.lon, t.lat]))).padStart(3, "0")}°T ${c.range.toFixed(1)} NM` : "";
+        const name = `${what} ${t.name ?? t.mmsi}`;
+        const show = () => { map.easeTo({ center: [t.lon, t.lat], zoom: Math.max(map.getZoom(), 12) }); openPopup(t.mmsi); };
+        const pos = `${ddm(t.lat, "N", "S")} ${ddm(t.lon, "E", "W")}`;
+        const forget = () => clearedDistress.set(id, heard ?? Date.now() / 1000);
+        const ago = heard != null ? Math.round((Date.now() / 1000 - heard) / 60) : null;
+        if (isTest(t)) {
+          // a test transmission (navigational status 15, "SART TEST"): a caution, not a distress alarm
+          alarms.raise(id, { level: "warn", stage: 0, watchdog: false, clearable: true, onClear: forget, text: `${name} TEST transmission${where}`,
+            detail: `${pos} · a transmitter being tested, not a distress · click to show`, onClick: show });
+        } else if (distressLost(t)) {
+          // not heard for a while: a warning that can be cleared (it comes back if heard again)
+          alarms.raise(id, { level: "warn", stage: 0, watchdog: false, clearable: true, onClear: forget,
+            text: `${name} not heard for ${ago ?? "?"} min`, detail: `last at ${pos} · Clear removes the alarm; it sounds again if heard again · click to show`, onClick: show });
+        } else {
+          // heard: an alarm that can be silenced but not cleared while the transmitter is heard;
+          // the watchdog (Alarms › Sound) sounds it again while it lasts
+          // (an alarm that was a clearable warning loses its Clear button again)
+          alarms.raise(id, { level: "alarm", stage: 1, watchdog: true, clearable: false, dismiss: null, dismissLabel: null, dismissTitle: null, onClear: null, text: `${name}${where}`,
+            detail: `${pos} · stays while it is heard; once not heard for ${DISTRESS_LOST_MIN} min it can be cleared · click to show`, onClick: show });
+        }
         now.add(id);
         continue;
       }
