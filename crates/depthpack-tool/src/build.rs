@@ -132,8 +132,27 @@ fn sha256(path: &Path) -> Result<String, String> {
     Ok(h.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
 
+/// Grid every survey into the master, coarsest and oldest first, then its coarser zooms.
+fn build_master(master: &Path, todo: &[(Survey, Vec<PathBuf>)], max_z: &mut u8) -> Result<(), String> {
+    let w = Writer::create(master).map_err(|e| e.to_string())?;
+    for (s, files) in todo {
+        let lat = depthpack::bbox_of(&s.outline).map_or(-41.0, |b| (b[1] + b[3]) / 2.0);
+        let z = zoom_for(s.res.max(0.5), lat).max(MIN_ZOOM);
+        *max_z = (*max_z).max(z);
+        println!("{} ({} m, zoom {z}):", s.title, s.res);
+        paint_survey(&w, s, files, z)?;
+        w.add_survey(s).map_err(|e| e.to_string())?;
+    }
+    println!("coarser zooms…");
+    w.build_pyramid(MIN_ZOOM, *max_z).map_err(|e| e.to_string())?;
+    w.finish().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Build D/out: nz-national-<edition>.tpdepth, region-<id>-<edition>.tpdepth, manifest.json.
-pub fn build(dir: &Path, edition: &str, national_max: u8, only: Option<&[i64]>) -> Result<(), String> {
+/// `repack`: cut the packages again from the master made last time, without gridding the
+/// surveys again (quick: for a change in how packages are cut).
+pub fn build(dir: &Path, edition: &str, national_max: u8, only: Option<&[i64]>, repack: bool) -> Result<(), String> {
     let cat: Vec<Model> = load_catalogue(dir)?.into_iter().filter(|m| only.is_none_or(|o| o.contains(&m.survey.id))).collect();
     let outl = outlines(dir);
     let norm = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
@@ -142,8 +161,13 @@ pub fn build(dir: &Path, edition: &str, national_max: u8, only: Option<&[i64]>) 
     std::fs::create_dir_all(&work).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
     let master = work.join("master.tpdepth");
-    let _ = std::fs::remove_file(&master);
-    let w = Writer::create(&master).map_err(|e| e.to_string())?;
+    let reuse = repack && master.is_file();
+    if repack && !reuse {
+        println!("no master from a previous build: building in full");
+    }
+    if !reuse {
+        let _ = std::fs::remove_file(&master);
+    }
 
     // coarsest and oldest first: the finer and newer are painted over them
     let mut todo: Vec<(Survey, Vec<PathBuf>)> = cat
@@ -166,17 +190,12 @@ pub fn build(dir: &Path, edition: &str, national_max: u8, only: Option<&[i64]>) 
         return Err("nothing to build: no downloaded surveys".into());
     }
     let mut max_z = MIN_ZOOM;
-    for (s, files) in &todo {
-        let lat = depthpack::bbox_of(&s.outline).map_or(-41.0, |b| (b[1] + b[3]) / 2.0);
-        let z = zoom_for(s.res.max(0.5), lat).max(MIN_ZOOM);
-        max_z = max_z.max(z);
-        println!("{} ({} m, zoom {z}):", s.title, s.res);
-        paint_survey(&w, s, files, z)?;
-        w.add_survey(s).map_err(|e| e.to_string())?;
+    if reuse {
+        max_z = depthpack::read_info(&master)?.max_zoom;
+        println!("repacking from {} (zooms up to {max_z})", master.display());
+    } else {
+        build_master(&master, &todo, &mut max_z)?;
     }
-    println!("coarser zooms…");
-    w.build_pyramid(MIN_ZOOM, max_z).map_err(|e| e.to_string())?;
-    w.finish().map_err(|e| e.to_string())?;
 
     // the packages
     let created = today();

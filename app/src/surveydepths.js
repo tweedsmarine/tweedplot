@@ -3,7 +3,9 @@
 // the Get data rows (import, list, delete), the survey outlines with a card for each, and the
 // depth under the cursor.
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { infoBox } from "./infobox.js";
+import * as activity from "./activity.js";
 
 const SHOW = "racenav.surveydepths.show";
 const OUTLINES = "racenav.surveydepths.outlines";
@@ -74,15 +76,39 @@ export function setupSurveyDepths(map, { toast } = {}) {
     }
   }
 
+  // an import: a card in the activity list from the moment the files are chosen, with how
+  // far it has got (checking each file against the manifest, then copying it)
+  let job = null;
+  const setBusy = (on) => { for (const id of ["sd-import", "sd-import-dir", "sd-del"]) $(id).disabled = on; };
+  listen("depthpack-import", (e) => {
+    const p = e.payload || {};
+    if (p.stage === "start") {
+      job = activity.start("Importing survey depths");
+      setBusy(true);
+      const t = `Importing ${p.count} package${p.count === 1 ? "" : "s"} (${fmtMB(p.bytes)})…`;
+      job.progress(t.replace(/…$/, ""));
+      $("sd-state").textContent = t;
+      return;
+    }
+    if (p.stage === "end") { setBusy(false); return; }
+    const t = `${p.stage === "checking" ? "Checking" : "Copying"} ${p.file} (${p.index} of ${p.count}): ${fmtMB(p.done)} of ${fmtMB(p.total)}`;
+    job?.progress("", p.done, p.total, t);
+    $("sd-state").textContent = t;
+  });
+
   async function doImport(folder) {
     let r = null;
-    try { r = await invoke("depthpack_import", { folder }); } catch (e) { toast?.(`Import failed: ${e}`, 8000); return; }
+    try { r = await invoke("depthpack_import", { folder }); } catch (e) {
+      if (job) job.fail(`Import failed: ${e}`); else toast?.(`Import failed: ${e}`, 8000);
+      job = null; setBusy(false); refresh();
+      return;
+    }
     if (r?.cancelled) return;
     const added = r.added || [], skipped = r.skipped || [];
-    const parts = [];
-    if (added.length) parts.push(`Imported ${added.map((a) => `${a.region} (${a.edition})`).join(", ")}.`);
-    if (skipped.length) parts.push(`Not imported: ${skipped.map((s) => `${s.file}: ${s.why}`).join("; ")}.`);
-    toast?.(parts.join(" ") || "Nothing imported.", 9000);
+    const result = added.length ? `Imported ${added.length} package${added.length === 1 ? "" : "s"}${skipped.length ? `; ${skipped.length} not imported` : ""}.` : "Nothing imported.";
+    const details = [...added.map((a) => `${a.region} (${a.edition})`), ...skipped.map((x) => `Not imported: ${x.file}: ${x.why}`)];
+    if (job) job.done(result, { details, keep: skipped.length > 0 || !added.length }); else toast?.(result, 8000);
+    job = null;
     await refresh(); reload(); loadOutlines();
   }
   $("sd-import").onclick = () => doImport(false);

@@ -308,31 +308,10 @@ pub fn extract_where(
     let w = Writer::create(to)?;
     w.db.execute("ATTACH DATABASE ?1 AS src", [from.to_string_lossy()])?;
     let tx = w.db.unchecked_transaction()?;
-    let mut n = 0;
-    let mut kept = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
-    {
-        let mut st = w.db.prepare("SELECT z, x, y, data FROM src.tiles WHERE z BETWEEN ?1 AND ?2")?;
-        let mut ins = w.db.prepare("INSERT OR REPLACE INTO tiles VALUES (?1, ?2, ?3, ?4)")?;
-        let mut rows = st.query(params![zooms.start(), zooms.end()])?;
-        while let Some(r) = rows.next()? {
-            let (z, x, y): (u8, u32, u32) = (r.get(0)?, r.get(1)?, r.get(2)?);
-            let (lon, lat) = from_pixel((x as f64 + 0.5) * N as f64, (y as f64 + 0.5) * N as f64, z);
-            if !keep(lon, lat) {
-                continue;
-            }
-            // the area the kept tiles cover
-            let (w, nn) = from_pixel(x as f64 * N as f64, y as f64 * N as f64, z);
-            let (e, ss) = from_pixel((x + 1) as f64 * N as f64, (y + 1) as f64 * N as f64, z);
-            kept = [kept[0].min(w), kept[1].min(ss), kept[2].max(e), kept[3].max(nn)];
-            let data: Vec<u8> = r.get(3)?;
-            ins.execute(params![z, x, y, data])?;
-            n += 1;
-        }
-    }
-    // the surveys that reach the area
-    {
+    // the surveys, each with the boxes of its outline's parts
+    let surveys: Vec<Survey> = {
         let mut st = w.db.prepare("SELECT id, title, year, res, epsg, datum, accuracy, published, outline FROM src.surveys")?;
-        let rows: Vec<Survey> = st
+        let v = st
             .query_map([], |r| {
                 Ok(Survey {
                     id: r.get(0)?,
@@ -347,11 +326,37 @@ pub fn extract_where(
                 })
             })?
             .collect::<Result<_, _>>()?;
-        for s in rows {
-            let a = kept;
-            if n > 0 && bbox_of(&s.outline).is_none_or(|b| b[0] < a[2] && b[2] > a[0] && b[1] < a[3] && b[3] > a[1]) {
-                w.add_survey(&s)?;
+        v
+    };
+    let parts: Vec<Vec<[f64; 4]>> = surveys.iter().map(|s| part_boxes(&s.outline)).collect();
+    let mut used = vec![false; surveys.len()];
+    let mut n = 0;
+    {
+        let mut st = w.db.prepare("SELECT z, x, y, data FROM src.tiles WHERE z BETWEEN ?1 AND ?2")?;
+        let mut ins = w.db.prepare("INSERT OR REPLACE INTO tiles VALUES (?1, ?2, ?3, ?4)")?;
+        let mut rows = st.query(params![zooms.start(), zooms.end()])?;
+        while let Some(r) = rows.next()? {
+            let (z, x, y): (u8, u32, u32) = (r.get(0)?, r.get(1)?, r.get(2)?);
+            let (lon, lat) = from_pixel((x as f64 + 0.5) * N as f64, (y as f64 + 0.5) * N as f64, z);
+            if !keep(lon, lat) {
+                continue;
             }
+            // the surveys whose outline reaches this tile (a survey without one: any)
+            let (tw, tn) = from_pixel(x as f64 * N as f64, y as f64 * N as f64, z);
+            let (te, ts) = from_pixel((x + 1) as f64 * N as f64, (y + 1) as f64 * N as f64, z);
+            for (k, pb) in parts.iter().enumerate() {
+                if !used[k] && (pb.is_empty() || pb.iter().any(|b| b[0] < te && b[2] > tw && b[1] < tn && b[3] > ts)) {
+                    used[k] = true;
+                }
+            }
+            let data: Vec<u8> = r.get(3)?;
+            ins.execute(params![z, x, y, data])?;
+            n += 1;
+        }
+    }
+    for (s, u) in surveys.iter().zip(&used) {
+        if *u {
+            w.add_survey(s)?;
         }
     }
     tx.commit()?;
@@ -361,6 +366,17 @@ pub fn extract_where(
     }
     w.finish()?;
     Ok(n)
+}
+
+/// The boxes [w, s, e, n] of a GeoJSON outline's parts: one per polygon of a MultiPolygon
+/// (LINZ's index gives a survey as many separate blocks), one for anything else.
+pub fn part_boxes(g: &serde_json::Value) -> Vec<[f64; 4]> {
+    if g["type"] == "MultiPolygon" {
+        if let Some(polys) = g["coordinates"].as_array() {
+            return polys.iter().filter_map(|p| bbox_of(&serde_json::json!({ "coordinates": p }))).collect();
+        }
+    }
+    bbox_of(g).into_iter().collect()
 }
 
 /// [w, s, e, n] of a GeoJSON geometry's coordinates.
@@ -724,7 +740,9 @@ mod tests {
         let reg = d.join("nelson.tpdepth");
         let n2 = extract(&master, &reg, 14..=15, Some([172.0, -42.0, 175.0, -40.0]), &[("tier", "region"), ("region", "nelson")]).unwrap();
         assert!(n1 > 0 && n2 > 0);
+        assert_eq!(survey_ids(&reg).unwrap(), vec![122423]);
         let none = extract(&master, &d.join("far.tpdepth"), 14..=15, Some([165.0, -48.0, 168.0, -45.0]), &[]).unwrap();
+        assert!(survey_ids(&d.join("far.tpdepth")).unwrap().is_empty());
         assert_eq!(none, 0);
         std::fs::remove_file(d.join("far.tpdepth")).unwrap();
         std::fs::remove_file(&master).unwrap();
@@ -741,6 +759,26 @@ mod tests {
         assert!(p.tile_png(10, x10, y10).is_some());
         assert!(p.tile_png(16, (tx + 1) * 2, ty * 2 + 1).is_some());
         assert!(p.tile_png(16, 0, 0).is_none());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn surveys_listed_only_where_their_parts_reach() {
+        let d = tmp("parts");
+        let master = d.join("m.tpdepth");
+        let w = Writer::create(&master).unwrap();
+        // a tile off Nelson, and two surveys: one in two blocks (one block over the tile),
+        // one whose box is wide but whose blocks miss the tile
+        let (px, py) = to_pixel(173.2, -41.2, 15);
+        let (tx, ty) = ((px / N as f64) as u32, (py / N as f64) as u32);
+        w.paint(15, tx, ty, &vec![-20.0; N * N]).unwrap();
+        let mp = |blocks: &[[f64; 4]]| serde_json::json!({ "type": "MultiPolygon", "coordinates": blocks.iter().map(|b| vec![vec![[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]], [b[0], b[1]]]]).collect::<Vec<_>>() });
+        w.add_survey(&Survey { id: 1, outline: mp(&[[173.0, -41.4, 173.4, -41.0], [176.0, -38.0, 176.5, -37.5]]), ..Default::default() }).unwrap();
+        w.add_survey(&Survey { id: 2, outline: mp(&[[170.0, -46.0, 171.0, -45.0], [176.0, -38.0, 176.5, -37.5]]), ..Default::default() }).unwrap();
+        w.finish().unwrap();
+        let out = d.join("o.tpdepth");
+        extract_where(&master, &out, 15..=15, &|_, _| true, &[]).unwrap();
+        assert_eq!(survey_ids(&out).unwrap(), vec![1]);
         let _ = std::fs::remove_dir_all(&d);
     }
 
