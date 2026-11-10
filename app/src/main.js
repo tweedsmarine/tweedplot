@@ -81,6 +81,7 @@ import { setupStations, stationImage } from "./stations.js";
 import { setupInstruments, waypointData, targetAt } from "./instruments.js";
 import { setupLibrary, labelImage } from "./library.js";
 import { setupSettings } from "./settings.js";
+import { setupHistorySettings, restoreHistoryCards } from "./history.js";
 import { setupNmeaMonitor } from "./nmeamonitor.js";
 
 /** A "1"/"0" flag from localStorage; false where storage is unavailable. */
@@ -471,6 +472,8 @@ if (PRIMARY) {
     openNmeaSettings();
   });
 }
+setupHistorySettings(document.getElementById("hist-keep"), document.getElementById("hist-info"), document.getElementById("hist-clear"));
+restoreHistoryCards();
 setupNmeaMonitor(document.getElementById("nmea-monitor-inline"), { openSettings: openNmeaSettings });
 setupNmeaMonitor(document.getElementById("nmea-monitor-window"), { standalone: true, openSettings: openNmeaSettings });
 const dock = setupDock(map);
@@ -759,6 +762,8 @@ function boatTime() {
   const t = Date.parse(vessel.datetime ?? "");
   return Math.floor(Number.isFinite(t) ? t / 1000 : Date.now() / 1000);
 }
+// replayOn is declared further down; feed() can run before that line during start-up
+function replaying() { try { return replayOn; } catch { return false; } }
 function feed() {
   const nav = route?.nav() ?? null;
   const pos = lastBoat;
@@ -766,7 +771,7 @@ function feed() {
   const pts = routing?.activePoints();
   const target = pts ? targetAt(pts, boatTime()) : null;
   const v = live ? vessel : { ...vessel, lat: pos?.[1], lon: pos?.[0] };
-  inst.update({ v, dataAt: live ? lastFeed : 0, nav, wp, target, safetyDepth: settings.safetyDepth });
+  inst.update({ v, dataAt: live ? lastFeed : 0, nav, wp, target, safetyDepth: settings.safetyDepth, replay: replaying() });
   // the route's next mark changed (or the route's start moved): redraw the laylines
   const key = nav ? `${nav.next.lon},${nav.next.lat},${nav.from}` : "";
   if (key !== layKey) { layKey = key; laylines?.refresh(); }

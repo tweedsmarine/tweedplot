@@ -44,10 +44,12 @@ pub enum DataGroup {
     Wind,
     Depth,
     WaterTemperature,
+    Weather,
 }
 
 impl DataGroup {
-    pub const ALL: [Self; 7] = [Self::Position, Self::Motion, Self::Heading, Self::SpeedThroughWater, Self::Wind, Self::Depth, Self::WaterTemperature];
+    pub const ALL: [Self; 8] =
+        [Self::Position, Self::Motion, Self::Heading, Self::SpeedThroughWater, Self::Wind, Self::Depth, Self::WaterTemperature, Self::Weather];
 
     pub fn key(self) -> &'static str {
         match self {
@@ -58,6 +60,7 @@ impl DataGroup {
             Self::Wind => "wind",
             Self::Depth => "depth",
             Self::WaterTemperature => "waterTemperature",
+            Self::Weather => "weather",
         }
     }
 
@@ -74,6 +77,7 @@ impl DataGroup {
             Self::Wind => "Wind",
             Self::Depth => "Depth",
             Self::WaterTemperature => "Water temperature",
+            Self::Weather => "Air pressure, temperature and humidity",
         }
     }
 }
@@ -345,6 +349,9 @@ fn sentence_groups(sentence: &Sentence, observation: &Observation) -> Vec<DataGr
     if sentence.formatter == "MTW" && has_number(0) && fields.get(1).is_some_and(|unit| unit == "C") && observation.water_temp.is_some() {
         groups.push(DataGroup::WaterTemperature);
     }
+    if matches!(sentence.formatter.as_str(), "MDA" | "XDR") && marine_nmea::weather(&sentence.formatter, fields).any() {
+        groups.push(DataGroup::Weather);
+    }
     groups
 }
 
@@ -406,6 +413,11 @@ fn copy_group(vessel: &mut signalk::VesselState, observation: &Observation, grou
             vessel.depth_surface = observation.depth_surface;
         }
         DataGroup::WaterTemperature => vessel.water_temp = observation.water_temp,
+        DataGroup::Weather => {
+            vessel.pressure = observation.pressure;
+            vessel.air_temp = observation.air_temp;
+            vessel.humidity = observation.humidity;
+        }
     }
 }
 

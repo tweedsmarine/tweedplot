@@ -345,6 +345,7 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
     ["wind", "Wind"],
     ["depth", "Depth"],
     ["waterTemperature", "Water temperature"],
+    ["weather", "Air pressure, temperature and humidity"],
   ];
 
   function renderArbitration() {
@@ -482,6 +483,7 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
         wind: ["aws", "awa", "tws", "twa", "twd"],
         depth: ["depth", "depthKeel", "depthSurface"],
         waterTemperature: ["waterTemp"],
+        weather: ["pressure", "airTemp", "humidity"],
       }[group] || [];
       return [Object.fromEntries(fields.map((field) => [field, observation[field]]))];
     });

@@ -1,6 +1,7 @@
 // The Instruments view: one screen of individual readings on a fixed grid. Drag a tile to
 // move it (a tile dropped under another locks to that tile's column), drag its corner to
 // size it, click it to change the reading. The grid always fits the screen.
+import { openHistoryCard } from "./history.js";
 import { GRID, fits, clampTile, snapBelow, placeTile, firstFree } from "./gridmath.js";
 
 const PAD = 6, GAP = 4; // must match #itiles in style.css
@@ -12,7 +13,7 @@ export function defaultTiles(items) {
   }));
 }
 
-export function setupTiles({ host, menu, items, getLayout, save, paint }) {
+export function setupTiles({ host, menu, items, getLayout, save, paint, historyKey = () => null }) {
   const tiles = () => (getLayout().tiles ??= defaultTiles(items));
   const locked = () => !!getLayout().locked;
   let swallow = false;
@@ -33,8 +34,9 @@ export function setupTiles({ host, menu, items, getLayout, save, paint }) {
     for (const t of tiles()) {
       const it = items[t.k];
       const el = document.createElement("div");
-      el.className = `tile itile${it?.graphic ? " graphic" : ""}${it?.highway ? " highway-card" : ""}${it?.sounder ? " sounder-card" : ""}`;
+      el.className = `tile itile${it?.tint ? ` wt-${it.tint}` : ""}${it?.graphic ? " graphic" : ""}${it?.highway ? " highway-card" : ""}${it?.sounder ? " sounder-card" : ""}${it?.history ? " hist-card" : ""}`;
       el.dataset.id = t.id;
+      el.dataset.k = t.k;
       el.innerHTML = `<div class="lbl"><span>${it ? it.label : t.k}</span><span class="sd"></span></div><div class="v">—</div>`;
       place(el, t);
       if (!locked()) {
@@ -160,6 +162,8 @@ export function setupTiles({ host, menu, items, getLayout, save, paint }) {
       for (const [k, it] of list) html += `<button data-set="${k}" class="${k === t.k ? "cur" : ""}">${it.label}${it.unit ? ` <small>${it.unit}</small>` : ""}</button>`;
       html += "</div>";
     }
+    const hk = historyKey(t.k);
+    if (hk) html += `<hr><button data-act="hist">Show its history in a card (or right-click it)</button>`;
     html += `<hr><button data-act="remove">Remove this instrument</button>`;
     menu.innerHTML = html;
     menu.hidden = false;
@@ -172,11 +176,13 @@ export function setupTiles({ host, menu, items, getLayout, save, paint }) {
     menu.onclick = (ev) => {
       const b = ev.target.closest("button");
       if (!b) return;
+      if (b.dataset.act === "hist") { menu.hidden = true; openHistoryCard(hk, [rect.right, rect.top]); return; }
       if (b.dataset.act === "remove") getLayout().tiles = tiles().filter((x) => x !== t);
       else if (b.dataset.set) {
         t.k = b.dataset.set;
-        if (items[t.k]?.highway) {
-          const p = placeTile(tiles(), { ...t, w: Math.max(t.w, 5), h: Math.max(t.h, 4) }, t.c, t.r);
+        if (items[t.k]?.highway || items[t.k]?.history) {
+          const big = items[t.k].highway ? [5, 4] : [4, 2];
+          const p = placeTile(tiles(), { ...t, w: Math.max(t.w, big[0]), h: Math.max(t.h, big[1]) }, t.c, t.r);
           if (p) Object.assign(t, p);
         }
       }
@@ -189,8 +195,8 @@ export function setupTiles({ host, menu, items, getLayout, save, paint }) {
     build, render,
     /** A new instrument in the first free place. */
     add(key = "SOG") {
-      const hw = items[key]?.highway;
-      const spot = firstFree(tiles(), hw ? 5 : 3, hw ? 4 : 2);
+      const hw = items[key]?.highway, hist = items[key]?.history;
+      const spot = firstFree(tiles(), hw ? 5 : hist ? 4 : 3, hw ? 4 : 2);
       if (!spot) return false;
       tiles().push({ id: `t${Date.now().toString(36)}`, k: key, c: spot.c, r: spot.r, w: spot.w, h: spot.h });
       save(); build();

@@ -24,6 +24,9 @@ const VARIABLES = [
   ["depthKeel", "Depth below keel", "depth", "depthKeel", (v) => `${v.toFixed(1)} m`],
   ["depthSurface", "Depth below surface", "depth", "depthSurface", (v) => `${v.toFixed(1)} m`],
   ["waterTemp", "Water temperature", "waterTemperature", "waterTemp", (v) => `${v.toFixed(1)} °C`],
+  ["pressure", "Barometric pressure", "weather", "pressure", (v) => `${v.toFixed(1)} hPa`],
+  ["airTemp", "Air temperature", "weather", "airTemp", (v) => `${v.toFixed(1)} °C`],
+  ["humidity", "Relative humidity", "weather", "humidity", (v) => `${v.toFixed(0)} %`],
 ];
 const DEFAULT_VARIABLES = ["latitude", "longitude", "sog", "cog", "depth", "heading"];
 

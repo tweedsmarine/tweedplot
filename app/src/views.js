@@ -98,10 +98,19 @@ export function setupViews(map) {
   document.addEventListener("pointerdown", (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest("#view-btn")) pop.hidden = true; });
   window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !pop.hidden) { pop.hidden = true; e.preventDefault(); } });
 
+  // Esc leaves the Live data and Instruments views for the view you came from (when nothing else
+  // is open and the key isn't for a text box), so there is always a way back without F-keys
+  let previous = "nav";
+  window.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || e.defaultPrevented || !["nmea", "inst"].includes(s.current)) return;
+    if (e.target.closest?.("input, textarea, select, [contenteditable]")) return;
+    if (document.querySelector(".ctx:not([hidden]), dialog[open]")) return;
+    api.set(previous === s.current ? "nav" : previous);
+  });
   window.addEventListener("racenav-need-tools", () => { if (!toolsOn(s.current)) { s.tools[s.current] = true; apply(); } });
   const api = {
     current: () => s.current,
-    set(id) { if (def(id) && id !== s.current) { s.current = id; apply(); } },
+    set(id) { if (def(id) && id !== s.current) { if (!["nmea", "inst"].includes(s.current)) previous = s.current; s.current = id; apply(); } },
     onChange(f) { window.addEventListener("racenav-view", (e) => f(e.detail.id, e.detail.tools)); },
   };
   apply();

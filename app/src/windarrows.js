@@ -2,12 +2,17 @@
 // on the cursor when planning (true wind from the GRIB shown; apparent wind only
 // where a shown routing passes near the cursor, for its heading and boat speed).
 //
-// Each arrow points the way the wind blows, its tip on the boat (or cursor) and
-// its tail upwind; its length grows with the wind speed.
+// Each arrow starts on the boat (or cursor) and points to where the wind comes from,
+// like the needles on the wind dial; its length grows with the wind speed. The
+// colours are the dial's (--wind-true, --wind-app in style.css).
 
 const KEY = "racenav.windarrows";
-const TRUE_COLOUR = "#1565c0";
-const APP_COLOUR = "#e65100";
+/** The shared true and apparent wind colours (CSS variables, with fall-backs). */
+export function windColours() {
+  const cs = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
+  const v = (name, d) => cs?.getPropertyValue(name).trim() || d;
+  return { true: v("--wind-true", "#2f8fe6"), app: v("--wind-app", "#f57c00") };
+}
 const rad = (d) => (d * Math.PI) / 180;
 const deg = (r) => ((r * 180) / Math.PI + 360) % 360;
 
@@ -37,16 +42,17 @@ export function setupWindArrows(map, { before }) {
   map.addImage("wind-arrow", arrowImage(), { sdf: true, pixelRatio: 2 });
   map.addSource("wind-arrows", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addLayer({ id: "wind-arrows", type: "symbol", source: "wind-arrows",
-    layout: { "icon-image": "wind-arrow", "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map", "icon-anchor": "top",
+    layout: { "icon-image": "wind-arrow", "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map", "icon-anchor": "bottom",
               "icon-size": ["get", "size"], "icon-allow-overlap": true, "icon-ignore-placement": true },
     paint: { "icon-color": ["get", "colour"], "icon-halo-color": "#ffffff", "icon-halo-width": 1.2, "icon-opacity": 0.9 } }, before);
 
+  const col = windColours();
   const size = (kn) => 0.55 + (Math.min(Math.max(kn, 0), 40) / 40) * 1.25;
   function show(pos, tw, aw) {
     const f = [];
     if (on && pos) {
-      if (tw && Number.isFinite(tw.twd) && Number.isFinite(tw.tws)) f.push({ type: "Feature", properties: { rot: (tw.twd + 180) % 360, size: size(tw.tws), colour: TRUE_COLOUR, kind: "true" }, geometry: { type: "Point", coordinates: pos } });
-      if (aw && Number.isFinite(aw.awd) && Number.isFinite(aw.aws)) f.push({ type: "Feature", properties: { rot: (aw.awd + 180) % 360, size: size(aw.aws), colour: APP_COLOUR, kind: "apparent" }, geometry: { type: "Point", coordinates: pos } });
+      if (tw && Number.isFinite(tw.twd) && Number.isFinite(tw.tws)) f.push({ type: "Feature", properties: { rot: tw.twd % 360, size: size(tw.tws), colour: col.true, kind: "true" }, geometry: { type: "Point", coordinates: pos } });
+      if (aw && Number.isFinite(aw.awd) && Number.isFinite(aw.aws)) f.push({ type: "Feature", properties: { rot: aw.awd % 360, size: size(aw.aws), colour: col.app, kind: "apparent" }, geometry: { type: "Point", coordinates: pos } });
     }
     map.getSource("wind-arrows").setData({ type: "FeatureCollection", features: f });
   }

@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/gridmath.test.js src/rules.test.js src/weather.test.js src/keys.test.js src/nightcursor.test.js src/ais-symbols.test.js src/wmm.test.js src/navmath.test.js src/marinermath.test.js",
+    "test": "node --test src/gridmath.test.js src/rules.test.js src/weather.test.js src/keys.test.js src/nightcursor.test.js src/ais-symbols.test.js src/wmm.test.js src/navmath.test.js src/marinermath.test.js src/histcore.test.js",
     "tauri": "tauri"
   },
   "dependencies": {

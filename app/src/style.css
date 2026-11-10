@@ -21,6 +21,9 @@
   --tile-bg: rgba(16, 28, 36, 0.86);
   --tile-ink: #f2f6f8;
   --tile-quiet: #9fb2bd;
+  /* true and apparent wind: one pair of colours for the dial, the chart arrows and the routing card */
+  --wind-true: #2f8fe6;
+  --wind-app: #f57c00;
   --hw-road: #1b2b40;
   --hw-grid: #60768c;
   --hw-accent: #45c6f5;
@@ -436,7 +439,10 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
 .nmea-frame.ignored code { opacity: 0.45; text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.35); }
 .nmea-frame-ignored { flex: none; white-space: nowrap; color: #a9bac2; font-size: 10px; text-transform: uppercase; }
 #nmea-monitor-window { display: none; }
-html[data-view="nmea"] #nmea-monitor-window { position: absolute; z-index: 20; inset: 0; display: flex; padding: 16px; background: var(--panel-bg); }
+/* the toolbar stays usable beside it (View, Live, colours…), as in the Instruments view */
+html[data-view="nmea"] #nmea-monitor-window { position: absolute; z-index: 20; inset: 0 0 0 calc(var(--rail-w) + 49px); display: flex; padding: 16px; background: var(--panel-bg); }
+html[data-view="nmea"] body.drawer-open #nmea-monitor-window { left: calc(var(--rail-w) + var(--drawer-w) + 49px); }
+html[data-view="nmea"] body { background: var(--panel-bg); }
 html[data-view="nmea"] #nmea-monitor-window .nmea-monitor { width: 100%; min-height: 0; }
 html[data-view="nmea"] #nmea-monitor-window .nmea-monitor-log { flex: 1; max-height: none; }
 html[data-view="nmea"] #nmea-monitor-window .nmea-variable-grid { grid-template-columns: repeat(3, minmax(160px, 1fr)); }
@@ -736,7 +742,7 @@ html[data-palette="dusk"][data-iho] { filter: invert(1) hue-rotate(180deg) brigh
 html[data-palette="dusk"][data-iho] body { background: #fff; }
 /* things already dark (the rail, instrument panels, the title bars of floating boxes, the
    about box, messages) are turned back, so they stay dark rather than going light grey */
-html[data-palette="dusk"][data-iho] :is(#rail, .ipanel, #itiles, .dot, #replay-bar, #tip,
+html[data-palette="dusk"][data-iho] :is(#rail, .ipanel, #itiles, .hist-float, .dot, #replay-bar, #tip,
   .float-win header, .about, .toast, .startup-splash, #wx-pop-btn.on) { filter: invert(1) hue-rotate(180deg); }
 html[data-palette="dusk"][data-iho] #map .maplibregl-canvas-container { filter: hue-rotate(180deg) invert(1); }
 /* Night (IHO): the chart is drawn in the IHO night palette, so it is left out of the colour
@@ -745,7 +751,7 @@ html[data-palette="dusk"][data-iho] #map .maplibregl-canvas-container { filter: 
    With the paper chart symbols the map goes through the dark page filter as before. */
 html[data-palette="iho-night"] body { background: #000; }
 html[data-palette="iho-night"] body > :not(#map) { filter: invert(1) url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
-html[data-palette="iho-night"] body > :is(#rail, #itiles, #replay-bar, #tip, .startup-splash) { filter: url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
+html[data-palette="iho-night"] body > :is(#rail, #itiles, .hist-float, #replay-bar, #tip, .startup-splash) { filter: url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
 html[data-palette="iho-night"] :is(.ipanel, .dot) { filter: invert(1); }
 html[data-palette="iho-night"] #map > :not(.maplibregl-canvas-container, .maplibregl-control-container, .maplibregl-canvas) { filter: invert(1) url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
 html[data-palette="iho-night"] #map :is(.maplibregl-ctrl, .maplibregl-popup) { filter: invert(1) url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
@@ -756,7 +762,7 @@ html[data-palette="iho-night"]:not([data-iho]) #map .maplibregl-canvas-container
    (the rail, instrument panels) are inverted first so they stay dark. */
 html[data-palette="night-red"] { filter: invert(1) url(#pal-red) brightness(var(--pal-dim, 0.6)); }
 html[data-palette="night-green"] { filter: invert(1) url(#pal-green) brightness(var(--pal-dim, 0.6)); }
-html[data-palette^="night"] #rail, html[data-palette^="night"] .ipanel, html[data-palette^="night"] #itiles, html[data-palette^="night"] .dot,
+html[data-palette^="night"] #rail, html[data-palette^="night"] .ipanel, html[data-palette^="night"] #itiles, html[data-palette^="night"] .hist-float, html[data-palette^="night"] .dot,
 html[data-palette^="night"] #replay-bar, html[data-palette^="night"] #tip, html[data-palette^="night"] .startup-splash { filter: invert(1); }
 #tip { position: fixed; z-index: 100; max-width: 320px; padding: 5px 9px; border-radius: 5px; background: #1d2a33; color: #fff; font-size: 12.5px; line-height: 1.35; pointer-events: none; box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
 #tip[hidden] { display: none; }
@@ -932,9 +938,17 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 .hw-bottom .hw-metric strong { font-size: clamp(15px, 2vw, 23px); }
 .tile.mob-highway { outline: 2px solid var(--alarm-bg); outline-offset: 2px; }
 .tile.highway-card.stale .hw-metric strong { color: var(--tile-quiet); }
-.dial .ptr-a { fill: #f0932b; } .dial .ptr-t { fill: #4aa3df; }
+.dial .ptr-a { fill: var(--wind-app); } .dial .ptr-t { fill: var(--wind-true); }
 .dial .num { font-size: 12px; font-weight: 700; fill: var(--tile-ink); text-anchor: middle; }
-.dial .num.a { fill: #f0932b; } .dial .num.t { fill: #4aa3df; }
+.dial .num.a { fill: var(--wind-app); } .dial .num.t { fill: var(--wind-true); }
+/* true and apparent wind in text (routing cards), darker shades of the same colours for white cards */
+.w-true { color: color-mix(in srgb, var(--wind-true) 80%, #000); font-weight: 600; } .w-app { color: color-mix(in srgb, var(--wind-app) 80%, #000); font-weight: 600; }
+/* wind dial corners: true wind on top, apparent below, in the needles' colours */
+.wdial .wv { font-size: 13px; font-weight: 700; } .wdial .wc { font-size: 6.5px; font-weight: 700; letter-spacing: 0.04em; }
+.wdial .t { fill: var(--wind-true); } .wdial .a { fill: var(--wind-app); } .wdial .end { text-anchor: end; }
+.wdial .u { font-weight: 500; fill: var(--tile-quiet); } .wdial .wv .ps { font-size: 7px; } .wdial .ps.p { fill: #e5534b; } .wdial .ps.s { fill: #3fb950; }
+/* the single wind readings carry the same colours on their labels */
+.tile.wt-t .lbl > span:first-child { color: var(--wind-true); font-weight: 700; } .tile.wt-a .lbl > span:first-child { color: var(--wind-app); font-weight: 700; }
 .dial .cap { font-size: 6.5px; fill: var(--tile-quiet); font-weight: 500; } .dial .cap.end { text-anchor: end; } .dial .cap.mid { text-anchor: middle; }
 .dial .card { font-size: 8px; fill: var(--tile-ink); text-anchor: middle; font-weight: 700; } .dial .card.n { fill: #e74c3c; }
 .dial .m-cog { fill: #f0932b; } .dial .m-btw { fill: #2ecc71; } .dial .lubber { fill: var(--tile-ink); }
@@ -950,6 +964,34 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 .snd-ctl { position: absolute; right: 4px; top: 4px; display: flex; gap: 3px; opacity: 0.55; }
 .tile:hover .snd-ctl { opacity: 1; }
 .snd-ctl button { font-size: 10px; padding: 1px 5px; min-height: 0; background: rgba(0,0,0,.45); color: #fff; border: 1px solid rgba(255,255,255,.35); border-radius: 3px; }
+
+/* history plots (history.js): in a tile, the latest value and its note over a canvas */
+.tile.hist-card { padding: 3px 6px 4px; }
+.ipanel:not(.free) .tile.hist-card { width: 340px; min-height: 150px; }
+.tile.hist-card .v { position: relative; flex: 1 1 0; min-height: 0; overflow: hidden; contain: size layout; padding: 0; }
+.hist-host { display: flex; flex-direction: column; font-size: 12px; line-height: 1.2; text-align: left; align-items: stretch; }
+.hist-host .hh, .hist-float .hh { display: flex; align-items: baseline; gap: 4px; white-space: nowrap; overflow: hidden; color: var(--tile-quiet); }
+.hist-host .hv { font-size: 20px; color: var(--tile-ink); }
+.hist-card.wt-t .hv { color: var(--wind-true); } .hist-card.wt-a .hv { color: var(--wind-app); }
+.hist-host .hh { flex-wrap: wrap; row-gap: 0; }
+.hist-host .hn { flex-basis: 100%; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+.hist-float .hn { font-size: 11.5px; color: var(--tile-quiet); min-height: 14px; margin-top: -2px; }
+.hn.warn { color: #ffb347; font-weight: 700; }
+.hist-cv { flex: 1 1 0; min-height: 0; width: 100%; display: block; }
+.hist-win { position: absolute; right: 2px; top: 0; font-size: 10px; padding: 1px 5px; min-height: 0; background: rgba(0,0,0,.45); color: #fff; border: 1px solid rgba(255,255,255,.35); border-radius: 3px; opacity: 0.6; }
+.tile:hover .hist-win { opacity: 1; }
+/* the floating card: dark like the instrument panels, moved by its title and sized by its corner */
+.hist-float { position: fixed; z-index: 40; display: flex; flex-direction: column; min-width: 240px; min-height: 140px; max-width: 96vw; max-height: 90vh;
+  background: var(--tile-bg); color: var(--tile-ink); border-radius: 7px; box-shadow: 0 3px 14px rgba(0,0,0,.45); padding: 0 6px 6px; box-sizing: border-box; }
+.hist-float header { display: flex; align-items: center; gap: 6px; padding: 5px 0 3px; font-size: 12px; white-space: nowrap; }
+.hist-float .ht { font-weight: 700; }
+.hist-float.wt-t .ht, .hist-float.wt-t .hh b { color: var(--wind-true); } .hist-float.wt-a .ht, .hist-float.wt-a .hh b { color: var(--wind-app); }
+.hist-float .hh { flex: 0 1 auto; min-width: 0; }
+.hist-float .hsp { flex: 1; }
+.hist-float select { font-size: 11px; padding: 1px 2px; min-height: 0; width: auto; }
+.hist-float .hist-x { padding: 0 6px; min-height: 0; background: transparent; color: var(--tile-quiet); border: 0; font-size: 14px; }
+.hist-float.flash { animation: hist-flash 0.6s; }
+@keyframes hist-flash { 50% { box-shadow: 0 0 0 3px var(--wind-true), 0 3px 14px rgba(0,0,0,.45); } }
 
 @media (max-width: 600px) {
   .ipanel .tile.highway-card { width: calc(100vw - var(--rail-w) - 20px); min-height: 470px; }

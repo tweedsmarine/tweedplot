@@ -60,6 +60,8 @@ pub struct VesselState {
     pub water_temp: Option<f64>,
     pub air_temp: Option<f64>,
     pub pressure: Option<f64>,
+    /// Relative humidity, %.
+    pub humidity: Option<f64>,
     /// GPS date and time (`navigation.datetime`, ISO 8601 UTC), when the source sends it.
     pub datetime: Option<String>,
     /// Time stamp of the last update. Sentences without a date (GGA, GLL)
@@ -156,6 +158,10 @@ impl VesselState {
             "environment.water.temperature" => self.water_temp = num().map(|k| k - 273.15),
             "environment.outside.temperature" => self.air_temp = num().map(|k| k - 273.15),
             "environment.outside.pressure" => self.pressure = num().map(|pa| pa / 100.0),
+            "environment.outside.relativeHumidity" | "environment.outside.humidity" => {
+                // a ratio in Signal K (0–1); some servers send percent
+                self.humidity = num().map(|h| if h <= 1.0 { h * 100.0 } else { h });
+            }
             "navigation.datetime" => self.datetime = val.as_str().map(str::to_string),
             _ => {}
         }

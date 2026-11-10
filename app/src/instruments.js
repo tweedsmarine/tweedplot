@@ -7,6 +7,7 @@ import { ask } from "./ask.js";
 import { VIEWS } from "./views.js";
 import { own } from "./role.js";
 import { setupTiles } from "./insttiles.js";
+import { CHANNELS as HIST, sample as histSample, renderHistoryTile, openHistoryCard, recorder as histRec } from "./history.js";
 import { columns, spanFromDrag, cleanSpan, moveReading, dropIndex, CELL, ROW } from "./gridmath.js";
 
 const KEY = "racenav.instruments";
@@ -39,12 +40,18 @@ export const ITEMS = {
   UTC: { label: "UTC", unit: "", group: "Navigation", get: (c) => c.now, fmt: (t) => new Date(t).toISOString().slice(11, 19) },
   LOCAL: { label: "Local", unit: "", group: "Navigation", get: (c) => c.now, fmt: (t) => new Date(t).toLocaleTimeString("en-NZ", { hour12: false }) },
 
-  AWS: { label: "AWS", unit: "kn", group: "Wind", live: true, get: (c) => c.v.aws, fmt: f1 },
-  AWA: { label: "AWA", unit: "°", group: "Wind", live: true, get: (c) => c.v.awa, fmt: sideAngle, side: (x) => (x < 0 ? "port" : "stbd") },
-  TWS: { label: "TWS", unit: "kn", group: "Wind", live: true, get: (c) => c.v.tws, fmt: f1 },
-  TWA: { label: "TWA", unit: "°", group: "Wind", live: true, get: (c) => c.v.twa, fmt: sideAngle, side: (x) => (x < 0 ? "port" : "stbd") },
-  TWD: { label: "TWD", unit: "°T", group: "Wind", live: true, get: (c) => c.v.twd, fmt: deg3 },
+  AWS: { label: "AWS", unit: "kn", group: "Wind", live: true, tint: "a", get: (c) => c.v.aws, fmt: f1 },
+  AWA: { label: "AWA", unit: "°", group: "Wind", live: true, tint: "a", get: (c) => c.v.awa, fmt: sideAngle, side: (x) => (x < 0 ? "port" : "stbd") },
+  TWS: { label: "TWS", unit: "kn", group: "Wind", live: true, tint: "t", get: (c) => c.v.tws, fmt: f1 },
+  TWA: { label: "TWA", unit: "°", group: "Wind", live: true, tint: "t", get: (c) => c.v.twa, fmt: sideAngle, side: (x) => (x < 0 ? "port" : "stbd") },
+  TWD: { label: "TWD", unit: "°T", group: "Wind", live: true, tint: "t", get: (c) => c.v.twd, fmt: deg3 },
   VMG: { label: "VMG", unit: "kn", group: "Wind", live: true, get: (c) => (c.v.twa != null && (c.v.stw ?? c.v.sog) != null ? (c.v.stw ?? c.v.sog) * Math.cos((c.v.twa * Math.PI) / 180) : null), fmt: (x) => f1(Math.abs(x)) },
+
+  // the weather station (Signal K environment.outside, or NMEA MDA / XDR)
+  PRES: { label: "Pressure", unit: "hPa", group: "Weather", live: true, get: (c) => c.v.pressure, fmt: f1 },
+  AIRT: { label: "Air temp", unit: "°C", group: "Weather", live: true, get: (c) => c.v.air_temp, fmt: f1 },
+  HUM: { label: "Humidity", unit: "%", group: "Weather", live: true, get: (c) => c.v.humidity, fmt: (x) => x.toFixed(0) },
+  WTEMP: { label: "Water temp", unit: "°C", group: "Weather", live: true, get: (c) => c.v.water_temp, fmt: f1 },
 
   NEXT: { label: "To mark", unit: "", group: "Route", wide: true, get: (c) => c.nav?.next?.name ?? null, fmt: (s) => esc(s) },
   BTW: { label: "BTW", unit: "°T", group: "Route", get: (c) => c.wp?.btw, fmt: deg3 },
@@ -104,6 +111,8 @@ export const ITEMS = {
     fmt: (s) => `${Math.floor(s / 60)}<span class="u">min</span>${String(Math.floor(s % 60)).padStart(2, "0")}<span class="u">s</span>` },
 };
 
+const histChange = (k) => histRec.change(k, 3);
+
 // ---------- graphical instruments ----------------------------------------------------------
 const polar = (r, deg) => [50 + r * Math.sin((deg * Math.PI) / 180), 50 - r * Math.cos((deg * Math.PI) / 180)];
 const pt = (p) => `${p[0].toFixed(2)},${p[1].toFixed(2)}`;
@@ -112,21 +121,26 @@ function ticks(step, rIn, rOut, cls) {
   for (let a = 0; a < 360; a += step) d += `M${pt(polar(rIn, a))}L${pt(polar(rOut, a))}`;
   return `<path d="${d}" class="${cls}"/>`;
 }
-/** Wind dial: boat up, apparent (orange) and true (blue) wind angle pointers, speeds in the middle. */
+/** Wind dial: boat up, true (blue) and apparent (orange) needles pointing to where each wind
+ *  comes from. True wind speed and angle in the top corners, apparent in the bottom corners,
+ *  each labelled in its needle's colour (the same colours as the wind arrows on the chart). */
 function windDial(w) {
   const sector = (a0, a1, cls) => {
     const p0 = polar(44, a0), p1 = polar(44, a1);
     return `<path d="M${pt(polar(38, a0))}L${pt(p0)}A44,44 0 0 ${a1 > a0 ? 1 : 0} ${pt(p1)}L${pt(polar(38, a1))}A38,38 0 0 ${a1 > a0 ? 0 : 1} ${pt(polar(38, a0))}z" class="${cls}"/>`;
   };
   const ptr = (a, cls, len) => (a == null ? "" : `<path d="M${pt(polar(len, a))}L${pt(polar(10, a - 9))}L${pt(polar(10, a + 9))}z" class="${cls}"/>`);
-  return `<svg viewBox="-6 -1 112 108" class="dial">
+  const spd = (x) => (x != null ? x.toFixed(1) : "—");
+  const ang = (x) => (x == null ? "—" : `${Math.round(Math.abs(x))}°<tspan class="ps ${x < 0 ? "p" : "s"}">${x < 0 ? "P" : "S"}</tspan>`);
+  return `<svg viewBox="-10 -10 120 120" class="dial wdial">
     ${sector(20, 60, "close-stbd")}${sector(-60, -20, "close-port")}
     <circle cx="50" cy="50" r="44" class="ring"/>${ticks(10, 41, 44, "tk")}${ticks(30, 37, 44, "tk2")}
     <path d="M50,32 L56,47 L56,62 L50,68 L44,62 L44,47z" class="hull"/>
     ${ptr(w.twa, "ptr-t", 40)}${ptr(w.awa, "ptr-a", 43)}
-    <text x="50" y="84" class="num a">${w.aws != null ? w.aws.toFixed(1) : "—"}</text>
-    <text x="50" y="22" class="num t">${w.tws != null ? w.tws.toFixed(1) : "—"}</text>
-    <text x="-5" y="105.5" class="cap">AWA ${w.awa != null ? Math.round(Math.abs(w.awa)) + "°" : "—"}</text><text x="105" y="105.5" class="cap end">TWA ${w.twa != null ? Math.round(Math.abs(w.twa)) + "°" : "—"}</text>
+    <text x="-8" y="-2.5" class="wc t">TWS <tspan class="u">kn</tspan></text><text x="-8" y="10" class="wv t">${spd(w.tws)}</text>
+    <text x="108" y="-2.5" class="wc t end">TWA</text><text x="108" y="10" class="wv t end">${ang(w.twa)}</text>
+    <text x="-8" y="100" class="wv a">${spd(w.aws)}</text><text x="-8" y="108.5" class="wc a">AWS <tspan class="u">kn</tspan></text>
+    <text x="108" y="100" class="wv a end">${ang(w.awa)}</text><text x="108" y="108.5" class="wc a end">AWA</text>
   </svg>`;
 }
 /** Compass: heading up; COG (orange tick) and bearing to the mark (green). */
@@ -311,6 +325,27 @@ ITEMS.SOUNDER = {
   label: "Sounder history", unit: "m", group: "Graphic", live: true, graphic: true, wide: true, sounder: true,
   get: () => true, fmt: () => "", render: renderSounder,
 };
+
+// ---------- history plots (history.js): one per recorded reading ------------------------------
+for (const [k, ch] of Object.entries(HIST)) {
+  ITEMS[`H_${k}`] = { label: `${ch.label} history`, unit: "", group: "History", live: true, graphic: true, wide: true, history: k, tint: ch.tint,
+    get: () => true, fmt: () => "", render: renderHistoryTile(k) };
+}
+// the pressure tendency as a single reading: change over three hours, with the words for it
+ITEMS.PTEND = { label: "Pressure 3 h", unit: "hPa", group: "Weather", live: true,
+  get: () => histChange("PRES"), fmt: (d) => `${d > 0 ? "+" : d < 0 ? "−" : "±"}${Math.abs(d).toFixed(1)}`,
+  state: (d) => (d <= -6 ? "alarm" : d <= -3.6 ? "warn" : "") };
+for (const [k, it] of Object.entries(ITEMS)) it.key = k;
+
+/** The history channel behind a reading (TWS → TWS, H_PRES → PRES, Pressure 3 h → PRES), if any. */
+export function historyKey(itemKey) {
+  const it = ITEMS[itemKey];
+  if (!it) return null;
+  if (it.history) return it.history;
+  if (itemKey === "PTEND") return "PRES";
+  if (itemKey === "HDM") return null;
+  return HIST[itemKey] ? itemKey : null;
+}
 
 function highwayData(c) {
   let range = null, bearingToTarget = null, track = null, cts = null, xte = null;
@@ -545,7 +580,7 @@ export function setupInstruments() {
   const rail = document.getElementById("rail");
   const menu = document.getElementById("tile-menu");
   let layout = loadLayout();
-  const tiles = setupTiles({ host: document.getElementById("itiles"), menu, items: ITEMS, getLayout: () => layout, save, paint: (t, it, fit) => paintTile(t, it, fit) });
+  const tiles = setupTiles({ host: document.getElementById("itiles"), menu, items: ITEMS, getLayout: () => layout, save, paint: (t, it, fit) => paintTile(t, it, fit), historyKey });
   let ctx = { v: {}, now: Date.now(), age: Infinity, safetyDepth: 3 };
 
   function save() { try { localStorage.setItem(KEY, JSON.stringify(layout)); } catch { /* ignore */ } }
@@ -575,7 +610,7 @@ export function setupInstruments() {
       const el = document.createElement("div");
       const g = geo(p);
       // a panel holding the highway is always a free grid: its fixed size would be far too big
-      const hasHw = p.tiles.some((k) => ITEMS[k]?.highway || ITEMS[k]?.sounder);
+      const hasHw = p.tiles.some((k) => ITEMS[k]?.highway || ITEMS[k]?.sounder || ITEMS[k]?.history);
       const avail = Math.max(120, window.innerHeight - (parseInt(getComputedStyle(document.documentElement).getPropertyValue("--dock-h")) || 0) - 8);
       const gw = g.w > 0 ? g.w : hasHw ? 420 : 0;
       const free = !p.collapsed && gw > 0;
@@ -586,7 +621,7 @@ export function setupInstruments() {
         const cols = columns(w, p.size);
         const base = ROW[p.size] ?? ROW.m;
         // default spans: the highway fills the panel's width, three rows tall
-        p.span = p.tiles.map((k, i) => p.span?.[i] ?? (ITEMS[k]?.highway ? [cols, 3] : ITEMS[k]?.sounder ? [cols, 2] : null));
+        p.span = p.tiles.map((k, i) => p.span?.[i] ?? (ITEMS[k]?.highway ? [cols, 3] : ITEMS[k]?.sounder || ITEMS[k]?.history ? [cols, 2] : null));
         const area = p.tiles.reduce((n, _, i) => { const [c, r] = cleanSpan(p.span[i]); return n + Math.min(c, cols) * r; }, 0);
         const rows = Math.max(1, Math.ceil(area / cols));
         // too many rows for the screen: make the rows shorter, never taller than the screen
@@ -615,8 +650,9 @@ export function setupInstruments() {
       if (!p.collapsed) p.tiles.forEach((key, i) => {
         const it = ITEMS[key];
         const t = document.createElement("div");
-        t.className = `tile ${p.size}${it?.wide ? " wide" : ""}${it?.graphic ? " graphic" : ""}${it?.highway ? " highway-card" : ""}${it?.sounder ? " sounder-card" : ""}`;
+        t.className = `tile ${p.size}${it?.tint ? ` wt-${it.tint}` : ""}${it?.wide ? " wide" : ""}${it?.graphic ? " graphic" : ""}${it?.highway ? " highway-card" : ""}${it?.sounder ? " sounder-card" : ""}${it?.history ? " hist-card" : ""}`;
         t.dataset.i = i;
+        t.dataset.k = key;
         t.innerHTML = `<div class="lbl"><span>${it ? it.label : key}</span><span class="sd"></span></div><div class="v">—</div>`;
         const sp = cleanSpan(p.span?.[i]);
         if (free) {
@@ -928,7 +964,39 @@ export function setupInstruments() {
     const k = Math.min(v.clientWidth / 680, v.clientHeight / 470);
     d.style.transform = `translate(${((v.clientWidth - 680 * k) / 2).toFixed(1)}px, ${((v.clientHeight - 470 * k) / 2).toFixed(1)}px) scale(${k.toFixed(4)})`;
   }
-  setInterval(() => { ctx.age = (Date.now() - (ctx.dataAt ?? 0)) / 1000; sampleDepth(ctx); render(); }, 250);
+  setInterval(() => {
+    ctx.age = (Date.now() - (ctx.dataAt ?? 0)) / 1000;
+    sampleDepth(ctx);
+    // the history records live data only: not a replay, not planning, not stale
+    histSample(ctx.v, ctx.age <= STALE_S && !ctx.replay && (ctx.dataAt ?? 0) > 0);
+    render();
+  }, 250);
+
+  // right-click (or hold) a reading: its history in a floating card
+  const histFrom = (el) => {
+    const t = el?.closest?.("#inst .tile, #itiles .itile");
+    if (!t) return null;
+    let k = t.dataset.k;
+    if (!k && t.classList.contains("itile")) k = layout.tiles?.find((x) => x.id === t.dataset.id)?.k;
+    return historyKey(k);
+  };
+  document.addEventListener("contextmenu", (e) => {
+    const h = histFrom(e.target);
+    if (!h) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openHistoryCard(h, [e.clientX, e.clientY]);
+  }, true);
+  let hold = null;
+  document.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse") return;
+    const h = histFrom(e.target);
+    if (!h) return;
+    const at = [e.clientX, e.clientY];
+    hold = setTimeout(() => { hold = "done"; openHistoryCard(h, at); }, 600);
+  });
+  document.addEventListener("pointerup", () => { if (hold && hold !== "done") clearTimeout(hold); setTimeout(() => { hold = null; }, 0); });
+  document.addEventListener("click", (e) => { if (hold === "done" && histFrom(e.target)) { e.stopPropagation(); e.preventDefault(); } }, true);
 
   // ---------- tile menu ----------------------------------------------------------
   root.addEventListener("click", (e) => {
@@ -947,6 +1015,8 @@ export function setupInstruments() {
       for (const [k, it] of items) html += `<button data-set="${k}" class="${k === cur ? "cur" : ""}">${it.label}${it.unit ? ` <small>${it.unit}</small>` : ""}</button>`;
       html += "</div>";
     }
+    const hk = historyKey(cur);
+    if (hk) html += `<hr><button data-act="hist">Show ${HIST[hk].label} history (right-click a reading)</button>`;
     html += `<hr><button data-act="add">Add a reading after this one</button><button data-act="remove">Remove this reading</button>`;
     html += `<hr><div class="grp">This panel</div><div class="sizes">${["s", "m", "l"].map((s) => `<button data-size="${s}" class="${p.size === s ? "cur" : ""}">${{ s: "Small", m: "Medium", l: "Large" }[s]}</button>`).join("")}</div>`;
     html += `<button data-act="dir">${p.dir === "row" ? "Stack vertically" : "Lay out horizontally"}</button>`;
@@ -966,6 +1036,7 @@ export function setupInstruments() {
       if (!b) return;
       if (b.dataset.set) p.tiles[i] = b.dataset.set;
       if (b.dataset.size) p.size = b.dataset.size;
+      if (b.dataset.act === "hist") { menu.hidden = true; openHistoryCard(hk, [rect.right, rect.top]); return; }
       if (b.dataset.act === "add") { p.tiles.splice(i + 1, 0, cur); p.span?.splice(i + 1, 0, null); }
       if (b.dataset.act === "remove") { p.tiles.splice(i, 1); p.span?.splice(i, 1); if (!p.tiles.length) layout.panels = layout.panels.filter((x) => x !== p); }
       if (b.dataset.act === "dir") { p.dir = p.dir === "row" ? "column" : "row"; if (p.vp?.[view()]) { delete p.vp[view()].w; delete p.vp[view()].h; } }

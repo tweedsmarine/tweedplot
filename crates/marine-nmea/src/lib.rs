@@ -44,6 +44,11 @@ pub struct Observation {
     pub tws: Option<f64>,
     pub twd: Option<f64>,
     pub water_temp: Option<f64>,
+    /// Air temperature (°C), barometric pressure (hPa) and relative humidity (%),
+    /// from MDA or XDR.
+    pub air_temp: Option<f64>,
+    pub pressure: Option<f64>,
+    pub humidity: Option<f64>,
     pub datetime: Option<String>,
     pub extra: BTreeMap<String, String>,
     /// The heading came from a true-heading sensor (HDT, VHW), so a magnetic heading
@@ -279,6 +284,12 @@ impl Observation {
             "DBK" if f.len() >= 4 => put(&mut self.depth_keel, number(&f[2]).or_else(|| number(&f[0]).map(|ft| ft * 0.3048))),
             "DBS" if f.len() >= 4 => put(&mut self.depth_surface, number(&f[2]).or_else(|| number(&f[0]).map(|ft| ft * 0.3048))),
             "MTW" if f.len() >= 2 && f[1] == "C" => put(&mut self.water_temp, number(&f[0])),
+            "MDA" | "XDR" => {
+                let w = weather(&sentence.formatter, f);
+                put(&mut self.pressure, w.pressure);
+                put(&mut self.air_temp, w.air_temp);
+                put(&mut self.humidity, w.humidity);
+            }
             "ZDA" if f.len() >= 4 => {
                 if let Some(datetime) = zda_datetime(&f[0], &f[1], &f[2], &f[3]) {
                     self.datetime = Some(datetime);
@@ -316,6 +327,76 @@ impl Observation {
         self.lat = nmea_coord(lat, ns, true);
         self.lon = nmea_coord(lon, ew, false);
     }
+}
+
+/// Barometric pressure (hPa), air temperature (°C) and relative humidity (%) in one sentence.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Weather {
+    pub pressure: Option<f64>,
+    pub air_temp: Option<f64>,
+    pub humidity: Option<f64>,
+}
+
+impl Weather {
+    pub fn any(&self) -> bool {
+        self.pressure.is_some() || self.air_temp.is_some() || self.humidity.is_some()
+    }
+}
+
+/// A barometer reads 870–1090 hPa at sea level; anything else (an engine's oil pressure in
+/// an XDR, a wrong unit) is not the air pressure.
+fn barometric(hpa: Option<f64>) -> Option<f64> {
+    hpa.filter(|p| (870.0..=1090.0).contains(p))
+}
+
+/// The weather in an MDA (meteorological composite) or XDR (transducer) sentence.
+///
+/// MDA: pressure in inches of mercury (I) and bars (B), air temperature (C), water
+/// temperature, relative humidity (%), … — the bars are used when present.
+/// XDR: groups of type, value, unit, name. Pressure (P) in bars (B) or pascals (P)
+/// within the barometric range; temperature (C, in C) whose name says air (Air,
+/// TempAir, ENV_OUTSIDE_T…); humidity (H, in P = percent).
+pub fn weather(formatter: &str, f: &[String]) -> Weather {
+    let field = |i: usize| f.get(i).map(String::as_str).unwrap_or("");
+    let mut w = Weather::default();
+    match formatter {
+        "MDA" => {
+            w.pressure = barometric(if field(3) == "B" { number(field(2)).map(|b| b * 1000.0) } else { None }.or_else(|| {
+                if field(1) == "I" {
+                    number(field(0)).map(|inhg| inhg * 33.863_886)
+                } else {
+                    None
+                }
+            }));
+            w.air_temp = if field(5) == "C" { number(field(4)) } else { None };
+            w.humidity = number(field(8)).filter(|h| (0.0..=100.0).contains(h));
+        }
+        "XDR" => {
+            for g in f.chunks(4) {
+                let (kind, value, unit) = (g[0].as_str(), g.get(1).and_then(|v| number(v)), g.get(2).map(String::as_str).unwrap_or(""));
+                let name = g.get(3).map(|n| n.to_ascii_uppercase()).unwrap_or_default();
+                match kind {
+                    "P" => {
+                        let hpa = match unit {
+                            "B" => value.map(|b| b * 1000.0),
+                            "P" => value.map(|pa| pa / 100.0),
+                            _ => None,
+                        };
+                        if w.pressure.is_none() {
+                            w.pressure = barometric(hpa);
+                        }
+                    }
+                    "C" if unit == "C" && (name.contains("AIR") || name.contains("OUTSIDE") || name == "ENV_OUTAIR_T") => {
+                        w.air_temp = w.air_temp.or(value.filter(|t| (-60.0..=70.0).contains(t)));
+                    }
+                    "H" if unit == "P" => w.humidity = w.humidity.or(value.filter(|h| (0.0..=100.0).contains(h))),
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+    w
 }
 
 fn number(s: &str) -> Option<f64> {
@@ -464,6 +545,7 @@ pub const CATALOG: &[CatalogEntry] = &[
     entry!("HDT", "Heading, true", "Heading", Decoded),
     entry!("MWD", "Wind direction and speed", "Wind", Decoded),
     entry!("MWV", "Wind angle and speed", "Wind", Decoded),
+    entry!("MDA", "Meteorological composite (pressure, air temperature, humidity)", "Environment", Decoded),
     entry!("MTW", "Mean water temperature", "Environment", Decoded),
     entry!("RMB", "Recommended minimum navigation data", "Waypoint", PreservedRaw),
     entry!("RMC", "Recommended minimum GNSS data", "Position", Decoded),
@@ -477,7 +559,7 @@ pub const CATALOG: &[CatalogEntry] = &[
     entry!("VWR", "Relative wind speed and angle", "Wind", PreservedRaw),
     entry!("VWT", "True wind speed and angle", "Wind", PreservedRaw),
     entry!("WPL", "Waypoint location", "Waypoint", PreservedRaw),
-    entry!("XDR", "Transducer measurements", "Sensors", PreservedRaw),
+    entry!("XDR", "Transducer measurements (barometer, air temperature and humidity used)", "Sensors", Decoded),
     entry!("XTE", "Cross-track error", "Waypoint", PreservedRaw),
     entry!("ZDA", "Time and date", "Time", Decoded),
 ];
@@ -627,5 +709,27 @@ mod tests {
         o.apply(&sentence("HCHDG,100.0,,,20.0,E"));
         o.apply(&sentence("VWVHW,,T,,M,5.2,N,,K"));
         assert_eq!((o.heading, o.stw), (Some(120.0), Some(5.2)));
+    }
+
+    #[test]
+    fn mda_and_xdr_weather() {
+        let mut o = Observation::default();
+        let s = parse_sentence(frame("WIMDA,29.9213,I,1.0132,B,18.5,C,,,62.0,,,,,,,,,,,").trim().as_bytes(), 200).unwrap();
+        o.apply(&s);
+        assert!((o.pressure.unwrap() - 1013.2).abs() < 0.01);
+        assert_eq!(o.air_temp, Some(18.5));
+        assert_eq!(o.humidity, Some(62.0));
+        // inches only
+        let w = weather("MDA", &"30.00,I,,,,,,,,,,,,,,,,,,".split(',').map(str::to_owned).collect::<Vec<_>>());
+        assert!((w.pressure.unwrap() - 1015.9).abs() < 0.1);
+        // XDR: barometer in bars and pascals, air temperature, humidity; oil pressure ignored
+        let x = |t: &str| weather("XDR", &t.split(',').map(str::to_owned).collect::<Vec<_>>());
+        assert!((x("P,1.0081,B,Barometer").pressure.unwrap() - 1008.1).abs() < 0.01);
+        assert!((x("P,101500,P,BARO").pressure.unwrap() - 1015.0).abs() < 0.01);
+        assert_eq!(x("P,3.2,B,OIL").pressure, None);
+        let w = x("C,21.4,C,ENV_OUTSIDE_T,H,55,P,ENV_OUTSIDE_H,C,80,C,ENGINE");
+        assert_eq!(w.air_temp, Some(21.4));
+        assert_eq!(w.humidity, Some(55.0));
+        assert_eq!(x("C,80,C,ENGINE").air_temp, None);
     }
 }
