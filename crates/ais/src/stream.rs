@@ -67,7 +67,8 @@ fn subscription(r: &Request) -> String {
         "BoundingBoxes": r.boxes,
         "FilterMessageTypes": [
             "PositionReport", "StandardClassBPositionReport", "ExtendedClassBPositionReport", "ShipStaticData",
-            "StaticDataReport", "AidsToNavigationReport", "StandardSearchAndRescueAircraftReport", "BaseStationReport"
+            "StaticDataReport", "AidsToNavigationReport", "StandardSearchAndRescueAircraftReport", "BaseStationReport",
+            "SafetyBroadcastMessage"
         ]
     })
     .to_string()
@@ -181,8 +182,12 @@ pub fn parse(text: &str) -> Option<Update> {
         // Open Waters rebuilds class B reports as class A messages: a static message with no raw NMEA
         // proves nothing about the class, and a position with both "not available" defaults is a class B.
         let raw = v.get("nmea").and_then(Value::as_array).is_some_and(|a| !a.is_empty());
+        // A distress transmitter (AIS-SART 970…, MOB 972…, EPIRB 974…) sends real class A position
+        // reports: its status 15 is "test", not a rebuilt class B, so it keeps its status and no class.
+        let distress = crate::Kind::from_mmsi(u.mmsi).is_some_and(|k| k.is_distress());
         match ty {
             "ShipStaticData" if !raw => u.class = None,
+            "PositionReport" if distress => u.class = None,
             "PositionReport"
                 if m.get("NavigationalStatus").and_then(Value::as_u64) == Some(15) && m.get("RateOfTurn").and_then(Value::as_i64) == Some(-128) =>
             {
@@ -249,6 +254,10 @@ fn decode(ty: &str, m: &Value, meta: Option<&Value>) -> Option<Update> {
             u.destination = clean(m.get("Destination").and_then(Value::as_str));
             u.draught = f("MaximumStaticDraught").filter(|d| *d > 0.0);
             dims(&mut u, m.get("Dimension"));
+        }
+        "SafetyBroadcastMessage" => {
+            u.safety_text = clean(m.get("Text").and_then(Value::as_str));
+            u.safety_text.as_ref()?;
         }
         "StaticDataReport" => {
             u.class = Some("B");
@@ -333,6 +342,13 @@ mod tests {
         assert!(parse(r#"{"type":"welcome","role":"personal"}"#).is_none());
         let snap = r#"{"type":"event","mmsi":512000706,"msg_type":"PositionReport","lat":-41.2,"lon":173.3,"message":{"UserID":512000706,"NavigationalStatus":15,"RateOfTurn":-128,"Sog":0,"Cog":10,"TrueHeading":511,"Latitude":-41.2,"Longitude":173.3}}"#;
         assert_eq!(parse(snap).unwrap().class, Some("B"));
+        // an EPIRB-AIS in test mode (status 15) is not taken for a class B, and keeps its status
+        let epirb = snap.replace("512000706", "974018110");
+        let u = parse(&epirb).unwrap();
+        assert_eq!((u.class, u.status), (None, Some(15)));
+        // its safety broadcast: "EPIRB TEST"
+        let sb = r#"{"type":"event","mmsi":974018110,"msg_type":"SafetyBroadcastMessage","message":{"UserID":974018110,"Text":"EPIRB TEST@@"}}"#;
+        assert_eq!(parse(sb).unwrap().safety_text.as_deref(), Some("EPIRB TEST"));
         let st = r#"{"type":"event","mmsi":512000706,"msg_type":"ShipStaticData","nmea":[],"message":{"UserID":512000706,"Name":"NELSON PILOT"}}"#;
         assert_eq!(parse(st).unwrap().class, None);
         let st = r#"{"type":"event","mmsi":512000706,"msg_type":"ShipStaticData","nmea":["!AIVDM,x"],"message":{"UserID":512000706,"Name":"NELSON PILOT"}}"#;

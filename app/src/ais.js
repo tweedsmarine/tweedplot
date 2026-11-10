@@ -469,7 +469,12 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     add("Call sign", t.callsign);
     if (t.kind === "aton") add("Aid", ATON[t.aton_type] ?? (t.aton_type != null ? `type ${t.aton_type}` : null));
     if (t.off_position) add("Warning", "OFF POSITION");
-    add("Status", t.status != null ? STATUS[t.status] : null);
+    if (["sart", "mob", "epirb"].includes(t.kind)) {
+      // active or test: what an operator must know first about a distress transmitter
+      add("Mode", distressState(t));
+      add("Navigational status", t.status != null ? `${t.status}${t.status === 14 ? " (active)" : t.status === 15 ? " (test, or not defined)" : ""}` : "not received");
+      add("Safety message", t.safety_text);
+    } else add("Status", t.status != null ? (STATUS[t.status] || `Not defined (${t.status})`) : null);
     if (t.sog != null || t.cog != null) add("SOG / COG", `${t.sog != null ? t.sog.toFixed(1) + " kn" : "—"} / ${t.cog != null ? Math.round(t.cog) + "°T" : "—"}`);
     if (t.heading != null) add("Heading", `${Math.round(t.heading)}°T`);
     if (t.rot != null && Math.abs(t.rot) >= 0.1) add("Rate of turn", `${Math.abs(t.rot).toFixed(1)}°/min to ${t.rot > 0 ? "starboard" : "port"}`);
@@ -594,8 +599,17 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     const heard = t.last_pos ?? t.last_seen;
     return heard == null || Date.now() / 1000 - heard > DISTRESS_LOST_MIN * 60;
   };
-  const isTest = (t) => t.status === 15 || /\bTEST\b/i.test(String(t.name ?? ""));
+  // Active or test (IEC 61097-14 and the like): an active transmitter reports navigational
+  // status 14 and broadcasts "SART ACTIVE" (MOB, EPIRB likewise); in test, status 15 and "… TEST".
+  const isTest = (t) => /\bTEST\b/i.test(String(t.safety_text ?? "")) || (t.status === 15 && !/ACTIVE/i.test(String(t.safety_text ?? ""))) || /\bTEST\b/i.test(String(t.name ?? ""));
   const clearedDistress = new Map(); // alarm id → time last heard when the user cleared it
+  /** What a distress transmitter says about itself: active, test, or not known. */
+  function distressState(t) {
+    const txt = t.safety_text ? ` ("${t.safety_text}")` : "";
+    if (isTest(t)) return `TEST${txt}`;
+    if (t.status === 14 || /ACTIVE/i.test(String(t.safety_text ?? ""))) return `ACTIVE${txt}`;
+    return "active or test not known (no status or safety message received)";
+  }
   function checkAlarms() {
     const own = getOwn();
     const now = new Set();
@@ -615,10 +629,17 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
         const pos = `${ddm(t.lat, "N", "S")} ${ddm(t.lon, "E", "W")}`;
         const forget = () => clearedDistress.set(id, heard ?? Date.now() / 1000);
         const ago = heard != null ? Math.round((Date.now() / 1000 - heard) / 60) : null;
+        const net = netOnly(t);
         if (isTest(t)) {
           // a test transmission (navigational status 15, "SART TEST"): a caution, not a distress alarm
           alarms.raise(id, { level: "warn", stage: 0, watchdog: false, clearable: true, onClear: forget, text: `${name} TEST transmission${where}`,
             detail: `${pos} · a transmitter being tested, not a distress · click to show`, onClick: show });
+        } else if (net) {
+          // heard only over the internet (late, patchy, maybe far away): a warning, not a distress
+          // alarm for your own receiver to act on; it clears like a lost one
+          alarms.raise(id, { level: "warn", stage: 0, watchdog: false, clearable: true, onClear: forget,
+            text: `${name} (internet)${where}${ago != null && ago >= 1 ? ` · ${ago} min old` : ""}`,
+            detail: `${pos} · ${distressState(t)} · heard over the internet only, not by your receiver · click to show`, onClick: show });
         } else if (distressLost(t)) {
           // not heard for a while: a warning that can be cleared (it comes back if heard again)
           alarms.raise(id, { level: "warn", stage: 0, watchdog: false, clearable: true, onClear: forget,
@@ -628,7 +649,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
           // the watchdog (Alarms › Sound) sounds it again while it lasts
           // (an alarm that was a clearable warning loses its Clear button again)
           alarms.raise(id, { level: "alarm", stage: 1, watchdog: true, clearable: false, dismiss: null, dismissLabel: null, dismissTitle: null, onClear: null, text: `${name}${where}`,
-            detail: `${pos} · stays while it is heard; once not heard for ${DISTRESS_LOST_MIN} min it can be cleared · click to show`, onClick: show });
+            detail: `${pos} · ${distressState(t)} · stays while it is heard; once not heard for ${DISTRESS_LOST_MIN} min it can be cleared · click to show`, onClick: show });
         }
         now.add(id);
         continue;

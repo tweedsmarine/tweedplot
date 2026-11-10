@@ -108,6 +108,9 @@ pub struct Target {
     pub off_position: bool,
     /// Altitude, m (SAR aircraft).
     pub altitude: Option<f64>,
+    /// The last safety-related broadcast text (AIS message 14). An AIS-SART, MOB device or
+    /// EPIRB-AIS sends "SART ACTIVE" / "SART TEST" (MOB, EPIRB likewise) with its position reports.
+    pub safety_text: Option<String>,
     /// When the last position came, Unix s.
     pub last_pos: Option<i64>,
     /// When anything last came, Unix s.
@@ -371,6 +374,7 @@ pub struct Update {
     pub virtual_aton: Option<bool>,
     pub off_position: Option<bool>,
     pub altitude: Option<f64>,
+    pub safety_text: Option<String>,
 }
 
 impl Update {
@@ -383,7 +387,25 @@ impl Update {
         macro_rules! set {
             ($($f:ident),*) => { $( if self.$f.is_some() { t.$f = self.$f; } )* };
         }
-        set!(name, callsign, cog, sog, heading, rot, status, ship_type, length, beam, from_bow, from_centre, draught, destination, aton_type, altitude);
+        set!(
+            name,
+            callsign,
+            cog,
+            sog,
+            heading,
+            rot,
+            status,
+            ship_type,
+            length,
+            beam,
+            from_bow,
+            from_centre,
+            draught,
+            destination,
+            aton_type,
+            altitude,
+            safety_text
+        );
         if let Some(c) = self.class {
             // static data (message 24) says only "B": it must not undo a "B+" seen in a position report
             if !(c == "B" && t.class.as_deref() == Some("B+")) {

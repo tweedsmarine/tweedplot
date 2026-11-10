@@ -102,7 +102,8 @@ impl Bits {
     }
     /// Text in the AIS 6-bit alphabet; padding (`@`) and trailing spaces dropped.
     fn text(&self, a: usize, b: usize) -> Option<String> {
-        let b = b.min(self.0.len() / 6 * 6).min(self.0.len());
+        // whole characters from `a` (a field need not start on a multiple of 6 bits)
+        let b = b.min(self.0.len());
         if b <= a {
             return None;
         }
@@ -230,6 +231,11 @@ fn decode(b: &Bits) -> Option<Update> {
             }
             u.class = Some("B");
         }
+        14 => {
+            // safety-related broadcast: from 40 bits on, text in the 6-bit alphabet
+            u.safety_text = b.text(40, b.len());
+            u.safety_text.as_ref()?;
+        }
         27 => {
             u.status = b.u(40, 44).map(|s| s as u8);
             u.pos = position(b, 44, 62, true);
@@ -299,6 +305,46 @@ mod tests {
         assert_eq!(u.cog, Some(79.6));
         // the same message as our own ship's (VDO) is not a target
         assert!(d.push("VDO", &fields).is_none());
+    }
+
+    /// An AIS payload ("armoured" 6-bit text) and its fill bits for a bit string.
+    fn armor(bits: &[u8]) -> (String, usize) {
+        let fill = (6 - bits.len() % 6) % 6;
+        let mut v = bits.to_vec();
+        v.extend(std::iter::repeat_n(0, fill));
+        let s = v
+            .chunks(6)
+            .map(|c| {
+                let n = c.iter().fold(0u8, |a, &x| (a << 1) | x);
+                (if n < 40 { n + 48 } else { n + 56 }) as char
+            })
+            .collect();
+        (s, fill)
+    }
+    fn push_bits(v: &mut Vec<u8>, n: u32, w: usize) {
+        for i in (0..w).rev() {
+            v.push(((n >> i) & 1) as u8);
+        }
+    }
+
+    #[test]
+    fn safety_broadcast_text() {
+        // message 14 from an AIS-SART in test mode: "SART TEST"
+        let mut bits = Vec::new();
+        push_bits(&mut bits, 14, 6);
+        push_bits(&mut bits, 0, 2);
+        push_bits(&mut bits, 970012345, 30);
+        push_bits(&mut bits, 0, 2);
+        for ch in "SART TEST".bytes() {
+            push_bits(&mut bits, if ch >= 64 { (ch - 64) as u32 } else { ch as u32 }, 6);
+        }
+        let (payload, fill) = armor(&bits);
+        let fields: Vec<String> = ["1", "1", "", "A", payload.as_str(), &fill.to_string()].iter().map(|s| s.to_string()).collect();
+        let mut d = Decoder::new();
+        let u = d.push("VDM", &fields).unwrap();
+        assert_eq!(u.mmsi, 970012345);
+        assert_eq!(u.safety_text.as_deref(), Some("SART TEST"));
+        assert_eq!(u.kind, Some(Kind::Sart));
     }
 
     #[test]
