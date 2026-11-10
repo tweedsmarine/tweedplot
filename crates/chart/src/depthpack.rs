@@ -189,7 +189,8 @@ impl Writer {
     /// A new (or continued) package file.
     pub fn create(path: &Path) -> rusqlite::Result<Writer> {
         let db = Connection::open(path)?;
-        db.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
+        // big pages: a tile is tens of kB, so fewer overflow pages to read and write
+        db.execute_batch("PRAGMA page_size = 65536; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
         db.execute_batch(SCHEMA)?;
         db.execute("INSERT OR REPLACE INTO meta VALUES ('format', ?1), ('version', ?2)", params![FORMAT, VERSION.to_string()])?;
         Ok(Writer { db })
@@ -280,10 +281,19 @@ impl Writer {
 
     /// Finish: zoom range in the metadata, the file compacted.
     pub fn finish(self) -> rusqlite::Result<()> {
+        self.finish_with(true)
+    }
+
+    /// `compact`: VACUUM (after painting and the pyramid, which leave free pages). A package
+    /// written in one go in tile order is compact already, and VACUUM would copy it again.
+    fn finish_with(self, compact: bool) -> rusqlite::Result<()> {
         let (lo, hi): (Option<i64>, Option<i64>) = self.db.query_row("SELECT min(z), max(z) FROM tiles", [], |r| Ok((r.get(0)?, r.get(1)?)))?;
         self.set_meta("min_zoom", &lo.unwrap_or(0).to_string())?;
         self.set_meta("max_zoom", &hi.unwrap_or(0).to_string())?;
-        self.db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode = DELETE; VACUUM;")?;
+        self.db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode = DELETE;")?;
+        if compact {
+            self.db.execute_batch("VACUUM;")?;
+        }
         Ok(())
     }
 }
@@ -292,20 +302,24 @@ impl Writer {
 /// `area` ([w, s, e, n]; None for all), the surveys that reach `area`, and `meta`.
 pub fn extract(from: &Path, to: &Path, zooms: std::ops::RangeInclusive<u8>, area: Option<[f64; 4]>, meta: &[(&str, &str)]) -> rusqlite::Result<usize> {
     let keep = |lon: f64, lat: f64| area.is_none_or(|a| lon >= a[0] && lon < a[2] && lat >= a[1] && lat < a[3]);
-    extract_where(from, to, zooms, &keep, meta)
+    extract_where(from, to, zooms, area, &keep, meta)
 }
 
 /// [`extract`] with any test of a tile's middle (longitude, latitude). The surveys kept are
-/// those that reach the area of the tiles kept.
+/// those that reach the tiles kept. `within` ([w, s, e, n]): only tiles in this box are
+/// looked at (read from the source by their numbers: a region needn't read the whole master).
 pub fn extract_where(
     from: &Path,
     to: &Path,
     zooms: std::ops::RangeInclusive<u8>,
+    within: Option<[f64; 4]>,
     keep: &dyn Fn(f64, f64) -> bool,
     meta: &[(&str, &str)],
 ) -> rusqlite::Result<usize> {
     let _ = std::fs::remove_file(to);
     let w = Writer::create(to)?;
+    // a new file written in one go: no journal (if it fails it is simply made again)
+    w.db.execute_batch("PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF;")?;
     w.db.execute("ATTACH DATABASE ?1 AS src", [from.to_string_lossy()])?;
     let tx = w.db.unchecked_transaction()?;
     // the surveys, each with the boxes of its outline's parts
@@ -331,10 +345,24 @@ pub fn extract_where(
     let parts: Vec<Vec<[f64; 4]>> = surveys.iter().map(|s| part_boxes(&s.outline)).collect();
     let mut used = vec![false; surveys.len()];
     let mut n = 0;
-    {
-        let mut st = w.db.prepare("SELECT z, x, y, data FROM src.tiles WHERE z BETWEEN ?1 AND ?2")?;
-        let mut ins = w.db.prepare("INSERT OR REPLACE INTO tiles VALUES (?1, ?2, ?3, ?4)")?;
-        let mut rows = st.query(params![zooms.start(), zooms.end()])?;
+    for z in zooms.clone() {
+        // the tile numbers the box covers at this zoom (all of them without a box)
+        let (x0, y0, x1, y1) = match within {
+            Some(a) => {
+                let (px0, py0) = to_pixel(a[0], a[3], z);
+                let (px1, py1) = to_pixel(a[2], a[1], z);
+                (
+                    (px0 / N as f64).floor().max(0.0) as i64,
+                    (py0 / N as f64).floor().max(0.0) as i64,
+                    (px1 / N as f64).floor() as i64,
+                    (py1 / N as f64).floor() as i64,
+                )
+            }
+            None => (0, 0, i64::MAX, i64::MAX),
+        };
+        let mut st = w.db.prepare_cached("SELECT z, x, y, data FROM src.tiles WHERE z = ?1 AND x BETWEEN ?2 AND ?3 AND y BETWEEN ?4 AND ?5")?;
+        let mut ins = w.db.prepare_cached("INSERT OR REPLACE INTO tiles VALUES (?1, ?2, ?3, ?4)")?;
+        let mut rows = st.query(params![z, x0, x1, y0, y1])?;
         while let Some(r) = rows.next()? {
             let (z, x, y): (u8, u32, u32) = (r.get(0)?, r.get(1)?, r.get(2)?);
             let (lon, lat) = from_pixel((x as f64 + 0.5) * N as f64, (y as f64 + 0.5) * N as f64, z);
@@ -364,7 +392,7 @@ pub fn extract_where(
     for (k, v) in meta {
         w.set_meta(k, v)?;
     }
-    w.finish()?;
+    w.finish_with(false)?;
     Ok(n)
 }
 
@@ -777,7 +805,7 @@ mod tests {
         w.add_survey(&Survey { id: 2, outline: mp(&[[170.0, -46.0, 171.0, -45.0], [176.0, -38.0, 176.5, -37.5]]), ..Default::default() }).unwrap();
         w.finish().unwrap();
         let out = d.join("o.tpdepth");
-        extract_where(&master, &out, 15..=15, &|_, _| true, &[]).unwrap();
+        extract_where(&master, &out, 15..=15, None, &|_, _| true, &[]).unwrap();
         assert_eq!(survey_ids(&out).unwrap(), vec![1]);
         let _ = std::fs::remove_dir_all(&d);
     }
