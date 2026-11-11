@@ -1619,14 +1619,17 @@ html.side-left .sp-grip { left: auto; right: -3px; }
 .sp-head button:hover { color: var(--tile-ink); }
 #side.editing .sp-edit { color: #e3b341; }
 /* MOB, Drop and Anchor live here while the panel is shown (sidepanel.js moves them) */
-.sp-actions { display: flex; gap: calc(1.2 * var(--u)); padding: calc(1.6 * var(--u)) calc(1.5 * var(--u)) calc(1.2 * var(--u)); border-bottom: 1px solid #2c3d48; }
+/* one even gap (--sp-gap) above and below the display buttons and below MOB/Drop/Anchor; their
+   black and white rings stand 4 px outside them, so that is added */
+#side { --sp-gap: calc(1.5 * var(--u)); }
+.sp-actions { display: flex; gap: calc(1.2 * var(--u)); padding: calc(var(--sp-gap) + 4px) calc(1.5 * var(--u)) calc(var(--sp-gap) + 4px); border-bottom: 1px solid #2c3d48; }
 .sp-actions:empty { display: none; }
 :is(.sp-actions, .ss-actions) :is(#mob-btn, #drop-btn, #anchor-btn) { position: static; flex: 1; min-width: 0; height: calc(8 * var(--u)); min-height: 0; padding: 0 4px; font-size: calc(3.4 * var(--u)); }
 :is(.sp-actions, .ss-actions) #mob-btn { flex: 1.4; }
 :is(.sp-actions, .ss-actions) #anchor-btn svg { width: calc(6 * var(--u)); height: calc(4.4 * var(--u)); }
 /* rows: label, side, value and unit; two columns where asked; a wide reading spans both */
 .sp-own, .sp-rows { display: grid; grid-template-columns: 1fr; column-gap: calc(2.5 * var(--u)); padding: calc(0.8 * var(--u)) calc(1.5 * var(--u)); }
-.sp-own { grid-template-columns: 1fr 1fr; border-bottom: 2px solid #2c3d48; }
+.sp-own { grid-template-columns: 1fr 1fr; border-bottom: 2px solid #2c3d48; padding-top: calc(0.3 * var(--u)); }
 .sp-sec.c2 .sp-rows { grid-template-columns: 1fr 1fr; }
 .sp-row { display: flex; align-items: baseline; gap: calc(0.8 * var(--u)); min-width: 0; padding: calc(0.25 * var(--u)) 0; border-bottom: 1px solid rgba(255,255,255,.05); }
 .sp-row.wide { grid-column: 1 / -1; }
@@ -1748,7 +1751,7 @@ html.side-strip body:has(.ss-alerts .alarm:not(.warn):not(.acked):not(.summary))
 @keyframes edge-flash { 50% { opacity: 0; } }
 
 /* chart display category in the data panel: three small buttons under the status line */
-.sp-disp { display: flex; flex-wrap: wrap; align-items: center; gap: calc(0.8 * var(--u)); padding: calc(0.8 * var(--u)) calc(1.5 * var(--u)) 0; }
+.sp-disp { display: flex; flex-wrap: wrap; align-items: center; gap: calc(0.8 * var(--u)); padding: var(--sp-gap) calc(1.5 * var(--u)) 0; }
 .sp-disp[hidden] { display: none; }
 .sp-disp button { flex: 1; min-width: 0; min-height: 0; padding: calc(0.6 * var(--u)) 2px; font-size: calc(2.7 * var(--u)); font-weight: 600; background: #22343f; color: var(--tile-quiet); border: 1px solid #3a4f5c; border-radius: 4px; }
 .sp-disp button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
