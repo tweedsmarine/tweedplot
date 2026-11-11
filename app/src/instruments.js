@@ -388,10 +388,10 @@ function highwayData(c) {
 function highwayMarkup() {
   return `<div class="hw-dashboard">
     <div class="hw-metrics hw-top">
-      <div class="hw-metric"><span data-hw="hdg-label">Heading · HDG</span><strong data-hw="hdg">—</strong></div>
-      <div class="hw-metric hw-target"><span>Course to steer · CTS</span><strong data-hw="cts">—</strong></div>
-      <div class="hw-metric"><span>Speed over ground</span><strong data-hw="sog">—</strong><small>SOG · kn</small></div>
-      <div class="hw-metric"><span data-hw="dtw-label">Distance to waypoint</span><strong data-hw="dtw">—</strong><small>DTW · NM</small></div>
+      <div class="hw-metric"><span data-hw="hdg-label" data-short="HDG">Heading · HDG</span><strong data-hw="hdg">—</strong></div>
+      <div class="hw-metric hw-target"><span data-short="CTS">Course to steer · CTS</span><strong data-hw="cts">—</strong></div>
+      <div class="hw-metric"><span data-short="SOG kn">Speed over ground</span><strong data-hw="sog">—</strong><small>SOG · kn</small></div>
+      <div class="hw-metric"><span data-hw="dtw-label" data-short="DTW NM">Distance to waypoint</span><strong data-hw="dtw">—</strong><small>DTW · NM</small></div>
     </div>
     <div class="hw-ribbon">
       <svg viewBox="0 0 600 50" preserveAspectRatio="none" role="img" aria-label="Heading compass ribbon">
@@ -423,9 +423,9 @@ function highwayMarkup() {
       </svg>
     </div>
     <div class="hw-metrics hw-bottom">
-      <div class="hw-metric hw-xte"><span>Cross-track error · XTE</span><strong data-hw="xte">—</strong></div>
-      <div class="hw-metric"><span>Time to go · TTG</span><strong data-hw="ttg">—</strong><small data-hw="vmg">VMG —</small></div>
-      <div class="hw-metric"><span>Estimated arrival · ETA</span><strong data-hw="eta">—</strong></div>
+      <div class="hw-metric hw-xte"><span data-short="XTE">Cross-track error · XTE</span><strong data-hw="xte">—</strong></div>
+      <div class="hw-metric"><span data-short="TTG">Time to go · TTG</span><strong data-hw="ttg">—</strong><small data-hw="vmg">VMG —</small></div>
+      <div class="hw-metric"><span data-short="ETA">Estimated arrival · ETA</span><strong data-hw="eta">—</strong></div>
     </div>
   </div>`;
 }
@@ -484,6 +484,8 @@ function renderHighway(host, raw, ctx) {
   const angle = (degrees) => degrees == null ? "—" : `${deg3(degrees)}°`;
   text("hdg", angle(h?.hdg));
   text("hdg-label", h?.hdgFromCog ? "Course over ground · COG" : "Heading · HDG");
+  host.querySelector('[data-hw="hdg-label"]')?.setAttribute("data-short", h?.hdgFromCog ? "COG" : "HDG");
+  host.querySelector('[data-hw="dtw-label"]')?.setAttribute("data-short", h?.mob ? "To MOB NM" : "DTW NM");
   text("cts", angle(h?.cts));
   text("sog", h?.sog == null ? "—" : h.sog.toFixed(1));
   text("dtw", h?.range == null ? "—" : h.range.toFixed(h.range < 10 ? 2 : 1));
@@ -509,7 +511,7 @@ function renderHighway(host, raw, ctx) {
       const x = 300 + i * 30;
       const value = base + i * 10;
       const bearing = ((value % 360) + 360) % 360;
-      marks += `<path d="M${x} 0V22" class="hw-ribbon-tick"/><text x="${x}" y="40" text-anchor="middle" class="hw-ribbon-label">${String(bearing).padStart(3, "0")}</text>`;
+      marks += `<path d="M${x} 0V22" class="hw-ribbon-tick"/><text x="${x}" y="40" text-anchor="middle" class="hw-ribbon-label${value % 20 ? " hw-odd" : ""}">${String(bearing).padStart(3, "0")}</text>`;
     }
     if (ribbon.dataset.base !== String(base)) {
       ribbon.innerHTML = marks;
@@ -714,7 +716,18 @@ export function paintGraphic(host, it, ctx) {
     const html = val != null ? it.fmt(val) : "—";
     if (host._html !== html) { host.innerHTML = html; host._html = html; }
   }
-  if (it.highway) fitHighway(host);
+  // in the data panel the highway lays itself out to the panel's width (CSS .hw-fluid), rather than
+  // being its full-screen drawing shrunk to fit, which made it unreadably small
+  if (it.highway) {
+    const fluid = !!host.closest("#side");
+    host.classList.toggle("hw-fluid", fluid);
+    const d = host.querySelector(".hw-dashboard");
+    if (fluid) { if (d) d.style.transform = ""; } else fitHighway(host);
+    // narrow: the compass ribbon keeps its proportions (cropped at the sides) so its figures stay readable
+    const rib = host.querySelector(".hw-ribbon svg");
+    const par = fluid ? "xMidYMid slice" : "none";
+    if (rib && rib.getAttribute("preserveAspectRatio") !== par) rib.setAttribute("preserveAspectRatio", par);
+  }
 }
 
 /** Paint one reading's value: { html, stale, state, side } (the data panel's rows). */
