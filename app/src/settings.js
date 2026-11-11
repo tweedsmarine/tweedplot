@@ -518,6 +518,10 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       ),
     };
     try {
+      // the old statuses go before the sources restart, not after: the restarted sources report
+      // while this call is still on its way back (a UDP source is listening at once), and
+      // clearing afterwards threw those reports away, leaving the source at "starting" for good
+      sourceStatuses = new Map();
       await invoke("nmea_sources_set", { sources: next, arbitration: nextArbitration });
       sources = next;
       arbitration = nextArbitration;
@@ -526,7 +530,6 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
         saved.nmeaSources = next;
         saved.nmeaArbitration = nextArbitration;
       }
-      sourceStatuses = new Map();
       renderSources();
       renderActiveSources();
       renderNmeaData();

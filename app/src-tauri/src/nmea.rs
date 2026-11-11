@@ -698,6 +698,7 @@ fn start_sources(app: &tauri::AppHandle, sources: &[SourceConfig], mut arbitrati
     let mut statuses = STATUSES.lock().unwrap();
     statuses.clear();
     let mut initial_statuses = Vec::new();
+    let mut to_start = Vec::new();
     for source in enabled {
         let generation = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
         let (stop_tx, stop_rx) = watch::channel(false);
@@ -716,14 +717,17 @@ fn start_sources(app: &tauri::AppHandle, sources: &[SourceConfig], mut arbitrati
         };
         statuses.insert(source.id.clone(), status.clone());
         initial_statuses.push(status);
-        let app = app.clone();
-        let source = source.clone();
-        tauri::async_runtime::spawn(run_source(app, source, generation, stop_rx));
+        to_start.push((source.clone(), generation, stop_rx));
     }
     drop(statuses);
     drop(running);
+    // "Starting source" goes out before a source runs: a UDP source binds at once, and its
+    // "Listening" must not be overtaken (and replaced on the screen) by this first status
     for status in initial_statuses {
         emit_status(app, status);
+    }
+    for (source, generation, stop_rx) in to_start {
+        tauri::async_runtime::spawn(run_source(app.clone(), source, generation, stop_rx));
     }
     publish_multiplexed(app, true);
 }
@@ -829,7 +833,7 @@ async fn run_udp(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
                 continue;
             }
         };
-        update_status(app, &source.id, generation, Some("connected"), Some(format!("Listening on UDP {bind_address}; waiting for NMEA data")), false, None);
+        update_status(app, &source.id, generation, Some("connected"), Some(format!("Listening on UDP {bind_address}; nothing received yet (check the sender's address and port)")), false, None);
         loop {
             let received = tokio::select! {
                 _ = stop.changed() => break,
