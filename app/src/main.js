@@ -507,14 +507,26 @@ let ctxRose = false; // right-click was on the variation diagram
 let gotoTarget = null;
 try { gotoTarget = JSON.parse(localStorage.getItem("racenav.goto") || "null"); } catch { /* none */ }
 function setGoto(g) {
+  // the leg runs from where the boat was when the go to was set (cross-track error is off that line)
+  if (g && !g.from && lastBoat) g = { ...g, from: [...lastBoat] };
   gotoTarget = g;
   try { if (g) localStorage.setItem("racenav.goto", JSON.stringify(g)); else localStorage.removeItem("racenav.goto"); } catch { /* storage unavailable */ }
   laylines?.refresh();
+  feed();
+}
+/** What is being navigated to: a "Go to" while one is set (it takes over from the route, which
+ *  keeps its place and comes back when the go to is cancelled), else the route's next mark. Same
+ *  shape as route.nav(): the instruments, the data panel, the highway and the alarms all use it. */
+function activeNav() {
+  if (gotoTarget) {
+    return { next: { name: gotoTarget.name || "Go to", lon: gotoTarget.lon, lat: gotoTarget.lat, n: "→" },
+      from: gotoTarget.from ?? lastBoat ?? null, index: 0, count: 1, ahead: [], goto: true };
+  }
+  return route?.nav() ?? null;
 }
 function layTarget() {
-  if (gotoTarget) return { ...gotoTarget, goto: true };
-  const nav = route?.nav();
-  return nav ? { ...nav.next, from: nav.from, goto: false } : null;
+  const nav = activeNav();
+  return nav ? { ...nav.next, from: nav.from, goto: !!nav.goto } : null;
 }
 let layKey = "";
 /** True wind at the target: the live instruments when the boat is live, else the GRIB at the slider time. */
@@ -621,7 +633,7 @@ map.on("load", () => {
     getSafetyContour: () => settings.safetyContour,
     getAirDraft: () => Number(boat.get().airDraft) || 0,
     getNav: () => {
-      const nav = route?.nav();
+      const nav = activeNav();
       if (!nav || !lastBoat) return null;
       return { nav, wp: waypointData(lastBoat, vessel.sog, vessel.cog, nav.from, [nav.next.lon, nav.next.lat]), arrivalNm: Number(document.getElementById("rt-radius").value) || 0.1 };
     },
@@ -778,7 +790,7 @@ function boatTime() {
 // replayOn is declared further down; feed() can run before that line during start-up
 function replaying() { try { return replayOn; } catch { return false; } }
 function feed() {
-  const nav = route?.nav() ?? null;
+  const nav = activeNav();
   const pos = lastBoat;
   const wp = pos && nav ? waypointData(pos, vessel.sog, vessel.cog, nav.from, [nav.next.lon, nav.next.lat]) : null;
   const pts = routing?.activePoints();
@@ -1521,7 +1533,7 @@ listen("vessel", ({ payload }) => {
   }
   if (follow && ctx.hidden && !boatDrag) map.easeTo({ center: pos, offset: followOffset(), duration: 200 }); // the menu stays where it was opened
   arrows?.live(pos, v);
-  route?.boatAt(pos);
+  if (!gotoTarget) route?.boatAt(pos); // a go to holds the route where it was
   feed();
 });
 

@@ -1615,6 +1615,7 @@ html.side-left .sp-grip { left: auto; right: -3px; }
 .sp-status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .sp-status b { color: var(--tile-ink); }
 .sp-status .st-live { color: #3fb950; font-weight: 700; } .sp-status .st-paused { color: #e3b341; font-weight: 700; } .sp-status .st-replay { color: #58a6ff; font-weight: 700; }
+.sp-status .st-goto { color: #c58af9; font-weight: 700; }
 .sp-head button { flex: none; width: auto; padding: 0 calc(1 * var(--u)); min-height: 0; background: none; border: 0; color: var(--tile-quiet); font-size: calc(3.2 * var(--u)); line-height: 1.2; }
 .sp-head button:hover { color: var(--tile-ink); }
 #side.editing .sp-edit { color: #e3b341; }

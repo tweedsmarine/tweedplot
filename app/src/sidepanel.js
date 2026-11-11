@@ -263,6 +263,7 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
     try { const n = displayScale(c.lat, map.getZoom(), s52PxPerMm()); scale = `1:${Math.round(n).toLocaleString("en-NZ")}`; } catch { /* ignore */ }
     const parts = [
       `<b>${esc(viewName())}</b>`,
+      ...(inst.ctx().nav?.goto ? [`<span class="st-goto" title="Navigating to a Go to point (right-click the chart › Cancel go to returns to the route)">GO TO</span>`] : []),
       replay ? `<span class="st-replay">REPLAY</span>` : live ? `<span class="st-live">LIVE</span>` : `<span class="st-paused">PAUSED</span>`,
       `<span title="Orientation: north up, or the chart turned">${Math.round(brg) === 0 || Math.round(brg) === 360 ? "N UP" : `ROT ${String(Math.round(brg)).padStart(3, "0")}°`}</span>`,
       `<span title="${follow ? "Relative motion: the chart moves under the boat (Follow on)" : "True motion: the boat moves across the chart (Follow off)"}">${follow ? "RM" : "TM"}</span>`,
