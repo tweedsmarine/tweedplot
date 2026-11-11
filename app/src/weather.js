@@ -1174,7 +1174,7 @@ export function setupWeather(map, layers) {
           const sw = document.createElement("span");
           sw.style.background = c;
           sw.title = `${layer.log ? fmtChl(10 ** v) : v} ${layer.unit}`;
-          sw.textContent = layer.log ? fmtChl(10 ** v) : layer.auto ? (Math.abs(v) >= 10 && layer.unit === "°C" ? v.toFixed(v % 1 ? 1 : 0) : String(v)) : v;
+          sw.textContent = layer.log ? fmtChl(10 ** v) : layer.auto ? (Math.abs(v) >= 10 && layer.unit === "°C" ? v.toFixed(v % 1 ? 1 : 0) : String(Number(Number(v).toFixed(Math.abs(v) >= 10 ? 1 : 2)))) : v;
           el.append(sw);
         }
       }

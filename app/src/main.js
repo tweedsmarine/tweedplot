@@ -737,7 +737,7 @@ map.on("load", () => {
   weather.onLoaded(() => inst.update({ seaLoaded: weather.hasSea() }));
   weather.onPoint((row, at) => {
     inst.update({ grib: row });
-    if (!signalKActive()) planningArrows(row, at); // planning, or no live data: arrows on the cursor
+    if (cursorArrows()) planningArrows(row, at); // planning (the view, paused, or no live data): arrows on the cursor
   });
   library.onChange(feed);
   feed();
@@ -751,9 +751,19 @@ map.on("load", () => {
  * point's time) and the apparent wind from them. Without a routing there is no boat,
  * so no apparent wind. */
 let arrowSeq = 0;
+// The wind arrows are at the cursor when planning: with no live data, and in the Planning view
+// even with live data (the forecast under the cursor is what that view is for). Elsewhere, and
+// while the cursor is off the forecast, they are on the boat.
+let arrowsAtCursor = false;
+const cursorArrows = () => !signalKActive() || document.documentElement.dataset.view === "plan";
+function boatArrows() {
+  if (!arrows) return;
+  if (live && lastBoat && signalKActive()) arrows.live(lastBoat, vessel); else arrows.clear();
+}
+window.addEventListener("racenav-view", () => { arrowsAtCursor = false; boatArrows(); });
 async function planningArrows(row, at) {
   if (!arrows) return;
-  if (!row || !at || row.tws == null || row.twd == null) { arrows.clear(); return; }
+  if (!row || !at || row.tws == null || row.twd == null) { arrowsAtCursor = false; boatArrows(); return; }
   const seq = ++arrowSeq;
   let tw = { twd: row.twd, tws: row.tws };
   let hdg = null, bsp = null;
@@ -773,7 +783,8 @@ async function planningArrows(row, at) {
       if (Number.isFinite(best.twd) && Number.isFinite(best.tws)) tw = { twd: best.twd, tws: best.tws };
     }
   }
-  if (seq !== arrowSeq || signalKActive()) return;
+  if (seq !== arrowSeq || !cursorArrows()) return;
+  arrowsAtCursor = true;
   arrows.planning(at, tw, hdg, bsp);
 }
 
@@ -1042,7 +1053,7 @@ map.on("mousemove", (e) => {
 });
 // touch screens have no hover: a tap sets the cursor
 map.on("click", (e) => setCursor([e.lngLat.lng, e.lngLat.lat]));
-map.getCanvas().addEventListener("mouseleave", () => { setCursor(null); inst.update({ sounding: null }); if (!signalKActive()) arrows?.clear(); });
+map.getCanvas().addEventListener("mouseleave", () => { setCursor(null); inst.update({ sounding: null }); arrowsAtCursor = false; boatArrows(); });
 
 // ---------- follow / track -------------------------------------------------
 let follow = true;
@@ -1532,7 +1543,7 @@ listen("vessel", ({ payload }) => {
     mariner?.track(track, trackT);
   }
   if (follow && ctx.hidden && !boatDrag) map.easeTo({ center: pos, offset: followOffset(), duration: 200 }); // the menu stays where it was opened
-  arrows?.live(pos, v);
+  if (!(arrowsAtCursor && cursorArrows())) arrows?.live(pos, v);
   if (!gotoTarget) route?.boatAt(pos); // a go to holds the route where it was
   feed();
 });
