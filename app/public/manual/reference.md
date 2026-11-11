@@ -927,7 +927,9 @@ Barriers are places routings must keep out of, beyond what the chart already avo
 
 - **Lines** (Library › Barriers › **Draw line**): fences the routing may not cross. Click points, double-click to finish.
 - **Zones** (**Draw zone**): areas the routing may not enter. Click the corners, double-click to finish.
-- **Barrier marks**: give any mark a **Barrier radius** in the mark editor and routings keep that far off it (a red dashed ring), unless the mark is on the course.
+- **Barrier marks**: give any mark a **Barrier radius** in the mark editor and routings keep that far off it (a red dashed circle), unless the mark is on the course.
+
+**Hatch zones** (beside **Show**, on to begin with) fills every zone, clearing bearing and barrier mark's circle with a red cross hatch. Zoomed in until a zone's edges are off the screen, the hatch is what tells you the chart view is inside one. A barrier that isn't in use has a fainter hatch. Untick it for a plain tint.
 
 Untick a barrier to keep it but not use it; rename it in the list; move its points like marks; right-click it to delete a point, delete it, or switch it off. Wx routing › Run › Limits and barriers › **Keep off barriers** turns them all on or off for routings.
 - **Clearing bearings** (**Clearing bearing**): click the mark, then a point out to sea along the bearing; the danger side is where you click third. It is labelled "Clearing bearing xxx°T xxx°M" and, as a barrier, the router avoids its danger side.

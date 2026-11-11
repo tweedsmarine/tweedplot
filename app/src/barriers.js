@@ -22,6 +22,29 @@ const empty = { type: "FeatureCollection", features: [] };
 const isArea = (b) => b.kind === "zone" || b.kind === "clearing";
 const KIND_WORD = { line: "Line", zone: "Zone", clearing: "Clearing bearing" };
 
+/**
+ * The cross hatch that fills zones, so that zoomed in past a zone's edges it still shows that
+ * the chart view is inside one: a square tile with both diagonals, which repeats without a seam.
+ * `alpha` is fainter for barriers not in use. Returns ImageData at `ratio` pixels to the px.
+ */
+export function hatchTile(alpha, ratio = 2, size = 18, color = RED) {
+  const s = size * ratio;
+  const c = document.createElement("canvas");
+  c.width = s; c.height = s;
+  const g = c.getContext("2d");
+  g.strokeStyle = color;
+  g.globalAlpha = alpha;
+  g.lineWidth = 1 * ratio;
+  g.beginPath();
+  // each diagonal, and its neighbours one tile away, so the corners join up
+  for (const d of [-s, 0, s]) {
+    g.moveTo(d, 0); g.lineTo(d + s, s);
+    g.moveTo(d, s); g.lineTo(d + s, 0);
+  }
+  g.stroke();
+  return g.getImageData(0, 0, s, s);
+}
+
 function ring(c, nm) {
   const out = [];
   const k = Math.cos((c[1] * Math.PI) / 180);
@@ -35,7 +58,7 @@ function ring(c, nm) {
 export function setupBarriers(map, { before, library, toast, getVariation }) {
   const $ = (id) => document.getElementById(id);
   let list = [];
-  let prefs = { show: true };
+  let prefs = { show: true, hatch: true };
   try { Object.assign(prefs, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
   const savePrefs = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ } };
   let drawing = null; // { kind, pts }
@@ -45,6 +68,12 @@ export function setupBarriers(map, { before, library, toast, getVariation }) {
   for (const s of ["bar-shapes", "bar-pts", "bar-rubber", "bar-sel", "bar-discs", "bar-clear", "bar-labels"]) map.addSource(s, { type: "geojson", data: empty });
   map.addLayer({ id: "bar-fill", type: "fill", source: "bar-shapes", filter: ["==", ["geometry-type"], "Polygon"],
     paint: { "fill-color": RED, "fill-opacity": ["case", ["get", "active"], 0.12, 0.04] } }, before);
+  // the cross hatch over zones, clearing bearings and barrier marks' circles (Library › Barriers › Hatch zones)
+  map.addImage("bar-hatch", hatchTile(0.55), { pixelRatio: 2 });
+  map.addImage("bar-hatch-off", hatchTile(0.2), { pixelRatio: 2 });
+  map.addLayer({ id: "bar-hatch", type: "fill", source: "bar-shapes", filter: ["==", ["geometry-type"], "Polygon"],
+    paint: { "fill-pattern": ["case", ["get", "active"], "bar-hatch", "bar-hatch-off"] } }, before);
+  map.addLayer({ id: "bar-disc-hatch", type: "fill", source: "bar-discs", paint: { "fill-pattern": "bar-hatch" } }, before);
   map.addLayer({ id: "bar-line", type: "line", source: "bar-shapes",
     paint: { "line-color": RED, "line-width": ["case", ["get", "active"], 2.4, 1.2], "line-opacity": ["case", ["get", "active"], 0.9, 0.45],
              "line-dasharray": [3, 1.5] } }, before);
@@ -72,6 +101,7 @@ export function setupBarriers(map, { before, library, toast, getVariation }) {
   function draw() {
     const vis = prefs.show ? "visible" : "none";
     for (const id of ["bar-fill", "bar-line", "bar-hit", "bar-discs", "bar-pt", "bar-sel", "bar-clear", "bar-lbl"]) map.setLayoutProperty(id, "visibility", vis);
+    for (const id of ["bar-hatch", "bar-disc-hatch"]) map.setLayoutProperty(id, "visibility", prefs.show && prefs.hatch ? "visible" : "none");
     const shapes = [], pts = [], clears = [], labels = [];
     for (const b of list) {
       if (b.points.length < 2) continue;
@@ -98,7 +128,7 @@ export function setupBarriers(map, { before, library, toast, getVariation }) {
     map.getSource("bar-labels").setData({ type: "FeatureCollection", features: labels });
     map.getSource("bar-pts").setData({ type: "FeatureCollection", features: pts });
     const discs = library.marks().filter((m) => m.barrier_nm > 0)
-      .map((m) => ({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: ring([m.lon, m.lat], m.barrier_nm) } }));
+      .map((m) => ({ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [ring([m.lon, m.lat], m.barrier_nm)] } }));
     map.getSource("bar-discs").setData({ type: "FeatureCollection", features: discs });
     drawSel();
   }
@@ -160,6 +190,7 @@ export function setupBarriers(map, { before, library, toast, getVariation }) {
   function renderList() {
     barrierList.setItems(list);
     $("bar-show").checked = prefs.show;
+    $("bar-hatch").checked = prefs.hatch;
   }
   function fit(pts) {
     if (!pts.length) return;
@@ -174,6 +205,7 @@ export function setupBarriers(map, { before, library, toast, getVariation }) {
     draw();
   }
   $("bar-show").onchange = (e) => { prefs.show = e.target.checked; savePrefs(); draw(); };
+  $("bar-hatch").onchange = (e) => { prefs.hatch = e.target.checked; savePrefs(); draw(); };
 
   // ---------- drawing ----------
   function arm(kind) {
