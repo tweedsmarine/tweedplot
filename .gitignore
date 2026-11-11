@@ -19,3 +19,6 @@ vault.key
 signing.key
 *.tpplugin
 /tweedplot-charts/
+
+# simulated passages (tools/nmea-sim make)
+*.nmea

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="TweedPlot nmea-sim" xmlns="http://www.topografix.com/GPX/1/1">
+  <rte>
+    <name>Demo: Nelson to Wellington by French Pass</name>
+    <rtept lat="-41.2327" lon="173.2407"><name>Off Nelson</name></rtept>
+    <rtept lat="-41.118" lon="173.392"><name>Off Pepin Island</name></rtept>
+    <rtept lat="-41.022" lon="173.598"><name>Off Cape Soucis</name></rtept>
+    <rtept lat="-40.975" lon="173.745"><name>Current Basin</name></rtept>
+    <rtept lat="-40.93" lon="173.826"><name>French Pass SW</name></rtept>
+    <rtept lat="-40.923" lon="173.834"><name>French Pass</name></rtept>
+    <rtept lat="-40.905" lon="173.86"><name>French Pass NE</name></rtept>
+    <rtept lat="-40.88" lon="173.95"><name>Admiralty Bay</name></rtept>
+    <rtept lat="-40.85" lon="174.08"><name>North of the Chetwode Islands</name></rtept>
+    <rtept lat="-40.955" lon="174.335"><name>Off Cape Jackson</name></rtept>
+    <rtept lat="-41.07" lon="174.5"><name>East of The Brothers</name></rtept>
+    <rtept lat="-41.3" lon="174.56"><name>Off Cape Terawhiti</name></rtept>
+    <rtept lat="-41.385" lon="174.69"><name>Off Sinclair Head</name></rtept>
+    <rtept lat="-41.395" lon="174.83"><name>Wellington approach</name></rtept>
+    <rtept lat="-41.345" lon="174.835"><name>Wellington entrance</name></rtept>
+  </rte>
+</gpx>
