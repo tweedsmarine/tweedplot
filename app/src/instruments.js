@@ -45,7 +45,9 @@ export const ITEMS = {
   AWA: { label: "AWA", unit: "°", group: "Wind", live: true, tint: "a", get: (c) => c.v.awa, fmt: sideAngle, side: (x) => (x < 0 ? "port" : "stbd") },
   TWS: { label: "TWS", unit: "kn", group: "Wind", live: true, tint: "t", get: (c) => c.v.tws, fmt: f1 },
   TWA: { label: "TWA", unit: "°", group: "Wind", live: true, tint: "t", get: (c) => c.v.twa, fmt: sideAngle, side: (x) => (x < 0 ? "port" : "stbd") },
-  TWD: { label: "TWD", unit: "°T", group: "Wind", live: true, tint: "t", get: (c) => c.v.twd, fmt: deg3 },
+  // TWD as sent (MWD, Signal K), else worked out from the true wind angle and the heading (MWV sends only the angle)
+  TWD: { label: "TWD", unit: "°T", group: "Wind", live: true, tint: "t",
+    get: (c) => c.v.twd ?? ((c.v.heading ?? c.v.cog) != null && c.v.twa != null ? ((c.v.heading ?? c.v.cog) + c.v.twa + 360) % 360 : null), fmt: deg3 },
   VMG: { label: "VMG", unit: "kn", group: "Wind", live: true, get: (c) => (c.v.twa != null && (c.v.stw ?? c.v.sog) != null ? (c.v.stw ?? c.v.sog) * Math.cos((c.v.twa * Math.PI) / 180) : null), fmt: (x) => f1(Math.abs(x)) },
 
   // the weather station (Signal K environment.outside, or NMEA MDA / XDR)

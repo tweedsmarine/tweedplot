@@ -6,7 +6,7 @@
 //
 // make  writes one second of sentences after another: position, course and speed (RMC, GGA, VTG),
 //       heading (HDT), speed through the water (VHW), depth (DBT, DPT), apparent and true wind
-//       (MWV), water temperature (MTW), barometer, air temperature and humidity (MDA), and a
+//       (MWV, MWD), water temperature (MTW), barometer, air temperature and humidity (MDA), and a
 //       few invented AIS targets (!AIVDM). The route is a list of waypoints, each with the
 //       depth, wind and tidal stream to expect there (see nelson-wellington.json); a GPX route
 //       exported from TweedPlot works too (default depth, wind and no stream).
@@ -258,6 +258,7 @@ function make(args) {
       sentence(`SDDPT,${(depth - TD).toFixed(1)},${TD.toFixed(1)}`),
       sentence(`WIMWV,${awa.toFixed(0)},R,${aws.toFixed(1)},N,A`),
       sentence(`WIMWV,${twa.toFixed(0)},T,${tws.toFixed(1)},N,A`),
+      sentence(`WIMWD,${twd.toFixed(0)},T,${norm360(twd - VAR).toFixed(0)},M,${tws.toFixed(1)},N,${(tws * 0.514444).toFixed(1)},M`),
     );
     if (t % 5 === 0) {
       buf.push(sentence(`YXMTW,${water.toFixed(1)},C`),

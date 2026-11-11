@@ -20,6 +20,8 @@ const LIGHT = { r: "#d7262b", g: "#1f9a3a", w: "#f4c20d", o: MAGENTA, m: MAGENTA
 const KEY = "racenav.chartfeatures";
 const DEFAULTS = { screenMm: 50, cat: "all", sectors: true, names: true, soundings: true, avoidDangers: true, avoidFarms: true, symSize: 1, sym: "s52", info: false, bounds: "plain",
   textImportant: true, textOther: true, dateSym: false };
+/** The settings kept separately for each view with a chart (see setup). */
+const VIEW_KEYS = ["cat", "sectors", "names", "soundings", "info", "textImportant", "textOther", "dateSym"];
 /** The standard display (S-Mode): one press back to it. */
 const STANDARD = { cat: "standard", sectors: true, names: true, soundings: true };
 
@@ -403,7 +405,22 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   try { Object.assign(opts, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
   // before display categories: "Lights, marks, dangers, areas" off was the base display
   if (opts.show === false) { opts.cat = "base"; delete opts.show; } else delete opts.show;
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(opts)); } catch { /* ignore */ } };
+  // What the chart shows is kept for each view with a chart (Navigation, Planning): the display
+  // category and the Chart display switches, so that Planning can be a clean chart under the
+  // weather while Navigation keeps the lights, names and soundings. A view not set up yet starts
+  // as the one you came from. The symbols, sizes, calibration and safety settings are the same
+  // in every view.
+  const chartView = () => (document.documentElement.dataset.view === "plan" ? "plan" : "nav");
+  const pick = (o) => Object.fromEntries(VIEW_KEYS.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
+  let curView = chartView();
+  if (opts.views?.[curView]) Object.assign(opts, pick(opts.views[curView]));
+  const save = () => {
+    // only this view's part is this window's to write: another window may be in the other view
+    let stored = {};
+    try { stored = JSON.parse(localStorage.getItem(KEY) || "{}").views || {}; } catch { /* ignore */ }
+    opts.views = { ...stored, [curView]: pick(opts) };
+    try { localStorage.setItem(KEY, JSON.stringify(opts)); } catch { /* ignore */ }
+  };
   // the screen calibration's scale, before the layers are made with it (applyCalibration)
   if (Number(opts.screenMm) > 5) S52_PX_MM = 3.78 * 2 * (50 / Number(opts.screenMm));
   let enabled = false;
@@ -657,6 +674,16 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     el.checked = opts[key];
     el.onchange = () => { opts[key] = el.checked; save(); apply(); };
   }
+  window.addEventListener("racenav-view", () => {
+    const v = chartView();
+    if (v === curView) return;
+    let stored = {};
+    try { stored = JSON.parse(localStorage.getItem(KEY) || "{}").views || {}; } catch { /* ignore */ }
+    curView = v;
+    if (stored[v]) Object.assign(opts, pick(stored[v]));
+    save();
+    apply();
+  });
   const dateIn = $("set-chartdate"), dateTo = $("set-chartdate-to"), dateNow = $("set-chartdate-today");
   const iso = (d) => (d ? `${ymd(d).slice(0, 4)}-${ymd(d).slice(4, 6)}-${ymd(d).slice(6)}` : "");
   const parse = (v) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ""); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };

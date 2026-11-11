@@ -19,7 +19,7 @@ In TweedPlot: **Settings › Connections › NMEA data sources › Add source**,
 | `HEHDT` | True heading: the course steered, crabbing across the stream, with a little yaw |
 | `VWVHW` | Speed through the water, 7.2 to 7.8 kn |
 | `SDDBT`, `SDDPT` | Depth below the transducer, and the transducer 1.5 m below the waterline |
-| `WIMWV` (R and T) | Apparent and true wind: north-westerly 12 kn in Tasman Bay, 25 to 30 kn in Cook Strait, gusty |
+| `WIMWV` (R and T), `WIMWD` | Apparent and true wind, and the true wind direction: north-westerly 12 kn in Tasman Bay, 25 to 30 kn in Cook Strait, gusty |
 | `YXMTW`, `WIMDA` | Water temperature; barometer (falling slowly), air temperature, humidity. Every 5 s |
 | `!AIVDM` | Six invented AIS targets: a ferry, a cargo ship, a trawler fishing in Tasman Bay, a yacht, a ship at anchor off Nelson and a fast launch. Messages 1, 5, 18 and 24 |
 
