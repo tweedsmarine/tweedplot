@@ -1619,7 +1619,7 @@ html.side-left .sp-grip { left: auto; right: -3px; }
 .sp-head button:hover { color: var(--tile-ink); }
 #side.editing .sp-edit { color: #e3b341; }
 /* MOB, Drop and Anchor live here while the panel is shown (sidepanel.js moves them) */
-.sp-actions { display: flex; gap: calc(1.2 * var(--u)); padding: calc(1.2 * var(--u)) calc(1.5 * var(--u)); border-bottom: 1px solid #2c3d48; }
+.sp-actions { display: flex; gap: calc(1.2 * var(--u)); padding: calc(1.6 * var(--u)) calc(1.5 * var(--u)) calc(1.2 * var(--u)); border-bottom: 1px solid #2c3d48; }
 .sp-actions:empty { display: none; }
 :is(.sp-actions, .ss-actions) :is(#mob-btn, #drop-btn, #anchor-btn) { position: static; flex: 1; min-width: 0; height: calc(8 * var(--u)); min-height: 0; padding: 0 4px; font-size: calc(3.4 * var(--u)); }
 :is(.sp-actions, .ss-actions) #mob-btn { flex: 1.4; }
@@ -1761,3 +1761,20 @@ html.side-strip body:has(.ss-alerts .alarm:not(.warn):not(.acked):not(.summary))
 .ss-disp { flex: none; font-size: calc(2.6 * var(--u)); font-weight: 700; padding: 0 5px; border: 1px solid #3a4f5c; border-radius: 3px; color: var(--tile-quiet); }
 .ss-disp.warn { color: #e3b341; border-color: #b77900; }
 .ss-disp[hidden] { display: none; }
+
+/* the highway in the data panel: laid out to the panel's width, in millimetres (--u) */
+.hw-fluid { position: relative; }
+.hw-fluid .hw-dashboard { position: absolute; inset: 0; width: auto; height: auto; transform: none;
+  grid-template-rows: auto calc(7 * var(--u)) minmax(calc(10 * var(--u)), 1fr) calc(3.5 * var(--u)) auto; gap: calc(0.8 * var(--u)); }
+.hw-fluid .hw-metrics { gap: calc(0.6 * var(--u)); }
+.hw-fluid .hw-metrics.hw-top { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.hw-fluid .hw-metric { padding: calc(0.4 * var(--u)) calc(0.8 * var(--u)); border-radius: 4px; gap: 0; }
+.hw-fluid .hw-metric > span[data-short] { font-size: 0; }
+.hw-fluid .hw-metric > span[data-short]::before { content: attr(data-short); font-size: calc(2.3 * var(--u)); }
+.hw-fluid .hw-metric small { display: none; }
+.hw-fluid .hw-metric strong { font-size: calc(3.6 * var(--u)); text-overflow: clip; }
+.hw-fluid .hw-bottom .hw-metric strong { font-size: calc(3.2 * var(--u)); }
+.hw-fluid .hw-ribbon-label { font-size: 17px; }
+.hw-fluid .hw-ribbon-label.hw-odd { display: none; }
+.hw-fluid .hw-ribbon-current { font-size: 17px; }
+.hw-fluid .hw-canvas { border-radius: 4px; }

@@ -350,7 +350,9 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
     if (on !== mobShown) {
       mobShown = on;
       mobEl.hidden = !on;
-      mobEl.innerHTML = on ? `<h4>MAN OVERBOARD</h4><div class="sp-rows">${["MOBBRG", "MOBRNG", "MOBAGO", "MOBPOS"].map((k) => rowHtml(k)).join("")}</div>` : "";
+      // the highway steers back to the MOB (course to steer, distance to it); under it the time
+      // since and where it happened (for the log and the distress call)
+      mobEl.innerHTML = on ? `<h4>MAN OVERBOARD</h4><div class="sp-g" data-k="HIGHWAY" data-h="62"></div><div class="sp-rows">${["MOBAGO", "MOBPOS"].map((k) => rowHtml(k)).join("")}</div>` : "";
       geometry();
     }
   }
