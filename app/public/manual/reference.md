@@ -1033,7 +1033,7 @@ The slider, the **◀** and **▶|** steps, **▶** play and **Now** set the for
 
 **The time slider.** The same controls float over the chart as a bar: the GRIB choice, step back and forward, play, **Now**, what the shading shows, the slider and the time. Drag it anywhere by its grip. With it and the data panel's forecast at the cursor (the Planning view) you can close every drawer and still move through the forecast and read values anywhere on the chart, which is the most useful layout for planning or talking a route through with crew. Hide it with ✕; bring it back with Weather › **Floating time slider**.
 
-![Drawers closed: the time slider over a forecast for New Zealand, with the forecast at the cursor in the data panel](img/03-slider-grib-panel.jpg)
+![The Planning view with the drawers closed: wind shading and barbs from an ECMWF forecast over central New Zealand, the time slider at the bottom, and the forecast at the cursor in the data panel](img/03-slider-grib-panel.jpg)
 
 **What the chart shows**
 
@@ -1138,13 +1138,13 @@ Ocean currents (not tidal streams) come from the ECMWF 0.1° and HYCOM downloads
 
 It follows the active routing, with its own times and positions (and its TWA in the readout). With no routing, it follows the course (start and marks) at the speed you set, from the weather slider's time. Values come from the GRIB shown on the chart, and anything it doesn't have (waves, sea temperature) from another loaded file that does. Hover a strip to see the boat's place on the chart and every value there; click to move the weather slider to that time. Distance run is marked under the times.
 
-![Weather on route for a Golden Globe Race boat routed from the South Atlantic towards the Indian Ocean: 2659 NM over 16 days, with a gale of 40 kn gusting 55 and 5 to 6 m seas around 26 to 27 October; the purple line marks the slider time, and the popup on the chart is the routing at that moment](img/11-weather-on-route.jpg)
+![Weather on route for the passage from Nelson to Wellington by French Pass, followed at 6 kn: 99 NM in 16 h 37 min, the wind rising to 20 kn gusting 35, and the waves along the way](img/11-weather-on-route.jpg)
 
 **Meteogram**
 
 Right-click the chart › **Meteogram here**: every loaded GRIB's forecast at that point over time, in the dock. Wind speed is solid with gusts dashed and an ensemble's spread shaded; direction is drawn so GRIBs that agree stay together through north; pressure underneath. A line marks the slider time; click the graph to move the slider. A quick way to see when a front arrives, how long a blow lasts, or whether the models agree for your departure. 
 
-![A meteogram south of Africa with ECMWF IFS (blue) and GFS (red): wind speed with gusts dashed, direction and pressure, the violet line at the slider time. The models agree on the blow on Tuesday and part company after Saturday](img/04-meteogram.jpg)
+![A meteogram in Tasman Bay with ECMWF IFS (blue) and GFS (red): wind speed with gusts dashed, direction and pressure, the violet line at the slider time](img/04-meteogram.jpg)
 
 **Wind and waves in one file**
 
@@ -1157,7 +1157,7 @@ Wind and waves come from different models: GFS with GFS-Wave, ECMWF IFS or AIFS 
 
 With two or more GRIBs loaded, **Show** offers displays of how much they disagree at the slider time: green where the forecasts agree, red where they don't. Vector disagreement (speed and direction together), speed spread, direction spread (blank in light winds), pressure spread, and run trend (newest run minus oldest: is the forecast getting windier?). The note under the legend lists what is compared. Where the forecasts disagree, plan with margin.
 
-![Wind disagreement (vector) between ECMWF IFS and GFS over the South Atlantic three days ahead: green where the models agree, pink and red where they don't](img/08-agreement.jpg)
+![Wind disagreement (vector) between ECMWF IFS and GFS over central New Zealand ten hours ahead: green throughout, the models agree](img/08-agreement.jpg)
 
 **Verify runs**
 
