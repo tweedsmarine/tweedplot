@@ -473,7 +473,7 @@ export function setupMariner(map, { settings, saveSettings, colours, usingS52, l
     }
     barLbl.textContent = `${fmtRange(sb.nm)} NM`;
     barLbl.style.color = tokenColour(a === "SCLBR" ? "SCLBR" : "SNDG2");
-    bar.title = sb.symbol === "SCALEB10" ? `S-52 scale bar: ${fmtRange(sb.nm)} NM in tenths (display scale larger than 1:80,000)` : "S-52 latitude scale: 10 NM in miles (display scale smaller than 1:80,000)";
+    bar.title = sb.symbol === "SCALEB10" ? `S-52 scale bar: ${fmtRange(sb.nm)} NM in tenths (display scale larger than 1:80,000)` : `S-52 latitude scale: ${fmtRange(sb.nm)} NM in tenths (display scale smaller than 1:80,000; longer than ten miles when zoomed out, so it stays at least 35 mm long)`;
   }
   let scaleSeq = 0;
   async function checkOverscale() {

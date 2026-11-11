@@ -51,6 +51,14 @@ test("display scale and the S-52 scale bar", () => {
   assert.equal(fit.symbol, "SCALEB10");
   assert.equal(fit.nm, 1);
   assert.equal(scaleBar(-41, 10, 3.78, 300, 600).symbol, "SCALEB11");
+  // zoomed out the latitude scale grows in 20, 50, 100… NM steps to at least 35 mm
+  for (const z of [5, 6, 7, 8, 9]) {
+    const b = scaleBar(-41, z, 3.78, 300, 600);
+    assert.equal(b.symbol, "SCALEB11");
+    assert.ok([10, 20, 50, 100, 200, 500, 1000].includes(b.nm), String(b.nm));
+    assert.ok(b.px >= 35 * 3.78 - 1e-6 && b.px <= 600, `${z}: ${b.nm} NM ${b.px} px`);
+  }
+  assert.equal(scaleBar(-41, 9, 3.78, 300, 600).nm, 10); // 161 px ≈ 43 mm: ten miles do
   // zoomed right in: a tenth, then a hundredth of a mile
   assert.equal(scaleBar(-41, 16, 3.78, 600).nm, 0.1);
   assert.equal(scaleBar(-41, 18, 3.78, 600).nm, 0.01);

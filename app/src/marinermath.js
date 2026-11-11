@@ -66,9 +66,10 @@ export function displayScale(lat, zoom, pxPerMm) {
 /** S-52 scale bar (PresLib 8.5.3): SCALEB10, a one-mile bar in tenths, at display scales larger
  *  than 1:80,000; SCALEB11, a ten-mile latitude scale in miles, at smaller scales. Where a mile
  *  would be taller than `maxPx` (zoomed right in), a tenth of a mile in hundredths. The ten-mile
- *  scale is used only where it fits in `roomPx` (the chart's height below the north arrow).
+ *  scale is used only where it fits in `roomPx` (the chart's height below the north arrow); zoomed
+ *  out, it becomes 20, 50, 100… NM so it is at least `minMm` long.
  *  { symbol, nm, segments, px } (px: the bar's length on the screen). */
-export function scaleBar(lat, zoom, pxPerMm, maxPx, roomPx = Infinity) {
+export function scaleBar(lat, zoom, pxPerMm, maxPx, roomPx = Infinity, minMm = 35) {
   const mpp = metresPerPixel(lat, zoom);
   const n = displayScale(lat, zoom, pxPerMm);
   const pxOf = (nm) => (nm * 1852) / mpp;
@@ -80,7 +81,15 @@ export function scaleBar(lat, zoom, pxPerMm, maxPx, roomPx = Infinity) {
     while (pxOf(nm) > maxPx && nm > 0.002) nm /= 10;
     return { symbol: "SCALEB10", nm: Math.round(nm * 1000) / 1000, segments: 10, px: pxOf(nm) };
   }
-  return { symbol: "SCALEB11", nm: 10, segments: 10, px: pxOf(10) };
+  // Zoomed further out the ten-mile scale shrinks to a few millimetres: the scale grows with
+  // the chart (20, 50, 100… NM, still ten parts) so it is never shorter than `minMm`, as long as
+  // the longer one still fits
+  let nm = 10;
+  for (const step of [20, 50, 100, 200, 500, 1000, 2000, 5000]) {
+    if (pxOf(nm) >= minMm * pxPerMm || pxOf(step) > roomPx) break;
+    nm = step;
+  }
+  return { symbol: "SCALEB11", nm, segments: 10, px: pxOf(nm) };
 }
 
 /** Time marks along a vector of `minutes` at sog knots: [{ nm, big }] (S-52 VECMRK01 every
