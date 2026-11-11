@@ -1,5 +1,6 @@
 // Keyboard shortcuts, all in one table: the handler, the "?" sheet, the key shown in each
-// button's tooltip and the manual's list all come from KEYS, so they can't drift apart.
+// button's tooltip and the manual's list (its {keys} table, manual.js) all come from KEYS, so
+// they can't drift apart.
 //
 // Single keys only work when you aren't typing (a text box, number box or list has the
 // keyboard); keys with Ctrl work everywhere. The arrow keys and + / − move the chart
@@ -22,6 +23,7 @@ export const KEYS = [
   { group: "Views", keys: "F4", label: "Instruments view", run: (c) => c.views.set("inst") },
   { group: "Views", keys: "P", label: "Show or hide the panels (rail, drawers and dock)", btn: "tools-btn", run: click("tools-btn") },
   { group: "Views", keys: "O", label: "Show the data panel beside the chart, or hide it to a line under the chart", btn: "side-btn", run: click("side-btn") },
+  { group: "Views", keys: "Esc", label: "In the Instruments or Live data view: back to the view you came from", own: true },
   { group: "Views", keys: "F11", label: "Full screen", own: true },
 
   { group: "Drawers (the same key again closes it)", keys: "W", label: "Weather and tides", pane: "weather" },
@@ -29,7 +31,7 @@ export const KEYS = [
   { group: "Drawers (the same key again closes it)", keys: "G", label: "Weather routing", pane: "routing" },
   { group: "Drawers (the same key again closes it)", keys: "L", label: "Library", pane: "library" },
   { group: "Drawers (the same key again closes it)", keys: "C", label: "Chart", pane: "chart" },
-  { group: "Drawers (the same key again closes it)", keys: "I", label: "Instrument panels", pane: "inst" },
+  { group: "Drawers (the same key again closes it)", keys: "I", label: "Instruments (the data panel, the Instruments view, history)", pane: "inst" },
   { group: "Drawers (the same key again closes it)", keys: "A", label: "Alarms", pane: "alarms" },
   { group: "Drawers (the same key again closes it)", keys: "S", label: "Settings", pane: "settings" },
   { group: "Drawers (the same key again closes it)", keys: "Esc", label: "Close the drawer (or the menu, box or mode that is open)", own: true },
@@ -43,7 +45,7 @@ export const KEYS = [
   { group: "Chart", keys: "M", label: "Measure (ruler); Esc stops", btn: "ruler-btn", map: true, run: click("ruler-btn") },
   { group: "Chart", keys: "V", label: "EBL/VRM from the boat (click fixes it, Esc cancels)", btn: "ebl-btn", map: true, run: click("ebl-btn") },
   { group: "Chart", keys: "T", label: "Target list", btn: "targets-btn", run: click("targets-btn") },
-  { group: "Chart", keys: "N", label: "Colours: day, dusk, night red, night green", btn: "palette-btn", run: click("palette-btn") },
+  { group: "Chart", keys: "N", label: "Colours: day, dusk, night (IHO), night red, night green", btn: "palette-btn", run: click("palette-btn") },
   { group: "Chart", keys: "Space", label: "Live or paused", btn: "sk-live", run: click("sk-live") },
 
   { group: "Weather time", keys: "[", label: "Back one step", run: (c) => c.weatherStep(-1) },

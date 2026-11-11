@@ -127,7 +127,7 @@ Fresher water is lighter and floats on saltier. Its edge is a **salinity front**
 
 **Afterwards**
 
-- Save the trip in the library. Your own soundings (Chart data › Own soundings) build a seabed picture of your fishing grounds, coloured by depth, that you can show or hide with the seabed button.
+- Save the trip in the library. Your own soundings (Chart › Get data › Own soundings) build a seabed picture of your fishing grounds, coloured by depth, that you can show or hide with the seabed button.
 - Come back and compare the chart's picture with where the fish were. This is how you learn what each layer means for *your* fishery.
 
 ## Worked examples

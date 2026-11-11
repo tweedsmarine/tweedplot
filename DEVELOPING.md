@@ -275,15 +275,15 @@ Floating panels of readings, always on top. Drag a panel by its grip; double-cli
 
 ## User manual
 
-The manual is built into the app: **Manual** on the rail (or F1) opens it in a panel on the right, and the **?** in each drawer's title bar opens it at that drawer's section. Tabs: Reference, Route planning, Weather routing, Glossary; contents, search across every tab, pictures and diagrams full size on click, Wide. External links open in the browser (`open_url` allows mailto:, http: and https: only).
+The manual is built into the app: **Manual** on the rail (or F1) opens it in a panel on the right, and the **?** in each drawer's title bar opens it at that drawer's section. Tabs: Quick start, Reference, Route planning, Weather routing, Fishing tools, AIS, Glossary; contents, search across every tab, pictures and diagrams full size on click, Wide. External links open in the browser (`open_url` allows mailto:, http: and https: only).
 
-The text is written as a Claude Doc ("TweedPlot User Manual") and bundled from `app/public/manual` (Markdown, screenshots in `img/`, diagrams as inline SVG in `fig/`), so every build carries the manual for its own version and it works offline. To update it: export each tab as Markdown, then `python tools/manual/import.py <exports> <screenshots> tools/manual/fig`; the script turns the export's picture and diagram placeholders back into images (by alt text) and SVGs (by caption). The diagram sources are in `tools/manual/fig` (`*.jsx`, rendered with `render.mjs`, needs esbuild). The viewer is `app/src/manual.js` (uses `marked`).
+The text is bundled from `app/public/manual` (Markdown, screenshots in `img/`, diagrams as inline SVG in `fig/`), so every build carries the manual for its own version and it works offline. In the text, `{icon:name}` draws a button's own icon (`ICONS` in `manual.js`), `{img:id}` a chart symbol, and `{keys}` on a line of its own the keyboard shortcut table, made from `KEYS` in `keys.js`: never type that table by hand. The manual describes a clean install (data in `%APPDATA%\nz.tweedsmarine.tweedplot`), not the developer's `C:\dev\tweedplot-data`. Edit the Markdown there. To bring in a Markdown export written elsewhere: `python tools/manual/import.py <exports> <screenshots> tools/manual/fig`; the script turns the export's picture and diagram placeholders back into images (by alt text) and SVGs (by caption). The diagram sources are in `tools/manual/fig` (`*.jsx`, rendered with `render.mjs`, needs esbuild). The viewer is `app/src/manual.js` (uses `marked`).
 
 ## Front-end layout
 
 - Rail + one drawer (`ui.js`): controls. Panes: Weather, Course (`route.js`), Routing (`routing.js`), Library, Boat (`boat.js`), Chart, Instruments.
 - Dock (`dock.js`): wide views along the bottom, registered by name (`dock.register("compare", { title, render(body, tools) })`). Future: polar plot and tuning, routing timeline graphs, ensemble spread.
-- Floating instrument panels (`instruments.js`) keep clear of the dock.
+- The data panel beside the chart (`sidepanel.js`, starting layouts in `sidepresets.js`); the Instruments view's tiles (`instruments.js`, `insttiles.js`).
 - Statistics (`stats.js`): `STATS` lists the compare columns; adding one there makes it available in the table and its ⚙ menu.
 
 ## Licence and contributing

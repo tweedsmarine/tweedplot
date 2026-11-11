@@ -3,7 +3,7 @@
 // tools/manual_import.py), so the manual can't be separated from the version
 // it describes and works offline.
 //
-// A panel on the right of the window: tabs (reference, tutorials, glossary),
+// A panel on the right of the window: tabs (quick start, reference, tutorials, glossary),
 // contents, search across every tab, pictures full size on click, Wide.
 // Open with the Manual button on the rail, F1, or the ? in a drawer's title bar
 // (`openManual(tab, heading)`).
@@ -11,6 +11,7 @@
 import { marked } from "marked";
 import { invoke } from "@tauri-apps/api/core";
 import { VIEWS } from "./views.js";
+import { KEYS } from "./keys.js";
 
 const KEY = "racenav.manual";
 const BASE = "manual/";
@@ -18,13 +19,13 @@ const BASE = "manual/";
 /** Drawer → the reference section that explains it. */
 export const PANE_HELP = {
   weather: ["reference", "Weather and tides"],
-  course: ["reference", "Routes, marks and the library"],
+  course: ["reference", "Routes"],
   routing: ["reference", "Weather routing"],
   fleet: ["reference", "Targets and fleets"],
-  library: ["reference", "Routes, marks and the library"],
+  library: ["reference", "The library"],
   chart: ["reference", "Charts"],
-  inst: ["reference", "Instruments"],
-  alarms: ["reference", "Alarms and man overboard"],
+  inst: ["reference", "The data panel and instruments"],
+  alarms: ["reference", "Alarms"],
   settings: ["reference", "Settings"],
 };
 
@@ -35,6 +36,7 @@ const ICONS = {
   fleet: ['#rail [data-pane="fleet"] svg'], library: ['#rail [data-pane="library"] svg'], chart: ['#rail [data-pane="chart"] svg'],
   inst: ['#rail [data-pane="inst"] svg'], alarms: ['#rail [data-pane="alarms"] svg'], manual: ["#manual-btn svg"], targets: ["#targets-btn svg"], settings: ["#settings-btn svg"],
   ruler: ["#ruler-btn svg"], ebl: ["#ebl-btn svg"],
+  shoot: ["#shoot-btn svg"], haul: ["#haul-btn svg"], rec: ["#pb-rec svg"], soundings: ["#pb-tb svg"], wxpanel: ["#wx-pop-btn svg"], side: ["#side-btn svg"],
   north: ["#north-btn svg"], sk: ["#sk-state svg", "ok"], "sk-off": ["#sk-state svg", "off"], live: ["#sk-live svg", "play"], paused: ["#sk-live svg", "pause"],
   follow: ["#follow svg"], panels: ["#tools-btn svg"], day: ["#palette-btn svg", "sun"], night: ["#palette-btn svg", "moon"],
   "clear-track": ["#clear-track svg"], snap: ["#wxp-snap svg"],
@@ -86,6 +88,19 @@ function imgHtml(id, image) {
 }
 const TOKENS = /\{(icon|img):([^}\s]+)\}/g;
 
+/** `{keys}` on a line of its own in the manual's text: the keyboard shortcuts as a table, made
+ *  from KEYS (keys.js), the same list the handler and the "?" sheet use, so the manual can't
+ *  list a key the program doesn't have, or miss one it does. */
+export function keysTable(keys = KEYS) {
+  const rows = ["| Key | Does |", "| --- | --- |"];
+  let group = null;
+  for (const k of keys) {
+    if (k.group !== group) { group = k.group; rows.push(`| **${group}** | |`); }
+    rows.push(`| ${k.keys.split(" ").map((x) => `\`${x}\``).join(" ")} | ${k.label} |`);
+  }
+  return rows.join("\n");
+}
+
 export const slug = (s) => s.toLowerCase().replace(/<[^>]+>/g, "").replace(/&[a-z#0-9]+;/g, "").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "");
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
@@ -136,7 +151,7 @@ export function setupManual({ image = null } = {}) {
     const r = await fetch(BASE + "manual.json");
     book = await r.json();
     await Promise.all(book.tabs.map(async (t) => {
-      t.md = await (await fetch(BASE + t.file)).text();
+      t.md = (await (await fetch(BASE + t.file)).text()).replace(/^\{keys\}[ \t]*$/m, () => keysTable());
       t.html = null;
       // plain-text sections for search
       t.sections = [];

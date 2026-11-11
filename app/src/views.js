@@ -53,9 +53,8 @@ export function setupViews(map) {
     document.documentElement.classList.toggle("no-map", !chart);
     document.documentElement.dataset.view = v.id;
     const vb = $("view-btn");
-    const next = VIEWS[(VIEWS.indexOf(v) + 1) % VIEWS.length];
     vb.querySelector("svg").innerHTML = v.icon;
-    vb.title = `View: ${v.name} (click for ${next.name}; right-click or hold to choose, or to show or hide the chart)`;
+    vb.title = `View: ${v.name}. Click to choose Navigation, Planning, Instruments or Live data, or to show or hide the chart in this view (F2, F3, F4)`;
     vb.setAttribute("aria-label", `View: ${v.name}`);
     const tb = $("tools-btn");
     tb.classList.toggle("on", tools);

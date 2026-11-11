@@ -131,7 +131,7 @@
             <label title="NOAA NDBC moored buoys and coastal stations (mostly around the US)"><input id="stn-src-ndbc" type="checkbox" /> Buoys (NDBC)</label>
           </div>
           <div id="stn-status" class="wx-note"></div>
-          <div class="wx-note">Each station shows its wind (arrow downwind, coloured like the wind shading) and speed, gust after the G. Click one for its last 24 h against the loaded GRIBs: the quickest check of which forecast is right today. Updated every 10 minutes while shown.</div>
+          <div class="wx-note">Each station is a circle with W in it, with its wind as a barbed shaft pointing to where the wind comes from, and the speed beside it (the gust after the G). Click one for its last 24 h against the loaded GRIBs: the quickest check of which forecast is right today. Updated every 10 minutes while shown.</div>
         </details>
         <details class="sub">
           <summary>Display</summary>
@@ -301,7 +301,7 @@
           <ul id="ais-list" class="list"></ul>
         </div>
         <div class="tab" data-tab="own" hidden>
-          <div class="wx-note">Boats you want to pick out: friends, your company's vessels, a race fleet. They are ringed in their group's colour and named on the chart, and their tracks can be drawn. Your own boat's MMSI goes in Settings.</div>
+          <div class="wx-note">Boats you want to pick out: friends, your company's vessels, a race fleet. Each has its stern filled in its group's colour and is named on the chart, and their tracks can be drawn. Your own boat's MMSI goes in Settings.</div>
           <div class="wx-row"><input id="of-mmsi" type="text" inputmode="numeric" placeholder="MMSI" maxlength="9" style="width:90px" title="The 9-digit MMSI" /><input id="of-name" class="grow" type="text" placeholder="Name (optional)" /></div>
           <div class="wx-row"><select id="of-group" class="grow" title="Group"><option>Friends</option><option>Company</option><option>Race fleet</option><option>Other</option></select><input id="of-colour" type="color" class="of-col" title="Stern colour on the chart" /><button id="of-add">Add</button></div>
           <div id="of-msg" class="wx-note"></div>
@@ -331,7 +331,7 @@
             <button id="fl-history" title="Download every published fix of every boat (YB's full tracks)">Full tracks</button>
           </div>
           <ul id="fl-list" class="list"></ul>
-          <div class="wx-note">Positions come from YB's light Expedition file, which holds each boat's latest fix; tracks build up from the fixes this app has downloaded (kept in tweedplot-data\tracking). Races may publish positions with a delay.</div>
+          <div class="wx-note">Positions come from YB's light Expedition file, which holds each boat's latest fix; tracks build up from the fixes TweedPlot has downloaded (kept in the tracking folder: Settings › Diagnostics lists the data folders). Races may publish positions with a delay.</div>
         </div>
       </section>
 
@@ -604,7 +604,7 @@
         <div class="wx-row"><label class="grow" for="set-boundaries" title="With the IHO symbols: area boundaries as plain lines, or symbolised (with the area's symbol repeated along the edge on the inside, as on an ECDIS)">Area boundaries</label>
           <select id="set-boundaries"><option value="plain">Plain</option><option value="symbolised">Symbolised</option></select></div>
         <div class="wx-row"><label class="grow" for="set-symsize" title="Size of buoys, beacons, lights, dangers and other chart symbols. Labels grow at half the rate">Chart symbol size</label><input id="set-symsize" type="range" min="0.75" max="2" step="0.05" /><span id="set-symsize-v" class="val"></span></div>
-        <div class="wx-note">From the LINZ hydrographic layers in the linz folder (any scale band). Click a light, mark or area for its details. Not for navigation.</div>
+        <div class="wx-note">From the LINZ hydrographic layers in the LINZ charts folder (any scale band; Settings › Diagnostics lists the data folders). Click a light, mark or area for its details. Not for navigation.</div>
         <h3>Get data</h3>
         <div id="data-box">
           <div class="data-item"><span class="dot" id="data-wd-dot"></span><span class="grow"><b>World depths</b>: Natural Earth, bundled (0, 200, 1000 … 10000 m)</span></div>
@@ -779,7 +779,7 @@
         <div class="wx-row"><label class="grow" for="al-snd-alarm" title="The sound of red alarms (shallow water, collision risk, MOB…)">Alarm sound</label><select id="al-snd-alarm"></select><button id="al-snd-alarm-test" title="Play it">▶</button></div>
         <div class="wx-row"><label class="grow" for="al-snd-warn" title="The sound of amber warnings (approaching a mark, a closed area ahead, position lost…)">Warning sound</label><select id="al-snd-warn"></select><button id="al-snd-warn-test" title="Play it">▶</button></div>
         <div class="wx-row"><label class="grow" for="al-snd-anchor" title="The sound of the anchor alarm, different from the others so it's known at once in the night">Anchor alarm sound</label><select id="al-snd-anchor"></select><button id="al-snd-anchor-test" title="Play it">▶</button></div>
-        <div class="wx-note">Alarms (red) sound until silenced; warnings (amber) chime. Every alarm shows in the banner at the top of the chart in every window, and can be silenced from any of them. Silencing stops the sound; the alarm then waits in the list below until its cause ends. A collision alarm sounds again if it gets worse (TCPA or CPA at half, then a quarter, of your limit). They work from live data (or a replay), not while planning.</div>
+        <div class="wx-note">Alarms (red) sound until silenced; warnings (amber) chime. Every alarm shows in the alerts at the bottom of the data panel (on the line under the chart when the panel is hidden) in every window, and can be silenced from any of them. Silencing stops the sound; the alarm then waits in the list below until its cause ends. A collision alarm sounds again if it gets worse (TCPA or CPA at half, then a quarter, of your limit). They work from live data (or a replay), not while planning.</div>
       </section>
     </aside>
 
@@ -825,13 +825,13 @@
         <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M15 4.5v15M17 8h1.5M17 11h1.5M17 14h1.5"/></svg></button>
       <button id="tools-btn" aria-label="Show or hide the panels" title="Show or hide the panels and dock in this view">
         <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M9 4.5v15"/></svg></button>
-      <button id="palette-btn" aria-label="Day or night colours" title="Colours: day (click for dusk, night red, night green)">
+      <button id="palette-btn" aria-label="Day or night colours" title="Colours: day (click for dusk, night (IHO), night red, night green)">
         <svg viewBox="0 0 24 24"><path class="sun" d="M12 7a5 5 0 1 0 0 10a5 5 0 1 0 0-10zM12 1v3M12 20v3M1 12h3M20 12h3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/><path class="moon" d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg></button>
       <button id="clear-track" aria-label="Clear the track trail" title="Clear the trail behind the boat">
         <svg viewBox="0 0 24 24"><path d="M3 18c3-1 4-5 7-6s5 1 7-1" stroke-dasharray="2.2 2.2"/><path d="M15 15l6 6M21 15l-6 6"/></svg></button>
     </div>
 
-    <!-- Floating instrument panels -->
+    <!-- The Instruments view's tiles -->
     <div id="itiles"></div>
     <aside id="side" aria-label="Data panel" hidden>
       <div class="sp-grip" title="Drag for a narrow, normal or wide panel"></div>
@@ -973,15 +973,15 @@
             <option value="day">Day</option><option value="dusk">Dusk</option><option value="iho-night">Night (IHO)</option><option value="night-red">Night (red)</option><option value="night-green">Night (green)</option></select></div>
         <div class="wx-row"><label class="grow" for="pal-dim">Brightness</label><input id="pal-dim" type="range" min="20" max="100" step="5" title="How bright the screen is drawn in dusk and night colours" /><span id="pal-dim-v" class="wx-note"></span></div>
         <div class="wx-row"><button id="pal-full" title="Fill the screen, hiding the window's title bar and the taskbar (F11 to switch back)">Full screen (F11)</button></div>
-        <div class="wx-note">The colours button in the toolbar at the top left steps through them. With dusk and night colours the window's title bar turns dark too; full screen hides it altogether. Turn the screen's own brightness down at night too.</div>
+        <div class="wx-note">The colours button in the toolbar steps through them (N). With dusk and night colours the window's title bar turns dark too; full screen hides it altogether. Turn the screen's own brightness down at night too.</div>
                   <section id="ui-settings" class="ui-settings">
             <h3>Use</h3>
-            <p class="settings-note">What the boat is mostly for. Fishing shows the shoot and haul buttons and the own soundings button in the toolbar; the first choice also sets up the Instruments screen. Everything else is the same for every use.</p>
+            <p class="settings-note">What the boat is mostly for. Fishing shows the shoot and haul buttons and the own soundings button in the toolbar. Each use has its own layout of the data panel, and the first choice also sets up the Instruments screen. Everything else is the same for every use.</p>
             <div class="wx-row"><label class="grow" title="Which side of the chart the data panel (own ship, route, wind… and the alerts) is on">Data panel side</label><select id="set-side"><option value="right">Right</option><option value="left">Left</option></select></div>
         <div class="wx-row"><label class="grow" for="set-use" title="What the boat is mostly for: Fishing shows the shoot and haul buttons and own soundings in the toolbar">Use</label>
               <select id="set-use"><option value="" disabled hidden>Choose…</option><option value="cruise">Cruising</option><option value="fish">Fishing</option><option value="race">Racing</option></select></div>
             <div class="wx-row"><label class="grow" title="The Record soundings button shows in the toolbar in Fishing; tick to show it whatever the use"><input id="set-rec-all" type="checkbox" /> Record soundings button in every use</label></div>
-            <div class="wx-row"><label class="grow" title="A button above Drop that drops anchor, and weighs it when anchored. Without it: right-click the chart, the K key, or Alarms › Anchor watch"><input id="set-anchor-btn" type="checkbox" /> Anchor button on the chart</label></div>
+            <div class="wx-row"><label class="grow" title="A button beside MOB and Drop that drops anchor, and weighs it when anchored. Without it: right-click the chart, the K key, or Alarms › Anchor watch"><input id="set-anchor-btn" type="checkbox" /> Anchor button beside MOB and Drop</label></div>
             <div class="wx-row"><span class="grow">Start-up questions</span><button id="set-welcome" type="button">Show the welcome screen</button></div>
             <h3>Screen calibration</h3>
             <div class="wx-row" title="So the IHO symbols, lines and text are their true size (S-52): measure the bar on your screen with a ruler and enter its length. Uncalibrated, it is 50 mm on a typical screen"><label for="set-screen-mm">Screen calibration</label> <span id="cal-bar" style="display:inline-block;height:6px;background:currentColor;vertical-align:middle;width:189px"></span> measures <input id="set-screen-mm" type="number" min="10" max="200" step="0.5" style="width:4.5em" /> mm</div>
@@ -1042,7 +1042,7 @@
         <div class="wx-row"><select id="replay-log" class="grow" title="Signal K sessions are logged while TweedPlot runs; play one back in place of the live data"></select>
           <button id="replay-play" title="Play this log in place of the live Signal K data">Replay</button></div>
         <div id="replay-note" class="wx-note">Every Signal K session is logged. A replay drives the boat, instruments, AIS targets and alarms as if live; live data waits until it stops. Tracks are not recorded from a replay.</div>
-        <div class="wx-note">The buttons in the toolbar at the top left: the live data status (green receiving, amber connected but quiet, red not connected), Live ▶ / Paused ❚❚, Follow and Clear track. Pause to plan: right-click the chart to move the boat.</div>
+        <div class="wx-note">The buttons in the toolbar: the live data status (green receiving, amber connected but quiet, red not connected), Live ▶ / Paused ❚❚, Follow and Clear track. Pause to plan: right-click the chart to move the boat.</div>
         <h3>Damping</h3>
         <div class="wx-row"><label class="grow" for="set-damp-motion">Heading, COG, SOG, BSP</label><select id="set-damp-motion"></select></div>
         <div class="wx-row"><label class="grow" for="set-damp-wind">Wind (AWS, AWA, TWS, TWA, TWD)</label><select id="set-damp-wind"></select></div>

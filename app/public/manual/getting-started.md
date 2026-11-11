@@ -1,21 +1,33 @@
 # Quick start
 
-TweedPlot plans and sails passages: charts, weather, routing, AIS, alarms and fishing tools in one program. This guide covers where to find things. The full manual is one click away: **F1**, or {icon:manual} **Manual** at the bottom left.
+TweedPlot plans and sails passages: charts, weather, routing, AIS, alarms and fishing tools in one program. This guide covers where to find things and the first steps. The full manual is one click away: **F1**, or {icon:manual} **Manual** at the bottom left.
 
 ## The screen
 
-- **The rail** (left edge): the drawers. {icon:weather} Weather, {icon:course} Route, {icon:routing} Wx routing, {icon:fleet} Targets & fleets, {icon:library} Library, {icon:chart} Chart, {icon:inst} Instruments, {icon:alarms} Alarms. {icon:settings} Settings is at the bottom. Click one to open it; click it again (or **Esc**) to close it.
-- **The toolbar** (the strip down the chart's left edge): {icon:north} north up, live or paused, {icon:follow} follow the boat, {icon:ruler} ruler, the **View** list, {icon:panels} panels, the data panel (**O**), {icon:day} colours (day, dusk, night).
-- **On the chart**: **MOB** (top right). Bottom right: **Drop** (a mark at the boat), and above it the optional anchor button (Settings › Display › **Anchor button on the chart**).
+Nothing covers the chart: everything else sits beside it.
+
+- **The rail** (left edge): the drawers. {icon:weather} Weather, {icon:course} Route, {icon:routing} Wx routing, {icon:fleet} Targets & fleets, {icon:library} Library, {icon:chart} Chart, {icon:inst} Instruments, {icon:alarms} Alarms. {icon:manual} Manual and {icon:settings} Settings are at the bottom. Click one to open it; click it again (or **Esc**) to close it. The **?** in a drawer's title bar opens the manual at that drawer.
+- **The toolbar** (the strip down the chart's left edge): {icon:north} north up, the live data light, live or paused, {icon:follow} follow the boat, {icon:ruler} ruler, {icon:ebl} EBL/VRM, {icon:targets} target list, {icon:wxpanel} weather, the **View** list, {icon:side} the data panel, {icon:panels} panels, {icon:day} colours (day, dusk, night). Hover a button for what it does.
+- **The data panel** (right of the chart). From the top:
+  - the status line: the view, LIVE or PAUSED, north up or turned, and the scale;
+  - **Base**, **Standard**, **All**: how much the chart shows;
+  - **MOB** and **Drop** (a mark at the boat), and the anchor button if you turn it on;
+  - own ship: heading, course, speed, depth, position and time, always shown;
+  - readings that suit the view: route, marks ahead, AIS targets, wind, weather;
+  - the cursor's position, and the **alerts** at the bottom.
+- **✎** at the top of the panel changes what it shows. **O** hides it to one line under the chart, which keeps MOB, Drop and the main readings.
 - **Right-click the chart** (or hold a finger on it): move the boat, start a route, new mark, drop anchor, go to, meteogram, ruler… Most things start here.
-- **The ?** in a drawer's title bar opens the manual at that drawer.
+- **Click** a light, buoy, AIS target or area for its details.
+
+**Views.** The **View** button switches between **Navigation** (F2, under way), **Planning** (F3, routes and weather), **Instruments** (F4, large readings without the chart) and **Live data** (the raw instrument data). TweedPlot starts in Navigation.
 
 ## First start
 
-1. **Welcome**: choose what the boat is mostly for: **Cruising**, **Fishing** or **Racing**. It sets up the toolbar and the Instruments screen. You can change it later in Settings › Display › Use.
-2. {icon:settings} **Settings › Vessel**: name, **MMSI** (so your own AIS doesn't show as a target), **draft**, **length**, **air draft**, and where the GPS antenna is (metres from the bow). Press **Save vessel details**.
-3. **Settings › Connections**: where the live data comes from: a **Signal K** server, or **NMEA 0183** straight from a COM port, TCP or UDP. The live-data light in the toolbar turns green when a position arrives.
+1. **Welcome**: choose what the boat is mostly for: **Cruising**, **Fishing** or **Racing**. It sets up the toolbar, the data panel and the Instruments screen. Change it later in Settings › Display › **Use**.
+2. {icon:settings} **Settings › Vessel**: name, **MMSI** (so your own AIS doesn't show as a target), **draft**, **length**, **air draft**, **transducer depth**, and where the GPS antenna is (metres from the bow). Press **Save vessel details**.
+3. **Settings › Connections**: where the live data comes from: a **Signal K** server, or **NMEA 0183** straight from a COM port, TCP or UDP. The live data light in the toolbar turns green when a position arrives.
 4. {icon:chart} **Chart › Safety**: the **safety depth** (draft plus a margin) and the **safety contour** (drawn bold).
+5. **Settings › Display › Screen calibration**: measure the bar with a ruler, so symbols and text are their true size.
 
 ## Charts
 
@@ -23,13 +35,12 @@ Everything for the chart is in {icon:chart} **Chart**.
 
 - **Chart › Layers** (it opens there): what's on the chart, in one list. Tick or untick a layer. **⚙** opens its settings; **Get…** means its data isn't here yet.
 - **Chart › Get data**: every download and import.
-  - **NZ charts (LINZ)**: download the GeoPackage zips from the LINZ Data Service (free account) and put them, unopened, in `tweedplot-data\linz`.
+  - **NZ charts (LINZ)**: download the GeoPackage zips from the LINZ Data Service (free account) and put them, unopened, in the charts folder. Settings › Diagnostics › **Where to install data files** opens it.
   - **World coastline**: **Download** (about 150 MB, once).
   - **High-resolution depths** (LINZ, 1 m, where surveyed): zoom in to the area, **Get for chart view**.
   - **NIWA bathymetry** (250 m, the whole NZ region): download the zip from NIWA, then **Import…**.
-  - **Official ENCs** (S-57) go in `tweedplot-data\enc`; encrypted S-63 charts need the plugin: Chart › Encrypted charts.
-- **Base / Standard / All** at the top of Layers: how much the chart shows, as on an ECDIS.
-- Click a light, buoy or area for its details.
+  - **Official ENCs** (S-57) go in the `enc` folder; encrypted S-63 charts need the plugin: Chart › Encrypted charts (S-63).
+- **Base / Standard / All** at the top of the data panel: how much the chart shows, as on an ECDIS. **Standard** is the one to come back to.
 
 ## Soundings
 
@@ -37,7 +48,7 @@ Your own depth soundings build up into a seabed, as on Olex or TimeZero.
 
 - **Record soundings**: the toolbar button with a dot (Fishing use; **D** in any use). The dot turns red and counts while it records. Click again to stop.
 - **Chart › Get data › Own soundings**: **Add my tracks** (the depths logged along your tracks), **Import PBG / XYZ…** (TimeZero files), colours, depth range, contours.
-- **Show them**: Chart › Layers › **Own soundings**, or the seabed button on the toolbar.
+- **Show them**: Chart › Layers › **Own soundings**, or the seabed button on the toolbar (Fishing use).
 - They're reduced to chart datum with the LINZ tides, and stay on this computer.
 
 ## Weather (GRIB files)
@@ -47,16 +58,17 @@ Your own depth soundings build up into a seabed, as on Olex or TimeZero.
 1. **Download GRIBs (free)**: choose the **model**, the **area** (draw it, the chart view, or round the route), the forecast length and the time step, then **Download**. Away from the internet, **Saildocs email request** writes the email for you.
 2. Choose the file at the top, **Load**, and move through time with the slider (or **[** and **]**).
 3. **Show** chooses the shading (wind, gusts, rain, waves, sea temperature…); barbs, isobars and arrows are in Chart › Layers › Weather and ocean.
-4. Right-click the chart › **Meteogram here** for the forecast at one place.
+4. {icon:wxpanel} in the toolbar shows the Weather panel and all the weather layers, or hides them all.
+5. Right-click the chart › **Meteogram here** for the forecast at one place.
 
 **Tides and weather stations** are layers too (Chart › Layers › Tides and observations); download the LINZ tide tables in Weather › Tides once a year.
 
 ## Marks and routes
 
-- **A mark**: right-click the chart › **New library mark here**, or Library › Marks › **+ Add mark**. Marks are kept in the {icon:library} **Library**, with routes, tracks, trips, the catch log and barriers.
+- **A mark**: right-click the chart › **New library mark here**, or Library › Marks › **+ Add mark**. Marks are kept in the {icon:library} **Library**, with routes, tracks, trips, the catch log, saved routings and barriers.
 - **Find one**: the **Find** box in its Library tab. **Filters** narrows the list (group, type, dates, trip…); filters in use always show, with **✕** to clear them.
 - **A route**: {icon:course} **Route › Plan**: **Set start**, then **Add marks** and click the chart (or library marks). Choose how each mark is passed, name it and **Save**.
-- **Sail it**: **Route › Navigate**: **◀ ▶** pick the next mark; the instruments show bearing, distance and cross-track error.
+- **Sail it**: **Route › Navigate**: **◀ ▶** pick the next mark; the data panel shows bearing, distance and cross-track error to it.
 - **Go to here** (right-click): a single point to steer to, in place of the route: the data panel, highway, laylines and alarms work to it until **Cancel go to**.
 
 ## Weather routing
@@ -68,8 +80,8 @@ Your own depth soundings build up into a seabed, as on Olex or TimeZero.
 ## AIS and alarms
 
 - {icon:fleet} **Targets & fleets › AIS**: AIS from your receiver arrives through Signal K or NMEA; **online AIS** (aisstream.io or Open Waters, free) fills in round you. **T** opens the target list.
-- {icon:alarms} **Alarms**: shallow water, the safety contour ahead, off track, the next mark, air draft, AIS collision risk, closed fishing areas. Alarms sound until **Silenced**; silenced ones stay listed while their cause lasts.
-- **MOB** marks the position at once and shows bearing and distance back to it.
+- {icon:alarms} **Alarms**: shallow water, the safety contour ahead, off track, the next mark, air draft, AIS collision risk, closed fishing areas. An alarm shows in the alerts at the bottom of the data panel and sounds until you press **Silence**; a silenced one stays listed while its cause lasts.
+- **MOB** marks the position at once, and the data panel steers you back to it.
 
 ## Anchoring
 
@@ -84,14 +96,17 @@ Your own depth soundings build up into a seabed, as on Olex or TimeZero.
 | --- | --- |
 | F1 | Manual |
 | ? | Every key |
+| F2  F3  F4 | Navigation, Planning, Instruments view |
 | W  R  G  L  C  I  A  S | Open a drawer: Weather, Route, Wx routing, Library, Chart, Instruments, Alarms, Settings |
+| O  /  P | Show or hide the data panel / the rail, drawers and dock |
 | B  /  F | Centre on the boat / follow it |
-| M | Ruler (measure) |
+| Space | Live or paused |
+| M  /  V | Ruler (measure) / EBL/VRM |
 | T | Target list |
 | N | Colours (day, dusk, night) |
 | E | Drop a mark at the boat |
 | D | Record soundings on or off |
-| K | Drop anchor (twice: weigh it) |
+| K | Drop anchor (twice when anchored: weigh it) |
 | Ctrl+M | Man overboard |
 | Shift+A | Silence the alarms |
 

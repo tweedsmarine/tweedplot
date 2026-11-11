@@ -1584,7 +1584,7 @@ fn data_folders(app: &tauri::AppHandle) -> Vec<(&'static str, String, &'static s
     let enc = s63_cmd::enc_home(app);
     vec![
         ("S-63 / ENC charts", dir(enc), "Exchange sets and permits (PERMIT.TXT) for S-63 charts; or use Chart › Encrypted charts (S-63)"),
-        ("LINZ charts (NZ)", dir(chart_dir(app)), "LINZ chart data (.gpkg) for New Zealand"),
+        ("LINZ charts (NZ)", dir(chart_dir(app)), "LINZ chart data for New Zealand: the GeoPackage zip files as downloaded"),
         ("High-resolution depths", dir(hires_dir(app)), "LINZ coastal elevation GeoTIFFs"),
         ("Survey depths", dir(depthpacks::dir(app)), "TweedPlot depth packages (.tpdepth) from LINZ's multibeam and lidar surveys"),
         ("NIWA bathymetry", dir(nzbathy_dir(app)), "NIWA 2016 250 m grid"),
@@ -1594,8 +1594,8 @@ fn data_folders(app: &tauri::AppHandle) -> Vec<(&'static str, String, &'static s
         ("GRIB weather files", dir(download_dir(app)), "Downloaded and manually added GRIB files"),
         ("Polars", dir(user_polar_dir(app)), "Your own polar files"),
         ("Tides", dir(tide_dir(app)), "Tide station data"),
-        ("Library", dir(library_dir(app)), "Marks, routes, tracks and soundings"),
-        ("Tracking", dir(tracking_dir(app)), "Recorded tracks"),
+        ("Library", dir(library_dir(app)), "Marks, routes, tracks, trips, the catch log, routings and barriers (library.gpkg), exports and backups"),
+        ("Race tracking", dir(tracking_dir(app)), "YB race tracking data, one folder per race"),
         ("Logs", dir(activity_log_path(app).parent().map(|p| p.to_path_buf()).unwrap_or_default()), "Activity log"),
     ]
 }

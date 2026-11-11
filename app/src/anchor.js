@@ -1,6 +1,6 @@
 // The anchor: a library mark (type Anchor, in the Anchorages group) with a watch on it.
 //
-// Drop it from the Anchor button on the chart, the chart's right-click menu (here, or at the
+// Drop it from the anchor button beside MOB and Drop, the chart's right-click menu (here, or at the
 // boat) or Alarms › Anchor watch. It goes at the bow (the GPS position moved forward by the
 // antenna's distance from the bow, along the heading). Then, during the pull test, drag the
 // anchor to where it really lies: the readout gives its distance and bearing from the bow.

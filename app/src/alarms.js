@@ -466,7 +466,7 @@ export function setupAlarms(map, { getBoat, getBow = () => null, getSafetyDepth,
     $("al-volume").value = Math.round(s.volume * 100);
     $("anc-radius").value = s.anchorM;
     $("anc-drop").textContent = s.anchor ? "Weigh anchor" : "Drop anchor";
-    if (!s.anchor) $("anc-state").textContent = "Off. Drop anchor (here, the Anchor button on the chart, or right-click the chart), then drag the anchor to where it lies and set its swing radius on its card.";
+    if (!s.anchor) $("anc-state").textContent = "Off. Drop anchor (here, the anchor button beside MOB and Drop, or right-click the chart), then drag the anchor to where it lies and set its swing radius on its card.";
     $("anchor-btn")?.classList.toggle("on", !!s.anchor);
     window.dispatchEvent(new Event("racenav-anchor-watch"));
     const air = getAirDraft();
