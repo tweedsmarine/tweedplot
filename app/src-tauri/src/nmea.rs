@@ -833,7 +833,15 @@ async fn run_udp(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
                 continue;
             }
         };
-        update_status(app, &source.id, generation, Some("connected"), Some(format!("Listening on UDP {bind_address}; nothing received yet (check the sender's address and port)")), false, None);
+        update_status(
+            app,
+            &source.id,
+            generation,
+            Some("connected"),
+            Some(format!("Listening on UDP {bind_address}; nothing received yet (check the sender's address and port)")),
+            false,
+            None,
+        );
         loop {
             let received = tokio::select! {
                 _ = stop.changed() => break,
