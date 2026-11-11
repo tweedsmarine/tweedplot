@@ -57,7 +57,7 @@ Your own depth soundings build up into a seabed, as on Olex or TimeZero.
 - **Find one**: the **Find** box in its Library tab. **Filters** narrows the list (group, type, dates, trip…); filters in use always show, with **✕** to clear them.
 - **A route**: {icon:course} **Route › Plan**: **Set start**, then **Add marks** and click the chart (or library marks). Choose how each mark is passed, name it and **Save**.
 - **Sail it**: **Route › Navigate**: **◀ ▶** pick the next mark; the instruments show bearing, distance and cross-track error.
-- **Go to here** (right-click): a single mark to steer to, with laylines.
+- **Go to here** (right-click): a single point to steer to, in place of the route: the data panel, highway, laylines and alarms work to it until **Cancel go to**.
 
 ## Weather routing
 
