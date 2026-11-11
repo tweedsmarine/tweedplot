@@ -191,10 +191,14 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       profile[key] = input.type === "number" ? optionalNumber(input.value) : input.value.trim();
     }
     profile.gpsAntennas = antennasFromForm();
-    const next = { ...saved, vessel: { ...saved.vessel, ...profile } };
     saveButton.disabled = true;
     showStatus("Saving…");
     try {
+      // the settings as they are on disk now, not as this window read them at start-up: the whole
+      // file is written back, so an old copy here would undo NMEA sources (or anything else)
+      // saved since, in this window or another
+      const current = await invoke("settings_get").catch(() => saved);
+      const next = { ...current, vessel: { ...current.vessel, ...profile } };
       await invoke("settings_save", { settings: next });
       saved = next;
       applyToBoat(profile);
@@ -570,9 +574,9 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
   });
   document.getElementById("nmea-source-cancel").addEventListener("click", resetSourceForm);
 
-  async function loadSources() {
+  async function loadSources(scan = true) {
     try {
-      await scanPorts();
+      if (scan) await scanPorts();
       const data = await invoke("nmea_sources_get");
       sources = data.sources || [];
       arbitration = data.arbitration || arbitration;
@@ -589,6 +593,10 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       showSourceStatus(`Could not load NMEA sources: ${error}`, "bad");
     }
   }
+  // the sources were changed (in this window or another): every window shows, and would save,
+  // the same list. Without this a monitor window kept its old list and wrote it back whole the
+  // next time anything was changed there
+  listen("nmea-sources-changed", () => { loadSources(false); }).catch(() => {});
   listen("nmea-status", ({ payload }) => {
     if (payload?.id) {
       sourceStatuses.set(payload.id, payload);
