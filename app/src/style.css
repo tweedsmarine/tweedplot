@@ -1619,10 +1619,10 @@ html.side-left .sp-grip { left: auto; right: -3px; }
 .sp-head button:hover { color: var(--tile-ink); }
 #side.editing .sp-edit { color: #e3b341; }
 /* MOB, Drop and Anchor live here while the panel is shown (sidepanel.js moves them) */
-/* one even gap (--sp-gap) above and below the display buttons and below MOB/Drop/Anchor; their
-   black and white rings stand 4 px outside them, so that is added */
+/* one even gap (--sp-gap) above and below the display buttons, below MOB/Drop/Anchor and between
+   them; their black and white rings stand 4 px outside them, so that is added (8 px between two) */
 #side { --sp-gap: calc(1.5 * var(--u)); }
-.sp-actions { display: flex; gap: calc(1.2 * var(--u)); padding: calc(var(--sp-gap) + 4px) calc(1.5 * var(--u)) calc(var(--sp-gap) + 4px); border-bottom: 1px solid #2c3d48; }
+.sp-actions { display: flex; gap: calc(var(--sp-gap) + 8px); padding: calc(var(--sp-gap) + 4px) calc(1.5 * var(--u)) calc(var(--sp-gap) + 4px); border-bottom: 1px solid #2c3d48; }
 .sp-actions:empty { display: none; }
 :is(.sp-actions, .ss-actions) :is(#mob-btn, #drop-btn, #anchor-btn) { position: static; flex: 1; min-width: 0; height: calc(8 * var(--u)); min-height: 0; padding: 0 4px; font-size: calc(3.4 * var(--u)); }
 :is(.sp-actions, .ss-actions) #mob-btn { flex: 1.4; }
@@ -1695,7 +1695,7 @@ html.side-on body:has(.sp-alerts .alarm:not(.warn):not(.acked):not(.summary)) #m
 #side-strip .sp-row { border: 0; padding: 0; flex: none; }
 #side-strip .sp-row .v { flex: none; font-size: calc(3.8 * var(--u)); white-space: nowrap; }
 #side-strip .sp-row .v br { display: none; }
-#side-strip .ss-actions { display: flex; gap: 6px; flex: none; }
+#side-strip .ss-actions { display: flex; gap: 14px; flex: none; } /* 6 px between the buttons' 4 px rings */
 #side-strip :is(#mob-btn, #drop-btn, #anchor-btn) { height: calc(5.8 * var(--u)); flex: none; min-width: calc(14 * var(--u)); }
 #side-strip .ss-show { flex: none; width: auto; min-height: 0; padding: 2px 8px; background: #22343f; color: var(--tile-ink); border: 1px solid #3a4f5c; font-size: calc(2.8 * var(--u)); }
 html.no-map #side-strip { display: none; }
