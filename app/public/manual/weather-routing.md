@@ -79,7 +79,7 @@ No single GRIB tells you how much to trust it. Comparing several does. TweedPlot
 | --- | --- |
 | **Values at the cursor** (table in the Weather drawer) | What does each loaded GRIB say here and now? |
 | **Meteogram** (right-click) | How does the wind at this point change over time in each GRIB, and do they agree on the timing of shifts and fronts? |
-| **Agreement displays** (Show > Agreement) | Where on the chart do the GRIBs disagree, and by how much? Is the forecast trending windier or lighter run to run? |
+| **Agreement displays** (Show › Agreement) | Where on the chart do the GRIBs disagree, and by how much? Is the forecast trending windier or lighter run to run? |
 | **Verify runs** | Over the past days, which model has forecast this area best? |
 
 **Rules of thumb**
@@ -99,7 +99,7 @@ A polar is a table (or the curve drawn from it) of boat speed against true wind 
 | Designer or class association | Theoretical (from a velocity prediction program, VPP) for a fully crewed boat in flat water with perfect sails. Optimistic for real sailing |
 | Rating certificates (ORC) | VPP polars from measured boat data; consistent between boats, still optimistic offshore |
 | Your own logged data | The truest, once you have enough hours across the range of angles and wind. Track recording builds the data; building polars from it is planned |
-| Another program's polar file | qtVlm CSV and .pol formats are read directly: Settings › Vessel › Performance › Import polar… (the file format, and where to find polars, are in the Reference manual under Your boat > Polars) |
+| Another program's polar file | qtVlm CSV and .pol formats are read directly: Settings › Vessel › Performance › Import polar… (the file format, and where to find polars, are in the Reference manual under Your boat › Polars) |
 
 **Efficiency**
 
@@ -161,7 +161,7 @@ The line on the chart is the least interesting part of a routing. Read the rest:
 
 A routing from one GRIB is one possible future. The point of routing several ways is to find the decisions that are good in most of them.
 
-**Several GRIBs** (Routing > **With each GRIB**)
+**Several GRIBs** (Routing › **With each GRIB**)
 
 Load GFS, ECMWF and others, or the last few runs of one. If every routing goes the same way, the decision is easy. If they split (some go left of an island, some right), you have found the decision that matters, and the next question is when you have to make it. Often the routes stay together for the first hours: sail that part and decide later with a newer forecast.
 
@@ -171,11 +171,11 @@ When you can choose when to leave (cruising, delivery, fishing), set a fixed sta
 
 **The gate sweep**
 
-When routings split between options, put a row of gates across the split (Routing > Gates): along a meridian or a parallel, through the options. TweedPlot routes through each gate with each GRIB and ranks them by the average time lost against the best gate under each forecast. A gate that is never more than an hour off the best is a safer choice than one that is best under one model and four hours off under another. This is the same idea as an ocean racer's "gates" or waypoint tests, automated.
+When routings split between options, put a row of gates across the split (Wx routing › Gates): along a meridian or a parallel, through the options. TweedPlot routes through each gate with each GRIB and ranks them by the average time lost against the best gate under each forecast. A gate that is never more than an hour off the best is a safer choice than one that is best under one model and four hours off under another. This is the same idea as an ocean racer's "gates" or waypoint tests, automated.
 
 **Re-route as the forecast updates**
 
-Forecasts improve as the time gets closer. Re-route from the boat's position with each new run (Course > From boat), and watch for the decision points creeping closer. The aim is not to follow the newest routing blindly but to keep the boat where most good futures are still open.
+Forecasts improve as the time gets closer. Re-route from the boat's position with each new run (Route › From boat), and watch for the decision points creeping closer. The aim is not to follow the newest routing blindly but to keep the boat where most good futures are still open.
 
 ## Racing, cruising and power boats
 

@@ -26,7 +26,7 @@ How to use TweedPlot's sea and weather tools to decide where to fish. The **Refe
 
 HYCOM's server is slow, especially for many time steps: a day's data can take a minute or two. Ask for a short forecast, every 3 or 6 hours, to keep it quick. Nothing is downloaded until you press Download, and the size estimate is shown first.
 
-**Several sources of the same thing are fine.** Load MUR and Himawari together and the panel's Show list offers both, with a drop-down to pick which file feeds each layer.
+**Several sources of the same thing are fine.** Load MUR and Himawari together and the Weather panel's Show list offers both, with a drop-down to pick which file feeds each layer.
 
 ## The Weather panel
 
@@ -76,7 +76,7 @@ Sea surface height (SSH) is how high the sea surface stands above its long-term 
 - A **red, rounded patch** is a high in the sea surface: a **warm-core eddy**. In the Southern Hemisphere it turns anticlockwise. It pushes warm water deeper, and its edge is a good place to look.
 - A **blue, rounded patch** is a low: a **cold-core eddy**, which pulls cold, nutrient-rich water up. Its rim and the water around it are often more productive.
 - **Currents run along the contours of the surface height.** In the Southern Hemisphere the higher water is on the *left* of the flow looking downstream; in the Northern Hemisphere it is on the right. A steep change in SSH between blue and red is a strong current.
-- Eddies drift slowly, so a pattern in SSH can be trusted for days ahead. Overlay SSH with sea temperature (switch between them in the panel, or use the cursor readout) to see whether the eddy has a warm or cold core.
+- Eddies drift slowly, so a pattern in SSH can be trusted for days ahead. Overlay SSH with sea temperature (switch between them in the Weather panel, or use the cursor readout) to see whether the eddy has a warm or cold core.
 - Values are small. A change of 0.3 m across an eddy is strong. The model's resolution is about 9 km, so it cannot show small eddies.
 
 ### Currents
@@ -107,7 +107,7 @@ Fresher water is lighter and floats on saltier. Its edge is a **salinity front**
 
 **The evening before**
 
-1. Download fresh data: MUR and chlorophyll are daily, HYCOM and wind and waves come with a forecast. The panel's top line shows the run time; it turns red when the run is more than a day old.
+1. Download fresh data: MUR and chlorophyll are daily, HYCOM and wind and waves come with a forecast. The Weather panel's top line shows the run time; it turns red when the run is more than a day old.
 2. Choose the **Fishing** preset. Slide through tomorrow's hours. Is the break moving? Will the current change?
 3. Note two or three candidate areas where the sea temperature break, a chlorophyll edge or an eddy rim line up. Put each in a route as a mark (right-click the chart › **Add mark to route here**) and name it for the reason.
 4. Check the wind and waves for the whole day.
