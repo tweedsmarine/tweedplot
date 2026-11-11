@@ -102,7 +102,7 @@ Nothing covers the chart. The rail, the open drawer, the toolbar, the data panel
 
 ![screen layout · rail, drawer, toolbar, chart, data panel, dock](fig/layout.svg)
 
-![The main window in the Planning view: the Weather drawer open, the toolbar, a forecast over the top of the South Island, the data panel on the right and the time slider](img/01-main-weather.jpg)
+![The Navigation view under way towards French Pass, in the Fishing use: the rail, the toolbar, the chart with the route being sailed, and the data panel with own ship, the sea, the wind, the next mark and the AIS targets](img/12-navigation.jpg)
 
 | Where | What | How to use it |
 | --- | --- | --- |
@@ -228,11 +228,15 @@ From top to bottom:
 - **Cursor readout**: the position under the cursor, its depth, and bearing and range from the boat, on one line above the alerts (on the line under the chart when the panel is hidden).
 - **Alerts**, always at the bottom. New alarms appear here with **Silence** and the other buttons, and the edge of the chart flashes red while an alarm is unacknowledged. Silenced alarms are one steady line; click it for the Alarms drawer.
 
+![The data panel hidden: one line under the chart keeps the display, HDG, COG, SOG, depth, position, the cursor readout, MOB, Drop and ⟨ Panel](img/14-panel-hidden.jpg)
+
 **Narrow screens.** On a screen under 1000 pixels wide (a tablet, or a small window) a panel beside the chart would leave too little chart, so the line under the chart stays and **O** (or **⟨ Panel**) slides the panel over the chart's edge; ⟩ or O puts it away again. That is the only time the panel covers the chart.
 
 **Hide it** with **O**, the panel button in the toolbar or **⟩**. Hidden, the panel leaves one line under the chart: HDG, COG, SOG, depth, position and time, with MOB and Drop, and **⟨ Panel** to bring it back. Each window remembers for each view whether its panel is shown. A new MOB brings the panel back. In a view without a chart (Instruments, Live data) there is no data panel: MOB is at the top right of the screen, Drop at the bottom right, and the alerts at the top.
 
 **Edit it** with **✎** (or **Instruments › Edit the data panel**; **Reset this layout** beside it goes back to the starting layout). Each section gets ▲ ▼ to move it, **1 col / 2 col** for one or two columns, **∿** for trend lines, **＋ −** for a graphic's height (or how many marks or targets a list shows), ✕ to remove it, and a box for its name. Click a reading to change it, move it or remove it; **+ Add a reading** adds one at the end. At the bottom, **+ Add a section** adds a section of readings, the marks ahead, the AIS targets, a graphic (wind dial, compass, highway, sounder history) or a history plot. **Reset** goes back to the starting layout for this view and Use. **Done** finishes. Your changes are kept for that view and Use, and are shared by every window.
+
+![The data panel being edited: each section has its name, ▲ ▼, columns, trend lines and ✕, and + Add a reading](img/15-panel-edit.jpg)
 
 **Right-click** (or hold) a reading for its history in a card (see *History plots*).
 
@@ -301,6 +305,8 @@ TweedPlot marks the boat's position (or where it was put when planning) and rais
 - **Since MOB**, in minutes and seconds;
 - **MOB at**: the position and the time it was pressed, local and UTC, for the log and a distress call.
 
+![A man overboard: the red section in the data panel with the highway steering back, the time since and the position; the MOB alarm with Clear MOB in the alerts](img/13-mob.jpg)
+
 Bearing and range to the MOB are also readings you can add anywhere (the Man overboard group). The data panel is shown again if it was hidden, and the section goes when the MOB is cleared. Every window shows the same readings for as long as the MOB is set, and the MOB can be cleared in any window. The position is also saved as a library mark in the group "MOB". **Clear MOB** in the alerts, pressed twice, ends it.
 
 **Drop mark**
@@ -329,6 +335,8 @@ Alarms appear in the **alerts** at the bottom of the data panel and sound until 
 - **Clear** (a source changed, a lost distress beacon) removes an alarm that reports an event, not a lasting cause.
 - **Alarms that escalate.** A collision alarm sounds again when TCPA or CPA falls to half, then a quarter, of your limit. So do the safety contour ahead, a closed area ahead and the approach to a mark (by the time left), and the off-track alarm (at twice, then four times, your limit).
 - **Watchdog.** Shallow water, air draft, the anchor alarm, man overboard, AIS-SART, MOB device and EPIRB alarms, position lost and being inside a closed area don't escalate; but if you silence one and its cause still lasts, it sounds again after the **Watchdog** time (Alarms › Sound; 1 to 20 minutes, 5 to begin with).
+
+![An alarm: Safety contour ahead in the alerts at the bottom of the data panel, with Silence, and the chart's edge in red](img/19-alarm.jpg)
 
 **The Alarms drawer**
 
@@ -397,6 +405,8 @@ Wharves, breakwaters, jetties, pontoons, floating docks and causeways are drawn 
 **The Chart drawer**
 
 {icon:chart} **Chart** opens on **Layers**: everything that can be drawn on the chart, in one list, so you can see at a glance what is on and off. The other cards set what keeps the boat safe, how the chart is drawn, and where the data comes from.
+
+![Chart › Layers: every layer in one list, with ⚙ for a layer's settings and Get… where its data isn't here yet](img/17-chart-layers.jpg)
 
 | Part | Settings |
 | --- | --- |
@@ -484,7 +494,7 @@ Depths are in metres below chart datum; a height that dries at low tide is label
 
 **Where the chart scales meet.** LINZ charts come in scale bands, and the same farm, cable or rock is often drawn differently in each (a 1:190,000 chart may show one big farm block where the 1:122,000 chart shows the separate farms). TweedPlot uses each band's coverage, as an ECDIS does: inside the area a larger-scale chart covers, its features are the ones shown, and a smaller-scale chart's features are cut back to outside it. So a feature can change shape at a chart boundary, but never at the edge of a map tile, and nothing comes and goes as you zoom except where the charts themselves differ. Click a light, mark, danger or area for its details: light characteristics, buoy shape and colours, depth over a rock, area restrictions.
 
-![The details of the Schnapper Point light at the Nelson harbour entrance: its characteristic Fl(4) R 20s 13m 8M first, then the structure and each sector, with the sector arcs drawn round the light](img/02-light-popup.jpg)
+![The details of a beacon near French Pass: the beacon, then its light Fl R 3s 4m 1M. The orange ring on the chart marks the feature the info window is about](img/02-light-popup.jpg)
 
 At small scales the world coastline (GSHHG) is drawn, and east of 180° (the Chathams, for example) works the same as west of it.
 
@@ -710,6 +720,8 @@ For a power boat, see *Making a power polar* in the Route planning tutorial.
 
 Each online feed has its own section and status light, and you can use either or both. **Online area** (shared by both) is the chart view (up to about 6° across), or a **Range** in NM round the chart centre or round your boat (it follows you); Open Waters limits the area it will send (100 square degrees without a token, 400 with one). Online targets are not for navigation (see the AIS tab): they show in italics, marked "Net", and raise no collision alarm unless **Alarms for internet-only targets too** is ticked. A ship's info window ("Heard by") and the target list's source column say which feed it came from.
 
+![Targets & fleets › AIS with the on-board and online feeds, and the target list over the chart](img/16-ais-targets.jpg)
+
 On the chart, every ship is one colour, and a ship inside the CPA and TCPA alarm limits is red. Class and kind are shown by shape and size:
 
 - <span class="mi"><svg viewBox="0 0 20 20"><path d="M10 2 L17 18 L10 15 L3 18 Z" fill="#1d2a33"/></svg></span> Class A: the largest triangle, pointing along the heading
@@ -934,7 +946,7 @@ Barriers are places routings must keep out of, beyond what the chart already avo
 Untick a barrier to keep it but not use it; rename it in the list; move its points like marks; right-click it to delete a point, delete it, or switch it off. Wx routing › Run › Limits and barriers › **Keep off barriers** turns them all on or off for routings.
 - **Clearing bearings** (**Clearing bearing**): click the mark, then a point out to sea along the bearing; the danger side is where you click third. It is labelled "Clearing bearing xxx°T xxx°M" and, as a barrier, the router avoids its danger side.
 
-![Library › Barriers with an example exclusion zone drawn across the first leg of a Coastal Classic course](img/10-barriers.jpg)
+![Library › Barriers with a zone drawn in Current Basin, filled with the cross hatch (Hatch zones)](img/10-barriers.jpg)
 
 **The Library menu**
 
@@ -1292,6 +1304,8 @@ With the IHO dusk and night colours, what TweedPlot draws over the chart (routes
 **Each window has its own colours.** A monitor window in a lit office can stay on day colours while the one on the fly bridge is on night red. Each window remembers its own setting.
 
 **Night cursors.** In the night modes the mouse pointer is drawn in the night colour (an arrow, a ring over things you can click, a cross while drawing and a four-way mark for dragging the chart), because the system's white pointer would spoil night vision. The pointer is drawn at a fixed brightness; the resize pointers and the text caret stay as Windows draws them. A touch screen has no pointer.
+
+![Night (IHO): the chart in the IHO night colours, and the rail, toolbar and data panel in dim red](img/18-night-iho.jpg)
 
 In Night (IHO), AIS targets are a dim grey with a dark outline, and the selection brackets and course lines are dimmed to match.
 

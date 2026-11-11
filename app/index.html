@@ -1017,7 +1017,7 @@
             <form id="nmea-source-form">
               <h4 id="nmea-form-title">Add source</h4>
               <div class="settings-grid">
-                <label>Source name<input name="name" type="text" maxlength="100" required placeholder="Main GPS" /></label>
+                <label>Source name<input name="name" type="text" maxlength="100" required placeholder="Main GPS" autocomplete="off" /></label>
                 <label>Connection type<select name="type"><option value="serial">Serial / COM</option><option value="tcp">TCP client</option><option value="udp">UDP listener</option></select></label>
               </div>
               <div class="settings-grid" data-nmea-transport="serial">
@@ -1026,10 +1026,10 @@
                 <div class="settings-field-action"><button id="nmea-scan-ports" type="button">Rescan COM ports</button></div>
               </div>
               <div class="settings-grid" data-nmea-transport="tcp" hidden>
-                <label>Server address (host:port)<input name="address" type="text" placeholder="192.168.1.10:10110" /></label>
+                <label>Server address (host:port)<input name="address" type="text" placeholder="192.168.1.10:10110" autocomplete="off" spellcheck="false" /></label>
               </div>
               <div class="settings-grid" data-nmea-transport="udp" hidden>
-                <label>Local bind address<input name="bindAddress" type="text" placeholder="0.0.0.0:10110" /></label>
+                <label>Local bind address<input name="bindAddress" type="text" placeholder="0.0.0.0:10110" autocomplete="off" spellcheck="false" /></label>
               </div>
               <div class="settings-actions">
                 <span id="nmea-settings-status" role="status" aria-live="polite"></span>

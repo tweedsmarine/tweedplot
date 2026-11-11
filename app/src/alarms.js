@@ -186,6 +186,7 @@ export function setupAlarms(map, { getBoat, getBow = () => null, getSafetyDepth,
 
   // ---------- banner ----------------------------------------------------------------
   const banner = $("alarm-banner");
+  let mobSureUntil = 0; // Clear MOB pressed once: "Sure?" until then (confirmMob)
   function render() {
     banner.innerHTML = "";
     const byLevel = (a, b) => (a[1].level === b[1].level ? a[1].since - b[1].since : a[1].level === "alarm" ? -1 : 1);
@@ -200,7 +201,7 @@ export function setupAlarms(map, { getBoat, getBow = () => null, getSafetyDepth,
       row.className = `alarm ${a.level}${a.acked ? " acked" : ""}`;
       row.innerHTML = `<div class="txt"><b>${esc(a.text)}</b>${a.detail ? `<small>${esc(a.detail)}</small>` : ""}</div>` +
         (a.acked ? "" : `<button data-act="ack" title="Stop the sound; the alarm moves to the Alarms list and stays while its cause lasts">Silence</button>`) +
-        (a.dismiss ? `<button data-act="dismiss" title="${esc(a.dismissTitle || "Dismiss")}">${esc(a.dismissLabel || "✕")}</button>` : "");
+        (a.dismiss ? `<button data-act="dismiss" title="${esc(a.dismissTitle || "Dismiss")}">${esc(id === "mob" && Date.now() < mobSureUntil ? "Sure?" : a.dismissLabel || "✕")}</button>` : "");
       row.querySelector(".txt").onclick = () => a.onClick?.();
       row.querySelector('[data-act="ack"]')?.addEventListener("click", () => ack(id));
       row.querySelector('[data-act="dismiss"]')?.addEventListener("click", () => a.dismiss());
@@ -289,11 +290,15 @@ export function setupAlarms(map, { getBoat, getBow = () => null, getSafetyDepth,
       toast(`Could not delete the MOB mark: ${error}`, 6000);
     }
   }
-  /** Clearing a MOB asks twice: the first press turns the button into "Sure?". */
+  /** Clearing a MOB asks twice: the first press turns the button into "Sure?" for four seconds.
+   *  The time is kept here, not on the button: the MOB alarm is redrawn every second (its time and
+   *  range change), and a "Sure?" kept on the button was lost with it, so the second press only
+   *  worked as a fast double-click. */
   function confirmMob(go) {
-    const btn = banner.querySelector(".alarm.alarm [data-act='dismiss']");
-    if (btn && btn.dataset.sure) go();
-    else if (btn) { btn.dataset.sure = "1"; btn.textContent = "Sure?"; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.sure; btn.textContent = "Clear MOB"; } }, 3000); }
+    if (Date.now() < mobSureUntil) { mobSureUntil = 0; go(); return; }
+    mobSureUntil = Date.now() + 4000;
+    render();
+    setTimeout(() => { if (mobSureUntil && Date.now() >= mobSureUntil) { mobSureUntil = 0; render(); } }, 4100);
   }
   function clearMob() {
     const incident = mob;
