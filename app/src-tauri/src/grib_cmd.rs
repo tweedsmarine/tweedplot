@@ -544,30 +544,31 @@ pub(crate) fn point_values(f: &grib::GribFile, lat: f64, lon: f64, t: i64) -> se
 /// GRIB that has it, the shown one first (so its wind wins; waves or sea data can come
 /// from another file).
 #[tauri::command]
-pub(crate) async fn grib_along(first: Option<String>, pts: Vec<(f64, f64, i64)>) -> Vec<serde_json::Value> {
+pub(crate) async fn grib_along(first: Option<String>, pts: Vec<(f64, f64, i64)>) -> Result<Vec<serde_json::Value>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut files: Vec<(String, Arc<grib::GribFile>)> = GRIBS.lock().unwrap().iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-        if let Some(p) = &first {
-            files.sort_by_key(|(k, _)| k != p);
-        }
+        files.sort_by(|(a, _), (b, _)| (Some(a) != first.as_ref(), a).cmp(&(Some(b) != first.as_ref(), b)));
         pts.iter()
             .map(|&(lat, lon, t)| {
                 let mut out = serde_json::Map::new();
-                for (_, f) in &files {
+                let mut sources = serde_json::Map::new();
+                for (path, f) in &files {
                     if let serde_json::Value::Object(m) = point_values(f, lat, lon, t) {
                         for (k, v) in m {
                             if !v.is_null() && !out.contains_key(&k) {
+                                sources.insert(k.clone(), path.clone().into());
                                 out.insert(k, v);
                             }
                         }
                     }
                 }
+                out.insert("_sources".into(), serde_json::Value::Object(sources));
                 serde_json::Value::Object(out)
             })
             .collect()
     })
     .await
-    .unwrap_or_default()
+    .map_err(|e| format!("Could not read forecast along route: {e}"))
 }
 
 /// Ask where to save a weather snapshot (PNG) and write it; returns the path, or None if cancelled.

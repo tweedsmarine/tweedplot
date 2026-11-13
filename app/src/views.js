@@ -9,6 +9,7 @@
 // Each window has its own view (and tools/chart choices), so any window can show any view.
 import { own, PRIMARY, LABEL, startView } from "./role.js";
 import { patchWindow } from "./windowstate.js";
+import { createPlanningIdle } from "./planning-idle.js";
 
 const KEY = own("racenav.views");
 
@@ -30,10 +31,11 @@ export const VIEWS = [
     icon: '<path d="M3 12h3l2.2-6 4.2 12 2.2-6H21"/><path d="M4 5h2M18 19h2"/>',
   },
 ];
+export const OPERATIONAL_VIEWS = VIEWS.filter((v) => v.id !== "nmea");
 
 const $ = (id) => document.getElementById(id);
 
-export function setupViews(map) {
+export function setupViews(map, { onPlanningTimeout = () => {} } = {}) {
   // The program always opens in Navigation; each view remembers for itself whether its panels
   // (the rail and drawers) are shown, and Navigation starts with them shown.
   let s = { current: "nav", tools: {}, map: {} };
@@ -44,6 +46,8 @@ export function setupViews(map) {
   const def = (id) => VIEWS.find((v) => v.id === id);
   const toolsOn = (id) => s.tools[id] ?? def(id).tools;
   const mapOn = (id) => s.map?.[id] ?? def(id).map;
+  const chartPositions = new Map();
+  const chartViews = new Set(["nav", "plan"]);
 
   function apply() {
     const v = def(s.current);
@@ -54,8 +58,13 @@ export function setupViews(map) {
     document.documentElement.dataset.view = v.id;
     const vb = $("view-btn");
     vb.querySelector("svg").innerHTML = v.icon;
-    vb.title = `View: ${v.name}. Click to choose Navigation, Planning, Instruments or Live data, or to show or hide the chart in this view (F2, F3, F4)`;
+    vb.title = `View: ${v.name}. Click to choose Navigation, Planning or Instruments, or to show or hide the chart in this view (F2, F3, F4)`;
     vb.setAttribute("aria-label", `View: ${v.name}`);
+    for (const button of document.querySelectorAll("[data-view-select]")) {
+      const current = button.dataset.viewSelect === v.id;
+      button.classList.toggle("on", current);
+      button.setAttribute("aria-pressed", String(current));
+    }
     const tb = $("tools-btn");
     tb.classList.toggle("on", tools);
     tb.title = tools ? `Hide the panels and dock in the ${v.name} view` : `Show the panels and dock in the ${v.name} view`;
@@ -79,7 +88,7 @@ export function setupViews(map) {
   document.body.append(pop);
   function openPop() {
     const v = def(s.current);
-    pop.innerHTML = `<div class="grp">View</div>${VIEWS.map((x) => `<button data-v="${x.id}" class="${x.id === v.id ? "cur" : ""}">${x.name}</button>`).join("")}
+    pop.innerHTML = `<div class="grp">View</div>${OPERATIONAL_VIEWS.map((x) => `<button data-v="${x.id}" class="${x.id === v.id ? "cur" : ""}">${x.name}</button>`).join("")}
       <hr /><label class="vp-chart"><input type="checkbox" ${mapOn(v.id) ? "checked" : ""}> Show the chart in the ${v.name} view</label>`;
     pop.querySelector("input").onchange = (e) => { s.map[s.current] = e.target.checked; apply(); pop.hidden = true; };
     const r = $("view-btn").getBoundingClientRect();
@@ -109,9 +118,58 @@ export function setupViews(map) {
   window.addEventListener("racenav-need-tools", () => { if (!toolsOn(s.current)) { s.tools[s.current] = true; apply(); } });
   const api = {
     current: () => s.current,
-    set(id) { if (def(id) && id !== s.current) { if (!["nmea", "inst"].includes(s.current)) previous = s.current; s.current = id; apply(); } },
+    set(id) {
+      if (!def(id) || id === s.current) return;
+      if (chartViews.has(s.current) || chartViews.has(id)) map.stop();
+      if (chartViews.has(s.current)) {
+        const { lng, lat } = map.getCenter();
+        chartPositions.set(s.current, { center: [lng, lat], zoom: map.getZoom() });
+      }
+      if (!["nmea", "inst"].includes(s.current)) previous = s.current;
+      s.current = id;
+      if (chartViews.has(id) && chartPositions.has(id)) map.jumpTo(chartPositions.get(id));
+      apply();
+    },
     onChange(f) { window.addEventListener("racenav-view", (e) => f(e.detail.id, e.detail.tools)); },
   };
+  const timeoutKey = own("racenav.planningTimeout");
+  const timeoutSelect = $("planning-timeout");
+  const validTimeout = (value) => Number.isInteger(value) && value >= 0 && value <= 10;
+  let timeout = 5;
+  try {
+    const savedTimeout = localStorage.getItem(timeoutKey);
+    if (savedTimeout !== null && validTimeout(Number(savedTimeout))) timeout = Number(savedTimeout);
+  } catch (error) { console.error("Could not read Planning timeout:", error); }
+  timeoutSelect.value = String(timeout);
+  const idle = createPlanningIdle({
+    now: () => Date.now(), schedule: (fn, delay) => setTimeout(fn, delay), cancel: clearTimeout,
+    currentView: () => s.current, timeoutMinutes: () => timeout,
+    onTimeout: () => { api.set("nav"); onPlanningTimeout(); },
+  });
+  timeoutSelect.addEventListener("change", () => {
+    const value = Number(timeoutSelect.value);
+    if (!validTimeout(value)) { timeoutSelect.value = String(timeout); return; }
+    timeout = value;
+    try { localStorage.setItem(timeoutKey, String(timeout)); } catch (error) { console.error("Could not save Planning timeout:", error); }
+    idle.activity();
+  });
+  for (const type of ["pointerdown", "pointermove", "wheel", "keydown", "touchstart"]) {
+    window.addEventListener(type, (event) => {
+      if (!event.isTrusted || s.current !== "plan") return;
+      idle.check();
+      if (s.current === "plan") idle.activity();
+    }, { passive: true, capture: true });
+  }
+  document.addEventListener("visibilitychange", idle.check);
+  window.addEventListener("focus", idle.check);
+  let lastView = s.current;
+  api.onChange((id) => {
+    if (id !== lastView) { lastView = id; idle.activity(); }
+  });
+  for (const button of document.querySelectorAll("[data-view-select]")) {
+    button.addEventListener("click", () => api.set(button.dataset.viewSelect));
+  }
   apply();
+  idle.activity();
   return api;
 }

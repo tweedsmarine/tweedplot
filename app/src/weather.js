@@ -214,6 +214,26 @@ function shadingExpression(mode, layer = LAYERS.wind) {
   return expr;
 }
 
+/** The outer time span of all parameters in a loaded GRIB, not a guarantee of every field. */
+export function forecastSpan(summary) {
+  const times = (summary?.params ?? []).flatMap((p) => p.times ?? []).filter(Number.isFinite);
+  return times.length ? [Math.min(...times), Math.max(...times)] : null;
+}
+
+/** Preserve exact forecast times even when different files use different time grids. */
+export function sliderStepForTime(time, start, step) {
+  return (time - start) % step === 0 ? step : "any";
+}
+
+export function weatherSelectionSummary({ visible, sources, layerInfo, layerOptions, overlayOptions }) {
+  if (!visible) return "Chart weather hidden";
+  if (!sources.length) return "No GRIB loaded";
+  const available = layerOptions.some((o) => o.key === layerInfo.key);
+  const shading = layerInfo.off ? "No shading" : `${layerInfo.layer.label}${available ? "" : " (no data)"}`;
+  const active = overlayOptions.filter((o) => o.on).map((o) => o.label);
+  return `Selected: ${[shading, ...active].join(", ")}`;
+}
+
 /**
  * `layers.landTop`: first land fill layer (shading goes under it for "land on top");
  * `layers.coastTop`: first coastline layer (shading goes under it for "coastline on top");
@@ -230,6 +250,7 @@ export function setupWeather(map, layers) {
   const loaded = new Map(); // path -> summary
   let display = null; // path shown on the chart
   let times = [];
+  let timeStep = 3600;
   let t = 0;
   let playing = null;
   let cursor = null; // [lon, lat]
@@ -284,36 +305,70 @@ export function setupWeather(map, layers) {
   }, beforeTop);
 
   // ---------- files ----------------------------------------------------------
-  async function refreshFiles() {
-    const files = await invoke("grib_files").catch(() => []);
-    const sel = $("wx-files");
-    sel.innerHTML = "";
-    if (!files.length) sel.append(new Option("No GRIB files found", ""));
-    for (const f of files) {
-      const mb = f.size ? `${(f.size / 1e6).toFixed(f.size < 1e7 ? 1 : 0)} MB` : "";
-      const fetched = f.mtime ? `fetched ${fmtLocal(f.mtime)}` : "";
-      const desc = f.info ? f.info.label : f.file;
-      const opt = new Option(`${f.loaded ? "✓ " : ""}${desc} · ${fetched} · ${mb}`, f.path);
-      opt.title = `${f.file}\n${f.dir}`;
-      sel.append(opt);
+  const fileSelects = [$("wx-files"), $("side-wx-files")];
+  const fileButtons = [$("wx-load"), $("side-wx-load")];
+  const fileStatus = $("side-wx-status");
+  let loadingPath = null;
+  let unloadingPath = null;
+  function fileMessage(text) {
+    fileStatus.textContent = text;
+  }
+  function syncFileSelection(source) {
+    for (const select of fileSelects) if (select !== source) select.value = source.value;
+    for (const button of fileButtons) button.disabled = !!loadingPath || !!unloadingPath || !source.value;
+    $("side-wx-unload").disabled = !!loadingPath || !!unloadingPath || !display;
+    for (const button of $("wx-loaded").querySelectorAll(".wx-unload")) button.disabled = !!loadingPath || !!unloadingPath;
+  }
+  for (const select of fileSelects) select.addEventListener("change", () => syncFileSelection(select));
+  for (const button of fileButtons) button.disabled = true;
+  async function refreshFiles(report = false) {
+    let files;
+    try {
+      files = await invoke("grib_files");
+    } catch (e) {
+      const message = `Could not list GRIB files: ${e}`;
+      alertLine(message);
+      fileMessage(message);
+      return;
     }
+    const selected = $("wx-files").value;
+    for (const sel of fileSelects) {
+      sel.innerHTML = "";
+      if (!files.length) sel.append(new Option("No GRIB files found", ""));
+      for (const f of files) {
+        const mb = f.size ? `${(f.size / 1e6).toFixed(f.size < 1e7 ? 1 : 0)} MB` : "";
+        const fetched = f.mtime ? `fetched ${fmtLocal(f.mtime)}` : "";
+        const desc = f.info ? f.info.label : f.file;
+        const opt = new Option(`${f.loaded ? "✓ " : ""}${desc} · ${fetched} · ${mb}`, f.path);
+        opt.title = `${f.file}\n${f.dir}`;
+        sel.append(opt);
+      }
+      if (files.some((f) => f.path === selected)) sel.value = selected;
+    }
+    syncFileSelection($("wx-files"));
+    if (report && !loadingPath) fileMessage(files.length ? `Found ${files.length} GRIB ${files.length === 1 ? "file" : "files"}.` : "No GRIB files found in the GRIB folders.");
   }
 
   // Loading progress (the Rust side reports while it reads and decodes).
   const prog = $("wx-progress");
-  let loadingPath = null;
   function showProgress(pc, stage) {
     prog.hidden = false;
     prog.querySelector(".bar").style.width = `${pc}%`;
     prog.querySelector("span").textContent = `${stage === "reading" ? "Reading" : stage === "indexing" ? "Indexing" : "Decoding"} … ${pc} %`;
+    fileMessage(`${prog.querySelector("span").textContent} · ${loadingPath}`);
   }
   listen("grib-progress", ({ payload }) => { if (payload.path === loadingPath) showProgress(payload.percent, payload.stage); }).catch(() => {});
 
   async function load(path) {
-    if (!path) return;
-    $("wx-load").disabled = true;
-    $("wx-load").textContent = "…";
+    if (!path || loadingPath || unloadingPath) {
+      const message = loadingPath || unloadingPath ? "A GRIB operation is already in progress." : "Select a GRIB file to load.";
+      alertLine(message);
+      fileMessage(message);
+      throw new Error(message);
+    }
     loadingPath = path;
+    syncFileSelection($("wx-files"));
+    $("wx-load").textContent = "…";
     showProgress(0, "reading");
     const t0 = performance.now();
     try {
@@ -331,15 +386,20 @@ export function setupWeather(map, layers) {
       }
       renderLoaded();
       setTimes();
-      alertLine(`Loaded ${s.name} in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+      const message = `Loaded ${s.name} in ${((performance.now() - t0) / 1000).toFixed(1)} s`;
+      alertLine(message);
+      fileMessage(message);
       await refreshFiles();
     } catch (e) {
-      alertLine(`Could not read GRIB: ${e}`);
+      const message = `Could not read GRIB: ${e}`;
+      alertLine(message);
+      fileMessage(message);
+      throw e;
     } finally {
       loadingPath = null;
       prog.hidden = true;
-      $("wx-load").disabled = false;
       $("wx-load").textContent = "Load";
+      syncFileSelection($("wx-files"));
     }
   }
 
@@ -356,7 +416,7 @@ export function setupWeather(map, layers) {
       const wind = s.params.find((p) => p.param === "WindU") ?? s.params.find((p) => p.times?.length);
       const span = wind ? `${fmt(wind.times[0], true)} → ${fmt(wind.times.at(-1), true)}` : "no data";
       row.innerHTML = `<input type="radio" name="wx-show" title="Show this GRIB on the chart"><label></label>` +
-        `<input type="checkbox" class="cmp" title="Include in the agreement displays (Show > Agreement of the loaded GRIBs)"><button title="Unload">×</button>`;
+        `<input type="checkbox" class="cmp" title="Include in the agreement displays (Show > Agreement of the loaded GRIBs)"><button class="wx-unload" title="Unload">×</button>`;
       const [radio, label, cmp, x] = row.children;
       cmp.hidden = loaded.size < 2;
       cmp.checked = !wx.cmpOff.includes(path);
@@ -371,14 +431,8 @@ export function setupWeather(map, layers) {
       label.title = `${path}\n${span}`;
       radio.onchange = () => showGrib(path);
       label.onclick = () => showGrib(path);
-      x.onclick = async () => {
-        await invoke("grib_unload", { path });
-        loaded.delete(path);
-        if (display === path) display = loaded.keys().next().value ?? null;
-        renderLoaded();
-        setTimes();
-        refreshFiles();
-      };
+      x.disabled = !!loadingPath || !!unloadingPath;
+      x.onclick = () => unload(path);
       box.append(row);
     }
     // a wind GRIB and a wave GRIB of the same run: offer to put them in one file
@@ -400,14 +454,48 @@ export function setupWeather(map, layers) {
     for (const fn of loadedListeners) fn();
   }
 
+  async function unload(path) {
+    if (!loaded.has(path) || loadingPath || unloadingPath) {
+      const message = loadingPath || unloadingPath ? "A GRIB operation is already in progress." : "Select a loaded GRIB to unload.";
+      alertLine(message);
+      fileMessage(message);
+      return;
+    }
+    unloadingPath = path;
+    syncFileSelection($("wx-files"));
+    const name = loaded.get(path).name;
+    try {
+      await invoke("grib_unload", { path });
+      loaded.delete(path);
+      const wasShown = display === path;
+      if (wasShown) display = loaded.keys().next().value ?? null;
+      renderLoaded();
+      setTimes();
+      if (wasShown) changed();
+      const message = `Unloaded ${name}. The file remains on disk.`;
+      alertLine(message);
+      fileMessage(message);
+      await refreshFiles();
+    } catch (e) {
+      const message = `Could not unload GRIB: ${e}`;
+      alertLine(message);
+      fileMessage(message);
+    } finally {
+      unloadingPath = null;
+      syncFileSelection($("wx-files"));
+    }
+  }
+
   /** Combine a loaded wind GRIB and wave GRIB of the same run into one file, and load that instead. */
   async function combine(a, b) {
     try {
       alertLine("Combining wind and waves…");
       const path = await invoke("grib_combine", { a, b });
-      for (const p of [a, b]) { await invoke("grib_unload", { path: p }); loaded.delete(p); if (display === p) display = null; }
       await load(path);
+      for (const p of [a, b]) { await invoke("grib_unload", { path: p }); loaded.delete(p); if (display === p) display = null; }
+      renderLoaded();
       showGrib(path);
+      await refreshFiles();
       alertLine(`Wind and waves are now in one file: ${path.split(/[\\/]/).pop()} (the two original files are kept).`);
     } catch (e) {
       alertLine(`Could not combine: ${e}`);
@@ -497,8 +585,36 @@ export function setupWeather(map, layers) {
   }
   /** First and last time any parameter of a GRIB has data. */
   function spanOf(path) {
-    const ts = (loaded.get(path)?.params ?? []).flatMap((p) => p.times ?? []);
-    return ts.length ? [Math.min(...ts), Math.max(...ts)] : null;
+    return forecastSpan(loaded.get(path));
+  }
+  function syncPanel(timeOnly = false) {
+    const select = $("side-wx-loaded");
+    if (!timeOnly) {
+      select.replaceChildren();
+      if (!loaded.size) select.append(new Option("No GRIB loaded", ""));
+      for (const [path, s] of loaded) {
+        const opt = new Option(s.name, path);
+        opt.title = path;
+        select.append(opt);
+      }
+      select.value = display ?? "";
+      select.disabled = !loaded.size;
+    }
+    const span = display && spanOf(display);
+    const coverage = $("side-wx-coverage");
+    const outside = span && (t < span[0] || t > span[1]);
+    coverage.textContent = span ? `Shown GRIB: ${fmt(span[0], true)} → ${fmt(span[1], true)}${outside ? " · Forecast time outside this range" : ""}` : "No forecast times for the shown GRIB.";
+    coverage.classList.toggle("warn", !!outside);
+    const main = $("wx-slider"), slider = $("side-wx-time");
+    slider.min = main.min; slider.max = main.max; slider.step = main.step; slider.value = t;
+    slider.disabled = !times.length;
+    $("side-wx-when").textContent = times.length ? fmt(t) : "—";
+    $("side-wx-start").disabled = !span;
+    $("side-wx-end").disabled = !span;
+    $("side-wx-now").disabled = !times.length;
+    for (const id of ["side-wx-prev", "side-wx-play", "side-wx-next"]) $(id).disabled = !times.length;
+    $("side-wx-play").textContent = playing ? "Pause" : "Play";
+    syncFileSelection($("wx-files"));
   }
   function setTimes() {
     // the slider covers every loaded GRIB; what each has at the slider time is shown as it is found there
@@ -517,13 +633,18 @@ export function setupWeather(map, layers) {
     if (!times.length) {
       slider.min = slider.max = 0;
       t = 0;
+      if (playing) {
+        clearInterval(playing);
+        playing = null;
+        $("wx-play").textContent = "▶";
+      }
       draw();
       return;
     }
     if (!Number.isFinite(step)) step = 3600;
     slider.min = times[0];
     slider.max = times.at(-1);
-    slider.step = Math.max(900, Math.min(step, 3600));
+    timeStep = Math.max(900, Math.min(step, 3600));
     if (t < times[0] || t > times.at(-1)) {
       const now = Math.floor(Date.now() / 1000);
       t = now >= times[0] && now <= times.at(-1) ? now - (now % 3600) : times[0];
@@ -542,7 +663,7 @@ export function setupWeather(map, layers) {
   }
   const stepBy = (n) => {
     const s = $("wx-slider");
-    t = Math.min(Number(s.max), Math.max(Number(s.min), t + n * Number(s.step)));
+    t = Math.min(Number(s.max), Math.max(Number(s.min), t + n * timeStep));
     s.value = t;
     draw();
   };
@@ -561,7 +682,7 @@ export function setupWeather(map, layers) {
     else {
       playing = setInterval(() => {
         const s = $("wx-slider");
-        if (t >= Number(s.max)) { t = Number(s.min) - Number(s.step); }
+        if (t >= Number(s.max)) { t = Number(s.min) - timeStep; }
         stepBy(1);
       }, 700);
     }
@@ -569,6 +690,22 @@ export function setupWeather(map, layers) {
     syncMirrors();
   }
   $("wx-play").onclick = togglePlay;
+  $("side-wx-loaded").onchange = (e) => showGrib(e.target.value);
+  $("side-wx-unload").onclick = () => unload(display);
+  $("side-wx-time").oninput = (e) => setT(Number(e.target.value));
+  $("side-wx-prev").onclick = () => stepBy(-1);
+  $("side-wx-next").onclick = () => stepBy(1);
+  $("side-wx-play").onclick = togglePlay;
+  $("side-wx-start").onclick = () => { const span = spanOf(display); if (span) setT(span[0]); };
+  $("side-wx-end").onclick = () => { const span = spanOf(display); if (span) setT(span[1]); };
+  $("side-wx-now").onclick = () => {
+    const now = Math.floor(Date.now() / 1000);
+    if (!times.length || now < times[0] || now > times.at(-1)) {
+      fileMessage("Now is outside the loaded GRIBs' time range.");
+      return;
+    }
+    setT(now);
+  };
 
   // ---------- copies of the GRIB choice and time slider elsewhere (e.g. the compare dock) ----------
   // Each copy drives the same state as the Weather drawer, so the drawer can stay closed.
@@ -625,70 +762,22 @@ export function setupWeather(map, layers) {
     el.querySelector(".when").textContent = times.length ? (el.dataset.compact ? fmt(t, true) : fmt(t)) : "—";
     el.querySelector('[data-act="play"]').textContent = playing ? "❚❚" : "▶";
   }
-  let floatReady = false;
   function syncMirrors(timeOnly) {
+    syncPanel(timeOnly);
     for (const el of mirrors) {
       if (!el.isConnected) { mirrors.delete(el); continue; }
       syncMirror(el, !timeOnly);
     }
-    if (floatReady && float.hidden === (fl.on && loaded.size > 0)) showFloat();
   }
-
-  // ---------- the floating time slider (drawers can stay closed) ----------
-  const FKEY = "racenav.wxfloat";
-  let fl = { on: true, x: 0.3, y: 0.78 };
-  try { Object.assign(fl, JSON.parse(localStorage.getItem(FKEY) || "{}")); } catch { /* ignore */ }
-  const saveFl = () => { try { localStorage.setItem(FKEY, JSON.stringify(fl)); } catch { /* ignore */ } };
-  const float = document.createElement("div");
-  float.id = "wx-float";
-  float.innerHTML = `<div class="grip" title="Drag to move">⋮⋮</div><div class="body"></div><button class="x" title="Hide (Weather and tides › Floating time slider brings it back)">×</button>`;
-  document.body.append(float);
-  mountControls(float.querySelector(".body"), { compact: true });
-  // kept over the chart (not over the toolbar, the data panel or the dock)
-  const chartBox = () => document.getElementById("map").getBoundingClientRect();
-  function placeFloat() {
-    const W = window.innerWidth, H = window.innerHeight, c = chartBox();
-    const minX = c.left, maxX = Math.max(minX, c.right - float.offsetWidth);
-    float.style.left = `${Math.max(minX, Math.min(maxX, fl.x * W))}px`;
-    float.style.top = `${Math.max(0, Math.min(c.bottom - float.offsetHeight, fl.y * H))}px`;
-  }
-  function showFloat() {
-    float.hidden = !fl.on || !loaded.size; // nothing to scrub without a GRIB
-    const cb = document.getElementById("inst-slider");
-    if (cb) cb.checked = fl.on;
-    if (fl.on) placeFloat();
-  }
-  floatReady = true;
-  float.querySelector(".x").onclick = () => { fl.on = false; saveFl(); showFloat(); };
-  {
-    const grip = float.querySelector(".grip");
-    grip.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      grip.setPointerCapture(e.pointerId);
-      const r = float.getBoundingClientRect();
-      const dx = e.clientX - r.left, dy = e.clientY - r.top;
-      const move = (ev) => {
-        const c = chartBox();
-        const x = Math.max(c.left, Math.min(Math.max(c.left, c.right - float.offsetWidth), ev.clientX - dx));
-        fl.x = x / window.innerWidth;
-        fl.y = (ev.clientY - dy) / window.innerHeight;
-        placeFloat();
-      };
-      const up = () => { grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); saveFl(); };
-      grip.addEventListener("pointermove", move);
-      grip.addEventListener("pointerup", up);
-    });
-  }
-  window.addEventListener("resize", () => fl.on && placeFloat());
-  window.addEventListener("racenav-layout", () => fl.on && placeFloat());
-  // the chart narrows when a drawer or the data panel opens
-  new ResizeObserver(() => fl.on && !float.hidden && placeFloat()).observe(document.getElementById("map"));
-  document.getElementById("inst-slider")?.addEventListener("change", (e) => { fl.on = e.target.checked; saveFl(); showFloat(); });
-  requestAnimationFrame(showFloat);
 
   // ---------- drawing --------------------------------------------------------------
   let pending = false;
+  let drawVersion = 0;
   async function draw() {
+    drawVersion++;
+    const slider = $("wx-slider");
+    slider.step = times.length ? sliderStepForTime(t, Number(slider.min), timeStep) : timeStep;
+    slider.value = t;
     $("wx-time").textContent = times.length ? fmt(t) : "—";
     syncMirrors(true);
     for (const fn of timeListeners) fn(t);
@@ -697,6 +786,7 @@ export function setupWeather(map, layers) {
     pending = true;
     requestAnimationFrame(async () => {
       pending = false;
+      const version = drawVersion;
       if (!display || !times.length || wx.hidden) {
         map.getSource("wx-cells").setData(fc([]));
         map.getSource("wx-barbs").setData(fc([]));
@@ -735,6 +825,7 @@ export function setupWeather(map, layers) {
           : [null, null],
         breakPath ? invoke("grib_grid", { path: breakPath, layer: breakKey, t, bbox, maxPoints: 20000 }).catch(() => null) : null,
       ]);
+      if (version !== drawVersion) return;
       const cells = [], barbs = [], waves = [], currents = [];
       if (g) {
         for (let j = 0; j < g.nj; j++) {
@@ -873,8 +964,10 @@ export function setupWeather(map, layers) {
       pointTimer = null;
       const body = document.querySelector("#wx-point tbody");
       if (!cursor || !loaded.size || !times.length) { body.innerHTML = ""; for (const fn of pointListeners) fn(null, cursor); return; }
-      const at = cursor, tt = t;
-      const rows = await invoke("grib_point", { lat: at[1], lon: at[0], t: tt }).catch(() => []) || [];
+      const at = cursor, tt = t, shownPath = display;
+      const result = await invoke("grib_point", { lat: at[1], lon: at[0], t: tt }).catch(() => []) || [];
+      if (at !== cursor || tt !== t || shownPath !== display) { updatePoint(); return; }
+      const rows = result.filter((r) => loaded.has(r.path));
       let shown = (rows || []).find((r) => r.path === display) ?? null;
       // sea readings from whichever loaded file has them (MUR, HYCOM), under the shown GRIB's weather
       // the shown GRIB's values, with anything it lacks (sea data, or weather when an ocean file is shown) from the other loaded files
@@ -923,8 +1016,14 @@ export function setupWeather(map, layers) {
   map.on("mousemove", (e) => { cursor = [e.lngLat.lng, e.lngLat.lat]; updatePoint(); });
   map.on("click", (e) => { cursor = [e.lngLat.lng, e.lngLat.lat]; updatePoint(); }); // touch: a tap is the cursor
 
-  $("wx-load").onclick = () => load($("wx-files").value);
-  $("wx-refresh").onclick = refreshFiles;
+  // load() has already reported any error in both weather surfaces.
+  $("wx-load").onclick = () => { load($("wx-files").value).catch(() => {}); };
+  $("wx-refresh").onclick = () => refreshFiles(true);
+  $("side-wx-load").onclick = () => {
+    const path = $("side-wx-files").value;
+    load(path).then(() => showGrib(path)).catch(() => {});
+  };
+  $("side-wx-refresh").onclick = () => refreshFiles(true);
 
   // ---------- display settings ----------------------------------------------------------
   const saveWx = () => { try { localStorage.setItem("racenav.wx", JSON.stringify(wx)); } catch { /* ignore */ } };
@@ -1012,6 +1111,7 @@ export function setupWeather(map, layers) {
       box.querySelector(".v.hi").textContent = fmtv(f.hi);
       box.querySelector(".v.min").textContent = fmtv(r.min);
       box.querySelector(".v.max").textContent = fmtv(r.max);
+      box.querySelector("[data-filter-clear]").disabled = f.tg == null;
       box.dataset.unit = layer.unit;
       box.title = `${layer.label} (${layer.unit}): drag the outer pointers to set the lowest and highest shown, the middle one to the target (bold contour); click a number to type it. Fit: back to the whole file's range.`;
     }
@@ -1074,6 +1174,7 @@ export function setupWeather(map, layers) {
         const input = document.createElement("input");
         input.type = "number";
         input.step = "any";
+        input.setAttribute("aria-label", `${{ lo: "Low", tg: "Target", hi: "High" }[k]} ${layer.label} (${layer.unit}). Press Enter to apply`);
         const cur = f[k] ?? (f.lo + f.hi) / 2;
         input.value = String(+(layer.log ? 10 ** cur : cur).toPrecision(4));
         input.style.width = "64px";
@@ -1091,7 +1192,14 @@ export function setupWeather(map, layers) {
         input.onkeydown = (e) => { if (e.key === "Enter") done(true); else if (e.key === "Escape") done(false); e.stopPropagation(); };
         input.onblur = () => done(true);
       });
+      box.querySelector(`[data-filter-edit="${k}"]`).onclick = () => span.click();
     }
+    box.querySelector("[data-filter-clear]").onclick = () => {
+      const f = wx.seaFilter[wx.layer];
+      if (!f || f.tg == null) return;
+      f.tg = null;
+      saveWx(); applyLayer(); draw();
+    };
     box.querySelector(".fit").onclick = () => {
       const r = seaRange[wx.layer];
       if (!r) return;
@@ -1148,7 +1256,7 @@ export function setupWeather(map, layers) {
   $("wx-isostep").onchange = (e) => { wx.isoStep = Number(e.target.value); saveWx(); draw(); };
   for (const [id, key] of [["wx-arrows", "arrows"], ["wx-wavearrows", "waveArrows"], ["wx-currarrows", "currArrows"], ["wx-isobars", "isobars"], ["wx-isoauto", "isoAuto"], ["wx-isotherms", "isotherms"]]) {
     $(id).checked = !!wx[key];
-    $(id).onchange = (e) => { wx[key] = e.target.checked; saveWx(); draw(); };
+    $(id).onchange = (e) => { wx[key] = e.target.checked; saveWx(); draw(); changed(); };
   }
   const legends = new Set();
   function drawLegend() {
@@ -1198,7 +1306,7 @@ export function setupWeather(map, layers) {
       const w = s.params.find((p) => p.param === "WindU") ?? s.params.find((p) => p.times?.length);
       return { path, name: s.name, start: w?.times[0], end: w?.times.at(-1) };
     }),
-    /** Move the slider to a time (clamped to the shown GRIB). */
+    /** Move the slider to a time (clamped to the loaded GRIBs' combined span). */
     setTime: (sec) => {
       const s = $("wx-slider");
       if (!times.length) return;

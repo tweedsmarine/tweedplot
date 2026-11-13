@@ -133,6 +133,8 @@ pub fn run(path: &Path, ctl: Arc<Control>, tx: mpsc::Sender<Event>, min_interval
     let mut i = 0usize;
     // wall clock and log time that match, for pacing
     let mut anchor = (Instant::now(), idx[0].0);
+    let mut anchor_speed = ctl.speed.load(Ordering::Relaxed).max(1) as f64 / 100.0;
+    ctl.at.store(idx[0].0, Ordering::Relaxed);
     let mut last_sent: i64 = i64::MIN / 2;
     let min_ms = min_interval.as_millis() as i64;
     while i < idx.len() {
@@ -150,34 +152,40 @@ pub fn run(path: &Path, ctl: Arc<Control>, tx: mpsc::Sender<Event>, min_interval
             }
             while i < target {
                 if let Some(v) = read_at(i, &mut file) {
-                    let (_, others) = router.route(&mut state, &v);
+                    let (_, others) = router.route_at(&mut state, &v, idx[i].0);
                     for ev in others {
                         let _ = tx.blocking_send(ev);
                     }
                 }
                 i += 1;
             }
-            let _ = tx.blocking_send(Event::Vessel(state.clone()));
+            let _ = tx.blocking_send(Event::Vessel(replay_state(&state, seek)));
             last_sent = idx[i.min(idx.len() - 1)].0;
-            anchor = (Instant::now(), idx[i.min(idx.len() - 1)].0);
-            ctl.at.store(anchor.1, Ordering::Relaxed);
+            anchor = (Instant::now(), seek);
+            ctl.at.store(seek, Ordering::Relaxed);
             continue;
         }
         if ctl.paused.load(Ordering::Relaxed) {
             std::thread::sleep(Duration::from_millis(50));
-            anchor = (Instant::now(), idx[i].0);
+            anchor = (Instant::now(), ctl.at.load(Ordering::Relaxed));
             continue;
         }
         let speed = ctl.speed.load(Ordering::Relaxed).max(1) as f64 / 100.0;
+        if (speed - anchor_speed).abs() > 1e-9 {
+            anchor = (Instant::now(), ctl.at.load(Ordering::Relaxed));
+            anchor_speed = speed;
+        }
         let (t, _) = idx[i];
         let due = anchor.0 + Duration::from_millis(((t - anchor.1).max(0) as f64 / speed) as u64);
         let now = Instant::now();
         if due > now {
+            let elapsed = (now.duration_since(anchor.0).as_millis() as f64 * speed) as i64;
+            ctl.at.store(anchor.1.saturating_add(elapsed).min(t), Ordering::Relaxed);
             std::thread::sleep((due - now).min(Duration::from_millis(50)));
             continue; // check the controls again
         }
         if let Some(v) = read_at(i, &mut file) {
-            let (own, others) = router.route(&mut state, &v);
+            let (own, others) = router.route_at(&mut state, &v, t);
             for ev in others {
                 if tx.blocking_send(ev).is_err() {
                     return Ok(());
@@ -185,21 +193,24 @@ pub fn run(path: &Path, ctl: Arc<Control>, tx: mpsc::Sender<Event>, min_interval
             }
             if own && t - last_sent >= min_ms {
                 last_sent = t;
-                if tx.blocking_send(Event::Vessel(state.clone())).is_err() {
+                if tx.blocking_send(Event::Vessel(replay_state(&state, t))).is_err() {
                     return Ok(());
                 }
             }
         }
         ctl.at.store(t, Ordering::Relaxed);
-        // keep pacing honest after a speed change
-        let sp_now = ctl.speed.load(Ordering::Relaxed).max(1) as f64 / 100.0;
-        if (sp_now - speed).abs() > 1e-9 {
-            anchor = (Instant::now(), t);
-        }
         i += 1;
     }
-    let _ = tx.blocking_send(Event::Vessel(state));
+    let _ = tx.blocking_send(Event::Vessel(replay_state(&state, idx[idx.len() - 1].0)));
     Ok(())
+}
+
+fn replay_state(state: &VesselState, at: i64) -> VesselState {
+    let mut result = state.clone();
+    result.position_age_ms = state.position_received_at_ms.map(|t| at.saturating_sub(t).max(0) as u64);
+    result.depth_age_ms = state.depth_received_at_ms.iter().map(|(field, t)| (field.clone(), at.saturating_sub(*t).max(0) as u64)).collect();
+    result.replay_time_ms = Some(at);
+    result
 }
 
 #[cfg(test)]
@@ -294,5 +305,52 @@ mod tests {
         // no context = self (subscribe=self servers)
         let bare = json!({"updates": [{"values": [{"path": "navigation.speedOverGround", "value": 2.0}]}]});
         assert!(r.route(&mut s, &bare).0);
+    }
+
+    #[test]
+    fn replay_position_age_uses_recorded_fix_time() {
+        let mut router = Router::default();
+        let mut state = VesselState::default();
+        let fix = json!({"updates": [{"values": [{"path": "navigation.position", "value": {"latitude": -41, "longitude": 173}}]}]});
+        let wind = json!({"updates": [{"values": [{"path": "environment.wind.speedApparent", "value": 4.0}]}]});
+        router.route_at(&mut state, &fix, 1000);
+        router.route_at(&mut state, &json!({"updates":[{"values":[{"path":"environment.depth.belowTransducer","value":5.0}]}]}), 2000);
+        router.route_at(&mut state, &wind, 32000);
+        assert_eq!(replay_state(&state, 32000).position_age_ms, Some(31000));
+        assert_eq!(replay_state(&state, 32000).depth_age_ms["depth"], 30000);
+        assert_eq!(state.position_observation, 1);
+    }
+
+    #[test]
+    fn replay_clock_advances_at_speed_and_stops_while_paused() {
+        let dir = std::env::temp_dir().join(format!("racenav-replay-clock-{}", std::process::id()));
+        let p = write_log(&dir);
+        let start = info(&p).unwrap().start;
+        let ctl = Arc::new(Control::default());
+        ctl.speed.store(1000, Ordering::Relaxed);
+        let (tx, _rx) = mpsc::channel(1000);
+        let c2 = ctl.clone();
+        let p2 = p.clone();
+        let h = std::thread::spawn(move || run(&p2, c2, tx, Duration::from_millis(250)));
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while ctl.at.load(Ordering::Relaxed) < start + 500 && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(ctl.at.load(Ordering::Relaxed) >= start + 500, "the replay clock did not advance");
+        ctl.paused.store(true, Ordering::Relaxed);
+        std::thread::sleep(Duration::from_millis(120));
+        let paused_at = ctl.at.load(Ordering::Relaxed);
+        std::thread::sleep(Duration::from_millis(120));
+        assert_eq!(ctl.at.load(Ordering::Relaxed), paused_at, "the replay clock moved while paused");
+        ctl.seek.store(start + 5500, Ordering::Relaxed);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while ctl.at.load(Ordering::Relaxed) != start + 5500 && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(ctl.at.load(Ordering::Relaxed), start + 5500);
+        ctl.stop.store(true, Ordering::Relaxed);
+        h.join().unwrap().unwrap();
+        std::fs::remove_file(p).unwrap();
+        std::fs::remove_dir(dir).unwrap();
     }
 }

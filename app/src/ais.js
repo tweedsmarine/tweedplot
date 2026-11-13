@@ -12,8 +12,11 @@ import { PRIMARY } from "./role.js";
 import { createInfoBox } from "./infobox.js";
 import { hullSymbolFeatures, targetSymbolFeatures } from "./ais-symbols.js";
 import { s52PxPerMm } from "./chartfeatures.js";
+import { aisVisibleInView } from "./ais-visibility.js";
+import { collisionAlarmEligible } from "./ais-collision.js";
 
 const KEY = "racenav.ais";
+const VIEW_VISIBILITY_KEY = "racenav.ais.views";
 const SRC_NAME = { signalk: "Signal K", nmea: "NMEA 0183", aisstream: "aisstream.io", openwaters: "Open Waters" };
 const SRC_SHORT = { signalk: "SK", nmea: "NMEA", aisstream: "aisstream", openwaters: "OpenW" };
 const DEFAULTS = { show: true, names: true, key: "", owKey: "", owSeed: "", owOn: false, online: false, cpaOn: true, cpa: 0.5, tcpa: 12, ignoreMoored: true, sort: "range", selTrack: false, trkCol: "#c98a00",
@@ -213,6 +216,14 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   if (s.provider === "openwaters") { s.owOn = !!s.online; s.online = false; }
   delete s.provider;
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* ignore */ } };
+  let visibilityByView = {};
+  try { visibilityByView = JSON.parse(localStorage.getItem(VIEW_VISIBILITY_KEY) || "{}") || {}; } catch (error) { console.error("Could not read AIS view visibility:", error); }
+  const viewNow = () => document.documentElement.dataset.view || "nav";
+  const shownInView = () => aisVisibleInView(visibilityByView, viewNow(), s.show);
+  const syncVisibilityControls = () => {
+    $("ais-show").checked = shownInView();
+    $("ly-ais").checked = shownInView();
+  };
   const targets = new Map(); // mmsi → target
   const online = { aisstream: { connected: false, detail: "off" }, openwaters: { connected: false, detail: "off" } };
   let selected = null;
@@ -335,9 +346,9 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   new MutationObserver(mapTheme).observe(rootEl, { attributes: true, attributeFilter: ["data-palette", "data-iho"] });
   mapTheme();
   function draw() {
-    const vis = s.show ? "visible" : "none";
+    const vis = shownInView() ? "visible" : "none";
     for (const id of ["ais-shapes", "ais-hdg", "ais-vec", "ais-sel", "ais-lost", "ais-status", "ais-fleet-names", "ais-track", "ais-cpa-path", "ais-cpa-line", "ais-cpa-pt", "ais-cpa-lbl"]) map.setLayoutProperty(id, "visibility", vis);
-    map.setLayoutProperty("ais-names", "visibility", s.show && s.names ? "visible" : "none");
+    map.setLayoutProperty("ais-names", "visibility", shownInView() && s.names ? "visible" : "none");
     const f = [];
     const cpaF = [];
     const own = getOwn();
@@ -658,16 +669,14 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
         now.add(id);
         continue;
       }
-      if (!s.cpaOn || !own?.live || t.kind !== "vessel" || isLost(t) || !shown(t)) continue;
-      // internet AIS is late and patchy: no collision alarms from it unless asked
-      if (netOnly(t) && !s.netAlarms) continue;
-      if (s.ignoreMoored && (t.status === 1 || t.status === 5)) continue;
+      if (!collisionAlarmEligible(t, { own, ownMmsi, enabled: s.cpaOn, lost: isLost(t), internetOnly: netOnly(t),
+        internetAlarms: s.netAlarms, ignoreMoored: s.ignoreMoored })) continue;
       const c = cpaTcpa(own, t);
       if (isDanger(c)) {
         // escalates (and sounds again) at the user's limit, then half, then a quarter of it
         const stage = Math.max(c.tcpa < s.tcpa / 4 ? 2 : c.tcpa < s.tcpa / 2 ? 1 : 0, c.cpa < s.cpa / 4 ? 2 : c.cpa < s.cpa / 2 ? 1 : 0);
         alarms.raise(id, { level: "alarm", stage, holdable: true, text: `COLLISION RISK ${t.name ?? t.mmsi}: CPA ${c.cpa.toFixed(2)} NM in ${Math.round(c.tcpa)} min`,
-          detail: `${c.range.toFixed(2)} NM at ${String(Math.round(bearing(own.pos, [t.lon, t.lat]))).padStart(3, "0")}°T · ${t.sog?.toFixed(1) ?? "?"} kn ${t.cog != null ? Math.round(t.cog) + "°T" : ""} · click to show`,
+          detail: `${c.range.toFixed(2)} NM at ${String(Math.round(bearing(own.pos, [t.lon, t.lat]))).padStart(3, "0")}°T · ${t.sog?.toFixed(1) ?? "?"} kn ${t.cog != null ? Math.round(t.cog) + "°T" : ""}${!shownInView() || !shown(t) ? " · target hidden by display settings" : ""} · click to show details`,
           onClick: () => { map.easeTo({ center: [t.lon, t.lat] }); openPopup(t.mmsi); } });
         now.add(id);
       }
@@ -755,7 +764,13 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       $(f.btn).classList.toggle("on", !!s[f.on]);
     }
   }
-  $("ais-show").checked = s.show;
+  syncVisibilityControls();
+  window.addEventListener("racenav-view", () => { syncVisibilityControls(); draw(); });
+  window.addEventListener("storage", (e) => {
+    if (e.key !== VIEW_VISIBILITY_KEY) return;
+    try { visibilityByView = JSON.parse(e.newValue || "{}") || {}; syncVisibilityControls(); draw(); }
+    catch (error) { console.error("Could not update AIS view visibility:", error); }
+  });
   $("ais-names").checked = s.names;
   for (const [id, f] of Object.entries(FEEDS)) {
     $(f.input).value = s[f.key] || "";
@@ -784,7 +799,12 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   $("ais-tcpa").value = s.tcpa;
   $("ais-ignore-moored").checked = s.ignoreMoored;
   $("ais-sort").value = s.sort;
-  $("ais-show").onchange = (e) => { s.show = e.target.checked; save(); draw(); };
+  $("ais-show").onchange = (e) => {
+    visibilityByView[viewNow()] = e.target.checked;
+    try { localStorage.setItem(VIEW_VISIBILITY_KEY, JSON.stringify(visibilityByView)); }
+    catch (error) { console.error("Could not save AIS view visibility:", error); }
+    syncVisibilityControls(); draw();
+  };
   $("ais-names").onchange = (e) => { s.names = e.target.checked; save(); draw(); };
   $("ais-cpa-on").onchange = (e) => { s.cpaOn = e.target.checked; save(); checkAlarms(); };
   $("ais-cpa").onchange = (e) => { const v = parseFloat(e.target.value); if (v > 0) s.cpa = v; save(); };

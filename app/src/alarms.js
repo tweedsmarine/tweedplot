@@ -10,6 +10,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { PRIMARY } from "./role.js";
 import { distNm, bearing } from "./instruments.js";
 import { ddm } from "./navmath.js";
+import { checkShallowWater } from "./depth-watch.js";
 
 const KEY = "racenav.alarms";
 const DEFAULTS = {
@@ -375,7 +376,6 @@ export function setupAlarms(map, { getBoat, getBow = () => null, getSafetyDepth,
   setTimeout(mobChanged, 0); // the instruments show a MOB still set from before
 
   // ---------- checks ----------------------------------------------------------------
-  let lastPosAt = Date.now();
   let lastAirCheck = 0;
   let lastContourCheck = 0;
   let arrivedKey = null; // the mark the approach warning was given for
@@ -385,10 +385,8 @@ export function setupAlarms(map, { getBoat, getBow = () => null, getSafetyDepth,
     // shallow water (live depth only)
     const depth = v.depth_keel ?? v.depth;
     const limit = s.shallowM ?? getSafetyDepth();
-    if (s.shallow && b.live && depth != null && limit > 0) {
-      if (depth < limit) raise("shallow", { level: "alarm", watchdog: true, text: `SHALLOW ${depth.toFixed(1)} m`, detail: `Below the alarm depth of ${limit} m${v.depth_keel != null ? " (under the keel)" : " (below the transducer)"}` });
-      else if (depth > limit + 0.5) clear("shallow");
-    } else clear("shallow");
+    checkShallowWater({ enabled: s.shallow, plottingLive: b.plottingLive, depth, fresh: b.depthFresh,
+      graceElapsed: b.depthGraceElapsed, limit, underKeel: v.depth_keel != null }, raise, clear);
     // anchor watch
     // measured from the bow, as the anchor is placed and its swing circle drawn (anchor.js)
     const bowPos = b.pos ? (getBow() ?? b.pos) : null;
@@ -399,9 +397,8 @@ export function setupAlarms(map, { getBoat, getBow = () => null, getSafetyDepth,
       if (m > r) raise("anchor", { level: "alarm", watchdog: true, sound: "soundAnchor", text: `ANCHOR DRAGGING: bow ${Math.round(m)} m from the anchor`, detail: `Outside the ${r} m swing circle of ${s.anchor.name || "the anchor"} · click to show`, onClick: () => { map.easeTo({ center: [s.anchor.lon, s.anchor.lat] }); window.dispatchEvent(new Event("racenav-anchor-open")); } });
       else if (m < r * 0.9) clear("anchor");
     } else clear("anchor");
-    // position lost (live, Signal K connected, no fix for 30 s)
-    if (b.live && v.lat != null && b.fresh) lastPosAt = Date.now();
-    if (s.posLost && b.live && b.connected && Date.now() - lastPosAt > 30000) {
+    // Position age is independent of link status and other vessel updates.
+    if (s.posLost && b.plottingLive && b.positionLost) {
       raise("poslost", { level: "warn", watchdog: true, text: "POSITION LOST", detail: "No position data for 30 s: check the navigation source" });
     } else clear("poslost");
     // air draft: charted clearances ahead, every 10 s

@@ -110,6 +110,8 @@ impl Default for ArbitrationConfig {
 struct SourceObservation {
     observation: Observation,
     last_seen_by_group: BTreeMap<DataGroup, Instant>,
+    depth_seen: BTreeMap<String, Instant>,
+    position_observation: u64,
 }
 
 #[derive(Default)]
@@ -157,6 +159,7 @@ fn clock() -> f64 {
 static NEXT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 /// New navigation data since the vessel state was last published (at most 10 a second).
 static VESSEL_DIRTY: AtomicBool = AtomicBool::new(false);
+static POSITION_OBSERVATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 /// Sources whose status (sentence counts) changed since it was last published.
 static STATUS_DIRTY: Mutex<std::collections::BTreeSet<String>> = Mutex::new(std::collections::BTreeSet::new());
 /// Sentences heard since the last "nmea-observation" event, per source.
@@ -301,7 +304,11 @@ fn sentence_groups(sentence: &Sentence, observation: &Observation) -> Vec<DataGr
         _ => false,
     };
     let mut groups = Vec::new();
-    if valid_position && observation.lat.is_some() && observation.lon.is_some() {
+    let mut position = Observation::default();
+    if valid_position {
+        position.apply(sentence);
+    }
+    if valid_position && position.lat.is_some() && position.lon.is_some() {
         groups.push(DataGroup::Position);
     }
     let motion_valid = match sentence.formatter.as_str() {
@@ -353,6 +360,16 @@ fn sentence_groups(sentence: &Sentence, observation: &Observation) -> Vec<DataGr
         groups.push(DataGroup::Weather);
     }
     groups
+}
+
+fn update_depth_seen(source: &mut SourceObservation, sentence: &Sentence, at: Instant) {
+    let mut current = Observation::default();
+    current.apply(sentence);
+    for (field, value) in [("depth", current.depth), ("depth_keel", current.depth_keel), ("depth_surface", current.depth_surface)] {
+        if value.is_some_and(f64::is_finite) {
+            source.depth_seen.insert(field.to_owned(), at);
+        }
+    }
 }
 
 fn selected_sources(hub: &mut Multiplexer, now: Instant) -> BTreeMap<DataGroup, Option<String>> {
@@ -421,6 +438,27 @@ fn copy_group(vessel: &mut signalk::VesselState, observation: &Observation, grou
     }
 }
 
+fn multiplexed_vessel(hub: &Multiplexer, selected: &BTreeMap<DataGroup, Option<String>>, now: Instant) -> signalk::VesselState {
+    let mut vessel = signalk::VesselState { timestamp: Some(chrono::Utc::now().to_rfc3339()), ..Default::default() };
+    for (group, source_id) in selected {
+        let Some(source) = source_id.as_ref().and_then(|id| hub.sources.get(id)) else {
+            continue;
+        };
+        copy_group(&mut vessel, &source.observation, *group);
+        match group {
+            DataGroup::Position => {
+                vessel.position_observation = source.position_observation;
+                vessel.position_age_ms = source.last_seen_by_group.get(group).map(|at| now.duration_since(*at).as_millis() as u64);
+            }
+            DataGroup::Depth => {
+                vessel.depth_age_ms = source.depth_seen.iter().map(|(field, at)| (field.clone(), now.duration_since(*at).as_millis() as u64)).collect();
+            }
+            _ => {}
+        }
+    }
+    vessel
+}
+
 fn publish_multiplexed(app: &tauri::AppHandle, force: bool) {
     let now = Instant::now();
     let (vessel, group_sources, switches, changed) = {
@@ -436,12 +474,7 @@ fn publish_multiplexed(app: &tauri::AppHandle, force: bool) {
             })
             .collect::<Vec<_>>();
         hub.active_sources = selected.clone();
-        let mut vessel = signalk::VesselState { timestamp: Some(chrono::Utc::now().to_rfc3339()), ..Default::default() };
-        for (group, source_id) in &selected {
-            if let Some(observation) = source_id.as_ref().and_then(|id| hub.sources.get(id)).map(|source| &source.observation) {
-                copy_group(&mut vessel, observation, *group);
-            }
-        }
+        let vessel = multiplexed_vessel(&hub, &selected, now);
         (
             vessel,
             selected.iter().filter_map(|(group, source)| source.as_ref().map(|source| (group.key(), source.clone()))).collect::<BTreeMap<_, _>>(),
@@ -538,8 +571,12 @@ fn consume_bytes(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
                     let mut hub = MULTIPLEXER.lock().unwrap();
                     let source_observation = hub.sources.entry(source.id.clone()).or_default();
                     source_observation.observation = observation.clone();
+                    update_depth_seen(source_observation, &sentence, Instant::now());
                     for group in sentence_groups(&sentence, observation) {
                         source_observation.last_seen_by_group.insert(group, Instant::now());
+                        if group == DataGroup::Position {
+                            source_observation.position_observation = POSITION_OBSERVATION.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
                     VESSEL_DIRTY.store(true, Ordering::Relaxed);
                 }
@@ -1014,6 +1051,8 @@ mod tests {
         SourceObservation {
             observation: Observation { lat: Some(-41.0), lon: Some(173.0), ..Default::default() },
             last_seen_by_group: BTreeMap::from([(DataGroup::Position, now)]),
+            depth_seen: BTreeMap::new(),
+            position_observation: 1,
         }
     }
 
@@ -1081,5 +1120,128 @@ mod tests {
         };
         let observation = Observation { lat: Some(-41.0), lon: Some(173.0), sog: Some(5.0), cog: Some(90.0), ..Default::default() };
         assert!(sentence_groups(&sentence, &observation).is_empty());
+    }
+
+    #[test]
+    fn position_group_requires_valid_coordinates_in_the_current_sentence() {
+        let old = Observation { lat: Some(-41.0), lon: Some(173.0), ..Default::default() };
+        let make = |fields: &[&str]| Sentence {
+            talker: "GP".into(),
+            formatter: "RMC".into(),
+            fields: fields.iter().map(|s| (*s).into()).collect(),
+            raw: String::new(),
+            checksum_valid: true,
+        };
+        for fields in [
+            vec!["120000", "A"],
+            vec!["120000", "A", "", "S", "", "E", "", "", "010124"],
+            vec!["120000", "A", "4160.0", "S", "17300.0", "E", "", "", "010124"],
+            vec!["120000", "A", "9100.0", "S", "17300.0", "E", "", "", "010124"],
+            vec!["120000", "A", "4100.0", "N", "18100.0", "E", "", "", "010124"],
+            vec!["120000", "A", "4100.0", "E", "17300.0", "S", "", "", "010124"],
+        ] {
+            assert!(!sentence_groups(&make(&fields), &old).contains(&DataGroup::Position), "{fields:?}");
+        }
+        for fields in
+            [vec!["120000", "A", "4100.0", "S", "17300.0", "E", "", "", "010124"], vec!["120000", "A", "4100.0", "N", "17300.0", "W", "", "", "010124"]]
+        {
+            assert!(sentence_groups(&make(&fields), &old).contains(&DataGroup::Position));
+        }
+        for (formatter, fields, valid) in [
+            ("GGA", vec!["120000", "4100.0", "S", "17300.0", "E", "1", "8", "1", "0"], true),
+            ("GGA", vec!["120000", "", "S", "17300.0", "E", "1", "8", "1", "0"], false),
+            ("GGA", vec!["120000", "4100.0", "S", "17300.0", "E", "0", "8", "1", "0"], false),
+            ("GLL", vec!["4100.0", "S", "17300.0", "E", "120000", "A"], true),
+            ("GLL", vec!["4100.0", "S", "17360.0", "E", "120000", "A"], false),
+            ("GLL", vec!["4100.0", "S", "17300.0", "E", "120000", "V"], false),
+        ] {
+            let mut sentence = make(&fields);
+            sentence.formatter = formatter.into();
+            assert_eq!(sentence_groups(&sentence, &old).contains(&DataGroup::Position), valid, "{formatter} {fields:?}");
+        }
+    }
+
+    #[test]
+    fn depth_receive_times_follow_each_field_not_the_group() {
+        let now = Instant::now();
+        let mut source = SourceObservation::default();
+        let sentence = |formatter: &str, fields: &[&str]| Sentence {
+            talker: "SD".into(),
+            formatter: formatter.into(),
+            fields: fields.iter().map(|s| (*s).into()).collect(),
+            raw: String::new(),
+            checksum_valid: true,
+        };
+        let dpt = sentence("DPT", &["5.0"]);
+        let keel = sentence("DBK", &["10", "f", "3", "M"]);
+        update_depth_seen(&mut source, &keel, now);
+        update_depth_seen(&mut source, &dpt, now + Duration::from_secs(11));
+        update_depth_seen(&mut source, &sentence("DPT", &[""]), now + Duration::from_secs(12));
+        assert_eq!(source.depth_seen["depth_keel"], now);
+        assert_eq!(source.depth_seen["depth"], now + Duration::from_secs(11));
+        update_depth_seen(&mut source, &dpt, now + Duration::from_secs(13));
+        assert_eq!(source.depth_seen["depth"], now + Duration::from_secs(13));
+    }
+
+    #[test]
+    fn captured_depth_sentences_publish_values_and_freshness_without_a_position_source() {
+        let now = Instant::now();
+        let mut hub = Multiplexer { source_configs: vec![source("Demo_UDP")], ..Default::default() };
+        let source = hub.sources.entry("Demo_UDP".into()).or_default();
+        for raw in ["$SDDBT,97.9,f,29.8,M,16.3,F*36", "$SDDPT,29.8,1.5*60"] {
+            let sentence = marine_nmea::parse_sentence(raw.as_bytes(), marine_nmea::DEFAULT_MAX_FRAME_LEN).unwrap();
+            source.observation.apply(&sentence);
+            update_depth_seen(source, &sentence, now);
+            for group in sentence_groups(&sentence, &source.observation) {
+                source.last_seen_by_group.insert(group, now);
+            }
+        }
+        let selected = selected_sources(&mut hub, now);
+        assert_eq!(selected[&DataGroup::Depth].as_deref(), Some("Demo_UDP"));
+        assert_eq!(selected[&DataGroup::Position], None);
+        let vessel = multiplexed_vessel(&hub, &selected, now + Duration::from_millis(250));
+        let payload = serde_json::to_value(vessel).unwrap();
+        assert_eq!(payload["depth"], 29.8);
+        assert_eq!(payload["depth_age_ms"]["depth"], 250);
+        assert!(payload["position_age_ms"].is_null());
+    }
+
+    #[test]
+    fn multiplexed_depth_ages_follow_the_selected_source_and_each_measurement() {
+        let now = Instant::now();
+        let mut hub = Multiplexer {
+            source_configs: vec![source("primary"), source("backup")],
+            arbitration: ArbitrationConfig { preferred_sources: BTreeMap::from([("depth".into(), "primary".into())]), ..Default::default() },
+            ..Default::default()
+        };
+        let primary = SourceObservation {
+            observation: Observation { depth: Some(5.0), depth_keel: Some(3.0), depth_surface: Some(7.0), ..Default::default() },
+            last_seen_by_group: BTreeMap::from([(DataGroup::Depth, now - Duration::from_secs(11))]),
+            depth_seen: BTreeMap::from([
+                ("depth".into(), now - Duration::from_secs(11)),
+                ("depth_keel".into(), now - Duration::from_secs(12)),
+                ("depth_surface".into(), now - Duration::from_secs(13)),
+            ]),
+            ..Default::default()
+        };
+        let backup = SourceObservation {
+            observation: Observation { depth: Some(9.0), depth_keel: Some(6.0), depth_surface: Some(10.0), ..Default::default() },
+            last_seen_by_group: BTreeMap::from([(DataGroup::Depth, now - Duration::from_secs(2))]),
+            depth_seen: BTreeMap::from([
+                ("depth".into(), now - Duration::from_secs(2)),
+                ("depth_keel".into(), now - Duration::from_secs(3)),
+                ("depth_surface".into(), now - Duration::from_secs(4)),
+            ]),
+            ..Default::default()
+        };
+        hub.sources.insert("primary".into(), primary);
+        hub.sources.insert("backup".into(), backup);
+        let selected = selected_sources(&mut hub, now);
+        assert_eq!(selected[&DataGroup::Depth].as_deref(), Some("backup"));
+        let vessel = multiplexed_vessel(&hub, &selected, now);
+        assert_eq!((vessel.depth, vessel.depth_keel, vessel.depth_surface), (Some(9.0), Some(6.0), Some(10.0)));
+        assert_eq!(vessel.depth_age_ms["depth"], 2000);
+        assert_eq!(vessel.depth_age_ms["depth_keel"], 3000);
+        assert_eq!(vessel.depth_age_ms["depth_surface"], 4000);
     }
 }

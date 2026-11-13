@@ -7,6 +7,7 @@ import { ask } from "./ask.js";
 import { own } from "./role.js";
 import { setupTiles } from "./insttiles.js";
 import { CHANNELS as HIST, sample as histSample, renderHistoryTile, openHistoryCard, recorder as histRec } from "./history.js";
+import { depthFresh, depthHistoryV } from "./depth-watch.js";
 
 const KEY = "racenav.instruments";
 const STALE_S = 10;
@@ -86,7 +87,7 @@ export const ITEMS = {
   GGUST: { label: "GRIB gust", unit: "kn", group: "GRIB at cursor", get: (c) => c.grib?.gust, fmt: (x) => x.toFixed(0) },
   GMSLP: { label: "GRIB MSLP", unit: "hPa", group: "GRIB at cursor", get: (c) => c.grib?.mslp, fmt: (x) => x.toFixed(0) },
   GHS: { label: "GRIB Hs", unit: "m", group: "GRIB at cursor", get: (c) => c.grib?.wave, fmt: f1 },
-  GTP: { label: "GRIB period", unit: "s", group: "GRIB at cursor", get: (c) => c.grib?.period, fmt: (x) => x.toFixed(0) },
+  GTP: { label: "Wave period", unit: "s", group: "GRIB at cursor", wide: true, get: (c) => c.grib?.period, fmt: (x) => x.toFixed(0) },
   GWVD: { label: "GRIB wave dir", unit: "°T", group: "GRIB at cursor", get: (c) => c.grib?.wavedir, fmt: deg3 },
   GRAIN: { label: "GRIB rain", unit: "mm/h", group: "GRIB at cursor", get: (c) => c.grib?.rain, fmt: f1 },
   GTEMP: { label: "GRIB air temp", unit: "°C", group: "GRIB at cursor", get: (c) => c.grib?.temp, fmt: f1 },
@@ -211,7 +212,7 @@ window.addEventListener("pagehide", saveSounder);
 function sampleDepth(c) {
   const d = c.v?.depth ?? c.v?.depth_surface;
   const now = Date.now();
-  if (d == null || !Number.isFinite(d) || c.age > STALE_S) return;
+  if (!depthFresh(c.v, c.depthAge ?? (() => null))) return;
   const last = sndHist[sndHist.length - 1];
   if (last && now - last.t < 1000) return;
   sndHist.push({ t: now, d, w: c.v?.water_temp ?? null });
@@ -283,12 +284,17 @@ function drawSounder(cv, c) {
 
   // the readout
   const last = sndHist[sndHist.length - 1];
-  const live = last && now - last.t < STALE_S * 1000;
+  const live = last && now - last.t < STALE_S * 1000 && depthFresh(c.v, c.depthAge ?? (() => null));
   g.textAlign = "left"; g.textBaseline = "top";
   g.shadowColor = "rgba(0,0,0,.8)"; g.shadowBlur = 4 * dpr;
   g.fillStyle = "#fff"; g.font = font(Math.max(16, Math.min(40, cv.clientHeight / 4)), true);
   const big = live ? last.d.toFixed(1) : "—";
   g.fillText(`${big}`, 6 * dpr, 16 * dpr);
+  if (!live && last) {
+    g.font = font(11, true); g.fillStyle = "#ffce75";
+    g.fillText("DEPTH UNAVAILABLE", 6 * dpr, 3 * dpr);
+    g.font = font(Math.max(16, Math.min(40, cv.clientHeight / 4)), true);
+  }
   const bw = g.measureText(big).width;
   g.font = font(11); g.fillStyle = "rgba(255,255,255,.8)"; g.fillText("m", 6 * dpr + bw + 3 * dpr, 20 * dpr + 14 * dpr);
   if (live && last.w != null) { g.font = font(13, true); g.fillStyle = "#7fe0ff"; g.fillText(`${last.w.toFixed(1)} °C`, 6 * dpr, (22 + Math.max(16, Math.min(40, cv.clientHeight / 4))) * dpr); }
@@ -595,7 +601,7 @@ export function setupInstruments() {
     try { val = it.get(ctx); } catch { val = null; }
     const has = val !== null && val !== undefined && !(typeof val === "number" && !Number.isFinite(val));
     // a real true/false: classList.toggle(name, undefined) flips the class on every render
-    const stale = Boolean(it.live) && ctx.age > STALE_S;
+    const stale = readingStale(it, ctx);
     const state = has && !stale && it.state ? it.state(val, ctx) : "";
     const v = t.querySelector(".v");
     if (it.render) it.render(v, val, ctx);
@@ -617,7 +623,8 @@ export function setupInstruments() {
     ctx.age = (Date.now() - (ctx.dataAt ?? 0)) / 1000;
     sampleDepth(ctx);
     // the history records live data only: not a replay, not planning, not stale
-    histSample(ctx.v, ctx.age <= STALE_S && !ctx.replay && (ctx.dataAt ?? 0) > 0);
+    const historyV = depthHistoryV(ctx.v, ctx.depthAge ?? (() => null));
+    histSample(historyV, ctx.age <= STALE_S && !ctx.replay && (ctx.dataAt ?? 0) > 0);
     render();
   }, 250);
 
@@ -737,12 +744,18 @@ export function readingState(it, ctx) {
   let val = null;
   try { val = it.get(ctx); } catch { val = null; }
   const has = val !== null && val !== undefined && !(typeof val === "number" && !Number.isFinite(val));
-  const stale = Boolean(it.live) && ctx.age > STALE_S;
+  const stale = readingStale(it, ctx);
   const state = has && !stale && it.state ? it.state(val, ctx) : "";
   const side = has && it.side ? it.side(val) : "";
   let html = "—";
   if (has) { try { html = it.fmt(val); } catch { html = "—"; } }
   return { html, unit: has ? it.unit : "", stale, state, side };
+}
+
+function readingStale(it, ctx) {
+  if (it === ITEMS.POS) return ctx.positionAt == null || Date.now() - ctx.positionAt > STALE_S * 1000;
+  if (it === ITEMS.DPT || it === ITEMS.SOUNDER || it === ITEMS.H_DPT) return !depthFresh(ctx.v, ctx.depthAge ?? (() => null));
+  return Boolean(it.live) && ctx.age > STALE_S;
 }
 
 function loadLayout() {

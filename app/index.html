@@ -51,7 +51,6 @@
           <span id="wx-time">—</span>
         </div>
         <input id="wx-slider" type="range" min="0" max="0" step="3600" value="0" />
-        <div class="wx-row checks"><label title="Show or hide the floating time slider"><input id="inst-slider" type="checkbox" /> Floating time slider</label></div>
         <div class="wx-row"><label class="grow" for="wx-layer">Show</label><select id="wx-layer" title="What the shading shows"></select></div>
         <div class="wx-row checks">
           <label id="wx-arrows-row"><input id="wx-arrows" type="checkbox" /> Wind barbs</label>
@@ -68,6 +67,7 @@
         <div id="wx-sea" class="seafilter" hidden>
           <div class="track"><div class="grad"></div><span class="h lo"></span><span class="h tg"></span><span class="h hi"></span></div>
           <div class="vals"><span class="v min"></span><span class="v lo"></span><span class="v tg"></span><span class="v hi"></span><span class="v max"></span><button class="fit" title="Back to the whole file's range">Fit</button></div>
+          <div class="filter-actions"><button type="button" data-filter-edit="lo">Set low</button><button type="button" data-filter-edit="tg">Set target</button><button type="button" data-filter-edit="hi">Set high</button><button type="button" data-filter-clear>Clear target</button></div>
         </div>
         <div id="wx-cmp-note" class="wx-note" hidden></div>
         <div class="wx-row"><button id="wx-verify" title="Score earlier runs against a later run's hour 0 (opens the Verify dock)">Verify runs…</button></div>
@@ -175,7 +175,7 @@
         </div>
         <div class="wx-row"><label><input id="rt-great-circle" type="checkbox" /> Draw legs as great circles</label></div>
         <ol id="rt-marklist" class="list"></ol>
-        <div class="wx-row"><button id="crs-wx" title="The weather along this route: the active weather routing if there is one, else the route at a set speed from the weather slider's time">Weather on route</button></div>
+        <div class="wx-row"><button id="crs-wx" title="Weather along the active routing, or the route at an assumed speed and departure time">Weather on route</button></div>
         <div id="crs-status" class="wx-note"></div>
       </section>
 
@@ -265,7 +265,7 @@
       <section class="pane" data-pane="fleet" data-title="Targets and fleets">
         <div class="tabs"><button data-tab="ais" class="on">AIS</button><button data-tab="own">Own fleet</button><button data-tab="race">YB race</button></div>
         <div class="tab" data-tab="ais">
-          <div class="wx-row"><label class="grow"><input id="ais-show" type="checkbox" /> Show AIS targets</label><label><input id="ais-names" type="checkbox" /> Names</label></div>
+          <div class="wx-row"><label class="grow" title="Chart visibility for the current view; AIS reception and alarms continue"><input id="ais-show" type="checkbox" /> Show AIS targets in this view</label><label><input id="ais-names" type="checkbox" /> Names</label></div>
           <div class="wx-row"><label class="grow" title="Draw where the target you clicked has been (the last 6 hours this app has heard it)"><input id="ais-sel-track" type="checkbox" /> Track of the selected target</label></div>
           <div class="wx-row"><label class="grow" for="ais-trk-col" title="Colour of the trails behind tracked targets (own-fleet boats use their group colour)">Target track colour</label><input id="ais-trk-col" type="color" /></div>
           <div class="wx-row"><span class="dot" id="ais-sk-dot"></span><span class="grow wx-note" id="ais-sk-state">Signal K: —</span></div>
@@ -305,7 +305,8 @@
           <div class="wx-row"><input id="of-mmsi" type="text" inputmode="numeric" placeholder="MMSI" maxlength="9" style="width:90px" title="The 9-digit MMSI" /><input id="of-name" class="grow" type="text" placeholder="Name (optional)" /></div>
           <div class="wx-row"><select id="of-group" class="grow" title="Group"><option>Friends</option><option>Company</option><option>Race fleet</option><option>Other</option></select><input id="of-colour" type="color" class="of-col" title="Stern colour on the chart" /><button id="of-add">Add</button></div>
           <div id="of-msg" class="wx-note"></div>
-          <div class="wx-row"><label class="grow" title="Draw the tracks of every boat in the list"><input id="of-track-all" type="checkbox" /> Track all</label><label title="Hide every AIS target that is not in this list"><input id="of-only" type="checkbox" /> Only these on the chart</label></div>
+          <div class="wx-row"><label class="grow" title="Draw the tracks of every boat in the list"><input id="of-track-all" type="checkbox" /> Track all</label><label title="Hide other AIS targets on the chart and in lists; collision alarms still check them"><input id="of-only" type="checkbox" /> Only these on the chart</label></div>
+          <div class="wx-note">Fleet-only hides other targets on the chart and in lists, not from collision alarms.</div>
           <ul id="of-list" class="list"></ul>
           <div class="wx-note">Tracks are what this app has heard over the last 6 hours (from your receiver or online AIS), so they start when TweedPlot does. Click a boat on the chart and press Add to own fleet in its info window to add it from there.</div>
         </div>
@@ -735,7 +736,8 @@
         <div class="wx-row"><button id="sp-edit-btn" title="Add, move and remove the readings in the data panel beside the chart">Edit the data panel</button><button id="sp-reset-btn" title="Back to the starting layout for this view and Use">Reset this layout</button></div>
         <div class="wx-row"><label class="grow" title="Which side of the chart the data panel is on">Side</label><select id="sp-side"><option value="right">Right</option><option value="left">Left</option></select></div>
         <div class="wx-row"><label class="grow" title="Text size in the data panel, to suit how far you sit from the screen. Sizes follow the screen calibration (Settings › Display), so they are the same on every screen">Text size</label><select id="sp-text"><option value="1">Normal (1 m)</option><option value="1.25">Large (1.3 m)</option><option value="1.5">Extra large (1.6 m)</option></select></div>
-        <div class="wx-note">The data panel sits beside the chart and never covers it. HDG, COG, SOG, STW, depth, position and the time are always at its top, and the alerts at its bottom; what is in between has its own layout for each view (Navigation, Planning) and each Use (Cruising, Fishing, Racing). Drag its inner edge for narrow, normal or wide. <b>O</b> (or the panel button in the toolbar) hides it to a single line under the chart.</div>
+        <div class="wx-row"><label class="grow" for="sp-width">Panel width</label><select id="sp-width"><option value="narrow">Narrow</option><option value="normal">Normal</option><option value="wide">Wide</option></select></div>
+        <div class="wx-note">The data panel sits beside the chart (on narrow screens it opens over the chart). HDG, COG, SOG, STW, depth, position and the time are always at its top, and the alerts at its bottom; what is in between has its own layout for each view (Navigation, Planning) and each Use (Cruising, Fishing, Racing). Choose a panel width above or drag its inner edge. <b>O</b> (or the panel button in the toolbar) hides it to a single line under the chart.</div>
         <h3>Instruments view</h3>
         <div class="wx-row"><button id="it-add" title="Add a reading to the Instruments view">Add an instrument</button><button id="it-reset" title="Back to the default Instruments screen">Reset Instruments screen</button><button id="inst-lock" title="Stop the Instruments screen being changed by accident">Lock layout</button></div>
         <div class="wx-note">The Instruments view is one screen of single readings. Drag a tile to move it (under another tile it lines up with that tile's column), drag its corner to size it, click it to change the reading.</div>
@@ -819,7 +821,7 @@
       <button id="pb-tb" class="tb-fish" aria-label="Own soundings" title="Own soundings: show or hide your soundings as a seabed in this view, with the depth range card (on in Planning, off in Navigation to begin with)"><svg viewBox="0 0 24 24"><path d="M2 7c2.5 1.5 5 1.5 7.5 0s5-1.5 7.5 0 3.5 1.5 5 0"/><path d="M2 20l4-5 3 2 4-6 3 3 3-4 3 2v8z" class="fill" opacity=".55"/></svg></button>
       <button id="targets-btn" title="Target list: AIS targets with range, bearing, CPA and TCPA (T)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/><circle cx="16" cy="9" r="1.2" fill="currentColor"/></svg></button>
       <button id="wx-pop-btn" aria-label="Weather panel" title="Weather panel: time slider, what to show from the loaded GRIBs, the filter and the readout at the cursor"><svg viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .6-7.95A5.5 5.5 0 0 0 7 9.5 4.3 4.3 0 0 0 7 18z"/><path d="M8 21l1-2M12 21l1-2M16 21l1-2"/></svg></button>
-      <button id="view-btn" aria-label="View" title="View: choose Navigation, Planning, Instruments or Live data, and whether the chart shows (F2, F3, F4)">
+      <button id="view-btn" aria-label="View" title="View: choose Navigation, Planning or Instruments, and whether the chart shows (F2, F3, F4)">
         <svg viewBox="0 0 24 24"></svg></button>
       <button id="side-btn" aria-label="Data panel" title="Show or hide the data panel beside the chart (O)">
         <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M15 4.5v15M17 8h1.5M17 11h1.5M17 14h1.5"/></svg></button>
@@ -836,6 +838,11 @@
     <aside id="side" aria-label="Data panel" hidden>
       <div class="sp-grip" title="Drag for a narrow, normal or wide panel"></div>
       <header class="sp-head"><span class="sp-status"></span><button class="sp-edit" title="Edit the panel: add, move and remove readings">✎</button><button class="sp-hide" title="Hide the panel to a line under the chart (O)">⟩</button></header>
+      <div class="sp-views" role="group" aria-label="View">
+        <button type="button" data-view-select="nav">Navigation</button>
+        <button type="button" data-view-select="plan">Planning</button>
+        <button type="button" data-view-select="inst">Instruments</button>
+      </div>
       <div class="sp-disp" role="group" aria-label="Chart display">
         <button data-cat="base" title="Display base: land, depth areas, the safety contour and dangers. Not enough for safe navigation on its own (IHO S-52 2.3.3a): use it briefly to declutter">Base</button>
         <button data-cat="standard" title="The standard display, in one press (IMO S-Mode): Standard with light sectors, names and soundings. The display to use as a minimum for planning and monitoring">Standard</button>
@@ -845,6 +852,26 @@
       <div class="sp-actions"></div>
       <div class="sp-own"></div>
       <div class="sp-mob" hidden></div>
+      <div class="sp-routewx" hidden><button id="side-route-wx" title="Open weather along the active routing or planned route">Weather on route</button></div>
+      <details id="side-weather" class="sp-weather" open><summary>Weather <span id="side-weather-state"></span></summary>
+      <div id="side-grib-files" class="sp-grib-files" hidden>
+        <label for="side-wx-files">GRIB files</label>
+        <select id="side-wx-files" title="GRIB files in the GRIB folders"></select>
+        <div class="sp-grib-actions"><button id="side-wx-load" disabled>Load GRIB</button><button id="side-wx-refresh" title="Look for new GRIB files">Refresh</button></div>
+        <div id="side-wx-status" role="status" aria-live="polite"></div>
+        <label for="side-wx-loaded">Shown GRIB</label>
+        <select id="side-wx-loaded" disabled></select>
+        <div class="sp-grib-actions"><button id="side-wx-unload" disabled title="Unload the shown GRIB; the file stays on disk">Unload GRIB</button></div>
+        <div id="side-wx-coverage"></div>
+        <label for="side-wx-time">Forecast time: <span id="side-wx-when">—</span></label>
+        <input id="side-wx-time" type="range" min="0" max="0" step="3600" value="0" disabled />
+        <div class="sp-grib-actions"><button id="side-wx-start" disabled title="Go to the start of the shown GRIB">Start</button><button id="side-wx-end" disabled title="Go to the end of the shown GRIB">End</button><button id="side-wx-now" disabled>Now</button></div>
+        <div class="sp-grib-actions"><button id="side-wx-prev" aria-label="Previous forecast time">Previous</button><button id="side-wx-play">Play</button><button id="side-wx-next" aria-label="Next forecast time">Next</button></div>
+      </div>
+      <div id="wxp" class="sp-weather-controls"></div>
+      </details>
+      <details id="side-grib-point" class="sp-weather" open><summary>GRIB data at the cursor</summary><div id="wxp-point" class="wxp-point"></div></details>
+      <div id="side-weather-parking" hidden></div>
       <div class="sp-body"></div>
       <div class="sp-cursor" title="The cursor: position, depth and bearing and range from the boat"></div>
       <div class="sp-alerts"><div class="sp-noalert">No active alerts</div></div>
@@ -907,10 +934,15 @@
       <footer class="wx-note">NM · °T · min · kn. <i>Net</i>: internet only, not for navigation.</footer>
     </div>
     <div id="startup-splash" class="startup-splash" aria-live="polite">
-      <img src="/tweedplot-logo-splash.svg" alt="TweedPlot: Professional marine chart plotter" />
-      <div class="splash-by">by TweedsMarine · Nelson, New Zealand</div>
+      <div class="splash-brand">
+        <img src="/tweedplot-logo-splash.svg" alt="TweedPlot: Professional marine chart plotter" />
+        <div class="splash-details">
+          <div>by TweedsMarine · Nelson, New Zealand</div>
+          <div>https://tweedsmarine.nz/</div>
+        </div>
+      </div>
     </div>
-    <div id="toast" class="toast">Initialising - please wait</div>
+    <div id="toast" class="toast startup-toast">Initialising - please wait</div>
     <div id="s63-banner" class="s63-banner" hidden></div>
 
       <section id="settings" class="pane" data-pane="settings" data-title="Settings" hidden>
@@ -991,13 +1023,16 @@
               <select id="ui-zoom"><option value="auto">Auto</option><option value="on">Show</option><option value="off">Hide</option></select></div>
             <div class="wx-row"><label class="grow" for="ui-large">Large buttons</label>
               <select id="ui-large"><option value="auto">Auto</option><option value="on">On</option><option value="off">Off</option></select></div>
+            <div class="wx-row"><label class="grow" for="planning-timeout">Return to Navigation after Planning inactivity</label>
+              <select id="planning-timeout"><option value="0">Off</option><option value="1">1 minute</option><option value="2">2 minutes</option><option value="3">3 minutes</option><option value="4">4 minutes</option><option value="5">5 minutes</option><option value="6">6 minutes</option><option value="7">7 minutes</option><option value="8">8 minutes</option><option value="9">9 minutes</option><option value="10">10 minutes</option></select></div>
+            <div class="wx-note">This window returns to Navigation after the selected time without input, even if an edit or dialog is open. Off disables this feature.</div>
           </section>
           </div>
           <div class="tab" data-tab="conn" hidden>
 <h3 id="sk-section">Signal K</h3>
         <div class="wx-row"><span id="sk-detail" class="grow wx-note">—</span></div>
+<h3 id="nmea-0183-section">NMEA 0183 inputs</h3>
                   <section id="nmea-settings-section" class="nmea-settings">
-            <h3>NMEA data sources</h3>
             <p class="settings-note">Enabled sources are monitored concurrently. TweedPlot chooses a preferred source for each data group; when automatic failover is enabled, it uses the next available source in the configured source order and raises an alarm when the active source changes.</p>
             <div id="nmea-sources" class="nmea-sources" aria-live="polite"></div>
             <h4>Multiplexer</h4>
@@ -1011,9 +1046,9 @@
             </div>
             <div id="nmea-arbitration" class="settings-grid"></div>
             <h4>Live NMEA data</h4>
+            <div class="wx-row"><button id="nmea-popout" type="button" title="Open the live NMEA monitor in a separate window">Pop out live NMEA data</button></div>
             <div id="nmea-active-sources" class="nmea-current-data">No active NMEA sources.</div>
             <div id="nmea-current-data" class="nmea-current-data">Waiting for a valid sentence.</div>
-            <div id="nmea-monitor-inline"></div>
             <form id="nmea-source-form">
               <h4 id="nmea-form-title">Add source</h4>
               <div class="settings-grid">
@@ -1038,6 +1073,8 @@
               </div>
             </form>
           </section>
+<h3 id="nmea-2000-section">NMEA 2000 inputs</h3>
+        <p id="nmea-2000-status" class="settings-note">Direct NMEA 2000 inputs are not supported. Connect an NMEA 2000 gateway to a Signal K server and configure it there; TweedPlot receives its data through Signal K.</p>
 <h3>Replay a log</h3>
         <div class="wx-row"><select id="replay-log" class="grow" title="Signal K sessions are logged while TweedPlot runs; play one back in place of the live data"></select>
           <button id="replay-play" title="Play this log in place of the live Signal K data">Replay</button></div>
@@ -1050,6 +1087,8 @@
         <div class="wx-note">Averages the live readings (Signal K or NMEA) over the time chosen, for the boat on the chart, its lines and the instruments. Position is never damped.</div>
                   </div>
           <div class="tab" data-tab="diag" hidden>
+<h3>Live NMEA data</h3>
+        <div id="nmea-monitor-inline"></div>
 <h3>About this system</h3>
         <div class="wx-note">Version, computer details and where to put your chart and data files. Copy for support puts all of this, with the activity log, on the clipboard, to paste into an email to Tweedsmarine.</div>
         <div class="wx-row"><span class="grow"></span><button id="sys-copy" class="on">Copy for support</button></div>

@@ -7,7 +7,7 @@ How to use TweedPlot's sea and weather tools to decide where to fish. The **Refe
 ## The short version
 
 1. In **Weather › Download GRIBs** fetch, for your area: **MUR sea temperature**, **Chlorophyll-a**, and **HYCOM** with **Surface currents**, **Sea surface height** and **Temperature and salinity at a depth** ticked. Add a wind GRIB (ECMWF or GFS) for the day's weather.
-2. Press the **Weather** button in the toolbar. The pop-up **Weather panel** opens with the weather layers.
+2. Press the **Weather** button in the toolbar. The data panel opens its **Weather** controls.
 3. In the panel choose the **Fishing** preset (sea temperature shaded, current arrows, contours and temperature breaks on). Drag the filter's three pointers to bracket the water you want, with the target in the middle.
 4. Click through the other layers (chlorophyll, sea surface height, temperature at depth) and look for places where several of them agree.
 5. Mark the candidate spots, go, and let the **Sounder history** and the **Sea at cursor** readings tell you what the water is actually doing.
@@ -30,7 +30,7 @@ HYCOM's server is slow, especially for many time steps: a day's data can take a 
 
 ## The Weather panel
 
-The toolbar's Weather button switches the panel *and* all weather layers on and off together, so one click clears the chart for navigation and one click brings the sea picture back. In the panel:
+The toolbar's Weather button opens the data panel's Weather section. **Hide weather on chart** and **Show weather on chart** switch all weather layers off and on without unloading the files. In the panel:
 
 - The **time slider** moves everything together. Today's analyses are shown for a few days after their date, so your slider's "now" works for all of them.
 - The **colour bar with its three pointers** is your *filter*. For whatever layer is shaded, drag the outer pointers to the lowest and highest values you want and nothing outside them is coloured. Drag the middle pointer to your **target**: the colours run from the low limit to the target over the cool half and from the target to the high limit over the warm half, so the water you are after is always the same colour in the middle and has its own bold contour. Click a pointer's number to type an exact value. Each layer keeps its own filter.

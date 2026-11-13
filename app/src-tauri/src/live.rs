@@ -45,7 +45,7 @@ fn on_event(app: &tauri::AppHandle, ev: signalk::Event, replayed: bool) {
             *crate::SK_STATUS.lock().unwrap() = Some((connected, detail.clone()));
             let _ = app.emit("sk-status", serde_json::json!({ "connected": connected, "detail": detail }));
         }
-        signalk::Event::Vessel(v) => {
+        signalk::Event::Vessel(mut v) => {
             if replayed != is_replaying() {
                 return; // live data waits while a log plays
             }
@@ -53,6 +53,8 @@ fn on_event(app: &tauri::AppHandle, ev: signalk::Event, replayed: bool) {
                 return;
             }
             if !replayed {
+                v.position_age_ms = v.position_received_at_instant.map(|t| t.elapsed().as_millis() as u64);
+                v.depth_age_ms = v.depth_received_at_instant.iter().map(|(field, at)| (field.clone(), at.elapsed().as_millis() as u64)).collect();
                 crate::rec_vessel(app, &v);
             }
             let _ = app.emit("vessel", serde_json::json!({ "replay": replayed, "v": v }));
@@ -122,11 +124,17 @@ pub fn start(app: &tauri::AppHandle) {
             if !changed.is_empty() || !gone.is_empty() {
                 let _ = h3.emit("ais", serde_json::json!({ "targets": changed, "gone": gone }));
             }
-            // replay progress
+        }
+    });
+
+    let h4 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(250)).await;
             let r = REPLAY.lock().unwrap().clone();
             if let Some((c, name)) = r {
                 let (s, e) = *c.span.lock().unwrap();
-                let _ = h3.emit(
+                let _ = h4.emit(
                     "replay",
                     serde_json::json!({
                         "name": name, "at": c.at.load(Ordering::Relaxed), "start": s, "end": e,

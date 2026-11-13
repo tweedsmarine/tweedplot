@@ -8,8 +8,39 @@ for (const v of Object.values(PRESETS)) for (const f of Object.values(v)) for (c
 const ITEMS = Object.fromEntries([...keys, "SOUNDER", "HIGHWAY", "WDIAL", "MOBBRG"].map((k) => [k, { label: k, graphic: ["SOUNDER", "HIGHWAY", "WDIAL"].includes(k) }]));
 
 test("every view has a preset for each Use, and an unknown Use is Cruising", () => {
-  for (const v of ["nav", "plan"]) for (const u of ["cruise", "fish", "race"]) assert.ok(preset(v, u).length >= 2, `${v}.${u}`);
+  for (const v of ["nav", "plan"]) for (const u of ["cruise", "fish", "race"]) assert.ok(preset(v, u).length >= 1, `${v}.${u}`);
   assert.deepEqual(preset("nav", null), preset("nav", "cruise"));
+});
+
+test("planning migration consolidates GRIB readings but preserves custom content", () => {
+  const data = { presetsVersion: 2, layouts: { "plan.fish": [
+    { id: "sea", kind: "readings", items: ["GSST", "GCUR"] },
+    { id: "mine", kind: "readings", items: ["SOG", "GTP"], collapsed: true },
+    { id: "grib", kind: "readings", items: ["GTWS", "GTIME"] },
+    { id: "cursor", kind: "readings", items: ["CPOS"] },
+  ] } };
+  assert.ok(upgrade(data));
+  assert.deepEqual(data.layouts["plan.fish"].map((s) => s.id), ["weather", "gribPoint", "mine", "cursor"]);
+  assert.deepEqual(data.layouts["plan.fish"][2].items, ["SOG"]);
+  assert.equal(data.layouts["plan.fish"][2].collapsed, true);
+  assert.equal(upgrade(data), false);
+});
+
+test("weather sections are optional in Navigation and editable in Planning layouts", () => {
+  for (const use of ["cruise", "fish", "race"]) {
+    assert.ok(!preset("nav", use).some((s) => ["weather", "gribPoint"].includes(s.kind)));
+    assert.deepEqual(preset("plan", use).slice(0, 2).map((s) => s.kind), ["weather", "gribPoint"]);
+  }
+  const original = [
+    { id: "mine", kind: "readings", title: "Mine", items: ["SOG"], collapsed: true },
+    { id: "route", kind: "readings", items: ["BTW"] },
+  ];
+  const data = { presetsVersion: 3, layouts: { "plan.cruise": structuredClone(original), "nav.cruise": structuredClone(original) } };
+  upgrade(data);
+  assert.deepEqual(data.layouts["plan.cruise"].slice(2), original);
+  assert.deepEqual(data.layouts["nav.cruise"], original);
+  const arranged = [data.layouts["plan.cruise"][2], data.layouts["plan.cruise"][1], data.layouts["plan.cruise"][0], data.layouts["plan.cruise"][1]];
+  assert.deepEqual(clean(arranged, ITEMS).map((s) => s.kind), ["readings", "gribPoint", "weather"]);
 });
 
 test("presets are fresh copies (editing one doesn't change the next)", () => {

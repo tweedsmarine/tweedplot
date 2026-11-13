@@ -557,6 +557,8 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
     msg,
     /** Points of the active routing, for the instruments' targets. */
     activePoints: () => { const a = activeItem(); return a && a.visible ? a.r.points : null; },
+    activeName: () => { const a = activeItem(); return a && a.visible ? a.name : null; },
+    activeStale: () => { const a = activeItem(); return !!(a && a.visible && courseKey(course.get()) !== a.courseKey); },
     /** Called whenever the routings on the chart change (computed, shown, made active). */
     onDraw: (fn) => drawListeners.push(fn),
     /** Show a saved routing (Library panel). */

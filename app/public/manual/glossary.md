@@ -93,7 +93,7 @@ Terms and abbreviations used in TweedPlot and in this manual.
 | Lidar | Laser surveying from an aircraft; in clear water it measures the seabed too |
 | Light sector | The arc over which a light shows one colour, or is hidden |
 | LINZ | Land Information New Zealand, the national hydrographic authority and source of the open chart data |
-| Live data view | The view that shows the raw NMEA 0183 sentences as they arrive |
+| Live NMEA data | The monitor under Settings › Diagnostics that shows raw NMEA 0183 sentences as they arrive; it can also be opened in a separate window from Settings › Connections |
 | Lost target | An AIS target not heard for a while, shown crossed through at its last known position |
 | Magnetic variation (VAR) | The angle between true and magnetic north, east positive; from the World Magnetic Model or the chart's charted value |
 | Mātaitai | A customary fishing reserve set up for tangata whenua, closed to commercial fishing |
@@ -168,7 +168,7 @@ Terms and abbreviations used in TweedPlot and in this manual.
 | Use | What the boat is mostly for (Cruising, Fishing or Racing); it chooses the toolbar's optional buttons and the data panel's starting layout |
 | User permit | The code that identifies your system to chart suppliers when you order encrypted charts |
 | UTC, Z | Coordinated Universal Time; weather model times are given in UTC ("12Z") |
-| View | An arrangement of the screen: Navigation, Planning, Instruments or Live data |
+| View | An arrangement of the screen: Navigation, Planning or Instruments |
 | VMC, VMG | Speed made good towards the mark (course), or directly upwind or downwind |
 | Watchdog | The time after which a silenced alarm sounds again if its cause still lasts |
 | Waypoint | A position on a route; in TweedPlot, a mark used as one |

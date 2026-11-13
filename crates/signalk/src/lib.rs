@@ -8,6 +8,7 @@
 //! Signal K uses SI units (radians, m/s, metres). [`VesselState`] converts to
 //! the project conventions: degrees true, knots, metres.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -28,6 +29,21 @@ const MS_TO_KN: f64 = 3600.0 / 1852.0;
 pub struct VesselState {
     pub lat: Option<f64>,
     pub lon: Option<f64>,
+    /// Changes only when a valid position observation is received.
+    pub position_observation: u64,
+    /// Local receive time of the fix, or log time during replay.
+    pub position_received_at_ms: Option<i64>,
+    #[serde(skip)]
+    pub position_received_at_instant: Option<std::time::Instant>,
+    /// Log time represented by this snapshot; absent for live data.
+    pub replay_time_ms: Option<i64>,
+    /// Age of the selected position at publication, when available.
+    pub position_age_ms: Option<u64>,
+    /// Age and receive time for each depth measurement independently.
+    pub depth_age_ms: BTreeMap<String, u64>,
+    pub depth_received_at_ms: BTreeMap<String, i64>,
+    #[serde(skip)]
+    pub depth_received_at_instant: BTreeMap<String, std::time::Instant>,
     /// Course over ground, degrees true.
     pub cog: Option<f64>,
     /// Speed over ground, knots.
@@ -102,6 +118,10 @@ impl VesselState {
 
     /// Apply one Signal K delta message. Returns true if anything changed.
     pub fn apply_delta(&mut self, msg: &Value) -> bool {
+        self.apply_delta_at(msg, chrono::Utc::now().timestamp_millis())
+    }
+
+    fn apply_delta_at(&mut self, msg: &Value, received_at_ms: i64) -> bool {
         let Some(updates) = msg.get("updates").and_then(Value::as_array) else {
             return false;
         };
@@ -115,7 +135,7 @@ impl VesselState {
                 let (Some(path), Some(val)) = (v.get("path").and_then(Value::as_str), v.get("value")) else {
                     continue;
                 };
-                self.apply_value(path, val);
+                self.apply_value(path, val, received_at_ms);
             }
             if let Some(ts) = ts {
                 self.timestamp = Some(ts.to_string());
@@ -127,13 +147,33 @@ impl VesselState {
         *self != before
     }
 
-    fn apply_value(&mut self, path: &str, val: &Value) {
+    fn apply_value(&mut self, path: &str, val: &Value, received_at_ms: i64) {
         let num = || val.as_f64();
+        let depth_field = match path {
+            "environment.depth.belowTransducer" => Some("depth"),
+            "environment.depth.belowKeel" => Some("depth_keel"),
+            "environment.depth.belowSurface" => Some("depth_surface"),
+            _ => None,
+        };
+        if let Some(field) = depth_field {
+            if num().is_some_and(f64::is_finite) {
+                self.depth_received_at_ms.insert(field.to_owned(), received_at_ms);
+                self.depth_received_at_instant.insert(field.to_owned(), std::time::Instant::now());
+            } else {
+                self.depth_received_at_ms.remove(field);
+                self.depth_received_at_instant.remove(field);
+            }
+        }
         match path {
             "navigation.position" => {
                 if let (Some(lat), Some(lon)) = (val.get("latitude").and_then(Value::as_f64), val.get("longitude").and_then(Value::as_f64)) {
-                    self.lat = Some(lat);
-                    self.lon = Some(lon);
+                    if (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon) {
+                        self.lat = Some(lat);
+                        self.lon = Some(lon);
+                        self.position_observation = self.position_observation.wrapping_add(1);
+                        self.position_received_at_ms = Some(received_at_ms);
+                        self.position_received_at_instant = Some(std::time::Instant::now());
+                    }
                 }
             }
             "navigation.courseOverGroundTrue" => self.cog = num().map(|r| nav_core::norm360(r.to_degrees())),
@@ -198,12 +238,16 @@ impl Router {
     /// Route one message: apply own-vessel values to `state` (returns whether it
     /// changed) and return the other contexts' values.
     pub fn route(&mut self, state: &mut VesselState, msg: &Value) -> (bool, Vec<Event>) {
+        self.route_at(state, msg, chrono::Utc::now().timestamp_millis())
+    }
+
+    fn route_at(&mut self, state: &mut VesselState, msg: &Value, received_at_ms: i64) -> (bool, Vec<Event>) {
         if let Some(s) = msg.get("self").and_then(Value::as_str) {
             self.self_ctx = Some(s.to_string());
         }
         let ctx = msg.get("context").and_then(Value::as_str);
         if self.is_self(ctx) {
-            return (state.apply_delta(msg), Vec::new());
+            return (state.apply_delta_at(msg, received_at_ms), Vec::new());
         }
         let Some(updates) = msg.get("updates").and_then(Value::as_array) else { return (false, Vec::new()) };
         let mut values = Vec::new();
@@ -357,8 +401,41 @@ mod tests {
         assert!((s.cog.unwrap() - 180.0).abs() < 1e-9);
         assert!((s.sog.unwrap() - 5.0).abs() < 1e-3);
         assert_eq!(s.timestamp.as_deref(), Some("2015-03-06T09:06:04.000Z"));
-        // same delta again changes nothing
-        assert!(!s.apply_delta(&d));
+        // The same coordinates can be a new valid fix.
+        assert!(s.apply_delta(&d));
+        assert_eq!(s.position_observation, 2);
+    }
+
+    #[test]
+    fn position_observation_changes_only_for_valid_position_updates() {
+        let mut s = VesselState::default();
+        let delta = |path: &str, value: Value| json!({"updates": [{"values": [{"path": path, "value": value}]}]});
+        assert!(s.apply_delta(&delta("navigation.position", json!({"latitude": -41.0, "longitude": 173.0}))));
+        assert_eq!(s.position_observation, 1);
+        assert!(s.apply_delta(&delta("environment.depth.belowTransducer", json!(5.0))));
+        assert_eq!(s.position_observation, 1);
+        assert!(!s.apply_delta(&delta("navigation.position", json!({"latitude": 91.0, "longitude": 173.0}))));
+        assert!(!s.apply_delta(&delta("navigation.position", Value::Null)));
+        assert_eq!(s.position_observation, 1);
+        assert_eq!((s.lat, s.lon), (Some(-41.0), Some(173.0)));
+        assert!(s.apply_delta(&delta("navigation.position", json!({"latitude": -41.0, "longitude": 173.0}))));
+        assert_eq!(s.position_observation, 2);
+    }
+
+    #[test]
+    fn depth_receive_times_follow_each_path_even_for_unchanged_values() {
+        let mut s = VesselState::default();
+        let delta = |path: &str, value: Value| json!({"updates": [{"values": [{"path": path, "value": value}]}]});
+        s.apply_delta_at(&delta("environment.depth.belowKeel", json!(3.0)), 1000);
+        s.apply_delta_at(&delta("environment.depth.belowTransducer", json!(5.0)), 2000);
+        s.apply_delta_at(&delta("environment.wind.speedApparent", json!(5.0)), 3000);
+        assert_eq!(s.depth_received_at_ms["depth_keel"], 1000);
+        assert_eq!(s.depth_received_at_ms["depth"], 2000);
+        assert!(s.apply_delta_at(&delta("environment.depth.belowTransducer", json!(5.0)), 4000));
+        assert_eq!(s.depth_received_at_ms["depth"], 4000);
+        s.apply_delta_at(&delta("environment.depth.belowKeel", Value::Null), 5000);
+        assert!(!s.depth_received_at_ms.contains_key("depth_keel"));
+        assert_eq!(s.depth_keel, None);
     }
 
     #[test]

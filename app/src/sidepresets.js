@@ -25,7 +25,11 @@ const ROUTE = () => R("route", "Route", ["BTW", "DTW", "XTE", "VMC"], 2);
 const WIND = () => R("wind", "Wind", ["TWS", "TWD", "AWS", "AWA", "TWA", "VMG"], 2, true);
 const WEATHER = () => R("wx", "Weather", ["PRES", "PTEND", "AIRT", "WTEMP"], 2, true);
 const CURSOR = () => R("cursor", "Cursor", ["CPOS", "CBRG", "CRNG", "CSND"], 2);
-const GRIB = () => R("grib", "Forecast at the cursor", ["GTIME", "GTWS", "GTWD", "GGUST", "GMSLP", "GHS", "GTP", "GRAIN"], 2);
+export const WEATHER_SECTIONS = {
+  weather: "Weather controls",
+  gribPoint: "GRIB data at the cursor",
+};
+export const weatherSection = (kind) => ({ id: kind, kind, title: WEATHER_SECTIONS[kind] });
 
 export const PRESETS = {
   nav: {
@@ -46,9 +50,9 @@ export const PRESETS = {
     ],
   },
   plan: {
-    cruise: () => [CURSOR(), GRIB(), R("route", "Route", ["BTW", "DTW", "TTG"], 2), M(8)],
-    race: () => [CURSOR(), GRIB(), R("route", "Route", ["BTW", "DTW", "TTG"], 2), M(8), R("perf", "Routing targets", ["TTWA", "TBSP", "THDG"], 2)],
-    fish: () => [CURSOR(), R("sea", "Sea at the cursor", ["GSST", "GSKIN", "GCHL", "GCUR", "GSET", "GSUBT"], 2), GRIB()],
+    cruise: () => [weatherSection("weather"), weatherSection("gribPoint"), CURSOR(), R("route", "Route", ["BTW", "DTW", "TTG"], 2), M(8)],
+    race: () => [weatherSection("weather"), weatherSection("gribPoint"), CURSOR(), R("route", "Route", ["BTW", "DTW", "TTG"], 2), M(8), R("perf", "Routing targets", ["TTWA", "TBSP", "THDG"], 2)],
+    fish: () => [weatherSection("weather"), weatherSection("gribPoint"), CURSOR()],
   },
 };
 
@@ -61,9 +65,13 @@ export function preset(view, use) {
 /** Only the readings and graphics that exist (an older layout may name a reading since removed). */
 export function clean(sections, items) {
   const out = [];
+  const special = new Set();
   for (const s of Array.isArray(sections) ? sections : []) {
     if (!s || typeof s !== "object") continue;
-    if (s.kind === "readings") {
+    if (Object.hasOwn(WEATHER_SECTIONS, s.kind)) {
+      if (!special.has(s.kind)) out.push(weatherSection(s.kind));
+      special.add(s.kind);
+    } else if (s.kind === "readings") {
       const list = (Array.isArray(s.items) ? s.items : []).filter((k) => items[k]);
       out.push({ id: String(s.id || `s${out.length}`), kind: "readings", title: String(s.title ?? ""), cols: s.cols === 2 ? 2 : 1, items: list, collapsed: !!s.collapsed, ...(s.trend ? { trend: true } : {}) });
     } else if (s.kind === "marks" || s.kind === "targets") {
@@ -119,7 +127,8 @@ export function snapWidth(px, pxPerMm, scale = 1) {
 // ---------- upgrading saved layouts ----------
 // the section ids the starting layouts have used (a layout made only of these hasn't had sections added)
 const PRESET_IDS = new Set(["route", "wind", "wx", "perf", "dial", "fish", "snd", "cursor", "grib", "sea", "marks", "targets"]);
-export const PRESETS_VERSION = 2;
+export const PRESETS_VERSION = 4;
+const GRIB_READINGS = new Set(["GTIME", "GSRC", "GTWS", "GTWD", "GGUST", "GMSLP", "GHS", "GTP", "GWVD", "GRAIN", "GTEMP", "GSST", "GSKIN", "GCHL", "GSSS", "GSUBT", "GSUBS", "GCUR", "GSET"]);
 /**
  * Bring saved layouts up to the current presets (v2: no sounder in Navigation · Fishing; marks
  * ahead, targets and trend lines added). A layout the user hasn't added sections to is replaced by
@@ -128,15 +137,27 @@ export const PRESETS_VERSION = 2;
  */
 export function upgrade(data) {
   if (!data || (data.presetsVersion ?? 1) >= PRESETS_VERSION) return false;
+  const oldVersion = data.presetsVersion ?? 1;
   for (const [k, L] of Object.entries(data.layouts ?? {})) {
     if (!Array.isArray(L)) continue;
     const [view, use] = k.split(".");
     const own = L.some((sec) => !PRESET_IDS.has(sec?.id));
-    if (!own && PRESETS[view]) {
+    if (oldVersion < 2 && !own && PRESETS[view] && view !== "plan") {
       const folded = new Set(L.filter((sec) => sec?.collapsed).map((sec) => sec.id));
       data.layouts[k] = preset(view, use).map((sec) => (folded.has(sec.id) ? { ...sec, collapsed: true } : sec));
-    } else if (k === "nav.fish") {
+    } else if (oldVersion < 2 && k === "nav.fish") {
       data.layouts[k] = L.filter((sec) => !(sec?.id === "snd" && sec.item === "SOUNDER"));
+    }
+    if (oldVersion < 3 && view === "plan") {
+      data.layouts[k] = data.layouts[k].flatMap((sec) => {
+        if (sec?.kind !== "readings" || !Array.isArray(sec.items)) return [sec];
+        const items = sec.items.filter((item) => !GRIB_READINGS.has(item));
+        if (!items.length && (sec.id === "grib" || sec.id === "sea")) return [];
+        return [{ ...sec, items }];
+      });
+    }
+    if (oldVersion < 4 && view === "plan") {
+      data.layouts[k] = [weatherSection("weather"), weatherSection("gribPoint"), ...data.layouts[k]];
     }
   }
   data.presetsVersion = PRESETS_VERSION;

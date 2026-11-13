@@ -2,7 +2,7 @@
 // bring one forward, close it. Windows that were open when the app last closed reopen
 // at startup, in the same place and colours (windowstate.js).
 import { invoke } from "@tauri-apps/api/core";
-import { VIEWS } from "./views.js";
+import { VIEWS, OPERATIONAL_VIEWS } from "./views.js";
 import { PRIMARY } from "./role.js";
 import { readWindows, patchWindow, monitorsToReopen } from "./windowstate.js";
 
@@ -10,7 +10,7 @@ const $ = (id) => document.getElementById(id);
 
 export function setupMonitors(toast = () => {}) {
   const sel = $("mon-new-view");
-  for (const v of VIEWS) sel.add(new Option(v.name, v.id));
+  for (const v of OPERATIONAL_VIEWS) sel.add(new Option(v.name, v.id));
   const nameOf = (id) => VIEWS.find((v) => v.id === id)?.name ?? id;
 
   async function open(view, label) {

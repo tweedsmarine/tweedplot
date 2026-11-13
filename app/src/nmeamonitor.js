@@ -93,7 +93,7 @@ function sourceColour(sourceId, sources) {
   return `hsl(${hue.toFixed(1)} 85% 68%)`;
 }
 
-async function openMonitorWindow(report) {
+export async function openMonitorWindow(report) {
   try {
     const labels = await invoke("monitor_list");
     const existing = labels.find((label) => readWindows()[label]?.view === "nmea");

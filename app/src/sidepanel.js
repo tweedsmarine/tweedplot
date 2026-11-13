@@ -16,7 +16,7 @@
 // millimetres on every screen. The chart's container is narrowed by the panel (style.css,
 // --side-w), so the chart is never under it.
 import { ITEMS, readingState, paintGraphic, historyKey, distNm } from "./instruments.js";
-import { preset, clean, fromFloating, upgrade, OWN_SHIP, PANEL_VIEWS, WIDTHS_MM, snapWidth } from "./sidepresets.js";
+import { preset, clean, fromFloating, upgrade, weatherSection as makeWeatherSection, WEATHER_SECTIONS, OWN_SHIP, PANEL_VIEWS, WIDTHS_MM, snapWidth } from "./sidepresets.js";
 import { CHANNELS as HIST, openHistoryCard, recorder } from "./history.js";
 import { unwrap } from "./histcore.js";
 import { s52PxPerMm } from "./chartfeatures.js";
@@ -36,6 +36,10 @@ function store(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } c
 export function setupSidePanel({ inst, views, use, map, getAis = () => null, centreOn = () => {}, centreBoat = () => {} }) {
   const side = $("side"), strip = $("side-strip"), root = document.documentElement;
   const body = side.querySelector(".sp-body"), ownEl = side.querySelector(".sp-own"), mobEl = side.querySelector(".sp-mob");
+  const routeWeather = side.querySelector(".sp-routewx");
+  const gribFiles = $("side-grib-files");
+  const weatherSection = $("side-weather"), gribPoint = $("side-grib-point");
+  const weatherParking = $("side-weather-parking");
   const statusEl = side.querySelector(".sp-status"), actions = side.querySelector(".sp-actions"), alerts = side.querySelector(".sp-alerts");
   const cursorSlot = side.querySelector(".sp-cursor");
   const menu = $("tile-menu");
@@ -91,6 +95,7 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
     for (const id of ["sp-side", "set-side"]) { const el = $(id); if (el) el.value = prefs.side; }
     const t = $("sp-text");
     if (t) t.value = String(prefs.text);
+    if ($("sp-width")) $("sp-width").value = prefs.width;
     for (const g of side.querySelectorAll(".sp-g")) g.style.height = `${Math.round(Number(g.dataset.h) * pxmm * prefs.text)}px`;
     requestAnimationFrame(() => map.resize());
   }
@@ -98,6 +103,9 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
   const setPref = (k, v) => { prefs[k] = v; store(PKEY, prefs); geometry(); };
   for (const id of ["sp-side", "set-side"]) $(id)?.addEventListener("change", (e) => setPref("side", e.target.value));
   $("sp-text")?.addEventListener("change", (e) => setPref("text", Number(e.target.value)));
+  $("sp-width")?.addEventListener("change", (e) => {
+    if (WIDTHS_MM[e.target.value]) setPref("width", e.target.value);
+  });
 
   // ---------- shown, hidden (a line under the chart) or not at all (no chart) ----------
   // On a narrow screen (a tablet, a small window) a panel beside the chart would leave too little
@@ -112,6 +120,7 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
     const on = hasPanel() && (n ? sheet : !hidden[view()]);
     const line = hasPanel() && (n || !!hidden[view()]);
     side.hidden = !on;
+    routeWeather.hidden = view() !== "plan";
     strip.hidden = !line || (n && on);
     root.classList.toggle("side-narrow", n);
     root.classList.toggle("side-on", on);
@@ -203,11 +212,21 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
     $("sp-edit-btn")?.classList.toggle("on", editing);
     ownEl.innerHTML = OWN_SHIP.map((k) => rowHtml(k, " own")).join("");
     const L = layout();
+    routeWeather.remove();
+    weatherParking.append(weatherSection, gribPoint);
     body.innerHTML = "";
+    body.append(routeWeather);
+    gribFiles.hidden = false;
     L.forEach((s, i) => {
       const sec = document.createElement("section");
       sec.className = `sp-sec${s.collapsed && !editing ? " collapsed" : ""}${s.kind === "readings" && s.cols === 2 ? " c2" : ""}`;
       sec.dataset.i = i;
+      if (Object.hasOwn(WEATHER_SECTIONS, s.kind)) {
+        if (editing) sec.innerHTML = `<h4><span class="sp-title">${esc(WEATHER_SECTIONS[s.kind])}</span><span class="sp-tools"><button data-act="up" title="Move up">▲</button><button data-act="down" title="Move down">▼</button><button data-act="del" title="Remove this section">✕</button></span></h4>`;
+        sec.append(s.kind === "weather" ? weatherSection : gribPoint);
+        body.append(sec);
+        return;
+      }
       const tools = editing
         ? `<span class="sp-tools"><button data-act="up" title="Move up">▲</button><button data-act="down" title="Move down">▼</button>${s.kind === "readings"
           ? `<button data-act="cols" title="One or two columns">${s.cols === 2 ? "2 col" : "1 col"}</button><button data-act="trend" class="${s.trend ? "on" : ""}" title="Trend lines: the last 3 hours under each reading that has a history">∿</button>`
@@ -262,9 +281,9 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
     let scale = "";
     try { const n = displayScale(c.lat, map.getZoom(), s52PxPerMm()); scale = `1:${Math.round(n).toLocaleString("en-NZ")}`; } catch { /* ignore */ }
     const parts = [
-      `<b>${esc(viewName())}</b>`,
       ...(inst.ctx().nav?.goto ? [`<span class="st-goto" title="Navigating to a Go to point (right-click the chart › Cancel go to returns to the route)">GO TO</span>`] : []),
-      replay ? `<span class="st-replay">REPLAY</span>` : live ? `<span class="st-live">LIVE</span>` : `<span class="st-paused">PAUSED</span>`,
+      replay ? `<span class="st-replay">REPLAY</span>${live ? "" : ` · <span class="st-paused">PLOTTING PAUSED</span>`}` : live ? `<span class="st-live">LIVE</span>` : `<span class="st-paused">PAUSED</span>`,
+      ...($("ais-show") && !$("ais-show").checked ? [`<span class="st-paused" title="AIS targets are hidden on the chart in this view; reception and alarms remain active">AIS HIDDEN</span>`] : []),
       `<span title="Orientation: north up, or the chart turned">${Math.round(brg) === 0 || Math.round(brg) === 360 ? "N UP" : `ROT ${String(Math.round(brg)).padStart(3, "0")}°`}</span>`,
       `<span title="${follow ? "Relative motion: the chart moves under the boat (Follow on)" : "True motion: the boat moves across the chart (Follow off)"}">${follow ? "RM" : "TM"}</span>`,
       `<span title="Display scale on this screen (from the screen calibration)">${scale}</span>`,
@@ -372,6 +391,7 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
     if (b?.dataset.act === "done") { setEditing(false); return; }
     if (!sec) return;
     const i = Number(sec.dataset.i), s = L[i];
+    if (Object.hasOwn(WEATHER_SECTIONS, s.kind) && e.target.closest("h4")?.parentElement !== sec) return;
     if (!editing) {
       if (e.target.closest("h4")) { s.collapsed = !s.collapsed; save(); build(); return; }
       const li = e.target.closest(".sp-li");
@@ -468,7 +488,9 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
   }
   function addSection(rect) {
     const graphics = [["WDIAL", "Wind dial", 48], ["COMPASS", "Compass", 48], ["HIGHWAY", "Highway", 70], ["SOUNDER", "Sounder history", 40]];
-    let html = `<div class="grp">Add a section</div><button data-kind="readings">Readings</button><button data-kind="marks">Marks ahead (route)</button><button data-kind="targets">AIS targets (closest by CPA)</button><div class="grp">Graphics</div><div class="items">`;
+    const current = layout();
+    const weatherChoices = Object.entries(WEATHER_SECTIONS).filter(([kind]) => !current.some((s) => s.kind === kind)).map(([kind, label]) => `<button data-kind="${kind}">${label}</button>`).join("");
+    let html = `<div class="grp">Add a section</div><button data-kind="readings">Readings</button><button data-kind="marks">Marks ahead (route)</button><button data-kind="targets">AIS targets (closest by CPA)</button>${weatherChoices}<div class="grp">Graphics</div><div class="items">`;
     for (const [k, n] of graphics) if (ITEMS[k]) html += `<button data-g="${k}">${n}</button>`;
     html += `</div><div class="grp">History plot</div><div class="items">`;
     for (const [k, ch] of Object.entries(HIST)) if (ITEMS[`H_${k}`]) html += `<button data-g="H_${k}">${esc(ch.label)}</button>`;
@@ -479,6 +501,7 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
       if (b.dataset.kind === "readings") L.push({ id, kind: "readings", title: "", cols: 2, items: [] });
       else if (b.dataset.kind === "marks") L.push({ id, kind: "marks", title: "Marks ahead", n: 5 });
       else if (b.dataset.kind === "targets") L.push({ id, kind: "targets", title: "Targets", n: 4 });
+      else if (Object.hasOwn(WEATHER_SECTIONS, b.dataset.kind) && !L.some((s) => s.kind === b.dataset.kind)) L.push(makeWeatherSection(b.dataset.kind));
       else if (b.dataset.g) {
         const g = graphics.find((x) => x[0] === b.dataset.g);
         L.push({ id, kind: "graphic", title: g ? g[1] : ITEMS[b.dataset.g].label, item: b.dataset.g, h: g ? g[2] : 35 });
@@ -543,5 +566,16 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
   geometry();
   visibility();
   build();
-  return { toggle, shown: () => !side.hidden, openHistory: (k) => openHistoryCard(k) };
+  return { toggle, shown: () => !side.hidden, openHistory: (k) => openHistoryCard(k),
+    openWeather() {
+      if (!hasPanel()) views.set("plan");
+      if (!layout().some((s) => s.kind === "weather") && view() !== "plan") views.set("plan");
+      if (!layout().some((s) => s.kind === "weather")) {
+        layout().unshift(makeWeatherSection("weather"));
+        save(); build();
+      }
+      if (side.hidden) toggle();
+      weatherSection.open = true;
+      weatherSection.scrollIntoView({ block: "start" });
+    } };
 }

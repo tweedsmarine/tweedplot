@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 
 const $ = (id) => document.getElementById(id);
 
-export function setupReplay({ onState } = {}) {
+export function setupReplay({ onState, onProgress } = {}) {
   let logs = [];
   let state = null; // last "replay" event
   let dragging = false;
@@ -76,6 +76,7 @@ export function setupReplay({ onState } = {}) {
   listen("replay", ({ payload }) => {
     state = payload;
     if ($("replay-bar").hidden) show(true);
+    onProgress?.(payload);
     if (!dragging) {
       const f = payload.end > payload.start ? (payload.at - payload.start) / (payload.end - payload.start) : 0;
       $("rp-pos").value = String(Math.round(Math.max(0, Math.min(1, f)) * 1000));

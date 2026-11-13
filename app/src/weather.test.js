@@ -1,6 +1,35 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { seaScale, fronts, filterable, LAYERS } from "./weather.js";
+import { seaScale, fronts, filterable, forecastSpan, sliderStepForTime, weatherSelectionSummary, LAYERS } from "./weather.js";
+
+test("weather summary distinguishes hidden, unavailable and selected chart layers", () => {
+  const state = {
+    visible: true, sources: [], layerInfo: { key: "wind", layer: { label: "Wind" }, off: false },
+    layerOptions: [{ key: "wind" }], overlayOptions: [{ label: "Isobars", on: true }, { label: "Wave direction", on: false }],
+  };
+  assert.equal(weatherSelectionSummary(state), "No GRIB loaded");
+  state.sources = [{ path: "test" }];
+  assert.equal(weatherSelectionSummary(state), "Selected: Wind, Isobars");
+  state.layerOptions = [];
+  assert.equal(weatherSelectionSummary(state), "Selected: Wind (no data), Isobars");
+  state.layerInfo.off = true;
+  assert.equal(weatherSelectionSummary(state), "Selected: No shading, Isobars");
+  state.visible = false;
+  assert.equal(weatherSelectionSummary(state), "Chart weather hidden");
+});
+
+test("GRIB coverage uses the outer span of available parameter times", () => {
+  assert.equal(forecastSpan(null), null);
+  assert.equal(forecastSpan({ params: [{ times: [] }] }), null);
+  assert.deepEqual(forecastSpan({ params: [{ times: [200, 300] }, { times: [100, 400] }] }), [100, 400]);
+  assert.deepEqual(forecastSpan({ params: [{ times: [200] }, { times: [null, 100, 400] }] }), [100, 400]);
+});
+
+test("the time slider preserves forecast times on different time grids", () => {
+  assert.equal(sliderStepForTime(1700007200, 1700000000, 3600), 3600);
+  assert.equal(sliderStepForTime(1700100000, 1700000000, 3600), "any");
+  assert.equal(sliderStepForTime(1700107200, 1700000000, 3600), "any");
+});
 
 test("sea scale without a target runs evenly from low to high", () => {
   const s = seaScale({ lo: 10, hi: 20, tg: null });

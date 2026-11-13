@@ -28,7 +28,7 @@ This manual is for anyone who plans a passage and then makes it: racing and crui
 - *Toolbar*: the strip of buttons down the chart's left edge.
 - *Data panel*: the column of readings beside the chart.
 - *Dock*: the wide panel under the chart for tables and graphs.
-- *View*: an arrangement of the screen (Navigation, Planning, Instruments, Live data).
+- *View*: an arrangement of the screen (Navigation, Planning or Instruments).
 - *GRIB*: a weather forecast file (see Weather and tides).
 - *Routing*: a computed fastest route through the weather. *Route*: your planned list of marks.
 - Bearings are true (°T) unless shown as °M; distances are nautical miles (NM); speeds are knots (kn); depths and heights are metres.
@@ -87,7 +87,7 @@ Type that into the address bar of File Explorer to open it. You rarely need to: 
 **First start checklist**
 
 - [ ] {icon:settings} **Settings › Vessel**: the vessel's name, MMSI, draft, length, breadth, air draft, transducer depth and where the GPS antenna is. Press **Save vessel details**.
-- [ ] {icon:settings} **Settings › Connections**: start your Signal K server, or add your NMEA sources under **NMEA data sources**. The live data button in the toolbar turns green {icon:sk}.
+- [ ] {icon:settings} **Settings › Connections**: start your Signal K server, or add direct NMEA sources under **NMEA 0183 inputs**. The live data button in the toolbar turns green {icon:sk}.
 - [ ] {icon:chart} **Chart › Get data**: get the charts and depths for where you sail.
 - [ ] {icon:chart} **Chart › Safety**: set your **safety depth** and **safety contour**.
 - [ ] {icon:alarms} **Alarms**: check the alarms you want are on.
@@ -112,8 +112,8 @@ Nothing covers the chart. The rail, the open drawer, the toolbar, the data panel
 | Middle | **The chart** | Drag to pan, scroll to zoom. Click a light, buoy, target or area for its details. Right-click for the chart menu |
 | On the chart, left | The scale bar and north arrow | See *Scale bar, north arrow and overscale* under Charts |
 | Beside the chart, on the right | **The data panel**: status, Base / Standard / All, MOB and Drop, own ship, readings, the cursor readout and the alerts | **O** hides it to one line under the chart; **✎** changes what it shows. It can go on the left: Settings › Display › **Data panel side** |
-| Under the chart | **The dock**: Compare routings, Gates, Fleet, Meteogram, Verify, Weather on route | Opens from buttons in the drawers; drag its top edge to resize; **✕** closes it |
-| Over the chart, when asked for | The time slider, the Weather panel, info windows, the target list, history cards, the own soundings card and activity cards | Drag one by its title bar or grip; **✕** closes it. Each remembers where you put it |
+| Under the chart | **The dock**: Compare routings, Gates, Fleet, Meteogram, Verify, Weather on route | Opens from buttons in the drawers or Weather on route in the Planning data panel; drag its top edge to resize; **✕** closes it |
+| Over the chart, when asked for | Info windows, the target list, history cards, the own soundings card and activity cards | Drag one by its title bar or grip; **✕** closes it. Each remembers where you put it |
 | Bottom centre of the chart | **Zoom out** and **Zoom in**, two round buttons well apart | Shown on touch screens only, unless you change it in Settings › Display › Screen controls |
 | Right-click the chart (or hold a finger on it) | **The chart menu** | Move the boat, start a route or add a mark to it, a new library mark, record soundings, drop anchor, go to, laylines, EBL/VRM, centre the chart, a meteogram, a ruler. On a mark, ruler, barrier or EBL/VRM: the actions for it |
 
@@ -151,8 +151,8 @@ From top to bottom:
 | {icon:rec} | **Record soundings** | Starts and stops recording your own soundings from the depth sounder; the dot is red while it records (also **D**). Shown in the Fishing use, in every use if you tick it in Settings › Display, and always while recording |
 | {icon:soundings} | **Own soundings** | Shows or hides your soundings as a seabed in this view, with the depth range card. Fishing use only (in other uses: Chart › Layers › Own soundings) |
 | {icon:targets} | **Target list** | Opens the AIS target list over the chart (also **T**) |
-| {icon:wxpanel} | **Weather panel** | Shows the Weather panel and every weather layer; click again to hide them all (see Weather and tides) |
-| {icon:view-nav} {icon:view-plan} {icon:view-inst} {icon:view-nmea} | **View** | Lists the views (Navigation, Planning, Instruments, Live data) and **Show the chart in this view**. The icon shows the view you are in (also **F2**, **F3**, **F4**) |
+| {icon:wxpanel} | **Weather** | Opens the weather controls in the data panel (see Weather and tides) |
+| {icon:view-nav} {icon:view-plan} {icon:view-inst} | **View** | Lists Navigation, Planning and Instruments and **Show the chart in this view**. The icon shows the view you are in (also **F2**, **F3**, **F4**) |
 | {icon:side} | **Data panel** | Shows the data panel beside the chart, or hides it to a line under the chart (also **O**) |
 | {icon:panels} | **Panels** | Shows or hides the rail, the drawers and the dock in this view (also **P**) |
 | {icon:day} {icon:night} | **Colours** | Steps through day, dusk, night (IHO), night red and night green (also **N**). Right-click it (or hold it on a touch screen) for all five and the brightness at once |
@@ -169,10 +169,14 @@ A **view** is an arrangement of the same screen. Every drawer and tool is availa
 | {icon:view-nav} **Navigation** (F2) | The chart, with the data panel's Navigation layout: route, marks ahead, targets, wind | Under way |
 | {icon:view-plan} **Planning** (F3) | The chart, with the data panel's Planning layout: the cursor and the forecast at the cursor | Routes, weather and routing, at the chart table |
 | {icon:view-inst} **Instruments** (F4) | A screen of large single readings and dials, with no chart | A helm display or a second screen |
-| {icon:view-nmea} **Live data** | The raw NMEA 0183 sentences from each input as they arrive, with selected values (see *NMEA 0183 direct* under Your boat) | Checking instruments and wiring |
+
+Use the view buttons at the top of the data panel or the toolbar's View button. The current panel button has a check mark and a highlighted border. The NMEA monitor is under **Settings › Diagnostics › Live NMEA data**. Open it in a separate window with **Pop out** there or **Settings › Connections › NMEA 0183 inputs › Pop out live NMEA data**.
 
 - TweedPlot always starts in the Navigation view.
 - Each view remembers, in each window, whether its panels (the rail, drawers and dock) are shown, whether the data panel is shown, and whether own soundings are shown.
+- Navigation and Planning remember their chart centre and zoom independently while the window is open. The first time you enter a view it starts at the current centre and zoom; switching back restores that view's last centre and zoom, including when returning from Instruments or after the Planning timeout. Follow is shared between views: if it is on, subsequent boat position updates move the chart to follow the boat.
+- AIS chart visibility is selected per view in **Targets & fleets** or **Chart › Layers**. Planning starts with AIS hidden; the other views keep the previous AIS setting until changed. Reception, target lists and AIS alarms continue when chart symbols are hidden.
+- **Settings › Display › Return to Navigation after Planning inactivity** defaults to five minutes, and can be set from one to ten minutes or Off for this window. Mouse, touch, wheel and keyboard input in that window resets the timer. The switch occurs even with an edit or dialog open; check any unfinished work afterwards. Other windows have their own timers.
 - Navigation and Planning each keep their own chart display: **Base**, **Standard** or **All**, and the switches of Chart › Chart display (light sectors, names and labels, soundings, information symbols, important and other text, date-dependent symbols). So Planning can be a clean chart under the weather, on Base with the names off, while Navigation keeps everything a watchkeeper needs. A view starts with the display of the view you came from; change it there and it is kept. The symbols, their size and the safety depth and contour are the same in every view.
 - **Esc** leaves the Instruments or Live data view for the view you came from.
 - **Show the chart in this view**, in the View button's list, turns the chart on or off in the view you are in. The Instruments and Live data views start without it.
@@ -211,7 +215,8 @@ The boat's numbers are in the **data panel**, a column beside the chart that nev
 
 From top to bottom:
 
-- **Status line**: the view; **GO TO** while a Go to is set; **LIVE**, **PAUSED** or **REPLAY**; the orientation (**N UP**, or **ROT 045°** when the chart is turned); the motion (**RM**, relative motion: Follow is on and the chart moves under the boat; **TM**, true motion: the boat moves across the chart); and the display scale on this screen. **✎** edits the panel; **⟩** hides it.
+- **Status line**: **GO TO** while a Go to is set; **LIVE**, **PAUSED** or **REPLAY**; the orientation (**N UP**, or **ROT 045°** when the chart is turned); the motion (**RM**, relative motion: Follow is on and the chart moves under the boat; **TM**, true motion: the boat moves across the chart); and the display scale on this screen. **✎** edits the panel; **⟩** hides it.
+- **Navigation**, **Planning**, **Instruments**: select a view; the current one is highlighted and marked with a check.
 - **Base**, **Standard** and **All**: how much of the chart is shown, with the one in use lit (see *Display: Base, Standard and All* under Charts).
 - **MOB**, **Drop** and (when switched on) the **anchor** button.
 - **Own ship**, always shown, in the order IMO's S-Mode guidelines give: HDG (°T), COG, SOG, STW (boat speed through the water), depth, position, and the date and time, local and UTC. A reading with no data shows a dash, and one from live data that has stopped greys out after 10 seconds, so a failed sensor is seen, not hidden.
@@ -220,7 +225,7 @@ From top to bottom:
   - Navigation · Cruising starts with Route (BTW, DTW, XTE, VMC), Marks ahead, Targets, Wind and Weather.
   - Navigation · Racing starts with Performance (boat speed against target, % of target, TWA against target, VMG, VMC), the wind dial, Route, Marks ahead, Weather and Targets.
   - Navigation · Fishing starts with Sea (water temperature, trip, pressure and its 3-hour change), Wind, Route and Targets.
-  - Planning, for every Use, starts with the cursor (position, bearing and range from the boat, own sounding) and the forecast at the cursor, then Route and the marks of the route (and, for Racing, the routing's targets; for Fishing, the sea at the cursor instead of the route).
+  - Planning starts with Weather and GRIB data at the cursor, followed by the cursor position and other readings. Cruising and Racing also have Route and marks; Racing adds routing targets.
   - Click a section's title to fold it.
 - **Marks ahead**: the route's next marks, in order, with the distance to each along the route (from the boat to the next mark, then mark to mark) and the time you would get there at the present speed over ground. "and 3 more" says how many are left. Click a mark to show it on the chart.
 - **Targets**: the AIS targets that matter most: distress beacons (SART, MOB, EPIRB) first, then dangerous targets (inside your CPA and TCPA limits, in red), then targets closing on you by CPA (CPA and TCPA shown), then the rest by range. A lost target is crossed out. Click one to show it on the chart and open its info window. The full list is the target list (T).
@@ -237,11 +242,13 @@ From top to bottom:
 
 **Edit it** with **✎** (or **Instruments › Edit the data panel**; **Reset this layout** beside it goes back to the starting layout). Each section gets ▲ ▼ to move it, **1 col / 2 col** for one or two columns, **∿** for trend lines, **＋ −** for a graphic's height (or how many marks or targets a list shows), ✕ to remove it, and a box for its name. Click a reading to change it, move it or remove it; **+ Add a reading** adds one at the end. At the bottom, **+ Add a section** adds a section of readings, the marks ahead, the AIS targets, a graphic (wind dial, compass, highway, sounder history) or a history plot. **Reset** goes back to the starting layout for this view and Use. **Done** finishes. Your changes are kept for that view and Use, and are shared by every window.
 
+**Weather controls** and **GRIB data at the cursor** are separate sections: use ▲ ▼ to reposition them, ✕ to remove them, and **+ Add a section** to add either back. They start in Planning but not Navigation. The toolbar Weather button uses the current view's Weather controls if present; otherwise it opens Planning and restores those controls if they were removed.
+
 ![The data panel being edited: each section has its name, ▲ ▼, columns, trend lines and ✕, and + Add a reading](img/15-panel-edit.jpg)
 
 **Right-click** (or hold) a reading for its history in a card (see *History plots*).
 
-**Sizes.** The panel's text is sized in millimetres from the screen calibration (Settings › Display), as the chart symbols are, so it is the same size on every screen. **Instruments › Text size** makes it larger for reading from further away: **Normal** (for about 1 m), **Large** (1.3 m) or **Extra large** (1.6 m). Drag the panel's inner edge for **narrow**, **normal** or **wide**; it snaps to the nearest. **Side** (Instruments, or Settings › Display › **Data panel side**) puts it to the right of the chart (to begin with) or the left, between the drawers and the chart.
+**Sizes.** The panel's text is sized in millimetres from the screen calibration (Settings › Display), as the chart symbols are, so it is the same size on every screen. **Instruments › Text size** makes it larger for reading from further away: **Normal** (for about 1 m), **Large** (1.3 m) or **Extra large** (1.6 m). Choose **Instruments › Panel width** for narrow, normal or wide, or drag the panel's inner edge; it snaps to the nearest. **Side** (Instruments, or Settings › Display › **Data panel side**) puts it to the right of the chart (to begin with) or the left, between the drawers and the chart.
 
 **The Instruments view**
 
@@ -271,7 +278,7 @@ The same readings are offered in the data panel (**+ Add a reading**) and on the
 | Graphic | The wind dial, compass, highway and sounder history (see *Graphical readings*) |
 | History | A plot of any recorded reading against time (see *History plots*) |
 
-Port and starboard are marked on wind angles. Readings from live data grey out after 10 seconds without data, so stale numbers can't be mistaken for live ones. Depth turns amber within 2 m of the safety depth and red below it.
+Port and starboard are marked on wind angles. Position and depth are marked **STALE** after 10 seconds without their own updates, even if other data is still arriving. Other live readings currently use the age of the overall vessel feed, so an individual sensor can stop without its reading being marked stale. Depth turns amber within 2 m of the safety depth and red below it only while its reading is fresh.
 
 **Graphical readings**
 
@@ -345,12 +352,12 @@ Alarms appear in the **alerts** at the bottom of the data panel and sound until 
 
 | Group | Alarm | Raised when | Settings |
 | --- | --- | --- | --- |
-| Depth and clearance | **Shallow water** | The depth (under the keel if the instruments give it, else below the transducer) is less than the alarm depth | Alarm depth; empty = the safety depth (Chart › Safety) |
+| Depth and clearance | **Shallow water** | The depth (under the keel if the instruments give it, else below the transducer) is less than the alarm depth. If the selected depth is missing or 10 seconds old, **DEPTH DATA UNAVAILABLE** warns that the alarm cannot be checked. There is a 10-second grace period at startup or a navigation-source change. An active shallow alarm remains until a fresh safe reading, the alarm is disabled, or plotting is paused. Replay uses recorded time | Alarm depth; empty = the safety depth (Chart › Safety) |
 | | **Safety contour ahead** | Water shallower than the safety contour, land or a charted danger lies on the course over ground within the time you choose (3 to 15 minutes), from the chart's depth areas. Checked every 10 seconds while moving | Look-ahead time. Charted depths only, not the high-resolution depths |
 | | **Air draft** | A bridge, overhead cable or pipeline on the chart within a mile (or 10 minutes) ahead has less charted clearance than your air draft plus the margin | Air draft in **Settings › Vessel**; margin. Charted clearances are above Highest Astronomical Tide |
 | Navigation | **Off track** | The boat is further than the limit from the line between the last mark and the next (cross-track error, Route › Navigate) | Limit in NM; off until you turn it on |
 | | **Approaching the next mark** | The next mark is the time you set away at your speed made good towards it, or you are inside its arrival radius (a warning, once per mark) | Minutes before |
-| | **Position lost** | Live data is connected but no position has come for 30 seconds | On or off |
+| | **Position lost** | No valid position fix has been received for 30 seconds while plotting live, including when the connection is lost. A new valid fix clears the warning; other sensor updates do not. At startup or after changing the navigation source there is a 30-second grace period if no fix is available. The warning is suppressed while plotting is paused; replay uses recorded time, which stops when the replay is paused | On or off |
 | Anchor watch | **Anchor alarm** | The bow is outside the anchor's swing circle | **Default swing radius** here; the swing radius and scope on the anchor's card. **Drop anchor** here, the anchor button or the right-click menu starts the watch; **Weigh anchor** ends it (see *Anchoring*) |
 | Targets (AIS) | **Collision** | A ship's closest point of approach (CPA) is less than the limit within the time limit (TCPA) | CPA and TCPA; ignore anchored and moored ships; alarms for internet-only targets too |
 | | **AIS-SART, MOB device, EPIRB** | One is heard (a test transmission is a caution only); not heard for 6 minutes it becomes a warning you can clear | Always on |
@@ -435,7 +442,7 @@ As on an ECDIS (IHO S-52), **Display** decides how much of the chart is shown:
 | **Standard** | Base, plus lights (with their sectors), leading lines and recommended tracks, fairways and ferry routes, restricted, caution and anchorage areas, wharves and other constructions, chart objects TweedPlot has no symbol for (a magenta ?), and spot soundings if **Soundings** is ticked |
 | **All** | Standard, plus every spot sounding, the other depth contours, submarine cables and pipelines, dumping grounds and kelp |
 
-The display in use is always shown (the IMO ECDIS performance standard puts the display mode in the display base): at the top of the data panel, three buttons, **Base**, **Standard** and **All**, under the status line, with the one in use lit; with the panel hidden, BASE, STD or ALL at the left of the line under the chart. Press one to change the display. **Standard** is the one press back to the standard display (below). If you have changed the standard display since (light sectors, names or soundings off), its button shows **Standard \*** with "Standard changed" under it, as an ECDIS must indicate a changed standard display. **Base** lights amber: S-52 warns that the display base alone isn't enough to navigate by, so use it briefly to declutter, then go back. The same choice is in **Chart › Chart display** and on the Layers header.
+The display in use is always shown (the IMO ECDIS performance standard puts the display mode in the display base): at the top of the data panel, three buttons, **Base**, **Standard** and **All**, under the view buttons, with the one in use highlighted and checked; with the panel hidden, BASE, STD or ALL at the left of the line under the chart. Press one to change the display. **Standard** is the one press back to the standard display (below). If you have changed the standard display since (light sectors, names or soundings off), its button shows **Standard \*** with "Standard changed" under it, as an ECDIS must indicate a changed standard display. Selecting **Base** shows an amber warning: S-52 warns that the display base alone isn't enough to navigate by, so use it briefly to declutter, then go back. The same choice is in **Chart › Chart display** and on the Layers header.
 
 **Names and labels** (light characteristics, names of marks and places, depths over dangers) and **Light sectors** go on and off separately in Standard and All. **Standard display** (Chart › Chart display), like **Standard** in the data panel, puts everything back in one press: Standard, with light sectors, names and soundings, the display to come back to when the chart has been changed for a particular job (S-Mode, IMO's standard user interface for navigation equipment, asks for this). The button is highlighted while the chart is at the standard display.
 
@@ -608,14 +615,14 @@ No instruments? A GPS dongle into Signal K is enough for position, course and sp
 
 **NMEA 0183 direct**
 
-TweedPlot can also read NMEA 0183 itself, without Signal K: from a COM port (USB adapter or multiplexer), a TCP connection or UDP broadcasts. Add each source in **Settings › Connections › NMEA data sources**. When NMEA sources are on, they take over from Signal K for your own boat's data.
+TweedPlot can also read NMEA 0183 itself, without Signal K: from a COM port (USB adapter or multiplexer), a TCP connection or UDP broadcasts. Add each source in **Settings › Connections › NMEA 0183 inputs**. When NMEA sources are on, they take over from Signal K for your own boat's data. Direct NMEA 2000 connections are not supported; use an NMEA 2000 gateway configured in Signal K.
 
 - **Several sources:** each kind of data (position, motion, heading, speed through water, wind, depth, water temperature, and air pressure, temperature and humidity) can come from a different source. If the chosen one goes quiet for longer than **Source stale after**, the next source that has the data takes over (**Automatic failover**), and an alarm says so. It has no lasting cause to end it, so press **Clear** on it (in the alerts or the Alarms drawer) once you've checked the sources.
 - **Two GPS receivers on one input:** when two receivers arrive mixed on the same input (both as `GP`, say, through a multiplexer you can't set up), the position would jump between the two antennas each time one or the other is heard. TweedPlot tells them apart by how each formats its fixes (how many decimals of a minute, whether the time has decimals, the talker), and uses one. The source's row in Settings › Connections then lists them: *GPS A (GP, 5 decimals): DGPS · 7 sats · HDOP 1.1 · 1/s — in use*, the others *ignored*, and how far apart their fixes are. **Position from** chooses: **Automatic** takes the best (RTK, then DGPS, then GPS; then the lower HDOP), keeps it while it is heard, and changes only if it goes quiet for longer than **Source stale after**, or another has been better for 30 seconds (it lost its DGPS, say); an alarm says so. Or choose one receiver: it is used whenever it is heard, the best of the others when it isn't. The choice takes effect at once and is kept. The ignored receiver's VTG (course and speed) is left out too, when its mode letter shows whose it is; a fix whose time goes backwards (another receiver, a second behind, formatted the same way) is always dropped. Receivers that format their fixes identically and use the same talker can't be told apart. Each receiver's antenna position goes in Settings › Vessel › Position and GPS antenna.
 - **Heading:** a true heading (HDT, or VHW with a true heading) is used when there is one. Otherwise the magnetic heading (HDG, HDM) is corrected with the variation from the compass or the GPS.
 - **Weather station:** barometric pressure, air temperature and relative humidity come from MDA (the meteorological composite many weather sensors and multiplexers send) or XDR. From XDR TweedPlot takes a pressure (`P`, in bars or pascals) between 870 and 1090 hPa, so an engine's oil pressure is not mistaken for the barometer; a temperature (`C`) whose name says air or outside (`Air`, `TempAir`, `ENV_OUTSIDE_T`); and a humidity (`H`). Through Signal K they come from `environment.outside.pressure`, `.temperature` and `.relativeHumidity`.
 - **AIS:** AIS sentences from an AIS receiver or transponder on any source (`!AIVDM`) become AIS targets, the same as AIS through Signal K. Your own transponder's reports of your own ship (`!AIVDO`) are not shown as a target.
-- **Live NMEA data** shows raw sentences with a distinct colour for each input. Filter by input, show receive timestamps, and pause scrolling while data continues to buffer. Bad checksums and malformed sentences are highlighted with their error. With two GPS receivers on one input, each position sentence (and each VTG whose receiver can be told) carries **GPS A**, **GPS B** …, and those from the receiver not in use are struck through and marked **ignored**; a capture keeps the same tags (`[GPS B, ignored]`) at the end of the line. **Pop out** opens the monitor in its own window. **Configure inputs** opens the source settings, where a serial input's COM port and baud rate can be changed.
+- **Settings › Diagnostics › Live NMEA data** shows raw sentences with a distinct colour for each input. Filter by input, show receive timestamps, and pause scrolling while data continues to buffer. Bad checksums and malformed sentences are highlighted with their error. With two GPS receivers on one input, each position sentence (and each VTG whose receiver can be told) carries **GPS A**, **GPS B** …, and those from the receiver not in use are struck through and marked **ignored**; a capture keeps the same tags (`[GPS B, ignored]`) at the end of the line. **Pop out** opens the monitor in its own window; **Settings › Connections › NMEA 0183 inputs › Pop out live NMEA data** opens it directly or brings it to the front if already open. **Configure inputs** opens the source settings, where a serial input's COM port and baud rate can be changed.
 - **Capture 1 minute and copy** collects the next minute of sentences and copies them, with source names and optional timestamps, ready to paste into a support email. **Capture to file** asks where to save the text log, then records for 10, 30 or 60 minutes, or a custom duration up to 24 hours, writing to the file as it goes (so a long capture uses no extra memory, and what was recorded is kept if TweedPlot closes). Either capture can be cancelled; a cancelled file capture deletes its file.
 - **Selected values** shows up to six live values from the source currently selected for each data group. Choose the fields from the drop-downs; the defaults are latitude, longitude, SOG, COG, depth and true heading.
 
@@ -764,7 +771,7 @@ A line ahead of a moving ship shows where it will be in 6 minutes (**Course vect
 
 **Target list**: {icon:targets} **Target list** in the toolbar, **Target list** in Targets & fleets › AIS, or **T** opens a list over the chart with name, type (with the status, such as "Fishing · anchored" or "Cargo · RAM"), range, bearing, CPA, TCPA, speed, course, the age of the last position (✕ in red when not heard for a while) and the source. Click a heading to sort (again to reverse); distress beacons and dangerous targets always come first. The filter shows all targets, vessels only, those under way, those closing, or only dangerous ones. Click a row to centre the chart on the target and open its details. Drag the list by its title bar and resize it from the corner; it stays where you leave it. The list under the settings in the drawer sorts by range, CPA or name.
 
-**Alarms**: the collision alarm (CPA and TCPA limits, anchored and moored ships ignored or not, internet-only targets) and the distress beacon alarm are set in {icon:alarms} **Alarms › Targets (AIS)**. An AIS-SART, MOB device or EPIRB always raises an alarm, with its bearing and distance.
+**Alarms**: the collision alarm (CPA and TCPA limits, anchored and moored ships ignored or not, internet-only targets) and the distress beacon alarm are set in {icon:alarms} **Alarms › Targets (AIS)**. Chart visibility, fleet-only and target-list display filters do not exclude received targets from collision checks. If an alarming target is hidden by the primary window's display settings, its alarm says so; click the alarm in the primary window for its details. Internet-only targets remain excluded unless their alarm option is enabled. An AIS-SART, MOB device or EPIRB always raises an alarm, with its bearing and distance.
 
 - **While it is heard** the alarm stays: **Silence** stops the sound, and the watchdog sounds it again after the watchdog time (Alarms › Sound) for as long as it is heard. It can't be cleared while it is heard: someone may be in the water.
 - **Not heard for 6 minutes** (these transmitters send every minute): the alarm becomes an amber warning, "not heard for n min", with the last position. It no longer sounds, and **Clear** removes it. The target stays on the chart, crossed out, until it hasn't been heard for 20 minutes. If it is heard again, the alarm comes back and sounds, even after Clear.
@@ -779,7 +786,7 @@ A line ahead of a moving ship shows where it will be in 6 minutes (**Course vect
 
 **Tracking, own fleet and groups are set from the target list.** Each row has a **Track** tick and a group menu (No group, Friends, Company, Race fleet, Other). Choosing a group puts the target in your own fleet; tracking a target does not.
 
-**Own fleet** (Targets & fleets › Own fleet): a list of boats to pick out, such as friends, your company's vessels or a race fleet. Add an MMSI with a name and a group, set a group from the target list or the info window, or click a boat on the chart and press **Add to own fleet**. Own-fleet boats have a filled stern in their group's colour and are named at every zoom; each has a **Track** tick, **Track all** draws them all, and **Only these on the chart** hides every other AIS target. The list shows each boat's speed, distance and how long since it was heard; click one to show it.
+**Own fleet** (Targets & fleets › Own fleet): a list of boats to pick out, such as friends, your company's vessels or a race fleet. Add an MMSI with a name and a group, set a group from the target list or the info window, or click a boat on the chart and press **Add to own fleet**. Own-fleet boats have a filled stern in their group's colour and are named at every zoom; each has a **Track** tick, **Track all** draws them all, and **Only these on the chart** hides other AIS targets on the chart and in target lists, but does not exclude them from collision alarms. The list shows each boat's speed, distance and how long since it was heard; click one to show it.
 
 **YB race tracking**
 
@@ -1026,15 +1033,19 @@ Weather comes from GRIB files: gridded forecasts from computer models, one value
 
 The list shows every GRIB in the GRIB folders, described by model, run time, area and how far ahead it goes rather than by file name. Choose one and **Load** (↻ rescans the folders). Load as many as you like: different models, or several runs of one. One is shown on the chart (its radio button), and the table under the legend gives every loaded GRIB's values at the cursor. A tick beside each loaded GRIB includes it in the agreement displays; × unloads it.
 
+The data panel's **Weather** section also has the same GRIB file list, **Load GRIB** and **Refresh**. Choose a loaded file under **Shown GRIB** to display it, or **Unload GRIB** to remove it from memory without deleting the file. The section shows loading progress and errors, so the Weather drawer can stay closed. The list reads the configured GRIB folders; put files from elsewhere in one of those folders first.
+
 TweedPlot reads GRIB2 (including ECMWF's compressed files) and GRIB1 (Saildocs and older tools): wind, gusts, pressure, waves (height, period, direction, swell, wind waves), rain, CAPE, air temperature and ocean currents. Outside a file's area or time span there is no value: a short GRIB never shows as calm.
 
 **Time**
 
-The slider, the **◀** and **▶|** steps, **▶** play and **Now** set the forecast time (also **[** and **]**; with Shift, six hours). The time shows in local time with UTC in brackets. **Floating time slider**, under the slider, shows or hides the time slider over the chart (below).
+The slider, the **◀** and **▶|** steps, **▶** play and **Now** set the forecast time (also **[** and **]**; with Shift, six hours). The time shows in local time with UTC in brackets.
 
-**The time slider.** The same controls float over the chart as a bar: the GRIB choice, step back and forward, play, **Now**, what the shading shows, the slider and the time. Drag it anywhere by its grip. With it and the data panel's forecast at the cursor (the Planning view) you can close every drawer and still move through the forecast and read values anywhere on the chart, which is the most useful layout for planning or talking a route through with crew. Hide it with ✕; bring it back with Weather › **Floating time slider**.
+The data panel shows the time span of the shown GRIB and has a synchronized time slider and **Start**, **End** and **Now** buttons. **Start** and **End** go to the ends of that file's span. The slider still covers all loaded files, so it can also reach times outside the shown GRIB; the panel warns when it does. The span covers the earliest to latest time of any field in the file: individual fields can have shorter coverage or gaps.
 
-![The Planning view with the drawers closed: wind shading and barbs from an ECMWF forecast over central New Zealand, the time slider at the bottom, and the forecast at the cursor in the data panel](img/03-slider-grib-panel.jpg)
+**Wave period** is the GRIB's wave period in seconds, not the forecast update interval. Depending on the source, it can be a primary-wave mean period or a peak period; it is not itself significant wave height (Hs).
+
+The data panel's **Weather** section provides the same forecast time controls without covering the chart.
 
 **What the chart shows**
 
@@ -1049,19 +1060,20 @@ The slider, the **◀** and **▶|** steps, **▶** play and **Now** set the for
 
 Choices a GRIB doesn't contain are greyed out, and a wave-only GRIB switches to wave height by itself.
 
-**The Weather panel (pop-up)**
+**Weather in the data panel**
 
-{icon:wxpanel} **Weather panel** in the toolbar (the cloud with rain) turns the weather on and off as a whole: the first click shows the pop-up **Weather panel** and every weather layer, the next hides them all, so the chart is clear again. The ✕ on the panel only closes the panel; the layers stay. The panel floats over the chart, so you can watch the weather without the drawer open. Drag it by its title, and fold it (▴) down to its slider. Top to bottom:
+{icon:wxpanel} **Weather** in the toolbar opens the data panel's Weather section. **Hide weather on chart** hides the layers without unloading data; **Show weather on chart** restores them.
 
 - **Run line**: the loaded file being shown, when its run was made and how old it is. It turns red and bold when the run is more than a day old, or the slider is past the end of the forecast.
 - **Time slider**, with ◀ ▶ steps, play and Now, as in the drawer.
 - **Colour bar and filter**: for whatever is shaded now (wind, sea temperature, salinity, sea surface height, chlorophyll ...), the colour bar with three pointers: drag the outer two to the lowest and highest values you care about and the target between them. Click a pointer's number to type a value. Fit puts them back to the file's range.
+- The filter also offers **Set low**, **Set target**, **Set high** and **Clear target** buttons, so it can be operated without dragging or double-clicking.
 - **At the cursor**: a fixed list of every parameter in the loaded GRIBs, so it never grows or shrinks as the cursor moves; a dash where the file has no value. When two files supply the same parameter, the one on the chart is used and the others fill the gaps; a value taken from another file is marked with a small letter, and the file it came from is named under the list. With a strong wind blowing against a current of a knot or more it adds a warning of steep, short seas.
 - **Show on the chart**: one choice for each thing that can be shaded; a drop-down beside it picks the file when more than one loaded file can supply it (two sea temperatures, say). Choosing one never needs a wind file to be selected in the drawer. Presets (**Fishing**, **Passage**, **Anchorage**, and your own with **Save…**) set the shading and overlays together.
 - **Overlays**: wind barbs, wave direction, current direction, isobars, temperature breaks and contours, each from the file you choose.
 - {icon:snap} saves the chart as it is, with the shading, as a picture.
 
-Everything the panel does is also in the Weather drawer; the panel and the drawer always agree.
+The data panel and Weather drawer share the forecast time, loaded files and chart settings. Presets and the picture button are in the data panel.
 
 **Downloading: Weather › Download GRIBs**
 
@@ -1131,13 +1143,17 @@ Ocean currents (not tidal streams) come from the ECMWF 0.1° and HYCOM downloads
 
 **Weather on route**
 
-**Weather on route** (under a routing's summary in the Wx routing drawer, or in the Route drawer) opens a view in the dock with the forecast the boat meets along the way, in strips against time:
+**Weather on route** opens the forecast the boat meets along the way in the dock. In Planning it is one button near the top of the data panel; it is also in the Route drawer and under a routing's summary in Wx routing. Close the dock with **✕** and use the button to open it again.
 
 - **Wind**: true wind speed (solid) and gusts (dashed), with arrows along the top pointing where the wind blows.
 - **Waves**: significant height Hs (solid, left scale) and peak period Tp (dotted, right scale), with arrows for the wave direction.
 - Tick **Pressure**, **Rain**, **Air temp**, **CAPE**, **Sea temp** or **Current** to add their strips; your choice is remembered.
 
-It follows the active routing, with its own times and positions (and its TWA in the readout). With no routing, it follows the course (start and marks) at the speed you set, from the weather slider's time. Values come from the GRIB shown on the chart, and anything it doesn't have (waves, sea temperature) from another loaded file that does. Hover a strip to see the boat's place on the chart and every value there; click to move the weather slider to that time. Distance run is marked under the times.
+It follows the active, visible routing, named above the graph, with its own times and positions (and its TWA in the readout). A warning appears if it was computed for a different route. With no active routing it follows the named course (start and marks) at a constant assumed speed. The initial departure is the weather slider's time; thereafter the departure is fixed and remembered. Change the local departure or speed and press **Apply and recalculate** to change the passage. Times are local to the computer; the GRIB run time is shown in UTC.
+
+Click or tap a strip, or use **Previous / Next**, to select an estimated position and time on the passage. The mark on the chart and the readout show the selection; the weather time and cursor forecast move to it when the time is available. This does **not** change the departure. If the time is outside the loaded forecast's time range, the chart time and cursor forecast stay as they were and the readout says so. Distance run is marked under the graph.
+
+Values come from the GRIB shown on the chart, with missing fields filled from other loaded files. The sources and run times are listed above the graph, and the selected point lists its contributing sources. Missing fields or sampled coverage are reported; gaps are not calm conditions. When the route, routing or loaded forecast changes, old results are hidden while the new calculation runs. An error is shown with **Retry**, not as a valid empty forecast. Forecasts and fixed-speed passage times are estimates, not observations.
 
 ![Weather on route for the passage from Nelson to Wellington by French Pass, followed at 6 kn: 99 NM in 16 h 37 min, the wind rising to 20 kn gusting 35, and the waves along the way](img/11-weather-on-route.jpg)
 
@@ -1245,7 +1261,7 @@ Ruler bearings and distances are rhumb lines: a constant compass course, which i
 
 **Cursor readout**
 
-The data panel shows the cursor's position, the depth there, and the bearing and range to it from the boat, on one line above the alerts (on the line under the chart when the panel is hidden). In the Planning view the panel's **Cursor** and **Forecast at the cursor** sections add the own sounding there and the forecast at the slider time, so you can point at any spot and read its position, distance from you and weather.
+The data panel shows the cursor's position, the depth there, and the bearing and range to it from the boat, on one line above the alerts (on the line under the chart when the panel is hidden). The **GRIB data at the cursor** section shows available weather and sea fields at the slider time; the Planning view's **Cursor** section also shows the own sounding there.
 
 **Magnetic variation diagram.** Right-click the chart › **Magnetic variation diagram here** puts a true north line (25 mm high on your screen at any zoom) on the screen, with the magnetic north vector beside it and the text "Var 19.5°E inc 6′ annually", from the World Magnetic Model (or your instruments near the boat). It is fixed to the screen, not the chart: drag it where you want it, and it turns with the chart and takes the variation of the chart under it. It follows the night palettes. Right-click it › **Remove variation diagram**; right-click the chart › **Move variation diagram here** to relocate it. Its place is kept between runs.
 
@@ -1268,7 +1284,7 @@ Press **Save vessel details** after changing the identity, dimensions or antenna
 
 **Connections**
 
-Where the live data comes from and how it is treated: **Signal K** (its connection and what is arriving), **NMEA data sources** (COM, TCP and UDP sources, failover and the live NMEA monitor, see *NMEA 0183 direct*), **Replay a log**, and **Damping** (see Your boat).
+Where the live data comes from and how it is treated: **Signal K** (its connection and what is arriving), **NMEA 0183 inputs** (COM, TCP and UDP sources and failover, see *NMEA 0183 direct*), **NMEA 2000 inputs** (through Signal K; direct inputs are not supported), **Replay a log**, and **Damping** (see Your boat). **Pop out live NMEA data** under **NMEA 0183 inputs** opens the raw monitor in its own window; the inline monitor is under **Diagnostics**.
 
 **Display**
 
@@ -1316,9 +1332,11 @@ With dusk and night colours the window's title bar turns dark as well. To get ri
 
 - **Zoom buttons**: **Auto** shows them only where a touch screen is found; **Show** or **Hide** forces it. They are two round buttons at the bottom centre of the chart, well apart.
 - **Large buttons**: **Auto** enlarges the toolbar, MOB, Drop and zoom buttons on a touch screen; **On** does it on any screen, for gloves.
+- **Return to Navigation after Planning inactivity**: five minutes by default, adjustable from one to ten minutes or Off. It applies to this window and changes view even if a dialog or edit is open.
 
 **Diagnostics**
 
+- **Live NMEA data**: inspect, capture or pop out the raw NMEA monitor.
 - **About this system**: TweedPlot's version and the computer's details (Windows, processor, memory, graphics). **Copy for support** puts all of it, with the activity log, on the clipboard to paste into an email to Tweedsmarine.
 - **Where to install data files**: every data folder with its full path and what goes there; **Open** opens it in File Explorer (see *The data folder*).
 - **Activity log**: what TweedPlot has done (imports, deletes, exports, chart changes) and how each went, newest first, with **Refresh** and **Copy for support**.
@@ -1351,7 +1369,7 @@ Single keys (letters, Space, the brackets) work whenever you aren't typing in a 
 | MOB, Drop or the readings have gone | The data panel is hidden: they are on the line under the chart. **O**, or **⟨ Panel**, brings the panel back |
 | A toolbar button described here isn't there | Shoot, Haul and Own soundings show in the Fishing use only: Settings › Display › Use |
 | Laylines don't show | They aren't drawn in the Fishing use, or without a wind (live, or a loaded GRIB), or without a next mark or Go to |
-| The data panel or the time slider has gone | The data panel: **O**, or **⟨ Panel** on the line under the chart; the time slider: Weather › **Floating time slider** |
+| The data panel or time controls have gone | Open the data panel with **O** or **⟨ Panel**, then open its **Weather** section |
 | Soundings, contours or cables have gone | The display is on Base or Standard: press **All** at the top of the data panel, or tick **Soundings** in Chart › Chart display |
 | An info window is off where I can't see it | It is kept on the screen, but may be behind a drawer: close the drawer, or drag the window by its title bar |
 | An AIS target is crossed through | It hasn't been heard for a while (see Targets): out of range, behind land, its set switched off, or (online AIS) no shore station in reach |

@@ -9,9 +9,10 @@ Nothing covers the chart: everything else sits beside it.
 ![The Navigation view under way: the rail, the toolbar, the chart and the data panel](img/12-navigation.jpg)
 
 - **The rail** (left edge): the drawers. {icon:weather} Weather, {icon:course} Route, {icon:routing} Wx routing, {icon:fleet} Targets & fleets, {icon:library} Library, {icon:chart} Chart, {icon:inst} Instruments, {icon:alarms} Alarms. {icon:manual} Manual and {icon:settings} Settings are at the bottom. Click one to open it; click it again (or **Esc**) to close it. The **?** in a drawer's title bar opens the manual at that drawer.
-- **The toolbar** (the strip down the chart's left edge): {icon:north} north up, the live data light, live or paused, {icon:follow} follow the boat, {icon:ruler} ruler, {icon:ebl} EBL/VRM, {icon:targets} target list, {icon:wxpanel} weather, the **View** list, {icon:side} the data panel, {icon:panels} panels, {icon:day} colours (day, dusk, night). Hover a button for what it does.
+- **The toolbar** (the strip down the chart's left edge): {icon:north} north up, the live data light, live or paused, {icon:follow} follow the boat, {icon:ruler} ruler, {icon:ebl} EBL/VRM, {icon:targets} target list, {icon:wxpanel} weather, the **View** list, {icon:side} the data panel, {icon:panels} panels, {icon:day} colours (day, dusk, night). Scroll the toolbar when the window is too short to show all buttons. **LIVE**, **PAUSED** or **REPLAY** shows the data mode; **FOLLOW** means the chart follows the boat and **FREE** means it does not. Hover a button for what it does.
 - **The data panel** (right of the chart). From the top:
-  - the status line: the view, LIVE or PAUSED, north up or turned, and the scale;
+  - the status line: LIVE, PAUSED or REPLAY, north up or turned, and the scale;
+  - **Navigation**, **Planning**, **Instruments**: select a view; the current one is marked;
   - **Base**, **Standard**, **All**: how much the chart shows;
   - **MOB** and **Drop** (a mark at the boat), and the anchor button if you turn it on;
   - own ship: heading, course, speed, depth, position and time, always shown;
@@ -21,7 +22,7 @@ Nothing covers the chart: everything else sits beside it.
 - **Right-click the chart** (or hold a finger on it): move the boat, start a route, new mark, drop anchor, go to, meteogram, ruler… Most things start here.
 - **Click** a light, buoy, AIS target or area for its details.
 
-**Views.** The **View** button switches between **Navigation** (F2, under way), **Planning** (F3, routes and weather), **Instruments** (F4, large readings without the chart) and **Live data** (the raw instrument data). TweedPlot starts in Navigation.
+**Views.** The buttons at the top of the data panel switch between **Navigation** (F2, under way), **Planning** (F3, routes and weather) and **Instruments** (F4, large readings without the chart). The toolbar's **View** button also switches views, including when the data panel is hidden. TweedPlot starts in Navigation. The raw NMEA monitor is in **Settings › Diagnostics › Live NMEA data**, or open it in a separate window from **Settings › Connections › NMEA 0183 inputs › Pop out live NMEA data**.
 
 ## First start
 
@@ -58,10 +59,11 @@ Your own depth soundings build up into a seabed, as on Olex or TimeZero.
 {icon:weather} **Weather**:
 
 1. **Download GRIBs (free)**: choose the **model**, the **area** (draw it, the chart view, or round the route), the forecast length and the time step, then **Download**. Away from the internet, **Saildocs email request** writes the email for you.
-2. Choose the file at the top, **Load**, and move through time with the slider (or **[** and **]**).
+2. Choose the file at the top, **Load**, and move through time with the slider (or **[** and **]**). The data panel's **Weather** section also lets you load, select and unload GRIBs, and shows the selected file's time span with **Start** and **End** shortcuts.
 3. **Show** chooses the shading (wind, gusts, rain, waves, sea temperature…); barbs, isobars and arrows are in Chart › Layers › Weather and ocean.
-4. {icon:wxpanel} in the toolbar shows the Weather panel and all the weather layers, or hides them all.
+4. {icon:wxpanel} in the toolbar opens **Weather** in the data panel, switching to Planning if the current view has no Weather controls. Use **Hide weather on chart** there to hide the layers.
 5. Right-click the chart › **Meteogram here** for the forecast at one place.
+6. In Planning, press **Weather on route** in the data panel to see the forecast along the active routing or planned route. Select a graph point to inspect it without changing the route's departure.
 
 **Tides and weather stations** are layers too (Chart › Layers › Tides and observations); download the LINZ tide tables in Weather › Tides once a year.
 

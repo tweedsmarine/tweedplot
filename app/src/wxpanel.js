@@ -1,10 +1,9 @@
 // The pop-up Weather panel: time slider, what to show (every parameter in the loaded GRIBs, each with its sources),
 // the low / target / high filter, a cursor readout and presets, and a snapshot.
 import { invoke } from "@tauri-apps/api/core";
-import { fmt } from "./weather.js";
+import { fmt, weatherSelectionSummary } from "./weather.js";
 import * as activity from "./activity.js";
 import { ask } from "./ask.js";
-import { floatResize } from "./floatresize.js";
 
 const KEY = "racenav.wxpanel";
 const PRESETS = {
@@ -32,12 +31,12 @@ const ROWS = [
   ["Temp at depth", ["SubTemp"], (r) => r.subt != null && `${r.subt.toFixed(1)} °C${r.depth != null ? ` at ${Math.abs(r.depth).toFixed(0)} m` : ""}`, "subt"],
   ["Salinity", ["Salinity"], (r) => r.sss != null && `${r.sss.toFixed(2)} PSU`, "sss"],
   ["Salinity at depth", ["SubSalinity"], (r) => r.subs != null && `${r.subs.toFixed(2)} PSU${r.depth != null ? ` at ${Math.abs(r.depth).toFixed(0)} m` : ""}`, "subs"],
-  ["Chlorophyll", ["Chlorophyll"], (r) => r.chl != null && `${(10 ** r.chl).toFixed(2)} mg/m³`, "chl"],
+  ["Chlorophyll", ["Chlorophyll"], (r) => r.chl != null && `${r.chl.toFixed(2)} mg/m³`, "chl"],
   ["Sea surface height", ["SeaLevel"], (r) => r.ssh != null && `${r.ssh >= 0 ? "+" : ""}${r.ssh.toFixed(2)} m`, "ssh"],
   ["Current", ["CurrentU"], (r) => r.cur && `${r.cur.kn.toFixed(1)} kn toward ${deg3(r.cur.set)}° ${compass(r.cur.set)}`, "cur"],
 ];
 
-export function setupWeatherPanel(map, weather) {
+export function setupWeatherPanel(map, weather, sidePanel) {
   const $ = (id) => document.getElementById(id);
   const st = { open: false, x: null, y: null, collapsed: false, sec: { show: true, over: true }, presets: {} };
   try { Object.assign(st, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* storage unavailable or damaged: defaults */ }
@@ -45,25 +44,18 @@ export function setupWeatherPanel(map, weather) {
   if (!st.presets || typeof st.presets !== "object") st.presets = {};
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch { /* ignore */ } };
 
-  const win = document.createElement("div");
-  win.id = "wxp";
-  win.className = "float-win";
-  win.hidden = true;
+  const win = $("wxp");
   win.innerHTML = `
-    <header><b>Weather</b><span class="wx-note" id="wxp-when"></span><span class="grow"></span>
-      <button id="wxp-snap" title="Save the chart as a picture" aria-label="Save the chart as a picture"><svg viewBox="0 0 24 24" class="ic"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
-      <button id="wxp-fold" title="Fold down to the time slider"></button><button id="wxp-x" title="Close">✕</button></header>
+    <span class="wx-note" id="wxp-when"></span>
     <div class="wxp-run" id="wxp-run"></div>
-    <div class="wxp-time"><div id="wxp-slider"></div><div id="wxp-legend" class="wx-legend"></div><div id="wxp-filter"></div></div>
+    <div class="wxp-time"><div id="wxp-legend" class="wx-legend"></div><div id="wxp-filter"></div></div>
     <div class="wxp-body" id="wxp-body">
-      <div class="wxp-head">At the cursor</div><div id="wxp-point" class="wxp-point"></div>
       <details data-sec="show"><summary>Show on the chart</summary><div id="wxp-show"></div>
         <div class="wxp-presets"><select id="wxp-preset" title="Presets"></select><button id="wxp-psave" title="Save what is shown as a preset">Save…</button><button id="wxp-pdel" title="Delete the chosen saved preset">Delete</button></div></details>
       <details data-sec="over"><summary>Overlays</summary><div id="wxp-over"></div></details>
+      <button id="wxp-visible">Hide weather on chart</button>
+      <button id="wxp-snap" title="Save the chart as a picture" aria-label="Save the chart as a picture"><svg viewBox="0 0 24 24" class="ic"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg> Save picture</button>
     </div>`;
-  (($("tgt-win") ?? map.getContainer()).parentElement).append(win);
-  floatResize(win, { widthOnly: true });
-  weather.mountControls($("wxp-slider"), { bare: true });
   weather.mountLegend($("wxp-legend"));
   weather.mountFilter($("wxp-filter"));
 
@@ -72,39 +64,9 @@ export function setupWeatherPanel(map, weather) {
     d.ontoggle = () => { st.sec[d.dataset.sec] = d.open; save(); };
   }
 
-  function place() {
-    if (st.x == null) return;
-    const m = map.getContainer().getBoundingClientRect();
-    win.style.left = `${Math.max(0, Math.min(m.width - 140, st.x))}px`;
-    win.style.top = `${Math.max(0, Math.min(m.height - 40, st.y))}px`;
-    win.style.right = "auto";
-  }
-  function fold() {
-    win.classList.toggle("folded", st.collapsed);
-    $("wxp-fold").textContent = st.collapsed ? "▾" : "▴";
-  }
-  function show(on, withLayers = false) {
-    st.open = on;
-    win.hidden = !on;
-    $("wx-pop-btn")?.classList.toggle("on", on);
-    save();
-    if (withLayers) weather.setVisible(on);
-    if (on) { place(); fold(); refresh(); }
-  }
-  // the toolbar button switches the panel and every weather layer on or off together
-  $("wx-pop-btn").title = "Weather: show or hide the weather panel and all the weather layers on the chart";
-  $("wx-pop-btn").onclick = () => show(win.hidden, true);
-  $("wxp-x").onclick = () => show(false);
-  $("wxp-fold").onclick = () => { st.collapsed = !st.collapsed; save(); fold(); };
-  win.querySelector("header").addEventListener("pointerdown", (e) => {
-    if (e.target.closest("select, button")) return;
-    const r = win.getBoundingClientRect(), m = map.getContainer().getBoundingClientRect();
-    const dx = e.clientX - r.left, dy = e.clientY - r.top;
-    const move = (ev) => { st.x = ev.clientX - m.left - dx; st.y = ev.clientY - m.top - dy; place(); };
-    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); save(); };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  });
+  $("wx-pop-btn").title = "Open weather controls in the data panel (switches to Planning if needed)";
+  $("wx-pop-btn").onclick = () => sidePanel.openWeather();
+  $("wxp-visible").onclick = () => weather.setVisible(!weather.visible());
 
   // ---------- what is loaded: layers and overlays, each with its sources ----------
   const short = (n) => (n.length > 28 ? `${n.slice(0, 27)}…` : n);
@@ -225,24 +187,27 @@ export function setupWeatherPanel(map, weather) {
 
   // ---------- cursor readout ----------
   let lastPoint = null, trend = null, trendKey = "";
-  weather.onPoint((row, at) => { lastPoint = row; if (row) fetchTrend(row, at); renderPoint(); });
+  weather.onPoint((row, at) => { lastPoint = row; if (row && at) fetchTrend(row, at); else { trendKey = ""; trend = null; } renderPoint(); });
   async function fetchTrend(row, at) {
-    const key = `${at[0].toFixed(3)},${at[1].toFixed(3)},${row.t}`;
+    const source = row.src?.mslp ?? weather.current().name;
+    const key = `${at[0].toFixed(3)},${at[1].toFixed(3)},${row.t},${source}`;
     if (key === trendKey || row.mslp == null) return;
     trendKey = key;
     trend = null; // not the last point's trend while this one is fetched
     const rows = await invoke("grib_point", { lat: at[1], lon: at[0], t: row.t - 10800 }).catch(() => []);
     if (key !== trendKey) return; // the cursor has moved on: a newer request will answer
-    const was = (rows || []).find((r) => r.path === weather.current().path)?.mslp;
+    const was = (rows || []).find((r) => r.name === source)?.mslp;
     trend = was != null ? row.mslp - was : null;
     renderPoint();
   }
   function renderPoint() {
     const box = $("wxp-point");
-    if (win.hidden) return;
     const have = weather.loadedParams();
     const rows = ROWS.filter(([, params]) => params.some((p) => have.has(p)));
-    if (!rows.length) { box.innerHTML = `<div class="wx-note">No GRIB loaded.</div>`; return; }
+    if (!rows.length) {
+      box.innerHTML = `<div class="wx-note">${weather.sources().length ? "No supported cursor fields in the loaded GRIBs." : "No GRIB loaded."}</div>`;
+      return;
+    }
     const r = lastPoint;
     // one fixed row per parameter in the loaded GRIBs, so the list never changes size as the cursor moves
     // a value borrowed from another loaded file (the shown one lacks it) is marked a, b … with the file below
@@ -307,15 +272,23 @@ export function setupWeatherPanel(map, weather) {
   function refresh() {
     clearTimeout(timer);
     timer = setTimeout(() => {
-      if (win.hidden) return;
       renderHead(); renderShow(); renderOver(); renderPoint();
+      $("wxp-visible").textContent = weather.visible() ? "Hide weather on chart" : "Show weather on chart";
+      $("wxp-visible").setAttribute("aria-pressed", String(weather.visible()));
     }, 60);
   }
   weather.onChange(refresh);
   weather.onLoaded(refresh);
-  weather.onTime(() => { if (!win.hidden) renderHead(); });
+  weather.onTime(renderHead);
+  function renderChartState() {
+    $("side-weather-state").textContent = weatherSelectionSummary({
+      visible: weather.visible(), sources: weather.sources(), layerInfo: weather.layerInfo(),
+      layerOptions: weather.layerOptions(), overlayOptions: weather.overlayOptions(),
+    });
+  }
+  weather.onChange(renderChartState);
+  weather.onLoaded(renderChartState);
+  renderChartState();
   renderPresets();
-  fold();
-  show(!!st.open);
-  return { show, toggle: () => show(win.hidden) };
+  refresh();
 }

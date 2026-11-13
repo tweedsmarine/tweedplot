@@ -229,8 +229,10 @@ export function setupGribDownload(map, { weather, course }) {
     status("Downloading…");
     const t0 = performance.now();
     job = activity.start(`Downloading a GRIB (${$("dl-model").selectedOptions[0]?.textContent ?? prefs.model})`, { cancel: () => invoke("gribdl_cancel").catch(() => {}) });
+    let downloaded = null;
     try {
       const r = await invoke("gribdl_start", { req });
+      downloaded = r;
       status(`Downloaded ${r.name} in ${((performance.now() - t0) / 1000).toFixed(0)} s. Loading…`, "good");
       job.progress("Loading it");
       await weather.refreshFiles();
@@ -240,8 +242,10 @@ export function setupGribDownload(map, { weather, course }) {
       else status(`${r.name}: downloaded and loaded (${file}).`, "good");
       job.done(`${r.name}: downloaded in ${((performance.now() - t0) / 1000).toFixed(0)} s and loaded.`, { details: [r.path, ...(r.note ? [r.note] : [])], keep: !!r.note });
     } catch (e) {
-      status(String(e) === "cancelled" ? "Download cancelled." : `Download failed: ${e}`, String(e) === "cancelled" ? "warn" : "bad");
-      if (String(e) === "cancelled") job.done("Cancelled."); else job.fail(`Download failed: ${e}`);
+      const message = downloaded ? `Downloaded ${downloaded.name}, but could not load it: ${e}` : `Download failed: ${e}`;
+      const cancelled = !downloaded && String(e) === "cancelled";
+      status(cancelled ? "Download cancelled." : message, cancelled ? "warn" : "bad");
+      if (cancelled) job.done("Cancelled."); else job.fail(message);
     } finally {
       job = null;
       $("dl-go").disabled = false;

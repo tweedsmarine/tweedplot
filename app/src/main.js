@@ -74,6 +74,8 @@ import { setupReplay } from "./replay.js";
 import { setupPalette } from "./palette.js";
 import { setupMapPalette } from "./mappalette.js";
 import { setupAlarms } from "./alarms.js";
+import { createPositionWatch } from "./position-watch.js";
+import { createDepthWatch, depthFresh } from "./depth-watch.js";
 import { setupMarine } from "./marine.js";
 import { setupAis } from "./ais.js";
 import { hullRing, bigEnough } from "./hull.js";
@@ -83,7 +85,7 @@ import { setupLibrary, labelImage } from "./library.js";
 import { setupSettings } from "./settings.js";
 import { setupSidePanel } from "./sidepanel.js";
 import { setupHistorySettings, restoreHistoryCards, recorder as histRecorder } from "./history.js";
-import { setupNmeaMonitor } from "./nmeamonitor.js";
+import { setupNmeaMonitor, openMonitorWindow } from "./nmeamonitor.js";
 
 /** A "1"/"0" flag from localStorage; false where storage is unavailable. */
 const storedFlag = (key) => { try { return localStorage.getItem(key) === "1"; } catch { return false; } };
@@ -441,7 +443,7 @@ let routing = null;
 let aisApi = null; // AIS targets (ais.js), for the data panel's Targets section
 let library = null;
 const ui = setupRail(map);
-const views = setupViews(map);
+const views = setupViews(map, { onPlanningTimeout: () => toast("Planning inactive: returned to Navigation", 8000) });
 setupCards();
 const use = setupUse();
 
@@ -464,11 +466,10 @@ setupWelcome({ use, inst });
 const sidePanel = setupSidePanel({ inst, views, use, map,
   getAis: () => aisApi,
   // show a place (a mark, a target, the MOB): Follow off so the chart stays there
-  centreOn: (ll) => { if (follow) { follow = false; followBtn.classList.remove("on"); } map.easeTo({ center: ll, duration: 400 }); },
+  centreOn: (ll) => { setFollow(false); map.easeTo({ center: ll, duration: 400 }); },
   centreBoat: () => {
     if (!lastBoat) { toast("No boat position yet", 2500); return; }
-    follow = true;
-    followBtn.classList.add("on");
+    setFollow(true);
     map.easeTo({ center: lastBoat, offset: followOffset(), duration: 300 });
   } });
 window.__inst = inst; window.__side = sidePanel; window.__ais = () => aisApi; window.__rec = histRecorder; window.__map = map; // debugging handles
@@ -477,7 +478,15 @@ window.addEventListener("racenav-mob", (e) => { inst.update({ mob: e.detail }); 
 const boat = setupBoat();
 const antennas = setupAntennas(); // which receiver's antenna the position is from
 setupSettings({ boat, ui, onReferencePosition: useReferencePosition });
-const openNmeaSettings = () => ui.openTab("settings", "conn");
+function openConnectionCard(id) {
+  ui.openTab("settings", "conn");
+  const card = document.getElementById(id);
+  if (card) {
+    card.open = true;
+    card.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+}
+const openNmeaSettings = () => openConnectionCard("nmea-0183-section");
 if (PRIMARY) {
   listen("nmea-open-settings", () => {
     const w = getCurrentWindow();
@@ -487,6 +496,7 @@ if (PRIMARY) {
 }
 setupHistorySettings(document.getElementById("hist-keep"), document.getElementById("hist-info"), document.getElementById("hist-clear"));
 restoreHistoryCards();
+document.getElementById("nmea-popout").addEventListener("click", () => openMonitorWindow((message) => toast(message, 6000)));
 setupNmeaMonitor(document.getElementById("nmea-monitor-inline"), { openSettings: openNmeaSettings });
 setupNmeaMonitor(document.getElementById("nmea-monitor-window"), { standalone: true, openSettings: openNmeaSettings });
 const dock = setupDock(map);
@@ -542,9 +552,10 @@ let tracks = null;
 
 /** A short message at the bottom of the chart ("" hides it); gone after `ms` if given. */
 let toastTimer = null;
-function toast(text, ms = 0) {
+function toast(text, ms = 0, isStartup = false) {
   const el = document.getElementById("toast");
   clearTimeout(toastTimer);
+  el.classList.toggle("startup-toast", isStartup);
   el.textContent = text;
   el.hidden = !text;
   if (text && ms) toastTimer = setTimeout(() => { el.hidden = true; }, ms);
@@ -567,7 +578,7 @@ function chartLoadingMessage() {
 function startupToast(text) {
   if (startup.finished || startup.message === text) return;
   startup.message = text;
-  toast(text);
+  toast(text, 0, true);
 }
 function finishStartupWhenReady() {
   if (startup.finished || !startup.mapLoaded || !startup.appReady || !startup.chartsReady) return;
@@ -584,9 +595,9 @@ function finishStartupWhenReady() {
     return;
   }
   startup.finished = true;
-  if (info.error) toast(`Chart loading failed: ${info.error}`, 8000);
-  else if (info.tables > 0) toast("System ready", 3000);
-  else toast("System ready - no charts found", 5000);
+  if (info.error) toast(`Chart loading failed: ${info.error}`, 8000, true);
+  else if (info.tables > 0) toast("System ready", 3000, true);
+  else toast("System ready - no charts found", 5000, true);
 }
 function noteChartsReady(info) {
   if (!info) return;
@@ -627,7 +638,8 @@ map.on("load", () => {
   setupWebMap(map);
   layerVis = setupLayerVisibility(map, { ready: () => chartMapLoaded && chartStoreReady });
   alarms = setupAlarms(map, {
-    getBoat: () => ({ pos: lastBoat, v: vessel, live: live && signalKActive(), connected: liveDataConnected(), fresh: Date.now() - lastFeed < 5000 }),
+    getBoat: () => ({ pos: lastBoat, v: vessel, live: live && signalKActive(), plottingLive: live, positionLost: positionWatch.lost(),
+      depthFresh: depthFresh(vessel, (field) => depthWatch.age(field), true), depthGraceElapsed: depthWatch.graceElapsed() }),
     getBow: () => { const o = antennas.offsets(boat.get()); return bowOf(lastBoat, vessel, o.fromBow, o.fromCentre)?.pos ?? null; },
     getSafetyDepth: () => settings.safetyDepth,
     getSafetyContour: () => settings.safetyContour,
@@ -672,10 +684,13 @@ map.on("load", () => {
   activity.setupSystemInfo().catch(() => {});
   setupWindowState();
   aisApi = setupAis(map, { alarms, ui, getOwnMmsi: () => boat.get().mmsi, getOwn: () => ({ pos: lastBoat, cog: live ? vessel?.cog : null, sog: live ? vessel?.sog : 0, live: live && signalKActive() }) });
-  setupReplay({ onState: (on) => {
+  setupReplay({ onProgress: ({ at, start }) => { positionWatch.replayProgress(at, start); depthWatch.progress(at, start); }, onState: (on) => {
     replayOn = on;
+    positionWatch.reset();
+    depthWatch.reset();
     if (on && !live) liveBtn.click(); // a replay plays live
     if (!on) { lastFeed = 0; }
+    showStatus();
   } });
   library = setupLibrary(map, { ui, toast, getBoat: () => lastBoat });
   route = setupRoute(map, { library, getBoat: () => lastBoat, getArrivalNm: () => Number(document.getElementById("rt-radius").value) || 0.1 });
@@ -689,10 +704,10 @@ map.on("load", () => {
   setupFleet(map, { weather, course: route, routing, dock, ui });
   setupGribDownload(map, { weather, course: route });
   gribTools = setupGribTools(map, { weather, dock });
-  setupWeatherPanel(map, weather);
+  setupWeatherPanel(map, weather, sidePanel);
   const routeWx = setupRouteWeather(map, { weather, routing, course: route, dock });
   setupRadar(map, { getBoat: () => lastBoat });
-  for (const id of ["rt-wx", "crs-wx"]) { const b = document.getElementById(id); if (b) b.onclick = () => routeWx.open(); }
+  for (const id of ["rt-wx", "crs-wx", "side-route-wx"]) { const b = document.getElementById(id); if (b) b.onclick = () => routeWx.open(); }
   document.getElementById("wx-verify").onclick = () => gribTools.openVerify();
   setupTides(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn) });
   ruler = setupRuler(map, { before: "track", ui, library, route, toast, getVariation: variationAt });
@@ -790,6 +805,8 @@ async function planningArrows(row, at) {
 
 // ---------- instruments ----------------------------------------------------------
 let vessel = {}; // latest Signal K state
+const positionWatch = createPositionWatch();
+const depthWatch = createDepthWatch();
 const damping = createDamping((g) => Number(settings[{ motion: "dampMotion", wind: "dampWind", depth: "dampDepth" }[g]]) || 0);
 function boatTime() {
   // planning: the weather slider's time; live: the GPS time, else the clock
@@ -807,7 +824,9 @@ function feed() {
   const pts = routing?.activePoints();
   const target = pts ? targetAt(pts, boatTime()) : null;
   const v = live ? vessel : { ...vessel, lat: pos?.[1], lon: pos?.[0] };
-  inst.update({ v, dataAt: live ? lastFeed : 0, nav, wp, target, safetyDepth: settings.safetyDepth, replay: replaying() });
+  const positionAge = positionWatch.age();
+  inst.update({ v, dataAt: live ? lastFeed : 0, positionAt: live && positionAge != null ? Date.now() - positionAge : null,
+    depthAge: (field) => live ? depthWatch.age(field) : null, nav, wp, target, safetyDepth: settings.safetyDepth, replay: replaying() });
   // the route's next mark changed (or the route's start moved): redraw the laylines
   const key = nav ? `${nav.next.lon},${nav.next.lat},${nav.from}` : "";
   if (key !== layKey) { layKey = key; laylines?.refresh(); }
@@ -1058,8 +1077,14 @@ map.getCanvas().addEventListener("mouseleave", () => { setCursor(null); inst.upd
 // ---------- follow / track -------------------------------------------------
 let follow = true;
 const followBtn = document.getElementById("follow");
-followBtn.onclick = () => { follow = !follow; followBtn.classList.toggle("on", follow); };
-map.on("dragstart", () => { follow = false; followBtn.classList.remove("on"); });
+function setFollow(on) {
+  follow = on;
+  followBtn.classList.toggle("on", on);
+  followBtn.setAttribute("aria-pressed", String(on));
+}
+setFollow(true);
+followBtn.onclick = () => setFollow(!follow);
+map.on("dragstart", () => setFollow(false));
 
 // The boat's place on the screen while following, as a fraction of the map's width and height from its
 // centre. Drag the boat to set it (to see more chart ahead); double-click the boat to centre it again.
@@ -1122,11 +1147,10 @@ map.on("dblclick", (e) => {
 // ---------- keyboard shortcuts (keys.js holds the table) ------------------------------------
 setupKeys(map, {
   ui, views,
-  followOff: () => { if (follow) { follow = false; followBtn.classList.remove("on"); } },
+  followOff: () => setFollow(false),
   centreBoat: () => {
     if (!lastBoat) { toast("No boat position yet", 2500); return; }
-    follow = true;
-    followBtn.classList.add("on");
+    setFollow(true);
     map.easeTo({ center: lastBoat, offset: followOffset(), duration: 300 });
   },
   weatherStep: (n) => document.getElementById(n < 0 ? "wx-prev" : "wx-next").click(),
@@ -1193,13 +1217,21 @@ function showStatus() {
     lastData ? `Last update ${ago(age)} ago${what && state === "good" ? `: ${what}` : ""}` : connected ? "No data yet" : "",
     live ? "" : "Plotting paused (planning): the boat stays where you put it",
     usingNmea ? "Click for NMEA source settings" : "Click for the Signal K settings"].filter(Boolean).join("\n");
-  document.getElementById("sk-live").title = live
-    ? `Live: the boat follows ${usingNmea ? `NMEA 0183 · ${nmeaNavigationSourceName}` : "Signal K"}. Click to pause and plan (right-click the chart to move the boat).`
-    : "Paused (planning): the boat stays where you put it. Click to go live.";
+  el.setAttribute("aria-label", head);
+  const liveControl = document.getElementById("sk-live");
+  liveControl.setAttribute("aria-pressed", String(live));
+  liveControl.setAttribute("aria-label", replayOn ? `Replay, plotting ${live ? "on" : "paused"}` : `Plotting ${live ? "live" : "paused"}`);
+  liveControl.title = replayOn
+    ? `Replay: plotting ${live ? "on. Click to pause" : "paused. Click to resume"}. Stop the replay to return to live data.`
+    : live
+      ? `Live: the boat follows ${usingNmea ? `NMEA 0183 · ${nmeaNavigationSourceName}` : "Signal K"}. Click to pause and plan (right-click the chart to move the boat).`
+      : "Paused (planning): the boat stays where you put it. Click to go live.";
 }
 function setNmeaNavigationSource(payload) {
   const id = payload?.id ?? null;
   if (id !== nmeaNavigationSourceId) {
+    positionWatch.reset();
+    depthWatch.reset();
     nmeaConnected = false;
     nmeaSeen = false;
     nmeaDetail = "";
@@ -1265,8 +1297,7 @@ listen("sk-status", ({ payload }) => setStatus(payload));
 invoke("sk_status").then(setStatus).catch(() => {});
 setInterval(showStatus, 1000); // data going quiet turns it amber
 document.getElementById("sk-state").onclick = () => {
-  ui.openTab("settings", "conn");
-  document.getElementById(nmeaNavigationSourceId ? "nmea-settings-section" : "sk-section")?.scrollIntoView({ block: "start", behavior: "smooth" });
+  openConnectionCard(nmeaNavigationSourceId ? "nmea-0183-section" : "sk-section");
 };
 // the toolbar's ruler: one press to measure (the chart menu has "Start ruler here" too)
 document.getElementById("ebl-btn").onclick = () => mariner?.startEbl();
@@ -1491,6 +1522,7 @@ listen("vessel", ({ payload }) => {
   if (payload.replay) {
     if (!replayOn) return; // a late message after the replay stopped
   } else {
+    if (replayOn) return;
     if (nmeaNavigationSourceId) {
       if (payload.source !== "nmea0183" || payload.sourceId !== "nmea-multiplexer") return;
       nmeaConnected = true;
@@ -1506,6 +1538,8 @@ listen("vessel", ({ payload }) => {
   }
   const validPosition = Number.isFinite(raw.lat) && raw.lat >= -90 && raw.lat <= 90
     && Number.isFinite(raw.lon) && raw.lon >= -180 && raw.lon <= 180;
+  positionWatch.observe(raw, !!payload.replay);
+  depthWatch.observe(raw, !!payload.replay);
   if (validPosition) hasPositionFix = true;
   if (validPosition && !payload.replay && payload.source === "nmea0183") {
     useInitialPosition([raw.lon, raw.lat]);
