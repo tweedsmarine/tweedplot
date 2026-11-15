@@ -1048,7 +1048,7 @@ The Weather, Ocean and Seabed buttons are starting points; the last selected is 
 
 **Wave period** is the GRIB's wave period in seconds, not the forecast update interval. Depending on the source, it can be a primary-wave mean period or a peak period; it is not itself significant wave height (Hs).
 
-In Planning, forecast time stays above the scrolling panel. Cursor values identify their forecast time and shown GRIB, with other contributing files marked separately. Expand **Compare loaded GRIBs at cursor** for the individual runs.
+In Planning, forecast time stays above the scrolling panel. Cursor values identify their forecast time and shown GRIB, with other contributing files marked separately. The individual runs at the cursor are listed under **Compare GRIBs**.
 
 **What the chart shows**
 
@@ -1175,13 +1175,15 @@ Wind and waves come from different models: GFS with GFS-Wave, ECMWF IFS or AIFS 
 
 **Agreement of the loaded GRIBs**
 
+Everything for comparing GRIBs is in one place: Environment › Explore › Weather layers and filters › **Compare GRIBs**. It has the GRIBs to compare (tick two or more that have wind or pressure), the agreement displays (**Off** returns to the layer shown before), each GRIB's values at the cursor, and **Verify runs…**. The colour key under the Chart time buttons shows the display's scale.
+
 With two or more GRIBs loaded, **Show** offers displays of how much they disagree at the slider time: green where the forecasts agree, red where they don't. Vector disagreement (speed and direction together), speed spread, direction spread (blank in light winds), pressure spread, and run trend (newest run minus oldest: is the forecast getting windier?). The note under the legend lists what is compared. Where the forecasts disagree, plan with margin.
 
 ![Wind disagreement (vector) between ECMWF IFS and GFS over central New Zealand ten hours ahead: green throughout, the models agree](img/08-agreement.jpg)
 
 **Verify runs**
 
-Weather › **Advanced display and verification** › **Verify runs…** scores earlier forecasts against what a later run says actually happened at its first hour (its analysis), over the sea in the chart view: vector error, speed and direction bias, pressure bias. The track record averages every verify time by model and lead time, so after some days of downloads it shows which model has been doing best in your area. Click a forecast to shade its error on the chart.
+**Compare GRIBs** › **Verify runs…** scores earlier forecasts against what a later run says actually happened at its first hour (its analysis), over the sea in the chart view: vector error, speed and direction bias, pressure bias. The track record averages every verify time by model and lead time, so after some days of downloads it shows which model has been doing best in your area. Click a forecast to shade its error on the chart.
 
 **Weather stations and buoys**
 

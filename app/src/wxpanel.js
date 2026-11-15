@@ -71,6 +71,12 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
       <details data-sec="show"><summary>Show on the chart</summary><div id="wxp-show"></div>
         <div class="wxp-presets"><select id="wxp-preset" title="Presets"></select><button id="wxp-psave" title="Save what is shown as a preset">Save…</button><button id="wxp-pdel" title="Delete the chosen saved preset">Delete</button></div></details>
       <details data-sec="over"><summary>Overlays</summary><div id="wxp-over"></div><div id="wxp-isobar-controls"></div></details>
+      <details data-sec="cmp" id="wxp-cmp"><summary>Compare GRIBs</summary>
+        <h5>GRIBs to compare</h5><div id="wxp-cmp-files"></div>
+        <h5>Shade where they disagree</h5><div id="wxp-cmp-show"></div><div id="wxp-cmp-note"></div>
+        <h5>Each GRIB at the cursor</h5><div id="wxp-cmp-point"></div>
+        <h5>Check against what happened</h5><div id="wxp-cmp-verify"></div>
+      </details>
       <button id="wxp-visible">Hide weather on chart</button>
       <button id="wxp-snap" title="Save the chart as a picture" aria-label="Save the chart as a picture"><svg viewBox="0 0 24 24" class="ic"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg> Save picture</button>
     </div>`;
@@ -78,9 +84,20 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
   weather.mountLegend($("side-wx-key"), { always: true });
   weather.mountFilter($("wxp-filter"));
   $("wxp-isobar-controls").append($("wx-isobar-controls"));
+  // everything for comparing GRIBs in one place: the files, the agreement displays and their note,
+  // each GRIB's values at the cursor, and Verify runs
+  $("wxp-cmp-note").append($("wx-cmp-note"));
+  {
+    const old = document.querySelector("#side-grib-point .wxp-compare");
+    if (old) { $("wxp-cmp-point").append(...old.querySelectorAll(".wxp-compare-table, #wx-sea-point")); old.remove(); }
+    $("wx-verify").textContent = "Verify runs…";
+    const row = $("wx-verify").parentElement;
+    $("wxp-cmp-verify").append($("wx-verify"));
+    if (row && !row.children.length) row.remove();
+  }
 
   for (const d of win.querySelectorAll("details[data-sec]")) {
-    d.open = !!st.sec[d.dataset.sec];
+    d.open = st.sec[d.dataset.sec] ?? d.dataset.sec === "cmp";
     d.ontoggle = () => { st.sec[d.dataset.sec] = d.open; save(); };
   }
 
@@ -153,7 +170,8 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     const info = weather.layerInfo();
     const opts = weather.layerOptions();
     if (!opts.length) { box.innerHTML = `<div class="wx-note">No GRIB loaded. Open Get data to load one.</div>`; return; }
-    for (const o of [{ key: "none", label: "No shading", paths: [] }, ...opts]) {
+    // the agreement and verify displays are chosen under Compare GRIBs
+    for (const o of [{ key: "none", label: "No shading", paths: [] }, ...opts.filter((x) => !x.compare && !x.verify)]) {
       const row = document.createElement("label");
       row.className = "wxp-row";
       const r = document.createElement("input");
@@ -176,6 +194,50 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
       }
       box.append(row);
     }
+  }
+  // ---------- Compare GRIBs ----------
+  let lastPlain = "wind"; // the layer to go back to when an agreement display is switched off
+  function renderCompare() {
+    const info = weather.layerInfo();
+    const comparing = !info.off && !!(info.layer.compare || info.layer.verify);
+    if (!comparing && !info.off) lastPlain = info.key;
+    const files = weather.compareFiles().filter((f) => f.can); // ocean and satellite files have nothing the agreement displays use
+    const box = $("wxp-cmp-files");
+    box.innerHTML = "";
+    if (files.length < 2) box.innerHTML = `<div class="wx-note">Load two or more GRIBs (Get data) to compare them.</div>`;
+    else for (const f of files) {
+      const row = document.createElement("label");
+      row.className = "wxp-row";
+      const c = document.createElement("input");
+      c.type = "checkbox"; c.checked = f.on;
+      c.onchange = () => weather.setCompare(f.path, c.checked);
+      const name = document.createElement("span");
+      name.textContent = f.name;
+      row.append(c, name);
+      box.append(row);
+    }
+    const show = $("wxp-cmp-show");
+    show.innerHTML = "";
+    const opts = weather.layerOptions().filter((o) => o.compare || o.verify);
+    if (!opts.length) {
+      show.innerHTML = `<div class="wx-note">${files.length < 2 ? "" : "Tick two or more GRIBs that have wind or pressure."}</div>`;
+    } else for (const o of [{ key: "off", label: "Off" }, ...opts]) {
+      const row = document.createElement("label");
+      row.className = "wxp-row";
+      const r = document.createElement("input");
+      r.type = "radio"; r.name = "wxp-cmp-layer";
+      r.checked = o.key === "off" ? !comparing : comparing && info.key === o.key;
+      r.onchange = () => {
+        if (o.key !== "off") weather.pickLayer(o.key);
+        else if (comparing) { const back = weather.layerOptions().find((x) => x.key === lastPlain) ?? weather.layerOptions()[0]; if (back) weather.pickLayer(back.key, back.path ?? back.paths[0]); }
+      };
+      const name = document.createElement("span");
+      name.textContent = o.key === "off" ? o.label : `${o.label} (${o.unit})`;
+      if (o.help) row.title = o.help;
+      row.append(r, name);
+      show.append(row);
+    }
+    $("wx-verify").disabled = files.length < 2;
   }
   function renderOver() {
     const box = $("wxp-over");
@@ -348,7 +410,7 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
   function refresh() {
     clearTimeout(timer);
     timer = setTimeout(() => {
-      renderHead(); renderShow(); renderOver(); renderPoint();
+      renderHead(); renderShow(); renderOver(); renderCompare(); renderPoint();
       $("wxp-visible").textContent = weather.visible() ? "Hide weather on chart" : "Show weather on chart";
       $("wxp-visible").setAttribute("aria-pressed", String(weather.visible()));
     }, 60);

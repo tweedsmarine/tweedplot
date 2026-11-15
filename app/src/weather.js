@@ -752,14 +752,15 @@ export function setupWeather(map, layers) {
     if (!times.length) return;
     $("side-wx-time-status").textContent = "";
     const s = $("side-wx-time");
-    t = Math.min(Number(s.max), Math.max(Number(s.min), v));
+    // whole seconds: with its step at "any" the slider gives fractions, which the GRIB commands (whole seconds) refuse
+    t = Math.round(Math.min(Number(s.max), Math.max(Number(s.min), v)));
     s.value = t;
     draw();
   }
   const stepBy = (n) => {
     $("side-wx-time-status").textContent = "";
     const s = $("side-wx-time");
-    t = Math.min(Number(s.max), Math.max(Number(s.min), t + n * timeStep));
+    t = Math.round(Math.min(Number(s.max), Math.max(Number(s.min), t + n * timeStep)));
     s.value = t;
     draw();
   };
@@ -1487,7 +1488,7 @@ export function setupWeather(map, layers) {
     setTime: (sec) => {
       const s = $("side-wx-time");
       if (!times.length) return;
-      t = Math.min(Number(s.max), Math.max(Number(s.min), sec));
+      t = Math.round(Math.min(Number(s.max), Math.max(Number(s.min), sec)));
       s.value = t;
       draw();
     },
@@ -1503,6 +1504,14 @@ export function setupWeather(map, layers) {
     onLoaded: (fn) => { loadedListeners.push(fn); },
     /** Loaded GRIBs ticked for the agreement displays. */
     comparePaths,
+    /** Every loaded GRIB, whether it is in the agreement displays and whether it has wind or pressure to compare: [{ path, name, on, can }]. */
+    compareFiles: () => [...loaded].map(([path, s]) => ({ path, name: s.name, on: !wx.cmpOff.includes(path),
+      can: ["WindU", "WindSpeed", "Mslp"].some((p) => paramsOf(s).has(p)) })),
+    /** Put a loaded GRIB in the agreement displays, or leave it out. */
+    setCompare(path, on) {
+      wx.cmpOff = on ? wx.cmpOff.filter((p) => p !== path) : [...new Set([...wx.cmpOff, path])];
+      saveWx(); renderLoaded(); renderLayers(); draw(); changed();
+    },
     /** Shade a forecast's error at a verify time ({ t, path, name, lead, kind }), or null to stop. */
     setVerify(v) {
       verifyTarget = v;
@@ -1511,7 +1520,7 @@ export function setupWeather(map, layers) {
         if (!LAYERS[wx.layer]?.verify || v.kind) { wx.layer = key; if (wx.shading === "off") wx.shading = "smooth"; shade.value = wx.shading; saveWx(); applyLayer(); }
         renderLayers();
         const s = $("side-wx-time");
-        if (times.length && v.t >= Number(s.min) && v.t <= Number(s.max)) { t = v.t; s.value = t; }
+        if (times.length && v.t >= Number(s.min) && v.t <= Number(s.max)) { t = Math.round(v.t); s.value = t; }
         draw();
       } else {
         if (LAYERS[wx.layer]?.verify) { wx.layer = "wind"; saveWx(); applyLayer(); }
@@ -1544,7 +1553,7 @@ export function setupWeather(map, layers) {
     /** Shadable layers with the files that have them: [{ key, label, unit, paths, path }]. */
     layerOptions() {
       return Object.entries(LAYERS).filter(([key, l]) => !(l.compare || l.verify) || available().includes(key)).map(([key, l]) => {
-        if (l.compare || l.verify) return { key, label: l.label, unit: l.unit, paths: [], path: null, help: l.help };
+        if (l.compare || l.verify) return { key, label: l.label, unit: l.unit, paths: [], path: null, help: l.help, compare: !!l.compare, verify: !!l.verify };
         const paths = [...loaded].filter(([, s]) => l.params.some((p) => paramsOf(s).has(p))).map(([p]) => p);
         // the shown GRIB if it has the layer, else the newest loaded one that does
         const path = l.ocean ? oceanPath(l) : paths.includes(display) ? display : paths.at(-1);

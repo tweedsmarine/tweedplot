@@ -1942,3 +1942,9 @@ html.side-strip body:has(.ss-alerts .alarm:not(.warn):not(.acked):not(.summary))
 .wx-key { margin: 4px 0 2px; }
 .wx-key-title { font-size: calc(2.5 * var(--u, 4px)); font-weight: 600; color: var(--tile-ink, inherit); }
 .wx-key-ends { display: flex; justify-content: space-between; font-size: calc(2.4 * var(--u, 4px)); color: var(--tile-quiet, inherit); font-variant-numeric: tabular-nums; }
+
+/* Compare GRIBs: its parts under small headings */
+#wxp-cmp h5 { margin: 8px 0 2px; font-size: calc(2.5 * var(--u, 4px)); font-weight: 700; color: var(--tile-quiet, inherit); text-transform: none; }
+#wxp-cmp #wx-cmp-note { margin-top: 4px; }
+#wxp-cmp-point .wxp-compare-table { overflow-x: auto; }
+#wxp-cmp-verify button { margin-top: 2px; }

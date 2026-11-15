@@ -77,7 +77,7 @@ No single GRIB tells you how much to trust it. Comparing several does. TweedPlot
 
 | Tool | Question it answers |
 | --- | --- |
-| **Compare loaded GRIBs at cursor** (data panel) | What does each loaded GRIB say here and now? |
+| **Compare GRIBs** › Each GRIB at the cursor (data panel) | What does each loaded GRIB say here and now? |
 | **Meteogram** (right-click) | How does the wind at this point change over time in each GRIB, and do they agree on the timing of shifts and fronts? |
 | **Agreement displays** (Show › Agreement) | Where on the chart do the GRIBs disagree, and by how much? Is the forecast trending windier or lighter run to run? |
 | **Verify runs** | Over the past days, which model has forecast this area best? |
