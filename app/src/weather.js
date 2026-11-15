@@ -243,7 +243,12 @@ const WX_DEFAULTS = { density: 5, size: 1.0, shading: "2", opacity: 0.45, land: 
   hidden: false };
 const DENSITY_POINTS = [80, 150, 300, 500, 900, 1400, 2200, 3500, 6000, 1e9];
 const WX_VIEWS = "racenav.wx.views";
-export const weatherVisibleInView = (view, hidden) => view !== "nav" && !hidden;
+/** Weather is drawn in Planning and Environment unless hidden there; in Navigation only once it has been switched on there. */
+export const weatherVisibleInView = (view, hidden, shownInNav = false) => (view === "nav" ? shownInNav === true : !hidden);
+/** Whether a layer is coloured and limited by its filter: the ocean layers always, the weather layers once theirs has been set. */
+export const filterInUse = (layer, filter) => !!filter && filterable(layer) && (!!layer.auto || !!filter.set);
+/** Which ends of a filter hide values: only the ends that were set (an older filter without the marks: both). */
+export const filterBounds = (filter) => ({ lo: filter.loSet ?? !!filter.set, hi: filter.hiSet ?? !!filter.set });
 function loadWx() {
   try { return { ...WX_DEFAULTS, ...JSON.parse(localStorage.getItem("racenav.wx") || "{}") }; } catch { return { ...WX_DEFAULTS }; }
 }
@@ -374,7 +379,7 @@ export function setupWeather(map, layers) {
   map.addLayer({
     id: "wx-cells", type: "fill", source: "wx-cells",
     paint: { "fill-color": shadingExpression(wx.shading === "off" ? "2" : wx.shading, LAYERS[wx.layer] ?? LAYERS.wind), "fill-opacity": wx.opacity, "fill-antialias": false },
-    layout: { visibility: weatherVisibleInView(weatherView, wx.hidden) && wx.shading !== "off" ? "visible" : "none" },
+    layout: { visibility: weatherVisibleInView(weatherView, wx.hidden, wx.navShow) && wx.shading !== "off" ? "visible" : "none" },
   }, shadingBefore());
   window.addEventListener("webmap-changed", () => map.moveLayer("wx-cells", shadingBefore()));
   // isobars and wave-direction arrows
@@ -863,7 +868,7 @@ export function setupWeather(map, layers) {
     requestAnimationFrame(async () => {
       pending = false;
       const version = drawVersion;
-      if (!display || !times.length || !weatherVisibleInView(weatherView, wx.hidden)) {
+      if (!display || !times.length || !weatherVisibleInView(weatherView, wx.hidden, wx.navShow)) {
         map.getSource("wx-cells").setData(fc([]));
         map.getSource("wx-barbs").setData(fc([]));
         map.getSource("wx-wavedir").setData(fc([]));
@@ -1182,7 +1187,9 @@ export function setupWeather(map, layers) {
       grad.style.left = pc(f.lo);
       grad.style.width = `calc(${pc(f.hi)} - ${pc(f.lo)})`;
       const w = f.hi - f.lo;
-      const { stops } = filterColourStyle(layer, f, wx.shading);
+      const fixed = layer.scale.filter(([v]) => v > f.lo && v < f.hi);
+      const stops = filterInUse(layer, f) ? filterColourStyle(layer, f, wx.shading).stops
+        : [[f.lo, paletteAt(f.lo, layer.scale)], ...fixed, [f.hi, paletteAt(f.hi, layer.scale)]];
       grad.style.background = `linear-gradient(to right, ${stops.map(([v, c]) => `${c} ${((v - f.lo) / w) * 100}%`).join(", ")})`;
       for (const k of ["lo", "hi"]) box.querySelector(`.h.${k}`).style.left = pc(f[k]);
       const th = box.querySelector(".h.tg");
@@ -1223,6 +1230,8 @@ export function setupWeather(map, layers) {
       const q = seaQuantum(trackRange.min, trackRange.max);
       const r = typed ? full : trackRange;
       v = Math.min(r.max, Math.max(r.min, roundTo(v, q)));
+      if (!f.set) { f.loSet = false; f.hiSet = false; }
+      if (k === "lo") f.loSet = true; else if (k === "hi") f.hiSet = true;
       if (k === "lo") f.lo = Math.min(v, f.tg == null ? f.hi - q : f.tg - q);
       else if (k === "hi") f.hi = Math.max(v, f.tg == null ? f.lo + q : f.tg + q);
       else f.tg = Math.min(Math.max(v, f.lo + q), f.hi - q);
@@ -1323,14 +1332,18 @@ export function setupWeather(map, layers) {
     drawLegend();
   }
   function applyLayer() {
-    const visible = weatherVisibleInView(weatherView, wx.hidden);
+    const visible = weatherVisibleInView(weatherView, wx.hidden, wx.navShow);
     for (const id of ["wx-barbs", "wx-wavedir", "wx-currdir", "wx-breaks", "wx-isobars", "wx-isobar-labels", "wx-isotherms", "wx-isotherm-labels"]) {
       map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
     }
     map.setLayoutProperty("wx-cells", "visibility", visible && wx.shading !== "off" ? "visible" : "none");
     const lay = LAYERS[wx.layer] ?? LAYERS.wind;
-    const sf = filterable(lay) ? wx.seaFilter[wx.layer] : null;
-    map.setFilter("wx-cells", sf ? ["all", [">=", ["get", "v"], sf.lo], ["<=", ["get", "v"], sf.hi]] : null);
+    const sf = filterInUse(lay, wx.seaFilter[wx.layer]) ? wx.seaFilter[wx.layer] : null;
+    // only the ends that were set hide anything: beyond an end left alone the last colour carries on
+    const limits = [];
+    if (sf && filterBounds(sf).lo) limits.push([">=", ["get", "v"], sf.lo]);
+    if (sf && filterBounds(sf).hi) limits.push(["<=", ["get", "v"], sf.hi]);
+    map.setFilter("wx-cells", limits.length ? ["all", ...limits] : null);
     if (wx.shading !== "off") map.setPaintProperty("wx-cells", "fill-color", sf
       ? filterColourStyle(lay, sf, wx.shading).expression
       : shadingExpression(lay.auto ? "smooth" : wx.shading, lay));
@@ -1367,44 +1380,71 @@ export function setupWeather(map, layers) {
     $(id).checked = !!wx[key];
     $(id).onchange = (e) => { wx[key] = e.target.checked; saveWx(); draw(); changed(); };
   }
-  const legends = new Set();
+  // el -> { always }: a legend marked `always` is the key beside the chart time, shown whenever weather is drawn
+  const legends = new Map();
+  function swatches(el, layer) {
+    if (layer.knots) {
+      const step = wx.shading === "smooth" ? 5 : Math.max(Number(wx.shading), wx.shading === "1" ? 2 : Number(wx.shading));
+      for (let k = 0; k <= 40; k += step) {
+        const sw = document.createElement("span");
+        sw.style.background = paletteAt(wx.shading === "smooth" ? k : k + Number(wx.shading) / 2);
+        sw.title = `${k} kn`;
+        sw.textContent = k % 10 === 0 ? k : "";
+        el.append(sw);
+      }
+    } else {
+      for (const [v, c] of layer.scale) {
+        const sw = document.createElement("span");
+        sw.style.background = c;
+        sw.title = `${layer.log ? fmtChl(10 ** v) : v} ${layer.unit}`;
+        sw.textContent = layer.log ? fmtChl(10 ** v) : layer.auto ? (Math.abs(v) >= 10 && layer.unit === "°C" ? v.toFixed(v % 1 ? 1 : 0) : String(Number(Number(v).toFixed(Math.abs(v) >= 10 ? 1 : 2)))) : v;
+        el.append(sw);
+      }
+    }
+  }
   function drawLegend() {
     const layer = LAYERS[wx.layer] ?? LAYERS.wind;
     drawSeaFilter(layer);
-    const hide = filterBoxes.some(({ el }) => el.isConnected && !el.hidden);
-    for (const el of legends) {
-      if (!el.isConnected) { legends.delete(el); continue; }
+    const boxShown = filterBoxes.some(({ el }) => el.isConnected && !el.hidden);
+    const f = filterInUse(layer, wx.seaFilter[wx.layer]) ? wx.seaFilter[wx.layer] : null;
+    for (const [el, { always }] of legends) {
+      if (!el.isConnected) { if (!always) legends.delete(el); continue; }
       el.innerHTML = "";
-      el.hidden = hide;
-      if (wx.shading === "off" || hide) continue;
-      if (layer.knots) {
-        const step = wx.shading === "smooth" ? 5 : Math.max(Number(wx.shading), wx.shading === "1" ? 2 : Number(wx.shading));
-        for (let k = 0; k <= 40; k += step) {
-          const sw = document.createElement("span");
-          sw.style.background = paletteAt(wx.shading === "smooth" ? k : k + Number(wx.shading) / 2);
-          sw.title = `${k} kn`;
-          sw.textContent = k % 10 === 0 ? k : "";
-          el.append(sw);
-        }
-      } else {
-        for (const [v, c] of layer.scale) {
-          const sw = document.createElement("span");
-          sw.style.background = c;
-          sw.title = `${layer.log ? fmtChl(10 ** v) : v} ${layer.unit}`;
-          sw.textContent = layer.log ? fmtChl(10 ** v) : layer.auto ? (Math.abs(v) >= 10 && layer.unit === "°C" ? v.toFixed(v % 1 ? 1 : 0) : String(Number(Number(v).toFixed(Math.abs(v) >= 10 ? 1 : 2)))) : v;
-          el.append(sw);
-        }
-      }
+      el.hidden = wx.shading === "off" || (always ? !display || !weatherVisibleInView(weatherView, wx.hidden, wx.navShow) : boxShown);
+      if (el.hidden) continue;
       el.title = `${layer.label}, ${layer.unit}`;
+      if (!always) { swatches(el, layer); continue; }
+      const cap = document.createElement("div");
+      cap.className = "wx-key-title";
+      cap.textContent = `${layer.label} (${layer.unit})${f?.set ? " · filter set" : ""}`;
+      const bar = document.createElement("div");
+      bar.className = "wx-legend";
+      el.append(cap, bar);
+      if (!f) { swatches(bar, layer); continue; }
+      // coloured through the filter: its colours from low to high, with the numbers at the ends
+      const w = f.hi - f.lo || 1;
+      const { stops } = filterColourStyle(layer, f, wx.shading);
+      bar.classList.add("grad");
+      bar.style.background = `linear-gradient(to right, ${stops.map(([v, c]) => `${c} ${((v - f.lo) / w) * 100}%`).join(", ")})`;
+      const num = (v) => (layer.log ? fmtChl(10 ** v) : String(+v.toFixed(2)));
+      const ends = document.createElement("div");
+      ends.className = "wx-key-ends";
+      const ends_ = filterBounds(f);
+      // an end left alone hides nothing: beyond it the last colour carries on
+      for (const t of [`${ends_.lo || layer.auto ? "" : "≤ "}${num(f.lo)}`, f.tg != null ? `target ${num(f.tg)}` : "", `${ends_.hi || layer.auto ? "" : "≥ "}${num(f.hi)}`]) { const x = document.createElement("span"); x.textContent = t; ends.append(x); }
+      el.append(ends);
     }
   }
+  changeListeners.push(drawLegend);
+  loadedListeners.push(drawLegend);
   applyLayer();
 
   window.addEventListener("racenav-view", (event) => {
     const next = event.detail?.id;
     if (!["nav", "plan", "env"].includes(next) || next === weatherView) return;
     saveWx();
-    viewStates.set(weatherView, { settings: structuredClone(wx), display, time: t });
+    // the chart time belongs to the window, not to the view
+    viewStates.set(weatherView, { settings: structuredClone(wx), display });
     const previous = viewStates.get(next);
     const settings = previous?.settings ?? loadWxViews()[next] ?? wx;
     Object.assign(wx, structuredClone(settings));
@@ -1424,7 +1464,6 @@ export function setupWeather(map, layers) {
     applyLayer();
     renderLoaded();
     setTimes();
-    if (previous && times.length && previous.time >= times[0] && previous.time <= times.at(-1)) setT(previous.time);
     saveWx();
     changed();
   });
@@ -1483,13 +1522,13 @@ export function setupWeather(map, layers) {
     /** Put a GRIB chooser and time slider into `el`, working the same state as the Weather drawer. */
     mountControls,
     /** Show or hide every weather layer on the chart (shading, barbs, arrows, isobars, contours); the data stays loaded. */
-    setVisible(on) { wx.hidden = !on; saveWx(); applyLayer(); draw(); changed(); },
-    visible: () => weatherVisibleInView(weatherView, wx.hidden),
+    setVisible(on) { if (weatherView === "nav") wx.navShow = !!on; else wx.hidden = !on; saveWx(); applyLayer(); draw(); changed(); },
+    visible: () => weatherVisibleInView(weatherView, wx.hidden, wx.navShow),
     mountFilter,
     /** Names of every parameter in the loaded GRIBs. */
     loadedParams: () => new Set([...loaded.values()].flatMap((s) => [...paramsOf(s)])),
     /** A colour-bar legend for the shown layer, kept current. */
-    mountLegend(el) { legends.add(el); drawLegend(); },
+    mountLegend(el, { always = false } = {}) { legends.set(el, { always }); drawLegend(); },
     onChange: (fn) => { changeListeners.push(fn); },
     /** The shown layer's definition, key and the slider's range. */
     layerInfo: () => {

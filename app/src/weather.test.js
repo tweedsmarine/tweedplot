@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { seaScale, seaTrackRange, filterRangeForGrid, filterColourStyle, fronts, filterable, forecastSpan, sliderStepForTime, weatherSelectionSummary, weatherVisibleInView, dataTimeStatus, applyPointTimePolicy, LAYERS } from "./weather.js";
+import { seaScale, seaTrackRange, filterRangeForGrid, filterColourStyle, fronts, filterable, forecastSpan, sliderStepForTime, weatherSelectionSummary, weatherVisibleInView, filterInUse, filterBounds, dataTimeStatus, applyPointTimePolicy, LAYERS } from "./weather.js";
 
 test("automatic filter follows the complete grid at each time without losing extremes", () => {
   const earlier = filterRangeForGrid({ range: [0, 22], values: [0, 20] }, null);
@@ -25,13 +25,31 @@ test("manual limits and target remain fixed when the forecast range changes", ()
   assert.ok(constant.filter.lo <= 5 && constant.filter.hi > 5);
 });
 
-test("weather overlays are suppressed in Navigation without changing other views' visibility", () => {
+test("weather is off in Navigation until switched on there, whatever the other views show", () => {
   assert.equal(weatherVisibleInView("nav", false), false);
-  assert.equal(weatherVisibleInView("nav", true), false);
+  assert.equal(weatherVisibleInView("nav", false, true), true);
+  assert.equal(weatherVisibleInView("nav", true, true), true);
   for (const view of ["plan", "env"]) {
     assert.equal(weatherVisibleInView(view, false), true);
     assert.equal(weatherVisibleInView(view, true), false);
+    assert.equal(weatherVisibleInView(view, true, true), false);
   }
+});
+
+test("weather layers keep their fixed scale until a filter is set; only the ends that were set hide values", () => {
+  const auto = { lo: 4, hi: 29, tg: null };
+  assert.equal(filterInUse(LAYERS.wind, auto), false);
+  assert.equal(filterInUse(LAYERS.mslp, auto), false);
+  assert.equal(filterInUse(LAYERS.sst, auto), true);
+  assert.equal(filterInUse(LAYERS.agree_vec, auto), false);
+  assert.equal(filterInUse(LAYERS.wind, null), false);
+  const low = { lo: 16, hi: 29, tg: null, set: true, loSet: true, hiSet: false };
+  assert.equal(filterInUse(LAYERS.wind, low), true);
+  assert.deepEqual(filterBounds(low), { lo: true, hi: false });
+  assert.deepEqual(filterBounds({ lo: 10, hi: 20, tg: 15, set: true, loSet: false, hiSet: false }), { lo: false, hi: false });
+  // a filter saved before the ends were marked hides at both, as it did
+  assert.deepEqual(filterBounds({ lo: 10, hi: 20, set: true }), { lo: true, hi: true });
+  assert.deepEqual(filterBounds(auto), { lo: false, hi: false });
 });
 
 test("filter track fits the selected range and leaves room to widen at the edges", () => {

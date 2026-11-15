@@ -75,6 +75,7 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
       <button id="wxp-snap" title="Save the chart as a picture" aria-label="Save the chart as a picture"><svg viewBox="0 0 24 24" class="ic"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg> Save picture</button>
     </div>`;
   weather.mountLegend($("wxp-legend"));
+  weather.mountLegend($("side-wx-key"), { always: true });
   weather.mountFilter($("wxp-filter"));
   $("wxp-isobar-controls").append($("wx-isobar-controls"));
 
