@@ -154,7 +154,7 @@ From top to bottom:
 | {icon:wxpanel} | **Weather** | Opens the weather controls in the data panel (see Weather and tides) |
 | {icon:view-nav} {icon:view-plan} {icon:view-inst} | **View** | Lists Navigation, Planning and Instruments and **Show the chart in this view**. The icon shows the view you are in (also **F2**, **F3**, **F4**) |
 | {icon:side} | **Data panel** | Shows the data panel beside the chart, or hides it to a line under the chart (also **O**) |
-| {icon:panels} | **Panels** | Shows or hides the rail, the drawers and the dock in this view (also **P**) |
+| {icon:panels} | **Panels** | Shows or hides the rail and drawers in this view (also **P**). The dock remains independent |
 | {icon:day} {icon:night} | **Colours** | Steps through day, dusk, night (IHO), night red and night green (also **N**). Right-click it (or hold it on a touch screen) for all five and the brightness at once |
 | {icon:clear-track} | **Clear track** | Clears the short trail behind the boat |
 
@@ -168,16 +168,17 @@ A **view** is an arrangement of the same screen. Every drawer and tool is availa
 | --- | --- | --- |
 | {icon:view-nav} **Navigation** (F2) | The chart, with the data panel's Navigation layout: route, marks ahead, targets, wind | Under way |
 | {icon:view-plan} **Planning** (F3) | The chart, with the data panel's Planning layout: the cursor and the forecast at the cursor | Routes, weather and routing, at the chart table |
+| **Environment** | The chart and a workspace for layers, chart time, cursor readings and GRIB data | Weather, ocean and seabed exploration |
 | {icon:view-inst} **Instruments** (F4) | A screen of large single readings and dials, with no chart | A helm display or a second screen |
 
 Use the view buttons at the top of the data panel or the toolbar's View button. The current panel button has a check mark and a highlighted border. The NMEA monitor is under **Settings › Diagnostics › Live NMEA data**. Open it in a separate window with **Pop out** there or **Settings › Connections › NMEA 0183 inputs › Pop out live NMEA data**.
 
 - TweedPlot always starts in the Navigation view.
-- Each view remembers, in each window, whether its panels (the rail, drawers and dock) are shown, whether the data panel is shown, and whether own soundings are shown.
-- Navigation and Planning remember their chart centre and zoom independently while the window is open. The first time you enter a view it starts at the current centre and zoom; switching back restores that view's last centre and zoom, including when returning from Instruments or after the Planning timeout. Follow is shared between views: if it is on, subsequent boat position updates move the chart to follow the boat.
+- Each view remembers, in each window, whether its rail and drawers are shown, whether the data panel is shown, and whether own soundings are shown. Survey depths and survey outlines also have separate visibility choices for each view. The dock opens and closes independently.
+- Navigation, Planning and Environment remember their chart centre and zoom independently while the window is open. The first time you enter a view it starts at the current centre and zoom; switching back restores that view's last centre and zoom, including when returning from Instruments or after the inactivity timeout. Follow is shared between views: if it is on, subsequent boat position updates move the chart to follow the boat.
 - AIS chart visibility is selected per view in **Targets & fleets** or **Chart › Layers**. Planning starts with AIS hidden; the other views keep the previous AIS setting until changed. Reception, target lists and AIS alarms continue when chart symbols are hidden.
-- **Settings › Display › Return to Navigation after Planning inactivity** defaults to five minutes, and can be set from one to ten minutes or Off for this window. Mouse, touch, wheel and keyboard input in that window resets the timer. The switch occurs even with an edit or dialog open; check any unfinished work afterwards. Other windows have their own timers.
-- Navigation and Planning each keep their own chart display: **Base**, **Standard** or **All**, and the switches of Chart › Chart display (light sectors, names and labels, soundings, information symbols, important and other text, date-dependent symbols). So Planning can be a clean chart under the weather, on Base with the names off, while Navigation keeps everything a watchkeeper needs. A view starts with the display of the view you came from; change it there and it is kept. The symbols, their size and the safety depth and contour are the same in every view.
+- **Settings › Display › Return to Navigation after Planning inactivity** also applies to Environment. It defaults to five minutes, and can be set from one to ten minutes or Off for this window. Mouse, touch, wheel and keyboard input in that window resets the timer. The switch occurs even with an edit or dialog open; check any unfinished work afterwards. Other windows have their own timers.
+- Navigation, Planning and Environment each keep their own chart display: **Base**, **Standard** or **All**, and the switches of Chart › Chart display (light sectors, names and labels, soundings, information symbols, important and other text, date-dependent symbols). Environment starts with Base; other views start with the display of the view you came from. Changes are remembered per view. Base is not sufficient for navigation: use Standard or All for planning and monitoring. The symbols, their size and the safety depth and contour are the same in every view.
 - **Esc** leaves the Instruments or Live data view for the view you came from.
 - **Show the chart in this view**, in the View button's list, turns the chart on or off in the view you are in. The Instruments and Live data views start without it.
 
@@ -225,7 +226,7 @@ From top to bottom:
   - Navigation · Cruising starts with Route (BTW, DTW, XTE, VMC), Marks ahead, Targets, Wind and Weather.
   - Navigation · Racing starts with Performance (boat speed against target, % of target, TWA against target, VMG, VMC), the wind dial, Route, Marks ahead, Weather and Targets.
   - Navigation · Fishing starts with Sea (water temperature, trip, pressure and its 3-hour change), Wind, Route and Targets.
-  - Planning starts with Weather and GRIB data at the cursor, followed by the cursor position and other readings. Cruising and Racing also have Route and marks; Racing adds routing targets.
+  - Planning puts own-ship readings, safety buttons and alerts in the bar below the chart, leaving room for Chart time and the shared route's editing controls in the panel. Navigation keeps the active-route controls in the Route drawer. Cruising and Racing also have Route and marks; Racing adds routing targets. Use Environment for detailed weather controls and GRIB cursor readings, and Environment › Get data to manage GRIB files.
   - Click a section's title to fold it.
 - **Marks ahead**: the route's next marks, in order, with the distance to each along the route (from the boat to the next mark, then mark to mark) and the time you would get there at the present speed over ground. "and 3 more" says how many are left. Click a mark to show it on the chart.
 - **Targets**: the AIS targets that matter most: distress beacons (SART, MOB, EPIRB) first, then dangerous targets (inside your CPA and TCPA limits, in red), then targets closing on you by CPA (CPA and TCPA shown), then the rest by range. A lost target is crossed out. Click one to show it on the chart and open its info window. The full list is the target list (T).
@@ -242,7 +243,7 @@ From top to bottom:
 
 **Edit it** with **✎** (or **Instruments › Edit the data panel**; **Reset this layout** beside it goes back to the starting layout). Each section gets ▲ ▼ to move it, **1 col / 2 col** for one or two columns, **∿** for trend lines, **＋ −** for a graphic's height (or how many marks or targets a list shows), ✕ to remove it, and a box for its name. Click a reading to change it, move it or remove it; **+ Add a reading** adds one at the end. At the bottom, **+ Add a section** adds a section of readings, the marks ahead, the AIS targets, a graphic (wind dial, compass, highway, sounder history) or a history plot. **Reset** goes back to the starting layout for this view and Use. **Done** finishes. Your changes are kept for that view and Use, and are shared by every window.
 
-**Weather controls** and **GRIB data at the cursor** are separate sections: use ▲ ▼ to reposition them, ✕ to remove them, and **+ Add a section** to add either back. They start in Planning but not Navigation. The toolbar Weather button uses the current view's Weather controls if present; otherwise it opens Planning and restores those controls if they were removed.
+**Chart time**, **Weather layers and filters** and **GRIB data at the cursor** are separate sections: use ▲ ▼ to reposition them, ✕ to remove them, and **+ Add a section** to add them back. Planning starts with Chart time pinned above the scrolling panel, except while editing; its detailed weather sections are optional. The toolbar Weather button opens Environment; load, choose or unload files in Environment › Get data.
 
 ![The data panel being edited: each section has its name, ▲ ▼, columns, trend lines and ✕, and + Add a reading](img/15-panel-edit.jpg)
 
@@ -418,7 +419,7 @@ Wharves, breakwaters, jetties, pontoons, floating docks and causeways are drawn 
 
 | Part | Settings |
 | --- | --- |
-| **Layers** | At the top, **Chart**: **Base**, **Standard** or **All** (below), and **Standard** to go back to the standard display. Then the layers, in groups: **Depths and land** (high-resolution depths, survey depths and their outlines, NIWA bathymetry, own soundings, detailed depths, world depths, world coastline); **Tides and observations** (tide stations, tide gauges, tidal streams, weather stations and buoys); **Weather and ocean** (the shading, wind barbs, wave and current direction, isobars and temperature contours of the GRIB loaded); **Boundaries and fishing** (see *Boundaries and fishing rules*); **My things** (marks, barriers, AIS targets, laylines, tacking cone); **Own ship** (heading line, COG line, beam bearing line, range rings, wind arrows); **Online maps**. The **⚙** at the end of a row opens that layer's settings, wherever they are (the tide settings in Weather, say), and **Get…** shows on a layer whose data you haven't downloaded yet: it takes you to **Get data**. The same switches are also in the drawers they belong to (the tides in Weather › Tides, marks in the Library…): ticking one ticks the other |
+| **Layers** | At the top, **Chart**: **Base**, **Standard** or **All** (below), and **Standard** to go back to the standard display. Then the layers, in groups: **Depths and land** (high-resolution depths, survey depths and their outlines, NIWA bathymetry, own soundings, detailed depths, world depths, world coastline); **Tides and observations** (tide stations, tide gauges, tidal streams, weather stations and buoys); **Weather and ocean** (a shortcut to the data panel's weather controls); **Boundaries and fishing** (see *Boundaries and fishing rules*); **My things** (marks, barriers, AIS targets, laylines, tacking cone); **Own ship** (heading line, COG line, beam bearing line, range rings, wind arrows); **Online maps**. The **⚙** at the end of a row opens that layer's settings, wherever they are (the tide settings in Weather, say), and **Get…** shows on a layer whose data you haven't downloaded yet: it takes you to **Get data**. Other switches are also in the drawers they belong to (the tides in Weather › Tides, marks in the Library…): ticking one ticks the other |
 | **Safety** | **Safety depth** and **safety contour** (below), **Isolated dangers in shallow water** (see Isolated dangers), **Depth shades** (four: drying, shallow, safety and deep contours; or two, as S-52: shallower or deeper than the safety contour), **Shallow water pattern** (the S-52 grid of small diamonds over water shallower than the safety contour) and **Contour labels** |
 | **Chart display** | **Display**: Base, Standard or All (below); **Standard display**; **Light sectors**, **Sector lines to full range**, **Names and labels**, **Soundings**, **Information symbols**, **Important text**, **Other text**, **Date-dependent symbols**, **Chart date**; **Symbols**: IHO (S-52) with paper-chart or simplified symbols, or TweedPlot paper chart (below); **Area boundaries**; **Chart symbol size**. To make the IHO symbols their true size, calibrate the screen in **Settings › Display › Screen calibration** |
 | **Get data** | Every download and import: world coastline, detailed depths, high-resolution depths, survey depths, NIWA bathymetry, own soundings, maritime boundaries, fishing rules, and the LINZ and ENC charts. Each layer that needs data says **Get…** in Layers until it's here |
@@ -648,7 +649,7 @@ In **Settings › Vessel**, set the **Length overall** and **Breadth**, and wher
 - *Heading line* (solid) and *COG line* (dashed orange): each as long as a set time at the boat's speed, or to the edge of the chart. Set in Chart › Layers › Own ship.
 - *Beam bearing line* (dashed, off to begin with): through the boat at right angles to the heading, to the edge of the chart, so you can see what is abeam. Chart › Layers › Own ship.
 - *Range rings*: rings round the boat, as many as you choose (1 to 10) and as far apart as you choose, in nautical miles: type 0.25, 1/4, ½ or 1 1/2. Each ring's range is written where it crosses north of the boat, the outermost with "NM". Chart › Layers › Own ship, or right-click the boat › **Range rings round own ship…**. For rings round a mark or a route waypoint, see *Range rings round marks and waypoints*.
-- *Wind arrows*: true wind (blue) and apparent wind (orange), each starting on the boat and pointing to where the wind comes from, longer as the wind gets stronger. They use the same colours and the same sense as the needles on the **Wind** dial, so the chart and the dial read alike. With live data they sit on the boat. When planning (the Planning view, paused, or no live data) they follow the cursor instead, wherever it is over the forecast, showing the GRIB's true wind there at the weather slider time. Near a shown routing they show that routing's nearest point instead: the true wind it had at that point's time, and the apparent wind you would feel on its heading and boat speed, matching the point's hover box. Away from a routing there is no boat to feel it, so only the true wind is shown. Expect the apparent wind well forward of the true wind whenever the boat is fast for the wind: at 7 kn on a broad reach (TWA 128°) in 9 kn of true wind, the apparent wind is about 77°, forward of the beam. That is why asymmetric spinnakers are trimmed for a beam reach in light air. Hover a routing point for the exact AWA and AWS. Turn them on or off in **Chart › Layers › Own ship**.
+- *Wind arrows*: true wind (blue) and apparent wind (orange), each pointing towards the boat from the direction the wind comes from, longer as the wind gets stronger. They use the same colours as the needles on the **Wind** dial, which point in the opposite direction, towards the source of the wind. With live data they sit on the boat. When planning (the Planning view, paused, or no live data) they follow the cursor instead, wherever it is over the forecast, showing the GRIB's true wind there at the weather slider time. Near a shown routing they show that routing's nearest point instead: the true wind it had at that point's time, and the apparent wind you would feel on its heading and boat speed, matching the point's hover box. Away from a routing there is no boat to feel it, so only the true wind is shown. Expect the apparent wind well forward of the true wind whenever the boat is fast for the wind: at 7 kn on a broad reach (TWA 128°) in 9 kn of true wind, the apparent wind is about 77°, forward of the beam. That is why asymmetric spinnakers are trimmed for a beam reach in light air. Hover a routing point for the exact AWA and AWS. Turn them on or off in **Chart › Layers › Own ship**.
 
 **Own ship with the IHO symbols**
 
@@ -1025,27 +1026,29 @@ The fishing tools that log what the boat does are here. Ocean data, own sounding
 
 ## Weather and tides
 
-{icon:weather} **Weather** (the drawer is titled *Weather and tides*) holds everything about the sea and the air the boat will meet: GRIB forecasts, the time slider, the Saildocs request, tides, and live observations from weather stations and buoys.
+**Environment** brings the GRIB controls together: **Get data** downloads and manages files and makes Saildocs requests; **Explore** shows chart time, cursor readings, layers and filters. Get data replaces the Explore panes until you return to Explore. Weather and ocean GRIB overlays are hidden in Navigation; returning to Planning or Environment restores that view's weather settings. The Weather drawer continues to provide tides and live observations.
 
 Weather comes from GRIB files: gridded forecasts from computer models, one value per grid point per forecast time. TweedPlot downloads them, reads files from other sources, shows them on the chart, compares several at once, and routes through them. The Weather routing tutorial explains models, resolution and how much to trust them.
 
 **Loading GRIBs**
 
-The list shows every GRIB in the GRIB folders, described by model, run time, area and how far ahead it goes rather than by file name. Choose one and **Load** (↻ rescans the folders). Load as many as you like: different models, or several runs of one. One is shown on the chart (its radio button), and the table under the legend gives every loaded GRIB's values at the cursor. A tick beside each loaded GRIB includes it in the agreement displays; × unloads it.
+The list shows every GRIB in the GRIB folders, described by model, run time, area and how far ahead it goes rather than by file name. Choose one and **Load** (↻ rescans the folders). Load as many as you like: different models, or several runs of one. One is shown on the chart (its radio button). A tick beside each loaded GRIB includes it in the agreement displays; × unloads it without deleting the file.
 
-The data panel's **Weather** section also has the same GRIB file list, **Load GRIB** and **Refresh**. Choose a loaded file under **Shown GRIB** to display it, or **Unload GRIB** to remove it from memory without deleting the file. The section shows loading progress and errors, so the Weather drawer can stay closed. The list reads the configured GRIB folders; put files from elsewhere in one of those folders first.
+The list reads the configured GRIB folders; put files from elsewhere in one of those folders first. The toolbar's Weather button opens Environment; **Download or manage GRIBs** opens Get data.
 
-TweedPlot reads GRIB2 (including ECMWF's compressed files) and GRIB1 (Saildocs and older tools): wind, gusts, pressure, waves (height, period, direction, swell, wind waves), rain, CAPE, air temperature and ocean currents. Outside a file's area or time span there is no value: a short GRIB never shows as calm.
+TweedPlot reads GRIB2 (including ECMWF's compressed files) and GRIB1 (Saildocs and older tools): wind, gusts, pressure, waves (height, period, direction, swell, wind waves), rain, CAPE, air temperature and ocean currents. Outside a file's area or forecast time span there is no value: a short forecast never shows as calm. Some ocean analyses can be held beyond their last sample, subject to the Environment option below.
 
 **Time**
 
-The slider, the **◀** and **▶|** steps, **▶** play and **Now** set the forecast time (also **[** and **]**; with Shift, six hours). The time shows in local time with UTC in brackets.
+The data panel's **Chart time** slider and icon buttons set the time (also **[** and **]**; with Shift, six hours). The time shows in local time with UTC in brackets. Hover or focus the **Start**, **Previous**, **Play/Pause**, **Next**, **End** and **Now** buttons for their names. **Start** and **End** go to the ends of the shown file's span. The slider covers all loaded files, so it can also reach times outside the shown GRIB; the time section warns when it does. The span covers the earliest to latest time of any field in the file: individual fields can have shorter coverage or gaps.
 
-The data panel shows the time span of the shown GRIB and has a synchronized time slider and **Start**, **End** and **Now** buttons. **Start** and **End** go to the ends of that file's span. The slider still covers all loaded files, so it can also reach times outside the shown GRIB; the panel warns when it does. The span covers the earliest to latest time of any field in the file: individual fields can have shorter coverage or gaps.
+In Environment, fields outside their own time span are not shown. **Use latest past analysis outside chart time** explicitly permits available older MUR, VIIRS or Himawari analysis values; their analysis time is identified and they are not a forecast. This choice resets when leaving the view. Forecasts are not extended by this option.
+
+The Weather, Ocean and Seabed buttons are starting points; the last selected is highlighted, and afterwards you can choose any combination of layers and overlays. Seabed includes survey depths, outlines and own soundings with per-view visibility. High-resolution, NIWA, ETOPO and world-depth visibility is shared with other views; the controls say so. Obtain seabed packages under **Chart › Get data**.
 
 **Wave period** is the GRIB's wave period in seconds, not the forecast update interval. Depending on the source, it can be a primary-wave mean period or a peak period; it is not itself significant wave height (Hs).
 
-The data panel's **Weather** section provides the same forecast time controls without covering the chart.
+In Planning, forecast time stays above the scrolling panel. Cursor values identify their forecast time and shown GRIB, with other contributing files marked separately. Expand **Compare loaded GRIBs at cursor** for the individual runs.
 
 **What the chart shows**
 
@@ -1058,22 +1061,22 @@ The data panel's **Weather** section provides the same forecast time controls wi
 | Isobars | Pressure lines at 1 to 10 hPa intervals (2 hPa suits the tropics, 4 hPa higher latitudes); **Auto** widens the interval when zoomed out |
 | Display | Barb density and size, shading opacity and steps (smooth, or 1, 2 or 5 kn bands), shading under the land or under the coastline only |
 
-Choices a GRIB doesn't contain are greyed out, and a wave-only GRIB switches to wave height by itself.
+The data panel offers layers and overlays supplied by the loaded GRIBs, and a wave-only GRIB switches to wave height by itself. Isobar spacing and other display settings are in Weather › **Advanced display and verification**.
 
 **Weather in the data panel**
 
-{icon:wxpanel} **Weather** in the toolbar opens the data panel's Weather section. **Hide weather on chart** hides the layers without unloading data; **Show weather on chart** restores them.
+{icon:wxpanel} **Weather** in the toolbar opens the data panel's Weather layers and filters section. **Hide weather on chart** hides the layers without unloading data; **Show weather on chart** restores them.
 
 - **Run line**: the loaded file being shown, when its run was made and how old it is. It turns red and bold when the run is more than a day old, or the slider is past the end of the forecast.
-- **Time slider**, with ◀ ▶ steps, play and Now, as in the drawer.
-- **Colour bar and filter**: for whatever is shaded now (wind, sea temperature, salinity, sea surface height, chlorophyll ...), the colour bar with three pointers: drag the outer two to the lowest and highest values you care about and the target between them. Click a pointer's number to type a value. Fit puts them back to the file's range.
-- The filter also offers **Set low**, **Set target**, **Set high** and **Clear target** buttons, so it can be operated without dragging or double-clicking.
+- **Forecast time**: the slider, steps, play, start, end and Now stay above the scrolling panel in Planning and Environment.
+- **Colour bar and filter**: for whatever is shaded now (wind, sea temperature, salinity, sea surface height, chlorophyll ...), drag the outer pointers to the lowest and highest values you care about and the target between them. The full colour scale fits between the limits, with the target at the cool-to-warm transition; values outside the limits are not shaded. Banded shading uses the same colours and includes a band boundary at the target. Click a pointer's number to type a value. Fit clears the target and restores the full grid range at chart time, following it as the time changes; manually set limits stay fixed.
+- The filter also offers **Set low**, **Set high**, **Set target** and **Clear target** buttons, so it can be operated without dragging or double-clicking. In the data panel these are icons; hover over them for their names.
 - **At the cursor**: a fixed list of every parameter in the loaded GRIBs, so it never grows or shrinks as the cursor moves; a dash where the file has no value. When two files supply the same parameter, the one on the chart is used and the others fill the gaps; a value taken from another file is marked with a small letter, and the file it came from is named under the list. With a strong wind blowing against a current of a knot or more it adds a warning of steep, short seas.
 - **Show on the chart**: one choice for each thing that can be shaded; a drop-down beside it picks the file when more than one loaded file can supply it (two sea temperatures, say). Choosing one never needs a wind file to be selected in the drawer. Presets (**Fishing**, **Passage**, **Anchorage**, and your own with **Save…**) set the shading and overlays together.
-- **Overlays**: wind barbs, wave direction, current direction, isobars, temperature breaks and contours, each from the file you choose.
+- **Overlays**: wind barbs, wave direction, current direction, isobars, temperature breaks and contours, each from the file you choose. Set the isobar interval here; Auto widens the interval as you zoom out.
 - {icon:snap} saves the chart as it is, with the shading, as a picture.
 
-The data panel and Weather drawer share the forecast time, loaded files and chart settings. Presets and the picture button are in the data panel.
+The Weather drawer manages the loaded files; the data panel controls how their weather is viewed. Presets and the picture button are in the data panel.
 
 **Downloading: Weather › Download GRIBs**
 
@@ -1119,7 +1122,7 @@ Four free ocean sources sit in the same Download list, for fishing and for anyon
 
 Area, length and step work as for GRIBs; an area across 180° isn't offered yet (split it). The files are saved in the GRIB folder like any other and load straight away.
 
-Ocean data is shown under whatever weather GRIB is on the chart: choose **Sea temperature**, **Sea temperature, satellite hourly (Himawari)**, **Salinity**, their **at depth** versions, **Sea surface height**, **Chlorophyll-a** or **Current** under **Show** and the shading comes from the loaded ocean file while the wind barbs stay on. Under the colour bar, three pointers set a **filter**: drag the outer two to the lowest and highest temperature (or salinity) you want to see, and nothing outside them is shaded; drag the red middle one to your **target**. The colours run from the low limit to the target over the cool half of the scale and from the target to the high limit over the warm half, so the target water is always the green-yellow middle and stands out, and it gets its own bold contour. The track spans the whole loaded file's range; **Fit** puts the pointers back to it. The colours depend only on the filter, never on the zoom, and each layer keeps its own filter between sessions. **Contours** draws lines within the filter at a spacing that suits it: bunched lines are a front. Chlorophyll spans a hundredfold (0.05 to 5 mg/m³ is usual), so its colours, filter and contours run on a log scale: each step along the colour bar multiplies the value, and the contours sit at tidy values (0.1, 0.2, 0.3, 0.5, 1, 2 …).
+Ocean data is shown under whatever weather GRIB is on the chart: choose **Sea temperature**, **Sea temperature, satellite hourly (Himawari)**, **Salinity**, their **at depth** versions, **Sea surface height**, **Chlorophyll-a** or **Current** under **Show** and the shading comes from the loaded ocean file while the wind barbs stay on. Under the colour bar, three pointers set a **filter**: drag the outer two to the lowest and highest temperature (or salinity) you want to see, and nothing outside them is shaded; drag the red middle one to your **target**. The colours run from the low limit to the target over the cool half of the scale and from the target to the high limit over the warm half, so the target water is always the green-yellow middle and stands out, and it gets its own bold contour. The track refits around the selected range after adjustment; push an outer pointer to an edge to make room to widen it, up to the full grid range at chart time. **Fit** restores that range and follows it as chart time changes. The colours depend only on the filter, never on the zoom, and each layer keeps its own filter between sessions. **Contours** draws lines within the filter at a spacing that suits it: bunched lines are a front. Chlorophyll spans a hundredfold (0.05 to 5 mg/m³ is usual), so its colours, filter and contours run on a log scale: each step along the colour bar multiplies the value, and the contours sit at tidy values (0.1, 0.2, 0.3, 0.5, 1, 2 …).
 
 Values at the cursor show under the GRIB table, one line for each ocean file (its name, then sea temperature, satellite temperature, salinity, at depth, current and set, chlorophyll). The same values can be shown in the data panel (Planning · Fishing has them to begin with): **✎**, then add the readings of the *Sea at cursor* group (Sea temp, Sea temp sat, Salinity, Temp at depth, Salinity at depth, Current, Current set, Chlorophyll).
 
@@ -1143,7 +1146,7 @@ Ocean currents (not tidal streams) come from the ECMWF 0.1° and HYCOM downloads
 
 **Weather on route**
 
-**Weather on route** opens the forecast the boat meets along the way in the dock. In Planning it is one button near the top of the data panel; it is also in the Route drawer and under a routing's summary in Wx routing. Close the dock with **✕** and use the button to open it again.
+**Weather on route** opens the forecast the boat meets along the way in the dock. In Planning the button is below the forecast time controls: it highlights while the view is open and toggles it closed. It is also in the Route drawer and under a routing's summary in Wx routing. Hiding the rail does not hide the dock; **✕** closes it too.
 
 - **Wind**: true wind speed (solid) and gusts (dashed), with arrows along the top pointing where the wind blows.
 - **Waves**: significant height Hs (solid, left scale) and peak period Tp (dotted, right scale), with arrows for the wave direction.
@@ -1178,7 +1181,7 @@ With two or more GRIBs loaded, **Show** offers displays of how much they disagre
 
 **Verify runs**
 
-Weather › **Verify runs…** scores earlier forecasts against what a later run says actually happened at its first hour (its analysis), over the sea in the chart view: vector error, speed and direction bias, pressure bias. The track record averages every verify time by model and lead time, so after some days of downloads it shows which model has been doing best in your area. Click a forecast to shade its error on the chart.
+Weather › **Advanced display and verification** › **Verify runs…** scores earlier forecasts against what a later run says actually happened at its first hour (its analysis), over the sea in the chart view: vector error, speed and direction bias, pressure bias. The track record averages every verify time by model and lead time, so after some days of downloads it shows which model has been doing best in your area. Click a forecast to shade its error on the chart.
 
 **Weather stations and buoys**
 
@@ -1332,7 +1335,7 @@ With dusk and night colours the window's title bar turns dark as well. To get ri
 
 - **Zoom buttons**: **Auto** shows them only where a touch screen is found; **Show** or **Hide** forces it. They are two round buttons at the bottom centre of the chart, well apart.
 - **Large buttons**: **Auto** enlarges the toolbar, MOB, Drop and zoom buttons on a touch screen; **On** does it on any screen, for gloves.
-- **Return to Navigation after Planning inactivity**: five minutes by default, adjustable from one to ten minutes or Off. It applies to this window and changes view even if a dialog or edit is open.
+- **Return to Navigation after Planning inactivity**: five minutes by default, adjustable from one to ten minutes or Off. It applies to Planning and Environment in this window and changes view even if a dialog or edit is open.
 
 **Diagnostics**
 
@@ -1369,7 +1372,7 @@ Single keys (letters, Space, the brackets) work whenever you aren't typing in a 
 | MOB, Drop or the readings have gone | The data panel is hidden: they are on the line under the chart. **O**, or **⟨ Panel**, brings the panel back |
 | A toolbar button described here isn't there | Shoot, Haul and Own soundings show in the Fishing use only: Settings › Display › Use |
 | Laylines don't show | They aren't drawn in the Fishing use, or without a wind (live, or a loaded GRIB), or without a next mark or Go to |
-| The data panel or time controls have gone | Open the data panel with **O** or **⟨ Panel**, then open its **Weather** section |
+| The data panel or time controls have gone | Open the data panel with **O** or **⟨ Panel**, then open its **Forecast time** section |
 | Soundings, contours or cables have gone | The display is on Base or Standard: press **All** at the top of the data panel, or tick **Soundings** in Chart › Chart display |
 | An info window is off where I can't see it | It is kept on the screen, but may be behind a drawer: close the drawer, or drag the window by its title bar |
 | An AIS target is crossed through | It hasn't been heard for a while (see Targets): out of range, behind land, its set switched off, or (online AIS) no shore station in reach |

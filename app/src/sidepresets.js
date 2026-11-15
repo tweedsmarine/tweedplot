@@ -10,7 +10,7 @@
 // The own-ship block (top), the MOB section and the alerts (bottom) are not in the list: they
 // are always there.
 
-export const PANEL_VIEWS = ["nav", "plan"];
+export const PANEL_VIEWS = ["nav", "plan", "env"];
 export const USES = ["cruise", "fish", "race"];
 
 /** The fixed own-ship block, in S-Mode's order (MSC.1/Circ.1609 App. 3), plus depth. */
@@ -26,7 +26,8 @@ const WIND = () => R("wind", "Wind", ["TWS", "TWD", "AWS", "AWA", "TWA", "VMG"],
 const WEATHER = () => R("wx", "Weather", ["PRES", "PTEND", "AIRT", "WTEMP"], 2, true);
 const CURSOR = () => R("cursor", "Cursor", ["CPOS", "CBRG", "CRNG", "CSND"], 2);
 export const WEATHER_SECTIONS = {
-  weather: "Weather controls",
+  weatherTime: "Chart time",
+  weather: "Weather layers and filters",
   gribPoint: "GRIB data at the cursor",
 };
 export const weatherSection = (kind) => ({ id: kind, kind, title: WEATHER_SECTIONS[kind] });
@@ -50,9 +51,14 @@ export const PRESETS = {
     ],
   },
   plan: {
-    cruise: () => [weatherSection("weather"), weatherSection("gribPoint"), CURSOR(), R("route", "Route", ["BTW", "DTW", "TTG"], 2), M(8)],
-    race: () => [weatherSection("weather"), weatherSection("gribPoint"), CURSOR(), R("route", "Route", ["BTW", "DTW", "TTG"], 2), M(8), R("perf", "Routing targets", ["TTWA", "TBSP", "THDG"], 2)],
-    fish: () => [weatherSection("weather"), weatherSection("gribPoint"), CURSOR()],
+    cruise: () => [weatherSection("weatherTime"), CURSOR(), R("route", "Route", ["BTW", "DTW", "TTG"], 2), M(8)],
+    race: () => [weatherSection("weatherTime"), CURSOR(), R("route", "Route", ["BTW", "DTW", "TTG"], 2), M(8), R("perf", "Routing targets", ["TTWA", "TBSP", "THDG"], 2)],
+    fish: () => [weatherSection("weatherTime"), CURSOR()],
+  },
+  env: {
+    cruise: () => [weatherSection("weatherTime"), weatherSection("gribPoint"), weatherSection("weather")],
+    race: () => [weatherSection("weatherTime"), weatherSection("gribPoint"), weatherSection("weather")],
+    fish: () => [weatherSection("weatherTime"), weatherSection("gribPoint"), weatherSection("weather")],
   },
 };
 
@@ -99,7 +105,7 @@ export function fromFloating(panels, items) {
   const out = { nav: [], plan: [] };
   for (const p of Array.isArray(panels) ? panels : []) {
     if (!p || BUILT_IN.has(p.id) || p.hidden || !Array.isArray(p.tiles)) continue;
-    const views = (Array.isArray(p.views) ? p.views : PANEL_VIEWS).filter((v) => PANEL_VIEWS.includes(v));
+    const views = (Array.isArray(p.views) ? p.views : ["nav", "plan"]).filter((v) => Object.hasOwn(out, v));
     if (!views.length) continue;
     const name = String(p.name || "").trim();
     const readings = p.tiles.filter((k) => items[k] && !GRAPHIC_KEYS.has(k) && !items[k].graphic);
@@ -127,7 +133,7 @@ export function snapWidth(px, pxPerMm, scale = 1) {
 // ---------- upgrading saved layouts ----------
 // the section ids the starting layouts have used (a layout made only of these hasn't had sections added)
 const PRESET_IDS = new Set(["route", "wind", "wx", "perf", "dial", "fish", "snd", "cursor", "grib", "sea", "marks", "targets"]);
-export const PRESETS_VERSION = 4;
+export const PRESETS_VERSION = 8;
 const GRIB_READINGS = new Set(["GTIME", "GSRC", "GTWS", "GTWD", "GGUST", "GMSLP", "GHS", "GTP", "GWVD", "GRAIN", "GTEMP", "GSST", "GSKIN", "GCHL", "GSSS", "GSUBT", "GSUBS", "GCUR", "GSET"]);
 /**
  * Bring saved layouts up to the current presets (v2: no sounder in Navigation · Fishing; marks
@@ -158,6 +164,15 @@ export function upgrade(data) {
     }
     if (oldVersion < 4 && view === "plan") {
       data.layouts[k] = [weatherSection("weather"), weatherSection("gribPoint"), ...data.layouts[k]];
+    }
+    if (oldVersion < 5 && data.layouts[k].some((sec) => sec?.kind === "weather") && !data.layouts[k].some((sec) => sec?.kind === "weatherTime")) {
+      const i = data.layouts[k].findIndex((sec) => sec?.kind === "weather");
+      data.layouts[k].splice(i, 0, weatherSection("weatherTime"));
+    }
+    if (oldVersion < 7) data.layouts[k] = data.layouts[k].filter((sec) => sec?.kind !== "gribFiles");
+    if (oldVersion < 8 && view === "plan") {
+      data.layouts[k] = data.layouts[k].filter((sec) => sec?.kind !== "weather" && sec?.kind !== "gribPoint");
+      if (!data.layouts[k].some((sec) => sec?.kind === "weatherTime")) data.layouts[k].unshift(weatherSection("weatherTime"));
     }
   }
   data.presetsVersion = PRESETS_VERSION;

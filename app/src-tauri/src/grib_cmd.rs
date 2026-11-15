@@ -226,6 +226,19 @@ pub(crate) fn grib_wind_grid(path: String, t: i64, bbox: [f64; 4], max_points: u
     }))
 }
 
+fn finite_range(values: &[f32]) -> Option<(f32, f32)> {
+    values.iter().copied().filter(|v| v.is_finite()).fold(None, |range, v| {
+        Some(match range {
+            Some((lo, hi)) => (f32::min(lo, v), f32::max(hi, v)),
+            None => (v, v),
+        })
+    })
+}
+
+fn shading_range(values: &[f32], precision: f32) -> Option<(f32, f32)> {
+    finite_range(values).map(|(lo, hi)| (lo.min((lo * precision).round() / precision), hi.max((hi * precision).round() / precision)))
+}
+
 /// One quantity on a thinned grid inside `bbox` at time `t`, for shading and
 /// contours: "wind" and "gust" (kn), "waves", "swell", "windwaves" (m),
 /// "period" (s), "wavedir" (deg from), "rain" (mm/h), "cape" (J/kg), "mslp" (hPa), "temp" (°C).
@@ -298,6 +311,14 @@ pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max
         }
         _ => return None,
     };
+    // Include both the original values and the rounded values returned for shading.
+    let precision = match layer.as_str() {
+        "sst" | "subt" | "sss" | "subs" | "skin" => 100.0,
+        "chl" => 1000.0,
+        "ssh" => 100.0,
+        _ => 10.0,
+    };
+    let range = shading_range(&vals, precision);
     let turn = ((g.lon0 + g.dlon * (g.ni as f64 - 1.0) / 2.0 - (bbox[0] + bbox[2]) / 2.0) / 360.0).round() * 360.0;
     let bbox = [bbox[0] + turn, bbox[1], bbox[2] + turn, bbox[3]];
     let i_lo = (((bbox[0] - g.lon0) / g.dlon).floor().max(0.0) as usize).min(g.ni - 1);
@@ -314,14 +335,7 @@ pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max
         for i in (i_lo..=i_hi).step_by(stride) {
             ni += 1;
             let x = vals[j * g.ni + i];
-            // a tenth is plenty for weather; sea temperature fronts and salinity need finer
-            let k = match layer.as_str() {
-                "sst" | "subt" | "sss" | "subs" | "skin" => 100.0,
-                "chl" => 1000.0,
-                "ssh" => 100.0,
-                _ => 10.0,
-            };
-            out.push(x.is_finite().then(|| (x * k).round() / k));
+            out.push(x.is_finite().then(|| (x * precision).round() / precision));
         }
     }
     Some(serde_json::json!({
@@ -329,7 +343,7 @@ pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max
         "lat0": g.lat0 + j_lo as f64 * g.dlat,
         "dlon": g.dlon * stride as f64,
         "dlat": g.dlat * stride as f64,
-        "ni": ni, "nj": nj, "values": out,
+        "ni": ni, "nj": nj, "values": out, "range": range,
     }))
 }
 
@@ -583,6 +597,7 @@ pub(crate) async fn weather_save_png(app: tauri::AppHandle, request: tauri::ipc:
     if !data.starts_with(&[0x89, b'P', b'N', b'G']) {
         return Err("not a PNG picture".into());
     }
+
     let mut d = app.dialog().file().set_title("Save the weather view").add_filter("PNG image", &["png"]);
     if let Some(s) = request.headers().get("x-suggest").and_then(|v| v.to_str().ok()) {
         d = d.set_file_name(s);
@@ -594,4 +609,17 @@ pub(crate) async fn weather_save_png(app: tauri::AppHandle, request: tauri::ipc:
     }
     std::fs::write(&p, data).map_err(|e| e.to_string())?;
     Ok(Some(p.to_string_lossy().into_owned()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{finite_range, shading_range};
+
+    #[test]
+    fn full_grid_range_includes_extremes_and_ignores_missing_values() {
+        assert_eq!(finite_range(&[f32::NAN, 1.0, 23.2, f32::INFINITY, -2.0]), Some((-2.0, 23.2)));
+        assert_eq!(finite_range(&[f32::NAN]), None);
+        assert_eq!(finite_range(&[4.0]), Some((4.0, 4.0)));
+        assert_eq!(shading_range(&[1.03, 1.06], 10.0), Some((1.0, 1.1)));
+    }
 }

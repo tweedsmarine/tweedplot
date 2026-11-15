@@ -18,7 +18,7 @@ So the skill in weather routing lies less in pressing Compute and more in asking
 
 **Pressure systems**
 
-Wind blows roughly along the isobars, turning slightly in towards low pressure; the closer the isobars, the stronger the wind. In the Southern Hemisphere wind circulates clockwise round a low and anticlockwise round a high (the reverse in the Northern Hemisphere). Turn on Isobars in the Weather drawer to see the pattern behind the wind. Most routing decisions are about where a high or low will be when you get there: which side of a ridge has the wind, how far round a low you must go for a favourable shift.
+Wind blows roughly along the isobars, turning slightly in towards low pressure; the closer the isobars, the stronger the wind. In the Southern Hemisphere wind circulates clockwise round a low and anticlockwise round a high (the reverse in the Northern Hemisphere). Turn on Isobars in the data panel's Weather overlays to see the pattern behind the wind. Set the isobar interval beside the overlays; Auto widens it as you zoom out. Most routing decisions are about where a high or low will be when you get there: which side of a ridge has the wind, how far round a low you must go for a favourable shift.
 
 **Fronts and troughs**
 
@@ -77,7 +77,7 @@ No single GRIB tells you how much to trust it. Comparing several does. TweedPlot
 
 | Tool | Question it answers |
 | --- | --- |
-| **Values at the cursor** (table in the Weather drawer) | What does each loaded GRIB say here and now? |
+| **Compare loaded GRIBs at cursor** (data panel) | What does each loaded GRIB say here and now? |
 | **Meteogram** (right-click) | How does the wind at this point change over time in each GRIB, and do they agree on the timing of shifts and fronts? |
 | **Agreement displays** (Show › Agreement) | Where on the chart do the GRIBs disagree, and by how much? Is the forecast trending windier or lighter run to run? |
 | **Verify runs** | Over the past days, which model has forecast this area best? |

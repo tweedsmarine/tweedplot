@@ -36,9 +36,9 @@ const ROWS = [
   ["Current", ["CurrentU"], (r) => r.cur && `${r.cur.kn.toFixed(1)} kn toward ${deg3(r.cur.set)}° ${compass(r.cur.set)}`, "cur"],
 ];
 
-export function setupWeatherPanel(map, weather, sidePanel) {
+export function setupWeatherPanel(map, weather, sidePanel, ui) {
   const $ = (id) => document.getElementById(id);
-  const st = { open: false, x: null, y: null, collapsed: false, sec: { show: true, over: true }, presets: {} };
+  const st = { open: false, x: null, y: null, collapsed: false, sec: { show: true, over: true }, presets: {}, envStart: null };
   try { Object.assign(st, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* storage unavailable or damaged: defaults */ }
   if (!st.sec || typeof st.sec !== "object") st.sec = { show: true, over: true };
   if (!st.presets || typeof st.presets !== "object") st.presets = {};
@@ -46,27 +46,94 @@ export function setupWeatherPanel(map, weather, sidePanel) {
 
   const win = $("wxp");
   win.innerHTML = `
-    <span class="wx-note" id="wxp-when"></span>
-    <div class="wxp-run" id="wxp-run"></div>
+    <div class="env-start">
+      <div class="wx-note">Last starting point selected; adjust any layer or overlay afterwards.</div>
+      <div class="env-start-buttons" role="group" aria-label="Environment starting points">
+        <button type="button" data-env-preset="weather" aria-pressed="false">Weather</button>
+        <button type="button" data-env-preset="ocean" aria-pressed="false">Ocean</button>
+        <button type="button" data-env-preset="seabed" aria-pressed="false">Seabed</button>
+      </div>
+      <div id="env-start-status" class="wx-note" role="status"></div>
+      <details class="env-seabed"><summary>Seabed layers</summary>
+        <label><input type="checkbox" data-seabed="sd-show"> Survey depths (LINZ)</label>
+        <label><input type="checkbox" data-seabed="sd-outlines"> Survey outlines</label>
+        <label><input type="checkbox" data-seabed="pb-show"> Own soundings (not for navigation)</label>
+        <label><input type="checkbox" data-seabed="data-hr-show"> High-resolution depths (shared)</label>
+        <label><input type="checkbox" data-seabed="data-nz-show"> NIWA bathymetry (shared; not for navigation)</label>
+        <label><input type="checkbox" data-seabed="lv-etopo"> Detailed depths (shared; not for navigation)</label>
+        <label><input type="checkbox" data-seabed="lv-wdepth"> World depths (shared; not for navigation)</label>
+        <div class="wx-note">Manage seabed data in Chart → Get data. Shared layers also affect other views.</div>
+      </details>
+    </div>
+    <button id="wxp-data" type="button">Download or manage GRIBs…</button>
     <div class="wxp-time"><div id="wxp-legend" class="wx-legend"></div><div id="wxp-filter"></div></div>
     <div class="wxp-body" id="wxp-body">
       <details data-sec="show"><summary>Show on the chart</summary><div id="wxp-show"></div>
         <div class="wxp-presets"><select id="wxp-preset" title="Presets"></select><button id="wxp-psave" title="Save what is shown as a preset">Save…</button><button id="wxp-pdel" title="Delete the chosen saved preset">Delete</button></div></details>
-      <details data-sec="over"><summary>Overlays</summary><div id="wxp-over"></div></details>
+      <details data-sec="over"><summary>Overlays</summary><div id="wxp-over"></div><div id="wxp-isobar-controls"></div></details>
       <button id="wxp-visible">Hide weather on chart</button>
       <button id="wxp-snap" title="Save the chart as a picture" aria-label="Save the chart as a picture"><svg viewBox="0 0 24 24" class="ic"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg> Save picture</button>
     </div>`;
   weather.mountLegend($("wxp-legend"));
   weather.mountFilter($("wxp-filter"));
+  $("wxp-isobar-controls").append($("wx-isobar-controls"));
 
-  for (const d of win.querySelectorAll("details")) {
+  for (const d of win.querySelectorAll("details[data-sec]")) {
     d.open = !!st.sec[d.dataset.sec];
     d.ontoggle = () => { st.sec[d.dataset.sec] = d.open; save(); };
   }
 
-  $("wx-pop-btn").title = "Open weather controls in the data panel (switches to Planning if needed)";
+  $("wx-pop-btn").title = "Open weather controls in Environment";
   $("wx-pop-btn").onclick = () => sidePanel.openWeather();
+  $("wx-open-controls").onclick = () => sidePanel.openWeather();
+  $("wxp-data").onclick = () => sidePanel.openEnvironmentData();
   $("wxp-visible").onclick = () => weather.setVisible(!weather.visible());
+  const seabed = [...win.querySelectorAll("[data-seabed]")];
+  const syncSeabed = () => { for (const input of seabed) input.checked = !!$(input.dataset.seabed)?.checked; };
+  for (const input of seabed) {
+    input.addEventListener("change", () => {
+      const source = $(input.dataset.seabed);
+      source.checked = input.checked;
+      source.dispatchEvent(new Event("change", { bubbles: true }));
+      syncSeabed();
+    });
+  }
+  document.addEventListener("change", (event) => {
+    if (seabed.some((input) => input.dataset.seabed === event.target.id)) syncSeabed();
+  });
+  window.addEventListener("racenav-view", () => queueMicrotask(syncSeabed));
+  const startButtons = win.querySelector(".env-start-buttons");
+  function syncStartingPoint() {
+    for (const button of startButtons.querySelectorAll("[data-env-preset]")) {
+      const selected = button.dataset.envPreset === st.envStart;
+      button.classList.toggle("on", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    }
+  }
+  startButtons.addEventListener("click", (event) => {
+    const key = event.target.closest("[data-env-preset]")?.dataset.envPreset;
+    if (!key) return;
+    const choices = key === "weather" ? ["wind", "gust", "waves"] : key === "ocean" ? ["sst", "skin", "chl", "sss", "current"] : [];
+    const options = weather.layerOptions();
+    const choice = choices.map((name) => options.find((option) => option.key === name)).find(Boolean);
+    weather.setVisible(true);
+    if (choice) weather.pickLayer(choice.key, choice.path ?? choice.paths[0]);
+    weather.applyConfig({
+      layer: choice?.key ?? "none",
+      overlays: {
+        arrows: key === "weather", waveArrows: key === "weather", currArrows: key === "ocean",
+        isobars: key === "weather", isotherms: key === "ocean", breaks: false,
+      },
+    });
+    $("env-start-status").textContent = key === "seabed" ? "Choose the seabed layers below." :
+      choice ? `Starting with ${choice.label}.` : `No ${key} GRIB loaded. Use Get data to load one.`;
+    win.querySelector(".env-seabed").open = key === "seabed";
+    st.envStart = key;
+    save();
+    syncStartingPoint();
+  });
+  syncStartingPoint();
+  syncSeabed();
 
   // ---------- what is loaded: layers and overlays, each with its sources ----------
   const short = (n) => (n.length > 28 ? `${n.slice(0, 27)}…` : n);
@@ -84,7 +151,7 @@ export function setupWeatherPanel(map, weather, sidePanel) {
     box.innerHTML = "";
     const info = weather.layerInfo();
     const opts = weather.layerOptions();
-    if (!opts.length) { box.innerHTML = `<div class="wx-note">No GRIB loaded. Load one in the Weather drawer.</div>`; return; }
+    if (!opts.length) { box.innerHTML = `<div class="wx-note">No GRIB loaded. Open Get data to load one.</div>`; return; }
     for (const o of [{ key: "none", label: "No shading", paths: [] }, ...opts]) {
       const row = document.createElement("label");
       row.className = "wxp-row";
@@ -94,6 +161,7 @@ export function setupWeatherPanel(map, weather, sidePanel) {
       r.onchange = () => weather.pickLayer(o.key, o.path ?? o.paths[0]);
       const name = document.createElement("span");
       name.textContent = o.key === "none" ? o.label : `${o.label} (${o.unit})`;
+      if (o.help) row.title = o.help;
       row.append(r, name);
       if (o.paths.length > 1) {
         const sel = sourceSelect(o.paths, o.path, (p) => weather.pickLayer(o.key, p));
@@ -110,6 +178,8 @@ export function setupWeatherPanel(map, weather, sidePanel) {
   }
   function renderOver() {
     const box = $("wxp-over");
+    const isobarControls = $("wx-isobar-controls");
+    $("wxp-isobar-controls").append(isobarControls);
     box.innerHTML = "";
     for (const o of weather.overlayOptions()) {
       const row = document.createElement("label");
@@ -118,10 +188,12 @@ export function setupWeatherPanel(map, weather, sidePanel) {
       c.type = "checkbox"; c.checked = o.on;
       c.onchange = () => weather.setOverlay(o.key, c.checked);
       const name = document.createElement("span");
-      name.textContent = o.label;
+      name.textContent = o.label + (o.on && o.timeStatus?.state === "past" ? ` · past analysis ${fmt(o.timeStatus.time)}` :
+        o.on && o.timeStatus?.state === "missing" ? " · no data at chart time" : "");
       row.append(c, name);
       if (o.paths.length > 1) row.append(sourceSelect(o.paths, o.path, (p) => weather.setOverlay(o.key, null, p)));
       box.append(row);
+      if (o.key === "isobars") box.append(isobarControls);
     }
   }
   function renderPresets() {
@@ -158,7 +230,6 @@ export function setupWeatherPanel(map, weather, sidePanel) {
     const cur = weather.current();
     const info = weather.layerInfo();
     const s = weather.sources().find((x) => x.path === (info.path ?? cur.path));
-    $("wxp-when").textContent = cur.path ? fmt(cur.t) : "";
     const run = $("wxp-run");
     run.className = "wxp-run";
     if (!s) { run.textContent = "No GRIB loaded"; return; }
@@ -175,12 +246,13 @@ export function setupWeatherPanel(map, weather, sidePanel) {
       const lastH = (now - hi) / 3600;
       // how late each product normally is when published: VIIRS a couple of days, MUR a day or two, Himawari hours
       const slackH = /VIIRS/i.test(s.model ?? s.name ?? "") ? 96 : /MUR/i.test(s.model ?? s.name ?? "") ? 72 : 12;
-      if (outside) { run.classList.add("stale"); run.textContent += " · no data at this time"; }
+      if (info.timeStatus?.state === "past") { run.classList.add("stale"); run.textContent += ` · using past analysis from ${fmt(info.timeStatus.time)} where available`; }
+      else if (info.timeStatus?.state === "missing" || outside) { run.classList.add("stale"); run.textContent += " · no data at this time"; }
       else if (lastH > slackH) { run.classList.add("stale"); run.textContent += ` · latest data is ${age(lastH)} old: download a newer analysis`; }
       return;
     }
     run.textContent = `${s.name}${s.ref ? ` · run ${fmt(s.ref, true)} (${age(ageH)} old)` : ""}`;
-    if (outside) { run.classList.add("stale"); run.textContent += ` · no data at this time: it covers ${fmt(lo)} to ${fmt(hi)}`; }
+    if (info.timeStatus?.state === "missing" || outside) { run.classList.add("stale"); run.textContent += ` · no data at this time: it covers ${fmt(lo)} to ${fmt(hi)}`; }
     else if (over) { run.classList.add("stale"); run.textContent += ` · the data ends ${fmt(hi)}, before now`; }
     else if (ageH > 24) { run.classList.add("stale"); run.textContent += " · old: download a fresh run"; }
   }
@@ -213,7 +285,9 @@ export function setupWeatherPanel(map, weather, sidePanel) {
     // a value borrowed from another loaded file (the shown one lacks it) is marked a, b … with the file below
     const notes = [];
     const mark = (k) => {
-      const name = r?.src?.[k];
+      const past = r?.past?.[k];
+      const source = r?.src?.[k] ?? (past != null ? r.name : null);
+      const name = source && `${source}${past != null ? ` · past analysis ${fmt(past)}` : ""}`;
       if (!name) return "";
       let i = notes.indexOf(name);
       if (i < 0) { notes.push(name); i = notes.length - 1; }
@@ -229,7 +303,8 @@ export function setupWeatherPanel(map, weather, sidePanel) {
       const diff = Math.abs((((r.twd - r.cur.set) % 360) + 540) % 360 - 180);
       if (diff < 45) warn = "Wind against current: expect steep, short seas.";
     }
-    box.innerHTML = `<div class="wxp-grid">${cells.join("")}</div>${from}<div class="wxp-warn">${warn}</div>`;
+    const context = r ? `<div class="wxp-point-context">Chart time ${esc(fmt(r.t))} · shown GRIB: ${esc(r.name)}</div>` : "";
+    box.innerHTML = `${context}<div class="wxp-grid">${cells.join("")}</div>${from}<div class="wxp-warn">${warn}</div>`;
   }
 
   // ---------- snapshot ----------
@@ -279,7 +354,12 @@ export function setupWeatherPanel(map, weather, sidePanel) {
   }
   weather.onChange(refresh);
   weather.onLoaded(refresh);
-  weather.onTime(renderHead);
+  let lastOverlayTime = null;
+  weather.onTime((time) => {
+    renderHead();
+    if (document.documentElement.dataset.view === "env" && time !== lastOverlayTime) renderOver();
+    lastOverlayTime = time;
+  });
   function renderChartState() {
     $("side-weather-state").textContent = weatherSelectionSummary({
       visible: weather.visible(), sources: weather.sources(), layerInfo: weather.layerInfo(),

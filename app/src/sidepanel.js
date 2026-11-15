@@ -36,10 +36,16 @@ function store(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } c
 export function setupSidePanel({ inst, views, use, map, getAis = () => null, centreOn = () => {}, centreBoat = () => {} }) {
   const side = $("side"), strip = $("side-strip"), root = document.documentElement;
   const body = side.querySelector(".sp-body"), ownEl = side.querySelector(".sp-own"), mobEl = side.querySelector(".sp-mob");
+  const pinnedTime = side.querySelector(".sp-pinned-time"), pinnedPoint = side.querySelector(".sp-pinned-point");
   const routeWeather = side.querySelector(".sp-routewx");
-  const gribFiles = $("side-grib-files");
-  const weatherSection = $("side-weather"), gribPoint = $("side-grib-point");
+  const weatherSection = $("side-weather"), gribPoint = $("side-grib-point"), weatherTime = $("side-wx-clock");
+  const weatherElements = { weather: weatherSection, gribPoint, weatherTime };
   const weatherParking = $("side-weather-parking");
+  const envTabs = side.querySelector(".sp-env-tabs"), envData = side.querySelector(".sp-env-data");
+  const filesHome = $("wx-files-home"), filesSection = $("wx-files-section");
+  const planCard = document.querySelector('.pane[data-pane="course"] .dcard[data-title="Plan"]');
+  const planHome = document.createComment("Route planning controls");
+  planCard.before(planHome);
   const statusEl = side.querySelector(".sp-status"), actions = side.querySelector(".sp-actions"), alerts = side.querySelector(".sp-alerts");
   const cursorSlot = side.querySelector(".sp-cursor");
   const menu = $("tile-menu");
@@ -52,6 +58,7 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
   let data = load(KEY, null);
   if (!data || data.v !== 1 || typeof data.layouts !== "object") data = { v: 1, layouts: {} };
   let editing = false;
+  let envTab = "explore";
 
   // ---------- the old floating panels, once ----------
   if (!data.migrated) {
@@ -118,15 +125,18 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
   function visibility() {
     const n = narrow();
     const on = hasPanel() && (n ? sheet : !hidden[view()]);
-    const line = hasPanel() && (n || !!hidden[view()]);
+    const focus = on && ["plan", "env"].includes(view());
+    const line = hasPanel() && (n || !!hidden[view()] || focus);
     side.hidden = !on;
-    routeWeather.hidden = view() !== "plan";
-    strip.hidden = !line || (n && on);
+    routeWeather.hidden = !["plan", "env"].includes(view());
+    side.querySelector(".sp-edit").hidden = view() === "env";
+    strip.hidden = !line || (n && on && !focus);
     root.classList.toggle("side-narrow", n);
     root.classList.toggle("side-on", on);
     root.classList.toggle("side-strip", line);
+    root.classList.toggle("weather-focus", focus);
     $("side-btn")?.classList.toggle("on", on);
-    placeChrome(on, line && !(n && on));
+    placeChrome(on, !strip.hidden, focus);
     requestAnimationFrame(() => map.resize());
   }
   function toggle() {
@@ -137,9 +147,10 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
       store(HKEY, hidden);
     }
     visibility();
+    build();
   }
   let wasNarrow = narrow();
-  window.addEventListener("resize", () => { if (narrow() !== wasNarrow) { wasNarrow = narrow(); sheet = false; visibility(); } });
+  window.addEventListener("resize", () => { if (narrow() !== wasNarrow) { wasNarrow = narrow(); sheet = false; visibility(); build(); } });
   $("side-btn")?.addEventListener("click", toggle);
   side.querySelector(".sp-hide").onclick = toggle;
   strip.querySelector(".ss-show").onclick = toggle;
@@ -151,11 +162,11 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
   const cursorEl = $("cursor");
   const home = document.body;
   const put = (el, where) => { if (el && el.parentElement !== where) where.append(el); };
-  function placeChrome(on, line) {
-    const where = on ? actions : line ? strip.querySelector(".ss-actions") : home;
+  function placeChrome(on, line, focus) {
+    const where = on && !focus ? actions : line ? strip.querySelector(".ss-actions") : home;
     for (const b of chrome) put(b, where);
     // the alerts: in the panel, or on the line under the chart (never over the chart)
-    put(banner, on ? alerts : line ? strip.querySelector(".ss-alerts") : home);
+    put(banner, on && !focus ? alerts : line ? strip.querySelector(".ss-alerts") : home);
     // the cursor's position, depth and bearing and range from the boat: off the chart too
     put(cursorEl, on ? cursorSlot : line ? strip.querySelector(".ss-cursor") : home);
   }
@@ -212,19 +223,37 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
     $("sp-edit-btn")?.classList.toggle("on", editing);
     ownEl.innerHTML = OWN_SHIP.map((k) => rowHtml(k, " own")).join("");
     const L = layout();
-    routeWeather.remove();
-    weatherParking.append(weatherSection, gribPoint);
+    planHome.before(planCard);
+    weatherParking.append(weatherSection, gribPoint, weatherTime);
+    pinnedTime.innerHTML = "";
+    pinnedPoint.innerHTML = "";
     body.innerHTML = "";
-    body.append(routeWeather);
-    gribFiles.hidden = false;
+    const environment = view() === "env";
+    (environment ? envData : filesHome).append(filesSection);
+    envTabs.hidden = !environment;
+    setEnvironmentTab(envTab);
+    if (view() === "plan") {
+      planCard.open = true;
+      body.append(planCard);
+    }
+    if (L.some((s) => s.kind === "weatherTime")) {
+      const clock = weatherTime.querySelector(".sp-wx-clock");
+      clock.insertBefore($("wxp-run"), $("side-wx-time"));
+      clock.insertBefore(routeWeather, $("side-wx-time-status"));
+    } else {
+      $("wxp-run-fallback").append($("wxp-run"));
+      body.append(routeWeather);
+    }
     L.forEach((s, i) => {
       const sec = document.createElement("section");
       sec.className = `sp-sec${s.collapsed && !editing ? " collapsed" : ""}${s.kind === "readings" && s.cols === 2 ? " c2" : ""}`;
       sec.dataset.i = i;
       if (Object.hasOwn(WEATHER_SECTIONS, s.kind)) {
         if (editing) sec.innerHTML = `<h4><span class="sp-title">${esc(WEATHER_SECTIONS[s.kind])}</span><span class="sp-tools"><button data-act="up" title="Move up">▲</button><button data-act="down" title="Move down">▼</button><button data-act="del" title="Remove this section">✕</button></span></h4>`;
-        sec.append(s.kind === "weather" ? weatherSection : gribPoint);
-        body.append(sec);
+        sec.append(weatherElements[s.kind]);
+        if (s.kind === "weatherTime" && (view() === "plan" || root.classList.contains("weather-focus")) && !editing) pinnedTime.append(sec);
+        else if (s.kind === "gribPoint" && environment && !editing) pinnedPoint.append(sec);
+        else body.append(sec);
         return;
       }
       const tools = editing
@@ -263,13 +292,30 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
       add.innerHTML = `<button data-act="addsec">+ Add a section</button><button data-act="reset" title="Back to the starting layout for ${viewName()} · ${useName()}">Reset</button><button data-act="done" class="on">Done</button>`;
       body.append(add);
     }
-    strip.querySelector(".ss-rows").innerHTML = ["HDG", "COG", "SOG", "DPT", "POS", "TIME"].map((k) => rowHtml(k)).join("");
+    const focused = root.classList.contains("weather-focus");
+    const stripKeys = focused ? OWN_SHIP : ["HDG", "COG", "SOG", "DPT", "POS", "TIME"];
+    strip.querySelector(".ss-rows").innerHTML = stripKeys.map((k) => rowHtml(k, focused ? " own" : "")).join("");
     geometry();
     listsAt = 0; sparksAt = 0;
     paint();
   }
   const viewName = () => VIEWS.find((v) => v.id === view())?.name ?? "";
   const useName = () => ({ cruise: "Cruising", fish: "Fishing", race: "Racing" })[useNow()];
+
+  function setEnvironmentTab(tab) {
+    envTab = tab;
+    const environment = view() === "env";
+    envData.hidden = !environment || tab !== "data";
+    body.hidden = environment && tab === "data";
+    pinnedTime.hidden = environment && tab === "data";
+    pinnedPoint.hidden = environment && tab === "data";
+    for (const button of envTabs.querySelectorAll("[data-env-tab]")) button.setAttribute("aria-pressed", String(button.dataset.envTab === tab));
+    window.dispatchEvent(new Event("racenav-layout"));
+  }
+  envTabs.addEventListener("click", (e) => {
+    const button = e.target.closest("[data-env-tab]");
+    if (button) setEnvironmentTab(button.dataset.envTab);
+  });
 
   // ---------- paint (four times a second) ----------
   function status() {
@@ -560,22 +606,44 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
   });
 
   // ---------- follow the view and the Use ----------
-  views.onChange(() => { editing = false; visibility(); build(); });
+  let lastView = view();
+  views.onChange((id) => {
+    if (id !== lastView && id === "env" && narrow()) sheet = true;
+    lastView = id;
+    editing = false; visibility(); build();
+  });
   window.addEventListener("racenav-use", () => build());
 
   geometry();
   visibility();
   build();
   return { toggle, shown: () => !side.hidden, openHistory: (k) => openHistoryCard(k),
+    openEnvironmentData() {
+      if (view() !== "env") views.set("env");
+      if (side.hidden) toggle();
+      setEnvironmentTab("data");
+    },
     openWeather() {
-      if (!hasPanel()) views.set("plan");
-      if (!layout().some((s) => s.kind === "weather") && view() !== "plan") views.set("plan");
+      if (view() !== "env") views.set("env");
+      setEnvironmentTab("explore");
+      let changed = false;
       if (!layout().some((s) => s.kind === "weather")) {
         layout().unshift(makeWeatherSection("weather"));
-        save(); build();
+        changed = true;
       }
-      if (side.hidden) toggle();
+      if (!layout().some((s) => s.kind === "weatherTime")) {
+        layout().unshift(makeWeatherSection("weatherTime"));
+        changed = true;
+      }
+      if (!layout().some((s) => s.kind === "gribPoint")) {
+        const i = layout().findIndex((s) => s.kind === "weather");
+        layout().splice(i, 0, makeWeatherSection("gribPoint"));
+        changed = true;
+      }
+      if (changed) save();
+      if (side.hidden) toggle(); else build();
       weatherSection.open = true;
-      weatherSection.scrollIntoView({ block: "start" });
+      gribPoint.open = true;
+      gribPoint.scrollIntoView({ block: "start" });
     } };
 }

@@ -25,6 +25,11 @@ const VIEW_KEYS = ["cat", "sectors", "names", "soundings", "info", "textImportan
 /** The standard display (S-Mode): one press back to it. */
 const STANDARD = { cat: "standard", sectors: true, names: true, soundings: true };
 
+export function chartViewSettings(view, saved) {
+  const defaults = view === "env" ? { cat: "base" } : {};
+  return { ...defaults, ...Object.fromEntries(VIEW_KEYS.filter((k) => saved?.[k] !== undefined).map((k) => [k, saved[k]])) };
+}
+
 /** An underwater danger with a known depth at least as deep as the safety contour. */
 const deeper = (contour) => ["all", ["has", "dep"], [">=", ["get", "dep"], contour]];
 /** Point symbols. Hazards show at every zoom, except underwater dangers of known depth that
@@ -407,13 +412,13 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   if (opts.show === false) { opts.cat = "base"; delete opts.show; } else delete opts.show;
   // What the chart shows is kept for each view with a chart (Navigation, Planning): the display
   // category and the Chart display switches, so that Planning can be a clean chart under the
-  // weather while Navigation keeps the lights, names and soundings. A view not set up yet starts
-  // as the one you came from. The symbols, sizes, calibration and safety settings are the same
+  // weather while Navigation keeps the lights, names and soundings. Environment starts on Base;
+  // other views not set up yet start as the one you came from. The symbols, sizes, calibration and safety settings are the same
   // in every view.
-  const chartView = () => (document.documentElement.dataset.view === "plan" ? "plan" : "nav");
+  const chartView = () => (["plan", "env"].includes(document.documentElement.dataset.view) ? document.documentElement.dataset.view : "nav");
   const pick = (o) => Object.fromEntries(VIEW_KEYS.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
   let curView = chartView();
-  if (opts.views?.[curView]) Object.assign(opts, pick(opts.views[curView]));
+  Object.assign(opts, chartViewSettings(curView, opts.views?.[curView]));
   const save = () => {
     // only this view's part is this window's to write: another window may be in the other view
     let stored = {};
@@ -680,7 +685,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     let stored = {};
     try { stored = JSON.parse(localStorage.getItem(KEY) || "{}").views || {}; } catch { /* ignore */ }
     curView = v;
-    if (stored[v]) Object.assign(opts, pick(stored[v]));
+    Object.assign(opts, chartViewSettings(v, stored[v]));
     save();
     apply();
   });

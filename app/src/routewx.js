@@ -32,6 +32,16 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
   let timer = null;
   let lastPath = weather.current().path;
   const request = createRouteWeatherRequest(() => dock.refresh("routewx"));
+  const sideButton = document.getElementById("side-route-wx");
+  function syncSideButton(cur) {
+    if (!sideButton) return;
+    const active = cur === "routewx";
+    sideButton.classList.toggle("on", active);
+    sideButton.setAttribute("aria-pressed", String(active));
+    sideButton.title = `${active ? "Close" : "Open"} weather along the active routing or planned route`;
+  }
+  if (sideButton) sideButton.onclick = () => dock.toggle("routewx");
+  syncSideButton(dock.current());
 
   map.addSource("rw-point", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addLayer({ id: "rw-point", type: "circle", source: "rw-point",
@@ -73,7 +83,7 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
     invalidate();
     timer = setTimeout(refetch, 300);
   };
-  dock.onChange((cur) => { if (cur !== "routewx") invalidate("empty"); else refetch(); });
+  dock.onChange((cur) => { syncSideButton(cur); if (cur !== "routewx") invalidate("empty"); else refetch(); });
   weather.onLoaded(later);
   weather.onChange(() => { const path = weather.current().path; if (path !== lastPath) { lastPath = path; later(); } });
   routing.onDraw?.(later);
@@ -90,6 +100,9 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
       const title = document.createElement("strong");
       title.textContent = `${active?.length > 1 ? "Routing" : "Route"}: ${routeName}`;
       context.append(title);
+      const timeNote = document.createElement("span");
+      timeNote.textContent = "Passage times are independent of the chart forecast time.";
+      context.append(timeNote);
       if (active?.length > 1) {
         const info = document.createElement("span");
         info.textContent = "Uses the active routing's own times and positions.";

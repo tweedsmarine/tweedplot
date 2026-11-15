@@ -36,44 +36,18 @@
       <header><h2 id="drawer-title"></h2><button id="drawer-help" title="Open the manual at this drawer (F1 for the whole manual)">?</button><button id="drawer-close" title="Close (Esc)">✕</button></header>
 
       <section class="pane" data-pane="weather" data-title="Weather and tides">
+        <div id="wx-files-home"><div id="wx-files-section">
+        <h3>GRIB files</h3>
         <div class="wx-row">
           <select id="wx-files" title="GRIB files in the GRIB folders"></select>
           <button id="wx-load" title="Load the selected GRIB">Load</button>
           <button id="wx-refresh" title="Look for new GRIB files">↻</button>
         </div>
         <div id="wx-progress" class="progress" hidden><div class="bar"></div><span></span></div>
+        <div id="wx-where" class="wx-note" role="status" aria-live="polite"></div>
+        <div class="wx-note">Choose a shown GRIB; tick files to include in agreement displays. Unloading keeps the file on disk.</div>
         <div id="wx-loaded"></div>
-        <div class="wx-row time">
-          <button id="wx-prev" title="Back one step">◀</button>
-          <button id="wx-play" title="Play / pause">▶</button>
-          <button id="wx-next" title="Forward one step">▶|</button>
-          <button id="wx-now" title="Set the time to now">Now</button>
-          <span id="wx-time">—</span>
-        </div>
-        <input id="wx-slider" type="range" min="0" max="0" step="3600" value="0" />
-        <div class="wx-row"><label class="grow" for="wx-layer">Show</label><select id="wx-layer" title="What the shading shows"></select></div>
-        <div class="wx-row checks">
-          <label id="wx-arrows-row"><input id="wx-arrows" type="checkbox" /> Wind barbs</label>
-          <label id="wx-wavearrows-row"><input id="wx-wavearrows" type="checkbox" /> Wave direction</label>
-          <label id="wx-currarrows-row" title="Blue arrows showing which way the current flows, longer where it is stronger"><input id="wx-currarrows" type="checkbox" /> Current direction</label>
-          <span id="wx-isobars-row" class="iso"><label><input id="wx-isobars" type="checkbox" /> Isobars</label>
-            <select id="wx-isostep" title="Isobar interval. Auto: wider when zoomed out (×2 below zoom 4, ×4 below zoom 2.5)">
-              <option value="1">1 hPa</option><option value="2">2 hPa</option><option value="3">3 hPa</option><option value="4">4 hPa</option>
-              <option value="5">5 hPa</option><option value="8">8 hPa</option><option value="10">10 hPa</option></select>
-            <label title="Wider spacing when zoomed out"><input id="wx-isoauto" type="checkbox" /> Auto</label></span>
-          <label id="wx-isotherms-row" title="Contour lines over sea temperature or salinity, at a spacing that suits the range in view: fronts show as lines bunched together"><input id="wx-isotherms" type="checkbox" /> Contours</label>
-        </div>
-        <div id="wx-legend" class="legend" title="Wind speed, knots"></div>
-        <div id="wx-sea" class="seafilter" hidden>
-          <div class="track"><div class="grad"></div><span class="h lo"></span><span class="h tg"></span><span class="h hi"></span></div>
-          <div class="vals"><span class="v min"></span><span class="v lo"></span><span class="v tg"></span><span class="v hi"></span><span class="v max"></span><button class="fit" title="Back to the whole file's range">Fit</button></div>
-          <div class="filter-actions"><button type="button" data-filter-edit="lo">Set low</button><button type="button" data-filter-edit="tg">Set target</button><button type="button" data-filter-edit="hi">Set high</button><button type="button" data-filter-clear>Clear target</button></div>
-        </div>
-        <div id="wx-cmp-note" class="wx-note" hidden></div>
-        <div class="wx-row"><button id="wx-verify" title="Score earlier runs against a later run's hour 0 (opens the Verify dock)">Verify runs…</button></div>
-        <table id="wx-point"><thead><tr><th>Run</th><th>TWS</th><th>TWD</th><th>Gust</th><th>MSLP</th><th>Hs / Tp</th></tr></thead><tbody></tbody></table>
-        <div id="wx-sea-point" class="seapoint"></div>
-        <div id="wx-where" class="wx-note">Values at the cursor</div>
+        <div class="wx-row"><button id="wx-open-controls" type="button">View weather controls</button></div>
         <details class="sub" id="dl-box">
           <summary>Download GRIBs (free)</summary>
           <div class="wx-row"><label class="grow" for="dl-model">Model</label><select id="dl-model"></select></div>
@@ -110,6 +84,7 @@
             <div class="wx-note">Send it from your own email. The GRIB comes back attached: save it in the GRIB folder and it shows in the list above.</div>
           </details>
         </details>
+        </div></div>
         <details class="sub" id="tide-box">
           <summary>Tides</summary>
         <div class="wx-row checks"><label><input id="tide-show" type="checkbox" /> Tide stations</label>
@@ -134,7 +109,10 @@
           <div class="wx-note">Each station is a circle with W in it, with its wind as a barbed shaft pointing to where the wind comes from, and the speed beside it (the gust after the G). Click one for its last 24 h against the loaded GRIBs: the quickest check of which forecast is right today. Updated every 10 minutes while shown.</div>
         </details>
         <details class="sub">
-          <summary>Display</summary>
+          <summary>Advanced display and verification</summary>
+          <div id="wx-isobar-controls" class="wx-row iso"><label for="wx-isostep">Isobar interval</label>
+            <select id="wx-isostep" title="Isobar interval"><option value="1">1 hPa</option><option value="2">2 hPa</option><option value="3">3 hPa</option><option value="4">4 hPa</option><option value="5">5 hPa</option><option value="8">8 hPa</option><option value="10">10 hPa</option></select>
+            <label title="Wider spacing when zoomed out"><input id="wx-isoauto" type="checkbox" /> Auto</label></div>
           <div class="wx-row"><label class="grow" for="wx-density">Arrow density</label><input id="wx-density" type="range" min="1" max="10" step="1" /><span id="wx-density-v" class="val"></span></div>
           <div class="wx-row"><label class="grow" for="wx-size">Arrow size</label><input id="wx-size" type="range" min="0.5" max="2" step="0.1" /><span id="wx-size-v" class="val"></span></div>
           <div class="wx-row"><label class="grow" for="wx-shading" id="wx-shading-label">Wind shading</label>
@@ -151,6 +129,7 @@
               <option value="coast">Coastline only (wind over land shows)</option>
             </select></div>
           <div class="wx-row"><label class="grow" for="wx-opacity">Shading strength</label><input id="wx-opacity" type="range" min="0.1" max="0.9" step="0.05" /><span id="wx-opacity-v" class="val"></span></div>
+          <div class="wx-row"><button id="wx-verify" title="Score earlier runs against a later run's hour 0 (opens the Verify dock)">Verify runs…</button></div>
         </details>
       </section>
 
@@ -517,8 +496,8 @@
         </div>
         <div class="ly-group"><h4>Depths and land</h4>
           <div class="ly-row"><label title="LINZ coastal elevation (1 m), shown from about 2 NM range in. Get it in Get data"><input id="data-hr-show" type="checkbox" /> High-resolution depths</label><button class="ly-get" type="button" data-dot="data-hr-dot" data-go="chart|Get data|data-hr" hidden title="Not downloaded yet: get it in Chart › Get data">Get…</button><button class="ly-gear" type="button" data-go="chart|Get data|data-hr" title="Its settings">⚙</button></div>
-          <div class="ly-row"><label title="LINZ's multibeam and lidar survey depths (1–50 m grids, to approximate LAT), from TweedPlot depth packages. Import them in Get data"><input id="sd-show" type="checkbox" /> Survey depths (LINZ)</label><button class="ly-get" type="button" data-dot="sd-dot" data-go="chart|Get data|sd-import" hidden title="No packages yet: import them in Chart › Get data">Get…</button><button class="ly-gear" type="button" data-go="chart|Get data|sd-import" title="Its settings">⚙</button></div>
-          <div class="ly-row ly-sub"><label title="The outline of each survey in the packages: click one for its date, grid and accuracy"><input id="sd-outlines" type="checkbox" /> Survey outlines</label></div>
+          <div class="ly-row"><label title="LINZ's multibeam and lidar survey depths (1–50 m grids, to approximate LAT), from TweedPlot depth packages. Visibility is separate for each view. Import packages in Get data"><input id="sd-show" type="checkbox" /> Survey depths (LINZ)</label><button class="ly-get" type="button" data-dot="sd-dot" data-go="chart|Get data|sd-import" hidden title="No packages yet: import them in Chart › Get data">Get…</button><button class="ly-gear" type="button" data-go="chart|Get data|sd-import" title="Its settings">⚙</button></div>
+          <div class="ly-row ly-sub"><label title="The outline of each survey in the packages: click one for its date, grid and accuracy. Visibility is separate for each view"><input id="sd-outlines" type="checkbox" /> Survey outlines</label></div>
           <div class="ly-row"><label title="NIWA's 250 m seabed grid for the NZ region, at ocean and coastal scales. Not for navigation"><input id="data-nz-show" type="checkbox" /> NIWA bathymetry (250 m)</label><button class="ly-get" type="button" data-dot="data-nz-dot" data-go="chart|Get data|data-nz" hidden title="Not downloaded yet: get it in Chart › Get data">Get…</button><button class="ly-gear" type="button" data-go="chart|Get data|data-nz" title="Its settings">⚙</button></div>
           <div class="ly-row"><label title="Your own soundings as a seabed (this view: Planning and Navigation keep their own choice). Not for navigation"><input id="pb-show" type="checkbox" /> Own soundings</label><button class="ly-gear" type="button" data-go="chart|Get data|pb-live" title="Its settings">⚙</button></div>
           <div class="ly-row"><label title="The finer ETOPO depth shading and contours, where downloaded"><input id="lv-etopo" type="checkbox" /> Detailed depths (ETOPO)</label><button class="ly-get" type="button" data-dot="data-etopo-dot" data-go="chart|Get data|data-etopo" hidden title="Not downloaded yet: get it in Chart › Get data">Get…</button><button class="ly-gear" type="button" data-go="chart|Get data|data-etopo" title="Its settings">⚙</button></div>
@@ -532,12 +511,7 @@
           <div class="ly-row"><label title="Wind at weather stations, airports and buoys, every 10 minutes"><input id="ly-stn" type="checkbox" data-mirror="stn-show" /> Weather stations and buoys</label><button class="ly-gear" type="button" data-go="weather|Weather stations and buoys" title="Its settings">⚙</button></div>
         </div>
         <div class="ly-group" id="ly-wx"><h4>Weather and ocean <small>the loaded GRIB</small></h4>
-          <div class="ly-row"><label for="ly-wxlayer" title="What the colour shading shows">Shading</label><select id="ly-wxlayer" data-mirror="wx-layer"></select><button class="ly-gear" type="button" data-go="weather|" title="Weather: GRIB files, time, shading and arrows">⚙</button></div>
-          <div class="ly-row" data-row-of="wx-arrows-row"><label title="Wind barbs or arrows"><input id="ly-arrows" type="checkbox" data-mirror="wx-arrows" /> Wind barbs</label></div>
-          <div class="ly-row" data-row-of="wx-wavearrows-row"><label title="Arrows for the wave direction"><input id="ly-wave" type="checkbox" data-mirror="wx-wavearrows" /> Wave direction</label></div>
-          <div class="ly-row" data-row-of="wx-currarrows-row"><label title="Arrows for the current"><input id="ly-curr" type="checkbox" data-mirror="wx-currarrows" /> Current direction</label></div>
-          <div class="ly-row" data-row-of="wx-isobars-row"><label title="Pressure contours"><input id="ly-iso" type="checkbox" data-mirror="wx-isobars" /> Isobars</label></div>
-          <div class="ly-row" data-row-of="wx-isotherms-row"><label title="Contours over sea temperature or salinity"><input id="ly-isot" type="checkbox" data-mirror="wx-isotherms" /> Temperature contours</label></div>
+          <div class="ly-row"><button type="button" data-click="wx-pop-btn">Weather controls…</button></div>
         </div>
         <div class="ly-group" id="mar-box"><h4>Boundaries and fishing</h4>
           <div class="ly-row"><label title="Territorial sea (12 NM), contiguous zone (24 NM), EEZ (200 NM) and the boundaries agreed with Australia (LINZ)"><input id="mar-bounds" type="checkbox" /> Maritime boundaries</label><button class="ly-get" type="button" data-dot="data-mb-dot" data-go="chart|Get data|data-mb" hidden title="Not downloaded yet: get it in Chart › Get data">Get…</button></div>
@@ -825,7 +799,7 @@
         <svg viewBox="0 0 24 24"></svg></button>
       <button id="side-btn" aria-label="Data panel" title="Show or hide the data panel beside the chart (O)">
         <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M15 4.5v15M17 8h1.5M17 11h1.5M17 14h1.5"/></svg></button>
-      <button id="tools-btn" aria-label="Show or hide the panels" title="Show or hide the panels and dock in this view">
+      <button id="tools-btn" aria-label="Show or hide the rail and drawers" title="Show or hide the rail and drawers in this view">
         <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M9 4.5v15"/></svg></button>
       <button id="palette-btn" aria-label="Day or night colours" title="Colours: day (click for dusk, night (IHO), night red, night green)">
         <svg viewBox="0 0 24 24"><path class="sun" d="M12 7a5 5 0 1 0 0 10a5 5 0 1 0 0-10zM12 1v3M12 20v3M1 12h3M20 12h3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/><path class="moon" d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg></button>
@@ -841,6 +815,7 @@
       <div class="sp-views" role="group" aria-label="View">
         <button type="button" data-view-select="nav">Navigation</button>
         <button type="button" data-view-select="plan">Planning</button>
+        <button type="button" data-view-select="env">Environment</button>
         <button type="button" data-view-select="inst">Instruments</button>
       </div>
       <div class="sp-disp" role="group" aria-label="Chart display">
@@ -852,26 +827,46 @@
       <div class="sp-actions"></div>
       <div class="sp-own"></div>
       <div class="sp-mob" hidden></div>
-      <div class="sp-routewx" hidden><button id="side-route-wx" title="Open weather along the active routing or planned route">Weather on route</button></div>
-      <details id="side-weather" class="sp-weather" open><summary>Weather <span id="side-weather-state"></span></summary>
-      <div id="side-grib-files" class="sp-grib-files" hidden>
-        <label for="side-wx-files">GRIB files</label>
-        <select id="side-wx-files" title="GRIB files in the GRIB folders"></select>
-        <div class="sp-grib-actions"><button id="side-wx-load" disabled>Load GRIB</button><button id="side-wx-refresh" title="Look for new GRIB files">Refresh</button></div>
-        <div id="side-wx-status" role="status" aria-live="polite"></div>
-        <label for="side-wx-loaded">Shown GRIB</label>
-        <select id="side-wx-loaded" disabled></select>
-        <div class="sp-grib-actions"><button id="side-wx-unload" disabled title="Unload the shown GRIB; the file stays on disk">Unload GRIB</button></div>
-        <div id="side-wx-coverage"></div>
-        <label for="side-wx-time">Forecast time: <span id="side-wx-when">—</span></label>
-        <input id="side-wx-time" type="range" min="0" max="0" step="3600" value="0" disabled />
-        <div class="sp-grib-actions"><button id="side-wx-start" disabled title="Go to the start of the shown GRIB">Start</button><button id="side-wx-end" disabled title="Go to the end of the shown GRIB">End</button><button id="side-wx-now" disabled>Now</button></div>
-        <div class="sp-grib-actions"><button id="side-wx-prev" aria-label="Previous forecast time">Previous</button><button id="side-wx-play">Play</button><button id="side-wx-next" aria-label="Next forecast time">Next</button></div>
+      <div class="sp-env-tabs" hidden role="group" aria-label="Environment workspace">
+        <button type="button" data-env-tab="explore" aria-pressed="true">Explore</button>
+        <button type="button" data-env-tab="data" aria-pressed="false">Get data</button>
       </div>
+      <div class="sp-pinned-time"></div>
+      <div class="sp-pinned-point"></div>
+      <details id="side-wx-clock" class="sp-weather" open><summary>Chart time</summary>
+        <div class="sp-wx-clock">
+          <label for="side-wx-time">Chart time: <span id="side-wx-when">—</span></label>
+          <div id="side-wx-source" class="sp-wx-source"></div>
+          <div id="side-wx-coverage"></div>
+          <div id="wxp-run" class="wxp-run"></div>
+          <input id="side-wx-time" type="range" min="0" max="0" step="3600" value="0" disabled />
+          <div class="sp-wx-transport" role="group" aria-label="Chart time controls">
+            <button id="side-wx-start" disabled title="Start of the shown GRIB" aria-label="Start of the shown GRIB"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5v14M19 5 8 12l11 7z"/></svg></button>
+            <button id="side-wx-prev" disabled title="Previous chart time" aria-label="Previous chart time"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg></button>
+            <button id="side-wx-play" disabled title="Play chart time" aria-label="Play chart time"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5 19 12 7 19z"/></svg></button>
+            <button id="side-wx-next" disabled title="Next chart time" aria-label="Next chart time"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+            <button id="side-wx-end" disabled title="End of the shown GRIB" aria-label="End of the shown GRIB"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 5v14M5 5l11 7-11 7z"/></svg></button>
+            <button id="side-wx-now" disabled title="Current time" aria-label="Current time"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg></button>
+          </div>
+          <div class="sp-routewx" hidden><button id="side-route-wx" aria-pressed="false" title="Open weather along the active routing or planned route">Weather on route</button></div>
+          <div id="side-wx-time-status" role="status" aria-live="polite"></div>
+        </div>
+      </details>
+      <details id="side-weather" class="sp-weather" open><summary>Weather layers and filters <span id="side-weather-state"></span></summary>
+      <div id="wxp-run-fallback"></div>
+      <div id="wx-cmp-note" class="wx-note" hidden></div>
       <div id="wxp" class="sp-weather-controls"></div>
       </details>
-      <details id="side-grib-point" class="sp-weather" open><summary>GRIB data at the cursor</summary><div id="wxp-point" class="wxp-point"></div></details>
+      <details id="side-grib-point" class="sp-weather" open><summary>GRIB data at the cursor</summary>
+        <label class="env-past-analysis"><input id="env-use-past" type="checkbox"> Use latest past analysis outside chart time</label>
+        <div id="wxp-point" class="wxp-point"></div>
+        <details class="wxp-compare"><summary>Compare loaded GRIBs at cursor</summary>
+          <div class="wxp-compare-table"><table id="wx-point"><thead><tr><th>Run</th><th>TWS</th><th>TWD</th><th>Gust</th><th>MSLP</th><th>Hs / Tp</th></tr></thead><tbody></tbody></table></div>
+          <div id="wx-sea-point" class="seapoint"></div>
+        </details>
+      </details>
       <div id="side-weather-parking" hidden></div>
+      <div class="sp-env-data" hidden></div>
       <div class="sp-body"></div>
       <div class="sp-cursor" title="The cursor: position, depth and bearing and range from the boat"></div>
       <div class="sp-alerts"><div class="sp-noalert">No active alerts</div></div>
@@ -1023,7 +1018,7 @@
               <select id="ui-zoom"><option value="auto">Auto</option><option value="on">Show</option><option value="off">Hide</option></select></div>
             <div class="wx-row"><label class="grow" for="ui-large">Large buttons</label>
               <select id="ui-large"><option value="auto">Auto</option><option value="on">On</option><option value="off">Off</option></select></div>
-            <div class="wx-row"><label class="grow" for="planning-timeout">Return to Navigation after Planning inactivity</label>
+            <div class="wx-row"><label class="grow" for="planning-timeout">Return to Navigation after Planning or Environment inactivity</label>
               <select id="planning-timeout"><option value="0">Off</option><option value="1">1 minute</option><option value="2">2 minutes</option><option value="3">3 minutes</option><option value="4">4 minutes</option><option value="5">5 minutes</option><option value="6">6 minutes</option><option value="7">7 minutes</option><option value="8">8 minutes</option><option value="9">9 minutes</option><option value="10">10 minutes</option></select></div>
             <div class="wx-note">This window returns to Navigation after the selected time without input, even if an edit or dialog is open. Off disables this feature.</div>
           </section>

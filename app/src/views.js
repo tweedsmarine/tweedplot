@@ -1,6 +1,6 @@
-// Views: Navigation, Planning and Instruments are different arrangements of the
+// Views: Navigation, Planning, Environment and Instruments are different arrangements of the
 // same screen. Every option stays available in every view; a view only decides
-// what is shown to begin with (the rail, drawers and dock are "tools"), and the
+// what is shown to begin with (the rail and drawers are "tools"), and the
 // tools can be shown or hidden in any view. A view also has its own day/night
 // colours (palette.js). More views (radar, sounder) are added to VIEWS.
 //
@@ -21,6 +21,10 @@ export const VIEWS = [
   {
     id: "plan", name: "Planning", tools: true, map: true,
     icon: '<circle cx="5" cy="18" r="2"/><circle cx="19" cy="6" r="2"/><path d="M7 17c5-1 3-8 10-10"/>',
+  },
+  {
+    id: "env", name: "Environment", tools: false, map: true,
+    icon: '<path d="M3 16c3-2 5-2 8 0s5 2 10-1M3 11c3-2 5-2 8 0s5 2 10-1"/><circle cx="16" cy="6" r="2"/>',
   },
   {
     id: "inst", name: "Instruments", tools: false, map: false,
@@ -47,7 +51,7 @@ export function setupViews(map, { onPlanningTimeout = () => {} } = {}) {
   const toolsOn = (id) => s.tools[id] ?? def(id).tools;
   const mapOn = (id) => s.map?.[id] ?? def(id).map;
   const chartPositions = new Map();
-  const chartViews = new Set(["nav", "plan"]);
+  const chartViews = new Set(["nav", "plan", "env"]);
 
   function apply() {
     const v = def(s.current);
@@ -58,7 +62,7 @@ export function setupViews(map, { onPlanningTimeout = () => {} } = {}) {
     document.documentElement.dataset.view = v.id;
     const vb = $("view-btn");
     vb.querySelector("svg").innerHTML = v.icon;
-    vb.title = `View: ${v.name}. Click to choose Navigation, Planning or Instruments, or to show or hide the chart in this view (F2, F3, F4)`;
+    vb.title = `View: ${v.name}. Click to choose a view or show or hide its chart (F2, F3, F4)`;
     vb.setAttribute("aria-label", `View: ${v.name}`);
     for (const button of document.querySelectorAll("[data-view-select]")) {
       const current = button.dataset.viewSelect === v.id;
@@ -67,7 +71,7 @@ export function setupViews(map, { onPlanningTimeout = () => {} } = {}) {
     }
     const tb = $("tools-btn");
     tb.classList.toggle("on", tools);
-    tb.title = tools ? `Hide the panels and dock in the ${v.name} view` : `Show the panels and dock in the ${v.name} view`;
+    tb.title = tools ? `Hide the rail and drawers in the ${v.name} view` : `Show the rail and drawers in the ${v.name} view`;
     save();
     if (!PRIMARY) patchWindow(LABEL, { view: v.id });
     window.dispatchEvent(new CustomEvent("racenav-view", { detail: { id: v.id, tools } }));
@@ -144,7 +148,7 @@ export function setupViews(map, { onPlanningTimeout = () => {} } = {}) {
   const idle = createPlanningIdle({
     now: () => Date.now(), schedule: (fn, delay) => setTimeout(fn, delay), cancel: clearTimeout,
     currentView: () => s.current, timeoutMinutes: () => timeout,
-    onTimeout: () => { api.set("nav"); onPlanningTimeout(); },
+    onTimeout: () => { const previousView = s.current; api.set("nav"); onPlanningTimeout(previousView); },
   });
   timeoutSelect.addEventListener("change", () => {
     const value = Number(timeoutSelect.value);
@@ -155,9 +159,9 @@ export function setupViews(map, { onPlanningTimeout = () => {} } = {}) {
   });
   for (const type of ["pointerdown", "pointermove", "wheel", "keydown", "touchstart"]) {
     window.addEventListener(type, (event) => {
-      if (!event.isTrusted || s.current !== "plan") return;
+      if (!event.isTrusted || !["plan", "env"].includes(s.current)) return;
       idle.check();
-      if (s.current === "plan") idle.activity();
+      if (["plan", "env"].includes(s.current)) idle.activity();
     }, { passive: true, capture: true });
   }
   document.addEventListener("visibilitychange", idle.check);

@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Environment workspace — TweedPlot prototype</title>
+  <style>
+    :root { color-scheme: dark; font-family: "Segoe UI", system-ui, sans-serif; --ink: #edf4f6; --muted: #a7bbc3; --line: #334c59; --panel: #10232d; --accent: #14799a; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #081820; color: var(--ink); font-size: 14px; }
+    button, select, input { font: inherit; }
+    button, select { color: var(--ink); background: #203a47; border: 1px solid #607c89; border-radius: 5px; }
+    button { cursor: pointer; min-height: 34px; padding: 5px 10px; }
+    button:hover { background: #2a4b59; }
+    button:focus-visible, select:focus-visible, input:focus-visible, svg:focus-visible { outline: 3px solid #ffca64; outline-offset: 2px; }
+    button[aria-pressed="true"], button[aria-selected="true"] { background: #087da1; border-color: #80d5ed; color: white; }
+    button:disabled { opacity: .48; cursor: not-allowed; }
+    select { min-height: 34px; padding: 4px 8px; max-width: 100%; }
+    input[type="checkbox"], input[type="range"] { accent-color: #39b6d3; }
+    [hidden] { display: none !important; }
+    .app { display: flex; flex-direction: column; height: 100vh; min-height: 0; }
+    .prototype-banner { background: #684715; color: #fff3da; text-align: center; padding: 5px 12px; font-size: 12px; font-weight: 650; }
+    .top { min-height: 56px; display: flex; align-items: center; gap: 18px; padding: 7px 14px; border-bottom: 1px solid var(--line); background: #0c202a; }
+    .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; white-space: nowrap; letter-spacing: .02em; }
+    .brand-symbol { color: #60c6db; font-size: 24px; }
+    .views { display: flex; gap: 4px; flex-wrap: wrap; }
+    .views button { border-color: transparent; background: transparent; color: #b7c8ce; }
+    .views button[aria-pressed="true"] { background: #1d566b; color: #fff; border-color: #5594a8; }
+    .top-note { margin-left: auto; color: #a7bbc3; font-size: 12px; text-align: right; }
+    .workspace { display: flex; flex: 1; min-height: 0; }
+    .chart-area { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; background: #bad1d0; }
+    .chart { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+    #chart-svg { width: 100%; height: 100%; display: block; cursor: crosshair; }
+    #chart-svg.marking { cursor: copy; }
+    .chart-header { position: absolute; top: 14px; left: 16px; pointer-events: none; background: #0c2631e8; color: white; padding: 9px 12px; border-radius: 6px; box-shadow: 0 2px 8px #0003; }
+    .chart-header strong, .chart-header span { display: block; }
+    .chart-header span { font-size: 11px; color: #b9d1d8; margin-top: 3px; }
+    .chart-tools { position: absolute; top: 14px; right: 14px; display: flex; gap: 6px; }
+    .chart-tools button { background: #0b2936ec; }
+    .chart-note { position: absolute; bottom: 10px; left: 14px; max-width: calc(100% - 28px); padding: 5px 8px; background: #f9f4e3e8; color: #213d45; font-size: 11px; border-radius: 3px; }
+    .chart-message { position: absolute; left: 50%; top: 68px; transform: translateX(-50%); background: #0b2936f2; padding: 9px 13px; border-radius: 5px; text-align: center; width: max-content; max-width: 90%; }
+    .panel { width: 390px; flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-left: 1px solid #47616c; }
+    .panel-title { padding: 13px 15px 10px; display: flex; justify-content: space-between; align-items: baseline; }
+    .panel-title h1 { margin: 0; font-size: 18px; letter-spacing: .01em; }
+    .panel-title small { color: var(--muted); }
+    .tabs { display: flex; padding: 0 12px; border-bottom: 1px solid var(--line); }
+    .tabs button { flex: 1; border: 0; border-radius: 0; background: transparent; color: var(--muted); border-bottom: 3px solid transparent; }
+    .tabs button[aria-selected="true"] { background: transparent; border-color: #62c9e2; color: white; font-weight: 700; }
+    .panel-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+    .fixed { flex: none; }
+    .section { padding: 11px 15px; border-bottom: 1px solid var(--line); }
+    .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
+    .section-heading h2 { margin: 0; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #bed0d6; }
+    .section-heading span, .hint, .small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .time-line { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .time-sub { color: var(--muted); font-size: 11px; margin-top: 2px; }
+    .timeline { width: 100%; margin: 9px 0 5px; }
+    .transport { display: flex; gap: 4px; }
+    .transport button { flex: 1; min-width: 0; padding: 4px; font-size: 15px; }
+    .transport button:last-child { flex: 1.35; font-size: 12px; }
+    .readings { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+    .reading { min-width: 0; }
+    .reading span { display: block; color: var(--muted); font-size: 11px; }
+    .reading strong { font-size: 14px; font-variant-numeric: tabular-nums; }
+    .reading sup { color: #83d4e5; margin-left: 2px; font-size: 10px; }
+    .cursor-context { margin-top: 6px; font-size: 11px; color: #a7bbc3; }
+    .cursor-context button { min-height: 0; padding: 0; border: 0; background: none; color: #82d9ed; text-decoration: underline; font-size: inherit; }
+    .preset-row { display: flex; gap: 5px; margin-bottom: 10px; }
+    .preset-row button { flex: 1; padding-inline: 5px; }
+    .field { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; margin: 8px 0; }
+    .field select { max-width: 210px; }
+    .legend { height: 13px; border-radius: 3px; background: linear-gradient(90deg, #342c82, #2473bc, #3cc5bc, #8bd758, #f8d94b, #e65435); margin-top: 9px; }
+    .legend-labels { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-top: 3px; }
+    .filters { display: flex; align-items: end; gap: 5px; margin-top: 8px; }
+    .filters label { flex: 1; min-width: 0; color: var(--muted); font-size: 11px; }
+    .filters input { display: block; width: 100%; min-width: 0; min-height: 31px; margin-top: 3px; padding: 4px; border-radius: 4px; border: 1px solid #607c89; background: #17313c; color: white; }
+    .filters button { font-size: 12px; }
+    .overlay { display: flex; gap: 8px; align-items: center; min-height: 38px; border-top: 1px solid #29414b; }
+    .overlay label { flex: 1; display: flex; align-items: center; gap: 7px; }
+    .overlay select { min-height: 30px; }
+    .overlay .auto { flex: none; font-size: 11px; color: var(--muted); }
+    .source { padding: 8px 0; border-top: 1px solid #29414b; font-size: 12px; line-height: 1.4; }
+    .source strong { color: #e5f1f3; }
+    .source span { color: var(--muted); }
+    .notice { padding: 8px 10px; border-left: 3px solid #e8b44e; background: #4a391d; color: #ffdf9c; font-size: 12px; line-height: 1.4; }
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .actions button { flex: 1; }
+    .primary { background: #087da1; border-color: #62bdd4; font-weight: 650; }
+    .data-card { border: 1px solid #3c5965; background: #152e39; border-radius: 5px; padding: 10px; margin: 9px 0; }
+    .data-card strong, .data-card span { display: block; }
+    .data-card span { color: var(--muted); margin-top: 4px; font-size: 12px; }
+    .data-card label { display: block; margin-top: 10px; }
+    .data-card select { width: 100%; margin-top: 4px; }
+    .route-dock { flex: none; background: #112934; border-top: 1px solid #76929c; padding: 10px 15px; color: #edf4f6; }
+    .route-dock .dock-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .route-dock p { margin: 6px 0; color: #b3c9d0; font-size: 12px; }
+    .route-bars { display: flex; gap: 4px; height: 25px; }
+    .route-bars span { flex: 1; background: #3d8391; border-radius: 2px; text-align: center; font-size: 11px; padding: 4px; }
+    .safety { flex: none; display: flex; align-items: center; gap: 15px; padding: 7px 12px; background: #091a23; border-top: 2px solid #48616c; }
+    .safety .measure { color: #a7bbc3; white-space: nowrap; font-size: 11px; }
+    .safety .measure strong { display: block; color: #eaf3f5; font-size: 14px; }
+    .safety .spacer { flex: 1; }
+    .safety .simulated { color: #ffc96d; font-size: 11px; }
+    .safety .mob { background: #7d2a27; }
+    .planning-content { padding: 15px; }
+    .planning-content h2 { margin: 8px 0; font-size: 16px; }
+    .planning-content p { line-height: 1.45; color: #b6c8cf; }
+    .planning-content button { width: 100%; margin-top: 8px; }
+    @media (max-width: 850px) {
+      .app { height: auto; min-height: 100vh; }
+      .top { gap: 8px; flex-wrap: wrap; }
+      .top-note { display: none; }
+      .workspace { flex-direction: column; min-height: 0; }
+      .chart-area { min-height: 420px; }
+      .chart { min-height: 350px; }
+      .panel { width: 100%; max-height: none; border-left: 0; border-top: 1px solid #47616c; }
+      .panel-scroll { overflow: visible; }
+      .safety { flex-wrap: wrap; gap: 9px; }
+      .safety .spacer { display: none; }
+    }
+    @media (max-width: 480px) {
+      .brand { width: 100%; }
+      .views button { padding-inline: 6px; font-size: 12px; }
+      .chart-tools { top: 75px; right: 8px; }
+      .safety .measure { font-size: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="prototype-banner">INTERACTIVE PROTOTYPE · Simulated data and schematic chart · Not for navigation</div>
+    <header class="top">
+      <div class="brand"><span class="brand-symbol">◈</span> TweedPlot <small class="small">DESIGN PREVIEW</small></div>
+      <nav class="views" aria-label="Workspace">
+        <button data-view="navigation" aria-pressed="false">Navigation</button>
+        <button data-view="planning" aria-pressed="false">Planning</button>
+        <button data-view="environment" aria-pressed="true">Environment</button>
+      </nav>
+      <div class="top-note">One chart, shared marks<br>Independent view presentations</div>
+    </header>
+    <main class="workspace">
+      <div class="chart-area">
+        <div class="chart">
+          <svg id="chart-svg" viewBox="0 0 1000 680" preserveAspectRatio="xMidYMid slice" tabindex="0" role="img" aria-label="Schematic chart. Move the pointer to inspect sample data; use Add mark and click or press Enter to place a sample mark.">
+            <defs>
+              <linearGradient id="ocean" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#195474"/><stop offset=".45" stop-color="#3b9f9e"/><stop offset=".75" stop-color="#83bd9c"/><stop offset="1" stop-color="#b3d2c0"/></linearGradient>
+              <linearGradient id="weather" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#89cddd"/><stop offset=".45" stop-color="#b2d8be"/><stop offset="1" stop-color="#e4d999"/></linearGradient>
+              <linearGradient id="seabed" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#315c78"/><stop offset=".45" stop-color="#71aab8"/><stop offset="1" stop-color="#c5d6c3"/></linearGradient>
+              <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse"><path d="M100 0H0V100" fill="none" stroke="#fff" stroke-opacity=".16"/></pattern>
+            </defs>
+            <rect id="map-bg" width="1000" height="680" fill="url(#ocean)"/>
+            <rect width="1000" height="680" fill="url(#grid)"/>
+            <g id="depth-lines" fill="none" stroke="#d7eff0" stroke-opacity=".55" stroke-width="1.5">
+              <path d="M-40 490C150 400 180 400 300 449S580 565 750 425 950 260 1050 300"/>
+              <path d="M-40 550C140 455 210 450 330 500S580 620 780 480 950 340 1050 350"/>
+              <path d="M-40 590C160 510 210 505 340 555S600 665 815 530 980 420 1050 410"/>
+              <path d="M-40 635C130 570 220 565 350 610S620 710 860 580 980 500 1050 475"/>
+            </g>
+            <g id="isobar-lines" fill="none" stroke="#253d4a" stroke-opacity=".7" stroke-width="2">
+              <path d="M-30 215C160 130 310 120 470 195S750 275 1040 160"/>
+              <path d="M-30 280C160 195 320 185 470 260S760 340 1040 225"/>
+              <path d="M-30 345C170 260 320 250 470 325S760 405 1040 290"/>
+            </g>
+            <g id="currents" fill="none" stroke="#173d61" stroke-width="3" opacity=".8">
+              <path d="M210 310l38-8m-8-5 8 5-6 7M460 400l39-8m-8-5 8 5-6 7M710 300l38-8m-8-5 8 5-6 7"/>
+            </g>
+            <g id="barbs" fill="none" stroke="#1b3643" stroke-width="3" opacity=".8">
+              <path d="M230 155l18 37m-13-28 10-5m-6 14 10-5M425 125l18 37m-13-28 10-5m-6 14 10-5M675 130l18 37m-13-28 10-5m-6 14 10-5"/>
+            </g>
+            <g id="survey-grid" fill="none" stroke="#164e64" stroke-width="2" opacity=".55"><path d="M270 425l140-28 40 85-140 28z M293 420l40 85 M316 415l40 85 M339 410l40 85 M362 405l40 85 M385 400l40 85 M280 446l140-28 M290 467l140-28 M300 488l140-28"/></g>
+            <g id="own-soundings" fill="#123d54" opacity=".8"><circle cx="340" cy="391" r="4"/><circle cx="362" cy="380" r="4"/><circle cx="388" cy="369" r="4"/><circle cx="410" cy="360" r="4"/><circle cx="433" cy="349" r="4"/></g>
+            <path d="M-10 680V493L62 469 98 447 143 454 168 421 205 424 239 401 283 413 301 440 354 446 400 477 450 489 481 518 535 525 575 556 621 561 665 590 716 603 741 626 793 642 826 680Z" fill="#d9d4b8" stroke="#607d75" stroke-width="3"/>
+            <path d="M724 680l30-37 47-8 39-21 45 4 32-19 83 13v68z" fill="#d9d4b8" stroke="#607d75" stroke-width="3"/>
+            <g fill="#203f48" opacity=".7" font-size="16" font-family="system-ui"><text x="65" y="520">SCHEMATIC COAST</text><text x="580" y="473">200 m</text><text x="600" y="529">1,000 m</text><text x="500" y="594">2,000 m</text></g>
+            <g id="route-line" fill="none" stroke="#ef9b27" stroke-width="4" stroke-dasharray="9 6"><path d="M175 485 Q350 325 560 250"/></g>
+            <g id="sample-mark" hidden><circle r="13" fill="#fcb93b" stroke="#fff" stroke-width="3"/><path d="M0 -15v30M-15 0h30" stroke="#503c0d" stroke-width="2"/><text x="18" y="-5" fill="#173440" font-size="18" font-weight="bold">Sample mark</text></g>
+            <g transform="translate(85 485)"><path d="M0 -16L11 12 0 7 -11 12Z" fill="#0c4357" stroke="white" stroke-width="2"/></g>
+          </svg>
+          <div class="chart-header"><strong id="chart-title">Ocean overview</strong><span id="chart-subtitle">Schematic chart · sea temperature</span></div>
+          <div class="chart-tools"><button id="mark-button" aria-pressed="false">＋ Add mark</button><button id="route-button" aria-pressed="false">Weather on route</button></div>
+          <div id="chart-message" class="chart-message" role="status" hidden></div>
+          <div class="chart-note">Schematic illustration only · not chart data · not for navigation</div>
+        </div>
+        <section id="route-dock" class="route-dock" aria-label="Weather on route" hidden>
+          <div class="dock-head"><strong>Weather on route · sample voyage</strong><button id="close-dock" aria-label="Close weather on route">✕</button></div>
+          <p>Illustration only. Passage times are independent of the chart time; no route calculation is performed.</p>
+          <div class="route-bars" aria-hidden="true"><span>Wind</span><span>15 kn</span><span>18 kn</span><span>22 kn</span><span>19 kn</span></div>
+        </section>
+      </div>
+      <aside class="panel" aria-label="Workspace panel">
+        <div class="panel-title"><h1 id="panel-title">Environment</h1><small>SIMULATED</small></div>
+        <div id="environment-panel" style="display:contents">
+          <div class="tabs" role="tablist" aria-label="Environment">
+            <button id="explore-tab" role="tab" aria-selected="true" aria-controls="explore-panel">Explore</button>
+            <button id="data-tab" role="tab" aria-selected="false" aria-controls="data-panel">Get data</button>
+          </div>
+          <div class="fixed">
+            <section class="section" aria-label="Environment time">
+              <div class="section-heading"><h2>Chart time</h2><span>Local · UTC</span></div>
+              <div id="time-label" class="time-line"></div>
+              <div class="time-sub">Sample Now: 14 Nov 2026 · forecasts and analyses have different valid times</div>
+              <input id="time-slider" class="timeline" type="range" min="0" max="8" value="4" aria-label="Chart time">
+              <div class="transport">
+                <button data-time="start" aria-label="First time" title="First time">|◀</button>
+                <button data-time="previous" aria-label="Previous time" title="Previous time">←</button>
+                <button data-time="play" aria-label="Play" title="Play">▶</button>
+                <button data-time="next" aria-label="Next time" title="Next time">→</button>
+                <button data-time="end" aria-label="Last time" title="Last time">▶|</button>
+                <button data-time="now">Now</button>
+              </div>
+            </section>
+            <section class="section" aria-label="Conditions at cursor">
+              <div class="section-heading"><h2>At cursor</h2><span id="cursor-position">Sample location</span></div>
+              <div id="readings" class="readings"></div>
+              <label id="latest-label" class="hint" style="display:block;margin-top:6px"><input id="latest-analysis" type="checkbox"> Use latest past analysis</label>
+              <div class="cursor-context">Sample values · <button id="show-sources">Source and valid time ↓</button></div>
+            </section>
+          </div>
+          <div class="panel-scroll">
+            <div id="explore-panel" role="tabpanel" aria-labelledby="explore-tab">
+              <section class="section">
+                <div class="section-heading"><h2>Display</h2><span>Starting presets</span></div>
+                <div class="preset-row" role="group" aria-label="Display presets">
+                  <button data-preset="weather" aria-pressed="false">Weather</button>
+                  <button data-preset="ocean" aria-pressed="true">Ocean</button>
+                  <button data-preset="seabed" aria-pressed="false">Seabed</button>
+                </div>
+                <div class="field"><label for="shading">Shading</label><select id="shading">
+                  <option value="wind">Wind speed</option><option value="waves">Wave height</option><option value="temperature" selected>Sea temperature</option><option value="chlorophyll">Chlorophyll-a</option><option value="salinity">Salinity</option><option value="depth">Bathymetry</option><option value="none">None</option>
+                </select></div>
+                <div id="legend-box">
+                  <div class="legend"></div><div class="legend-labels"><span id="legend-low"></span><span id="legend-high"></span></div>
+                  <div class="filters">
+                    <label>Low<input id="filter-low" type="number" step="any"></label>
+                    <label>Target<input id="filter-target" type="number" step="any" placeholder="None"></label>
+                    <label>High<input id="filter-high" type="number" step="any"></label>
+                    <button id="filter-fit" title="Restore example range">Fit</button>
+                  </div>
+                  <div class="hint">Example controls only; they do not filter real data.</div>
+                </div>
+                <div class="section-heading" style="margin-top:14px"><h2>Overlays</h2></div>
+                <div class="overlay"><label><input id="wind-barbs" type="checkbox"> Wind barbs</label></div>
+                <div class="overlay"><label><input id="isobars" type="checkbox"> Isobars</label>
+                  <select id="isobar-spacing" aria-label="Isobar spacing"><option>1 hPa</option><option>2 hPa</option><option>3 hPa</option><option selected>4 hPa</option><option>5 hPa</option><option>8 hPa</option><option>10 hPa</option></select>
+                  <label class="auto"><input id="isobar-auto" type="checkbox"> Auto</label>
+                </div>
+                <div id="isobar-note" class="hint" hidden>In the real app, Auto varies spacing with chart zoom, not latitude.</div>
+                <div class="overlay"><label><input id="current-arrows" type="checkbox" checked> Current direction</label></div>
+                <div class="overlay"><label><input id="contours" type="checkbox" checked> Depth contours</label></div>
+                <div class="overlay"><label><input id="surveys" type="checkbox"> High-definition surveys</label></div>
+                <div class="overlay"><label><input id="soundings" type="checkbox"> Own soundings</label></div>
+                <div class="hint">Presets change these example choices. Isobar spacing does not change the illustration. View settings are separate from Planning and Navigation.</div>
+              </section>
+              <section class="section" id="sources-section">
+                <div class="section-heading"><h2>Sources &amp; valid time</h2></div>
+                <div id="coverage-notice" class="notice"></div>
+                <div id="sources"></div>
+              </section>
+            </div>
+            <div id="data-panel" role="tabpanel" aria-labelledby="data-tab" hidden>
+              <section class="section">
+                <div class="section-heading"><h2>Get data</h2></div>
+                <div class="notice">Prototype only: these controls simulate the workflow. No files are downloaded or changed.</div>
+                <div class="data-card">
+                  <strong>Download environmental data</strong><span>Choose a source and an area on the chart.</span>
+                  <label for="data-model">Source</label><select id="data-model"><option>Wind and pressure forecast</option><option>Wave forecast</option><option>Ocean model</option><option>Sea temperature analysis</option><option>Chlorophyll analysis</option><option>High-definition survey data</option></select>
+                  <label for="data-area">Area</label><select id="data-area"><option>Current chart view</option><option>Around the sample route</option></select>
+                  <button id="simulate-download" class="primary" style="width:100%;margin-top:10px">Simulate download</button>
+                  <p id="download-status" class="hint" role="status"></p>
+                </div>
+                <div class="section-heading"><h2>Available example data</h2></div>
+                <div class="source"><strong>Wind forecast</strong><br><span>Forecast · example model run</span></div>
+                <div class="source"><strong>Sea temperature and chlorophyll</strong><br><span>Analyses · past example observations</span></div>
+                <div class="source"><strong>Survey and own soundings</strong><br><span>Example seabed sources · dates and datum shown in Explore</span></div>
+              </section>
+            </div>
+          </div>
+        </div>
+        <div id="planning-panel" class="panel-scroll planning-content" hidden>
+          <h2>Plan the voyage</h2>
+          <p>Illustrative Planning view. Your sample mark is shared with Environment; weather and chart presentation are independent.</p>
+          <div class="data-card"><strong>Sample route</strong><span id="planning-mark"></span></div>
+          <div class="data-card"><strong>Route weather</strong><span>Example wind and waves. Route departure time is independent of the Environment chart time.</span></div>
+          <button id="planning-route" class="primary">Weather on route</button>
+          <button id="open-environment">Open Environment here</button>
+        </div>
+        <div id="navigation-panel" class="panel-scroll planning-content" hidden>
+          <h2>Navigation</h2>
+          <div class="notice">This is a design preview, not a navigation display. No live sensors, chart data or alarms are connected.</div>
+          <p>The real Navigation view would retain its own chart configuration and safety controls.</p>
+          <button id="navigation-environment">Open Environment here</button>
+        </div>
+      </aside>
+    </main>
+    <footer class="safety">
+      <div class="measure">HDG<strong>—</strong></div><div class="measure">COG<strong>—</strong></div><div class="measure">SOG<strong>—</strong></div><div class="measure">DEPTH<strong>—</strong></div><div class="measure">POSITION<strong>—</strong></div>
+      <div class="spacer"></div><span class="simulated">No live data or alarms</span>
+      <button class="mob" disabled title="Not connected in this prototype">MOB</button><button disabled title="Not connected in this prototype">Drop</button><button id="return-nav">Navigation</button>
+    </footer>
+  </div>
+  <script>
+    (() => {
+      const $ = (id) => document.getElementById(id);
+      const state = { view: "environment", tab: "explore", preset: "weather", time: 4, mark: null, marking: false, route: false, latest: false, playing: null, cursor: { x: 560, y: 250 } };
+      const times = Array.from({ length: 9 }, (_, i) => Date.UTC(2026, 10, 13, 6 + i * 6));
+      const analysisStart = Date.UTC(2026, 10, 13, 0), analysisEnd = Date.UTC(2026, 10, 14, 0);
+      const formatTime = (time, zone) => new Intl.DateTimeFormat("en-NZ", { timeZone: zone, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(time));
+      const dates = (time) => `${formatTime(time, "Pacific/Auckland")} NZDT · ${formatTime(time, "UTC")} UTC`;
+      const ranges = { wind: ["0", "40", "kn"], waves: ["0", "8", "m"], temperature: ["10", "24", "°C"], chlorophyll: ["0.1", "3", "mg/m³"], salinity: ["33", "36", "PSU"], depth: ["0", "3000", "m"] };
+      const labels = { wind: "wind speed", waves: "wave height", temperature: "sea temperature", chlorophyll: "chlorophyll-a", salinity: "salinity", depth: "bathymetry", none: "no shading" };
+      const presetSettings = {
+        weather: { shade: "wind", barbs: true, isobars: true, currents: false, contours: false, surveys: false, soundings: false },
+        ocean: { shade: "temperature", barbs: false, isobars: false, currents: true, contours: true, surveys: false, soundings: false },
+        seabed: { shade: "depth", barbs: false, isobars: false, currents: false, contours: true, surveys: true, soundings: true },
+      };
+      function save() {
+        try {
+          localStorage.setItem("tweedplot.environment.prototype", JSON.stringify({ time: state.time, mark: state.mark, latest: state.latest }));
+        } catch (error) {
+          $("chart-message").textContent = `Prototype state could not be saved: ${error.message}`;
+          $("chart-message").hidden = false;
+        }
+      }
+      function load() {
+        try {
+          const value = JSON.parse(localStorage.getItem("tweedplot.environment.prototype") || "{}");
+          if (Number.isInteger(value.time) && value.time >= 0 && value.time < times.length) state.time = value.time;
+          if (value.mark && Number.isFinite(value.mark.x) && Number.isFinite(value.mark.y)) state.mark = value.mark;
+          state.latest = value.latest === true;
+        } catch (error) {
+          $("chart-message").textContent = `Prototype state could not be read: ${error.message}`;
+          $("chart-message").hidden = false;
+        }
+      }
+      function analysisState() {
+        const time = times[state.time];
+        if (time >= analysisStart && time < analysisEnd) return "valid";
+        if (time >= analysisEnd && state.latest) return "latest";
+        return "missing";
+      }
+      function renderTime() {
+        $("time-slider").value = state.time;
+        $("time-label").textContent = dates(times[state.time]);
+        const analysis = analysisState();
+        $("latest-analysis").checked = state.latest;
+        $("latest-label").hidden = analysis === "valid";
+        $("coverage-notice").textContent = analysis === "valid"
+          ? "Analysis is valid for this example time. Analysis dates are not forecast dates."
+          : analysis === "latest" ? "Using the latest past analysis, not a forecast. Example analysis: 13 Nov 2026 00:00 UTC."
+          : "No analysis at this chart time. Choose an earlier time or explicitly use the latest past analysis.";
+        renderReadings();
+        $("sources").innerHTML = `<div class="source"><strong>1 · Example seabed</strong><br><span>Survey illustration · date, resolution and datum would be shown here. Not for navigation.</span></div>
+          <div class="source"><strong>2 · Sea temperature and chlorophyll</strong><br><span>Past analysis · 13 Nov 2026 00:00 UTC${analysis === "latest" ? " · latest past analysis, outside chart time" : analysis === "missing" ? " · no data at chart time" : " · valid at chart time"}</span></div>
+          <div class="source"><strong>3 · Example wind model</strong><br><span>Forecast · run 13 Nov 2026 00:00 UTC · valid ${dates(times[state.time])}</span></div>`;
+        renderChart();
+        save();
+      }
+      function renderReadings() {
+        const analysis = analysisState();
+        const sample = analysis === "missing" ? "—" : `${(15 + state.cursor.x / 250).toFixed(1)} °C`;
+        const chl = analysis === "missing" ? "—" : `${(0.2 + state.cursor.y / 1250).toFixed(2)} mg/m³`;
+        $("readings").innerHTML = `<div class="reading"><span>Depth</span><strong>${Math.round(300 + state.cursor.y)} m<sup>1</sup></strong></div>
+          <div class="reading"><span>Sea temperature</span><strong>${sample}<sup>2</sup></strong></div>
+          <div class="reading"><span>Chlorophyll</span><strong>${chl}<sup>2</sup></strong></div>
+          <div class="reading"><span>Wind</span><strong>${14 + state.time} kn<sup>3</sup></strong></div>`;
+        $("cursor-position").textContent = `Sample ${Math.round(state.cursor.x)}, ${Math.round(state.cursor.y)}`;
+      }
+      function renderChart() {
+        const environment = state.view === "environment";
+        const shade = $("shading").value, isAnalysis = ["temperature", "chlorophyll"].includes(shade);
+        const unavailable = isAnalysis && analysisState() === "missing";
+        const background = !environment || unavailable || shade === "none" ? "#b3d0d2" : shade === "depth" ? "url(#seabed)" : ["wind", "waves"].includes(shade) ? "url(#weather)" : "url(#ocean)";
+        $("map-bg").setAttribute("fill", background);
+        $("depth-lines").toggleAttribute("hidden", !environment || !$("contours").checked);
+        $("isobar-lines").toggleAttribute("hidden", !environment || !$("isobars").checked);
+        $("currents").toggleAttribute("hidden", !environment || !$("current-arrows").checked);
+        $("barbs").toggleAttribute("hidden", !environment || !$("wind-barbs").checked);
+        $("survey-grid").toggleAttribute("hidden", !environment || !$("surveys").checked);
+        $("own-soundings").toggleAttribute("hidden", !environment || !$("soundings").checked);
+        $("sample-mark").toggleAttribute("hidden", !state.mark);
+        if (state.mark) {
+          $("sample-mark").setAttribute("transform", `translate(${state.mark.x} ${state.mark.y})`);
+          $("route-line").querySelector("path").setAttribute("d", `M175 485 Q350 325 ${state.mark.x} ${state.mark.y}`);
+        }
+        $("chart-title").textContent = state.view === "environment" ? `${state.preset === "seabed" ? "Seabed" : state.preset === "weather" ? "Weather" : "Ocean"} overview` : state.view === "planning" ? "Voyage planning" : "Navigation preview";
+        $("chart-subtitle").textContent = state.view === "environment" ? `Schematic chart · ${labels[shade]}${unavailable ? " · no data at chart time" : isAnalysis && analysisState() === "latest" ? " · latest past analysis" : ""}` : "Schematic chart · no real route or navigation data";
+        $("isobar-spacing").disabled = !$("isobars").checked || $("isobar-auto").checked;
+        $("isobar-auto").disabled = !$("isobars").checked;
+        $("isobar-note").hidden = !$("isobars").checked || !$("isobar-auto").checked;
+      }
+      function setShade(value) {
+        $("shading").value = value;
+        const range = ranges[value];
+        $("legend-box").hidden = !range;
+        if (range) {
+          $("legend-low").textContent = `${range[0]} ${range[2]}`;
+          $("legend-high").textContent = `${range[1]} ${range[2]}`;
+          $("filter-low").value = range[0];
+          $("filter-high").value = range[1];
+          $("filter-target").value = "";
+        }
+        renderChart();
+      }
+      function setPreset(preset) {
+        state.preset = preset;
+        const settings = presetSettings[preset];
+        for (const [id, key] of [["wind-barbs", "barbs"], ["isobars", "isobars"], ["current-arrows", "currents"], ["contours", "contours"], ["surveys", "surveys"], ["soundings", "soundings"]]) $(id).checked = settings[key];
+        document.querySelectorAll("[data-preset]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.preset === preset)));
+        setShade(settings.shade);
+      }
+      function setView(view) {
+        state.view = view;
+        document.querySelectorAll("[data-view]").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.view === view)));
+        $("panel-title").textContent = view[0].toUpperCase() + view.slice(1);
+        $("environment-panel").hidden = view !== "environment";
+        $("planning-panel").hidden = view !== "planning";
+        $("navigation-panel").hidden = view !== "navigation";
+        $("planning-mark").textContent = state.mark ? "Sample mark is available in this view." : "No sample mark yet. Add one in Environment.";
+        $("mark-button").hidden = view !== "environment";
+        state.marking = false;
+        $("mark-button").setAttribute("aria-pressed", "false");
+        $("chart-svg").classList.remove("marking");
+        $("chart-message").hidden = true;
+        renderChart();
+      }
+      function setTab(tab) {
+        state.tab = tab;
+        $("explore-tab").setAttribute("aria-selected", String(tab === "explore"));
+        $("data-tab").setAttribute("aria-selected", String(tab === "data"));
+        $("explore-panel").hidden = tab !== "explore";
+        $("data-panel").hidden = tab !== "data";
+        document.querySelector(".panel-scroll").scrollTop = 0;
+      }
+      function setRoute(open) {
+        state.route = open;
+        $("route-dock").hidden = !open;
+        $("route-button").setAttribute("aria-pressed", String(open));
+        $("planning-route").textContent = open ? "Close weather on route" : "Weather on route";
+      }
+      function setTime(value) {
+        state.time = Math.max(0, Math.min(times.length - 1, value));
+        renderTime();
+      }
+      function togglePlay() {
+        if (state.playing) { clearInterval(state.playing); state.playing = null; }
+        else state.playing = setInterval(() => setTime((state.time + 1) % times.length), 900);
+        const button = document.querySelector('[data-time="play"]');
+        button.textContent = state.playing ? "Ⅱ" : "▶";
+        button.setAttribute("aria-label", state.playing ? "Pause" : "Play");
+        button.title = state.playing ? "Pause" : "Play";
+      }
+      document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
+      document.querySelectorAll("[data-preset]").forEach((button) => button.addEventListener("click", () => setPreset(button.dataset.preset)));
+      $("explore-tab").onclick = () => setTab("explore");
+      $("data-tab").onclick = () => setTab("data");
+      $("open-environment").onclick = $("navigation-environment").onclick = () => setView("environment");
+      $("return-nav").onclick = () => setView("navigation");
+      $("time-slider").oninput = (event) => setTime(Number(event.target.value));
+      document.querySelectorAll("[data-time]").forEach((button) => button.addEventListener("click", () => {
+        const action = button.dataset.time;
+        if (action === "play") return togglePlay();
+        setTime(action === "start" ? 0 : action === "end" ? times.length - 1 : action === "now" ? 4 : state.time + (action === "previous" ? -1 : 1));
+      }));
+      $("latest-analysis").onchange = (event) => { state.latest = event.target.checked; renderTime(); };
+      $("shading").onchange = (event) => setShade(event.target.value);
+      $("filter-fit").onclick = () => setShade($("shading").value);
+      for (const id of ["wind-barbs", "isobars", "isobar-auto", "current-arrows", "contours", "surveys", "soundings"]) $(id).onchange = renderChart;
+      $("show-sources").onclick = () => { setTab("explore"); $("sources-section").scrollIntoView({ block: "start", behavior: "smooth" }); };
+      $("route-button").onclick = () => setRoute(!state.route);
+      $("planning-route").onclick = () => setRoute(!state.route);
+      $("close-dock").onclick = () => setRoute(false);
+      $("mark-button").onclick = () => {
+        state.marking = !state.marking;
+        $("mark-button").setAttribute("aria-pressed", String(state.marking));
+        $("chart-svg").classList.toggle("marking", state.marking);
+        $("chart-message").textContent = "Click the schematic chart, or focus it and press Enter, to place a sample mark.";
+        $("chart-message").hidden = !state.marking;
+      };
+      function chartPoint(event) {
+        const point = $("chart-svg").createSVGPoint();
+        point.x = event.clientX; point.y = event.clientY;
+        const mapped = point.matrixTransform($("chart-svg").getScreenCTM().inverse());
+        return { x: Math.max(0, Math.min(1000, mapped.x)), y: Math.max(0, Math.min(680, mapped.y)) };
+      }
+      function placeMark(point) {
+        if (!state.marking) return;
+        state.mark = point;
+        state.marking = false;
+        $("mark-button").setAttribute("aria-pressed", "false");
+        $("chart-svg").classList.remove("marking");
+        $("chart-message").textContent = "Sample mark saved. Open Planning to see it there.";
+        $("chart-message").hidden = false;
+        renderChart();
+        save();
+      }
+      $("chart-svg").addEventListener("pointermove", (event) => { state.cursor = chartPoint(event); renderReadings(); });
+      $("chart-svg").addEventListener("click", (event) => placeMark(chartPoint(event)));
+      $("chart-svg").addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); placeMark(state.cursor); } });
+      $("simulate-download").onclick = () => {
+        $("download-status").textContent = `Simulated request for ${$("data-model").value.toLowerCase()} · ${$("data-area").value.toLowerCase()}. No download was started.`;
+      };
+      load();
+      setPreset("weather");
+      renderTime();
+      setView("environment");
+      setTab("explore");
+    })();
+  </script>
+</body>
+</html>

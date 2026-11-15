@@ -443,7 +443,7 @@ let routing = null;
 let aisApi = null; // AIS targets (ais.js), for the data panel's Targets section
 let library = null;
 const ui = setupRail(map);
-const views = setupViews(map, { onPlanningTimeout: () => toast("Planning inactive: returned to Navigation", 8000) });
+const views = setupViews(map, { onPlanningTimeout: (view) => toast(`${view === "env" ? "Environment" : "Planning"} inactive: returned to Navigation`, 8000) });
 setupCards();
 const use = setupUse();
 
@@ -704,10 +704,10 @@ map.on("load", () => {
   setupFleet(map, { weather, course: route, routing, dock, ui });
   setupGribDownload(map, { weather, course: route });
   gribTools = setupGribTools(map, { weather, dock });
-  setupWeatherPanel(map, weather, sidePanel);
+  setupWeatherPanel(map, weather, sidePanel, ui);
   const routeWx = setupRouteWeather(map, { weather, routing, course: route, dock });
   setupRadar(map, { getBoat: () => lastBoat });
-  for (const id of ["rt-wx", "crs-wx", "side-route-wx"]) { const b = document.getElementById(id); if (b) b.onclick = () => routeWx.open(); }
+  for (const id of ["rt-wx", "crs-wx"]) { const b = document.getElementById(id); if (b) b.onclick = () => routeWx.open(); }
   document.getElementById("wx-verify").onclick = () => gribTools.openVerify();
   setupTides(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn) });
   ruler = setupRuler(map, { before: "track", ui, library, route, toast, getVariation: variationAt });
@@ -1153,9 +1153,9 @@ setupKeys(map, {
     setFollow(true);
     map.easeTo({ center: lastBoat, offset: followOffset(), duration: 300 });
   },
-  weatherStep: (n) => document.getElementById(n < 0 ? "wx-prev" : "wx-next").click(),
+  weatherStep: (n) => document.getElementById(n < 0 ? "side-wx-prev" : "side-wx-next").click(),
   weatherHours: (h) => {
-    const sl = document.getElementById("wx-slider");
+    const sl = document.getElementById("side-wx-time");
     if (!weather || Number(sl.max) <= Number(sl.min)) { toast("Load a GRIB first", 2500); return; }
     weather.setTime(Number(sl.value) + h * 3600);
   },

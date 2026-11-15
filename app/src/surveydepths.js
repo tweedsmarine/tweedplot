@@ -9,6 +9,7 @@ import * as activity from "./activity.js";
 
 const SHOW = "racenav.surveydepths.show";
 const OUTLINES = "racenav.surveydepths.outlines";
+const VIEWS = "racenav.surveydepths.views";
 const $ = (id) => document.getElementById(id);
 const flag = (k, dflt) => { try { const v = localStorage.getItem(k); return v == null ? dflt : v === "1"; } catch { return dflt; } };
 const setFlag = (k, v) => { try { localStorage.setItem(k, v ? "1" : "0"); } catch { /* ignore */ } };
@@ -16,6 +17,14 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const fmtMB = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} kB`);
 
 let have = false;
+
+export function surveyFlagsForView(views, view, defaults) {
+  const saved = views?.[view];
+  return {
+    show: typeof saved?.show === "boolean" ? saved.show : defaults.show,
+    outlines: typeof saved?.outlines === "boolean" ? saved.outlines : defaults.outlines,
+  };
+}
 
 export function setupSurveyDepths(map, { toast } = {}) {
   map.addSource("sd-outlines", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
@@ -25,14 +34,35 @@ export function setupSurveyDepths(map, { toast } = {}) {
     paint: { "line-color": "#000", "line-opacity": 0.01, "line-width": 12 } }, "track");
 
   const show = $("sd-show"), outl = $("sd-outlines");
-  show.checked = flag(SHOW, true);
-  outl.checked = flag(OUTLINES, false);
-  const applyShow = () => { if (map.getLayer("depthpack")) map.setLayoutProperty("depthpack", "visibility", show.checked ? "visible" : "none"); };
-  show.onchange = () => { setFlag(SHOW, show.checked); applyShow(); };
-  outl.onchange = () => {
-    setFlag(OUTLINES, outl.checked);
+  const defaults = { show: flag(SHOW, true), outlines: flag(OUTLINES, false) };
+  const viewNow = () => document.documentElement.dataset.view || "nav";
+  function readViews() {
+    let saved = {};
+    try {
+      saved = JSON.parse(localStorage.getItem(VIEWS) || "{}");
+      if (!saved || typeof saved !== "object" || Array.isArray(saved)) throw new Error("Invalid survey visibility");
+    } catch (error) { console.error("Could not read survey visibility by view:", error); saved = {}; }
+    return { nav: { ...defaults }, plan: { ...defaults }, ...saved };
+  }
+  let views = readViews();
+  function applyShow() {
+    const state = surveyFlagsForView(views, viewNow(), defaults);
+    show.checked = state.show;
+    outl.checked = state.outlines;
+    if (map.getLayer("depthpack")) map.setLayoutProperty("depthpack", "visibility", show.checked ? "visible" : "none");
     for (const id of ["sd-outline", "sd-outline-hit"]) map.setLayoutProperty(id, "visibility", outl.checked ? "visible" : "none");
-  };
+  }
+  function saveView() {
+    const view = viewNow();
+    views = { ...readViews(), [view]: { show: show.checked, outlines: outl.checked } };
+    try { localStorage.setItem(VIEWS, JSON.stringify(views)); }
+    catch (error) { console.error("Could not save survey visibility by view:", error); }
+    if (view === "nav") { setFlag(SHOW, show.checked); setFlag(OUTLINES, outl.checked); }
+    applyShow();
+  }
+  show.onchange = outl.onchange = saveView;
+  window.addEventListener("racenav-view", () => { views = readViews(); applyShow(); });
+  window.addEventListener("storage", (e) => { if (e.key === VIEWS) { views = readViews(); applyShow(); } });
   applyShow();
 
   const reload = () => {

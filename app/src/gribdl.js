@@ -35,7 +35,7 @@ export function setupGribDownload(map, { weather, course }) {
   map.addLayer({ id: "dl-area-line", type: "line", source: "dl-area", paint: { "line-color": "#0b5cad", "line-width": 2, "line-dasharray": [4, 2] } });
   function showArea() {
     const a = prefs.area;
-    const open = $("dl-box").open && !$("drawer").hidden;
+    const open = $("dl-box").open && $("dl-box").getClientRects().length > 0;
     map.getSource("dl-area").setData(a && open ? { type: "Feature", properties: {}, geometry: { type: "Polygon",
       coordinates: [[[a[0], a[1]], [a[2], a[1]], [a[2], a[3]], [a[0], a[3]], [a[0], a[1]]]] } } : empty);
     for (const [id, i] of [["dl-w", 0], ["dl-s", 1], ["dl-e", 2], ["dl-n", 3]]) $(id).value = a ? String(+a[i].toFixed(2)) : "";
@@ -53,9 +53,6 @@ export function setupGribDownload(map, { weather, course }) {
     showArea();
     estimate();
   }
-  $("dl-box").addEventListener("toggle", showArea);
-  new MutationObserver(showArea).observe($("drawer"), { attributes: true, attributeFilter: ["hidden"] });
-
   $("dl-view").onclick = () => {
     const b = map.getBounds();
     setArea([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
@@ -88,6 +85,18 @@ export function setupGribDownload(map, { weather, course }) {
     map.getContainer().classList.toggle("drawing", drawing);
     if (drawing) { map.dragPan.disable(); status("Drag a rectangle on the chart."); } else map.dragPan.enable();
   };
+  function updateAreaVisibility() {
+    showArea();
+    if (drawing && (!$("dl-box").open || !$("dl-box").getClientRects().length)) {
+      $("dl-draw").click();
+      from = null;
+      to = null;
+      status("Area drawing cancelled because the download controls were closed.", "warn");
+    }
+  }
+  $("dl-box").addEventListener("toggle", updateAreaVisibility);
+  new MutationObserver(updateAreaVisibility).observe($("drawer"), { attributes: true, attributeFilter: ["hidden"] });
+  window.addEventListener("racenav-layout", updateAreaVisibility);
   map.on("mousedown", (e) => { if (drawing) { from = e.lngLat; e.preventDefault(); } });
   let to = null;
   map.on("mousemove", (e) => {

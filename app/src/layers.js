@@ -55,9 +55,6 @@ export function setupLayers({ ui }) {
       const o = $(r.dataset.rowOf);
       r.hidden = !o || hiddenThere(o);
     }
-    // the weather group only means something with a GRIB loaded
-    const wx = $("ly-wx");
-    if (wx) wx.classList.toggle("ly-empty", ![...wx.querySelectorAll(".ly-row")].some((r) => !r.hidden && r.querySelector("input")));
     for (const g of box.querySelectorAll(".ly-get")) {
       const dot = $(g.dataset.dot);
       g.hidden = !dot || dot.classList.contains("ok");

@@ -2,8 +2,8 @@
 // on the cursor when planning (true wind from the GRIB shown; apparent wind only
 // where a shown routing passes near the cursor, for its heading and boat speed).
 //
-// Each arrow starts on the boat (or cursor) and points to where the wind comes from,
-// like the needles on the wind dial; its length grows with the wind speed. The
+// Each arrow points in towards the boat (or cursor), from where the wind comes;
+// its length grows with the wind speed. The
 // colours are the dial's (--wind-true, --wind-app in style.css).
 
 const KEY = "racenav.windarrows";
@@ -39,20 +39,30 @@ function arrowImage() {
 export function setupWindArrows(map, { before }) {
   let on = true;
   try { on = JSON.parse(localStorage.getItem(KEY) ?? "true"); } catch { /* ignore */ }
+  const col = windColours();
   map.addImage("wind-arrow", arrowImage(), { sdf: true, pixelRatio: 2 });
   map.addSource("wind-arrows", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  // Keep colours in paint so the IHO palette can darken them.
   map.addLayer({ id: "wind-arrows", type: "symbol", source: "wind-arrows",
-    layout: { "icon-image": "wind-arrow", "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map", "icon-anchor": "bottom",
+    layout: { "icon-image": "wind-arrow", "icon-rotate": ["get", "rot"], "icon-rotation-alignment": "map", "icon-anchor": "top",
               "icon-size": ["get", "size"], "icon-allow-overlap": true, "icon-ignore-placement": true },
-    paint: { "icon-color": ["get", "colour"], "icon-halo-color": "#ffffff", "icon-halo-width": 1.2, "icon-opacity": 0.9 } }, before);
+    paint: { "icon-color": ["match", ["get", "kind"], "true", col.true, "apparent", col.app, col.true],
+             "icon-halo-color": "#ffffff", "icon-halo-width": 1.2, "icon-opacity": 0.9 } }, before);
 
-  const col = windColours();
+  const root = document.documentElement;
+  function applyNightOpacity() {
+    const mode = root.dataset.palette;
+    const filteredNight = mode?.startsWith("night-") || (mode === "iho-night" && !root.hasAttribute("data-iho"));
+    map.setPaintProperty("wind-arrows", "icon-opacity", filteredNight ? 0.6 : 0.9);
+  }
+  new MutationObserver(applyNightOpacity).observe(root, { attributes: true, attributeFilter: ["data-palette", "data-iho"] });
+  applyNightOpacity();
   const size = (kn) => 0.55 + (Math.min(Math.max(kn, 0), 40) / 40) * 1.25;
   function show(pos, tw, aw) {
     const f = [];
     if (on && pos) {
-      if (tw && Number.isFinite(tw.twd) && Number.isFinite(tw.tws)) f.push({ type: "Feature", properties: { rot: tw.twd % 360, size: size(tw.tws), colour: col.true, kind: "true" }, geometry: { type: "Point", coordinates: pos } });
-      if (aw && Number.isFinite(aw.awd) && Number.isFinite(aw.aws)) f.push({ type: "Feature", properties: { rot: aw.awd % 360, size: size(aw.aws), colour: col.app, kind: "apparent" }, geometry: { type: "Point", coordinates: pos } });
+      if (tw && Number.isFinite(tw.twd) && Number.isFinite(tw.tws)) f.push({ type: "Feature", properties: { rot: (tw.twd + 180) % 360, size: size(tw.tws), kind: "true" }, geometry: { type: "Point", coordinates: pos } });
+      if (aw && Number.isFinite(aw.awd) && Number.isFinite(aw.aws)) f.push({ type: "Feature", properties: { rot: (aw.awd + 180) % 360, size: size(aw.aws), kind: "apparent" }, geometry: { type: "Point", coordinates: pos } });
     }
     map.getSource("wind-arrows").setData({ type: "FeatureCollection", features: f });
   }

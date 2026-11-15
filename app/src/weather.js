@@ -79,11 +79,12 @@ export function autoScale(lo, hi) {
 /** The colours for a sea filter: lo..target over the cool half of TURBO, target..hi over the warm half. */
 export function seaScale(f) {
   const half = TURBO.length / 2;
-  const lo = f.lo, hi = Math.max(f.hi, f.lo + 1e-3);
+  const lo = f.lo, hi = f.hi > f.lo ? f.hi : f.lo + 1e-3;
   const out = [];
   // no target: the whole palette runs evenly from lo to hi
   if (!Number.isFinite(f.tg)) return TURBO.map((c, i) => [lo + ((hi - lo) * i) / (TURBO.length - 1), c]);
-  const tg = Math.min(Math.max(f.tg, lo + 1e-4), hi - 1e-4);
+  const margin = (hi - lo) * 1e-6;
+  const tg = Math.min(Math.max(f.tg, lo + margin), hi - margin);
   for (let i = 0; i < half; i++) out.push([lo + ((tg - lo) * i) / half, TURBO[i]]);
   for (let i = 0; i < half; i++) out.push([tg + ((hi - tg) * i) / (half - 1), TURBO[half + i]]);
   return out;
@@ -139,6 +140,67 @@ export const LAYERS = {
 /** Layers the low / target / high filter works on: anything shaded from one GRIB (not the agreement or error displays). */
 export const filterable = (l) => !!l && !l.compare && !l.verify;
 
+function seaQuantum(lo, hi) {
+  const r = Math.max(hi - lo, 0.01);
+  return 10 ** Math.floor(Math.log10(r / 20));
+}
+
+/** The full grid range at this time, and the filter to use with it. */
+export function filterRangeForGrid(grid, filter) {
+  let [min, max] = grid.range ?? [];
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+    const values = (grid.values ?? []).filter(Number.isFinite);
+    if (!values.length) return null;
+    min = values.reduce((a, v) => Math.min(a, v), Infinity);
+    max = values.reduce((a, v) => Math.max(a, v), -Infinity);
+  }
+  const q = seaQuantum(min, max);
+  const lo = +(Math.floor(min / q) * q).toFixed(6);
+  let hi = +(Math.ceil(max / q) * q).toFixed(6);
+  if (hi <= lo) hi = +(lo + q).toFixed(6);
+  const keep = filter && (filter.set || Number.isFinite(filter.tg) || (filter.lo === lo && filter.hi === hi));
+  return { min: lo, max: hi, filter: keep ? filter : { lo, hi, tg: null } };
+}
+
+/** Fit a filter track around the selected range, with room to widen it again. */
+export function seaTrackRange(filter, full, previous = null, edge = null) {
+  const span = Math.max(filter.hi - filter.lo, 1e-6);
+  const quantum = 10 ** Math.floor(Math.log10(Math.max(span, 0.01) / 20));
+  let min = Math.floor((filter.lo - span * 0.25) / quantum) * quantum;
+  let max = Math.ceil((filter.hi + span * 0.25) / quantum) * quantum;
+  if (previous && edge === "lo") min = Math.min(min, filter.lo - (previous.max - previous.min) * 0.6);
+  if (previous && edge === "hi") max = Math.max(max, filter.hi + (previous.max - previous.min) * 0.6);
+  return {
+    min: +Math.max(Math.min(full.min, filter.lo), min).toFixed(6),
+    max: +Math.min(Math.max(full.max, filter.hi), max).toFixed(6),
+  };
+}
+
+export function dataTimeStatus(summary, params, time, allowPastAnalysis = false) {
+  const times = (summary?.params ?? []).filter((p) => params.includes(p.param)).flatMap((p) => p.times ?? []).filter(Number.isFinite);
+  if (!times.length || !Number.isFinite(time)) return { state: "missing" };
+  const first = Math.min(...times), last = Math.max(...times);
+  if (time >= first && time <= last) return { state: "valid" };
+  const analysis = /VIIRS|MUR SST|Himawari/i.test(`${summary?.model ?? ""} ${summary?.name ?? ""}`);
+  return time > last && analysis && allowPastAnalysis ? { state: "past", time: last } : { state: "missing" };
+}
+
+const SEA_POINT_PARAMS = {
+  sst: "SeaTemp", skin: "SkinTemp", sss: "Salinity", subt: "SubTemp",
+  subs: "SubSalinity", chl: "Chlorophyll", ssh: "SeaLevel", cur: "CurrentU",
+};
+
+export function applyPointTimePolicy(row, summary, time, allowPastAnalysis) {
+  const result = { ...row, past: {} };
+  for (const [key, param] of Object.entries(SEA_POINT_PARAMS)) {
+    if (result[key] == null) continue;
+    const status = dataTimeStatus(summary, [param], time, allowPastAnalysis);
+    if (status.state === "missing") result[key] = null;
+    else if (status.state === "past") result.past[key] = status.time;
+  }
+  return result;
+}
+
 /**
  * Sea temperature fronts: the cells of a temperature grid where it changes faster than
  * `min` °C per km (the larger of the two directions), each with its gradient `g`.
@@ -180,8 +242,20 @@ const WX_DEFAULTS = { density: 5, size: 1.0, shading: "2", opacity: 0.45, land: 
   // all weather layers hidden from the chart (the toolbar button)
   hidden: false };
 const DENSITY_POINTS = [80, 150, 300, 500, 900, 1400, 2200, 3500, 6000, 1e9];
+const WX_VIEWS = "racenav.wx.views";
+export const weatherVisibleInView = (view, hidden) => view !== "nav" && !hidden;
 function loadWx() {
   try { return { ...WX_DEFAULTS, ...JSON.parse(localStorage.getItem("racenav.wx") || "{}") }; } catch { return { ...WX_DEFAULTS }; }
+}
+function loadWxViews() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(WX_VIEWS) || "{}");
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) throw new Error("Invalid weather view settings");
+    return saved;
+  } catch (error) {
+    console.error("Could not read weather settings by view:", error);
+    return {};
+  }
 }
 
 /** Colour of a value on a scale (linear between stops); the wind palette by default. */
@@ -212,6 +286,34 @@ function shadingExpression(mode, layer = LAYERS.wind) {
   const expr = ["step", ["get", "v"], scale[0][1]];
   for (let i = 1; i < scale.length; i++) expr.push(scale[i][0], paletteAt((scale[i][0] + (scale[i + 1]?.[0] ?? scale[i][0] * 1.2)) / 2, scale));
   return expr;
+}
+
+/** Matching chart colours and colour-bar stops for a filtered layer. */
+export function filterColourStyle(layer, filter, mode) {
+  const scale = seaScale(filter);
+  if (mode === "smooth" || layer.auto) {
+    return { expression: ["interpolate", ["linear"], ["get", "v"], ...scale.flat()], stops: scale };
+  }
+  const lo = scale[0][0], hi = scale.at(-1)[0];
+  const boundaries = [];
+  if (layer.knots) {
+    const step = Number(mode);
+    for (let k = Math.floor(lo / step) + 1; k * step < hi; k++) boundaries.push(k * step);
+    if (Number.isFinite(filter.tg) && filter.tg > lo && filter.tg < hi) boundaries.push(filter.tg);
+    boundaries.sort((a, b) => a - b);
+  } else {
+    boundaries.push(...scale.slice(1, -1).map(([v]) => v));
+  }
+  const edges = [lo, ...new Set(boundaries), hi];
+  const colours = edges.slice(1).map((edge, i) => paletteAt((edges[i] + edge) / 2, scale));
+  const expression = ["step", ["get", "v"], colours[0]];
+  const stops = [[lo, colours[0]]];
+  for (let i = 1; i < edges.length - 1; i++) {
+    expression.push(edges[i], colours[i]);
+    stops.push([edges[i], colours[i - 1]], [edges[i], colours[i]]);
+  }
+  stops.push([hi, colours.at(-1)]);
+  return { expression, stops };
 }
 
 /** The outer time span of all parameters in a loaded GRIB, not a guarantee of every field. */
@@ -254,7 +356,11 @@ export function setupWeather(map, layers) {
   let t = 0;
   let playing = null;
   let cursor = null; // [lon, lat]
-  const wx = loadWx();
+  let weatherView = ["nav", "plan", "env"].includes(document.documentElement.dataset.view) ? document.documentElement.dataset.view : "nav";
+  let allowPastAnalysis = false;
+  const savedViews = loadWxViews();
+  const wx = { ...loadWx(), ...structuredClone(savedViews[weatherView] ?? {}) };
+  const viewStates = new Map();
   const timeListeners = [];
   const loadedListeners = [];
   const changeListeners = [];
@@ -268,7 +374,7 @@ export function setupWeather(map, layers) {
   map.addLayer({
     id: "wx-cells", type: "fill", source: "wx-cells",
     paint: { "fill-color": shadingExpression(wx.shading === "off" ? "2" : wx.shading, LAYERS[wx.layer] ?? LAYERS.wind), "fill-opacity": wx.opacity, "fill-antialias": false },
-    layout: { visibility: wx.shading === "off" ? "none" : "visible" },
+    layout: { visibility: weatherVisibleInView(weatherView, wx.hidden) && wx.shading !== "off" ? "visible" : "none" },
   }, shadingBefore());
   window.addEventListener("webmap-changed", () => map.moveLayer("wx-cells", shadingBefore()));
   // isobars and wave-direction arrows
@@ -305,22 +411,18 @@ export function setupWeather(map, layers) {
   }, beforeTop);
 
   // ---------- files ----------------------------------------------------------
-  const fileSelects = [$("wx-files"), $("side-wx-files")];
-  const fileButtons = [$("wx-load"), $("side-wx-load")];
-  const fileStatus = $("side-wx-status");
+  const fileSelect = $("wx-files"), fileButton = $("wx-load");
   let loadingPath = null;
   let unloadingPath = null;
   function fileMessage(text) {
-    fileStatus.textContent = text;
+    $("wx-where").textContent = text;
   }
-  function syncFileSelection(source) {
-    for (const select of fileSelects) if (select !== source) select.value = source.value;
-    for (const button of fileButtons) button.disabled = !!loadingPath || !!unloadingPath || !source.value;
-    $("side-wx-unload").disabled = !!loadingPath || !!unloadingPath || !display;
+  function syncFileSelection() {
+    fileButton.disabled = !!loadingPath || !!unloadingPath || !fileSelect.value;
     for (const button of $("wx-loaded").querySelectorAll(".wx-unload")) button.disabled = !!loadingPath || !!unloadingPath;
   }
-  for (const select of fileSelects) select.addEventListener("change", () => syncFileSelection(select));
-  for (const button of fileButtons) button.disabled = true;
+  fileSelect.addEventListener("change", syncFileSelection);
+  fileButton.disabled = true;
   async function refreshFiles(report = false) {
     let files;
     try {
@@ -331,21 +433,19 @@ export function setupWeather(map, layers) {
       fileMessage(message);
       return;
     }
-    const selected = $("wx-files").value;
-    for (const sel of fileSelects) {
-      sel.innerHTML = "";
-      if (!files.length) sel.append(new Option("No GRIB files found", ""));
-      for (const f of files) {
-        const mb = f.size ? `${(f.size / 1e6).toFixed(f.size < 1e7 ? 1 : 0)} MB` : "";
-        const fetched = f.mtime ? `fetched ${fmtLocal(f.mtime)}` : "";
-        const desc = f.info ? f.info.label : f.file;
-        const opt = new Option(`${f.loaded ? "✓ " : ""}${desc} · ${fetched} · ${mb}`, f.path);
-        opt.title = `${f.file}\n${f.dir}`;
-        sel.append(opt);
-      }
-      if (files.some((f) => f.path === selected)) sel.value = selected;
+    const selected = fileSelect.value;
+    fileSelect.innerHTML = "";
+    if (!files.length) fileSelect.append(new Option("No GRIB files found", ""));
+    for (const f of files) {
+      const mb = f.size ? `${(f.size / 1e6).toFixed(f.size < 1e7 ? 1 : 0)} MB` : "";
+      const fetched = f.mtime ? `fetched ${fmtLocal(f.mtime)}` : "";
+      const desc = f.info ? f.info.label : f.file;
+      const opt = new Option(`${f.loaded ? "✓ " : ""}${desc} · ${fetched} · ${mb}`, f.path);
+      opt.title = `${f.file}\n${f.dir}`;
+      fileSelect.append(opt);
     }
-    syncFileSelection($("wx-files"));
+    if (files.some((f) => f.path === selected)) fileSelect.value = selected;
+    syncFileSelection();
     if (report && !loadingPath) fileMessage(files.length ? `Found ${files.length} GRIB ${files.length === 1 ? "file" : "files"}.` : "No GRIB files found in the GRIB folders.");
   }
 
@@ -367,7 +467,7 @@ export function setupWeather(map, layers) {
       throw new Error(message);
     }
     loadingPath = path;
-    syncFileSelection($("wx-files"));
+    syncFileSelection();
     $("wx-load").textContent = "…";
     showProgress(0, "reading");
     const t0 = performance.now();
@@ -399,7 +499,7 @@ export function setupWeather(map, layers) {
       loadingPath = null;
       prog.hidden = true;
       $("wx-load").textContent = "Load";
-      syncFileSelection($("wx-files"));
+      syncFileSelection();
     }
   }
 
@@ -418,6 +518,9 @@ export function setupWeather(map, layers) {
       row.innerHTML = `<input type="radio" name="wx-show" title="Show this GRIB on the chart"><label></label>` +
         `<input type="checkbox" class="cmp" title="Include in the agreement displays (Show > Agreement of the loaded GRIBs)"><button class="wx-unload" title="Unload">×</button>`;
       const [radio, label, cmp, x] = row.children;
+      radio.setAttribute("aria-label", `Show ${s.name}`);
+      cmp.setAttribute("aria-label", `Include ${s.name} in agreement displays`);
+      x.setAttribute("aria-label", `Unload ${s.name}`);
       cmp.hidden = loaded.size < 2;
       cmp.checked = !wx.cmpOff.includes(path);
       cmp.onchange = () => {
@@ -425,6 +528,7 @@ export function setupWeather(map, layers) {
         saveWx();
         renderLayers();
         draw();
+        changed();
       };
       radio.checked = path === display;
       label.textContent = s.name;
@@ -462,7 +566,7 @@ export function setupWeather(map, layers) {
       return;
     }
     unloadingPath = path;
-    syncFileSelection($("wx-files"));
+    syncFileSelection();
     const name = loaded.get(path).name;
     try {
       await invoke("grib_unload", { path });
@@ -482,7 +586,7 @@ export function setupWeather(map, layers) {
       fileMessage(message);
     } finally {
       unloadingPath = null;
-      syncFileSelection($("wx-files"));
+      syncFileSelection();
     }
   }
 
@@ -558,7 +662,7 @@ export function setupWeather(map, layers) {
   function renderLayers() {
     const av = available();
     if (av.length && !av.includes(wx.layer)) { wx.layer = av[0]; saveWx(); applyLayer(); }
-    for (const sel of [$("wx-layer"), ...[...mirrors].filter((m) => m.isConnected).map((m) => m.querySelector(".layer"))]) {
+    for (const sel of [...mirrors].filter((m) => m.isConnected).map((m) => m.querySelector(".layer"))) {
       if (!sel) continue;
       sel.innerHTML = "";
       const group = document.createElement("optgroup");
@@ -576,45 +680,32 @@ export function setupWeather(map, layers) {
       sel.append(new Option("No shading", "none"));
       sel.value = wx.shading === "off" ? "none" : wx.layer;
     }
-    const hasOv = (k) => OVERLAY_PARAMS[k].some((n) => hasIn(srcOf(k), n));
-    $("wx-arrows-row").hidden = !hasOv("arrows");
-    $("wx-wavearrows-row").hidden = !hasOv("waveArrows");
-    $("wx-currarrows-row").hidden = !oceanPath(LAYERS.current);
-    $("wx-isobars-row").hidden = !hasOv("isobars");
-    $("wx-isotherms-row").hidden = !(LAYERS[wx.layer]?.contour);
   }
   /** First and last time any parameter of a GRIB has data. */
   function spanOf(path) {
     return forecastSpan(loaded.get(path));
   }
-  function syncPanel(timeOnly = false) {
-    const select = $("side-wx-loaded");
-    if (!timeOnly) {
-      select.replaceChildren();
-      if (!loaded.size) select.append(new Option("No GRIB loaded", ""));
-      for (const [path, s] of loaded) {
-        const opt = new Option(s.name, path);
-        opt.title = path;
-        select.append(opt);
-      }
-      select.value = display ?? "";
-      select.disabled = !loaded.size;
-    }
+  function syncPanel() {
     const span = display && spanOf(display);
     const coverage = $("side-wx-coverage");
     const outside = span && (t < span[0] || t > span[1]);
-    coverage.textContent = span ? `Shown GRIB: ${fmt(span[0], true)} → ${fmt(span[1], true)}${outside ? " · Forecast time outside this range" : ""}` : "No forecast times for the shown GRIB.";
+    coverage.textContent = span ? `${loaded.get(display)?.name ?? "Shown GRIB"}: ${fmt(span[0], true)} → ${fmt(span[1], true)}${outside ? " · Chart time outside this range" : ""}` : "No times for the shown GRIB.";
     coverage.classList.toggle("warn", !!outside);
-    const main = $("wx-slider"), slider = $("side-wx-time");
-    slider.min = main.min; slider.max = main.max; slider.step = main.step; slider.value = t;
+    const slider = $("side-wx-time");
+    slider.value = t;
     slider.disabled = !times.length;
     $("side-wx-when").textContent = times.length ? fmt(t) : "—";
+    $("side-wx-source").textContent = display ? `Shown GRIB: ${loaded.get(display)?.name ?? display}` : "No GRIB loaded";
     $("side-wx-start").disabled = !span;
     $("side-wx-end").disabled = !span;
     $("side-wx-now").disabled = !times.length;
     for (const id of ["side-wx-prev", "side-wx-play", "side-wx-next"]) $(id).disabled = !times.length;
-    $("side-wx-play").textContent = playing ? "Pause" : "Play";
-    syncFileSelection($("wx-files"));
+    const play = $("side-wx-play");
+    const playLabel = playing ? "Pause chart time" : "Play chart time";
+    play.title = playLabel;
+    play.setAttribute("aria-label", playLabel);
+    play.querySelector("path").setAttribute("d", playing ? "M8 5v14M16 5v14" : "M7 5 19 12 7 19z");
+    syncFileSelection();
   }
   function setTimes() {
     // the slider covers every loaded GRIB; what each has at the slider time is shown as it is found there
@@ -629,14 +720,13 @@ export function setupWeather(map, layers) {
     }
     times = [...all].sort((a, b) => a - b);
     renderLayers();
-    const slider = $("wx-slider");
+    const slider = $("side-wx-time");
     if (!times.length) {
       slider.min = slider.max = 0;
       t = 0;
       if (playing) {
         clearInterval(playing);
         playing = null;
-        $("wx-play").textContent = "▶";
       }
       draw();
       return;
@@ -653,45 +743,32 @@ export function setupWeather(map, layers) {
     draw();
   }
 
-  $("wx-slider").oninput = (e) => { t = Number(e.target.value); draw(); };
   function setT(v) {
     if (!times.length) return;
-    const s = $("wx-slider");
+    $("side-wx-time-status").textContent = "";
+    const s = $("side-wx-time");
     t = Math.min(Number(s.max), Math.max(Number(s.min), v));
     s.value = t;
     draw();
   }
   const stepBy = (n) => {
-    const s = $("wx-slider");
+    $("side-wx-time-status").textContent = "";
+    const s = $("side-wx-time");
     t = Math.min(Number(s.max), Math.max(Number(s.min), t + n * timeStep));
     s.value = t;
     draw();
   };
-  $("wx-now").onclick = () => {
-    if (!times.length) { alertLine("Load a GRIB first."); return; }
-    const now = Math.floor(Date.now() / 1000);
-    if (now < times[0] || now > times.at(-1)) { alertLine(`Now is outside this GRIB (${fmt(times[0], true)} → ${fmt(times.at(-1), true)}).`); return; }
-    t = now;
-    $("wx-slider").value = t;
-    draw();
-  };
-  $("wx-prev").onclick = () => stepBy(-1);
-  $("wx-next").onclick = () => stepBy(1);
   function togglePlay() {
     if (playing) { clearInterval(playing); playing = null; }
     else {
       playing = setInterval(() => {
-        const s = $("wx-slider");
+        const s = $("side-wx-time");
         if (t >= Number(s.max)) { t = Number(s.min) - timeStep; }
         stepBy(1);
       }, 700);
     }
-    $("wx-play").textContent = playing ? "❚❚" : "▶";
     syncMirrors();
   }
-  $("wx-play").onclick = togglePlay;
-  $("side-wx-loaded").onchange = (e) => showGrib(e.target.value);
-  $("side-wx-unload").onclick = () => unload(display);
   $("side-wx-time").oninput = (e) => setT(Number(e.target.value));
   $("side-wx-prev").onclick = () => stepBy(-1);
   $("side-wx-next").onclick = () => stepBy(1);
@@ -701,14 +778,14 @@ export function setupWeather(map, layers) {
   $("side-wx-now").onclick = () => {
     const now = Math.floor(Date.now() / 1000);
     if (!times.length || now < times[0] || now > times.at(-1)) {
-      fileMessage("Now is outside the loaded GRIBs' time range.");
+      $("side-wx-time-status").textContent = "Now is outside the loaded GRIBs' time range.";
       return;
     }
     setT(now);
   };
 
   // ---------- copies of the GRIB choice and time slider elsewhere (e.g. the compare dock) ----------
-  // Each copy drives the same state as the Weather drawer, so the drawer can stay closed.
+  // Each copy drives the same state as the data panel.
   const mirrors = new Set();
   function mountControls(el, { compact = false, bare = false } = {}) {
     el.classList.add("wx-mini");
@@ -725,7 +802,7 @@ export function setupWeather(map, layers) {
     el.querySelector('[data-act="prev"]').onclick = () => stepBy(-1);
     el.querySelector('[data-act="next"]').onclick = () => stepBy(1);
     el.querySelector('[data-act="play"]').onclick = togglePlay;
-    el.querySelector('[data-act="now"]').onclick = () => $("wx-now").click();
+    el.querySelector('[data-act="now"]').onclick = () => $("side-wx-now").click();
     const lsel = el.querySelector(".layer");
     if (lsel) lsel.onchange = (e) => setLayer(e.target.value);
     mirrors.add(el);
@@ -756,14 +833,14 @@ export function setupWeather(map, layers) {
       }
       }
     }
-    const main = $("wx-slider"), sl = el.querySelector("input[type=range]");
+    const main = $("side-wx-time"), sl = el.querySelector("input[type=range]");
     sl.min = main.min; sl.max = main.max; sl.step = main.step; sl.value = t;
     sl.disabled = !times.length;
     el.querySelector(".when").textContent = times.length ? (el.dataset.compact ? fmt(t, true) : fmt(t)) : "—";
     el.querySelector('[data-act="play"]').textContent = playing ? "❚❚" : "▶";
   }
   function syncMirrors(timeOnly) {
-    syncPanel(timeOnly);
+    syncPanel();
     for (const el of mirrors) {
       if (!el.isConnected) { mirrors.delete(el); continue; }
       syncMirror(el, !timeOnly);
@@ -775,10 +852,9 @@ export function setupWeather(map, layers) {
   let drawVersion = 0;
   async function draw() {
     drawVersion++;
-    const slider = $("wx-slider");
+    const slider = $("side-wx-time");
     slider.step = times.length ? sliderStepForTime(t, Number(slider.min), timeStep) : timeStep;
     slider.value = t;
-    $("wx-time").textContent = times.length ? fmt(t) : "—";
     syncMirrors(true);
     for (const fn of timeListeners) fn(t);
     updatePoint();
@@ -787,7 +863,7 @@ export function setupWeather(map, layers) {
     requestAnimationFrame(async () => {
       pending = false;
       const version = drawVersion;
-      if (!display || !times.length || wx.hidden) {
+      if (!display || !times.length || !weatherVisibleInView(weatherView, wx.hidden)) {
         map.getSource("wx-cells").setData(fc([]));
         map.getSource("wx-barbs").setData(fc([]));
         map.getSource("wx-wavedir").setData(fc([]));
@@ -801,6 +877,8 @@ export function setupWeather(map, layers) {
       const b = map.getBounds();
       const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
       const layer = LAYERS[wx.layer] ?? LAYERS.wind;
+      const timeAllowed = (path, params) => weatherView !== "env" ||
+        dataTimeStatus(loaded.get(path), params, t, allowPastAnalysis).state !== "missing";
       const arrowPts = Math.round(DENSITY_POINTS[wx.density - 1]);
       const shade = wx.shading !== "off";
       // Barbs and wave arrows at the chosen density; shading at full GRIB resolution (up to 20 000 cells).
@@ -817,13 +895,14 @@ export function setupWeather(map, layers) {
             .catch((e) => ({ error: String(e) })) : { error: "Choose a forecast to verify in the Verify dock." })
           : layer.compare
           ? invoke("grib_compare", { paths: comparePaths(), metric: layer.compare, t, bbox, maxPoints: 20000 }).catch((e) => ({ error: String(e) }))
-          : invoke("grib_grid", { path: shadePath(layer), layer: wx.layer, t, bbox, maxPoints: 20000 }).catch(() => null),
+          : timeAllowed(shadePath(layer), layer.params)
+          ? invoke("grib_grid", { path: shadePath(layer), layer: wx.layer, t, bbox, maxPoints: 20000 }).catch(() => null) : null,
         wx.waveArrows && hasIn(pWaves, "WaveDir") ? invoke("grib_grid", { path: pWaves, layer: "wavedir", t, bbox, maxPoints: Math.max(40, arrowPts / 2) }).catch(() => null) : null,
         wx.isobars && hasIn(pIso, "Mslp") ? invoke("grib_grid", { path: pIso, layer: "mslp", t, bbox, maxPoints: 20000 }).catch(() => null) : null,
-        curPath
+        curPath && timeAllowed(curPath, ["CurrentU"])
           ? Promise.all(["currentdir", "current"].map((layer) => invoke("grib_grid", { path: curPath, layer, t, bbox, maxPoints: curPts }).catch(() => null)))
           : [null, null],
-        breakPath ? invoke("grib_grid", { path: breakPath, layer: breakKey, t, bbox, maxPoints: 20000 }).catch(() => null) : null,
+        breakPath && timeAllowed(breakPath, LAYERS[breakKey].params) ? invoke("grib_grid", { path: breakPath, layer: breakKey, t, bbox, maxPoints: 20000 }).catch(() => null) : null,
       ]);
       if (version !== drawVersion) return;
       const cells = [], barbs = [], waves = [], currents = [];
@@ -843,9 +922,8 @@ export function setupWeather(map, layers) {
       // ocean layers: colours from the skipper's filter (not the view); contours within it
       let contours = [];
       if (filterable(layer) && gs && !gs.error) {
+        updateSeaRange(wx.layer, shadePath(layer), gs);
         const f = wx.seaFilter[wx.layer];
-        const r = seaRange[wx.layer];
-        if (!f || !r || r.path !== shadePath(layer)) ensureSeaRange(wx.layer, layer);
         // a layer without the sea colours: only the target's own line, once the filter has been set
         if (!layer.auto && f?.set && f.tg != null) {
           contours.push(...isobars(gs, 0, [f.tg]).map((x) => ({ ...x, properties: { hpa: +f.tg.toFixed(2), target: 1 } })));
@@ -963,11 +1041,17 @@ export function setupWeather(map, layers) {
     pointTimer = setTimeout(async () => {
       pointTimer = null;
       const body = document.querySelector("#wx-point tbody");
-      if (!cursor || !loaded.size || !times.length) { body.innerHTML = ""; for (const fn of pointListeners) fn(null, cursor); return; }
-      const at = cursor, tt = t, shownPath = display;
+      if (!cursor || !loaded.size || !times.length) {
+        body.innerHTML = "";
+        $("wx-sea-point").innerHTML = "";
+        for (const fn of pointListeners) fn(null, cursor);
+        return;
+      }
+      const at = cursor, tt = t, shownPath = display, requestedView = weatherView, requestedPast = allowPastAnalysis;
       const result = await invoke("grib_point", { lat: at[1], lon: at[0], t: tt }).catch(() => []) || [];
-      if (at !== cursor || tt !== t || shownPath !== display) { updatePoint(); return; }
-      const rows = result.filter((r) => loaded.has(r.path));
+      if (at !== cursor || tt !== t || shownPath !== display || requestedView !== weatherView || requestedPast !== allowPastAnalysis) { updatePoint(); return; }
+      const rows = result.filter((r) => loaded.has(r.path)).map((r) =>
+        weatherView === "env" ? applyPointTimePolicy(r, loaded.get(r.path), tt, allowPastAnalysis) : r);
       let shown = (rows || []).find((r) => r.path === display) ?? null;
       // sea readings from whichever loaded file has them (MUR, HYCOM), under the shown GRIB's weather
       // the shown GRIB's values, with anything it lacks (sea data, or weather when an ocean file is shown) from the other loaded files
@@ -975,12 +1059,16 @@ export function setupWeather(map, layers) {
       if (shown) {
         const extra = {};
         const src = {}; // key → the name of the file a borrowed value came from
+        const past = { ...shown.past };
         for (const k of ["tws", "twd", "gust", "mslp", "wave", "period", "wavedir", "temp", "rain", ...SEA_KEYS]) {
           if (shown[k] != null) continue;
           const from = (rows || []).find((r) => r[k] != null);
-          if (from) { extra[k] = from[k]; src[k] = loaded.get(from.path)?.name ?? from.name ?? "another file"; }
+          if (from) {
+            extra[k] = from[k]; src[k] = loaded.get(from.path)?.name ?? from.name ?? "another file";
+            if (from.past?.[k] != null) past[k] = from.past[k];
+          }
         }
-        shown = { ...shown, ...extra, src };
+        shown = { ...shown, ...extra, src, past };
       }
       for (const fn of pointListeners) fn(shown && { ...shown, t: tt, name: loaded.get(display)?.name ?? shown.name }, at);
       body.innerHTML = "";
@@ -1003,7 +1091,8 @@ export function setupWeather(map, layers) {
           d.className = `row${r.path === display ? " shown" : ""}`;
           const src = document.createElement("span");
           src.className = "src";
-          src.textContent = r.name;
+          const pastTimes = [...new Set(Object.values(r.past ?? {}))];
+          src.textContent = `${r.name}${pastTimes.length ? ` · past analysis ${pastTimes.map((v) => fmt(v)).join(", ")}` : ""}`;
           const vals = document.createElement("span");
           vals.className = "vals";
           for (const s of sea) { const x = document.createElement("span"); x.textContent = s; vals.append(x); }
@@ -1016,17 +1105,24 @@ export function setupWeather(map, layers) {
   map.on("mousemove", (e) => { cursor = [e.lngLat.lng, e.lngLat.lat]; updatePoint(); });
   map.on("click", (e) => { cursor = [e.lngLat.lng, e.lngLat.lat]; updatePoint(); }); // touch: a tap is the cursor
 
-  // load() has already reported any error in both weather surfaces.
+  // load() has already reported any error.
   $("wx-load").onclick = () => { load($("wx-files").value).catch(() => {}); };
   $("wx-refresh").onclick = () => refreshFiles(true);
-  $("side-wx-load").onclick = () => {
-    const path = $("side-wx-files").value;
-    load(path).then(() => showGrib(path)).catch(() => {});
-  };
-  $("side-wx-refresh").onclick = () => refreshFiles(true);
 
   // ---------- display settings ----------------------------------------------------------
-  const saveWx = () => { try { localStorage.setItem("racenav.wx", JSON.stringify(wx)); } catch { /* ignore */ } };
+  const saveWx = () => {
+    try {
+      const saved = loadWxViews();
+      saved[weatherView] = structuredClone(wx);
+      localStorage.setItem(WX_VIEWS, JSON.stringify(saved));
+      if (weatherView === "nav") localStorage.setItem("racenav.wx", JSON.stringify(wx));
+    } catch (error) { console.error("Could not save weather settings by view:", error); }
+  };
+  $("env-use-past").onchange = (event) => {
+    allowPastAnalysis = event.target.checked;
+    draw();
+    changed();
+  };
   const dens = $("wx-density"), size = $("wx-size"), shade = $("wx-shading"), opac = $("wx-opacity");
   dens.value = wx.density; size.value = wx.size; shade.value = wx.shading; opac.value = wx.opacity;
   const showVals = () => {
@@ -1042,47 +1138,42 @@ export function setupWeather(map, layers) {
   landSel.value = wx.land;
   landSel.onchange = () => { wx.land = landSel.value; saveWx(); map.moveLayer("wx-cells", shadingBefore()); };
   // ---------- sea filter: low, target, high ----------------------------------------------
-  // The range of each sea layer's values over the whole loaded file (the slider's
-  // track), worked out once per file, never from the view.
+  // The full grid range at the current chart time, independent of the map bounds.
   const seaRange = {};
-  let rangeBusy = null;
-  async function ensureSeaRange(key, layer) {
-    const path = shadePath(layer);
-    if (!path || rangeBusy === key + path) return;
-    const ps = layer.params.map((n) => loaded.get(path)?.params.find((p) => p.param === n)).find(Boolean);
-    if (!ps) return;
-    rangeBusy = key + path;
-    const g = await invoke("grib_grid", { path, layer: key, t: Math.min(Math.max(t, ps.times[0]), ps.times.at(-1)), bbox: ps.bbox, maxPoints: 60000 }).catch(() => null);
-    rangeBusy = null;
-    const vals = (g?.values ?? []).filter((v) => v != null).sort((a, b) => a - b);
-    if (vals.length < 2) return;
-    const min = vals[Math.floor(vals.length * 0.005)], max = vals[Math.ceil(vals.length * 0.995) - 1];
-    const q = seaQuantum(min, max);
-    const r = { path, min: +(Math.floor(min / q) * q).toFixed(6), max: +(Math.ceil(max / q) * q).toFixed(6) };
-    if (r.max <= r.min) r.max = r.min + q;
-    seaRange[key] = r;
-    const f = wx.seaFilter[key];
-    // first time, or a file whose values lie outside the saved filter: start from the whole range
-    if (!f || f.hi < r.min || f.lo > r.max) {
-      wx.seaFilter[key] = { lo: r.min, hi: r.max, tg: null };
-      saveWx();
-    }
+  function updateSeaRange(key, path, grid) {
+    const old = seaRange[key], previous = wx.seaFilter[key];
+    const next = filterRangeForGrid(grid, previous);
+    if (!next) return;
+    const changedRange = !old || old.path !== path || old.min !== next.min || old.max !== next.max;
+    if (!changedRange && previous === next.filter) return;
+    seaRange[key] = { path, min: next.min, max: next.max, tracks: next.filter === previous ? old?.tracks : undefined };
+    wx.seaFilter[key] = next.filter;
+    if (next.filter !== previous && (!previous || previous.lo !== next.filter.lo || previous.hi !== next.filter.hi)) saveWx();
     applyLayer();
-    draw();
-  }
-  /** The step the pointers move in: 0.1 °C, 0.01 PSU or so. */
-  function seaQuantum(lo, hi) {
-    const r = Math.max(hi - lo, 0.01);
-    return 10 ** Math.floor(Math.log10(r / 20));
   }
   const roundTo = (v, q) => Math.round(v / q) * q;
+  function filterTrack() {
+    const r = seaRange[wx.layer], f = wx.seaFilter[wx.layer];
+    if (!r || !f) return null;
+    r.tracks ??= {};
+    let track = r.tracks[weatherView];
+    if (!track || f.lo < track.min || f.hi > track.max) {
+      track = f.set ? seaTrackRange(f, r) : { min: r.min, max: r.max };
+      r.tracks[weatherView] = track;
+    }
+    return track;
+  }
+  function refitFilterTrack(edge = null) {
+    const r = seaRange[wx.layer], f = wx.seaFilter[wx.layer], previous = filterTrack();
+    if (r && f) r.tracks[weatherView] = seaTrackRange(f, r, previous, edge);
+  }
 
-  /** The filter widgets under the colour bar: the drawer's (sea layers only) and any in the Weather panel (every shaded layer). */
-  const filterBoxes = [{ el: $("wx-sea"), all: false }];
+  /** Filter widgets under the colour bar. */
+  const filterBoxes = [];
   function drawSeaFilter(layer) {
     for (const { el: box, all } of filterBoxes) {
       if (!box.isConnected) continue;
-      const f = wx.seaFilter[wx.layer], r = seaRange[wx.layer];
+      const f = wx.seaFilter[wx.layer], r = filterTrack();
       box.hidden = !((layer.auto || (all && filterable(layer))) && f && r && wx.shading !== "off");
       if (box.hidden) continue;
       const span = Math.max(r.max - r.min, 1e-6);
@@ -1090,15 +1181,9 @@ export function setupWeather(map, layers) {
       const grad = box.querySelector(".grad");
       grad.style.left = pc(f.lo);
       grad.style.width = `calc(${pc(f.hi)} - ${pc(f.lo)})`;
-      const w = Math.max(f.hi - f.lo, 1e-6);
-      if (layer.auto) {
-        const sc = seaScale(f);
-        grad.style.background = `linear-gradient(to right, ${sc.map(([v, c]) => `${c} ${((v - f.lo) / w) * 100}%`).join(", ")}, ${sc.at(-1)[1]} 100%)`;
-      } else {
-        const sc = layer.scale.filter(([v]) => v > f.lo && v < f.hi);
-        const stops = [[f.lo, paletteAt(f.lo, layer.scale)], ...sc, [f.hi, paletteAt(f.hi, layer.scale)]];
-        grad.style.background = `linear-gradient(to right, ${stops.map(([v, c]) => `${c} ${((v - f.lo) / w) * 100}%`).join(", ")})`;
-      }
+      const w = f.hi - f.lo;
+      const { stops } = filterColourStyle(layer, f, wx.shading);
+      grad.style.background = `linear-gradient(to right, ${stops.map(([v, c]) => `${c} ${((v - f.lo) / w) * 100}%`).join(", ")})`;
       for (const k of ["lo", "hi"]) box.querySelector(`.h.${k}`).style.left = pc(f[k]);
       const th = box.querySelector(".h.tg");
       th.style.left = pc(f.tg ?? (f.lo + f.hi) / 2);
@@ -1113,7 +1198,7 @@ export function setupWeather(map, layers) {
       box.querySelector(".v.max").textContent = fmtv(r.max);
       box.querySelector("[data-filter-clear]").disabled = f.tg == null;
       box.dataset.unit = layer.unit;
-      box.title = `${layer.label} (${layer.unit}): drag the outer pointers to set the lowest and highest shown, the middle one to the target (bold contour); click a number to type it. Fit: back to the whole file's range.`;
+      box.title = `${layer.label} (${layer.unit}): drag the outer pointers to set the lowest and highest shown, the middle one to the target (bold contour); click a number to type it. Fit: back to the full range at chart time.`;
     }
   }
   /** Make a filter widget work: drag the pointers, click the numbers to type them, Fit. */
@@ -1121,7 +1206,7 @@ export function setupWeather(map, layers) {
     const track = box.querySelector(".track");
     let drag = null;
     track.addEventListener("pointerdown", (e) => {
-      const f = wx.seaFilter[wx.layer], r = seaRange[wx.layer];
+      const f = wx.seaFilter[wx.layer], r = filterTrack();
       if (!f || !r) return;
       const rect = track.getBoundingClientRect();
       const v = r.min + ((e.clientX - rect.left) / rect.width) * (r.max - r.min);
@@ -1133,9 +1218,10 @@ export function setupWeather(map, layers) {
       track.setPointerCapture(e.pointerId);
       move(e);
     });
-    const set = (k, v) => {
-      const f = wx.seaFilter[wx.layer], r = seaRange[wx.layer];
-      const q = seaQuantum(r.min, r.max);
+    const set = (k, v, typed = false) => {
+      const f = wx.seaFilter[wx.layer], trackRange = filterTrack(), full = seaRange[wx.layer];
+      const q = seaQuantum(trackRange.min, trackRange.max);
+      const r = typed ? full : trackRange;
       v = Math.min(r.max, Math.max(r.min, roundTo(v, q)));
       if (k === "lo") f.lo = Math.min(v, f.tg == null ? f.hi - q : f.tg - q);
       else if (k === "hi") f.hi = Math.max(v, f.tg == null ? f.lo + q : f.tg + q);
@@ -1150,11 +1236,20 @@ export function setupWeather(map, layers) {
     };
     const move = (e) => {
       if (!drag) return;
-      const r = seaRange[wx.layer];
+      const r = filterTrack();
       set(drag.k, r.min + ((e.clientX - drag.rect.left) / drag.rect.width) * (r.max - r.min));
     };
     track.addEventListener("pointermove", move);
-    track.addEventListener("pointerup", () => { if (drag) { drag = null; saveWx(); draw(); } });
+    const finishDrag = () => {
+      if (!drag) return;
+      const f = wx.seaFilter[wx.layer], r = filterTrack();
+      const edge = drag.k === "lo" && f.lo <= r.min ? "lo" : drag.k === "hi" && f.hi >= r.max ? "hi" : null;
+      drag = null;
+      refitFilterTrack(edge);
+      saveWx(); applyLayer(); draw();
+    };
+    track.addEventListener("pointerup", finishDrag);
+    track.addEventListener("pointercancel", finishDrag);
     // double-click the target pointer to clear the target (the track captures the pointer, so the event arrives at the track)
     track.addEventListener("dblclick", (e) => {
       const f = wx.seaFilter[wx.layer];
@@ -1187,7 +1282,11 @@ export function setupWeather(map, layers) {
           if (finished) return;
           finished = true;
           const x = parseFloat(input.value);
-          if (ok && Number.isFinite(x) && !(layer.log && x <= 0)) { set(k, layer.log ? Math.log10(x) : x); saveWx(); draw(); } else drawSeaFilter(layer);
+          if (ok && Number.isFinite(x) && !(layer.log && x <= 0)) {
+            set(k, layer.log ? Math.log10(x) : x, true);
+            refitFilterTrack();
+            saveWx(); applyLayer(); draw();
+          } else drawSeaFilter(layer);
         };
         input.onkeydown = (e) => { if (e.key === "Enter") done(true); else if (e.key === "Escape") done(false); e.stopPropagation(); };
         input.onblur = () => done(true);
@@ -1204,26 +1303,37 @@ export function setupWeather(map, layers) {
       const r = seaRange[wx.layer];
       if (!r) return;
       wx.seaFilter[wx.layer] = { lo: r.min, hi: r.max, tg: null };
+      if (r.tracks) r.tracks[weatherView] = { min: r.min, max: r.max };
       saveWx(); applyLayer(); draw();
     };
   }
-  wireFilter($("wx-sea"));
   /** A filter widget for the Weather panel, working for every shaded layer. */
   function mountFilter(el) {
     el.className = "seafilter";
-    el.innerHTML = $("wx-sea").innerHTML;
+    el.innerHTML = `
+      <div class="track"><div class="grad"></div><span class="h lo"></span><span class="h tg"></span><span class="h hi"></span></div>
+      <div class="vals"><span class="v min"></span><span class="v lo"></span><span class="v tg"></span><span class="v hi"></span><span class="v max"></span><button class="fit" title="Back to the full range at chart time">Fit</button></div>
+      <div class="filter-actions">
+      <button type="button" data-filter-edit="lo" title="Set low" aria-label="Set low"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 20h16"/></svg></button>
+      <button type="button" data-filter-edit="hi" title="Set high" aria-label="Set high"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21V9m-5 5 5-5 5 5M4 4h16"/></svg></button>
+      <button type="button" data-filter-edit="tg" title="Set target" aria-label="Set target"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v5m0 10v5M2 12h5m10 0h5"/><circle cx="12" cy="12" r="2"/></svg></button>
+      <button type="button" data-filter-clear title="Clear target" aria-label="Clear target"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v5m0 10v5M2 12h5m10 0h5M4 4l16 16"/></svg></button></div>`;
     wireFilter(el);
     filterBoxes.push({ el, all: true });
     drawLegend();
   }
   function applyLayer() {
-    map.setLayoutProperty("wx-cells", "visibility", wx.shading === "off" ? "none" : "visible");
+    const visible = weatherVisibleInView(weatherView, wx.hidden);
+    for (const id of ["wx-barbs", "wx-wavedir", "wx-currdir", "wx-breaks", "wx-isobars", "wx-isobar-labels", "wx-isotherms", "wx-isotherm-labels"]) {
+      map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
+    }
+    map.setLayoutProperty("wx-cells", "visibility", visible && wx.shading !== "off" ? "visible" : "none");
     const lay = LAYERS[wx.layer] ?? LAYERS.wind;
     const sf = filterable(lay) ? wx.seaFilter[wx.layer] : null;
-    if (sf && lay.auto) lay.scale = seaScale(sf);
-    // the filter's limits: nothing shown outside them (for the weather layers once they have been set)
-    map.setFilter("wx-cells", sf && (lay.auto || sf.set) ? ["all", [">=", ["get", "v"], sf.lo], ["<=", ["get", "v"], sf.hi]] : null);
-    if (wx.shading !== "off") map.setPaintProperty("wx-cells", "fill-color", shadingExpression(lay.auto ? "smooth" : wx.shading, lay));
+    map.setFilter("wx-cells", sf ? ["all", [">=", ["get", "v"], sf.lo], ["<=", ["get", "v"], sf.hi]] : null);
+    if (wx.shading !== "off") map.setPaintProperty("wx-cells", "fill-color", sf
+      ? filterColourStyle(lay, sf, wx.shading).expression
+      : shadingExpression(lay.auto ? "smooth" : wx.shading, lay));
     $("wx-shading-label").textContent = `${(LAYERS[wx.layer] ?? LAYERS.wind).label} shading`;
     drawLegend();
     changed();
@@ -1244,7 +1354,6 @@ export function setupWeather(map, layers) {
     applyLayer();
     setTimes();
   }
-  $("wx-layer").onchange = (e) => setLayer(e.target.value);
   /** The isobar interval for this zoom: the chosen one, ×2 below zoom 4 and ×4 below 2.5 when Auto is on. */
   function isobarStep() {
     const base = Number(wx.isoStep) || 4;
@@ -1254,7 +1363,7 @@ export function setupWeather(map, layers) {
   }
   $("wx-isostep").value = String(wx.isoStep);
   $("wx-isostep").onchange = (e) => { wx.isoStep = Number(e.target.value); saveWx(); draw(); };
-  for (const [id, key] of [["wx-arrows", "arrows"], ["wx-wavearrows", "waveArrows"], ["wx-currarrows", "currArrows"], ["wx-isobars", "isobars"], ["wx-isoauto", "isoAuto"], ["wx-isotherms", "isotherms"]]) {
+  for (const [id, key] of [["wx-isoauto", "isoAuto"]]) {
     $(id).checked = !!wx[key];
     $(id).onchange = (e) => { wx[key] = e.target.checked; saveWx(); draw(); changed(); };
   }
@@ -1262,8 +1371,8 @@ export function setupWeather(map, layers) {
   function drawLegend() {
     const layer = LAYERS[wx.layer] ?? LAYERS.wind;
     drawSeaFilter(layer);
-    const hide = layer.auto && !$("wx-sea").hidden;
-    for (const el of [$("wx-legend"), ...legends]) {
+    const hide = filterBoxes.some(({ el }) => el.isConnected && !el.hidden);
+    for (const el of legends) {
       if (!el.isConnected) { legends.delete(el); continue; }
       el.innerHTML = "";
       el.hidden = hide;
@@ -1291,6 +1400,35 @@ export function setupWeather(map, layers) {
   }
   applyLayer();
 
+  window.addEventListener("racenav-view", (event) => {
+    const next = event.detail?.id;
+    if (!["nav", "plan", "env"].includes(next) || next === weatherView) return;
+    saveWx();
+    viewStates.set(weatherView, { settings: structuredClone(wx), display, time: t });
+    const previous = viewStates.get(next);
+    const settings = previous?.settings ?? loadWxViews()[next] ?? wx;
+    Object.assign(wx, structuredClone(settings));
+    weatherView = next;
+    allowPastAnalysis = false;
+    $("env-use-past").checked = false;
+    if (previous && loaded.has(previous.display)) display = previous.display;
+    dens.value = wx.density; size.value = wx.size; shade.value = wx.shading; opac.value = wx.opacity;
+    landSel.value = wx.land;
+    $("wx-isostep").value = String(wx.isoStep);
+    $("wx-isoauto").checked = !!wx.isoAuto;
+    showVals();
+    map.setLayoutProperty("wx-barbs", "icon-size", wx.size);
+    map.setLayoutProperty("wx-currdir", "icon-size", ["*", wx.size, ["get", "s"]]);
+    map.setPaintProperty("wx-cells", "fill-opacity", wx.opacity);
+    map.moveLayer("wx-cells", shadingBefore());
+    applyLayer();
+    renderLoaded();
+    setTimes();
+    if (previous && times.length && previous.time >= times[0] && previous.time <= times.at(-1)) setT(previous.time);
+    saveWx();
+    changed();
+  });
+
   refreshFiles();
   invoke("grib_loaded").then((list) => {
     for (const s of list || []) loaded.set(s.file, s);
@@ -1308,7 +1446,7 @@ export function setupWeather(map, layers) {
     }),
     /** Move the slider to a time (clamped to the loaded GRIBs' combined span). */
     setTime: (sec) => {
-      const s = $("wx-slider");
+      const s = $("side-wx-time");
       if (!times.length) return;
       t = Math.min(Number(s.max), Math.max(Number(s.min), sec));
       s.value = t;
@@ -1333,7 +1471,7 @@ export function setupWeather(map, layers) {
         const key = { vector: "verr_vec", speed: "verr_spd", direction: "verr_dir" }[v.kind ?? "vector"];
         if (!LAYERS[wx.layer]?.verify || v.kind) { wx.layer = key; if (wx.shading === "off") wx.shading = "smooth"; shade.value = wx.shading; saveWx(); applyLayer(); }
         renderLayers();
-        const s = $("wx-slider");
+        const s = $("side-wx-time");
         if (times.length && v.t >= Number(s.min) && v.t <= Number(s.max)) { t = v.t; s.value = t; }
         draw();
       } else {
@@ -1345,8 +1483,8 @@ export function setupWeather(map, layers) {
     /** Put a GRIB chooser and time slider into `el`, working the same state as the Weather drawer. */
     mountControls,
     /** Show or hide every weather layer on the chart (shading, barbs, arrows, isobars, contours); the data stays loaded. */
-    setVisible(on) { wx.hidden = !on; saveWx(); draw(); changed(); },
-    visible: () => !wx.hidden,
+    setVisible(on) { wx.hidden = !on; saveWx(); applyLayer(); draw(); changed(); },
+    visible: () => weatherVisibleInView(weatherView, wx.hidden),
     mountFilter,
     /** Names of every parameter in the loaded GRIBs. */
     loadedParams: () => new Set([...loaded.values()].flatMap((s) => [...paramsOf(s)])),
@@ -1355,20 +1493,24 @@ export function setupWeather(map, layers) {
     onChange: (fn) => { changeListeners.push(fn); },
     /** The shown layer's definition, key and the slider's range. */
     layerInfo: () => {
-      const path = LAYERS[wx.layer]?.ocean ? oceanPath(LAYERS[wx.layer]) : null;
-      const [srcMin, srcMax] = spanOf(path ?? display) ?? [undefined, undefined];
-      return { key: wx.layer, layer: LAYERS[wx.layer] ?? LAYERS.wind, off: wx.shading === "off", min: times[0], max: times.at(-1), srcMin, srcMax, t, filter: wx.seaFilter[wx.layer] ?? null, path };
+      const layer = LAYERS[wx.layer] ?? LAYERS.wind;
+      const path = shadePath(layer);
+      const [srcMin, srcMax] = spanOf(path) ?? [undefined, undefined];
+      const timeStatus = weatherView === "env" && !layer.compare && !layer.verify
+        ? dataTimeStatus(loaded.get(path), layer.params, t, allowPastAnalysis) : null;
+      return { key: wx.layer, layer, off: wx.shading === "off", min: times[0], max: times.at(-1), srcMin, srcMax, t, filter: wx.seaFilter[wx.layer] ?? null, path, timeStatus };
     },
     /** Loaded GRIBs: { path, name, model, ref }. */
     sources: () => [...loaded].map(([path, s]) => ({ path, name: s.name, model: s.model, ref: s.ref_time, shown: path === display })),
     /** Shadable layers with the files that have them: [{ key, label, unit, paths, path }]. */
     layerOptions() {
-      return Object.entries(LAYERS).filter(([, l]) => filterable(l)).map(([key, l]) => {
+      return Object.entries(LAYERS).filter(([key, l]) => !(l.compare || l.verify) || available().includes(key)).map(([key, l]) => {
+        if (l.compare || l.verify) return { key, label: l.label, unit: l.unit, paths: [], path: null, help: l.help };
         const paths = [...loaded].filter(([, s]) => l.params.some((p) => paramsOf(s).has(p))).map(([p]) => p);
         // the shown GRIB if it has the layer, else the newest loaded one that does
         const path = l.ocean ? oceanPath(l) : paths.includes(display) ? display : paths.at(-1);
         return { key, label: l.label, unit: l.unit, paths, path };
-      }).filter((o) => o.paths.length);
+      }).filter((o) => o.paths.length || LAYERS[o.key].compare || LAYERS[o.key].verify);
     },
     /** Overlays with the files that can draw them: [{ key, label, on, paths, path }]. */
     overlayOptions() {
@@ -1382,8 +1524,12 @@ export function setupWeather(map, layers) {
       ];
       return defs.map(([key, label, params, sk]) => {
         const paths = params ? [...loaded].filter(([, s]) => params.some((p) => paramsOf(s).has(p))).map(([p]) => p) : [...loaded.keys()];
-        const path = key === "currArrows" ? oceanPath(LAYERS.current) : sk ? srcOf(sk) : null;
-        return { key, label, on: !!wx[key], paths: params ? paths : [], path, hasData: params ? paths.length > 0 : !!LAYERS[wx.layer]?.contour };
+        const path = key === "currArrows" ? oceanPath(LAYERS.current) :
+          key === "breaks" ? (loaded.has(wx.src.breaks) ? wx.src.breaks : oceanPath(LAYERS.sst) ?? oceanPath(LAYERS.skin)) :
+          sk ? srcOf(sk) : null;
+        const timeStatus = weatherView === "env" && params && path
+          ? dataTimeStatus(loaded.get(path), params, t, allowPastAnalysis) : null;
+        return { key, label, on: !!wx[key], paths: params ? paths : [], path, timeStatus, hasData: params ? paths.length > 0 : !!LAYERS[wx.layer]?.contour };
       }).filter((o) => o.hasData);
     },
     /** Shade `key` ("none" for no shading) from `path`. */
@@ -1399,8 +1545,6 @@ export function setupWeather(map, layers) {
       if (on != null) wx[key] = on;
       const sk = { arrows: "arrows", waveArrows: "waveArrows", currArrows: "current", isobars: "isobars", breaks: "breaks" }[key];
       if (path && sk) wx.src[sk] = path;
-      const box = { arrows: "wx-arrows", waveArrows: "wx-wavearrows", currArrows: "wx-currarrows", isobars: "wx-isobars", isotherms: "wx-isotherms" }[key];
-      if (box) $(box).checked = !!wx[key];
       saveWx(); draw(); changed();
     },
     /** What is shown, as a preset: { layer, src, overlays, filter }. */
@@ -1414,8 +1558,6 @@ export function setupWeather(map, layers) {
       Object.assign(wx.src, c.src ?? {});
       for (const [k, v] of Object.entries(c.overlays ?? {})) {
         wx[k] = v;
-        const box = { arrows: "wx-arrows", waveArrows: "wx-wavearrows", currArrows: "wx-currarrows", isobars: "wx-isobars", isotherms: "wx-isotherms" }[k];
-        if (box) $(box).checked = v;
       }
       if (c.layer && (c.layer === "none" || available().includes(c.layer))) setLayer(c.layer);
       if (c.filter && wx.layer === c.layer) { wx.seaFilter[c.layer] = { ...c.filter }; applyLayer(); }

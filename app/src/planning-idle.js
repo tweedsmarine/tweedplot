@@ -8,7 +8,7 @@ export function createPlanningIdle({ now, schedule, cancel, currentView, timeout
   function check() {
     stop();
     const minutes = timeoutMinutes();
-    if (currentView() !== "plan" || !minutes) return;
+    if (!["plan", "env"].includes(currentView()) || !minutes) return;
     const remaining = minutes * 60000 - (now() - lastInput);
     if (remaining <= 0) onTimeout();
     else timer = schedule(check, remaining);

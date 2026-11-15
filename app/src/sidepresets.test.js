@@ -20,16 +20,17 @@ test("planning migration consolidates GRIB readings but preserves custom content
     { id: "cursor", kind: "readings", items: ["CPOS"] },
   ] } };
   assert.ok(upgrade(data));
-  assert.deepEqual(data.layouts["plan.fish"].map((s) => s.id), ["weather", "gribPoint", "mine", "cursor"]);
-  assert.deepEqual(data.layouts["plan.fish"][2].items, ["SOG"]);
-  assert.equal(data.layouts["plan.fish"][2].collapsed, true);
+  assert.deepEqual(data.layouts["plan.fish"].map((s) => s.id), ["weatherTime", "mine", "cursor"]);
+  assert.deepEqual(data.layouts["plan.fish"][1].items, ["SOG"]);
+  assert.equal(data.layouts["plan.fish"][1].collapsed, true);
   assert.equal(upgrade(data), false);
 });
 
-test("weather sections are optional in Navigation and editable in Planning layouts", () => {
+test("Planning starts with chart time, while detailed weather sections remain optional", () => {
   for (const use of ["cruise", "fish", "race"]) {
-    assert.ok(!preset("nav", use).some((s) => ["weather", "gribPoint"].includes(s.kind)));
-    assert.deepEqual(preset("plan", use).slice(0, 2).map((s) => s.kind), ["weather", "gribPoint"]);
+    assert.ok(!preset("nav", use).some((s) => ["weather", "gribPoint", "gribFiles"].includes(s.kind)));
+    assert.equal(preset("plan", use)[0].kind, "weatherTime");
+    assert.ok(!preset("plan", use).some((s) => ["weather", "gribPoint"].includes(s.kind)));
   }
   const original = [
     { id: "mine", kind: "readings", title: "Mine", items: ["SOG"], collapsed: true },
@@ -37,10 +38,57 @@ test("weather sections are optional in Navigation and editable in Planning layou
   ];
   const data = { presetsVersion: 3, layouts: { "plan.cruise": structuredClone(original), "nav.cruise": structuredClone(original) } };
   upgrade(data);
-  assert.deepEqual(data.layouts["plan.cruise"].slice(2), original);
+  assert.deepEqual(data.layouts["plan.cruise"].slice(1), original);
   assert.deepEqual(data.layouts["nav.cruise"], original);
-  const arranged = [data.layouts["plan.cruise"][2], data.layouts["plan.cruise"][1], data.layouts["plan.cruise"][0], data.layouts["plan.cruise"][1]];
-  assert.deepEqual(clean(arranged, ITEMS).map((s) => s.kind), ["readings", "gribPoint", "weather"]);
+  const arranged = [data.layouts["plan.cruise"][1], { kind: "gribPoint" }, data.layouts["plan.cruise"][0], { kind: "weather" }, { kind: "gribPoint" }];
+  assert.deepEqual(clean(arranged, ITEMS).map((s) => s.kind), ["readings", "gribPoint", "weatherTime", "weather"]);
+});
+
+test("forecast time is added once beside existing weather without changing custom layouts", () => {
+  const data = { presetsVersion: 4, layouts: {
+    "plan.fish": [{ id: "mine", kind: "readings", items: ["SOG"] }, { id: "weather", kind: "weather" }, { id: "gribPoint", kind: "gribPoint" }],
+    "plan.race": [{ id: "mine", kind: "readings", items: ["SOG"] }],
+    "nav.fish": [{ id: "weather", kind: "weather" }],
+  } };
+  assert.equal(upgrade(data), true);
+  assert.deepEqual(data.layouts["plan.fish"].map((s) => s.kind), ["readings", "weatherTime"]);
+  assert.deepEqual(data.layouts["plan.race"].map((s) => s.kind), ["weatherTime", "readings"]);
+  assert.deepEqual(data.layouts["nav.fish"].map((s) => s.kind), ["weatherTime", "weather"]);
+  assert.equal(upgrade(data), false);
+});
+
+test("GRIB file controls move to the drawer without replacing custom sections", () => {
+  const data = { presetsVersion: 6, layouts: {
+    "plan.fish": [{ id: "mine", kind: "readings", items: ["SOG"], collapsed: true }, { id: "weather", kind: "weather" }, { id: "gribFiles", kind: "gribFiles" }, { id: "gribPoint", kind: "gribPoint" }],
+    "nav.fish": [{ id: "weather", kind: "weather" }, { id: "mine", kind: "readings", items: ["SOG"] }],
+    "plan.race": [{ id: "mine", kind: "readings", items: ["SOG"] }],
+    "plan.cruise": [{ id: "gribFiles", kind: "gribFiles" }, { id: "weather", kind: "weather" }],
+  } };
+  assert.equal(upgrade(data), true);
+  assert.deepEqual(data.layouts["plan.fish"].map((s) => s.kind), ["weatherTime", "readings"]);
+  assert.equal(data.layouts["plan.fish"][1].collapsed, true);
+  assert.deepEqual(data.layouts["nav.fish"].map((s) => s.kind), ["weather", "readings"]);
+  assert.deepEqual(data.layouts["plan.race"].map((s) => s.kind), ["weatherTime", "readings"]);
+  assert.deepEqual(data.layouts["plan.cruise"].map((s) => s.kind), ["weatherTime"]);
+  assert.equal(upgrade(data), false);
+});
+
+test("Planning migration keeps custom sections and leaves other views unchanged", () => {
+  const custom = { id: "mine", kind: "readings", items: ["SOG"], collapsed: true };
+  const time = { id: "weatherTime", kind: "weatherTime" };
+  const detailed = [{ id: "weather", kind: "weather" }, { id: "gribPoint", kind: "gribPoint" }];
+  const data = { presetsVersion: 7, layouts: {
+    "plan.fish": [custom, detailed[0], time, detailed[1]],
+    "plan.cruise": [custom],
+    "nav.fish": structuredClone(detailed),
+    "env.fish": structuredClone(detailed),
+  } };
+  assert.equal(upgrade(data), true);
+  assert.deepEqual(data.layouts["plan.fish"], [custom, time]);
+  assert.deepEqual(data.layouts["plan.cruise"], [{ id: "weatherTime", kind: "weatherTime", title: "Chart time" }, custom]);
+  assert.deepEqual(data.layouts["nav.fish"], detailed);
+  assert.deepEqual(data.layouts["env.fish"], detailed);
+  assert.equal(upgrade(data), false);
 });
 
 test("presets are fresh copies (editing one doesn't change the next)", () => {

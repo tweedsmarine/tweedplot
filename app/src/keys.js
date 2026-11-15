@@ -21,7 +21,7 @@ export const KEYS = [
   { group: "Views", keys: "F2", label: "Navigation view", run: (c) => c.views.set("nav") },
   { group: "Views", keys: "F3", label: "Planning view", run: (c) => c.views.set("plan") },
   { group: "Views", keys: "F4", label: "Instruments view", run: (c) => c.views.set("inst") },
-  { group: "Views", keys: "P", label: "Show or hide the panels (rail, drawers and dock)", btn: "tools-btn", run: click("tools-btn") },
+  { group: "Views", keys: "P", label: "Show or hide the rail and drawers", btn: "tools-btn", run: click("tools-btn") },
   { group: "Views", keys: "O", label: "Show the data panel beside the chart, or hide it to a line under the chart", btn: "side-btn", run: click("side-btn") },
   { group: "Views", keys: "Esc", label: "In the Instruments or Live data view: back to the view you came from", own: true },
   { group: "Views", keys: "F11", label: "Full screen", own: true },
@@ -52,7 +52,7 @@ export const KEYS = [
   { group: "Weather time", keys: "]", label: "Forward one step", run: (c) => c.weatherStep(1) },
   { group: "Weather time", keys: "Shift+[", label: "Back 6 hours", run: (c) => c.weatherHours(-6) },
   { group: "Weather time", keys: "Shift+]", label: "Forward 6 hours", run: (c) => c.weatherHours(6) },
-  { group: "Weather time", keys: "Home", label: "Now", run: click("wx-now") },
+  { group: "Weather time", keys: "Home", label: "Now", run: click("side-wx-now") },
 
   { group: "Marks and library", keys: "D", label: "Record own soundings on or off", btn: "pb-rec", map: true, run: click("pb-rec") },
   { group: "Marks and library", keys: "K", label: "Drop anchor, or weigh it when anchored (press twice)", btn: "anchor-btn", map: true, run: click("anchor-btn") },

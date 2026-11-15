@@ -21,8 +21,7 @@ export function setupVarDiagram(map, { getVariation, getAnnualChange }) {
 
   const svg = document.createElementNS(NS, "svg");
   svg.id = "vardiagram";
-  svg.hidden = true;
-  svg.style.cssText = "position:fixed;z-index:5;pointer-events:none;overflow:visible;touch-action:none;user-select:none";
+  svg.style.cssText = "display:none;position:fixed;z-index:5;pointer-events:none;overflow:visible;touch-action:none;user-select:none";
   const el = (name, attrs, parent = svg) => {
     const e = document.createElementNS(NS, name);
     for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
@@ -57,8 +56,8 @@ export function setupVarDiagram(map, { getVariation, getAnnualChange }) {
   }
 
   function draw() {
-    if (!state) { svg.hidden = true; return; }
-    svg.hidden = false;
+    if (!state) { svg.style.display = "none"; return; }
+    svg.style.display = "";
     clamp();
     const len = HEIGHT_MM * s52PxPerMm();
     const head = len * 0.14;
@@ -96,19 +95,20 @@ export function setupVarDiagram(map, { getVariation, getAnnualChange }) {
   // dragging
   let drag = null;
   svg.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0) return;
-    drag = { dx: state.x - e.clientX, dy: state.y - e.clientY };
+    if (e.button !== 0 || !state || drag) return;
+    drag = { id: e.pointerId, dx: state.x - e.clientX, dy: state.y - e.clientY };
     svg.setPointerCapture(e.pointerId);
     e.preventDefault();
   });
   svg.addEventListener("pointermove", (e) => {
-    if (!drag) return;
+    if (!drag || e.pointerId !== drag.id || !state) return;
     state.x = e.clientX + drag.dx; state.y = e.clientY + drag.dy;
     draw();
   });
-  const end = () => { if (drag) { drag = null; save(); } };
+  const end = (e) => { if (drag?.id === e.pointerId) { drag = null; save(); } };
   svg.addEventListener("pointerup", end);
   svg.addEventListener("pointercancel", end);
+  svg.addEventListener("lostpointercapture", end);
 
   // a right-click on it goes to the chart's menu (to remove it); `over` says it was on the diagram
   let over = false;
@@ -117,8 +117,9 @@ export function setupVarDiagram(map, { getVariation, getAnnualChange }) {
     const rect = map.getContainer().getBoundingClientRect();
     const point = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     over = true;
-    map.fire("contextmenu", { originalEvent: e, point, lngLat: map.unproject([point.x, point.y]) });
-    over = false;
+    try {
+      map.fire("contextmenu", { originalEvent: e, point, lngLat: map.unproject([point.x, point.y]) });
+    } finally { over = false; }
   });
 
   // fixed on the screen, but the chart under it changes: redraw (it turns with the chart, and its variation follows the chart)
@@ -138,7 +139,12 @@ export function setupVarDiagram(map, { getVariation, getAnnualChange }) {
     },
     /** Whether the right-click being handled is on the diagram. */
     hit: () => over,
-    remove() { state = null; save(); draw(); },
+    remove() {
+      const pointerId = drag?.id;
+      drag = null;
+      if (pointerId != null && svg.hasPointerCapture(pointerId)) svg.releasePointerCapture(pointerId);
+      state = null; save(); draw();
+    },
     shown: () => !!state,
     refresh: draw,
   };
