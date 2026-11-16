@@ -22,7 +22,7 @@ const EXTRAS = [
 ];
 
 export function setupRouteWeather(map, { weather, routing, course, dock }) {
-  let opts = { speed: 6, departure: null, wind: true, waves: true, extras: [] };
+  let opts = { speed: 6, departure: null, wind: true, waves: true, extras: [], settings: false };
   try { Object.assign(opts, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
   if (!Number.isFinite(opts.speed) || opts.speed < 0.5 || opts.speed > 40) opts.speed = 6;
   if (!Number.isFinite(opts.departure) || opts.departure <= 0) opts.departure = null;
@@ -151,7 +151,15 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
         sp.oninput = () => sp.setCustomValidity("");
         context.append(departure, speed, apply);
       }
-      body.append(context);
+      // the settings and details fold away so the plots have the dock; what matters shows on the summary line
+      const set = document.createElement("details");
+      set.className = "rw-settings";
+      set.open = !!opts.settings;
+      set.ontoggle = () => { if (opts.settings !== set.open) { opts.settings = set.open; save(); } };
+      const sum = document.createElement("summary");
+      sum.textContent = "Settings and details";
+      set.append(sum, context);
+      body.append(set);
       if (active?.length > 1 && routing.activeStale()) {
         const warning = document.createElement("div");
         warning.className = "rw-status";
@@ -162,7 +170,7 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
       source.className = "rw-source wx-note";
       const sources = data?.sources ?? weather.sources();
       source.textContent = sources.length ? `Forecast sources (shown file first): ${sources.slice().sort((a, b) => Number(b.path === (data?.path ?? weather.current().path)) - Number(a.path === (data?.path ?? weather.current().path))).map((s) => `${s.name}${s.ref ? ` · run ${runTime(s.ref)}` : " · run time unavailable"}`).join("; ")}` : "No forecast loaded.";
-      body.append(source);
+      set.append(source);
       if (state.status !== "ready") {
         const status = document.createElement("div");
         status.className = `rw-status${state.status === "error" ? " error" : ""}`;
@@ -195,7 +203,7 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
       };
       pick.append(box("Wind", opts.wind, (v) => (opts.wind = v)), box("Waves", opts.waves, (v) => (opts.waves = v)));
       for (const x of EXTRAS) pick.append(box(x.label, opts.extras.includes(x.key), (v) => { opts.extras = v ? [...new Set([...opts.extras, x.key])] : opts.extras.filter((k) => k !== x.key); }));
-      body.append(pick);
+      set.append(pick);
       const r0 = data.rows[0], r1 = data.rows.at(-1);
       const head = document.createElement("div");
       head.className = "mg-head";
@@ -204,7 +212,8 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
         : `Along the course at ${data.kn} kn from ${fmt(r0.t)}: ${r1.nm.toFixed(0)} NM, ${hm(r1.t - r0.t)}`;
       const lastWith = data.rows.findLast((r) => ["tws", "gust", "wave", "mslp", "temp", "rain", "cape", "sst"].some((k) => r[k] != null) || r.cur?.kn != null);
       if (lastWith && lastWith !== r1) head.textContent += ` · The forecast ends ${fmt(lastWith.t)}, ${lastWith.nm.toFixed(0)} NM along: the last ${(r1.nm - lastWith.nm).toFixed(0)} NM have no forecast`;
-      body.append(head);
+      set.append(head);
+      sum.textContent = `Settings and details · ${data.from === "routing" ? data.name : `${data.kn} kn from ${fmt(r0.t)}`} · ${r1.nm.toFixed(0)} NM · ${[...(opts.wind ? ["Wind"] : []), ...(opts.waves ? ["Waves"] : []), ...EXTRAS.filter((x) => opts.extras.includes(x.key)).map((x) => x.label)].join(", ") || "no plots"}`;
       const strips = [];
       if (opts.wind) strips.push({ key: "wind", title: "Wind kn (gusts dashed) · direction", h: 120 });
       if (opts.waves) strips.push({ key: "waves", title: "Waves Hs m · Tp s · direction", h: 90 });

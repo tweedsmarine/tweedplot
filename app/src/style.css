@@ -2116,3 +2116,7 @@ svg.mg .mg-marks { pointer-events: none; }
 svg.mg { cursor: ew-resize; }
 
 .dock-body { scrollbar-gutter: stable; }
+
+.rw-settings { margin: 2px 0 4px; border-bottom: 1px solid var(--line); }
+.rw-settings > summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--quiet); padding: 4px 0; list-style-position: inside; }
+.rw-settings[open] > summary { color: var(--ink); }
