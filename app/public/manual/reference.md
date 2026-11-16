@@ -154,6 +154,7 @@ From top to bottom:
 | {icon:wxpanel} | **Weather** | Opens the weather controls in the data panel (see Weather and tides) |
 | {icon:view-nav} {icon:view-plan} {icon:view-inst} | **View** | Lists Navigation, Planning and Instruments and **Show the chart in this view**. The icon shows the view you are in (also **F2**, **F3**, **F4**) |
 In the Instruments view, three buttons at the top right (Navigation, Planning, Environment) return you to those views. In Environment the chart background (depth shading) is switched off while weather is shaded, so the colours are true; the key always shows the same bands as the chart, with round numbers when a filter is set.
+With no GRIB loaded, the chart-time slider, transport buttons, Weather on route and the compare controls are hidden. A new information window opens beside any already open instead of over it.
 | {icon:side} | **Data panel** | Shows the data panel beside the chart, or hides it to a line under the chart (also **O**) |
 | {icon:panels} | **Panels** | Shows or hides the rail and drawers in this view (also **P**). The dock remains independent |
 | {icon:day} {icon:night} | **Colours** | Steps through day, dusk, night (IHO), night red and night green (also **N**). Right-click it (or hold it on a touch screen) for all five and the brightness at once |

@@ -730,6 +730,7 @@ export function setupWeather(map, layers) {
     slider.disabled = !times.length;
     $("side-wx-when").textContent = times.length ? fmt(t) : "—";
     $("side-wx-source").textContent = display ? `Shown GRIB: ${loaded.get(display)?.name ?? display}` : "No GRIB loaded";
+    document.getElementById("side")?.classList.toggle("no-grib", !loaded.size); // nothing to step through, time or compare
     $("side-wx-start").disabled = !span;
     $("side-wx-end").disabled = !span;
     $("side-wx-now").disabled = !times.length;

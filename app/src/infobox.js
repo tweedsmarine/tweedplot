@@ -42,6 +42,24 @@ export function createInfoBox(map, kind, { title = "", width = 340, height = 320
     el.style.top = `${r.top + Math.max(4, Math.min(r.height - h - 4, st.y ?? 70))}px`;
   }
 
+  /** A box opening over another open box moves aside (to its right, else left, else below) so neither hides the other.
+   *  Only this showing is moved: the position it was dragged to is kept. */
+  function clear() {
+    const r = area();
+    const others = [...boxes].filter((x) => x !== api && x.el && !x.el.hidden).map((x) => x.el.getBoundingClientRect());
+    for (let pass = 0; pass < others.length + 1; pass++) {
+      const me = el.getBoundingClientRect();
+      const hit = others.find((o) => me.left < o.right && me.right > o.left && me.top < o.bottom && me.bottom > o.top);
+      if (!hit) return;
+      const gap = 8;
+      let left = hit.right + gap, top = me.top;
+      if (left + me.width > r.right - 4) left = hit.left - gap - me.width;
+      if (left < r.left + 4) { left = Math.max(r.left + 4, Math.min(me.left, r.right - me.width - 4)); top = hit.bottom + gap; }
+      if (top + me.height > r.bottom - 4) top = Math.max(r.top + 4, r.bottom - 4 - me.height);
+      el.style.left = `${left}px`; el.style.top = `${top}px`;
+    }
+  }
+
   // first time: beside the point (not on it), on the side with room
   function besidePoint(at) {
     if (st.x != null || !at) return;
@@ -98,6 +116,7 @@ export function createInfoBox(map, kind, { title = "", width = 340, height = 320
   const api = {
     element: el,
     body,
+    el,
     get isOpen() { return !el.hidden; },
     open(content, { title: t = title, at = null, onClose: oc = null } = {}) {
       const was = !el.hidden;
@@ -108,6 +127,7 @@ export function createInfoBox(map, kind, { title = "", width = 340, height = 320
       besidePoint(at);
       el.hidden = false;
       place();
+      if (!was) clear();
       mark(at);
       onClose = oc;
       boxes.add(api);
