@@ -22,7 +22,7 @@ const EXTRAS = [
 ];
 
 export function setupRouteWeather(map, { weather, routing, course, dock }) {
-  let opts = { speed: 6, departure: null, wind: true, waves: true, extras: [], settings: false, layout: "below" };
+  let opts = { speed: 6, departure: null, wind: true, waves: true, extras: [], settings: false, layout: "below", fast: false };
   try { Object.assign(opts, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
   if (!Number.isFinite(opts.speed) || opts.speed < 0.5 || opts.speed > 40) opts.speed = 6;
   if (!Number.isFinite(opts.departure) || opts.departure <= 0) opts.departure = null;
@@ -297,12 +297,20 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
       play.onclick = () => {
         if (playTimer) { halt(); return; }
         if (selected >= data.rows.length - 1) selected = -1; // at the end: start again
+        startPlay();
+        playLabel();
+      };
+      const startPlay = () => {
+        clearInterval(playTimer);
         playTimer = setInterval(() => {
           if (selected >= data.rows.length - 1) { halt(); return; }
           update(selected + 1);
-        }, 350);
-        playLabel();
+        }, opts.fast ? 175 : 350);
       };
+      const speed = document.createElement("button");
+      speed.textContent = opts.fast ? "2×" : "1×";
+      speed.title = "Play speed: press for twice as fast (2×) or normal (1×)";
+      speed.onclick = () => { opts.fast = !opts.fast; save(); speed.textContent = opts.fast ? "2×" : "1×"; if (playTimer) startPlay(); };
       nowBtn.textContent = "Now";
       const nowT = Date.now() / 1000;
       nowBtn.disabled = !(nowT >= data.rows[0].t && nowT <= data.rows.at(-1).t);
@@ -315,7 +323,7 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
       previous.onclick = () => { halt(); update(selected < 0 ? 0 : selected - 1); };
       next.onclick = () => { halt(); update(selected < 0 ? 0 : selected + 1); };
       handlers.pick = (r) => { halt(); update(data.rows.indexOf(r), true, true); };
-      inspect.append(readout, previous, play, next, nowBtn);
+      inspect.append(readout, previous, play, speed, next, nowBtn);
       body.append(inspect); // measured with its readout and buttons, so the plots take all the rest
       const below = inspect.offsetHeight + 8;
       const make = (H) => (beside

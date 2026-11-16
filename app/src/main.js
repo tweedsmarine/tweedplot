@@ -1131,7 +1131,8 @@ function moveBoatDrag(e) {
   const c = map.getCanvas();
   const clamp = (v) => Math.min(0.45, Math.max(-0.45, v));
   followFrac = [clamp(e.point.x / c.clientWidth - 0.5), clamp(e.point.y / c.clientHeight - 0.5)];
-  map.jumpTo({ center: lastBoat, offset: followOffset() });
+  // easeTo, not jumpTo: jumpTo has no offset, so the boat went to the middle of the chart while it was held
+  map.easeTo({ center: lastBoat, offset: followOffset(), duration: 0 });
 }
 function endBoatDrag() {
   if (!boatDrag) return;
