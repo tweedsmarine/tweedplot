@@ -82,6 +82,8 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
         kn: opts.speed, rows, sources, path: current.path };
     });
   }
+  let playTimer = 0; // Play on the dock: steps along the route's forecast points
+  const stopPlay = () => { clearInterval(playTimer); playTimer = 0; };
   let follow = null, internal = false; // follow(t): move the graph's cursor to a chart time set elsewhere
   weather.onChange(() => { if (follow && dock.current() === "routewx") follow(weather.current().t); });
   const later = () => {
@@ -89,7 +91,7 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
     invalidate();
     timer = setTimeout(refetch, 300);
   };
-  dock.onChange((cur) => { syncSideButton(cur); if (cur !== "routewx") invalidate("empty"); else refetch(); });
+  dock.onChange((cur) => { if (cur !== "routewx") stopPlay(); syncSideButton(cur); if (cur !== "routewx") invalidate("empty"); else refetch(); });
   weather.onLoaded(later);
   weather.onChange(() => { const path = weather.current().path; if (path !== lastPath) { lastPath = path; later(); } });
   routing.onDraw?.(later);
@@ -104,6 +106,7 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
     render(body, tools) {
       const beside = opts.layout === "beside";
       follow = null;
+      stopPlay();
       if (tools) {
         const lay = document.createElement("button");
         lay.textContent = beside ? "Plots below" : "Plots beside";
@@ -287,9 +290,32 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
       const handlers = { pick: (r) => update(data.rows.indexOf(r), true, true), release: flush };
       // what is already above the plots (settings, warnings) and the readout row below take their room from the height
       const above = [...body.children].reduce((a, c) => a + c.offsetHeight + 6, 0);
-      previous.onclick = () => update(selected < 0 ? 0 : selected - 1);
-      next.onclick = () => update(selected < 0 ? 0 : selected + 1);
-      inspect.append(readout, previous, next);
+      const play = document.createElement("button"), nowBtn = document.createElement("button");
+      const playLabel = () => { play.textContent = playTimer ? "❚❚ Pause" : "▶ Play"; };
+      const halt = () => { stopPlay(); playLabel(); };
+      play.title = "Step along the route's forecast points, moving the chart time with them"; playLabel();
+      play.onclick = () => {
+        if (playTimer) { halt(); return; }
+        if (selected >= data.rows.length - 1) selected = -1; // at the end: start again
+        playTimer = setInterval(() => {
+          if (selected >= data.rows.length - 1) { halt(); return; }
+          update(selected + 1);
+        }, 350);
+        playLabel();
+      };
+      nowBtn.textContent = "Now";
+      const nowT = Date.now() / 1000;
+      nowBtn.disabled = !(nowT >= data.rows[0].t && nowT <= data.rows.at(-1).t);
+      nowBtn.title = nowBtn.disabled ? "The real time now is outside this route's times" : "Go to the point on the route where the boat is at the real time now";
+      nowBtn.onclick = () => {
+        const t = Date.now() / 1000;
+        if (!(t >= data.rows[0].t && t <= data.rows.at(-1).t)) return;
+        halt(); update(data.rows.reduce((b, r, k) => (Math.abs(r.t - t) < Math.abs(data.rows[b].t - t) ? k : b), 0));
+      };
+      previous.onclick = () => { halt(); update(selected < 0 ? 0 : selected - 1); };
+      next.onclick = () => { halt(); update(selected < 0 ? 0 : selected + 1); };
+      handlers.pick = (r) => { halt(); update(data.rows.indexOf(r), true, true); };
+      inspect.append(readout, previous, play, next, nowBtn);
       body.append(inspect); // measured with its readout and buttons, so the plots take all the rest
       const below = inspect.offsetHeight + 8;
       const make = (H) => (beside
