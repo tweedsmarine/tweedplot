@@ -152,7 +152,7 @@ test("view controls and chart positions stay in sync, including the Planning tim
 
 test("the dock can open and close while the rail and drawers remain hidden", () => {
   const classes = new Set(["no-tools"]);
-  const root = { classList: { contains: (name) => classes.has(name) }, style: { setProperty(name, value) { this[name] = value; } } };
+  const root = { classList: { contains: (name) => classes.has(name), toggle() {} }, style: { setProperty(name, value) { this[name] = value; } } };
   const bodyClasses = new Set();
   const body = { classList: { toggle(name, on) { if (on) bodyClasses.add(name); else bodyClasses.delete(name); } } };
   const parts = Object.fromEntries([".dock-tabs", ".dock-tools", ".dock-body", ".dock-close", ".dock-grip"].map((name) => [name, new Element()]));

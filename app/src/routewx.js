@@ -22,7 +22,7 @@ const EXTRAS = [
 ];
 
 export function setupRouteWeather(map, { weather, routing, course, dock }) {
-  let opts = { speed: 6, departure: null, wind: true, waves: true, extras: [], settings: false };
+  let opts = { speed: 6, departure: null, wind: true, waves: true, extras: [], settings: false, layout: "below" };
   try { Object.assign(opts, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
   if (!Number.isFinite(opts.speed) || opts.speed < 0.5 || opts.speed > 40) opts.speed = 6;
   if (!Number.isFinite(opts.departure) || opts.departure <= 0) opts.departure = null;
@@ -97,12 +97,25 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
 
   dock.register("routewx", {
     title: "Weather on route",
-    render(body) {
+    // beside the chart, the plots turn to run down the screen (for routes that run north-south): the dock
+    // moves to the chart's right side, wide enough for a column per plot
+    placement: () => (opts.layout === "beside"
+      ? { side: "right", width: 110 + 190 * ((opts.wind ? 1 : 0) + (opts.waves ? 1 : 0) + opts.extras.length) } : { side: "bottom" }),
+    render(body, tools) {
+      const beside = opts.layout === "beside";
       follow = null;
+      if (tools) {
+        const lay = document.createElement("button");
+        lay.textContent = beside ? "Plots below" : "Plots beside";
+        lay.title = beside ? "Put the plots under the chart, time running left to right" : "Put the plots beside the chart, time running down the screen: best for a route that runs north-south";
+        lay.onclick = () => { opts.layout = beside ? "below" : "beside"; save(); dock.show("routewx"); };
+        tools.append(lay);
+      }
       if (!body._rwObs) {
         body._rwObs = new ResizeObserver(() => {
           const w = body.clientWidth;
-          if (body._rwW != null && Math.abs(w - body._rwW) > 8) { body._rwW = w; dock.refresh("routewx"); }
+          const h = body.clientHeight;
+          if (body._rwW != null && (Math.abs(w - body._rwW) > 8 || (opts.layout === "beside" && Math.abs(h - (body._rwH ?? h)) > 8))) { body._rwW = w; body._rwH = h; dock.refresh("routewx"); }
         });
         body._rwObs.observe(body);
       }
@@ -256,15 +269,17 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
           else if (inRange) { pending = r; clearTimeout(timer); timer = setTimeout(flush, 150); }
         }
         const noValues = fields.length && fields.every((f) => r[f.key] == null);
-        readout.textContent = `Inspecting: ${describe(r)}${noValues ? " · No selected forecast data at this point" : ""}${used.length ? ` · Sources: ${used.join(", ")}` : ""}${note}`;
+        readout.textContent = `Inspecting: ${describe(r)}${noValues ? " · No selected forecast data at this point" : ""}${used.length && !beside ? ` · Sources: ${used.join(", ")}` : ""}${note}`;
         previous.disabled = selected === 0; next.disabled = selected === data.rows.length - 1;
         svg.cursor(r.t);
       };
-      body._rwW = body.clientWidth;
-      const svg = draw(data.rows, strips, Math.max(520, body.clientWidth - 20), {
-        pick: (r) => update(data.rows.indexOf(r), true, true),
-        release: flush,
-      });
+      body._rwW = body.clientWidth; body._rwH = body.clientHeight;
+      const handlers = { pick: (r) => update(data.rows.indexOf(r), true, true), release: flush };
+      // what is already above the plots (settings, warnings) and the readout row below take their room from the height
+      const above = [...body.children].reduce((a, c) => a + c.offsetHeight + 6, 0);
+      const svg = beside
+        ? drawV(data.rows, strips, Math.max(300, body.clientWidth - 20), Math.max(320, body.clientHeight - above - 150), handlers)
+        : draw(data.rows, strips, Math.max(520, body.clientWidth - 20), handlers);
       previous.onclick = () => update(selected < 0 ? 0 : selected - 1);
       next.onclick = () => update(selected < 0 ? 0 : selected + 1);
       inspect.append(readout, previous, next);
@@ -303,6 +318,16 @@ function describe(r) {
 }
 
 /** The strips as SVG over time, with distance marked along the bottom. */
+/** The route's course at a forecast point (towards the next one), degrees true; null when it does not move. */
+function courseAt(rows, i) {
+  const [a, b] = i < rows.length - 1 ? [rows[i], rows[i + 1]] : [rows[i - 1], rows[i]];
+  if (!a || !b || (a.lat === b.lat && a.lon === b.lon)) return null;
+  const R = Math.PI / 180, dl = (b.lon - a.lon) * R;
+  const y = Math.sin(dl) * Math.cos(b.lat * R), x = Math.cos(a.lat * R) * Math.sin(b.lat * R) - Math.sin(a.lat * R) * Math.cos(b.lat * R) * Math.cos(dl);
+  return (Math.atan2(y, x) / R + 360) % 360;
+}
+const crs3 = (c) => (c == null ? "" : `${String(Math.round(c) % 360).padStart(3, "0")}°`);
+
 function draw(rows, strips, W, { pick, release }) {
   const pad = { l: 46, r: 40 };
   const gap = 20, top = 16, axisH = 34;
@@ -426,7 +451,7 @@ function draw(rows, strips, W, { pick, release }) {
   for (let t = first; t <= t1; t += lab) {
     add("text", { x: x(t), y: y0 - gap + 14, class: "mg-tick", "text-anchor": "middle" }).textContent = label(t);
     const r = rows.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a));
-    add("text", { x: x(t), y: y0 - gap + 27, class: "mg-tick", "text-anchor": "middle" }).textContent = `${r.nm.toFixed(0)} NM`;
+    add("text", { x: x(t), y: y0 - gap + 27, class: "mg-tick", "text-anchor": "middle" }).textContent = `${r.nm.toFixed(0)} NM · ${crs3(courseAt(rows, rows.indexOf(r)))}`.replace(/ · $/, "");
   }
   const cur = add("line", { x1: 0, x2: 0, y1: top, y2: y0 - gap, class: "mg-cursor" });
   const marks = add("g", { class: "mg-marks" }); // a dot and a value where the cursor crosses each plot
@@ -481,6 +506,181 @@ function draw(rows, strips, W, { pick, release }) {
         for (let i = g.length - 1; i >= 0; i--) { g[i].y = Math.min(g[i].y, i < g.length - 1 ? g[i + 1].y - 13 : hi); }
       }
       for (const l of shown) add("text", { x: l.right ? cx + 8 : cx - 8, y: l.y, class: "mg-val", fill: l.sr.col, "text-anchor": l.right ? "start" : "end" }, marks).textContent = l.txt;
+    },
+  };
+}
+
+/** The same plots turned to run down the screen: time (and the route with it) from top to bottom, one column per plot.
+ *  For a route that runs north-south, beside the chart. Returns the same { el, cursor } as draw(). */
+function drawV(rows, strips, W, H, { pick, release }) {
+  const padL = 88, padR = 10, padT = 46, padB = 14, gap = 16, arrowCol = 18;
+  const Hp = Math.max(120, H - padT - padB);
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("width", W); svg.setAttribute("height", H);
+  svg.classList.add("mg", "mg-v");
+  const add = (tag, attrs, parent = svg) => {
+    const e = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    parent.append(e);
+    return e;
+  };
+  const hasData = (r) => ["tws", "gust", "wave", "mslp", "temp", "rain", "cape", "sst"].some((k) => r[k] != null) || r.cur?.kn != null;
+  const lastWith = rows.findLast(hasData) ?? rows.at(-1);
+  const t0 = rows[0].t, t1 = Math.max(lastWith.t, t0 + 600);
+  const y = (t) => padT + ((t - t0) / (t1 - t0)) * Hp;
+  const val = (r, k) => (k === "cur" ? r.cur?.kn ?? null : r[k] ?? null);
+  const n = Math.max(1, strips.length);
+  const sw = (W - padL - padR - gap * (n - 1)) / n;
+  const arrows = (g, x0, key, col) => {
+    let lastY = -1e9;
+    for (const r of rows) {
+      const d = r[key];
+      if (d == null || y(r.t) - lastY < 26) continue;
+      lastY = y(r.t);
+      const a = ((d + 180) % 360) * Math.PI / 180, cy = y(r.t), cx = x0 + 9, L = 7;
+      const dx = Math.sin(a) * L, dy = -Math.cos(a) * L;
+      add("line", { x1: cx - dx, y1: cy - dy, x2: cx + dx, y2: cy + dy, stroke: col, "stroke-width": 1.6 }, g);
+      add("circle", { cx: cx + dx, cy: cy + dy, r: 1.8, fill: col }, g);
+    }
+  };
+  const series = [];
+  const bands = [];
+  strips.forEach((st, i) => {
+    const x0 = padL + i * (sw + gap);
+    bands.push({ x0, w: sw });
+    const g = add("g", {});
+    add("rect", { x: x0, y: padT, width: sw, height: Hp, class: "mg-bg" }, g);
+    const title = st.key === "wind" ? "Wind kn (gust dashed)" : st.key === "waves" ? "Waves Hs m · Tp s" : st.title;
+    add("text", { x: x0, y: 11, class: "mg-title" }, g).textContent = title;
+    const keys = st.key === "wind" ? ["tws", "gust"] : st.key === "waves" ? ["wave"] : [st.key];
+    const vs = rows.flatMap((r) => keys.map((k) => val(r, k))).filter((v) => v != null);
+    if (!vs.length) { add("text", { x: x0 + 6, y: padT + 18, class: "mg-tick" }, g).textContent = "not in the loaded GRIBs"; return; }
+    let lo = ["mslp", "temp", "sst"].includes(st.key) ? Math.min(...vs) : 0, hi = Math.max(...vs);
+    const raw = (hi - lo) / 3 || 1, p10 = 10 ** Math.floor(Math.log10(raw));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * p10).find((q) => q >= raw);
+    lo = Math.floor(lo / step) * step;
+    hi = Math.max(lo + step, Math.ceil(hi / step) * step);
+    const left = st.key === "wind" || st.key === "waves" ? arrowCol : 0; // room for the arrows
+    const xv = (v) => x0 + left + ((v - lo) / (hi - lo)) * (sw - left - 4);
+    for (let v = lo; v <= hi + 1e-9; v += step) {
+      add("line", { x1: xv(v), x2: xv(v), y1: padT, y2: padT + Hp, class: "mg-grid" }, g);
+      add("text", { x: xv(v), y: padT - 5, class: "mg-tick", "text-anchor": "middle" }, g).textContent = String(+v.toFixed(2));
+    }
+    const path = (k, fx = xv) => {
+      let d = "", pen = false;
+      for (const r of rows) {
+        const v = val(r, k);
+        if (v == null) { pen = false; continue; }
+        d += `${pen ? "L" : "M"}${fx(v).toFixed(1)},${y(r.t).toFixed(1)}`;
+        pen = true;
+      }
+      return d;
+    };
+    const reg = (key, col, unit, fx = xv, above = true) => series.push({ key, xv: fx, col, unit, above, x0, w: sw });
+    if (st.key === "wind") {
+      reg("gust", "#c0392b", "kn"); reg("tws", "#006994", "kn", xv, false);
+      add("path", { d: path("gust"), stroke: "#c0392b", fill: "none", "stroke-width": 1.2, "stroke-dasharray": "4 3" }, g);
+      add("path", { d: path("tws"), stroke: "#006994", fill: "none", "stroke-width": 2 }, g);
+      arrows(g, x0, "twd", "#00274d");
+    } else if (st.key === "waves") {
+      reg("wave", "#2a62c9", "m");
+      add("path", { d: path("wave"), stroke: "#2a62c9", fill: "none", "stroke-width": 2 }, g);
+      const ps = rows.map((r) => r.period).filter((v) => v != null);
+      if (ps.length) {
+        const ph = Math.max(4, Math.ceil(Math.max(...ps) / 4) * 4);
+        const xp = (v) => x0 + left + (v / ph) * (sw - left - 4);
+        reg("period", "#5d6b75", "s", xp, false);
+        add("path", { d: path("period", xp), stroke: "#8a96a0", fill: "none", "stroke-width": 1.3, "stroke-dasharray": "2 2" }, g);
+        for (const v of [0, ph / 2, ph]) add("text", { x: xp(v), y: padT - 17, class: "mg-tick", "text-anchor": "middle", fill: "#5d6b75" }, g).textContent = `${v} s`;
+      }
+      arrows(g, x0, "wavedir", "#2a62c9");
+    } else if (st.bars) {
+      reg(st.key, st.col, st.unit ?? "");
+      const bh = Math.max(1, Hp / rows.length - 0.5);
+      for (const r of rows) {
+        const v = val(r, st.key);
+        if (!v) continue;
+        add("rect", { x: xv(lo), y: y(r.t) - bh / 2, width: xv(v) - xv(lo), height: bh, fill: st.col, opacity: 0.7 }, g);
+      }
+    } else {
+      reg(st.key, st.col, st.unit ?? "");
+      add("path", { d: path(st.key), stroke: st.col, fill: "none", "stroke-width": 1.8 }, g);
+    }
+  });
+  // time down the left (local days and hours), with the distance along the route and its course
+  const span = t1 - t0;
+  const minor = span > 5 * 86400 ? 21600 : span > 36 * 3600 ? 10800 : 3600;
+  for (let t = Math.ceil(t0 / minor) * minor; t <= t1; t += minor) for (const b of bands) add("line", { x1: b.x0, x2: b.x0 + b.w, y1: y(t), y2: y(t), class: "mg-vgrid" });
+  const off = -new Date(t0 * 1000).getTimezoneOffset() * 60;
+  const fits = (sec) => (sec / span) * Hp >= 50;
+  const lab = [3600, 10800, 21600, 43200, 86400, 2 * 86400, 4 * 86400, 7 * 86400].find(fits) ?? 7 * 86400;
+  const label = (t) => {
+    const d = new Date(t * 1000);
+    if (lab >= 86400 || (((t + off) % 86400) + 86400) % 86400 === 0) return d.toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "short" });
+    return d.toLocaleTimeString("en-NZ", { hour: "2-digit", minute: "2-digit", hour12: false });
+  };
+  const first = Math.ceil((t0 + off) / Math.min(lab, 86400)) * Math.min(lab, 86400) - off;
+  for (let t = first; t <= t1; t += lab) {
+    const yy = y(t);
+    add("line", { x1: padL - 8, x2: padL, y1: yy, y2: yy, class: "mg-vgrid", stroke: "#8a96a0" });
+    add("text", { x: padL - 10, y: yy + 4, class: "mg-tick", "text-anchor": "end" }).textContent = label(t);
+    const i = rows.reduce((b, r, k) => (Math.abs(r.t - t) < Math.abs(rows[b].t - t) ? k : b), 0);
+    const c = courseAt(rows, i);
+    add("text", { x: padL - 10, y: yy + 16, class: "mg-tick", "text-anchor": "end" }).textContent = `${rows[i].nm.toFixed(0)} NM`;
+    if (c != null) {
+      const gg = add("g", { transform: `translate(${padL - 14},${yy + 27}) rotate(${c.toFixed(0)})` });
+      add("path", { d: "M0,-5 L3,2 L0,0 L-3,2 Z", fill: "#5d6b75" }, gg);
+      add("text", { x: padL - 24, y: yy + 30, class: "mg-tick", "text-anchor": "end" }).textContent = crs3(c);
+    }
+  }
+  const cur = add("line", { x1: padL - 4, x2: W - padR, y1: 0, y2: 0, class: "mg-cursor" });
+  const marks = add("g", { class: "mg-marks" });
+  const at = (e) => t0 + ((e.clientY - svg.getBoundingClientRect().top - padT) / Hp) * (t1 - t0);
+  const nearest = (t) => rows.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a));
+  let last = null;
+  const follow = (e) => {
+    const r = nearest(Math.max(t0, Math.min(t1, at(e))));
+    if (r !== last) { last = r; pick(r); }
+  };
+  svg.style.touchAction = "none";
+  svg.addEventListener("pointerdown", (e) => {
+    if (e.button > 0) return;
+    const r = svg.getBoundingClientRect();
+    if (e.clientX - r.left < padL - 6 || e.clientX - r.left > W - padR + 6 || e.clientY - r.top < padT - 6) return;
+    svg.setPointerCapture?.(e.pointerId);
+    last = null; follow(e);
+    const move = (ev) => follow(ev);
+    const up = () => { release?.(); svg.removeEventListener("pointermove", move); svg.removeEventListener("pointerup", up); svg.removeEventListener("pointercancel", up); };
+    svg.addEventListener("pointermove", move); svg.addEventListener("pointerup", up); svg.addEventListener("pointercancel", up);
+    e.preventDefault();
+  });
+  return {
+    el: svg,
+    cursor(t) {
+      const show = t != null && t >= t0 && t <= t1;
+      cur.style.display = show ? "" : "none";
+      marks.replaceChildren();
+      if (!show) return;
+      const cy = y(t);
+      cur.setAttribute("y1", cy); cur.setAttribute("y2", cy);
+      const r = nearest(t);
+      const shown = [];
+      for (const sr of series) {
+        const v = val(r, sr.key);
+        if (v == null) continue;
+        const cx = sr.xv(v);
+        add("circle", { cx, cy, r: 3.5, fill: sr.col, stroke: "#fff", "stroke-width": 1.2 }, marks);
+        const txt = `${+v.toFixed(Math.abs(v) < 10 ? 1 : 0)}${sr.unit ? ` ${sr.unit}` : ""}`;
+        const right = cx + 12 + txt.length * 6.2 < sr.x0 + sr.w;
+        shown.push({ sr, txt, right, cx, y: cy + (sr.above ? -7 : 14) });
+      }
+      // values in one plot keep 13 px apart, within the plot
+      for (const sid of new Set(shown.map((l) => l.sr.x0))) {
+        const g = shown.filter((l) => l.sr.x0 === sid).sort((p, q) => p.y - q.y);
+        g.forEach((l, i) => { l.y = Math.max(padT + 11, i ? Math.max(l.y, g[i - 1].y + 13) : l.y); });
+        for (let i = g.length - 1; i >= 0; i--) g[i].y = Math.min(g[i].y, i < g.length - 1 ? g[i + 1].y - 13 : padT + Hp - 3);
+      }
+      for (const l of shown) add("text", { x: l.right ? l.cx + 8 : l.cx - 8, y: l.y, class: "mg-val", fill: l.sr.col, "text-anchor": l.right ? "start" : "end" }, marks).textContent = l.txt;
     },
   };
 }

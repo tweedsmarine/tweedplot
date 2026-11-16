@@ -45,7 +45,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; color: var(--ink); backg
 body {
   --tb-w: 60px; --drawer-x: 0px; --side-lx: 0px; --side-rx: 0px; --strip-h: 0px;
   --chart-l: calc(var(--rail-w) + var(--drawer-x) + var(--side-lx) + var(--tb-w));
-  --chart-r: var(--side-rx);
+  --chart-r: calc(var(--side-rx) + var(--dock-w, 0px));
   --chart-b: calc(var(--dock-h, 0px) + var(--strip-h));
 }
 body.drawer-open { --drawer-x: var(--drawer-w); }
@@ -2120,3 +2120,12 @@ svg.mg { cursor: ew-resize; }
 .rw-settings { margin: 2px 0 4px; border-bottom: 1px solid var(--line); }
 .rw-settings > summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--quiet); padding: 4px 0; list-style-position: inside; }
 .rw-settings[open] > summary { color: var(--ink); }
+
+/* the dock beside the chart (Weather on route with the plots running down the screen) */
+:root { --dock-w: 0px; }
+html.dock-right #dock { left: auto; top: 0; bottom: var(--strip-h); right: var(--side-rx); box-shadow: -2px 0 8px rgba(0, 0, 0, 0.2); }
+html.dock-right .dock-grip { position: absolute; left: 0; top: 0; bottom: 0; width: 6px; height: auto; cursor: ew-resize; z-index: 1; }
+html.side-narrow.weather-focus:not(.side-left) #dock { right: var(--side-w); }
+html.dock-right #dock header { flex-wrap: wrap; padding-top: 4px; }
+html.dock-right .dock-tabs { flex-wrap: wrap; flex-basis: 100%; }
+html.dock-right .dock-tools { margin-left: 0; }
