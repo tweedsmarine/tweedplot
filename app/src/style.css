@@ -2010,3 +2010,52 @@ html.side-strip body:has(.ss-alerts .alarm:not(.warn):not(.acked):not(.summary))
 .gf-acts .gf-update { border-color: #ffb74d; color: #ffb74d; }
 .gf-tools { flex-wrap: wrap; }
 .gf-tools select { flex: 0 1 auto; min-width: 0; }
+
+/* ===== One button style for the data panel =====
+   Every button in the panel has a fill that stands off the background (inactive), an accent fill when it
+   is the chosen one or switched on (active), and a dimmed look when it cannot be pressed. One height,
+   34 px: compact, and still a fair target for a finger or a mouse on a moving boat. MOB, Drop and the
+   anchor keep their own larger style. */
+#side {
+  --btn-h: 34px;
+  --btn-bg: #2f4a59;
+  --btn-bg-hover: #3b5d70;
+  --btn-line: #7d97a4;
+  --btn-on: var(--accent);
+}
+#side :is(.sp-views, .sp-disp, .sp-env-tabs, .sp-wx-transport, .env-start-buttons, .sp-routewx, #wxp, .sp-env-data, .sp-weather) button:not(.wxp-chip),
+#side #side-route-wx,
+html[data-view="env"] #side :is(.sp-env-tabs, .env-start-buttons, .sp-wx-transport) button,
+html[data-view="env"] #side #wxp .wxp-body :is(button, select),
+html[data-view="env"] #side #wxp .seafilter .filter-actions button {
+  min-height: var(--btn-h); padding: 4px 8px; border-radius: 6px; box-sizing: border-box;
+  background: var(--btn-bg); color: var(--tile-ink, #e8f0f4); border: 1px solid var(--btn-line);
+  font-size: calc(2.8 * var(--u, 4px)); font-weight: 600; line-height: 1.15; cursor: pointer;
+}
+#side :is(.sp-views, .sp-disp, .sp-env-tabs, .sp-wx-transport, .env-start-buttons, .sp-routewx, #wxp, .sp-env-data, .sp-weather) button:not(.wxp-chip):hover:not(:disabled, .on, [aria-pressed="true"]),
+#side #side-route-wx:hover:not(:disabled, .on), #side #wxp .wxp-chip:hover:not(.on) { background: var(--btn-bg-hover); }
+#side :is(.sp-views, .sp-disp, .sp-env-tabs, .sp-wx-transport, .env-start-buttons, .sp-routewx, #wxp, .sp-env-data, .sp-weather) button:is(.on, [aria-pressed="true"]):not(.wxp-chip),
+#side #side-route-wx:is(.on, [aria-pressed="true"]),
+html[data-view="env"] #side :is(.sp-env-tabs, .env-start-buttons) button:is(.on, [aria-pressed="true"]) {
+  background: var(--btn-on); color: #fff; border: 1px solid #fff;
+}
+#side button:disabled { opacity: .45; cursor: default; }
+#side :is(#wxp, .sp-env-data) select { min-height: var(--btn-h); border-radius: 6px; background: #1d2f3a; color: var(--tile-ink, #e8f0f4); border: 1px solid var(--btn-line); font-size: calc(2.8 * var(--u, 4px)); }
+/* the chips: the same fills, rounder, a little lower */
+#side #wxp .wxp-chip { min-height: 30px; padding: 3px 10px; border-radius: 15px; background: var(--btn-bg); border: 1px solid var(--btn-line); font-size: calc(2.8 * var(--u, 4px)); font-weight: 600; }
+#side #wxp .wxp-chip.on { background: var(--btn-on); color: #fff; border-color: #fff; }
+/* rows of equal buttons share the width; a button alone on a row takes all of it, so it is not missed */
+#side :is(.sp-views, .sp-disp, .sp-env-tabs, .env-start-buttons, .sp-wx-transport) { gap: 4px; }
+#side #side-route-wx { display: block; width: 100%; margin: 4px 0 2px; text-align: center; }
+#side .gf-acts button { min-height: 30px; padding: 2px 8px; }
+#side .gf-tools button { flex: 1 1 auto; }
+
+/* Fold-out headings (Download GRIBs, Saildocs…): readable, and plainly something to press */
+details.sub summary { color: inherit; opacity: .9; font-weight: 600; }
+#side details.sub { border-top: 0; margin-top: 6px; padding-top: 0; }
+#side details.sub > summary {
+  opacity: 1; padding: 7px 8px; border-radius: 6px; background: var(--btn-bg); border: 1px solid var(--btn-line);
+  color: var(--tile-ink, #e8f0f4); font-size: calc(2.8 * var(--u, 4px)); font-weight: 700; text-transform: none; letter-spacing: 0;
+}
+#side details.sub[open] > summary { margin-bottom: 6px; background: #22343f; }
+#side #wxp details > summary, #side .sp-weather > summary { color: var(--tile-ink, #e8f0f4); font-weight: 700; }

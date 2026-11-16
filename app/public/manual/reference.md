@@ -1148,7 +1148,7 @@ In **Weather › Tides**, tick **Tide stations** and press **Download LINZ tides
 
 Ocean currents (not tidal streams) come from the ECMWF 0.1° and HYCOM downloads; **Use GRIB currents** in Wx routing › Run › Settings includes them in a routing.
 
-**Saildocs email request** (its own card in the Weather drawer): for boats on email-only links (satellite or HF radio). It builds the request line from the area, length and step set in Download GRIBs, for GFS, ICON (0.125°) or the free part of ECMWF (0.4°), with a size estimate. **Email** opens a message to query@saildocs.com in your mail program; **Copy** copies the line. Save the GRIB that comes back attached into the GRIB folder. Keep requests small over satellite: fewer fields, a coarser grid, a shorter forecast.
+**Saildocs email request** (its own fold-out, after Download GRIBs): for boats on email-only links (satellite or HF radio). It builds the request line from the area, length and step set in Download GRIBs, for GFS, ICON (0.125°) or the free part of ECMWF (0.4°), with a size estimate. **Email** opens a message to query@saildocs.com in your mail program; **Copy** copies the line. Save the GRIB that comes back attached into the GRIB folder. Keep requests small over satellite: fewer fields, a coarser grid, a shorter forecast.
 
 **Weather on route**
 

@@ -56,7 +56,7 @@
         </div>
         <div class="wx-row"><button id="wx-open-controls" type="button">View weather controls</button></div>
         <details class="sub" id="dl-box">
-          <summary>Download GRIBs (free)</summary>
+          <summary>Download GRIBs</summary>
           <div class="wx-row"><label class="grow" for="dl-model">Model</label><select id="dl-model"></select></div>
           <div id="dl-params" class="checks"></div>
           <div class="wx-row dl-area-row"><label>Area</label>
@@ -79,17 +79,17 @@
           <div class="wx-row"><button id="dl-go" class="on grow">Download</button><button id="dl-cancel" disabled>Cancel</button></div>
           <div id="dl-progress" class="progress" hidden><div class="bar"></div><span></span></div>
           <div id="dl-status" class="wx-note">Source: NOAA NOMADS (GFS, GFS-Wave), cut to the area on the server. The newest complete run is used.</div>
-          <details class="sub" id="sd-box">
-            <summary>Saildocs email request</summary>
-            <div class="wx-note">For email-only links (satellite, HF): uses the area, forecast length and time step above.</div>
-            <div class="wx-row"><label class="grow" for="sd-model">Model</label><select id="sd-model"></select>
-              <select id="sd-res" title="Grid spacing, degrees"></select></div>
-            <div id="sd-params" class="checks"></div>
-            <textarea id="sd-text" rows="3" readonly spellcheck="false"></textarea>
-            <div class="wx-row"><span id="sd-size" class="grow wx-note"></span><button id="sd-copy" title="Copy the request line">Copy</button>
-              <button id="sd-mail" class="on" title="Open an email to query@saildocs.com in your mail program">Email</button></div>
-            <div class="wx-note">Send it from your own email. The GRIB comes back attached: save it in the GRIB folder and it shows in the list above.</div>
-          </details>
+        </details>
+        <details class="sub" id="sd-box">
+          <summary>Saildocs email request</summary>
+          <div class="wx-note">For email-only links (satellite, HF): uses the area, forecast length and time step above.</div>
+          <div class="wx-row"><label class="grow" for="sd-model">Model</label><select id="sd-model"></select>
+            <select id="sd-res" title="Grid spacing, degrees"></select></div>
+          <div id="sd-params" class="checks"></div>
+          <textarea id="sd-text" rows="3" readonly spellcheck="false"></textarea>
+          <div class="wx-row"><span id="sd-size" class="grow wx-note"></span><button id="sd-copy" title="Copy the request line">Copy</button>
+            <button id="sd-mail" class="on" title="Open an email to query@saildocs.com in your mail program">Email</button></div>
+          <div class="wx-note">Send it from your own email. The GRIB comes back attached: save it in the GRIB folder and it shows in the list above.</div>
         </details>
         </div></div>
         <details class="sub" id="tide-box">

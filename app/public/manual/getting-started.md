@@ -58,7 +58,7 @@ Your own depth soundings build up into a seabed, as on Olex or TimeZero.
 
 {icon:weather} **Weather**:
 
-1. Open **Environment › Get data › Download GRIBs (free)**: choose the **model**, the **area** (draw it, the chart view, or round the route), the forecast length and the time step, then **Download**. Away from the internet, **Saildocs email request** writes the email for you.
+1. Open **Environment › Get data › Download GRIBs**: choose the **model**, the **area** (draw it, the chart view, or round the route), the forecast length and the time step, then **Download**. Away from the internet, **Saildocs email request** writes the email for you.
 2. Choose a file at the top and **Load** it. Select the shown GRIB and unload files here too; loading several lets you compare them.
 3. {icon:wxpanel} in the toolbar opens **Environment › Explore**. Its pinned **Chart time** slider and buttons move through time (also **[** and **]**); the cursor readings are below.
 4. In **Weather layers and filters**, choose shading (wind, gusts, rain, waves, sea temperature…) and overlays such as barbs, isobars and arrows. Weather, Ocean and Seabed are starting points, not restrictions. **Hide weather on chart** hides the layers without unloading the files. **Download or manage GRIBs** opens Get data.
