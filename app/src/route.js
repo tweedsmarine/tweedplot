@@ -93,11 +93,45 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
   map.addLayer({ id: "rt-act-legs", type: "line", source: "rt-act-legs",
     paint: { "line-color": "#c2185b", "line-width": ["case", ["get", "active"], 3, 1.8], "line-dasharray": [4, 3], "line-opacity": 0.9 } }, "track");
   map.addLayer({ id: "rt-act-marks", type: "circle", source: "rt-act-marks",
-    paint: { "circle-radius": ["case", ["get", "next"], 7, 5], "circle-color": ["case", ["get", "next"], "#c2185b", "#ffffff"], "circle-stroke-color": "#c2185b", "circle-stroke-width": 2 } });
+    paint: { "circle-radius": ["case", ["get", "next"], 7, 5], "circle-color": ["case", ["get", "next"], "#c2185b", "#ffffff"], "circle-stroke-color": "#c2185b", "circle-stroke-width": ["case", ["get", "sel"], 5, 2] } });
   map.addLayer({ id: "rt-act-labels", type: "symbol", source: "rt-act-marks",
     layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 12], "icon-allow-overlap": true } });
+  // A mark of the navigated route picked for moving while another route is in the editor: click it (its ring
+  // thickens), then drag it, as with the editor's marks. The move changes the navigated copy only.
+  let actSel = -1, actDrag = false;
+  map.on("click", (e) => {
+    const hit = active && !active.linked ? map.queryRenderedFeatures(e.point, { layers: ["rt-act-marks"] })[0] : null;
+    const i = hit ? hit.properties.i : -1;
+    if (i === actSel) return;
+    actSel = i; drawActive();
+    if (i >= 0) status(`${active.marks[i].name || `Mark ${i + 1}`} of ${active.name || "the navigated route"}: drag it to move it.`);
+  });
+  map.on("mousedown", "rt-act-marks", (e) => {
+    if (e.originalEvent.button !== 0 || e.features[0].properties.i !== actSel || !active || active.linked) return;
+    e.preventDefault();
+    map.dragPan.disable();
+    actDrag = true;
+    map.getCanvas().style.cursor = "grabbing";
+  });
+  map.on("mousemove", (e) => {
+    if (!actDrag || !active?.marks[actSel]) return;
+    active.marks[actSel].lon = e.lngLat.lng; active.marks[actSel].lat = e.lngLat.lat;
+    delete active.marks[actSel].id; // no longer the library mark it came from
+    drawActive();
+  });
+  map.on("mouseup", () => {
+    if (!actDrag) return;
+    actDrag = false;
+    map.dragPan.enable();
+    map.getCanvas().style.cursor = "";
+    saveActive();
+    for (const f of listeners) f();
+  });
+  map.on("mouseenter", "rt-act-marks", () => { if (!actDrag) map.getCanvas().style.cursor = "pointer"; });
+  map.on("mouseleave", "rt-act-marks", () => { if (!actDrag) map.getCanvas().style.cursor = ""; });
   function drawActive() {
     const show = !!active && !active.linked;
+    if (!show) actSel = -1;
     const pts = show ? [active.start, ...active.marks.map((m) => [m.lon, m.lat])].filter(Boolean) : [];
     const off = show && active.start ? 1 : 0;
     const legs = [];
@@ -107,7 +141,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     }
     map.getSource("rt-act-legs").setData({ type: "FeatureCollection", features: legs });
     map.getSource("rt-act-marks").setData({ type: "FeatureCollection", features: show
-      ? active.marks.map((m, i) => pt([m.lon, m.lat], { next: i === active.nav, name: `${i + 1}${m.name ? ` ${m.name}` : ""}` })) : [] });
+      ? active.marks.map((m, i) => pt([m.lon, m.lat], { i, sel: i === actSel, next: i === active.nav, name: `${i + 1}${m.name ? ` ${m.name}` : ""}` })) : [] });
     map.setPaintProperty("rt-legs", "line-color", show ? "#e07b00" : "#c2185b");
   }
 

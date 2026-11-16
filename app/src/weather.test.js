@@ -97,6 +97,7 @@ test("weather summary distinguishes hidden, unavailable and selected chart layer
   assert.equal(weatherSelectionSummary(state), "Selected: No shading, Isobars");
   state.visible = false;
   assert.equal(weatherSelectionSummary(state), "Chart weather hidden");
+  assert.equal(weatherSelectionSummary({ ...state, view: "nav" }), "Weather is off in Navigation");
 });
 
 test("GRIB coverage uses the outer span of available parameter times", () => {

@@ -332,8 +332,9 @@ export function sliderStepForTime(time, start, step) {
   return (time - start) % step === 0 ? step : "any";
 }
 
-export function weatherSelectionSummary({ visible, sources, layerInfo, layerOptions, overlayOptions }) {
-  if (!visible) return "Chart weather hidden";
+export function weatherSelectionSummary({ visible, sources, layerInfo, layerOptions, overlayOptions, view = "" }) {
+  // in Navigation weather is off until switched on there, whatever the other views show
+  if (!visible) return view === "nav" ? "Weather is off in Navigation" : "Chart weather hidden";
   if (!sources.length) return "No GRIB loaded";
   const available = layerOptions.some((o) => o.key === layerInfo.key);
   const shading = layerInfo.off ? "No shading" : `${layerInfo.layer.label}${available ? "" : " (no data)"}`;
@@ -362,7 +363,19 @@ export function setupWeather(map, layers) {
   let playing = null;
   let cursor = null; // [lon, lat]
   let weatherView = ["nav", "plan", "env"].includes(document.documentElement.dataset.view) ? document.documentElement.dataset.view : "nav";
+  // Environment: show the latest past analysis (satellite sea temperature and the like) when the chart time is
+  // later than it. On to begin with in the Fishing use, where those layers are the point; the tick is remembered.
+  const pastDefault = () => wx.pastAnalysis ?? document.documentElement.dataset.use === "fish";
   let allowPastAnalysis = false;
+  // a GRIB call that failed while drawing: said in the panel, not swallowed (the chart would just be blank)
+  let drawError = null;
+  const failed = (e) => { drawError = String(e?.message ?? e); console.error("GRIB call failed:", e); return null; };
+  function showDrawError() {
+    const el = $("side-wx-error");
+    if (!el) return;
+    el.hidden = !drawError;
+    el.textContent = drawError ? `Weather could not be drawn: ${drawError}` : "";
+  }
   const savedViews = loadWxViews();
   const wx = { ...loadWx(), ...structuredClone(savedViews[weatherView] ?? {}) };
   const viewStates = new Map();
@@ -905,23 +918,25 @@ export function setupWeather(map, layers) {
       const bsrc = loaded.has(wx.src.breaks) ? wx.src.breaks : null;
       const breakKey = wx.breaks ? ["sst", "skin"].find((k) => (bsrc ? hasIn(bsrc, LAYERS[k].params[0]) : oceanPath(LAYERS[k]))) : null;
       const breakPath = breakKey ? bsrc ?? oceanPath(LAYERS[breakKey]) : null;
+      drawError = null;
       const [g, gs, gw, gp, [gcd, gcs], gb] = await Promise.all([
-        wx.arrows && (hasIn(pBarbs, "WindU") || hasIn(pBarbs, "WindSpeed")) ? invoke("grib_wind_grid", { path: pBarbs, t, bbox, maxPoints: arrowPts }).catch(() => null) : null,
+        wx.arrows && (hasIn(pBarbs, "WindU") || hasIn(pBarbs, "WindSpeed")) ? invoke("grib_wind_grid", { path: pBarbs, t, bbox, maxPoints: arrowPts }).catch(failed) : null,
         !shade ? null : layer.verify
           ? (verifyTarget ? invoke("grib_verify_grid", { paths: [], t: verifyTarget.t, at: t, forecast: verifyTarget.path, kind: layer.verify, bbox, maxPoints: 20000 })
             .catch((e) => ({ error: String(e) })) : { error: "Choose a forecast to verify in the Verify dock." })
           : layer.compare
           ? invoke("grib_compare", { paths: comparePaths(), metric: layer.compare, t, bbox, maxPoints: 20000 }).catch((e) => ({ error: String(e) }))
           : timeAllowed(shadePath(layer), layer.params)
-          ? invoke("grib_grid", { path: shadePath(layer), layer: wx.layer, t, bbox, maxPoints: 20000 }).catch(() => null) : null,
-        wx.waveArrows && hasIn(pWaves, "WaveDir") ? invoke("grib_grid", { path: pWaves, layer: "wavedir", t, bbox, maxPoints: Math.max(40, arrowPts / 2) }).catch(() => null) : null,
-        wx.isobars && hasIn(pIso, "Mslp") ? invoke("grib_grid", { path: pIso, layer: "mslp", t, bbox, maxPoints: 20000 }).catch(() => null) : null,
+          ? invoke("grib_grid", { path: shadePath(layer), layer: wx.layer, t, bbox, maxPoints: 20000 }).catch(failed) : null,
+        wx.waveArrows && hasIn(pWaves, "WaveDir") ? invoke("grib_grid", { path: pWaves, layer: "wavedir", t, bbox, maxPoints: Math.max(40, arrowPts / 2) }).catch(failed) : null,
+        wx.isobars && hasIn(pIso, "Mslp") ? invoke("grib_grid", { path: pIso, layer: "mslp", t, bbox, maxPoints: 20000 }).catch(failed) : null,
         curPath && timeAllowed(curPath, ["CurrentU"])
-          ? Promise.all(["currentdir", "current"].map((layer) => invoke("grib_grid", { path: curPath, layer, t, bbox, maxPoints: curPts }).catch(() => null)))
+          ? Promise.all(["currentdir", "current"].map((layer) => invoke("grib_grid", { path: curPath, layer, t, bbox, maxPoints: curPts }).catch(failed)))
           : [null, null],
-        breakPath && timeAllowed(breakPath, LAYERS[breakKey].params) ? invoke("grib_grid", { path: breakPath, layer: breakKey, t, bbox, maxPoints: 20000 }).catch(() => null) : null,
+        breakPath && timeAllowed(breakPath, LAYERS[breakKey].params) ? invoke("grib_grid", { path: breakPath, layer: breakKey, t, bbox, maxPoints: 20000 }).catch(failed) : null,
       ]);
       if (version !== drawVersion) return;
+      showDrawError();
       const cells = [], barbs = [], waves = [], currents = [];
       if (g) {
         for (let j = 0; j < g.nj; j++) {
@@ -1137,6 +1152,8 @@ export function setupWeather(map, layers) {
   };
   $("env-use-past").onchange = (event) => {
     allowPastAnalysis = event.target.checked;
+    wx.pastAnalysis = allowPastAnalysis;
+    saveWx();
     draw();
     changed();
   };
@@ -1460,6 +1477,14 @@ export function setupWeather(map, layers) {
   changeListeners.push(drawLegend);
   loadedListeners.push(drawLegend);
   applyLayer();
+  allowPastAnalysis = pastDefault();
+  $("env-use-past").checked = allowPastAnalysis;
+  window.addEventListener("racenav-use", () => {
+    if (wx.pastAnalysis != null || allowPastAnalysis === pastDefault()) return;
+    allowPastAnalysis = pastDefault();
+    $("env-use-past").checked = allowPastAnalysis;
+    draw(); changed();
+  });
 
   window.addEventListener("racenav-view", (event) => {
     const next = event.detail?.id;
@@ -1471,8 +1496,8 @@ export function setupWeather(map, layers) {
     const settings = previous?.settings ?? loadWxViews()[next] ?? wx;
     Object.assign(wx, structuredClone(settings));
     weatherView = next;
-    allowPastAnalysis = false;
-    $("env-use-past").checked = false;
+    allowPastAnalysis = pastDefault();
+    $("env-use-past").checked = allowPastAnalysis;
     if (previous && loaded.has(previous.display)) display = previous.display;
     dens.value = wx.density; size.value = wx.size; shade.value = wx.shading; opac.value = wx.opacity;
     landSel.value = wx.land;

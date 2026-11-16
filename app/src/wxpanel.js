@@ -45,7 +45,7 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch { /* ignore */ } };
 
   const win = $("wxp");
-  win.innerHTML = `
+  win.innerHTML = `<div id="wxp-key" class="wx-key" hidden></div>
     <div class="env-start">
       <div class="wx-note">Last starting point selected; adjust any layer or overlay afterwards.</div>
       <div class="env-start-buttons" role="group" aria-label="Environment starting points">
@@ -82,6 +82,7 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     </div>`;
   weather.mountLegend($("wxp-legend"));
   weather.mountLegend($("side-wx-key"), { always: true });
+  weather.mountLegend($("wxp-key"), { always: true });
   weather.mountFilter($("wxp-filter"));
   $("wxp-isobar-controls").append($("wx-isobar-controls"));
   // everything for comparing GRIBs in one place: the files, the agreement displays and their note,
@@ -436,8 +437,10 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
   function renderChartState() {
     $("side-weather-state").textContent = weatherSelectionSummary({
       visible: weather.visible(), sources: weather.sources(), layerInfo: weather.layerInfo(),
-      layerOptions: weather.layerOptions(), overlayOptions: weather.overlayOptions(),
+      layerOptions: weather.layerOptions(), overlayOptions: weather.overlayOptions(), view: document.documentElement.dataset.view,
     });
+    // the key here only when the one beside the chart time is not on the panel (Navigation without that section)
+    $("wxp-key").classList.toggle("dup", $("side-wx-key").getClientRects().length > 0);
   }
   weather.onChange(renderChartState);
   weather.onLoaded(renderChartState);

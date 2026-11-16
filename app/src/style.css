@@ -1967,3 +1967,7 @@ html.side-strip body:has(.ss-alerts .alarm:not(.warn):not(.acked):not(.summary))
 /* GRIB data at the cursor: tall enough for all its rows before it scrolls */
 .sp-pinned-point { max-height: 38vh; }
 #wxp-filter .none, .sea-filter .none { margin-top: 4px; color: #ffb74d; }
+
+.wx-key.dup { display: none; }
+.wx-error { color: #ff8a80; font-weight: 600; margin-top: 4px; }
+.wx-error[hidden] { display: none; }
