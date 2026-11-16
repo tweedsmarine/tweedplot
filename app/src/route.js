@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { distNm } from "./instruments.js";
 import { greatCircleGeometry, greatCircle as gcInitial, rhumb } from "./navmath.js";
 
+const ACTIVE_KEY = "racenav.route.active"; // the route being navigated: its own copy, so another can be planned meanwhile
 const WORK_KEY = "racenav.route.work"; // the route being edited survives a restart
 
 function load(key, defaults) {
@@ -37,10 +38,27 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
   let routeId = work.routeId;
   let dirty = work.dirty;
   let navIndex = work.nav || 0;
-  // Whether this route is being navigated (route monitoring), not only planned: set by Start navigating,
-  // cleared when another route is opened or a new one begun. Only then does it feed the instruments,
-  // the highway and the alarms in the Navigation view.
-  let navOn = work.navOn === true;
+  // The route being navigated (route monitoring), as its own copy: { routeId, name, start, startRef, startRings,
+  // marks, greatCircle, nav (index of the next mark), linked }. `linked`: it is the route in the editor, so edits
+  // there change it; opening another route or New unlinks it, and it stays navigated while the other is planned.
+  // Only this route feeds the instruments, the highway and the alarms in the Navigation view.
+  let active = load(ACTIVE_KEY, null);
+  if (!active?.marks?.length) active = work.navOn === true && (work.marks ?? []).length
+    ? { routeId: work.routeId ?? null, name: work.name || "", start: work.start ?? null, startRef: work.startRef ?? null, startRings: work.startRings ?? null,
+        marks: structuredClone(work.marks), greatCircle: Boolean(work.greatCircle), nav: work.nav || 0, linked: true }
+    : null;
+  const linked = () => !!active?.linked;
+  const snapshot = () => ({ routeId, name: $("rt-name").value, start, startRef, startRings, marks: structuredClone(marks), greatCircle });
+  const saveActive = () => { try { if (active) localStorage.setItem(ACTIVE_KEY, JSON.stringify(active)); else localStorage.removeItem(ACTIVE_KEY); } catch { /* ignore */ } };
+  /** Another route is about to take the editor: the navigated one keeps going as it last was. */
+  function unlink() { if (active?.linked) { active.linked = false; saveActive(); } }
+  function setActiveIndex(i) {
+    if (!active) return;
+    active.nav = Math.min(Math.max(0, active.marks.length - 1), Math.max(0, i));
+    if (active.linked) navIndex = active.nav;
+    persist(); drawMarks();
+    for (const f of listeners) f();
+  }
   let greatCircle = Boolean(work.greatCircle);
   // range rings of a start that isn't a library mark (marks keep theirs: m.rings, or the library's)
   let startRings = work.startRings || null;
@@ -67,8 +85,39 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
   map.addLayer({ id: "s52-rt-leglbl", type: "symbol", source: "s52-rt-leglbl",
     layout: { "icon-image": ["get", "img"], "icon-anchor": ["get", "anc"], "icon-offset": ["get", "off"], "icon-allow-overlap": false, "icon-padding": 2 } });
 
+  // The navigated route when it is not the one in the editor: drawn on its own, heavier, and the editor's
+  // route turns orange (the alternate planned route of S-52) so the two cannot be confused.
+  map.addSource("rt-act-legs", { type: "geojson", data: empty });
+  map.addSource("rt-act-marks", { type: "geojson", data: empty });
+  map.addLayer({ id: "rt-act-legs", type: "line", source: "rt-act-legs",
+    paint: { "line-color": "#c2185b", "line-width": ["case", ["get", "active"], 3, 1.8], "line-dasharray": [4, 3], "line-opacity": 0.9 } }, "track");
+  map.addLayer({ id: "rt-act-marks", type: "circle", source: "rt-act-marks",
+    paint: { "circle-radius": ["case", ["get", "next"], 7, 5], "circle-color": ["case", ["get", "next"], "#c2185b", "#ffffff"], "circle-stroke-color": "#c2185b", "circle-stroke-width": 2 } });
+  map.addLayer({ id: "rt-act-labels", type: "symbol", source: "rt-act-marks",
+    layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 12], "icon-allow-overlap": true } });
+  function drawActive() {
+    const show = !!active && !active.linked;
+    const pts = show ? [active.start, ...active.marks.map((m) => [m.lon, m.lat])].filter(Boolean) : [];
+    const off = show && active.start ? 1 : 0;
+    const legs = [];
+    for (let i = 1; i < pts.length; i++) {
+      legs.push({ type: "Feature", properties: { active: i - off === active.nav },
+        geometry: active.greatCircle ? greatCircleGeometry(pts[i - 1], pts[i]) : { type: "LineString", coordinates: [pts[i - 1], pts[i]] } });
+    }
+    map.getSource("rt-act-legs").setData({ type: "FeatureCollection", features: legs });
+    map.getSource("rt-act-marks").setData({ type: "FeatureCollection", features: show
+      ? active.marks.map((m, i) => pt([m.lon, m.lat], { next: i === active.nav, name: `${i + 1}${m.name ? ` ${m.name}` : ""}` })) : [] });
+    map.setPaintProperty("rt-legs", "line-color", show ? "#e07b00" : "#c2185b");
+  }
+
   function persist() {
-    save(WORK_KEY, { routeId, name: $("rt-name").value, start, startRef, marks, dirty, nav: navIndex, navOn, greatCircle, startRings });
+    save(WORK_KEY, { routeId, name: $("rt-name").value, start, startRef, marks, dirty, nav: navIndex, greatCircle, startRings });
+    // the navigated route follows the editor while it is the same route
+    if (active?.linked) {
+      if (marks.length) { navIndex = Math.min(navIndex, marks.length - 1); Object.assign(active, snapshot(), { nav: navIndex }); }
+      else active = null;
+    }
+    saveActive();
   }
   function changed() {
     dirty = true;
@@ -103,7 +152,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     // IHO: waypoint circles (the next one doubled), numbers and names in the route colour
     const ihoLabel = (n, name) => `s52m:t:PLRTE:${n}${name ? ` ${name}` : ""}`;
     if (start) f.push(pt(start, iho ? { icon: "s52m:wp:PLRTE", sel: -1, name: "", lbl: ihoLabel("S", startRef?.name) } : { icon: "mk:S", sel: -1, name: startRef?.name || "" }));
-    marks.forEach((m, i) => f.push(pt([m.lon, m.lat], iho ? { icon: navOn && i === navIndex ? "s52m:wpn:PLRTE" : "s52m:wp:PLRTE", sel: i, name: "", lbl: ihoLabel(i + 1, m.name) }
+    marks.forEach((m, i) => f.push(pt([m.lon, m.lat], iho ? { icon: linked() && i === navIndex ? "s52m:wpn:PLRTE" : "s52m:wp:PLRTE", sel: i, name: "", lbl: ihoLabel(i + 1, m.name) }
       : { icon: `mk:${i + 1}`, sel: i, name: m.name || "" })));
     map.getSource("rt-marks").setData({ type: "FeatureCollection", features: f });
     drawLegLabels();
@@ -112,7 +161,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     const legs = [];
     for (let i = 1; i < pts.length; i++) {
       const leg = [pts[i - 1], pts[i]];
-      legs.push({ type: "Feature", properties: { active: navOn && i - (start ? 1 : 0) === navIndex },
+      legs.push({ type: "Feature", properties: { active: linked() && i - (start ? 1 : 0) === navIndex },
         geometry: greatCircle ? greatCircleGeometry(...leg) : { type: "LineString", coordinates: leg } });
     }
     map.getSource("rt-legs").setData({ type: "FeatureCollection", features: legsHidden ? [] : legs });
@@ -124,6 +173,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     if (selected !== null && !posOf(selected)) deselect();
     drawSelection();
     renderList();
+    drawActive();
   }
 
   $("rt-great-circle").checked = greatCircle;
@@ -157,7 +207,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       prev = [m.lon, m.lat];
       const li = row(i + 1, "", m.name || `New mark ${i + 1}`, `${m.id ? "" : "not saved · "}${ddm(m.lat, "N", "S")} ${ddm(m.lon, "E", "W")}${leg}`,
         `<button data-act="up" title="Earlier">↑</button><button data-act="down" title="Later">↓</button><button data-act="x" title="Remove from the route (stays in the library)">✕</button>`);
-      li.classList.toggle("active", navOn && i === navIndex);
+      li.classList.toggle("active", linked() && i === navIndex);
       // how the mark is reached: through its arrival circle, rounded to port/starboard, or as close as possible
       const rr = document.createElement("div");
       rr.className = "rnd";
@@ -180,13 +230,16 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       li.querySelector('[data-act="x"]').onclick = () => { marks.splice(i, 1); if (navIndex >= marks.length) navIndex = Math.max(0, marks.length - 1); changed(); };
     });
     if (!start && !marks.length) ul.innerHTML = `<li class="empty">Set a start, then add marks: click the chart, or click a library mark to reuse it.</li>`;
-    if (!marks.length) navOn = false;
-    $("nav-to").textContent = !marks.length ? "—" : navOn ? `${navIndex + 1}. ${marks[navIndex]?.name || `Mark ${navIndex + 1}`}` : "Not navigating";
+    const an = active ? active.marks[active.nav] : null;
+    const apart = !!active && !active.linked; // navigating one route while another is in the editor
+    $("nav-to").textContent = active ? `${apart ? `${active.name || "Unsaved route"}: ` : ""}${active.nav + 1}. ${an?.name || `Mark ${active.nav + 1}`}` : marks.length ? "Not navigating" : "—";
     const go = $("nav-go");
-    go.textContent = navOn ? "Stop navigating" : "Start navigating";
-    go.classList.toggle("on", navOn);
-    go.disabled = !marks.length;
-    $("nav-prev").disabled = $("nav-next").disabled = !navOn;
+    go.textContent = !active ? "Start navigating" : apart ? `Stop navigating ${active.name || "the other route"}` : "Stop navigating";
+    go.classList.toggle("on", !!active);
+    go.disabled = !active && !marks.length;
+    $("nav-prev").disabled = $("nav-next").disabled = !active;
+    $("nav-apart").hidden = !apart;
+    $("nav-swap").disabled = !marks.length;
   }
 
   // ---------- selecting, moving and deleting marks on the chart ---------------------------------
@@ -295,7 +348,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     let w;
     try { w = JSON.parse(e.newValue); } catch { return; }
     start = w.start ?? null; startRef = w.startRef ?? null; marks = w.marks ?? []; routeId = w.routeId ?? null;
-    dirty = Boolean(w.dirty); navIndex = w.nav || 0; navOn = w.navOn === true; greatCircle = Boolean(w.greatCircle);
+    dirty = Boolean(w.dirty); navIndex = w.nav || 0; greatCircle = Boolean(w.greatCircle);
     if (document.activeElement !== $("rt-name")) $("rt-name").value = w.name || "";
     $("rt-great-circle").checked = greatCircle;
     deselect();
@@ -354,22 +407,49 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     } catch (e) { status(`Could not save: ${e}`); }
   };
   $("rt-new").onclick = () => {
-    start = null; startRef = null; startRings = null; marks = []; routeId = null; dirty = false; navIndex = 0; navOn = false; $("rt-name").value = "";
+    start = null; startRef = null; startRings = null; marks = []; routeId = null; dirty = false; navIndex = 0; unlink(); $("rt-name").value = "";
     arm(null); deselect(); persist(); drawMarks();
     for (const f of listeners) f();
   };
 
   // ---------- navigation ----------------------------------------------------------
-  $("nav-prev").onclick = () => { navIndex = Math.max(0, navIndex - 1); persist(); drawMarks(); };
-  $("nav-next").onclick = () => { navIndex = Math.min(Math.max(0, marks.length - 1), navIndex + 1); persist(); drawMarks(); };
+  $("nav-prev").onclick = () => setActiveIndex((active?.nav ?? 0) - 1);
+  $("nav-next").onclick = () => setActiveIndex((active?.nav ?? 0) + 1);
 
+  const begin = () => { active = { ...snapshot(), nav: navIndex, linked: true }; };
   $("nav-go").onclick = () => {
-    if (!marks.length) return;
-    navOn = !navOn;
+    if (!active && !marks.length) return;
+    const was = active?.name;
+    if (active) active = null; else begin();
     persist(); drawMarks();
     for (const f of listeners) f();
-    status(navOn ? `Navigating ${$("rt-name").value || "this route"}: to mark ${navIndex + 1}.` : "Navigation stopped.");
+    status(active ? `Navigating ${active.name || "this route"}: to mark ${active.nav + 1}.` : `Navigation${was ? ` of ${was}` : ""} stopped.`);
   };
+  // navigating one route with another in the editor: navigate the editor's instead, or bring the navigated one back to edit
+  $("nav-swap").onclick = () => {
+    if (!marks.length) return;
+    begin(); persist(); drawMarks();
+    for (const f of listeners) f();
+    status(`Navigating ${active.name || "this route"}: to mark ${active.nav + 1}.`);
+  };
+  $("nav-edit").onclick = () => {
+    if (!active) return;
+    start = active.start ?? null; startRef = active.startRef ?? null; startRings = active.startRings ?? null;
+    marks = structuredClone(active.marks); routeId = active.routeId ?? null; greatCircle = Boolean(active.greatCircle);
+    $("rt-name").value = active.name || ""; $("rt-great-circle").checked = greatCircle;
+    navIndex = active.nav; dirty = true; active.linked = true;
+    deselect(); persist(); drawMarks();
+    for (const f of listeners) f();
+    status(`${active.name || "The navigated route"} is in the editor again.`);
+  };
+  // the navigated route changed in another window
+  window.addEventListener("storage", (e) => {
+    if (e.key !== ACTIVE_KEY) return;
+    try { active = e.newValue ? JSON.parse(e.newValue) : null; } catch { return; }
+    if (active?.linked) navIndex = active.nav;
+    drawMarks();
+    for (const f of listeners) f();
+  });
 
   drawMarks();
   library.onChange(() => {
@@ -458,7 +538,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       routeId = null;
       $("rt-name").value = name || "";
       dirty = true;
-      navIndex = 0; navOn = false;
+      navIndex = 0; unlink();
       persist();
       drawMarks();
       for (const f of listeners) f();
@@ -479,7 +559,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       routeId = req.route_id && lib.length ? req.route_id : null;
       $("rt-name").value = req.course_name || "";
       dirty = !routeId;
-      navIndex = 0; navOn = false;
+      navIndex = 0; unlink();
       persist();
       drawMarks();
     },
@@ -495,7 +575,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       marks = r.marks.map((x) => [x, lib.find((m) => m.id === x.mark)]).filter(([, m]) => m)
         .map(([x, m]) => ({ id: m.id, name: m.name, lon: m.lon, lat: m.lat, rounding: x.rounding || "", radius_nm: x.radius_nm || 0 }));
       dirty = false;
-      navIndex = 0; navOn = false;
+      navIndex = 0; unlink();
       persist();
       drawMarks();
       for (const f of listeners) f();
@@ -504,20 +584,24 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     /** For the instruments: the leg being sailed and the routing's points. */
     /** `plan`: the route as planned, whether or not it is being navigated (the Planning view's readings). */
     nav(plan = false) {
-      const next = marks[navIndex];
-      if (!next || (!navOn && !plan)) return null;
-      const from = navIndex > 0 ? [marks[navIndex - 1].lon, marks[navIndex - 1].lat] : start;
+      // what is navigated; in Planning with nothing navigated, the route in the editor
+      const r = active ?? (plan ? { marks, start, nav: navIndex } : null);
+      const next = r?.marks[r.nav];
+      if (!next) return null;
+      const from = r.nav > 0 ? [r.marks[r.nav - 1].lon, r.marks[r.nav - 1].lat] : r.start;
       // the marks after the next one, for the data panel's list of marks ahead
-      const ahead = marks.slice(navIndex + 1).map((m, j) => ({ name: m.name || `Mark ${navIndex + j + 2}`, lon: m.lon, lat: m.lat, n: navIndex + j + 2 }));
-      return { next: { name: next.name || `Mark ${navIndex + 1}`, lon: next.lon, lat: next.lat, n: navIndex + 1 }, from, index: navIndex, count: marks.length, ahead };
+      const ahead = r.marks.slice(r.nav + 1).map((m, j) => ({ name: m.name || `Mark ${r.nav + j + 2}`, lon: m.lon, lat: m.lat, n: r.nav + j + 2 }));
+      return { next: { name: next.name || `Mark ${r.nav + 1}`, lon: next.lon, lat: next.lat, n: r.nav + 1 }, from, index: r.nav, count: r.marks.length, ahead };
     },
     /** Whether the route is being navigated (Start navigating), not only planned. */
-    navigating: () => navOn,
+    navigating: () => !!active,
+    /** The navigated route: { name, linked (it is the one in the editor) } or null. */
+    navigated: () => (active ? { name: active.name, linked: !!active.linked } : null),
     /** Boat moved: step on to the next mark once inside the arrival circle. */
     boatAt(pos) {
-      const next = marks[navIndex];
-      if (!navOn || !next || navIndex >= marks.length - 1) return;
-      if (distNm(pos, [next.lon, next.lat]) <= Math.max(getArrivalNm(), 0.05)) { navIndex += 1; persist(); drawMarks(); }
+      const next = active?.marks[active.nav];
+      if (!next || active.nav >= active.marks.length - 1) return;
+      if (distNm(pos, [next.lon, next.lat]) <= Math.max(getArrivalNm(), 0.05)) setActiveIndex(active.nav + 1);
     },
   };
 
