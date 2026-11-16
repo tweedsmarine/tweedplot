@@ -2131,6 +2131,8 @@ pub fn run() {
             tides_download,
             tides_cancel,
             grib_files,
+            grib_add,
+            grib_delete,
             grib_load,
             grib_unload,
             grib_loaded,

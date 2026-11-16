@@ -1548,6 +1548,10 @@ export function setupWeather(map, layers) {
     }),
     /** Called when a GRIB is loaded or unloaded. */
     onLoaded: (fn) => { loadedListeners.push(fn); },
+    /** Unload a loaded GRIB (the file stays on disk). */
+    unload: (path) => unload(path),
+    /** Make a loaded GRIB the shown one. */
+    show: (path) => { if (loaded.has(path)) { showGrib(path); changed(); } },
     /** Loaded GRIBs ticked for the agreement displays. */
     comparePaths,
     /** Every loaded GRIB, whether it is in the agreement displays and whether it has wind or pressure to compare: [{ path, name, on, can }]. */

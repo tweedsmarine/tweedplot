@@ -4,6 +4,7 @@
 // to the area, and the file is loaded as soon as it is written.
 import { SAILDOCS, SD_MODELS, SD_PARAM_NAMES, saildocsRequest, saildocsBytes } from "./saildocs.js";
 import { invoke } from "@tauri-apps/api/core";
+import { ask } from "./ask.js";
 import * as activity from "./activity.js";
 import { listen } from "@tauri-apps/api/event";
 
@@ -229,19 +230,22 @@ export function setupGribDownload(map, { weather, course }) {
     prog.querySelector(".bar").style.width = `${pc}%`;
     prog.querySelector("span").textContent = p.total ? `${p.stage} · ${p.done}/${p.total} · ${(p.bytes / 1e6).toFixed(1)} MB` : `${p.stage}…`;
   }).catch(() => {});
-  $("dl-go").onclick = async () => {
-    const req = request();
-    if (!req.area) { status("Choose an area first.", "warn"); return; }
-    if (!req.params.length) { status("Tick at least one parameter.", "warn"); return; }
+  // the request each downloaded file came from, so the same one can be asked for again when a newer run is out
+  const REQ_KEY = "racenav.gribdl.requests";
+  const reqs = (() => { try { return JSON.parse(localStorage.getItem(REQ_KEY)) ?? {}; } catch { return {}; } })();
+  const saveReqs = () => { try { localStorage.setItem(REQ_KEY, JSON.stringify(reqs)); } catch { /* ignore */ } };
+  async function download(req, label) {
+    if (job) { status("A download is already running.", "warn"); return; }
     $("dl-go").disabled = true;
     $("dl-cancel").disabled = false;
     status("Downloading…");
     const t0 = performance.now();
-    job = activity.start(`Downloading a GRIB (${$("dl-model").selectedOptions[0]?.textContent ?? prefs.model})`, { cancel: () => invoke("gribdl_cancel").catch(() => {}) });
+    job = activity.start(`Downloading a GRIB (${label})`, { cancel: () => invoke("gribdl_cancel").catch(() => {}) });
     let downloaded = null;
     try {
       const r = await invoke("gribdl_start", { req });
       downloaded = r;
+      reqs[r.path] = req; saveReqs();
       status(`Downloaded ${r.name} in ${((performance.now() - t0) / 1000).toFixed(0)} s. Loading…`, "good");
       job.progress("Loading it");
       await weather.refreshFiles();
@@ -250,6 +254,12 @@ export function setupGribDownload(map, { weather, course }) {
       if (r.note) status(`${r.name}: downloaded and loaded (${file}). ${r.note}`, "warn");
       else status(`${r.name}: downloaded and loaded (${file}).`, "good");
       job.done(`${r.name}: downloaded in ${((performance.now() - t0) / 1000).toFixed(0)} s and loaded.`, { details: [r.path, ...(r.note ? [r.note] : [])], keep: !!r.note });
+      // Environment: straight to Explore with the new file shown, at now
+      if (document.documentElement.dataset.view === "env") {
+        weather.show(r.path);
+        document.querySelector('[data-env-tab="explore"]')?.click();
+        $("side-wx-now")?.click();
+      }
     } catch (e) {
       const message = downloaded ? `Downloaded ${downloaded.name}, but could not load it: ${e}` : `Download failed: ${e}`;
       const cancelled = !downloaded && String(e) === "cancelled";
@@ -260,7 +270,98 @@ export function setupGribDownload(map, { weather, course }) {
       $("dl-go").disabled = false;
       $("dl-cancel").disabled = true;
       prog.hidden = true;
+      renderTable();
     }
+  }
+  $("dl-go").onclick = () => {
+    const req = request();
+    if (!req.area) { status("Choose an area first.", "warn"); return; }
+    if (!req.params.length) { status("Tick at least one parameter.", "warn"); return; }
+    download(req, $("dl-model").selectedOptions[0]?.textContent ?? prefs.model);
+  };
+
+  // ---------- the table of GRIB files ----------
+  // Every GRIB in the GRIB folders: what it is, what it covers, and what can be done with it. It stands in
+  // for the old drop-down and loaded list (those stay in the page, hidden: weather.js still fills them).
+  const table = $("wx-file-table"), fileStatus = (t) => { $("wx-where").textContent = t; };
+  $("wx-files").closest(".wx-row").style.display = "none";
+  $("wx-loaded").style.display = "none";
+  $("wx-loaded").previousElementSibling.style.display = "none";
+  const esc = (x) => String(x ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const utc = (t) => { const d = new Date(t * 1000); return `${d.getUTCDate()} ${d.toLocaleString("en-GB", { month: "short", timeZone: "UTC" })} ${String(d.getUTCHours()).padStart(2, "0")}Z`; };
+  const local = (t) => new Date(t * 1000).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const ll = (v, pos, neg) => `${Math.abs(v).toFixed(1)}°${v >= 0 ? pos : neg}`;
+  const age = (t) => { const h = (Date.now() / 1000 - t) / 3600; return h < 48 ? `${Math.max(0, Math.round(h))} h old` : `${Math.round(h / 24)} days old`; };
+  /** A newer run than this file's is probably on the server: only for files whose request is known. */
+  function due(f) {
+    const req = reqs[f.path], run = f.info?.runs?.[0];
+    const m = req && models.find((x) => x.id === req.model);
+    if (!m || !run) return false;
+    const cycle = (m.steps?.[0]?.[1] ?? 1) >= 24 ? 24 : 6; // daily analyses; forecast models run every six hours
+    return Date.now() / 1000 - run.ref_time > (cycle + (m.delay_h ?? 0)) * 3600;
+  }
+  let files = [];
+  async function renderTable() {
+    files = (await invoke("grib_files").catch(() => [])) ?? [];
+    const shown = weather.sources().find((x) => x.shown)?.path;
+    const isLoaded = new Set(weather.sources().map((x) => x.path));
+    table.innerHTML = files.length ? "" : `<div class="wx-note">No GRIB files yet. Download one below, or use Add file…</div>`;
+    for (const f of files) {
+      const run = f.info?.runs?.[0], on = isLoaded.has(f.path);
+      const row = document.createElement("div");
+      row.className = `gf-row${on ? " loaded" : ""}${f.path === shown ? " shown" : ""}`;
+      row.title = f.path;
+      const area = run ? `${ll(run.bbox[3], "N", "S")}–${ll(run.bbox[1], "N", "S")} ${ll(run.bbox[0], "E", "W")}–${ll(run.bbox[2] > 180 ? run.bbox[2] - 360 : run.bbox[2], "E", "W")}` : "";
+      row.innerHTML = `<div class="gf-main"><b>${esc(run ? `${run.model} · run ${utc(run.ref_time)}` : f.file)}</b>
+        ${run ? `<small>${esc(local(run.first))} → ${esc(local(run.last))}</small><small>${esc(area)}</small>` : `<small>Could not be read</small>`}
+        <small>${esc([run?.contents?.join(", "), f.size ? `${(f.size / 1e6).toFixed(1)} MB` : "", run ? age(run.ref_time) : ""].filter(Boolean).join(" · "))}</small>
+        <small class="gf-state">${f.path === shown ? "Shown on the chart" : on ? "Loaded" : ""}</small></div><div class="gf-acts"></div>`;
+      const acts = row.querySelector(".gf-acts");
+      const btn = (text, title, fn, cls = "") => { const b = document.createElement("button"); b.type = "button"; b.textContent = text; b.title = title; b.className = cls; b.onclick = fn; acts.append(b); return b; };
+      if (on && f.path !== shown) btn("Show", "Make this the GRIB shown on the chart", () => weather.show(f.path));
+      if (on) btn("Unload", "Unload it: the file stays on disk", () => weather.unload(f.path));
+      else btn("Load", "Load this GRIB", async () => { try { await weather.load(f.path); } catch (e) { fileStatus(String(e)); } });
+      if (due(f)) btn("Update", "A newer run is probably available: download the same area, parameters and length again", () => download(reqs[f.path], `${run.model}, newer run`), "gf-update");
+      table.append(row);
+    }
+    // forget the requests of files that are gone
+    const have = new Set(files.map((f) => f.path));
+    let dropped = false;
+    for (const k of Object.keys(reqs)) if (!have.has(k)) { delete reqs[k]; dropped = true; }
+    if (dropped && files.length) saveReqs();
+  }
+  weather.onLoaded(renderTable);
+  weather.onChange(() => { // the shown GRIB changed
+    const shown = weather.sources().find((x) => x.shown)?.path;
+    if (table.querySelector(".gf-row.shown")?.title !== (shown ?? undefined)) renderTable();
+  });
+  $("gf-refresh").onclick = async () => { await weather.refreshFiles(true); renderTable(); };
+  $("gf-add").onclick = async () => {
+    try {
+      const added = (await invoke("grib_add")) ?? [];
+      if (!added.length) return;
+      await weather.refreshFiles();
+      for (const p of added) await weather.load(p);
+      fileStatus(`Added ${added.length === 1 ? added[0].split(/[\\/]/).pop() : `${added.length} files`} to the GRIB folder and loaded.`);
+    } catch (e) { fileStatus(`Could not add the file: ${e}`); }
+    renderTable();
+  };
+  $("gf-tidy").onclick = async () => {
+    const days = Number($("gf-days").value) || 7, cut = Date.now() / 1000 - days * 86400;
+    const isLoaded = new Set(weather.sources().map((x) => x.path));
+    // by run time; never a loaded file, and never qtVlm's own folder
+    const old = files.filter((f) => !isLoaded.has(f.path) && !/qtvlm/i.test(f.path) && (f.info?.runs?.[0]?.ref_time ?? f.mtime ?? Infinity) < cut);
+    if (!old.length) { fileStatus(`Nothing to tidy: no unloaded GRIB has a run more than ${days} days old.`); return; }
+    const mb = old.reduce((a, f) => a + (f.size || 0), 0) / 1e6;
+    const v = await ask({ title: `Delete ${old.length} old GRIB file${old.length === 1 ? "" : "s"}?`,
+      note: `Runs more than ${days} days old, ${mb.toFixed(1)} MB in all. Loaded files and qtVlm's folder are left alone. This cannot be undone.`, ok: "Delete" });
+    if (!v) return;
+    try {
+      const n = await invoke("grib_delete", { paths: old.map((f) => f.path) });
+      fileStatus(`Deleted ${n} old GRIB file${n === 1 ? "" : "s"} (${mb.toFixed(1)} MB).`);
+    } catch (e) { fileStatus(`Could not delete: ${e}`); }
+    await weather.refreshFiles();
+    renderTable();
   };
   $("dl-cancel").onclick = () => invoke("gribdl_cancel").catch(() => {});
 

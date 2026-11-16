@@ -1994,3 +1994,19 @@ html.side-strip body:has(.ss-alerts .alarm:not(.warn):not(.acked):not(.summary))
 #wxp .wxp-chip { flex: 0 0 auto; width: auto; }
 .env-seabed[hidden] { display: none; }
 .wx-key .wx-legend span { overflow: visible; font-size: 9px; padding-left: 1px; }
+
+/* The table of GRIB files */
+#wx-file-table { margin: 4px 0; }
+.gf-row { display: flex; gap: 6px; align-items: flex-start; padding: 6px 4px; border-top: 1px solid rgba(128,128,128,.35); }
+.gf-row.loaded { background: rgba(79,195,247,.08); }
+.gf-row.shown { border-left: 3px solid #4fc3f7; padding-left: 5px; }
+.gf-main { flex: 1; min-width: 0; }
+.gf-main b { display: block; overflow-wrap: anywhere; }
+.gf-main small { display: block; opacity: .8; font-size: .82em; overflow-wrap: anywhere; }
+.gf-main .gf-state { color: #4fc3f7; opacity: 1; font-weight: 600; }
+.gf-main .gf-state:empty { display: none; }
+.gf-acts { display: flex; flex-direction: column; gap: 4px; flex: none; }
+.gf-acts button { min-height: 30px; padding: 2px 8px; }
+.gf-acts .gf-update { border-color: #ffb74d; color: #ffb74d; }
+.gf-tools { flex-wrap: wrap; }
+.gf-tools select { flex: 0 1 auto; min-width: 0; }

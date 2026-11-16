@@ -166,6 +166,52 @@ pub(crate) fn grib_unload(path: String) {
     GRIBS.lock().unwrap().remove(&path);
 }
 
+/// Pick GRIB files anywhere on the PC and copy them into the first GRIB folder. Returns the new paths
+/// (empty when the dialog is cancelled).
+#[tauri::command]
+pub(crate) async fn grib_add(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Add GRIB files")
+        .add_filter("GRIB files", &["grb", "grb2", "grib", "grib2"])
+        .add_filter("All files", &["*"])
+        .blocking_pick_files();
+    let Some(list) = picked else { return Ok(Vec::new()) };
+    let Some(dir) = grib_dirs().into_iter().next() else { return Err("There is no GRIB folder to copy into.".to_string()) };
+    let mut out = Vec::new();
+    for f in list {
+        let src = f.into_path().map_err(|e| e.to_string())?;
+        let Some(name) = src.file_name() else { continue };
+        let dst = dir.join(name);
+        if dst != src {
+            std::fs::copy(&src, &dst).map_err(|e| format!("Could not copy {}: {e}", src.display()))?;
+        }
+        out.push(dst.to_string_lossy().into_owned());
+    }
+    Ok(out)
+}
+
+/// Delete GRIB files from the GRIB folders: never a loaded file, and never from qtVlm's own folder.
+/// Returns how many were deleted.
+#[tauri::command]
+pub(crate) fn grib_delete(paths: Vec<String>) -> Result<usize, String> {
+    let dirs = grib_dirs();
+    let loaded = GRIBS.lock().unwrap();
+    let mut n = 0;
+    for p in paths {
+        let path = std::path::PathBuf::from(&p);
+        let in_folder = path.parent().is_some_and(|d| dirs.iter().any(|g| g.as_path() == d));
+        if loaded.contains_key(&p) || !in_folder || p.to_ascii_lowercase().contains("qtvlm") {
+            continue;
+        }
+        std::fs::remove_file(&path).map_err(|e| format!("Could not delete {p}: {e}"))?;
+        n += 1;
+    }
+    Ok(n)
+}
+
 #[tauri::command]
 pub(crate) fn grib_loaded() -> Vec<grib::Summary> {
     GRIBS
