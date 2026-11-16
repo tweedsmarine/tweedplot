@@ -223,7 +223,16 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
       inspect.className = "rw-inspect";
       const previous = document.createElement("button"), next = document.createElement("button");
       previous.textContent = "◀ Previous"; next.textContent = "Next ▶";
-      const update = (index, moveTime = true) => {
+      // dragging moves the cursor, values and boat marker at once; the chart's weather follows when the drag
+      // pauses for a moment (and on release), so a big GRIB is not asked for a new picture at every step
+      let pending = null, timer = 0;
+      const moveChart = (r) => {
+        clearTimeout(timer); pending = null;
+        internal = true;
+        try { weather.setTime(r.t); weather.setCursor([r.lon, r.lat]); } finally { internal = false; }
+      };
+      const flush = () => { if (pending) moveChart(pending); };
+      const update = (index, moveTime = true, deferred = false) => {
         selected = Math.max(0, Math.min(data.rows.length - 1, index));
         const r = data.rows[selected];
         mark(r);
@@ -234,10 +243,8 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
         const inRange = min != null && max != null && r.t >= min && r.t <= max;
         const note = inRange ? "" : " · Outside the available chart forecast times; chart time and cursor forecast unchanged";
         if (moveTime) {
-          if (inRange) {
-            internal = true;
-            try { weather.setTime(r.t); weather.setCursor([r.lon, r.lat]); } finally { internal = false; }
-          }
+          if (inRange && !deferred) moveChart(r);
+          else if (inRange) { pending = r; clearTimeout(timer); timer = setTimeout(flush, 150); }
         }
         const noValues = fields.length && fields.every((f) => r[f.key] == null);
         readout.textContent = `Inspecting: ${describe(r)}${noValues ? " · No selected forecast data at this point" : ""}${used.length ? ` · Sources: ${used.join(", ")}` : ""}${note}`;
@@ -246,7 +253,8 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
       };
       body._rwW = body.clientWidth;
       const svg = draw(data.rows, strips, Math.max(520, body.clientWidth - 20), {
-        pick: (r) => update(data.rows.indexOf(r)),
+        pick: (r) => update(data.rows.indexOf(r), true, true),
+        release: flush,
       });
       previous.onclick = () => update(selected < 0 ? 0 : selected - 1);
       next.onclick = () => update(selected < 0 ? 0 : selected + 1);
@@ -286,7 +294,7 @@ function describe(r) {
 }
 
 /** The strips as SVG over time, with distance marked along the bottom. */
-function draw(rows, strips, W, { pick }) {
+function draw(rows, strips, W, { pick, release }) {
   const pad = { l: 46, r: 40 };
   const gap = 20, top = 16, axisH = 34;
   const H = top + strips.reduce((a, p) => a + p.h + gap, 0) + axisH;
@@ -320,8 +328,10 @@ function draw(rows, strips, W, { pick }) {
     }
   };
   let y0 = top;
+  const bands = []; // each plot's top and height: the time grid is drawn within them only
   const series = []; // what the draggable cursor reads out: { key, yv, col, unit, above, y0, h }
   for (const st of strips) {
+    bands.push({ y0, h: st.h });
     const g = add("g", {});
     add("rect", { x: pad.l, y: y0, width: W - pad.l - pad.r, height: st.h, class: "mg-bg" }, g);
     add("text", { x: pad.l, y: y0 - 4, class: "mg-title" }, g).textContent = st.title;
@@ -393,7 +403,7 @@ function draw(rows, strips, W, { pick }) {
   // time along the bottom (local days and 6-hourly ticks), distance below it
   const span = t1 - t0;
   const minor = span > 5 * 86400 ? 21600 : span > 36 * 3600 ? 10800 : 3600;
-  for (let t = Math.ceil(t0 / minor) * minor; t <= t1; t += minor) add("line", { x1: x(t), x2: x(t), y1: top, y2: y0 - gap, class: "mg-vgrid" });
+  for (let t = Math.ceil(t0 / minor) * minor; t <= t1; t += minor) for (const b of bands) add("line", { x1: x(t), x2: x(t), y1: b.y0, y2: b.y0 + b.h, class: "mg-vgrid" });
   // labels at local midnights (date) or local hours, spaced so they never overlap
   const off = -new Date(t0 * 1000).getTimezoneOffset() * 60; // local time = UTC + off
   const fits = (sec) => (sec / span) * (W - pad.l - pad.r) >= 96;
@@ -430,7 +440,7 @@ function draw(rows, strips, W, { pick }) {
     svg.setPointerCapture?.(e.pointerId);
     last = null; follow(e);
     const move = (ev) => follow(ev);
-    const up = () => { svg.removeEventListener("pointermove", move); svg.removeEventListener("pointerup", up); svg.removeEventListener("pointercancel", up); };
+    const up = () => { release?.(); svg.removeEventListener("pointermove", move); svg.removeEventListener("pointerup", up); svg.removeEventListener("pointercancel", up); };
     svg.addEventListener("pointermove", move); svg.addEventListener("pointerup", up); svg.addEventListener("pointercancel", up);
     e.preventDefault();
   });

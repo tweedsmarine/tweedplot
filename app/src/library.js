@@ -1195,7 +1195,7 @@ export function labelImage(id) {
   c.width = w; c.height = 30;
   g.font = font;
   g.textBaseline = "middle";
-  g.lineWidth = 5; g.strokeStyle = "rgba(255,255,255,0.9)"; g.lineJoin = "round";
+  g.lineWidth = 6.5; g.strokeStyle = "rgba(255,255,255,0.95)"; g.lineJoin = "round";
   g.strokeText(text, 6, 15);
   g.fillStyle = "#1d2a33";
   g.fillText(text, 6, 15);
