@@ -47,11 +47,10 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
   const win = $("wxp");
   win.innerHTML = `<div id="wxp-key" class="wx-key" hidden></div>
     <div class="env-start">
-      <div class="wx-note">Last starting point selected; adjust any layer or overlay afterwards.</div>
-      <div class="env-start-buttons" role="group" aria-label="Environment starting points">
-        <button type="button" data-env-preset="weather" aria-pressed="false">Weather</button>
-        <button type="button" data-env-preset="ocean" aria-pressed="false">Ocean</button>
-        <button type="button" data-env-preset="seabed" aria-pressed="false">Seabed</button>
+      <div class="env-start-buttons" role="group" aria-label="What the Environment view is showing">
+        <button type="button" data-env-preset="weather" aria-pressed="false" title="Wind, pressure, rain and sea state. Remembers its own layer and overlays">Weather</button>
+        <button type="button" data-env-preset="ocean" aria-pressed="false" title="Sea temperature, salinity, chlorophyll and currents. Remembers its own layer and overlays">Ocean</button>
+        <button type="button" data-env-preset="seabed" aria-pressed="false" title="Depth layers, with no weather shading">Seabed</button>
       </div>
       <div id="env-start-status" class="wx-note" role="status"></div>
       <details class="env-seabed"><summary>Seabed layers</summary>
@@ -65,11 +64,9 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
         <div class="wx-note">Manage seabed data in Chart → Get data. Shared layers also affect other views.</div>
       </details>
     </div>
-    <button id="wxp-data" type="button">Download or manage GRIBs…</button>
+    <div id="wxp-show" class="wxp-chooser"></div>
     <div class="wxp-time"><div id="wxp-legend" class="wx-legend"></div><div id="wxp-filter"></div></div>
     <div class="wxp-body" id="wxp-body">
-      <details data-sec="show"><summary>Show on the chart</summary><div id="wxp-show"></div>
-        <div class="wxp-presets"><select id="wxp-preset" title="Presets"></select><button id="wxp-psave" title="Save what is shown as a preset">Save…</button><button id="wxp-pdel" title="Delete the chosen saved preset">Delete</button></div></details>
       <details data-sec="over"><summary>Overlays</summary><div id="wxp-over"></div><div id="wxp-isobar-controls"></div></details>
       <details data-sec="cmp" id="wxp-cmp"><summary>Compare GRIBs</summary>
         <h5>GRIBs to compare</h5><div id="wxp-cmp-files"></div>
@@ -77,6 +74,8 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
         <h5>Each GRIB at the cursor</h5><div id="wxp-cmp-point"></div>
         <h5>Check against what happened</h5><div id="wxp-cmp-verify"></div>
       </details>
+      <div class="wxp-presets"><select id="wxp-preset" title="Presets"></select><button id="wxp-psave" title="Save what is shown as a preset">Save…</button><button id="wxp-pdel" title="Delete the chosen saved preset">Delete</button></div>
+      <button id="wxp-data" type="button">Download or manage GRIBs…</button>
       <button id="wxp-visible">Hide weather on chart</button>
       <button id="wxp-snap" title="Save the chart as a picture" aria-label="Save the chart as a picture"><svg viewBox="0 0 24 24" class="ic"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg> Save picture</button>
     </div>`;
@@ -128,28 +127,45 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
       button.classList.toggle("on", selected);
       button.setAttribute("aria-pressed", String(selected));
     }
+    // the seabed layers belong to the Seabed mode
+    win.querySelector(".env-seabed").hidden = st.envStart !== "seabed";
+  }
+  // Weather, Ocean and Seabed are modes: each keeps its own layer, sources, overlays and filter, put back when
+  // you return to it. The first time, a mode starts from sensible defaults for what is loaded.
+  const MODE_LAYERS = { weather: ["wind", "gust", "mslp", "rain", "cape", "temp", "waves", "swell", "period"], ocean: ["sst", "skin", "chl", "sss", "subt", "subs", "current", "ssh"] };
+  const modeOf = (key) => Object.keys(MODE_LAYERS).find((m) => MODE_LAYERS[m].includes(key)) ?? null;
+  st.modes ??= {};
+  function setMode(key) {
+    if (!["weather", "ocean", "seabed"].includes(key)) return;
+    if (st.envStart && st.envStart !== key) st.modes[st.envStart] = weather.config();
+    st.envStart = key;
+    const kept = st.modes[key];
+    const options = weather.layerOptions();
+    weather.setVisible(true);
+    let said = "";
+    if (key === "seabed") {
+      weather.applyConfig({ layer: "none", overlays: { arrows: false, waveArrows: false, currArrows: false, isobars: false, isotherms: false, breaks: false } });
+      said = "Choose the seabed layers below.";
+    } else if (kept && (kept.layer === "none" || options.some((o) => o.key === kept.layer && o.paths.length))) {
+      weather.applyConfig(kept);
+    } else {
+      const choices = key === "weather" ? ["wind", "gust", "waves"] : ["sst", "skin", "chl", "sss", "current"];
+      const choice = choices.map((name) => options.find((o) => o.key === name && o.paths.length)).find(Boolean);
+      if (choice) weather.pickLayer(choice.key, choice.path ?? choice.paths[0]);
+      weather.applyConfig({ layer: choice?.key ?? "none", overlays: {
+        arrows: key === "weather", waveArrows: key === "weather", currArrows: key === "ocean",
+        isobars: key === "weather", isotherms: key === "ocean", breaks: false } });
+      if (!choice) said = `No ${key} GRIB loaded. Use Get data to load one.`;
+    }
+    $("env-start-status").textContent = said;
+    win.querySelector(".env-seabed").open = key === "seabed";
+    save();
+    syncStartingPoint();
+    refresh();
   }
   startButtons.addEventListener("click", (event) => {
     const key = event.target.closest("[data-env-preset]")?.dataset.envPreset;
-    if (!key) return;
-    const choices = key === "weather" ? ["wind", "gust", "waves"] : key === "ocean" ? ["sst", "skin", "chl", "sss", "current"] : [];
-    const options = weather.layerOptions();
-    const choice = choices.map((name) => options.find((option) => option.key === name)).find(Boolean);
-    weather.setVisible(true);
-    if (choice) weather.pickLayer(choice.key, choice.path ?? choice.paths[0]);
-    weather.applyConfig({
-      layer: choice?.key ?? "none",
-      overlays: {
-        arrows: key === "weather", waveArrows: key === "weather", currArrows: key === "ocean",
-        isobars: key === "weather", isotherms: key === "ocean", breaks: false,
-      },
-    });
-    $("env-start-status").textContent = key === "seabed" ? "Choose the seabed layers below." :
-      choice ? `Starting with ${choice.label}.` : `No ${key} GRIB loaded. Use Get data to load one.`;
-    win.querySelector(".env-seabed").open = key === "seabed";
-    st.envStart = key;
-    save();
-    syncStartingPoint();
+    if (key) setMode(key);
   });
   syncStartingPoint();
   syncSeabed();
@@ -178,32 +194,57 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     buildShow(box);
     put($("wxp-show"), box);
   }
+  // The layer chooser: a chip per layer that a loaded GRIB has, in groups, with the source of the chosen layer
+  // under it. In Environment the groups follow the mode; elsewhere all are offered.
+  const GROUPS = [["Weather", ["wind", "gust", "mslp", "rain", "cape", "temp"]], ["Sea state", ["waves", "swell", "period"]],
+    ["Ocean", ["sst", "skin", "chl", "sss", "subt", "subs", "current", "ssh"]]];
+  const CHIP = { wind: "Wind", gust: "Gusts", mslp: "Pressure", rain: "Rain", cape: "CAPE", temp: "Air temp", waves: "Waves", swell: "Swell", period: "Period",
+    sst: "Sea temp", skin: "Sea temp (sat)", chl: "Chlorophyll", sss: "Salinity", subt: "Temp at depth", subs: "Salinity at depth", current: "Current", ssh: "Sea height" };
   function buildShow(box) {
     const info = weather.layerInfo();
-    const opts = weather.layerOptions();
+    const opts = weather.layerOptions().filter((x) => !x.compare && !x.verify && x.paths.length);
+    const env = document.documentElement.dataset.view === "env";
+    // a layer picked some other way (a preset, a key) decides the mode shown
+    if (env && !info.off && modeOf(info.key) && st.envStart !== "seabed" && modeOf(info.key) !== st.envStart) { st.envStart = modeOf(info.key); save(); syncStartingPoint(); }
+    if (env && st.envStart === "seabed" && info.off) return; // Seabed: no weather shading to choose
     if (!opts.length) { box.innerHTML = `<div class="wx-note">No GRIB loaded. Open Get data to load one.</div>`; return; }
-    // the agreement and verify displays are chosen under Compare GRIBs
-    for (const o of [{ key: "none", label: "No shading", paths: [] }, ...opts.filter((x) => !x.compare && !x.verify)]) {
-      const row = document.createElement("label");
-      row.className = "wxp-row";
-      const r = document.createElement("input");
-      r.type = "radio"; r.name = "wxp-layer";
-      r.checked = o.key === "none" ? info.off : !info.off && info.key === o.key;
-      r.onchange = () => weather.pickLayer(o.key, o.path ?? o.paths[0]);
+    const mode = env && MODE_LAYERS[st.envStart] ? st.envStart : null;
+    const chip = (key, label, title, on, pick) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = `wxp-chip${on ? " on" : ""}`;
+      b.textContent = label; b.title = title;
+      b.setAttribute("aria-pressed", String(on));
+      b.dataset.key = key;
+      b.onclick = pick;
+      return b;
+    };
+    let any = false;
+    for (const [name, keys] of GROUPS) {
+      const here = keys.map((k) => opts.find((o) => o.key === k)).filter((o) => o && (!mode || MODE_LAYERS[mode].includes(o.key)));
+      if (!here.length) continue;
+      any = true;
+      const g = document.createElement("div");
+      g.className = "wxp-group";
+      const h = document.createElement("span");
+      h.className = "wxp-group-name"; h.textContent = name;
+      g.append(h);
+      for (const o of here) g.append(chip(o.key, CHIP[o.key] ?? o.label, `${o.label} (${o.unit})${o.help ? `: ${o.help}` : ""}`, !info.off && info.key === o.key,
+        () => weather.pickLayer(o.key, o.path ?? o.paths[0])));
+      box.append(g);
+    }
+    if (!any) { box.innerHTML = `<div class="wx-note">No ${mode} GRIB loaded. Open Get data to load one.</div>`; return; }
+    const last = box.lastElementChild;
+    last.append(chip("none", "None", "No shading: the overlays alone", info.off, () => weather.pickLayer("none")));
+    // where the chosen layer comes from
+    const cur = info.off ? null : opts.find((o) => o.key === info.key);
+    if (cur) {
+      const row = document.createElement("div");
+      row.className = "wxp-row wxp-source";
       const name = document.createElement("span");
-      name.textContent = o.key === "none" ? o.label : `${o.label} (${o.unit})`;
-      if (o.help) row.title = o.help;
-      row.append(r, name);
-      if (o.paths.length > 1) {
-        const sel = sourceSelect(o.paths, o.path, (p) => weather.pickLayer(o.key, p));
-        sel.onclick = (e) => e.stopPropagation();
-        row.append(sel);
-      } else if (o.paths.length === 1 && weather.sources().length > 1) {
-        const s = document.createElement("span");
-        s.className = "wx-note";
-        s.textContent = short(weather.sources().find((x) => x.path === o.paths[0])?.name ?? "");
-        row.append(s);
-      }
+      name.textContent = `${cur.label} from`;
+      row.append(name);
+      if (cur.paths.length > 1) row.append(sourceSelect(cur.paths, cur.path, (p) => weather.pickLayer(cur.key, p)));
+      else { const one = document.createElement("span"); one.className = "wx-note"; one.textContent = short(weather.sources().find((x) => x.path === cur.paths[0])?.name ?? ""); row.append(one); }
       box.append(row);
     }
   }
@@ -270,6 +311,46 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     }
     put($("wxp-over"), box);
   }
+  // ---------- the timeline under the time slider ----------
+  // Day ticks, a mark at now, and a bar for each loaded GRIB showing the times it covers (the shown one
+  // brighter), on the slider's own scale: where a file runs out is seen before the slider gets there.
+  const tl = document.createElement("div");
+  tl.id = "side-wx-timeline";
+  tl.title = "The times each loaded GRIB covers. Click to go to a time";
+  $("side-wx-time").after(tl);
+  tl.onclick = (e) => {
+    const sl = $("side-wx-time"), a = Number(sl.min), b = Number(sl.max), r = tl.getBoundingClientRect();
+    if (b > a && r.width) weather.setTime(a + ((e.clientX - r.left) / r.width) * (b - a));
+  };
+  function renderTimeline() {
+    const sl = $("side-wx-time"), a = Number(sl.min), b = Number(sl.max);
+    const srcs = weather.sources().map((x) => ({ ...x, span: weather.span(x.path) })).filter((x) => x.span);
+    tl.hidden = !(b > a) || !srcs.length;
+    if (tl.hidden) return;
+    const pc = (t) => `${Math.min(100, Math.max(0, ((t - a) / (b - a)) * 100)).toFixed(2)}%`;
+    const days = (b - a) / 86400;
+    const every = days > 12 ? 4 : days > 6 ? 2 : 1;
+    let html = "";
+    // local midnights
+    const d0 = new Date(a * 1000); d0.setHours(24, 0, 0, 0);
+    for (let d = d0, n = 0; d.getTime() / 1000 < b; d = new Date(d.getTime()), d.setDate(d.getDate() + 1), n++) {
+      const t = d.getTime() / 1000;
+      html += `<i class="day" style="left:${pc(t)}"></i>`;
+      if (n % every === 0 && (t - a) / (b - a) < 0.93) html += `<span class="lab" style="left:${pc(t)}">${d.toLocaleDateString(undefined, { weekday: "short" })} ${d.getDate()}</span>`;
+    }
+    srcs.forEach((x, i) => {
+      html += `<b class="cov${x.shown ? " shown" : ""}" style="left:${pc(x.span[0])};width:calc(${pc(x.span[1])} - ${pc(x.span[0])});top:${16 + i * 5}px" title="${x.name.replace(/"/g, "&quot;")}"></b>`;
+    });
+    const now = Date.now() / 1000;
+    if (now > a && now < b) html += `<i class="now" style="left:${pc(now)}" title="Now"></i>`;
+    html += `<i class="at" style="left:${pc(weather.current().t)}"></i>`;
+    tl.style.height = `${18 + srcs.length * 5}px`;
+    if (tl.dataset.sig !== html) { tl.dataset.sig = html; tl.innerHTML = html; }
+  }
+  weather.onTime(renderTimeline);
+  weather.onLoaded?.(renderTimeline);
+  weather.onChange(renderTimeline);
+
   function renderPresets() {
     const sel = $("wxp-preset");
     sel.innerHTML = "";

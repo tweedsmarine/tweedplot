@@ -1971,3 +1971,26 @@ html.side-strip body:has(.ss-alerts .alarm:not(.warn):not(.acked):not(.summary))
 .wx-key.dup { display: none; }
 .wx-error { color: #ff8a80; font-weight: 600; margin-top: 4px; }
 .wx-error[hidden] { display: none; }
+
+/* The layer chooser: chips in groups, the chosen layer's source under them */
+#wxp .wxp-chooser { padding: 2px 0 4px; }
+#wxp .wxp-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 3px 0; }
+#wxp .wxp-group-name { flex: 0 0 100%; font-size: calc(2.3 * var(--u, 4px)); font-weight: 700; color: var(--tile-quiet, inherit); text-transform: uppercase; letter-spacing: .04em; }
+#wxp .wxp-chip { min-height: 32px; padding: 3px 9px; border-radius: 16px; background: #22343f; color: var(--tile-ink); border: 1px solid #6c8490; cursor: pointer; font-size: calc(2.7 * var(--u, 4px)); }
+#wxp .wxp-chip.on { background: var(--accent); color: #fff; border-color: #fff; font-weight: 700; }
+#wxp .wxp-source { min-height: 28px; cursor: default; }
+#wxp .wxp-source select { max-width: 60%; }
+
+/* The timeline under the time slider: day ticks, now, and what each loaded GRIB covers */
+#side-wx-timeline { position: relative; margin: 2px 8px 4px; cursor: pointer; font-size: calc(2.2 * var(--u, 4px)); color: var(--tile-quiet, #9fb3bd); overflow: hidden; }
+#side-wx-timeline[hidden] { display: none; }
+#side-wx-timeline .day { position: absolute; top: 0; width: 1px; height: 100%; background: currentColor; opacity: .45; }
+#side-wx-timeline .lab { position: absolute; top: 0; padding-left: 3px; white-space: nowrap; line-height: 14px; }
+#side-wx-timeline .cov { position: absolute; height: 3px; border-radius: 2px; background: #6c8490; }
+#side-wx-timeline .cov.shown { background: #4fc3f7; }
+#side-wx-timeline .now { position: absolute; top: 0; width: 2px; height: 100%; background: #ffb74d; }
+#side-wx-timeline .at { position: absolute; top: 0; width: 2px; height: 100%; background: #fff; }
+
+#wxp .wxp-chip { flex: 0 0 auto; width: auto; }
+.env-seabed[hidden] { display: none; }
+.wx-key .wx-legend span { overflow: visible; font-size: 9px; padding-left: 1px; }

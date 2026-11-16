@@ -252,7 +252,8 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
         if (editing) sec.innerHTML = `<h4><span class="sp-title">${esc(WEATHER_SECTIONS[s.kind])}</span><span class="sp-tools"><button data-act="up" title="Move up">▲</button><button data-act="down" title="Move down">▼</button><button data-act="del" title="Remove this section">✕</button></span></h4>`;
         sec.append(weatherElements[s.kind]);
         if (s.kind === "weatherTime" && (view() === "plan" || root.classList.contains("weather-focus")) && !editing) pinnedTime.append(sec);
-        else if (s.kind === "gribPoint" && environment && !editing) pinnedPoint.append(sec);
+        // Environment: one scroll region, with the passive cursor read-out after the controls
+        else if (s.kind === "gribPoint" && environment && !editing) { body.append(sec); queueMicrotask(() => { if (sec.isConnected) body.append(sec); }); }
         else body.append(sec);
         return;
       }
