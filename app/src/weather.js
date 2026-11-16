@@ -389,12 +389,17 @@ export function setupWeather(map, layers) {
 
   map.addSource("wx-cells", { type: "geojson", data: fc([]) });
   map.addSource("wx-barbs", { type: "geojson", data: fc([]) });
+  const moveShading = () => { map.moveLayer("wx-cells", shadingBefore()); if (map.getLayer("wx-backdrop")) map.moveLayer("wx-backdrop", "wx-cells"); };
   map.addLayer({
     id: "wx-cells", type: "fill", source: "wx-cells",
     paint: { "fill-color": shadingExpression(wx.shading === "off" ? "2" : wx.shading, LAYERS[wx.layer] ?? LAYERS.wind), "fill-opacity": wx.opacity, "fill-antialias": false },
     layout: { visibility: weatherVisibleInView(weatherView, wx.hidden, wx.navShow) && wx.shading !== "off" ? "visible" : "none" },
   }, shadingBefore());
-  window.addEventListener("webmap-changed", () => map.moveLayer("wx-cells", shadingBefore()));
+  // Environment: a plain backdrop straight under the shading, so depth tints and bathymetry do not show
+  // through it and shift its colours. Only while a layer is shaded there; the coast, marks and everything
+  // drawn above the shading stay.
+  map.addLayer({ id: "wx-backdrop", type: "background", paint: { "background-color": "#e3e9ed" }, layout: { visibility: "none" } }, "wx-cells");
+  window.addEventListener("webmap-changed", () => moveShading());
   // isobars and wave-direction arrows
   map.addSource("wx-isobars", { type: "geojson", data: fc([]) });
   map.addSource("wx-wavedir", { type: "geojson", data: fc([]) });
@@ -937,6 +942,7 @@ export function setupWeather(map, layers) {
       ]);
       if (version !== drawVersion) return;
       showDrawError();
+      drawLegend(); // the key and the filter bar follow what was just drawn (a newly loaded GRIB too)
       const cells = [], barbs = [], waves = [], currents = [];
       if (g) {
         for (let j = 0; j < g.nj; j++) {
@@ -1170,7 +1176,7 @@ export function setupWeather(map, layers) {
   opac.oninput = () => { wx.opacity = Number(opac.value); showVals(); saveWx(); map.setPaintProperty("wx-cells", "fill-opacity", wx.opacity); };
   const landSel = $("wx-land");
   landSel.value = wx.land;
-  landSel.onchange = () => { wx.land = landSel.value; saveWx(); map.moveLayer("wx-cells", shadingBefore()); };
+  landSel.onchange = () => { wx.land = landSel.value; saveWx(); moveShading(); };
   // ---------- sea filter: low, target, high ----------------------------------------------
   // The full grid range at the current chart time, independent of the map bounds.
   const seaRange = {};
@@ -1216,9 +1222,7 @@ export function setupWeather(map, layers) {
       grad.style.left = pc(f.lo);
       grad.style.width = `calc(${pc(f.hi)} - ${pc(f.lo)})`;
       const w = f.hi - f.lo;
-      const fixed = layer.scale.filter(([v]) => v > f.lo && v < f.hi);
-      const stops = filterInUse(layer, f) ? filterColourStyle(layer, f, wx.shading).stops
-        : [[f.lo, paletteAt(f.lo, layer.scale)], ...fixed, [f.hi, paletteAt(f.hi, layer.scale)]];
+      const stops = filterInUse(layer, f) ? filterColourStyle(layer, f, wx.shading).stops : fixedStops(layer, f.lo, f.hi);
       grad.style.background = `linear-gradient(to right, ${stops.map(([v, c]) => `${c} ${((v - f.lo) / w) * 100}%`).join(", ")})`;
       for (const k of ["lo", "hi"]) box.querySelector(`.h.${k}`).style.left = pc(f[k]);
       const th = box.querySelector(".h.tg");
@@ -1376,6 +1380,7 @@ export function setupWeather(map, layers) {
       map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
     }
     map.setLayoutProperty("wx-cells", "visibility", visible && wx.shading !== "off" ? "visible" : "none");
+    map.setLayoutProperty("wx-backdrop", "visibility", visible && wx.shading !== "off" && weatherView === "env" && display ? "visible" : "none");
     const lay = LAYERS[wx.layer] ?? LAYERS.wind;
     const sf = filterInUse(lay, wx.seaFilter[wx.layer]) ? wx.seaFilter[wx.layer] : null;
     // only the ends that were set hide anything: beyond an end left alone the last colour carries on
@@ -1420,6 +1425,29 @@ export function setupWeather(map, layers) {
     $(id).onchange = (e) => { wx[key] = e.target.checked; saveWx(); draw(); changed(); };
   }
   // el -> { always }: a legend marked `always` is the key beside the chart time, shown whenever weather is drawn
+  /** A layer's fixed scale between two values, as the chart draws it: in bands when the shading is banded. */
+  function fixedStops(layer, lo, hi) {
+    const step = Number(wx.shading);
+    if (!layer.knots || !(step > 0)) {
+      return [[lo, paletteAt(lo, layer.scale)], ...layer.scale.filter(([v]) => v > lo && v < hi), [hi, paletteAt(hi, layer.scale)]];
+    }
+    const out = [];
+    for (let a = Math.floor(lo / step) * step; a < hi; a += step) {
+      const c = paletteAt(a + step / 2);
+      out.push([Math.max(lo, a), c], [Math.min(hi, a + step), c]);
+    }
+    return out;
+  }
+  /** Round numbers to label a scale from lo to hi: about `n` of them. */
+  function ticks(lo, hi, n = 5) {
+    const raw = (hi - lo) / n;
+    if (!(raw > 0)) return [];
+    const p = 10 ** Math.floor(Math.log10(raw)), m = raw / p;
+    const step = (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p;
+    const out = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(6));
+    return out;
+  }
   const legends = new Map();
   function swatches(el, layer) {
     if (layer.knots) {
@@ -1466,12 +1494,17 @@ export function setupWeather(map, layers) {
       bar.classList.add("grad");
       bar.style.background = `linear-gradient(to right, ${stops.map(([v, c]) => `${c} ${((v - f.lo) / w) * 100}%`).join(", ")})`;
       const num = (v) => (layer.log ? fmtChl(10 ** v) : String(+v.toFixed(2)));
-      const ends = document.createElement("div");
-      ends.className = "wx-key-ends";
+      // numbers under it: round values across the scale, and the two ends (an end left alone hides
+      // nothing: beyond it the last colour carries on, shown as ≤ or ≥)
       const ends_ = filterBounds(f);
-      // an end left alone hides nothing: beyond it the last colour carries on
-      for (const t of [`${ends_.lo || layer.auto ? "" : "≤ "}${num(f.lo)}`, f.tg != null ? `target ${num(f.tg)}` : "", `${ends_.hi || layer.auto ? "" : "≥ "}${num(f.hi)}`]) { const x = document.createElement("span"); x.textContent = t; ends.append(x); }
-      el.append(ends);
+      const row = document.createElement("div");
+      row.className = "wx-key-ticks";
+      const put = (v, text, cls = "") => { const x = document.createElement("span"); x.textContent = text; x.className = cls; x.style.left = `${((v - f.lo) / w) * 100}%`; row.append(x); };
+      put(f.lo, `${ends_.lo || layer.auto ? "" : "≤ "}${num(f.lo)}`, "lo");
+      for (const v of layer.log ? [] : ticks(f.lo, f.hi)) if ((v - f.lo) / w > 0.14 && (f.hi - v) / w > 0.14) put(v, num(v));
+      put(f.hi, `${ends_.hi || layer.auto ? "" : "≥ "}${num(f.hi)}`, "hi");
+      el.append(row);
+      if (f.tg != null) { const t = document.createElement("div"); t.className = "wx-key-ends"; t.textContent = `target ${num(f.tg)}`; el.append(t); }
     }
   }
   changeListeners.push(drawLegend);
@@ -1507,7 +1540,7 @@ export function setupWeather(map, layers) {
     map.setLayoutProperty("wx-barbs", "icon-size", wx.size);
     map.setLayoutProperty("wx-currdir", "icon-size", ["*", wx.size, ["get", "s"]]);
     map.setPaintProperty("wx-cells", "fill-opacity", wx.opacity);
-    map.moveLayer("wx-cells", shadingBefore());
+    moveShading();
     applyLayer();
     renderLoaded();
     setTimes();

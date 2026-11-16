@@ -33,7 +33,9 @@ export function createInfoBox(map, kind, { title = "", width = 340, height = 320
     const r = area();
     const w = Math.min(st.w, r.width - 16), h = Math.min(st.h, r.height - 16);
     el.style.width = `${w}px`;
-    el.style.height = `${h}px`;
+    // as tall as its content, up to the height it was last dragged to (it was always that tall, mostly empty)
+    el.style.height = "auto";
+    el.style.maxHeight = `${h}px`;
     el.style.right = "auto";
     // st.x, st.y are within the chart; the box is on the page, and the chart starts after the toolbar
     el.style.left = `${r.left + Math.max(4, Math.min(r.width - w - 4, st.x ?? r.width - w - 70))}px`;
@@ -87,6 +89,9 @@ export function createInfoBox(map, kind, { title = "", width = 340, height = 320
     const top = body.scrollTop;
     if (typeof content === "string") body.innerHTML = content;
     else body.replaceChildren(content);
+    // a heading that only repeats the window's title is not shown twice
+    const first = body.firstElementChild?.matches("h1, h2, h3, h4, h5, b, strong, .ib-h") ? body.firstElementChild : body.firstElementChild?.querySelector?.(":scope > :is(h1, h2, h3, h4, h5, b, strong):first-child");
+    if (first && first.textContent.trim() === titleEl.textContent.trim()) first.hidden = true;
     body.scrollTop = top;
   }
 

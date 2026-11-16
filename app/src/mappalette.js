@@ -42,7 +42,10 @@ export function darken(r, g, b, k, kn) {
 
 // `ink`: what black becomes in the images the app draws (labels, symbols). Higher than `kn`, which is for
 // lines and fills: at 0.17 the ink of a label was all but black on the night chart and could not be read.
-const PROFILES = { Dusk: { k: 0.6, kn: 0.45, ink: 0.6, raster: 0.45 }, Night: { k: 0.25, kn: 0.17, ink: 0.42, raster: 0.2 } };
+// `sym`: the same for the other images (AIS targets, buoys, symbols): between the two, so a symbol is seen but
+// is not among the brightest things on the night chart.
+const PROFILES = { Dusk: { k: 0.6, kn: 0.45, ink: 0.6, sym: 0.5, raster: 0.45 }, Night: { k: 0.25, kn: 0.17, ink: 0.42, sym: 0.26, raster: 0.2 } };
+const TEXT_IMAGE = /^(lbl:|txt:|barb|wx)/; // labels and wind barbs: must be read
 
 export function setupMapPalette(map) {
   const rawSet = map.setPaintProperty.bind(map);
@@ -79,11 +82,12 @@ export function setupMapPalette(map) {
   };
   const isData = (img) => img && typeof img.width === "number" && img.data && img.data.length === img.width * img.height * 4;
   const skipImage = (id) => /^(s52|sh:|dp:|cl:|pat:|dpat:)/.test(id);
-  const darkImage = (img) => {
+  const darkImage = (img, id = "") => {
+    const kn = (TEXT_IMAGE.test(id) ? prof.ink : prof.sym) ?? prof.kn;
     const d = new Uint8ClampedArray(img.data);
     for (let i = 0; i < d.length; i += 4) {
       if (!d[i + 3]) continue;
-      const [r, g, b] = darken(d[i], d[i + 1], d[i + 2], prof.k, prof.ink ?? prof.kn);
+      const [r, g, b] = darken(d[i], d[i + 1], d[i + 2], prof.k, kn);
       d[i] = r; d[i + 1] = g; d[i + 2] = b;
     }
     return { width: img.width, height: img.height, data: d };
@@ -91,7 +95,7 @@ export function setupMapPalette(map) {
   map.addImage = (id, img, opts = {}) => {
     if (!opts.sdf && isData(img) && !skipImage(id)) {
       images.set(id, { img, opts });
-      if (prof) img = darkImage(img);
+      if (prof) img = darkImage(img, id);
     }
     return rawImage(id, img, opts);
   };
@@ -117,7 +121,7 @@ export function setupMapPalette(map) {
     }
     for (const [id, { img }] of images) {
       if (!map.hasImage(id)) { images.delete(id); continue; }
-      try { map.updateImage(id, prof ? darkImage(img) : img); } catch { /* changed size: leave it */ }
+      try { map.updateImage(id, prof ? darkImage(img, id) : img); } catch { /* changed size: leave it */ }
     }
   }
   return { apply };

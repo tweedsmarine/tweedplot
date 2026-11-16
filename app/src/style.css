@@ -2081,3 +2081,28 @@ html:is([data-palette="iho-night"], [data-palette="dusk"][data-iho]) .ib-ring { 
 .ly-get { min-height: 28px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--btn-line); color: var(--btn-ink); background: var(--btn-bg); font-weight: 600; }
 .ly-get:hover { background: var(--btn-bg-hover); }
 #side #wxp-cmp-verify button { width: 100%; }
+
+/* Instruments view: the way back to the other views, on the top row beside MOB */
+#inst-views { display: none; }
+html[data-view="inst"] #inst-views { display: flex; gap: 6px; position: absolute; top: 10px; right: calc(var(--chart-r) + 150px); z-index: 7; }
+html[data-view="inst"] #inst-views button { flex: none; height: 48px; min-width: 120px; padding: 0 14px; font-size: 15px; background: #2f4a59; color: #e8f0f4; border: 1px solid #7d97a4; }
+html[data-view="inst"] #inst-views button:hover { background: #3b5d70; }
+html.ui-large[data-view="inst"] #inst-views button { height: 60px; font-size: 17px; }
+/* the key under a set filter: numbers across it */
+.wx-key-ticks { position: relative; height: calc(3.4 * var(--u, 4px)); font-size: calc(2.4 * var(--u, 4px)); color: var(--tile-quiet, inherit); font-variant-numeric: tabular-nums; }
+.wx-key-ticks span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.wx-key-ticks span.lo { transform: none; }
+.wx-key-ticks span.hi { transform: translateX(-100%); }
+/* night legibility: section headings and the alerts line a step brighter */
+.sp-sec h4, .sp-mob h4 { color: #a9bdc9; }
+.sp-sec h4 .chev { color: #8fa6b3; }
+/* the line under the chart: no scroll bar across it (it still scrolls by wheel or touch) */
+#side-strip, #side-strip .ss-rows { scrollbar-width: none; }
+#side-strip::-webkit-scrollbar, #side-strip .ss-rows::-webkit-scrollbar { display: none; }
+/* the chart credits: on a pale strip, so a route or a sounding under them does not make them unreadable */
+.attribution { background: rgba(255, 255, 255, 0.72); padding: 1px 6px; border-radius: 4px; }
+.info-box { height: auto; }
+
+/* Night legibility: brighter status text */
+.sp-status .st-paused { color: #ffd866; }
+.sp-noalert { color: #9fb6c4; }
