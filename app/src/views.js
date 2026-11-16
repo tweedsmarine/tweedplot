@@ -39,7 +39,7 @@ export const OPERATIONAL_VIEWS = VIEWS.filter((v) => v.id !== "nmea");
 
 const $ = (id) => document.getElementById(id);
 
-export function setupViews(map, { onPlanningTimeout = () => {} } = {}) {
+export function setupViews(map, { onPlanningTimeout = () => {}, livePosition = () => true } = {}) {
   // The program always opens in Navigation; each view remembers for itself whether its panels
   // (the rail and drawers) are shown, and Navigation starts with them shown.
   let s = { current: "nav", tools: {}, map: {} };
@@ -136,6 +136,13 @@ export function setupViews(map, { onPlanningTimeout = () => {} } = {}) {
     },
     onChange(f) { window.addEventListener("racenav-view", (e) => f(e.detail.id, e.detail.tools)); },
   };
+  const notice = document.createElement("div");
+  notice.id = "idle-notice";
+  notice.hidden = true;
+  notice.setAttribute("role", "alert");
+  notice.innerHTML = `<span></span><button type="button"></button>`;
+  document.body.append(notice);
+  notice.querySelector("button").onclick = () => idle.activity();
   const timeoutKey = own("racenav.planningTimeout");
   const timeoutSelect = $("planning-timeout");
   const validTimeout = (value) => Number.isInteger(value) && value >= 0 && value <= 10;
@@ -149,6 +156,17 @@ export function setupViews(map, { onPlanningTimeout = () => {} } = {}) {
     now: () => Date.now(), schedule: (fn, delay) => setTimeout(fn, delay), cancel: clearTimeout,
     currentView: () => s.current, timeoutMinutes: () => timeout,
     onTimeout: () => { const previousView = s.current; api.set("nav"); onPlanningTimeout(previousView); },
+    // only while a live position is arriving: at the desk there is nothing to return for
+    active: () => { try { return !!livePosition(); } catch { return false; } },
+    // a notice for the last 30 seconds; any input (or Stay) cancels it
+    warnMs: 30000,
+    onWarn: (seconds) => {
+      const name = s.current === "env" ? "Environment" : "Planning";
+      notice.querySelector("span").textContent = `No input: returning to Navigation in ${seconds} s`;
+      notice.querySelector("button").textContent = `Stay in ${name}`;
+      notice.hidden = false;
+    },
+    onWarnEnd: () => { notice.hidden = true; },
   });
   timeoutSelect.addEventListener("change", () => {
     const value = Number(timeoutSelect.value);

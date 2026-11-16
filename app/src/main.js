@@ -443,7 +443,7 @@ let routing = null;
 let aisApi = null; // AIS targets (ais.js), for the data panel's Targets section
 let library = null;
 const ui = setupRail(map);
-const views = setupViews(map, { onPlanningTimeout: (view) => toast(`${view === "env" ? "Environment" : "Planning"} inactive: returned to Navigation`, 8000) });
+const views = setupViews(map, { livePosition: () => live && positionWatch.age() != null && !positionWatch.lost(), onPlanningTimeout: (view) => toast(`${view === "env" ? "Environment" : "Planning"} inactive: returned to Navigation`, 8000) });
 setupCards();
 const use = setupUse();
 
@@ -534,8 +534,15 @@ function activeNav() {
   }
   return route?.nav() ?? null;
 }
-function layTarget() {
+/** For the readings, the highway and the laylines: in Planning and Environment the route as planned
+ *  stands in when nothing is being navigated; in Navigation and Instruments only what is navigated shows. */
+function shownNav() {
   const nav = activeNav();
+  if (nav) return nav;
+  return ["plan", "env"].includes(document.documentElement.dataset.view) ? route?.nav(true) ?? null : null;
+}
+function layTarget() {
+  const nav = shownNav();
   return nav ? { ...nav.next, from: nav.from, goto: !!nav.goto } : null;
 }
 let layKey = "";
@@ -694,6 +701,9 @@ map.on("load", () => {
   } });
   library = setupLibrary(map, { ui, toast, getBoat: () => lastBoat });
   route = setupRoute(map, { library, getBoat: () => lastBoat, getArrivalNm: () => Number(document.getElementById("rt-radius").value) || 0.1 });
+  // navigation started or stopped, or the view changed: the readings, highway and laylines follow at once
+  route.onChange(() => { feed(); laylines?.refresh(); });
+  window.addEventListener("racenav-view", () => { feed(); laylines?.refresh(); });
   mariner = setupMariner(map, { settings, saveSettings, colours: () => ihoColours, usingS52: () => features?.usingS52(), library, route, toast, getVariation: variationAt });
   route.setIho(!!ihoColours, tokenColour);
   if (lastBoat) drawBoat();
@@ -818,7 +828,7 @@ function boatTime() {
 // replayOn is declared further down; feed() can run before that line during start-up
 function replaying() { try { return replayOn; } catch { return false; } }
 function feed() {
-  const nav = activeNav();
+  const nav = shownNav();
   const pos = lastBoat;
   const wp = pos && nav ? waypointData(pos, vessel.sog, vessel.cog, nav.from, [nav.next.lon, nav.next.lat]) : null;
   const pts = routing?.activePoints();

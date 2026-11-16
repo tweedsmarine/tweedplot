@@ -125,6 +125,9 @@ test("view controls and chart positions stay in sync, including the Planning tim
   assert.ok(timer, "Planning schedules the inactivity timeout");
   now += 5 * 60000;
   timer();
+  assert.notEqual(views.current(), "nav", "the notice comes first");
+  now += 30000;
+  timer();
   assert.equal(views.current(), "nav");
   assert.equal(zoom, 15, "timeout restores Navigation zoom");
   assert.deepEqual(center, { lng: 171, lat: -42 }, "timeout restores Navigation centre");
@@ -136,6 +139,9 @@ test("view controls and chart positions stay in sync, including the Planning tim
   center = { lng: 176, lat: -34 };
   assert.ok(timer, "Environment schedules the inactivity timeout");
   now += 5 * 60000;
+  timer();
+  assert.notEqual(views.current(), "nav", "the notice comes first");
+  now += 30000;
   timer();
   assert.equal(views.current(), "nav");
   assert.equal(zoom, 15, "Environment timeout restores Navigation zoom");

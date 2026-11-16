@@ -177,7 +177,7 @@ Use the view buttons at the top of the data panel or the toolbar's View button. 
 - Each view remembers, in each window, whether its rail and drawers are shown, whether the data panel is shown, and whether own soundings are shown. Survey depths and survey outlines also have separate visibility choices for each view. The dock opens and closes independently.
 - Navigation, Planning and Environment remember their chart centre and zoom independently while the window is open. The first time you enter a view it starts at the current centre and zoom; switching back restores that view's last centre and zoom, including when returning from Instruments or after the inactivity timeout. Follow is shared between views: if it is on, subsequent boat position updates move the chart to follow the boat.
 - AIS chart visibility is selected per view in **Targets & fleets** or **Chart › Layers**. Planning starts with AIS hidden; the other views keep the previous AIS setting until changed. Reception, target lists and AIS alarms continue when chart symbols are hidden.
-- **Settings › Display › Return to Navigation after Planning inactivity** also applies to Environment. It defaults to five minutes, and can be set from one to ten minutes or Off for this window. Mouse, touch, wheel and keyboard input in that window resets the timer. The switch occurs even with an edit or dialog open; check any unfinished work afterwards. Other windows have their own timers.
+- **Settings › Display › Return to Navigation after Planning inactivity** also applies to Environment. It defaults to five minutes, and can be set from one to ten minutes or Off for this window. Mouse, touch, wheel and keyboard input in that window resets the timer. It applies only while a live position is arriving, so nothing happens at the desk. For the last 30 seconds a notice counts down at the top of the window; **Stay**, or any input, cancels it. The switch occurs even with an edit or dialog open; check any unfinished work afterwards. Other windows have their own timers.
 - Navigation, Planning and Environment each keep their own chart display: **Base**, **Standard** or **All**, and the switches of Chart › Chart display (light sectors, names and labels, soundings, information symbols, important and other text, date-dependent symbols). Environment starts with Base; other views start with the display of the view you came from. Changes are remembered per view. Base is not sufficient for navigation: use Standard or All for planning and monitoring. The symbols, their size and the safety depth and contour are the same in every view.
 - **Esc** leaves the Instruments or Live data view for the view you came from.
 - **Show the chart in this view**, in the View button's list, turns the chart on or off in the view you are in. The Instruments and Live data views start without it.
@@ -808,7 +808,7 @@ A **route** is a start and an ordered list of marks. A **mark** is a named posit
 
 {icon:course} **Route** keeps sailing a route apart from planning one, as an ECDIS keeps route monitoring apart from route planning:
 
-- **Navigate**, at the top: **◀ ▶** choose the mark the instruments and alarms steer to (BTW, DTW, XTE, the Highway, *Off track* and *Approaching the next mark*). With live data it moves on by itself when you reach a mark.
+- **Navigate**, at the top: **Start navigating** makes the route the one being navigated. Only then does it appear in the Navigation and Instruments views' Route readings, Marks ahead and Highway, and only then do *Off track* and *Approaching the next mark* watch it. A route that is only being planned shows "Not navigating" and feeds those readings in Planning and Environment alone. **◀ ▶** choose the mark being steered to; with live data it moves on by itself when you reach a mark. **Stop navigating** ends it, and so does opening another route or starting a new one, so check here after changing the route.
 - **Plan**, below: the route being built or changed.
 
 **Building a route**
@@ -1337,7 +1337,7 @@ With dusk and night colours the window's title bar turns dark as well. To get ri
 
 - **Zoom buttons**: **Auto** shows them only where a touch screen is found; **Show** or **Hide** forces it. They are two round buttons at the bottom centre of the chart, well apart.
 - **Large buttons**: **Auto** enlarges the toolbar, MOB, Drop and zoom buttons on a touch screen; **On** does it on any screen, for gloves.
-- **Return to Navigation after Planning inactivity**: five minutes by default, adjustable from one to ten minutes or Off. It applies to Planning and Environment in this window and changes view even if a dialog or edit is open.
+- **Return to Navigation after Planning inactivity**: five minutes by default, adjustable from one to ten minutes or Off. It applies to Planning and Environment in this window while a live position is arriving, gives a 30-second notice with a **Stay** button, and changes view even if a dialog or edit is open.
 
 **Diagnostics**
 

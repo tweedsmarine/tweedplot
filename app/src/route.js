@@ -37,6 +37,10 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
   let routeId = work.routeId;
   let dirty = work.dirty;
   let navIndex = work.nav || 0;
+  // Whether this route is being navigated (route monitoring), not only planned: set by Start navigating,
+  // cleared when another route is opened or a new one begun. Only then does it feed the instruments,
+  // the highway and the alarms in the Navigation view.
+  let navOn = work.navOn === true;
   let greatCircle = Boolean(work.greatCircle);
   // range rings of a start that isn't a library mark (marks keep theirs: m.rings, or the library's)
   let startRings = work.startRings || null;
@@ -64,7 +68,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     layout: { "icon-image": ["get", "img"], "icon-anchor": ["get", "anc"], "icon-offset": ["get", "off"], "icon-allow-overlap": false, "icon-padding": 2 } });
 
   function persist() {
-    save(WORK_KEY, { routeId, name: $("rt-name").value, start, startRef, marks, dirty, nav: navIndex, greatCircle, startRings });
+    save(WORK_KEY, { routeId, name: $("rt-name").value, start, startRef, marks, dirty, nav: navIndex, navOn, greatCircle, startRings });
   }
   function changed() {
     dirty = true;
@@ -99,7 +103,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     // IHO: waypoint circles (the next one doubled), numbers and names in the route colour
     const ihoLabel = (n, name) => `s52m:t:PLRTE:${n}${name ? ` ${name}` : ""}`;
     if (start) f.push(pt(start, iho ? { icon: "s52m:wp:PLRTE", sel: -1, name: "", lbl: ihoLabel("S", startRef?.name) } : { icon: "mk:S", sel: -1, name: startRef?.name || "" }));
-    marks.forEach((m, i) => f.push(pt([m.lon, m.lat], iho ? { icon: i === navIndex ? "s52m:wpn:PLRTE" : "s52m:wp:PLRTE", sel: i, name: "", lbl: ihoLabel(i + 1, m.name) }
+    marks.forEach((m, i) => f.push(pt([m.lon, m.lat], iho ? { icon: navOn && i === navIndex ? "s52m:wpn:PLRTE" : "s52m:wp:PLRTE", sel: i, name: "", lbl: ihoLabel(i + 1, m.name) }
       : { icon: `mk:${i + 1}`, sel: i, name: m.name || "" })));
     map.getSource("rt-marks").setData({ type: "FeatureCollection", features: f });
     drawLegLabels();
@@ -108,7 +112,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     const legs = [];
     for (let i = 1; i < pts.length; i++) {
       const leg = [pts[i - 1], pts[i]];
-      legs.push({ type: "Feature", properties: { active: i - (start ? 1 : 0) === navIndex },
+      legs.push({ type: "Feature", properties: { active: navOn && i - (start ? 1 : 0) === navIndex },
         geometry: greatCircle ? greatCircleGeometry(...leg) : { type: "LineString", coordinates: leg } });
     }
     map.getSource("rt-legs").setData({ type: "FeatureCollection", features: legsHidden ? [] : legs });
@@ -153,7 +157,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       prev = [m.lon, m.lat];
       const li = row(i + 1, "", m.name || `New mark ${i + 1}`, `${m.id ? "" : "not saved · "}${ddm(m.lat, "N", "S")} ${ddm(m.lon, "E", "W")}${leg}`,
         `<button data-act="up" title="Earlier">↑</button><button data-act="down" title="Later">↓</button><button data-act="x" title="Remove from the route (stays in the library)">✕</button>`);
-      li.classList.toggle("active", i === navIndex);
+      li.classList.toggle("active", navOn && i === navIndex);
       // how the mark is reached: through its arrival circle, rounded to port/starboard, or as close as possible
       const rr = document.createElement("div");
       rr.className = "rnd";
@@ -176,7 +180,13 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       li.querySelector('[data-act="x"]').onclick = () => { marks.splice(i, 1); if (navIndex >= marks.length) navIndex = Math.max(0, marks.length - 1); changed(); };
     });
     if (!start && !marks.length) ul.innerHTML = `<li class="empty">Set a start, then add marks: click the chart, or click a library mark to reuse it.</li>`;
-    $("nav-to").textContent = marks.length ? `${navIndex + 1}. ${marks[navIndex]?.name || `Mark ${navIndex + 1}`}` : "—";
+    if (!marks.length) navOn = false;
+    $("nav-to").textContent = !marks.length ? "—" : navOn ? `${navIndex + 1}. ${marks[navIndex]?.name || `Mark ${navIndex + 1}`}` : "Not navigating";
+    const go = $("nav-go");
+    go.textContent = navOn ? "Stop navigating" : "Start navigating";
+    go.classList.toggle("on", navOn);
+    go.disabled = !marks.length;
+    $("nav-prev").disabled = $("nav-next").disabled = !navOn;
   }
 
   // ---------- selecting, moving and deleting marks on the chart ---------------------------------
@@ -285,7 +295,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     let w;
     try { w = JSON.parse(e.newValue); } catch { return; }
     start = w.start ?? null; startRef = w.startRef ?? null; marks = w.marks ?? []; routeId = w.routeId ?? null;
-    dirty = Boolean(w.dirty); navIndex = w.nav || 0; greatCircle = Boolean(w.greatCircle);
+    dirty = Boolean(w.dirty); navIndex = w.nav || 0; navOn = w.navOn === true; greatCircle = Boolean(w.greatCircle);
     if (document.activeElement !== $("rt-name")) $("rt-name").value = w.name || "";
     $("rt-great-circle").checked = greatCircle;
     deselect();
@@ -344,7 +354,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     } catch (e) { status(`Could not save: ${e}`); }
   };
   $("rt-new").onclick = () => {
-    start = null; startRef = null; startRings = null; marks = []; routeId = null; dirty = false; navIndex = 0; $("rt-name").value = "";
+    start = null; startRef = null; startRings = null; marks = []; routeId = null; dirty = false; navIndex = 0; navOn = false; $("rt-name").value = "";
     arm(null); deselect(); persist(); drawMarks();
     for (const f of listeners) f();
   };
@@ -352,6 +362,14 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
   // ---------- navigation ----------------------------------------------------------
   $("nav-prev").onclick = () => { navIndex = Math.max(0, navIndex - 1); persist(); drawMarks(); };
   $("nav-next").onclick = () => { navIndex = Math.min(Math.max(0, marks.length - 1), navIndex + 1); persist(); drawMarks(); };
+
+  $("nav-go").onclick = () => {
+    if (!marks.length) return;
+    navOn = !navOn;
+    persist(); drawMarks();
+    for (const f of listeners) f();
+    status(navOn ? `Navigating ${$("rt-name").value || "this route"}: to mark ${navIndex + 1}.` : "Navigation stopped.");
+  };
 
   drawMarks();
   library.onChange(() => {
@@ -440,7 +458,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       routeId = null;
       $("rt-name").value = name || "";
       dirty = true;
-      navIndex = 0;
+      navIndex = 0; navOn = false;
       persist();
       drawMarks();
       for (const f of listeners) f();
@@ -461,7 +479,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       routeId = req.route_id && lib.length ? req.route_id : null;
       $("rt-name").value = req.course_name || "";
       dirty = !routeId;
-      navIndex = 0;
+      navIndex = 0; navOn = false;
       persist();
       drawMarks();
     },
@@ -477,25 +495,28 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       marks = r.marks.map((x) => [x, lib.find((m) => m.id === x.mark)]).filter(([, m]) => m)
         .map(([x, m]) => ({ id: m.id, name: m.name, lon: m.lon, lat: m.lat, rounding: x.rounding || "", radius_nm: x.radius_nm || 0 }));
       dirty = false;
-      navIndex = 0;
+      navIndex = 0; navOn = false;
       persist();
       drawMarks();
       for (const f of listeners) f();
       status(`Opened “${r.name}”.`);
     },
     /** For the instruments: the leg being sailed and the routing's points. */
-    nav() {
+    /** `plan`: the route as planned, whether or not it is being navigated (the Planning view's readings). */
+    nav(plan = false) {
       const next = marks[navIndex];
-      if (!next) return null;
+      if (!next || (!navOn && !plan)) return null;
       const from = navIndex > 0 ? [marks[navIndex - 1].lon, marks[navIndex - 1].lat] : start;
       // the marks after the next one, for the data panel's list of marks ahead
       const ahead = marks.slice(navIndex + 1).map((m, j) => ({ name: m.name || `Mark ${navIndex + j + 2}`, lon: m.lon, lat: m.lat, n: navIndex + j + 2 }));
       return { next: { name: next.name || `Mark ${navIndex + 1}`, lon: next.lon, lat: next.lat, n: navIndex + 1 }, from, index: navIndex, count: marks.length, ahead };
     },
+    /** Whether the route is being navigated (Start navigating), not only planned. */
+    navigating: () => navOn,
     /** Boat moved: step on to the next mark once inside the arrival circle. */
     boatAt(pos) {
       const next = marks[navIndex];
-      if (!next || navIndex >= marks.length - 1) return;
+      if (!navOn || !next || navIndex >= marks.length - 1) return;
       if (distNm(pos, [next.lon, next.lat]) <= Math.max(getArrivalNm(), 0.05)) { navIndex += 1; persist(); drawMarks(); }
     },
   };
