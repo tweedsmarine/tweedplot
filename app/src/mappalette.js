@@ -40,7 +40,9 @@ export function darken(r, g, b, k, kn) {
   return [Math.min(255, Math.round(r * f)), Math.min(255, Math.round(g * f)), Math.min(255, Math.round(b * f))];
 }
 
-const PROFILES = { Dusk: { k: 0.6, kn: 0.45, raster: 0.45 }, Night: { k: 0.25, kn: 0.17, raster: 0.2 } };
+// `ink`: what black becomes in the images the app draws (labels, symbols). Higher than `kn`, which is for
+// lines and fills: at 0.17 the ink of a label was all but black on the night chart and could not be read.
+const PROFILES = { Dusk: { k: 0.6, kn: 0.45, ink: 0.6, raster: 0.45 }, Night: { k: 0.25, kn: 0.17, ink: 0.42, raster: 0.2 } };
 
 export function setupMapPalette(map) {
   const rawSet = map.setPaintProperty.bind(map);
@@ -81,7 +83,7 @@ export function setupMapPalette(map) {
     const d = new Uint8ClampedArray(img.data);
     for (let i = 0; i < d.length; i += 4) {
       if (!d[i + 3]) continue;
-      const [r, g, b] = darken(d[i], d[i + 1], d[i + 2], prof.k, prof.kn);
+      const [r, g, b] = darken(d[i], d[i + 1], d[i + 2], prof.k, prof.ink ?? prof.kn);
       d[i] = r; d[i + 1] = g; d[i + 2] = b;
     }
     return { width: img.width, height: img.height, data: d };

@@ -248,11 +248,11 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   // CPA graphics: where own boat and the target will be at the closest point of approach
   map.addSource("ais-cpa", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addLayer({ id: "ais-cpa-path", type: "line", source: "ais-cpa", filter: ["==", ["get", "k"], "path"],
-    paint: { "line-color": ["get", "col"], "line-width": 1.4, "line-dasharray": [3, 2], "line-opacity": 0.9 } });
+    paint: { "line-color": ["match", ["get", "lvl"], "danger", "#d00000", "#e08a00"], "line-width": 1.4, "line-dasharray": [3, 2], "line-opacity": 0.9 } });
   map.addLayer({ id: "ais-cpa-line", type: "line", source: "ais-cpa", filter: ["==", ["get", "k"], "cpa"],
-    paint: { "line-color": ["get", "col"], "line-width": 2.5 } });
+    paint: { "line-color": ["match", ["get", "lvl"], "danger", "#d00000", "#e08a00"], "line-width": 2.5 } });
   map.addLayer({ id: "ais-cpa-pt", type: "circle", source: "ais-cpa", filter: ["==", ["get", "k"], "pt"],
-    paint: { "circle-radius": 4.5, "circle-color": "#fff", "circle-stroke-color": ["get", "col"], "circle-stroke-width": 2 } });
+    paint: { "circle-radius": 4.5, "circle-color": "#fff", "circle-stroke-color": ["match", ["get", "lvl"], "danger", "#d00000", "#e08a00"], "circle-stroke-width": 2 } });
   map.addLayer({ id: "ais-cpa-lbl", type: "symbol", source: "ais-cpa", filter: ["==", ["get", "k"], "lbl"],
     layout: { "icon-image": ["concat", "lbl:", ["get", "text"]], "icon-anchor": "left", "icon-offset": [8, 0], "icon-allow-overlap": true } });
   map.addSource("ais", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
@@ -422,11 +422,12 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
         const want = t.mmsi === selected || danger || (s.cpaDraw === "all" && c?.tcpa > 0 && c.tcpa < s.tcpa);
         if (want && c?.tcpa > 0 && c.tcpa <= 120) {
           const ccol = danger ? "#d00000" : "#e08a00";
-          const line = (k, a, b) => cpaF.push({ type: "Feature", properties: { k, col: ccol }, geometry: { type: "LineString", coordinates: [a, b] } });
+          const lvl = danger ? "danger" : "watch"; // the paint takes the colour from this, so the night palettes can dim it
+          const line = (k, a, b) => cpaF.push({ type: "Feature", properties: { k, col: ccol, lvl }, geometry: { type: "LineString", coordinates: [a, b] } });
           line("path", [t.lon, t.lat], c.tgt);
           line("path", own.pos, c.own);
           line("cpa", c.own, c.tgt);
-          for (const pt of [c.own, c.tgt]) cpaF.push({ type: "Feature", properties: { k: "pt", col: ccol }, geometry: { type: "Point", coordinates: pt } });
+          for (const pt of [c.own, c.tgt]) cpaF.push({ type: "Feature", properties: { k: "pt", col: ccol, lvl }, geometry: { type: "Point", coordinates: pt } });
           const mid = [(c.own[0] + c.tgt[0]) / 2, (c.own[1] + c.tgt[1]) / 2];
           cpaF.push({ type: "Feature", properties: { k: "lbl", text: `CPA ${c.cpa.toFixed(2)} NM · ${Math.round(c.tcpa)} min` }, geometry: { type: "Point", coordinates: mid } });
         }
