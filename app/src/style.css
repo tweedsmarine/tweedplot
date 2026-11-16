@@ -2110,3 +2110,7 @@ html.ui-large[data-view="inst"] #inst-views button { height: 60px; font-size: 17
 /* With no GRIB loaded there is nothing to step through, compare or route: hide those controls */
 #side.no-grib :is(#side-wx-time, .sp-wx-transport, .sp-routewx, #wxp-cmp-point, #wxp-cmp-point + h5, #wxp-cmp-verify, #wxp-cmp-show, #wxp-cmp-note) { display: none; }
 #side.no-grib #wxp-cmp h5 { display: none; }
+
+svg.mg .mg-val { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+svg.mg .mg-marks { pointer-events: none; }
+svg.mg { cursor: ew-resize; }

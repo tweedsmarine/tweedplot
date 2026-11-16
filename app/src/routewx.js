@@ -240,7 +240,7 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
       inspect.append(readout, previous, next);
       body.append(svg.el, inspect);
       if (selected >= 0 && selected < data.rows.length) update(selected, false);
-      else readout.textContent = "Select a point on the graph, or use Previous / Next, to inspect it.";
+      else readout.textContent = "Press on the graph and drag, or use Previous / Next, to inspect a point.";
     },
   });
 
@@ -297,6 +297,7 @@ function draw(rows, strips, W, { pick }) {
     }
   };
   let y0 = top;
+  const series = []; // what the draggable cursor reads out: { key, yv, col, unit, above, y0, h }
   for (const st of strips) {
     const g = add("g", {});
     add("rect", { x: pad.l, y: y0, width: W - pad.l - pad.r, height: st.h, class: "mg-bg" }, g);
@@ -329,17 +330,23 @@ function draw(rows, strips, W, { pick }) {
       }
       return d;
     };
+    // yv and yp read y0, which moves on to the next strip: the cursor reads them later, so undo that shift
+    const base = y0;
+    const reg = (key, col, unit, yfn = yv, above = true) => series.push({ key, yv: (v) => yfn(v) - (y0 - base), col, unit, above, y0: base, h: st.h });
     if (st.key === "wind") {
+      reg("gust", "#c0392b", "kn"); reg("tws", "#006994", "kn", yv, false);
       add("path", { d: path("gust"), stroke: "#c0392b", fill: "none", "stroke-width": 1.2, "stroke-dasharray": "4 3" }, g);
       add("path", { d: path("tws"), stroke: "#006994", fill: "none", "stroke-width": 2 }, g);
       arrows(g, y0 + 10, "twd", "#00274d");
     } else if (st.key === "waves") {
+      reg("wave", "#2a62c9", "m");
       add("path", { d: path("wave"), stroke: "#2a62c9", fill: "none", "stroke-width": 2 }, g);
       // Tp: its own scale on the right
       const ps = rows.map((r) => r.period).filter((v) => v != null);
       if (ps.length) {
         const pl = 0, ph = Math.max(4, Math.ceil(Math.max(...ps) / 4) * 4);
         const yp = (v) => y0 + st.h - ((v - pl) / (ph - pl)) * (st.h - top2);
+        reg("period", "#5d6b75", "s", yp, false);
         let d = "", pen = false;
         for (const r of rows) { if (r.period == null) { pen = false; continue; } d += `${pen ? "L" : "M"}${x(r.t).toFixed(1)},${yp(r.period).toFixed(1)}`; pen = true; }
         add("path", { d, stroke: "#8a96a0", fill: "none", "stroke-width": 1.3, "stroke-dasharray": "2 2" }, g);
@@ -347,6 +354,7 @@ function draw(rows, strips, W, { pick }) {
       }
       arrows(g, y0 + 10, "wavedir", "#2a62c9");
     } else if (st.bars) {
+      reg(st.key, st.col, st.unit ?? "");
       const bw = Math.max(1, (W - pad.l - pad.r) / rows.length - 0.5);
       for (const r of rows) {
         const v = val(r, st.key);
@@ -354,6 +362,7 @@ function draw(rows, strips, W, { pick }) {
         add("rect", { x: x(r.t) - bw / 2, y: yv(v), width: bw, height: yv(lo) - yv(v), fill: st.col, opacity: 0.7 }, g);
       }
     } else {
+      reg(st.key, st.col, st.unit ?? "");
       add("path", { d: path(st.key), stroke: st.col, fill: "none", "stroke-width": 1.8 }, g);
     }
     y0 += st.h + gap;
@@ -378,19 +387,58 @@ function draw(rows, strips, W, { pick }) {
     add("text", { x: x(t), y: y0 - gap + 27, class: "mg-tick", "text-anchor": "middle" }).textContent = `${r.nm.toFixed(0)} NM`;
   }
   const cur = add("line", { x1: 0, x2: 0, y1: top, y2: y0 - gap, class: "mg-cursor" });
+  const marks = add("g", { class: "mg-marks" }); // a dot and a value where the cursor crosses each plot
   const at = (e) => {
     const r = svg.getBoundingClientRect();
-    const t = t0 + ((e.clientX - r.left - pad.l) / (W - pad.l - pad.r)) * (t1 - t0);
-    return t >= t0 && t <= t1 ? t : null;
+    return t0 + ((e.clientX - r.left - pad.l) / (W - pad.l - pad.r)) * (t1 - t0);
   };
   const nearest = (t) => rows.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a));
-  svg.addEventListener("click", (e) => { const t = at(e); if (t != null) pick(nearest(t)); });
+  // press anywhere on the plots and drag: the cursor follows, snapping to the route's forecast points
+  let last = null;
+  const follow = (e) => {
+    const r = nearest(Math.max(t0, Math.min(t1, at(e))));
+    if (r !== last) { last = r; pick(r); }
+  };
+  svg.style.touchAction = "none";
+  svg.addEventListener("pointerdown", (e) => {
+    if (e.button > 0) return;
+    const r = svg.getBoundingClientRect();
+    if (e.clientX - r.left < pad.l - 6 || e.clientX - r.left > W - pad.r + 6 || e.clientY - r.top < top) return;
+    svg.setPointerCapture?.(e.pointerId);
+    last = null; follow(e);
+    const move = (ev) => follow(ev);
+    const up = () => { svg.removeEventListener("pointermove", move); svg.removeEventListener("pointerup", up); svg.removeEventListener("pointercancel", up); };
+    svg.addEventListener("pointermove", move); svg.addEventListener("pointerup", up); svg.addEventListener("pointercancel", up);
+    e.preventDefault();
+  });
   return {
     el: svg,
     cursor(t) {
       const show = t != null && t >= t0 && t <= t1;
       cur.style.display = show ? "" : "none";
-      if (show) { cur.setAttribute("x1", x(t)); cur.setAttribute("x2", x(t)); }
+      marks.replaceChildren();
+      if (!show) return;
+      const cx = x(t);
+      cur.setAttribute("x1", cx); cur.setAttribute("x2", cx);
+      const r = nearest(t);
+      const shown = [];
+      for (const sr of series) {
+        const v = val(r, sr.key);
+        if (v == null) continue;
+        const cy = sr.yv(v);
+        add("circle", { cx, cy, r: 3.5, fill: sr.col, stroke: "#fff", "stroke-width": 1.2 }, marks);
+        const txt = `${+v.toFixed(Math.abs(v) < 10 ? 1 : 0)}${sr.unit ? ` ${sr.unit}` : ""}`;
+        const right = cx + 12 + txt.length * 6.2 < W - pad.r;
+        shown.push({ sr, txt, right, y: cy + (sr.above ? -7 : 14) });
+      }
+      // values in one plot keep 13 px apart, within the plot
+      for (const sid of new Set(shown.map((l) => l.sr.y0))) {
+        const g = shown.filter((l) => l.sr.y0 === sid).sort((p, q) => p.y - q.y);
+        const lo = g[0].sr.y0 + 11, hi = g[0].sr.y0 + g[0].sr.h - 3;
+        g.forEach((l, i) => { l.y = Math.max(lo, i ? Math.max(l.y, g[i - 1].y + 13) : l.y); });
+        for (let i = g.length - 1; i >= 0; i--) { g[i].y = Math.min(g[i].y, i < g.length - 1 ? g[i + 1].y - 13 : hi); }
+      }
+      for (const l of shown) add("text", { x: l.right ? cx + 8 : cx - 8, y: l.y, class: "mg-val", fill: l.sr.col, "text-anchor": l.right ? "start" : "end" }, marks).textContent = l.txt;
     },
   };
 }

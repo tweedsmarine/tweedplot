@@ -63,7 +63,7 @@ Your own depth soundings build up into a seabed, as on Olex or TimeZero.
 3. {icon:wxpanel} in the toolbar opens **Environment › Explore**. Its pinned **Chart time** slider and buttons move through time (also **[** and **]**); the cursor readings are below.
 4. In **Weather layers and filters**, choose shading (wind, gusts, rain, waves, sea temperature…) and overlays such as barbs, isobars and arrows. Weather, Ocean and Seabed are starting points, not restrictions. **Hide weather on chart** hides the layers without unloading the files. **Download or manage GRIBs** opens Get data.
 5. Right-click the chart › **Meteogram here** for the forecast at one place.
-6. Planning keeps **Chart time** above the route controls. Press **Weather on route** below the time controls to open or close the forecast along the active routing or planned route. Select a graph point to inspect it without changing the route's departure. Use Environment for detailed layers, filters and GRIB cursor readings.
+6. Planning keeps **Chart time** above the route controls. Press **Weather on route** below the time controls to open or close the forecast along the active routing or planned route. Press anywhere on the graphs and drag: the purple cursor follows, snapping to the route's forecast points, each plot shows its value where the cursor crosses it, and the chart time and boat position follow. This does not change the route's departure. Use Environment for detailed layers, filters and GRIB cursor readings.
 
 **Tides and weather stations** are layers too (Chart › Layers › Tides and observations); download the LINZ tide tables in Weather › Tides once a year.
 
