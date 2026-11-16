@@ -1797,7 +1797,7 @@ html.side-on body:has(.sp-alerts .alarm:not(.warn):not(.acked):not(.summary)) #m
 #side-strip :is(#mob-btn, #drop-btn, #anchor-btn) { height: calc(5.8 * var(--u)); flex: none; min-width: calc(14 * var(--u)); }
 #side-strip .ss-show { flex: none; width: auto; min-height: 0; padding: 2px 8px; background: #22343f; color: var(--tile-ink); border: 1px solid #3a4f5c; font-size: calc(2.8 * var(--u)); }
 html.no-map #side-strip { display: none; }
-html.weather-focus #side-strip { right: var(--chart-r); overflow-x: auto; overflow-y: hidden; }
+html.weather-focus #side-strip { right: var(--side-rx); overflow-x: auto; overflow-y: hidden; }
 html.weather-focus #side-strip .ss-rows { flex: 1 1 0; overflow-x: auto; }
 html.weather-focus #side-strip .ss-cursor { display: none; }
 html.weather-focus #side-strip :is(#mob-btn, #drop-btn, #anchor-btn) { height: calc(8 * var(--u)); }

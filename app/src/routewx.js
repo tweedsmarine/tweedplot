@@ -530,7 +530,7 @@ function draw(rows, strips, W, { pick, release }) {
 /** The same plots turned to run down the screen: time (and the route with it) from top to bottom, one column per plot.
  *  For a route that runs north-south, beside the chart. Returns the same { el, cursor } as draw(). */
 function drawV(rows, strips, W, H, { pick, release }) {
-  const padL = 88, padR = 10, padT = 46, padB = 14, gap = 16, arrowCol = 18;
+  const padL = 88, padR = 10, padT = 46, padB = 40, gap = 16, arrowCol = 18; // padB: the last time label is three lines
   const Hp = Math.max(120, H - padT - padB);
   const svg = document.createElementNS(NS, "svg");
   svg.setAttribute("width", W); svg.setAttribute("height", H);
