@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { courseTrack, sampleTrack, coverage, createRouteWeatherRequest } from "./routewx-core.js";
+import { courseTrack, sampleTrack, coverage, gaps, createRouteWeatherRequest } from "./routewx-core.js";
 
 test("course uses its fixed departure and rejects invalid speed and zero-length routes", () => {
   const course = { start: [173, -41], marks: [{ lon: 174, lat: -41 }] };
@@ -38,4 +38,12 @@ test("stale and failed requests never publish an old result", async () => {
   assert.equal(request.state().data, null);
   assert.match(request.state().error, /offline/);
   assert.ok(seen.some((s) => s.status === "stale" && s.data === null));
+});
+
+test("gaps tell a forecast that ends early from holes inside it", () => {
+  const f = [{ key: "tws", label: "Wind" }, { key: "wave", label: "Waves" }];
+  const rows = [{ tws: 1, wave: null }, { tws: 2, wave: 1 }, { tws: 3, wave: null }, { tws: 4, wave: 2 }, { tws: null, wave: null }, { tws: null, wave: null }];
+  const [w, v] = gaps(rows, f);
+  assert.deepEqual([w.lead, w.inner, w.trail, w.earlier], [0, 0, 2, 0]);   // the route outlasts the forecast: no warning
+  assert.deepEqual([v.lead, v.inner, v.trail, v.earlier], [1, 1, 2, 0]);
 });

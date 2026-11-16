@@ -42,6 +42,20 @@ export function coverage(rows, fields) {
   });
 }
 
+/** Where each field's values are missing along the route: before its first value (lead), after its last (trail: the
+ *  forecast has ended) or between values (inner: a real gap, such as land for waves). A route that outlasts the
+ *  forecast is not a gap, so only lead, inner and ending-earlier-than-the-others are worth a warning. */
+export function gaps(rows, fields) {
+  const lastAny = Math.max(-1, ...fields.map(({ key }) => rows.findLastIndex((r) => r[key] != null)));
+  return fields.map(({ key, label }) => {
+    const idx = rows.map((r, i) => (r[key] != null ? i : -1)).filter((i) => i >= 0);
+    const total = rows.length, count = idx.length;
+    const lead = count ? idx[0] : total, last = count ? idx.at(-1) : -1;
+    const trail = count ? total - 1 - last : 0;
+    return { key, label, total, count, lead: count ? lead : 0, trail, inner: count ? last - idx[0] + 1 - count : 0, earlier: count > 0 && last < lastAny ? lastAny - last : 0 };
+  });
+}
+
 export function createRouteWeatherRequest(notify) {
   let generation = 0;
   let state = { status: "empty", data: null, error: null };

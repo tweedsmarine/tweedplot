@@ -7,7 +7,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { fmt } from "./weather.js";
 import { positionAt } from "./routing.js";
-import { courseTrack, sampleTrack, coverage, createRouteWeatherRequest } from "./routewx-core.js";
+import { courseTrack, sampleTrack, gaps as fieldGaps, createRouteWeatherRequest } from "./routewx-core.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const KEY = "racenav.routewx";
@@ -232,11 +232,21 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
       if (opts.waves) strips.push({ key: "waves", title: "Waves Hs m · Tp s · direction", h: 90 });
       for (const x of EXTRAS) if (opts.extras.includes(x.key)) strips.push({ ...x, title: `${x.label} ${x.unit}`, h: 64 });
       const fields = [...(opts.wind ? [{ key: "tws", label: "Wind" }] : []), ...(opts.waves ? [{ key: "wave", label: "Waves" }] : []), ...EXTRAS.filter((x) => opts.extras.includes(x.key))];
-      const gaps = coverage(data.rows, fields).filter((x) => x.count < x.total);
-      if (gaps.length) {
+      // a route that outlasts the forecast is not a gap (the heading says where the forecast ends): warn only about
+      // fields that are missing altogether, start late, have holes, or end before the others
+      const warn = fieldGaps(data.rows, fields).flatMap((g) => {
+        const n = (c) => `${c} of ${g.total} sampled points`;
+        if (g.count === 0) return [`${g.label} is not in the loaded GRIBs`];
+        return [
+          ...(g.lead ? [`${g.label} starts late: none at the first ${n(g.lead)}`] : []),
+          ...(g.inner ? [`${g.label} has holes at ${n(g.inner)} (over land, or outside that GRIB's area)`] : []),
+          ...(g.earlier ? [`${g.label} ends ${n(g.earlier)} before the other fields`] : []),
+        ];
+      });
+      if (warn.length) {
         const warning = document.createElement("div");
         warning.className = "rw-status";
-        warning.textContent = `Forecast coverage: ${gaps.map((x) => `${x.label} ${x.count === 0 ? "not available" : `missing at ${x.total - x.count} of ${x.total} sampled points`}`).join("; ")}. Gaps do not mean calm conditions.`;
+        warning.textContent = `Forecast coverage: ${warn.join("; ")}. Gaps do not mean calm conditions.`;
         body.append(warning);
       }
       const readout = document.createElement("div");
@@ -277,13 +287,20 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
       const handlers = { pick: (r) => update(data.rows.indexOf(r), true, true), release: flush };
       // what is already above the plots (settings, warnings) and the readout row below take their room from the height
       const above = [...body.children].reduce((a, c) => a + c.offsetHeight + 6, 0);
-      const svg = beside
-        ? drawV(data.rows, strips, Math.max(300, body.clientWidth - 20), Math.max(320, body.clientHeight - above - 150), handlers)
-        : draw(data.rows, strips, Math.max(520, body.clientWidth - 20), handlers);
       previous.onclick = () => update(selected < 0 ? 0 : selected - 1);
       next.onclick = () => update(selected < 0 ? 0 : selected + 1);
       inspect.append(readout, previous, next);
-      body.append(svg.el, inspect);
+      body.append(inspect); // measured with its readout and buttons, so the plots take all the rest
+      const below = inspect.offsetHeight + 8;
+      const make = (H) => (beside
+        ? drawV(data.rows, strips, Math.max(300, body.clientWidth - 20), H, handlers)
+        : draw(data.rows, strips, Math.max(520, body.clientWidth - 20), handlers));
+      let svg = make(Math.max(320, body.clientHeight - above - below - 16));
+      body.insertBefore(svg.el, inspect);
+      if (beside) { // margins and padding add up to a little more than the sum: trim what still overflows
+        const over = body.scrollHeight - body.clientHeight;
+        if (over > 0) { svg.el.remove(); svg = make(Math.max(320, parseFloat(svg.el.getAttribute("height")) - over - 2)); body.insertBefore(svg.el, inspect); }
+      }
       // the chart time moved elsewhere (the Explore slider, play): the cursor follows it
       follow = (t) => {
         if (internal) return;

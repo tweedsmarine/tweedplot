@@ -69,15 +69,15 @@ export function marinerImage(id) {
   if (parts[0] === "t") {
     const tok = parts[1], text = parts.slice(2).join(":");
     if (!text) return null;
-    const font = `600 ${Math.round(2.8 * k)}px "Segoe UI", system-ui, sans-serif`;
+    const font = `700 ${Math.round(2.9 * k)}px "Segoe UI", system-ui, sans-serif`;
     const [, g0] = canvas(1, 1);
     g0.font = font;
-    const w = g0.measureText(text).width + 1.6 * k, h = 4.2 * k;
+    const w = g0.measureText(text).width + 2.4 * k, h = 4.6 * k;
     const [c, g] = canvas(w, h);
     g.font = font; g.textBaseline = "middle";
-    g.lineWidth = 0.9 * k; g.strokeStyle = tokenColour("UIBCK"); g.lineJoin = "round";
-    g.strokeText(text, 0.8 * k, h / 2);
-    g.fillStyle = tokenColour(tok); g.fillText(text, 0.8 * k, h / 2);
+    g.lineWidth = 1.9 * k; g.strokeStyle = tokenColour("UIBCK"); g.lineJoin = "round"; // a wide halo in the page colour: the text reads over any shading, day or night
+    g.strokeText(text, 1.2 * k, h / 2);
+    g.fillStyle = tokenColour(tok); g.fillText(text, 1.2 * k, h / 2);
     return g.getImageData(0, 0, c.width, c.height);
   }
   return null;

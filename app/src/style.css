@@ -2127,5 +2127,7 @@ html.dock-right #dock { left: auto; top: 0; bottom: var(--strip-h); right: var(-
 html.dock-right .dock-grip { position: absolute; left: 0; top: 0; bottom: 0; width: 6px; height: auto; cursor: ew-resize; z-index: 1; }
 html.side-narrow.weather-focus:not(.side-left) #dock { right: var(--side-w); }
 html.dock-right #dock header { flex-wrap: wrap; padding-top: 4px; }
-html.dock-right .dock-tabs { flex-wrap: wrap; flex-basis: 100%; }
-html.dock-right .dock-tools { margin-left: 0; }
+html.dock-right .rw-inspect .rw-readout { min-height: 6.5em; } /* room for the longest reading: the plots above do not jump */
+html.dock-right #dock header { gap: 4px; }
+html.dock-right :is(.dock-tabs, .dock-tools) { display: contents; }
+html.dock-right .dock-close { margin-left: auto; }
