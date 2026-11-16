@@ -60,7 +60,11 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
     mark(null);
     const current = weather.current();
     if (!current.path || !weather.sources().length) { request.invalidate("no-forecast"); return; }
-    if (opts.departure == null && current.t > 0) { opts.departure = current.t; save(); }
+    // a departure saved on an earlier day lies outside today's forecast and would give empty strips:
+    // start again from the chart time (or the start of the forecast)
+    const sp = weather.span?.(current.path);
+    if (opts.departure != null && sp && (opts.departure > sp[1] || opts.departure < sp[0] - 12 * 3600)) opts.departure = null;
+    if (opts.departure == null && current.t > 0) { opts.departure = sp ? Math.min(sp[1], Math.max(sp[0], current.t)) : current.t; save(); }
     const c = course.get();
     const active = routing.activePoints();
     if (!(active?.length > 1) && (!c.start || !c.marks.length)) { request.invalidate("no-route"); return; }

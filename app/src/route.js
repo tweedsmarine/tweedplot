@@ -3,6 +3,7 @@
 import * as maplibregl from "maplibre-gl";
 import { invoke } from "@tauri-apps/api/core";
 import { distNm } from "./instruments.js";
+import { ask } from "./ask.js";
 import { greatCircleGeometry, greatCircle as gcInitial, rhumb } from "./navmath.js";
 
 const ACTIVE_KEY = "racenav.route.active"; // the route being navigated: its own copy, so another can be planned meanwhile
@@ -432,8 +433,15 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     for (const f of listeners) f();
     status(`Navigating ${active.name || "this route"}: to mark ${active.nav + 1}.`);
   };
-  $("nav-edit").onclick = () => {
+  $("nav-edit").onclick = async () => {
     if (!active) return;
+    // it takes the editor: ask when a route is there, and say if that one has unsaved changes
+    if (start || marks.length) {
+      const here = $("rt-name").value || "the unsaved route";
+      const v = await ask({ title: `Edit ${active.name || "the navigated route"}?`,
+        note: `It replaces ${here} in the editor.${dirty ? ` ${here[0].toUpperCase()}${here.slice(1)} has changes that are not saved and will be lost.` : ""}`, ok: "Replace" });
+      if (!v || !active) return;
+    }
     start = active.start ?? null; startRef = active.startRef ?? null; startRings = active.startRings ?? null;
     marks = structuredClone(active.marks); routeId = active.routeId ?? null; greatCircle = Boolean(active.greatCircle);
     $("rt-name").value = active.name || ""; $("rt-great-circle").checked = greatCircle;

@@ -1953,3 +1953,17 @@ html.side-strip body:has(.ss-alerts .alarm:not(.warn):not(.acked):not(.summary))
 #idle-notice { position: fixed; z-index: 60; top: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 8px; background: #7a4b00; color: #fff; font-weight: 600; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
 #idle-notice[hidden] { display: none; }
 #idle-notice button { padding: 4px 10px; border-radius: 6px; border: 1px solid #fff; background: #fff; color: #5a3700; font-weight: 700; cursor: pointer; }
+
+/* Loaded GRIBs: headings for the two columns of buttons, and the times each covers under its name */
+#wx-loaded .run-head { font-size: 0.8em; opacity: 0.75; padding-bottom: 0; }
+#wx-loaded .run-head .pad { width: 30px; flex: none; }
+#wx-loaded .run label small { display: block; font-size: 0.8em; opacity: 0.75; overflow: hidden; text-overflow: ellipsis; }
+.sp-env-data #wx-loaded .run label { white-space: normal; }
+#wx-loaded .run-head .grow { flex: 1; }
+/* Download: the Area label on its own line in the narrow panel, so the buttons do not cover it */
+.sp-env-data .dl-area-row { flex-wrap: wrap; }
+.sp-env-data .dl-area-row label { flex: 1 0 100%; }
+.dl-area-row label { flex: 1; min-width: 0; }
+/* GRIB data at the cursor: tall enough for all its rows before it scrolls */
+.sp-pinned-point { max-height: 38vh; }
+#wxp-filter .none, .sea-filter .none { margin-top: 4px; color: #ffb74d; }

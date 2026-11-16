@@ -164,9 +164,20 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     sel.onchange = () => onPick(sel.value);
     return sel;
   }
+  /** Put freshly built rows in a list only when they differ from what is there: the lists are asked to
+   *  redraw at every time step, and replacing them would close an open drop-down and drop a click. */
+  function put(target, built) {
+    const sig = built.innerHTML + "|" + [...built.querySelectorAll("input, select")].map((e) => (e.type === "checkbox" || e.type === "radio" ? +e.checked : e.value)).join(",");
+    if (target.dataset.sig === sig) return;
+    target.dataset.sig = sig;
+    target.replaceChildren(...built.childNodes);
+  }
   function renderShow() {
-    const box = $("wxp-show");
-    box.innerHTML = "";
+    const box = document.createElement("div");
+    buildShow(box);
+    put($("wxp-show"), box);
+  }
+  function buildShow(box) {
     const info = weather.layerInfo();
     const opts = weather.layerOptions();
     if (!opts.length) { box.innerHTML = `<div class="wx-note">No GRIB loaded. Open Get data to load one.</div>`; return; }
@@ -202,8 +213,7 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     const comparing = !info.off && !!(info.layer.compare || info.layer.verify);
     if (!comparing && !info.off) lastPlain = info.key;
     const files = weather.compareFiles().filter((f) => f.can); // ocean and satellite files have nothing the agreement displays use
-    const box = $("wxp-cmp-files");
-    box.innerHTML = "";
+    const box = document.createElement("div");
     if (files.length < 2) box.innerHTML = `<div class="wx-note">Load two or more GRIBs (Get data) to compare them.</div>`;
     else for (const f of files) {
       const row = document.createElement("label");
@@ -216,8 +226,8 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
       row.append(c, name);
       box.append(row);
     }
-    const show = $("wxp-cmp-show");
-    show.innerHTML = "";
+    put($("wxp-cmp-files"), box);
+    const show = document.createElement("div");
     const opts = weather.layerOptions().filter((o) => o.compare || o.verify);
     if (!opts.length) {
       show.innerHTML = `<div class="wx-note">${files.length < 2 ? "" : "Tick two or more GRIBs that have wind or pressure."}</div>`;
@@ -237,13 +247,13 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
       row.append(r, name);
       show.append(row);
     }
+    put($("wxp-cmp-show"), show);
     $("wx-verify").disabled = files.length < 2;
   }
   function renderOver() {
-    const box = $("wxp-over");
+    const box = document.createElement("div");
     const isobarControls = $("wx-isobar-controls");
-    $("wxp-isobar-controls").append(isobarControls);
-    box.innerHTML = "";
+    if (isobarControls.parentElement !== $("wxp-isobar-controls")) $("wxp-isobar-controls").append(isobarControls);
     for (const o of weather.overlayOptions()) {
       const row = document.createElement("label");
       row.className = "wxp-row";
@@ -256,8 +266,8 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
       row.append(c, name);
       if (o.paths.length > 1) row.append(sourceSelect(o.paths, o.path, (p) => weather.setOverlay(o.key, null, p)));
       box.append(row);
-      if (o.key === "isobars") box.append(isobarControls);
     }
+    put($("wxp-over"), box);
   }
   function renderPresets() {
     const sel = $("wxp-preset");

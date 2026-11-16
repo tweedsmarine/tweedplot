@@ -515,6 +515,13 @@ export function setupWeather(map, layers) {
   function renderLoaded() {
     const box = $("wx-loaded");
     box.innerHTML = "";
+    if (loaded.size) {
+      // what the two columns of buttons are for
+      const head = document.createElement("div");
+      head.className = "run run-head";
+      head.innerHTML = `<span>Show</span><span class="grow"></span><span${loaded.size < 2 ? " hidden" : ""}>Compare</span><span class="pad"></span>`;
+      box.append(head);
+    }
     for (const [path, s] of loaded) {
       const row = document.createElement("div");
       row.className = "run";
@@ -537,6 +544,10 @@ export function setupWeather(map, layers) {
       };
       radio.checked = path === display;
       label.textContent = s.name;
+      // the times it covers under the name: what tells two runs apart
+      const covers = document.createElement("small");
+      covers.textContent = span;
+      label.append(covers);
       label.title = `${path}\n${span}`;
       radio.onchange = () => showGrib(path);
       label.onclick = () => showGrib(path);
@@ -1154,7 +1165,7 @@ export function setupWeather(map, layers) {
     if (!changedRange && previous === next.filter) return;
     seaRange[key] = { path, min: next.min, max: next.max, tracks: next.filter === previous ? old?.tracks : undefined };
     wx.seaFilter[key] = next.filter;
-    if (next.filter !== previous && (!previous || previous.lo !== next.filter.lo || previous.hi !== next.filter.hi)) saveWx();
+    // an automatic range is not saved: it is worked out again at every time step
     applyLayer();
   }
   const roundTo = (v, q) => Math.round(v / q) * q;
@@ -1204,6 +1215,16 @@ export function setupWeather(map, layers) {
       box.querySelector(".v.hi").textContent = fmtv(f.hi);
       box.querySelector(".v.min").textContent = fmtv(r.min);
       box.querySelector(".v.max").textContent = fmtv(r.max);
+      // the ends of the track only when they say something the limits do not
+      box.querySelector(".v.min").style.visibility = fmtv(r.min) === fmtv(f.lo) ? "hidden" : "";
+      box.querySelector(".v.max").style.visibility = fmtv(r.max) === fmtv(f.hi) ? "hidden" : "";
+      // a set limit that leaves nothing to show at this time: say so, the chart would just be blank
+      const raw = seaRange[wx.layer], ends = filterBounds(f);
+      const nothing = !!raw && filterInUse(layer, f) && ((ends.hi && f.hi < raw.min) || (ends.lo && f.lo > raw.max));
+      let none = box.querySelector(".none");
+      if (!none) { none = document.createElement("div"); none.className = "wx-note none"; box.append(none); }
+      none.hidden = !nothing;
+      if (nothing) none.textContent = `Nothing ${ends.lo && ends.hi ? `between ${fmtv(f.lo)} and ${fmtv(f.hi)}` : ends.lo ? `above ${fmtv(f.lo)}` : `below ${fmtv(f.hi)}`} at this time: the data runs from ${fmtv(raw.min)} to ${fmtv(raw.max)}. Press Fit to show it all.`;
       box.querySelector("[data-filter-clear]").disabled = f.tg == null;
       box.dataset.unit = layer.unit;
       box.title = `${layer.label} (${layer.unit}): drag the outer pointers to set the lowest and highest shown, the middle one to the target (bold contour); click a number to type it. Fit: back to the full range at chart time.`;
@@ -1549,6 +1570,8 @@ export function setupWeather(map, layers) {
       return { key: wx.layer, layer, off: wx.shading === "off", min: times[0], max: times.at(-1), srcMin, srcMax, t, filter: wx.seaFilter[wx.layer] ?? null, path, timeStatus };
     },
     /** Loaded GRIBs: { path, name, model, ref }. */
+    /** The first and last forecast time of a loaded GRIB (the shown one if none is given): [t0, t1] or null. */
+    span: (path = display) => (path && loaded.has(path) ? spanOf(path) : null),
     sources: () => [...loaded].map(([path, s]) => ({ path, name: s.name, model: s.model, ref: s.ref_time, shown: path === display })),
     /** Shadable layers with the files that have them: [{ key, label, unit, paths, path }]. */
     layerOptions() {
