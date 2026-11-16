@@ -1450,12 +1450,19 @@ export function setupWeather(map, layers) {
     return out;
   }
   const legends = new Map();
+  /** Dark text on pale colours, white on dark ones (the key's numbers sit on the colours). */
+  const inkFor = (c) => {
+    const h = /^#([0-9a-f]{6})$/i.exec(c), q = /rgba?\((\d+)[ ,]+(\d+)[ ,]+(\d+)/.exec(c);
+    const [r, g, b] = h ? [0, 2, 4].map((i) => parseInt(h[1].slice(i, i + 2), 16)) : q ? [q[1], q[2], q[3]].map(Number) : [255, 255, 255];
+    return 0.299 * r + 0.587 * g + 0.114 * b < 120 ? "#fff" : "#1d2a33";
+  };
   function swatches(el, layer) {
     if (layer.knots) {
       const step = wx.shading === "smooth" ? 5 : Math.max(Number(wx.shading), wx.shading === "1" ? 2 : Number(wx.shading));
       for (let k = 0; k <= 40; k += step) {
         const sw = document.createElement("span");
         sw.style.background = paletteAt(wx.shading === "smooth" ? k : k + Number(wx.shading) / 2);
+        sw.style.color = inkFor(sw.style.background);
         sw.title = `${k} kn`;
         sw.textContent = k % 10 === 0 ? k : "";
         el.append(sw);
@@ -1464,6 +1471,7 @@ export function setupWeather(map, layers) {
       for (const [v, c] of layer.scale) {
         const sw = document.createElement("span");
         sw.style.background = c;
+        sw.style.color = inkFor(c);
         sw.title = `${layer.log ? fmtChl(10 ** v) : v} ${layer.unit}`;
         sw.textContent = layer.log ? fmtChl(10 ** v) : layer.auto ? (Math.abs(v) >= 10 && layer.unit === "°C" ? v.toFixed(v % 1 ? 1 : 0) : String(Number(Number(v).toFixed(Math.abs(v) >= 10 ? 1 : 2)))) : v;
         el.append(sw);

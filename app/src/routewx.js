@@ -82,6 +82,8 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
         kn: opts.speed, rows, sources, path: current.path };
     });
   }
+  let follow = null, internal = false; // follow(t): move the graph's cursor to a chart time set elsewhere
+  weather.onChange(() => { if (follow && dock.current() === "routewx") follow(weather.current().t); });
   const later = () => {
     if (dock.current() !== "routewx") return;
     invalidate();
@@ -96,6 +98,14 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
   dock.register("routewx", {
     title: "Weather on route",
     render(body) {
+      follow = null;
+      if (!body._rwObs) {
+        body._rwObs = new ResizeObserver(() => {
+          const w = body.clientWidth;
+          if (body._rwW != null && Math.abs(w - body._rwW) > 8) { body._rwW = w; dock.refresh("routewx"); }
+        });
+        body._rwObs.observe(body);
+      }
       const state = request.state(), data = state.data;
       const context = document.createElement("div");
       context.className = "rw-context";
@@ -192,6 +202,8 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
       head.textContent = data.from === "routing"
         ? `Along the active routing: ${fmt(r0.t)} to ${fmt(r1.t)}, ${r1.nm.toFixed(0)} NM`
         : `Along the course at ${data.kn} kn from ${fmt(r0.t)}: ${r1.nm.toFixed(0)} NM, ${hm(r1.t - r0.t)}`;
+      const lastWith = data.rows.findLast((r) => ["tws", "gust", "wave", "mslp", "temp", "rain", "cape", "sst"].some((k) => r[k] != null) || r.cur?.kn != null);
+      if (lastWith && lastWith !== r1) head.textContent += ` · The forecast ends ${fmt(lastWith.t)}, ${lastWith.nm.toFixed(0)} NM along: the last ${(r1.nm - lastWith.nm).toFixed(0)} NM have no forecast`;
       body.append(head);
       const strips = [];
       if (opts.wind) strips.push({ key: "wind", title: "Wind kn (gusts dashed) · direction", h: 120 });
@@ -223,8 +235,8 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
         const note = inRange ? "" : " · Outside the available chart forecast times; chart time and cursor forecast unchanged";
         if (moveTime) {
           if (inRange) {
-            weather.setTime(r.t);
-            weather.setCursor([r.lon, r.lat]);
+            internal = true;
+            try { weather.setTime(r.t); weather.setCursor([r.lon, r.lat]); } finally { internal = false; }
           }
         }
         const noValues = fields.length && fields.every((f) => r[f.key] == null);
@@ -232,6 +244,7 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
         previous.disabled = selected === 0; next.disabled = selected === data.rows.length - 1;
         svg.cursor(r.t);
       };
+      body._rwW = body.clientWidth;
       const svg = draw(data.rows, strips, Math.max(520, body.clientWidth - 20), {
         pick: (r) => update(data.rows.indexOf(r)),
       });
@@ -239,6 +252,13 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
       next.onclick = () => update(selected < 0 ? 0 : selected + 1);
       inspect.append(readout, previous, next);
       body.append(svg.el, inspect);
+      // the chart time moved elsewhere (the Explore slider, play): the cursor follows it
+      follow = (t) => {
+        if (internal) return;
+        if (!(t >= data.rows[0].t && t <= data.rows.at(-1).t)) { svg.cursor(null); return; }
+        const i = data.rows.reduce((b, r, k) => (Math.abs(r.t - t) < Math.abs(data.rows[b].t - t) ? k : b), 0);
+        if (i !== selected) update(i, false);
+      };
       if (selected >= 0 && selected < data.rows.length) update(selected, false);
       else readout.textContent = "Press on the graph and drag, or use Previous / Next, to inspect a point.";
     },
@@ -280,7 +300,10 @@ function draw(rows, strips, W, { pick }) {
     parent.append(e);
     return e;
   };
-  const t0 = rows[0].t, t1 = Math.max(rows.at(-1).t, t0 + 600);
+  // the axis ends where the forecast does (the route may go on longer: the heading says so)
+  const hasData = (r) => ["tws", "gust", "wave", "mslp", "temp", "rain", "cape", "sst"].some((k) => r[k] != null) || r.cur?.kn != null;
+  const lastWith = rows.findLast(hasData) ?? rows.at(-1);
+  const t0 = rows[0].t, t1 = Math.max(lastWith.t, t0 + 600);
   const x = (t) => pad.l + ((t - t0) / (t1 - t0)) * (W - pad.l - pad.r);
   const val = (r, k) => (k === "cur" ? r.cur?.kn ?? null : r[k] ?? null);
   // arrows along the top of a strip every so many px: pointing where the wind/waves go
