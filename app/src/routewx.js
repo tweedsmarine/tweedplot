@@ -83,7 +83,7 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
     });
   }
   let playTimer = 0; // Play on the dock: steps along the route's forecast points
-  const stopPlay = () => { clearInterval(playTimer); playTimer = 0; };
+  const stopPlay = () => { if (playTimer) cancelAnimationFrame(playTimer); playTimer = 0; };
   let follow = null, internal = false; // follow(t): move the graph's cursor to a chart time set elsewhere
   weather.onChange(() => { if (follow && dock.current() === "routewx") follow(weather.current().t); });
   const later = () => {
@@ -300,12 +300,24 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
         startPlay();
         playLabel();
       };
+      // Play runs on the clock, not on the chart: the cursor, values and boat marker move every frame (they are cheap),
+      // while the chart's weather is redrawn at most twice a second, so a slow redraw never holds the cursor back
+      const ROWS_PER_S = 2.86;
       const startPlay = () => {
-        clearInterval(playTimer);
-        playTimer = setInterval(() => {
-          if (selected >= data.rows.length - 1) { halt(); return; }
-          update(selected + 1);
-        }, opts.fast ? 175 : 350);
+        cancelAnimationFrame(playTimer);
+        const rate = ROWS_PER_S * (opts.fast ? 2 : 1), rows = data.rows;
+        const from = Math.max(0, selected), t0 = performance.now();
+        let lastChart = -1e9;
+        const tick = (now) => {
+          const pos = from + ((now - t0) / 1000) * rate;
+          if (pos >= rows.length - 1) { update(rows.length - 1); halt(); return; }
+          const i = Math.floor(pos);
+          if (i !== selected) update(i, false);
+          svg.cursor(rows[i].t + (pos - i) * (rows[i + 1].t - rows[i].t)); // between the points: a smooth line
+          if (now - lastChart > 500 && rows[i].t >= (weather.layerInfo().min ?? -Infinity) && rows[i].t <= (weather.layerInfo().max ?? Infinity)) { lastChart = now; moveChart(rows[i]); }
+          playTimer = requestAnimationFrame(tick);
+        };
+        playTimer = requestAnimationFrame(tick);
       };
       const speed = document.createElement("button");
       speed.textContent = opts.fast ? "2×" : "1×";
