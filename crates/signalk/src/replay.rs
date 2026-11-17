@@ -62,8 +62,10 @@ pub fn info(path: &Path) -> Option<LogInfo> {
     // last line: read the tail
     let tail = 64 * 1024u64;
     f.seek(SeekFrom::Start(bytes.saturating_sub(tail))).ok()?;
-    let mut s = String::new();
-    f.take(tail).read_to_string(&mut s).ok()?;
+    // the tail can start in the middle of a multi-byte character, so it is not read as strict UTF-8
+    let mut raw = Vec::new();
+    f.take(tail).read_to_end(&mut raw).ok()?;
+    let s = String::from_utf8_lossy(&raw);
     let end = s.lines().rev().find_map(line_time).unwrap_or(start);
     let name = path.file_name()?.to_string_lossy().into_owned();
     // lines: estimate from the size of the first line (counting all would read the file)

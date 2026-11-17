@@ -282,6 +282,13 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   map.addLayer({ id: "ais-names", type: "symbol", source: "ais", filter: ["all", ["==", ["get", "k"], "t"], ["has", "name"], ["!", ["has", "flag"]]], minzoom: 10,
     layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 14], "icon-allow-overlap": false } });
 
+  const CULL_ABOVE = 400;
+  /** The view's centre and half-sizes in degrees, 30 % wider than the screen. */
+  function viewBox() {
+    const b = map.getBounds(), c = map.getCenter();
+    return { x: c.lng, y: c.lat, hw: ((b.getEast() - b.getWest()) / 2) * 1.3 + 0.02, hh: ((b.getNorth() - b.getSouth()) / 2) * 1.3 + 0.02 };
+  }
+  const inViewBox = (v, t) => Math.abs(t.lat - v.y) <= v.hh && Math.abs(((t.lon - v.x + 540) % 360) - 180) <= v.hw;
   const isLost = (t) => {
     if (t.last_pos == null) return true;
     const age = Date.now() / 1000 - t.last_pos;
@@ -345,8 +352,19 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   }
   new MutationObserver(mapTheme).observe(rootEl, { attributes: true, attributeFilter: ["data-palette", "data-iho"] });
   mapTheme();
+  let drawnEmpty = false;
   function draw() {
     const vis = shownInView() ? "visible" : "none";
+    // AIS not shown in this view: nothing is built (a busy feed has thousands of targets); the layers are emptied once
+    if (vis === "none") {
+      for (const id of ["ais-shapes", "ais-hdg", "ais-vec", "ais-sel", "ais-lost", "ais-status", "ais-fleet-names", "ais-names", "ais-track", "ais-cpa-path", "ais-cpa-line", "ais-cpa-pt", "ais-cpa-lbl"]) map.setLayoutProperty(id, "visibility", "none");
+      if (!drawnEmpty) {
+        drawnEmpty = true;
+        for (const id of ["ais", "ais-cpa", "ais-tracks"]) map.getSource(id).setData({ type: "FeatureCollection", features: [] });
+      }
+      return;
+    }
+    drawnEmpty = false;
     for (const id of ["ais-shapes", "ais-hdg", "ais-vec", "ais-sel", "ais-lost", "ais-status", "ais-fleet-names", "ais-track", "ais-cpa-path", "ais-cpa-line", "ais-cpa-pt", "ais-cpa-lbl"]) map.setLayoutProperty(id, "visibility", vis);
     map.setLayoutProperty("ais-names", "visibility", shownInView() && s.names ? "visible" : "none");
     const f = [];
@@ -358,8 +376,11 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     // lifted 1e6 within their band: ais-symbols.js), and targets take turns within a band.
     const BAND = 1e7;
     let n = 0;
+    // with a big feed only the targets in (and a little round) the view are built; a pan redraws (moveend below)
+    const cull = targets.size > CULL_ABOVE ? viewBox() : null;
     for (const t of targets.values()) {
       if (!shown(t)) continue;
+      if (cull && t.mmsi !== selected && !inViewBox(cull, t)) continue;
       const fe = inFleet(t.mmsi);
       const lost = isLost(t);
       const c = t.kind === "vessel" && own?.pos ? cpaTcpa(own, t) : null;
@@ -462,7 +483,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   }
   async function loadTracks() {
     const ms = tracked();
-    if (!ms.length) { tracks.clear(); draw(); return; }
+    if (!ms.length) { if (tracks.size) { tracks.clear(); draw(); } return; }
     try {
       const r = await invoke("ais_tracks", { mmsis: ms });
       tracks.clear();
@@ -550,6 +571,8 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   }
   // symbols or outlines to scale, by zoom
   map.on("zoomend", () => draw());
+  let panTimer = null;
+  map.on("moveend", () => { if (targets.size > CULL_ABOVE) { clearTimeout(panTimer); panTimer = setTimeout(draw, 150); } });
   window.addEventListener("racenav-screen-calibration", () => draw());
 
   // ---------- list ----------------------------------------------------------------
