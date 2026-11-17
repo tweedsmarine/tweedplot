@@ -146,7 +146,7 @@ impl Raster {
         for (k, xs) in rows.iter_mut().enumerate() {
             xs.sort_by(|a, b| a.total_cmp(b));
             let row = (j0 + k) * self.w;
-            for pair in xs.chunks_exact(2) {
+            for pair in xs.as_chunks::<2>().0 {
                 let i0 = (pair[0] - 0.5).ceil().max(0.0) as usize;
                 let i1 = ((pair[1] - 0.5).floor() as isize).min(self.w as isize - 1);
                 if i1 < i0 as isize {

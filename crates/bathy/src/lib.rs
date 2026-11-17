@@ -249,7 +249,7 @@ pub fn decode(b: &[u8], mut f: impl FnMut(usize, usize, Cell)) -> Result<()> {
     }
     let f32_at = |r: &[u8], o: usize| f32::from_le_bytes(r[o..o + 4].try_into().unwrap());
     let u32_at = |r: &[u8], o: usize| u32::from_le_bytes(r[o..o + 4].try_into().unwrap());
-    for r in raw.chunks_exact(REC) {
+    for r in raw.as_chunks::<REC>().0 {
         f(r[0] as usize, r[1] as usize, Cell { n: u32_at(r, 2), mean: f32_at(r, 6), m2: f32_at(r, 10), newest: u32_at(r, 14), src: r[18] });
     }
     Ok(())

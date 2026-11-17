@@ -144,7 +144,7 @@ impl Tiff {
         };
         // an entry's values: inline when they fit in 4 bytes, else read from their offset
         let mut tags = std::collections::HashMap::new();
-        for e in ifd.chunks_exact(12) {
+        for e in ifd.as_chunks::<12>().0 {
             let (tag, typ, cnt) = (rd16(e), rd16(&e[2..]), rd32(&e[4..]) as usize);
             let total = cnt * size(typ);
             let data = if total <= 4 {
@@ -160,16 +160,16 @@ impl Tiff {
         let uint = |tag: u16| -> Option<Vec<u64>> {
             let (typ, d) = tags.get(&tag)?;
             Some(match typ {
-                3 => d.chunks_exact(2).map(|c| rd16(c) as u64).collect(),
-                4 => d.chunks_exact(4).map(|c| rd32(c) as u64).collect(),
-                16 => d.chunks_exact(8).map(rd64).collect(),
+                3 => d.as_chunks::<2>().0.iter().map(|c| rd16(c) as u64).collect(),
+                4 => d.as_chunks::<4>().0.iter().map(|c| rd32(c) as u64).collect(),
+                16 => d.as_chunks::<8>().0.iter().map(|c| rd64(c)).collect(),
                 _ => return None,
             })
         };
         let one = |tag: u16| uint(tag).and_then(|v| v.first().copied());
         let doubles = |tag: u16| -> Option<Vec<f64>> {
             let (typ, d) = tags.get(&tag)?;
-            (*typ == 12).then(|| d.chunks_exact(8).map(|c| f64::from_le_bytes(c.try_into().unwrap())).collect())
+            (*typ == 12).then(|| d.as_chunks::<8>().0.iter().map(|&c| f64::from_le_bytes(c)).collect())
         };
         let (width, height) = (one(256).ok_or(Error("no width".into()))? as usize, one(257).ok_or(Error("no height".into()))? as usize);
         if tags.contains_key(&322) {
@@ -192,8 +192,8 @@ impl Tiff {
             return bad("the strip tables don't match the image");
         }
         // the projection: EPSG:3994 in the GeoKey directory
-        let keys = tags.get(&34735).map(|(_, d)| d.chunks_exact(2).map(rd16).collect::<Vec<u16>>()).unwrap_or_default();
-        let epsg = keys.get(4..).and_then(|k| k.chunks_exact(4).find(|e| e[0] == 3072 && e[1] == 0)).map(|e| e[3]);
+        let keys = tags.get(&34735).map(|(_, d)| d.as_chunks::<2>().0.iter().map(|c| rd16(c)).collect::<Vec<u16>>()).unwrap_or_default();
+        let epsg = keys.get(4..).and_then(|k| k.as_chunks::<4>().0.iter().find(|e| e[0] == 3072 && e[1] == 0)).map(|e| e[3]);
         if epsg != Some(EPSG) {
             return bad(format!("the grid is in EPSG:{}, expected EPSG:{EPSG} (WGS 84 / Mercator 41)", epsg.map_or("unknown".into(), |e| e.to_string())));
         }
@@ -412,8 +412,8 @@ fn build(tif: &Path, dir: &Path, progress: &dyn Fn(&str, u64, u64), cancel: &Ato
         for (i, d) in decoded.into_iter().enumerate() {
             let d = d?;
             let row0 = (s0 + i) * t.rows_per_strip;
-            for (c, v) in d.chunks_exact(4).enumerate() {
-                let v = f32::from_le_bytes([v[0], v[1], v[2], v[3]]);
+            for (c, &v) in d.as_chunks::<4>().0.iter().enumerate() {
+                let v = f32::from_le_bytes(v);
                 grid[row0 * w + c] = store_value(v, t.nodata);
             }
         }
@@ -609,7 +609,7 @@ impl NzBathy {
             if end > idx.len() {
                 return bad("bad index");
             }
-            let index = idx[p..end].chunks_exact(12).map(|c| (rd64(c), rd32(&c[8..]))).collect();
+            let index = idx[p..end].as_chunks::<12>().0.iter().map(|c| (rd64(c), rd32(&c[8..]))).collect();
             levels.push(Level { w: lw, h: lh, tx, index });
             p = end;
         }
@@ -650,7 +650,7 @@ impl NzBathy {
                 }
                 let mut bytes = Vec::with_capacity(TILE * TILE * 2);
                 flate2::read::DeflateDecoder::new(&raw[..]).read_to_end(&mut bytes).ok()?;
-                (bytes.len() == TILE * TILE * 2).then(|| Arc::new(bytes.chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect::<Vec<i16>>()))
+                (bytes.len() == TILE * TILE * 2).then(|| Arc::new(bytes.as_chunks::<2>().0.iter().map(|&c| i16::from_le_bytes(c)).collect::<Vec<i16>>()))
             })
             .flatten();
         self.tiles.lock().unwrap_or_else(|e| e.into_inner()).put(key, t.clone());

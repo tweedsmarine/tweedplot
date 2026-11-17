@@ -70,7 +70,7 @@ impl RefGrid {
                 }
             }
             xs.sort_by(f64::total_cmp);
-            for pair in xs.chunks_exact(2) {
+            for pair in xs.as_chunks::<2>().0 {
                 let i0 = ((pair[0] - self.west) / self.step - 0.5).ceil().max(0.0) as usize;
                 let i1 = (((pair[1] - self.west) / self.step - 0.5).floor() + 1.0).max(0.0) as usize;
                 for i in i0..i1.min(self.nx) {

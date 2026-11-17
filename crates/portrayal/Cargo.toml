@@ -15,3 +15,6 @@ mlua = { version = "0.12", features = ["lua51", "vendored"] }
 [dev-dependencies]
 rusqlite.workspace = true
 enc-s57.workspace = true
+
+[lints]
+workspace = true

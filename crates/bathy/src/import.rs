@@ -34,7 +34,7 @@ pub fn decode_pbg_blob(b: &[u8]) -> Result<Vec<(u8, u8, f32)>> {
     let end = (18 + len).min(b.len());
     let mut raw = Vec::new();
     flate2::read::ZlibDecoder::new(&b[18..end]).read_to_end(&mut raw)?;
-    Ok(raw.chunks_exact(6).map(|r| (r[0], r[1], f32::from_le_bytes(r[2..6].try_into().unwrap()))).collect())
+    Ok(raw.as_chunks::<6>().0.iter().map(|r| (r[0], r[1], f32::from_le_bytes(r[2..6].try_into().unwrap()))).collect())
 }
 
 /// Read the finest level of a PBG database, calling `f` for each tile. Returns the level

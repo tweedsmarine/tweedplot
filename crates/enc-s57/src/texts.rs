@@ -89,7 +89,7 @@ pub fn copy_ancillary(from: &Path, to: &Path) -> std::io::Result<(usize, usize)>
 pub fn decode_text(b: &[u8]) -> String {
     let s = if b.len() >= 2 && (b[0..2] == [0xFF, 0xFE] || b[0..2] == [0xFE, 0xFF]) {
         let le = b[0] == 0xFF;
-        let units: Vec<u16> = b[2..].chunks_exact(2).map(|c| if le { u16::from_le_bytes([c[0], c[1]]) } else { u16::from_be_bytes([c[0], c[1]]) }).collect();
+        let units: Vec<u16> = b[2..].as_chunks::<2>().0.iter().map(|&c| if le { u16::from_le_bytes(c) } else { u16::from_be_bytes(c) }).collect();
         String::from_utf16_lossy(&units)
     } else if let Some(rest) = b.strip_prefix(b"\xEF\xBB\xBF") {
         String::from_utf8_lossy(rest).into_owned()
@@ -134,5 +134,7 @@ mod tests {
         assert_eq!(decode_text(b"A\r\nB\r\n"), "A\nB");
         assert_eq!(decode_text(b"caf\xe9"), "café");
         assert_eq!(decode_text(&[0xFF, 0xFE, b'H', 0, b'i', 0]), "Hi");
+        assert_eq!(decode_text(&[0xFF, 0xFE, b'H', 0, b'i']), "H");
+        assert_eq!(decode_text(&[0xFE, 0xFF, 0, b'H', 0, b'i', 0]), "Hi");
     }
 }
