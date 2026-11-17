@@ -72,9 +72,9 @@ pub struct VesselState {
     /// True heading and wind direction were worked out here (so they are worked out again
     /// when their inputs change), not sent by the server.
     #[serde(skip)]
-    heading_calc: bool,
+    pub heading_calc: bool,
     #[serde(skip)]
-    twd_calc: bool,
+    pub twd_calc: bool,
     /// Total log and trip, NM.
     pub log: Option<f64>,
     pub trip: Option<f64>,
