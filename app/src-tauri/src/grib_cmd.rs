@@ -644,11 +644,17 @@ pub(crate) async fn weather_save_png(app: tauri::AppHandle, request: tauri::ipc:
         return Err("not a PNG picture".into());
     }
 
-    let mut d = app.dialog().file().set_title("Save the weather view").add_filter("PNG image", &["png"]);
-    if let Some(s) = request.headers().get("x-suggest").and_then(|v| v.to_str().ok()) {
-        d = d.set_file_name(s);
-    }
-    let Some(p) = d.blocking_save_file() else { return Ok(None) };
+    let suggest = request.headers().get("x-suggest").and_then(|v| v.to_str().ok()).map(str::to_owned);
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let mut d = app.dialog().file().set_title("Save the weather view").add_filter("PNG image", &["png"]);
+        if let Some(s) = suggest {
+            d = d.set_file_name(&s);
+        }
+        d.blocking_save_file()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let Some(p) = picked else { return Ok(None) };
     let mut p = p.into_path().map_err(|e| e.to_string())?;
     if p.extension().is_none_or(|x| !x.eq_ignore_ascii_case("png")) {
         p.set_extension("png");

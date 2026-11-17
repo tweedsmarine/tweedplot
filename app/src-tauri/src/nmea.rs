@@ -1,7 +1,7 @@
 use marine_nmea::fixstreams::{FixStreams, StreamSummary, Verdict};
 use marine_nmea::{Framer, Observation, Sentence};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -135,6 +135,9 @@ pub struct SourceStatus {
     pub invalid_sentences: u64,
     pub last_sentence: Option<String>,
     pub last_seen: Option<String>,
+    /// When `last_seen` was last worked out: the text is made at most twice a second, not per sentence.
+    #[serde(skip)]
+    last_seen_at: Option<Instant>,
     /// The GPS receivers told apart on this input (see marine_nmea::fixstreams).
     #[serde(default, skip_deserializing)]
     pub gps_streams: Vec<StreamSummary>,
@@ -163,7 +166,7 @@ static POSITION_OBSERVATION: std::sync::atomic::AtomicU64 = std::sync::atomic::A
 /// Sources whose status (sentence counts) changed since it was last published.
 static STATUS_DIRTY: Mutex<std::collections::BTreeSet<String>> = Mutex::new(std::collections::BTreeSet::new());
 /// Sentences heard since the last "nmea-observation" event, per source.
-static RECENT: Mutex<BTreeMap<String, (String, Vec<MonitorFrame>)>> = Mutex::new(BTreeMap::new());
+static RECENT: Mutex<BTreeMap<String, (String, MonitorRing)>> = Mutex::new(BTreeMap::new());
 /// AIS messages over NMEA are put together and decoded per source.
 static AIS_DECODERS: Mutex<BTreeMap<String, ais::nmea::Decoder>> = Mutex::new(BTreeMap::new());
 /// How often the vessel state goes to the windows when data is coming in.
@@ -176,7 +179,10 @@ const FORCE_TICKS: u32 = 10;
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct MonitorFrame {
-    received_at: String,
+    /// Kept as a time and only written out as text when the frame is published (the monitor
+    /// sends at most a few hundred a second, a busy harbour's AIS can be many times that).
+    #[serde(serialize_with = "serialize_rfc3339")]
+    received_at: chrono::DateTime<chrono::Utc>,
     raw: String,
     checksum_valid: bool,
     error: Option<String>,
@@ -188,13 +194,49 @@ struct MonitorFrame {
     ignored: bool,
 }
 
-fn record_monitor_frame(source: &SourceConfig, raw: String, checksum_valid: bool, error: Option<String>, gps: Option<String>, ignored: bool) {
-    let mut recent = RECENT.lock().unwrap();
-    let frames = &mut recent.entry(source.id.clone()).or_insert_with(|| (source.name.clone(), Vec::new())).1;
-    frames.push(MonitorFrame { received_at: chrono::Utc::now().to_rfc3339(), raw, checksum_valid, error, gps, ignored });
-    if frames.len() > 100 {
-        frames.remove(0);
+fn serialize_rfc3339<S: serde::Serializer>(at: &chrono::DateTime<chrono::Utc>, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(&at.to_rfc3339())
+}
+
+/// How many sentences the monitor keeps per input between two publishes: navigation sentences
+/// and AIS apart, so a harbour full of AIS can't push the GPS and depth sentences off the list.
+const MONITOR_KEEP: usize = 100;
+const MONITOR_KEEP_AIS: usize = 20;
+
+/// The sentences one input has heard since the monitor was last published.
+#[derive(Default)]
+struct MonitorRing {
+    nav: VecDeque<MonitorFrame>,
+    ais: VecDeque<MonitorFrame>,
+}
+
+impl MonitorRing {
+    fn push(&mut self, frame: MonitorFrame, ais: bool) {
+        let (ring, keep) = if ais { (&mut self.ais, MONITOR_KEEP_AIS) } else { (&mut self.nav, MONITOR_KEEP) };
+        if ring.len() >= keep {
+            ring.pop_front();
+        }
+        ring.push_back(frame);
     }
+
+    /// Everything kept, oldest first.
+    fn into_frames(self) -> Vec<MonitorFrame> {
+        let mut frames: Vec<MonitorFrame> = self.nav.into_iter().chain(self.ais).collect();
+        frames.sort_by_key(|frame| frame.received_at);
+        frames
+    }
+}
+
+fn record_monitor_frame(source: &SourceConfig, raw: String, checksum_valid: bool, error: Option<String>, gps: Option<String>, ignored: bool, ais: bool) {
+    let mut recent = RECENT.lock().unwrap();
+    let ring = &mut recent.entry(source.id.clone()).or_insert_with(|| (source.name.clone(), MonitorRing::default())).1;
+    ring.push(MonitorFrame { received_at: chrono::Utc::now(), raw, checksum_valid, error, gps, ignored }, ais);
+}
+
+/// Whether this run of the input is still the current one: after the inputs are restarted a
+/// task that is still winding down must not put its data into the new state.
+fn is_current(id: &str, generation: u64) -> bool {
+    STATUSES.lock().unwrap().get(id).is_some_and(|status| status.generation == generation)
 }
 
 fn emit_status(app: &tauri::AppHandle, status: SourceStatus) {
@@ -218,10 +260,19 @@ fn update_status(app: &tauri::AppHandle, id: &str, generation: u64, state: Optio
         status.detail = detail;
     }
     if valid {
+        const RECEIVING: &str = "Receiving valid NMEA data";
         status.valid_sentences += 1;
-        status.state = "receiving".into();
-        status.detail = "Receiving valid NMEA data".into();
-        status.last_seen = Some(chrono::Utc::now().to_rfc3339());
+        if status.state != "receiving" {
+            status.state = "receiving".into();
+        }
+        if status.detail != RECEIVING {
+            status.detail = RECEIVING.into();
+        }
+        // the text of the time is made twice a second at most, not for every sentence
+        if status.last_seen_at.is_none_or(|at| at.elapsed() >= Duration::from_millis(500)) {
+            status.last_seen = Some(chrono::Utc::now().to_rfc3339());
+            status.last_seen_at = Some(Instant::now());
+        }
     }
     if let Some(sentence) = sentence {
         status.last_sentence = Some(sentence.raw.clone());
@@ -258,7 +309,8 @@ fn publish_monitor(app: &tauri::AppHandle) {
         return;
     }
     let hub = MULTIPLEXER.lock().unwrap();
-    for (id, (name, frames)) in recent {
+    for (id, (name, ring)) in recent {
+        let frames = ring.into_frames();
         let observation = hub.sources.get(&id).map(|s| s.observation.clone()).unwrap_or_default();
         let sentences: Vec<&str> = frames.iter().map(|frame| frame.raw.as_str()).collect();
         if let Err(error) = app.emit(
@@ -289,7 +341,7 @@ fn invalid_sentence(app: &tauri::AppHandle, source: &SourceConfig, generation: u
     status.detail = error.to_string();
     status.last_sentence = Some(raw.clone());
     drop(statuses);
-    record_monitor_frame(source, raw, false, Some(error.to_string()), None, false);
+    record_monitor_frame(source, raw, false, Some(error.to_string()), None, false, false);
     STATUS_DIRTY.lock().unwrap().insert(source.id.clone());
     let _ = app;
 }
@@ -552,12 +604,15 @@ fn publish_multiplexed(app: &tauri::AppHandle, force: bool) {
 }
 
 fn consume_bytes(app: &tauri::AppHandle, source: &SourceConfig, generation: u64, framer: &mut Framer, observation: &mut Observation, bytes: &[u8]) {
+    if !is_current(&source.id, generation) {
+        return;
+    }
     for (raw, parsed) in framer.push_with_raw(bytes) {
         match parsed {
             Ok(sentence) => {
                 let ais = matches!(sentence.formatter.as_str(), "VDM" | "VDO");
                 let (verdict, gps) = if ais { (Verdict::Use, None) } else { fix_verdict(app, source, &sentence) };
-                record_monitor_frame(source, sentence.raw.clone(), sentence.checksum_valid, None, gps, verdict == Verdict::Ignore);
+                record_monitor_frame(source, sentence.raw.clone(), sentence.checksum_valid, None, gps, verdict == Verdict::Ignore, ais);
                 if ais {
                     // AIS: a target for the chart, not navigation data
                     let update = AIS_DECODERS.lock().unwrap().entry(source.id.clone()).or_default().push(&sentence.formatter, &sentence.fields);
@@ -637,11 +692,17 @@ static CAPTURE: Mutex<Option<std::path::PathBuf>> = Mutex::new(None);
 #[tauri::command]
 pub async fn nmea_capture_begin(app: tauri::AppHandle, header: String, suggest: Option<String>) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let mut dialog = app.dialog().file().set_title("Save NMEA capture").add_filter("NMEA text log", &["txt", "log"]);
-    if let Some(name) = suggest {
-        dialog = dialog.set_file_name(&name);
-    }
-    let Some(path) = dialog.blocking_save_file() else { return Ok(None) };
+    // the dialog waits for the person, so it waits on a thread of its own, not one of the runtime's
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = app.dialog().file().set_title("Save NMEA capture").add_filter("NMEA text log", &["txt", "log"]);
+        if let Some(name) = suggest {
+            dialog = dialog.set_file_name(&name);
+        }
+        dialog.blocking_save_file()
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+    let Some(path) = picked else { return Ok(None) };
     let mut path = path.into_path().map_err(|error| error.to_string())?;
     if path.extension().is_none_or(|extension| !extension.eq_ignore_ascii_case("txt") && !extension.eq_ignore_ascii_case("log")) {
         path.set_extension("txt");
@@ -686,6 +747,8 @@ fn start_sources(app: &tauri::AppHandle, sources: &[SourceConfig], mut arbitrati
         let mut hub = MULTIPLEXER.lock().unwrap();
         hub.sources.clear();
         AIS_DECODERS.lock().unwrap().clear();
+        RECENT.lock().unwrap().clear();
+        STATUS_DIRTY.lock().unwrap().clear();
         hub.active_sources.clear();
         hub.source_configs = sources.to_vec();
         let mut streams = FIX_STREAMS.lock().unwrap();
@@ -750,6 +813,7 @@ fn start_sources(app: &tauri::AppHandle, sources: &[SourceConfig], mut arbitrati
             invalid_sentences: 0,
             last_sentence: None,
             last_seen: None,
+            last_seen_at: None,
             gps_streams: Vec::new(),
         };
         statuses.insert(source.id.clone(), status.clone());

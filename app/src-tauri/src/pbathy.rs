@@ -370,11 +370,16 @@ pub fn export_into(path: &std::path::Path, progress: &mut dyn FnMut(&str, usize,
 #[tauri::command]
 pub async fn pbathy_pick_xyz_save(app: tauri::AppHandle, suggest: Option<String>) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let mut d = app.dialog().file().set_title("Write own soundings as XYZ").add_filter("XYZ text (longitude, latitude, height)", &["xyz"]);
-    if let Some(s) = suggest {
-        d = d.set_file_name(&s);
-    }
-    let Some(p) = d.blocking_save_file() else { return Ok(None) };
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let mut d = app.dialog().file().set_title("Write own soundings as XYZ").add_filter("XYZ text (longitude, latitude, height)", &["xyz"]);
+        if let Some(s) = suggest {
+            d = d.set_file_name(&s);
+        }
+        d.blocking_save_file()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let Some(p) = picked else { return Ok(None) };
     let mut p = p.into_path().map_err(|e| e.to_string())?;
     if p.extension().is_none_or(|x| !x.eq_ignore_ascii_case("xyz")) {
         p.set_extension("xyz");

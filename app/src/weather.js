@@ -546,7 +546,7 @@ export function setupWeather(map, layers) {
       const wind = s.params.find((p) => p.param === "WindU") ?? s.params.find((p) => p.times?.length);
       const span = wind ? `${fmt(wind.times[0], true)} → ${fmt(wind.times.at(-1), true)}` : "no data";
       row.innerHTML = `<input type="radio" name="wx-show" title="Show this GRIB on the chart"><label></label>` +
-        `<input type="checkbox" class="cmp" title="Include in the agreement displays (Show > Agreement of the loaded GRIBs)"><button class="wx-unload" title="Unload">×</button>`;
+        `<input type="checkbox" class="cmp" title="Include in the agreement displays (Layer › Agreement of the loaded GRIBs)"><button class="wx-unload" title="Unload">×</button>`;
       const [radio, label, cmp, x] = row.children;
       radio.setAttribute("aria-label", `Show ${s.name}`);
       cmp.setAttribute("aria-label", `Include ${s.name} in agreement displays`);
@@ -1646,7 +1646,8 @@ export function setupWeather(map, layers) {
     sources: () => [...loaded].map(([path, s]) => ({ path, name: s.name, model: s.model, ref: s.ref_time, shown: path === display })),
     /** Shadable layers with the files that have them: [{ key, label, unit, paths, path }]. */
     layerOptions() {
-      return Object.entries(LAYERS).filter(([key, l]) => !(l.compare || l.verify) || available().includes(key)).map(([key, l]) => {
+      const av = available(); // once, not for every layer
+      return Object.entries(LAYERS).filter(([key, l]) => !(l.compare || l.verify) || av.includes(key)).map(([key, l]) => {
         if (l.compare || l.verify) return { key, label: l.label, unit: l.unit, paths: [], path: null, help: l.help, compare: !!l.compare, verify: !!l.verify };
         const paths = [...loaded].filter(([, s]) => l.params.some((p) => paramsOf(s).has(p))).map(([p]) => p);
         // the shown GRIB if it has the layer, else the newest loaded one that does
