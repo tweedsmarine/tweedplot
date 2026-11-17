@@ -69,6 +69,12 @@ pub struct VesselState {
     pub twd: Option<f64>,
     /// True wind was calculated here from apparent wind, boat speed and heading.
     pub true_wind_calc: bool,
+    /// True heading and wind direction were worked out here (so they are worked out again
+    /// when their inputs change), not sent by the server.
+    #[serde(skip)]
+    heading_calc: bool,
+    #[serde(skip)]
+    twd_calc: bool,
     /// Total log and trip, NM.
     pub log: Option<f64>,
     pub trip: Option<f64>,
@@ -89,9 +95,10 @@ impl VesselState {
     /// Fill in what can be worked out from what arrived: true heading from
     /// magnetic + variation, true wind from apparent wind, boat speed and heading.
     fn derive(&mut self) {
-        if self.heading.is_none() {
+        if self.heading.is_none() || self.heading_calc {
             if let (Some(m), Some(v)) = (self.heading_mag, self.variation) {
                 self.heading = Some(nav_core::norm360(m + v));
+                self.heading_calc = true;
             }
         }
         let server_tws = self.tws.is_some() && !self.true_wind_calc;
@@ -106,8 +113,9 @@ impl VesselState {
             }
         }
         if let (Some(twa), Some(h)) = (self.twa, self.heading) {
-            if self.true_wind_calc || self.twd.is_none() {
+            if self.true_wind_calc || self.twd_calc || self.twd.is_none() {
                 self.twd = Some(nav_core::norm360(h + twa));
+                self.twd_calc = true;
             }
         }
     }
@@ -178,7 +186,10 @@ impl VesselState {
             }
             "navigation.courseOverGroundTrue" => self.cog = num().map(|r| nav_core::norm360(r.to_degrees())),
             "navigation.speedOverGround" => self.sog = num().map(|ms| ms * MS_TO_KN),
-            "navigation.headingTrue" => self.heading = num().map(|r| nav_core::norm360(r.to_degrees())),
+            "navigation.headingTrue" => {
+                self.heading = num().map(|r| nav_core::norm360(r.to_degrees()));
+                self.heading_calc = false;
+            }
             "navigation.headingMagnetic" => self.heading_mag = num().map(|r| nav_core::norm360(r.to_degrees())),
             "navigation.magneticVariation" => self.variation = num().map(f64::to_degrees),
             "navigation.speedThroughWater" => self.stw = num().map(|ms| ms * MS_TO_KN),
@@ -194,7 +205,10 @@ impl VesselState {
                 self.true_wind_calc = false;
             }
             "environment.wind.angleTrueWater" => self.twa = num().map(|r| nav_core::norm180(r.to_degrees())),
-            "environment.wind.directionTrue" => self.twd = num().map(|r| nav_core::norm360(r.to_degrees())),
+            "environment.wind.directionTrue" => {
+                self.twd = num().map(|r| nav_core::norm360(r.to_degrees()));
+                self.twd_calc = false;
+            }
             "environment.water.temperature" => self.water_temp = num().map(|k| k - 273.15),
             "environment.outside.temperature" => self.air_temp = num().map(|k| k - 273.15),
             "environment.outside.pressure" => self.pressure = num().map(|pa| pa / 100.0),
@@ -287,10 +301,12 @@ pub async fn run(opts: Options, tx: mpsc::Sender<Event>) {
     let mut state = VesselState::default();
     let mut router = Router::default();
     let mut backoff = Duration::from_secs(1);
-    let mut log = match &opts.log_dir {
-        Some(dir) => open_log(dir).await,
-        None => None,
-    };
+    // the session log is opened when the first message arrives (not at start, so a PC with no
+    // Signal K server leaves no empty files) and stops at a size cap (a busy server sends
+    // hundreds of deltas a second, AIS targets included)
+    let mut log: Option<tokio::io::BufWriter<tokio::fs::File>> = None;
+    let mut log_tried = opts.log_dir.is_none();
+    let mut log_bytes: u64 = 0;
 
     loop {
         match tokio_tungstenite::connect_async(opts.url.as_str()).await {
@@ -324,9 +340,20 @@ pub async fn run(opts: Options, tx: mpsc::Sender<Event>) {
                             break;
                         }
                     };
+                    if !log_tried {
+                        log_tried = true;
+                        if let Some(dir) = &opts.log_dir {
+                            log = open_log(dir).await;
+                        }
+                    }
                     if let Some(f) = log.as_mut() {
                         let line = format!("{}\t{}\n", chrono::Utc::now().to_rfc3339(), text.as_str());
+                        log_bytes += line.len() as u64;
                         let _ = f.write_all(line.as_bytes()).await;
+                        if log_bytes > LOG_MAX_BYTES {
+                            let _ = f.flush().await;
+                            log = None;
+                        }
                     }
                     if let Ok(v) = serde_json::from_str::<Value>(text.as_str()) {
                         let (own, others) = router.route(&mut state, &v);
@@ -370,8 +397,23 @@ async fn send(tx: &mpsc::Sender<Event>, ev: Event) -> bool {
 
 pub mod replay;
 
+/// One session's log stops here (the next start begins a new one).
+const LOG_MAX_BYTES: u64 = 300_000_000;
+/// Delete the empty session logs (`sk-….log`) that earlier starts left when no server was there.
+async fn prune_logs(dir: &PathBuf) {
+    let Ok(mut entries) = tokio::fs::read_dir(dir).await else { return };
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("sk-") && name.ends_with(".log") && entry.metadata().await.is_ok_and(|m| m.len() == 0) {
+            let _ = tokio::fs::remove_file(entry.path()).await;
+        }
+    }
+}
+
 async fn open_log(dir: &PathBuf) -> Option<tokio::io::BufWriter<tokio::fs::File>> {
     tokio::fs::create_dir_all(dir).await.ok()?;
+    prune_logs(dir).await;
     let name = chrono::Utc::now().format("sk-%Y%m%d-%H%M%SZ.log").to_string();
     let f = tokio::fs::File::create(dir.join(name)).await.ok()?;
     Some(tokio::io::BufWriter::new(f))
@@ -444,6 +486,27 @@ mod tests {
         assert!(!s.apply_delta(&json!({"name": "signalk-server", "version": "2.0", "self": "vessels.urn"})));
         let d = json!({"updates": [{"values": [{"path": "navigation.racing.startLineStb", "value": 0.3}]}]});
         assert!(!s.apply_delta(&d));
+    }
+
+    #[test]
+    fn worked_out_heading_and_wind_direction_follow_their_inputs() {
+        let mut s = VesselState::default();
+        let delta = |path: &str, value: Value| json!({"updates": [{"values": [{"path": path, "value": value}]}]});
+        s.apply_delta(&delta("navigation.magneticVariation", json!(20f64.to_radians())));
+        s.apply_delta(&delta("navigation.headingMagnetic", json!(10f64.to_radians())));
+        assert!((s.heading.unwrap() - 30.0).abs() < 1e-6);
+        // the magnetic heading moves: the true heading moves with it, not frozen at the first value
+        s.apply_delta(&delta("navigation.headingMagnetic", json!(50f64.to_radians())));
+        assert!((s.heading.unwrap() - 70.0).abs() < 1e-6, "{:?}", s.heading);
+        // a true angle from the server, no direction: the direction follows heading changes
+        s.apply_delta(&delta("environment.wind.angleTrueWater", json!(40f64.to_radians())));
+        assert!((s.twd.unwrap() - 110.0).abs() < 1e-6);
+        s.apply_delta(&delta("navigation.headingMagnetic", json!(60f64.to_radians())));
+        assert!((s.twd.unwrap() - 120.0).abs() < 1e-6, "{:?}", s.twd);
+        // a heading or direction from the server wins from then on
+        s.apply_delta(&delta("navigation.headingTrue", json!(100f64.to_radians())));
+        s.apply_delta(&delta("navigation.headingMagnetic", json!(5f64.to_radians())));
+        assert!((s.heading.unwrap() - 100.0).abs() < 1e-6);
     }
 
     #[test]

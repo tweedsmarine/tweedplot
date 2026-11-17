@@ -231,7 +231,11 @@ function drawSounder(cv, c) {
   const g = cv.getContext("2d");
   const font = (px, bold) => `${bold ? "bold " : ""}${Math.round(px * dpr)}px system-ui, sans-serif`;
   const now = Date.now(), winMs = sndPrefs.win * 60e3, t0 = now - winMs;
-  const pts = sndHist.filter((s) => s.t >= t0 - 5000);
+  let pts = sndHist.filter((s) => s.t >= t0 - 5000);
+  // two hours is 7,200 samples: more than the screen has columns, so draw about one in every pixel and a half (the last one always)
+  const stride = Math.floor(pts.length / Math.max(1, W / 1.5));
+  if (stride > 1) pts = pts.filter((_, i) => i % stride === 0 || i === pts.length - 1);
+  const gap = 6000 * Math.max(1, stride); // a gap in the data this long leaves a gap in the trace
   const maxD = pts.reduce((m, s) => Math.max(m, s.d), 0);
   const want = Math.max(5, maxD * 1.4), ast = niceStep(want);
   const range = sndPrefs.range || Math.ceil(want / ast) * ast;
@@ -261,7 +265,7 @@ function drawSounder(cv, c) {
   const segs = [];
   for (const s of pts) {
     const cur = segs[segs.length - 1];
-    if (cur && s.t - cur[cur.length - 1].t < 6000) cur.push(s); else segs.push([s]);
+    if (cur && s.t - cur[cur.length - 1].t < gap) cur.push(s); else segs.push([s]);
   }
   const band = (off, colour) => {
     g.fillStyle = colour;
@@ -327,7 +331,11 @@ function renderSounder(host, _raw, ctx) {
     host.dataset.ready = "true";
   }
   host._ctx = ctx;
-  drawSounder(host.querySelector("canvas"), ctx);
+  const cv = host.querySelector("canvas"), now = Date.now(), size = `${cv.clientWidth}x${cv.clientHeight}`;
+  // the sounder is redrawn twice a second (it is asked ten times a second), and at once when its size changes
+  if (host._drawnAt && now - host._drawnAt < 500 && host._drawnSize === size) return;
+  host._drawnAt = now; host._drawnSize = size;
+  drawSounder(cv, ctx);
 }
 
 ITEMS.SOUNDER = {

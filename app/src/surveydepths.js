@@ -184,17 +184,19 @@ export function setupSurveyDepths(map, { toast } = {}) {
 }
 
 // the depth under the cursor, asked for at most one at a time: `show(text)` ("" for none)
-let busy = false, next = null;
+let busy = false, next = null, wanted = 0;
 export function surveyDepthAt(map, lon, lat, show) {
-  if (!have || map.getZoom() < 8 || map.getLayer("depthpack") == null || map.getLayoutProperty("depthpack", "visibility") === "none") { show(""); return; }
-  next = [lon, lat, show];
+  // `wanted` counts the times the layer went away (zoomed out, hidden): an answer still out then is dropped, so it can't put text back after the "" below
+  if (!have || map.getZoom() < 8 || map.getLayer("depthpack") == null || map.getLayoutProperty("depthpack", "visibility") === "none") { wanted++; next = null; show(""); return; }
+  next = [lon, lat, show, wanted];
   if (busy) return;
   busy = true;
   (async () => {
     while (next) {
-      const [lo, la, cb] = next; next = null;
+      const [lo, la, cb, id] = next; next = null;
       let h = null;
       try { h = await invoke("depthpack_height", { lon: lo, lat: la }); } catch { h = null; }
+      if (id !== wanted) continue; // the layer went away while this was out
       cb(h == null ? "" : h <= 0 ? `survey ${(-h).toFixed(1)} m (LAT)` : `survey dries ${h.toFixed(1)} m`);
     }
     busy = false;
