@@ -13,6 +13,7 @@
       <filter id="pal-green" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.06 0.12 0.02 0 0  0.299 0.587 0.114 0 0  0.03 0.06 0.01 0 0  0 0 0 1 0"/></filter>
     </defs></svg>
     <main>
+      <div class="st-top">
       <div class="st-state"><b id="st-state">Ready</b><span class="grow"></span><span id="st-clock" class="st-small"></span></div>
       <div class="st-next">
         <div id="st-count" class="st-count">–</div>
@@ -29,6 +30,8 @@
         <button id="st-start" class="on st-big">Start</button>
         <button id="st-pause" class="st-big" disabled>Pause</button>
       </div>
+      </div>
+      <div class="st-rest">
       <div class="st-buttons">
         <button id="st-back" disabled title="The crew is ahead: repeat the beep just gone (the pattern steps back one interval)">−1 beep</button>
         <button id="st-fwd" disabled title="The crew is behind: skip one interval of the pattern">+1 beep</button>
@@ -69,6 +72,7 @@
         <div class="wx-row"><label class="grow">Saved settings</label><select id="st-preset"><option value="">—</option></select><button id="st-save">Save as…</button><button id="st-del" title="Forget the chosen saved settings">✕</button></div>
       </details>
       <div class="wx-note st-small">Tones are timed by the sound card, so they keep time even when the computer is busy. Keep this window open (it stays on top; drag it to another screen if you like). The main window's Log shows the set.</div>
+      </div>
     </main>
     <script type="module" src="/src/setter.js"></script>
   </body>

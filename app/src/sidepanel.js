@@ -338,7 +338,19 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
     const html = parts.join(" · ");
     if (statusEl._html !== html) { statusEl.innerHTML = html; statusEl._html = html; }
   }
+  // The one-line strip under the chart: when its readings are wider than the room (Environment's wide
+  // panel, a narrow window) the type shrinks a little, down to 60 %, rather than cutting the position off.
+  let fitAt = 0, fitK = 1;
+  function fitStrip() {
+    const rows = strip.querySelector(".ss-rows");
+    if (!rows || !rows.clientWidth) return;
+    const natural = rows.scrollWidth / fitK;
+    const k = Math.max(0.6, Math.min(1, (rows.clientWidth / natural) * 0.98));
+    if (Math.abs(k - fitK) > 0.015) { fitK = k; strip.style.setProperty("--ss-k", k.toFixed(3)); }
+  }
+  new ResizeObserver(() => fitStrip()).observe(strip);
   function paint() {
+    if (!strip.hidden && Date.now() - fitAt > 1000) { fitAt = Date.now(); fitStrip(); }
     const ctx = inst.ctx();
     if (!side.hidden) {
       status();

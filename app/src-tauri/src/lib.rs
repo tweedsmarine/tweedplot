@@ -1776,7 +1776,7 @@ async fn setter_open(app: tauri::AppHandle) -> Result<(), String> {
     tauri::WebviewWindowBuilder::new(&app, "line-set", tauri::WebviewUrl::App("setter.html".into()))
         .title("TweedPlot line shooting")
         .inner_size(560.0, 760.0)
-        .min_inner_size(360.0, 420.0)
+        .min_inner_size(320.0, 360.0)
         .always_on_top(true)
         // the beeper must keep time minimised or behind another window
         .background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled)
