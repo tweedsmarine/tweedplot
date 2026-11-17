@@ -1,47 +1,86 @@
 # TweedPlot
 
-**Professional marine chart plotter, passage planner and weather router for Windows.** Free and open source, from [TweedsMarine](https://tweedsmarine.nz), Nelson, New Zealand.
+**A chart plotter, passage planner and weather router for Windows, built for racing, cruising and fishing.** Free and open source, from [TweedsMarine](https://tweedsmarine.nz), Nelson, New Zealand.
 
-<!-- Add a hero screenshot here: docs/images/hero.jpg -->
+<!-- hero screenshot here: docs/images/hero.jpg (Navigation view under way, day colours) -->
 
-TweedPlot puts vector charts, forecast weather, ocean data, weather routing, live instruments, AIS, alarms and fleet tracking in one window. It was built for yacht racing and works as well for cruising, fishing and powerboat use. Your data stays in plain files on your own PC, there are no accounts or subscriptions, and once your charts and forecasts are downloaded it works with no internet connection.
+TweedPlot puts charts, forecast weather, ocean data, weather routing, live instruments, AIS and alarms in one window. Your data stays in plain files on your own PC. There are no accounts and no subscriptions, and once your charts and forecasts are downloaded it works with no internet connection at sea.
 
-> **Not a certified navigation system.** TweedPlot is a planning and situational-awareness aid. Charts and forecasts can be wrong or out of date. Keep a lookout and carry official charts.
+It began as a tool for racing skippers who wanted routing, weather and instruments in one place, and has grown to suit fishing boats and cruising yachts as well. It is built in New Zealand, so the New Zealand data (LINZ charts, tides and depths) is the best supported, but nothing stops you using it anywhere in the world with S-57 charts and global weather.
 
-## Features
+> **Not a certified navigation system.** TweedPlot is a planning and situational-awareness aid, not an ECDIS. Charts and forecasts can be wrong or out of date. Keep a lookout and carry official charts.
+
+> **This is a beta (1.0.0b).** It has been used on the water by its author, but not by many people yet. That is why it is here: please try it, tell us what breaks, and tell us what you need. See [Testing and feedback](#testing-and-feedback).
+
+## What it does now
 
 **Charts**
-- LINZ New Zealand vector charts with S-52 colours, safety depth and contour, Base / Standard / All display and light sectors.
-- Official S-57 ENCs and encrypted S-63 charts with your own permits.
-- Worldwide coastline and depths (GSHHG, Natural Earth, ETOPO 2022), 1 m LINZ high-resolution depths, boundaries and fishing rules.
-- Own soundings: build a depth picture from your tracks and TimeZero PBG/XYZ files, with a target-depth highlight.
-- Optional OpenStreetMap and OpenSeaMap layers, **off by default and sending no traffic while off**, cached for offline use.
+- LINZ New Zealand vector charts, drawn with IHO S-52 colours and symbols, with safety depth and contour, Base / Standard / All display and light sectors.
+- Unencrypted S-57 ENCs (NOAA and other hydrographic offices) with no plugin needed.
+- Worldwide coastline and depths, 1 m LINZ high-resolution depths, marine boundaries and fishing rules.
+- **Own soundings:** build your own depth picture from your tracks and TimeZero PBG/XYZ files, reduced to chart datum.
+- Optional OpenStreetMap and OpenSeaMap layers, off by default and sending nothing while off.
 
 **Weather, ocean and tides**
-- GRIB viewer for many runs at once, with a time slider, comparison between models, a meteogram and forecast verification.
-- Downloads of GFS, ECMWF AIFS and other models, and ocean data: sea surface temperature, currents, salinity and temperature at depth, chlorophyll.
-- Weather stations and buoys, LINZ tide predictions.
-- Fishing tools: temperature breaks, eddies, chlorophyll and currents on the same chart as the depths.
+- A GRIB viewer for many runs at once: time slider, comparison between models, meteograms, and a check of where the models agree.
+- Downloads of GFS, ECMWF and other models, plus sea surface temperature, currents, chlorophyll and satellite sea data for fishing.
+- Weather stations, buoys, tide predictions and tidal streams.
 
 **Routing and planning**
-- Isochrone weather routing with polars, currents, tack and gybe costs, and avoidance of land and shallow water.
-- Compare routings, sweep departure times, barriers and robust decisions across models.
-- Routes, marks, rulers, GPX import and export, all in a GeoPackage library that QGIS can open.
+- Isochrone weather routing from your polar, with tack and gybe costs, GRIB currents, and avoidance of land and shallow water.
+- Compare routings, sweep departure times, set gates, and see what the weather will be along a route.
+- Routes, marks, rulers and GPX import and export, kept in a library you can also open in QGIS.
 
-**Navigation and instruments**
-- Live data from Signal K or the built-in NMEA 0183 multiplexer (serial, TCP, UDP) with source failover.
-- Follow mode with a look-ahead offset: drag the boat anywhere on screen and the chart keeps it there.
-- Floating instrument panels, Navigation / Planning / Instruments views, extra monitor windows, day, dusk and night colours, touch support.
-- Alarms for depth, safety contour, air draft, off track, anchor, collision (AIS CPA), closed areas and lost position. One-press man overboard.
-- AIS from Signal K and aisstream.io, and YB race tracking.
+**On the water**
+- Live data from Signal K, or straight from NMEA 0183 over serial, TCP and UDP, with failover between sources.
+- A configurable data panel, Instruments view (with a sounder), 24-hour history, and a replay of recorded passages.
+- AIS from your own receiver or the internet, with CPA and TCPA, and YB race tracking.
+- Alarms for depth, safety contour ahead, air draft, off track, anchor, collision, closed areas and lost position. One-press man overboard.
+- For fishing: temperature breaks, eddies and chlorophyll on the same chart as the depths, a line-shooting timer, and a catch log.
+- Day, dusk and night colours that keep your night vision.
 
-A full manual is built into the app (F1) and works offline.
+A full manual is built in (press F1) and works offline.
+
+## What it does not do (yet)
+
+- **It is not certified.** Not for use as a primary means of navigation.
+- **Windows only** (10 and 11, Intel and ARM). No macOS, Linux, tablet or phone version yet.
+- **No NMEA 2000 connection of its own.** NMEA 2000 data comes in through Signal K or a gateway that gives NMEA 0183. A direct connection is the next big job.
+- **Encrypted S-63 charts** work through a separate plugin that is still being finalised and needs an agreement with the IHO before it can be used with real chart data. It has been tested with the IHO's own test data.
+- **S-100 / S-101 charts** are not read yet. (The IHO S-101 symbols are used to draw the charts we do read.)
+- **No radar overlay, and no autopilot or instrument control.** TweedPlot reads your instruments; it does not send to them.
+- **Touch screens:** it is designed for touch, but has not been tested on touch hardware. Reports welcome.
+- Installers are **not yet code-signed**, so Windows may warn you the first time.
+
+## What is coming
+
+In roughly this order, driven by what testers ask for:
+
+1. **NMEA 2000 direct**, starting with Actisense gateways.
+2. **Encrypted charts (S-63)** once the IHO agreement is in place.
+3. **S-100 family:** S-101 charts first, then bathymetric surfaces, water levels and surface currents.
+4. **More for racing:** start line tools and laylines with current, target speeds against your polar, a recorder with replay and analysis.
+5. **Better routing:** tidal streams and ocean currents as routing input, ensembles, and a time-lost map.
+6. **More weather:** more models and servers, and historical weather and pilot-chart style climatology for passage planning.
+7. **More charts and data:** satellite imagery and raster charts.
+8. **macOS, Linux and a tablet companion.**
 
 ## Download
 
-Windows 10 and 11, Intel and ARM. Installers are on the [Releases](../../releases) page. They are not yet code-signed, so Windows SmartScreen may warn you the first time: choose **More info › Run anyway**.
+Installers for Windows 10 and 11 (Intel and ARM) are on the [Releases](../../releases) page. Windows SmartScreen may warn you the first time: choose **More info › Run anyway**.
 
-You provide your own chart data: see the manual's *Getting started* and *Charts* sections for downloading LINZ data and loading ENC or S-63 cells.
+You provide your own chart data. The manual's *Getting started* and *Charts* sections explain how to download the LINZ data and load ENC cells.
+
+## Testing and feedback
+
+The most useful things you can tell us:
+
+- Anything that crashes, freezes or draws wrongly (with a screenshot if you can).
+- How it behaves on a touch screen.
+- How it behaves with your instruments: which gateway, which sentences, what was missing.
+- Anything a fishing or racing skipper needs that is not here.
+
+Please open an [issue](../../issues). One feature request per issue is easiest to track.
 
 ## Build from source
 
@@ -69,4 +108,4 @@ Bug reports, ideas and pull requests are welcome. Please read [CONTRIBUTING.md](
 - The TweedPlot and TweedsMarine names and logos are not licensed for modified versions: see [TRADEMARKS.md](TRADEMARKS.md).
 - Third-party data and libraries (LINZ, OpenStreetMap, Natural Earth, GSHHG, NOAA, ECMWF and others): see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and [NOTICE.md](NOTICE.md).
 
-Encrypted (S-63) charts are not handled by TweedPlot itself but by the **TweedPlot S-63 Charts** plugin, TweedsMarine's separately licensed program, installed from Chart › Encrypted charts (download or package file). Unencrypted S-57 ENCs (NOAA and others) and the LINZ data need no plugin.
+Encrypted (S-63) charts are handled not by TweedPlot itself but by the **TweedPlot S-63 Charts** plugin, TweedsMarine's separately licensed program, installed from Chart › Encrypted charts. Unencrypted S-57 ENCs and the LINZ data need no plugin.
