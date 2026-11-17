@@ -254,9 +254,15 @@ function drawSounder(cv, c) {
   }
   const tick = winMs / 60e3 <= 15 ? 60e3 : winMs / 60e3 <= 60 ? 5 * 60e3 : 15 * 60e3;
   g.textBaseline = "top";
+  // the "DEPTH UNAVAILABLE" label sits in the top left corner, where the first time ticks are: leave them out
+  const last = sndHist[sndHist.length - 1];
+  const live = last && now - last.t < STALE_S * 1000 && depthFresh(c.v, c.depthAge ?? (() => null));
+  let clearOf = 0;
+  if (!live && last) { g.font = font(11, true); clearOf = 6 * dpr + g.measureText("DEPTH UNAVAILABLE").width + 6 * dpr; g.font = font(10); }
   for (let t = Math.ceil(t0 / tick) * tick; t < now; t += tick) {
     const x = X(t);
     g.strokeStyle = "rgba(255,255,255,.12)"; g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
+    if (x - 14 * dpr < clearOf || x > W - 90 * dpr) continue; // not under the label, nor under the window and range buttons
     g.fillStyle = "rgba(255,255,255,.6)"; g.textAlign = "center";
     g.fillText(`−${Math.round((now - t) / 60e3)}m`, Math.min(W - 14 * dpr, Math.max(14 * dpr, x)), 2 * dpr);
   }
@@ -287,8 +293,6 @@ function drawSounder(cv, c) {
   }
 
   // the readout
-  const last = sndHist[sndHist.length - 1];
-  const live = last && now - last.t < STALE_S * 1000 && depthFresh(c.v, c.depthAge ?? (() => null));
   g.textAlign = "left"; g.textBaseline = "top";
   g.shadowColor = "rgba(0,0,0,.8)"; g.shadowBlur = 4 * dpr;
   g.fillStyle = "#fff"; g.font = font(Math.max(16, Math.min(40, cv.clientHeight / 4)), true);

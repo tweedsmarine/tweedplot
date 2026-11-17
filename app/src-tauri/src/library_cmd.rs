@@ -138,19 +138,28 @@ pub(crate) async fn library_pick_db(
     use tauri_plugin_dialog::DialogExt;
     let protected = protected.unwrap_or(false);
     let ext = if protected { library::protect::EXT } else { "gpkg" };
-    let mut d = app.dialog().file().set_title(&title);
-    d = if save {
-        d.add_filter(if protected { "Protected TweedPlot library" } else { "TweedPlot library" }, &[ext])
-    } else {
-        d.add_filter("TweedPlot library", &["gpkg", library::protect::EXT])
-    };
-    if let Ok(l) = lib() {
-        d = d.set_directory(l.dir());
-    }
-    if let Some(s) = suggest {
-        d = d.set_file_name(&s);
-    }
-    let picked = if save { d.blocking_save_file() } else { d.blocking_pick_file() };
+    let dir = lib().ok().map(|l| l.dir().to_path_buf());
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let mut d = app.dialog().file().set_title(&title);
+        d = if save {
+            d.add_filter(if protected { "Protected TweedPlot library" } else { "TweedPlot library" }, &[ext])
+        } else {
+            d.add_filter("TweedPlot library", &["gpkg", library::protect::EXT])
+        };
+        if let Some(dir) = dir {
+            d = d.set_directory(dir);
+        }
+        if let Some(s) = suggest {
+            d = d.set_file_name(&s);
+        }
+        if save {
+            d.blocking_save_file()
+        } else {
+            d.blocking_pick_file()
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?;
     let Some(p) = picked else { return Ok(None) };
     let mut p = p.into_path().map_err(|e| e.to_string())?;
     if save && p.extension().is_none_or(|x| !x.eq_ignore_ascii_case(ext)) {
