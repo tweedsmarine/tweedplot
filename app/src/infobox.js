@@ -7,7 +7,8 @@
 import * as maplibregl from "maplibre-gl";
 import { floatResize } from "./floatresize.js";
 
-const KEY = "racenav.infobox.";
+// v2: sizes saved by v1 included heights that were only the content's own (a short box shrank every later one)
+const KEY = "racenav.infobox2.";
 const boxes = new Set();
 
 /**
@@ -81,9 +82,13 @@ export function createInfoBox(map, kind, { title = "", width = 340, height = 320
     e.preventDefault();
   });
   // the corner handle (CSS resize) changes the size: keep it
-  let sizing = null;
+  let sizing = null, dragging = false;
+  // only a drag of the corner is the person's choice of size; a box that is short because its content is must not be remembered as short
+  el.addEventListener("pointerdown", (e) => { if (e.target.closest(".fw-rsz")) dragging = true; }, true);
+  window.addEventListener("pointerup", () => { dragging = false; }, true);
+  window.addEventListener("pointercancel", () => { dragging = false; }, true);
   new ResizeObserver(() => {
-    if (el.hidden) return;
+    if (el.hidden || !dragging) return;
     const w = el.offsetWidth, h = el.offsetHeight;
     if (Math.abs(w - st.w) < 2 && Math.abs(h - st.h) < 2) return;
     st.w = w; st.h = h;
