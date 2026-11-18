@@ -511,7 +511,9 @@ function renderHighway(host, raw, ctx) {
   text("dtw", h?.range == null ? "—" : h.range.toFixed(h.range < 10 ? 2 : 1));
   text("dtw-label", h?.mob ? "Distance to MOB" : "Distance to waypoint");
   text("xte", h?.xte == null ? "—" : `${Math.abs(h.xte).toFixed(2)} NM`);
-  text("ttg", highwayTime(h?.ttg));
+  // no time to go when the range isn't closing: say so rather than show a dash
+  const closing = h?.ttg != null || h?.range == null || h?.vmg == null || !Number.isFinite(h.vmg);
+  text("ttg", closing ? highwayTime(h?.ttg) : h.vmg < -0.1 ? "Opening" : "Not closing");
   text("vmg", h?.vmg == null ? "VMG —" : `VMG ${h.vmg.toFixed(1)} kn`);
   text("eta", highwayClock(h?.eta));
   text("ribbon-heading", h?.hdg == null ? "—" : `${deg3(h.hdg)}°`);

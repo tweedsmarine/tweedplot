@@ -361,7 +361,9 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       wrapper.textContent = `${label} source`;
       const select = document.createElement("select");
       select.dataset.group = key;
-      select.add(new Option("Automatic (source order)", ""));
+      // short, so it fits the drawer's two columns; the title says what it means
+      select.add(new Option("Automatic", ""));
+      select.title = "Automatic: the first source in the source order that is giving this data";
       for (const source of sources) {
         const enabledNote = source.enabled ? "" : " · disabled";
         select.add(new Option(`${source.name}${enabledNote}`, source.id));

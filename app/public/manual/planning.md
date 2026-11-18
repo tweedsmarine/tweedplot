@@ -49,6 +49,8 @@ Start from the deepest point of the boat and add allowances for everything that 
 
 Set the result as TweedPlot's **safety depth**, and the next charted contour deeper than it as the **safety contour**. The routing will not go shallower, and the chart shades the water inside the safety contour darker so it stands out.
 
+![Chart › Safety at the Nelson harbour entrance: safety depth and safety contour 5 m, four depth shades with the shallow water pattern and contour labels](img/33-chart-safety.jpg)
+
 **Clearing distances**
 
 - **Headlands and reefs**: allow more off a lee shore (wind or swell towards the land) than a weather shore; half a mile in fair weather, a mile or more with onshore wind or swell, more at night.
@@ -68,7 +70,7 @@ A river or harbour bar can break with little warning when swell meets an ebbing 
 | Keep off a rock or reef by a set distance | A barrier mark with a radius, or a mark on the course left to port or starboard with a clearance |
 | An area you won't enter | A barrier zone |
 | A line you won't cross (a fairway, a reserve boundary) | A barrier line |
-| A mark you must round on one side | Leave to port / Leave to starboard with a clearance |
+| A mark you must round on one side | Leave to port / Leave to starboard with a clearance (right-click the mark on the chart, or use its row in the route's mark list) |
 | A spot you must reach precisely | As close as possible |
 
 ## Tides and currents
@@ -95,6 +97,20 @@ When wind and stream oppose each other, waves grow steeper and closer together, 
 
 ## Building the route
 
+**Where the route is edited**
+
+The route is planned in **Route › Plan**. In the Planning view it sits in the data panel beside the chart, so the chart stays clear; in the other views it is in the Route drawer (rail › Route). Opening the Route drawer in the Planning view, or choosing **Edit the route** when you right-click the route, takes you to it.
+
+- **Set start** then click the chart (or a library mark), or **From boat** to start from the boat's position, leaving now.
+- **Add marks**, then click the chart in order; click a library mark to reuse it. **Undo** takes off the last one.
+- The mark list shows each leg's course and distance, and how each mark is reached (see Rounding choices below). The arrows change the order; ✕ takes a mark off the route (it stays in the library).
+- **Departure** and **Planning speed** set the timetable (see Timing, fuel and weather windows).
+- **Save** keeps the route and its marks in the library.
+
+The route you are navigating can't be changed: press **Stop navigating**, change it, then **Start navigating** again. While it is navigated the editing buttons are greyed out and a note says why.
+
+![Planning a trip from Nelson to The Anchorage in Torrent Bay: Wx routing › Run starts at the route's departure, and Route › Plan in the data panel holds the departure, the planning speed and the anchorage set to As close as possible](img/35-route-plan.jpg)
+
 **Good waypoints**
 
 - **In safe water**, never on a hazard, a mark or a headland: put them where you would be happy to arrive in poor visibility.
@@ -109,9 +125,13 @@ For a power boat or a cruise the route you draw is usually the route you take: s
 
 **Quick sketch with the ruler**
 
-Press **Ruler**, click along the passage, double-click to finish, then right-click › **Save ruler as route**. The points become library marks and the route opens in the Route drawer, ready to name, adjust and save.
+Press **Ruler**, click along the passage, double-click to finish, then right-click › **Save ruler as route**. The points become library marks and the route opens in Route › Plan, ready to name, adjust and save.
+
+![A ruler through French Pass with each leg's course and distance, and the right-click menu with Save ruler as route](img/34-ruler-route.jpg)
 
 **Rounding choices**
+
+Each mark is reached one of four ways: **Pass through** (anywhere within its radius), **Leave to port**, **Leave to starboard** (with the radius as the clearance), or **As close as possible**. Set it on the mark's row in the mark list, where the box beside it takes the radius in NM (empty uses the routing's arrival radius), or right-click the mark on the chart and pick under **How to reach**. On the chart a red ring means leave to port, green to starboard and black as close as possible.
 
 | Mark | Usual choice |
 | --- | --- |
@@ -131,6 +151,10 @@ Library › Routes: tick the route and press **GPX** to export it; import it on 
 
 Plan with the speed you average, not the speed you touch. A yacht averages perhaps 70–80 % of its polar over a day; a trailer boat that planes at 25 kn in flat water may manage 12 kn into a short chop. Time = distance ÷ speed, then add time for the harbour, the bar, the slow first and last miles.
 
+**Departure and planning speed**
+
+In Route › Plan, **Departure** is **Now** or **Set a time**, and **Planning speed** is the speed you expect to average. **From boat** always departs now. **Weather on route** uses them to show the wind, gusts and sea you will meet on each leg at the time you get there, and weather routing starts at the route's departure unless you choose another start time in Wx routing › Run › **Start time**. Once a route is being navigated, Weather on route uses the boat's real speed over ground instead.
+
 **Daylight**
 
 Arrive in daylight anywhere unfamiliar, with a bar, or with fishing gear and farms about. Work backwards from sunset to the latest safe departure.
@@ -145,9 +169,11 @@ A window is a period when wind and sea stay inside your limits for the whole tri
 
 1. Download a GRIB for the area (wind, gusts and waves; a wave GRIB as well if the wind GRIB has none).
 2. Close the drawers and use the time slider with the forecast at the cursor in the data panel (Planning view): scrub through the trip at the places that matter (the exposed headland, the bar, the fishing spot).
-3. Right-click › **Meteogram here** at the most exposed point: when does the wind ease, when does it build again, do the models agree?
+3. Right-click › **Meteogram here** at the most exposed point: when does the wind ease, when does it build again, do the models agree? Add the plots you need with **Plots ▾** (waves are on by default; rain or air temperature if they matter) and drag along the graph to read the values.
 4. Load a second model, or a newer run, and compare. If they disagree about the timing of a front, your window is the time both agree is safe.
 5. For a sailing boat, run routings at several start times and compare them (Wx routing › Routings › Compare table).
+
+Every routing you compute is listed in Wx routing › **Routings**: tick it to show it on the chart, ✕ to discard it. While a routing is shown the route's dashed legs are hidden. Right-click a routing's line or boat on the chart to find it on the list, hide it or discard it.
 
 **Your limits**
 
@@ -170,22 +196,22 @@ On the day, look again: the latest forecast, a fresh GRIB, the actual conditions
 - In live mode TweedPlot shows the boat, its track and the route; the Route instruments give the next mark's bearing and distance, cross-track error, time to go and ETA.
 - Compare progress against the plan at each mark: ahead or behind the timetable? Is the weather what was forecast?
 - Record the track (Library › Tracks › Record): afterwards it shows how the plan and reality differed, the best way to plan the next trip better.
-- When conditions or progress drift from the plan, re-plan: a new routing from the boat's position (Course › **From boat**), or the bolt hole.
+- When conditions or progress drift from the plan, re-plan: while a route is being navigated, Wx routing › Run › **Compute** routes from the boat's position, now, through the marks still ahead (the routing's name says *from boat*); the route itself stays as it is. To go to a bolt hole instead, press **Stop navigating**, change the route, and **Start navigating** again.
 
 ## Worked example: a cruise across Tasman Bay
 
 *A yacht leaves Nelson for a night at anchor on the Abel Tasman coast.*
 
-1. **Appraise.** Load the forecast (Weather › Download, GFS or ECMWF, Tasman Bay, 3 days). The cruising guide notes which bays shelter from which winds; the chart shows the Boulder Bank, the harbour entrance and the shoals off the river mouths.
+1. **Appraise.** Load the forecast (Weather and tides › Download GRIBs, GFS or ECMWF, Tasman Bay, 3 days). The cruising guide notes which bays shelter from which winds; the chart shows the Boulder Bank, the harbour entrance and the shoals off the river mouths.
 2. **Set margins.** Chart › Safety: safety depth = draft 1.9 m + 1 m = 3 m; safety contour 5 m. In Wx routing › Limits and barriers, turn on Route round dangers and Route round marine farms (there are farms in the bay).
-3. **Sketch the route.** Ruler from the harbour entrance across the bay to the anchorage, double-click, right-click › Save ruler as route. In the Route drawer name it "Nelson to Torrent Bay" and set the anchorage mark to As close as possible.
+3. **Sketch the route.** Ruler from the harbour entrance across the bay to the anchorage, double-click, right-click › Save ruler as route. In Route › Plan name it "Nelson to Torrent Bay", then right-click the anchorage mark on the chart › **As close as possible**.
 4. **Mark the bolt holes.** Add points of interest for one or two sheltered bays you could reach if the wind turns onshore, with notes on which winds they suit.
 5. **Choose the day and time.** Close the drawers, scrub the time slider and watch the forecast at the cursor in the data panel at mid-bay: you want 8–18 kn from a reaching angle, not a building sea breeze on the nose for the last hours. A meteogram at the anchorage shows whether the night will stay settled.
-6. **Route it.** Settings › Vessel › Performance: your polar at 85 % efficiency. Wx routing › Run › Compute at the departure time. Then With each GRIB if you have two models: if both give a similar route and ETA, the plan is robust.
+6. **Route it.** Settings › Vessel › Performance (polar): your polar, with Polar efficiency 85 %. Set **Departure** in Route › Plan to the time you mean to leave, then Wx routing › Run › Compute (its start time is the route's departure). Then With each GRIB if you have two models: if both give a similar route and ETA, the plan is robust.
 7. **Check the anchorage.** Click the tide station nearest the anchorage for the evening's low water; the depth where you plan to anchor must still be enough at low tide.
 8. **Go, and monitor.** Record the track; in live mode watch XTE and TTG. If the breeze builds onshore, the bolt holes are on the chart.
 
-![Nelson to the Abel Tasman coast: the routing from the start off Nelson to the anchorage (As close as possible) with its isochrones, the boat's position at 11:00, the wind arrows at the cursor and a bolt hole saved as a shelter point of interest](img/05-tasman-cruise.jpg)
+![Nelson to Torrent Bay: the routing from off Nelson to The Anchorage (As close as possible), and Weather on route beside the chart with the wind, gusts and waves the boat meets on the way, the cursor at 20:10](img/05-tasman-cruise.jpg)
 
 ## Worked example: a fishing trip in a trailer boat
 
@@ -200,7 +226,7 @@ On the day, look again: the latest forecast, a fresh GRIB, the actual conditions
 7. **Tell someone.** Log a trip report or tell someone ashore your plan and return time.
 8. **On the water.** In live mode the instruments show distance and time to the spot; the wind arrows on the boat show how the breeze is changing. If it freshens beyond your limit, head home early: the return is usually the rough leg.
 
-![A meteogram at a spot in outer Tasman Bay: light winds under 10 kn until Friday, then a steady build past 15 kn from Friday afternoon. The window is Wednesday to Friday morning](img/06-fishing-meteogram.jpg)
+![A meteogram at a rock west of D'Urville Island with two models, ECMWF IFS and GFS with waves: wind speed with gusts dashed and direction arrows, then the waves from the ECMWF file. The tide at Nelson for the same morning is open above](img/06-fishing-meteogram.jpg)
 
 ## Worked example: a coastal race
 
@@ -209,17 +235,17 @@ On the day, look again: the latest forecast, a fresh GRIB, the actual conditions
 1. **Read the sailing instructions** and turn every constraint into TweedPlot: the start line ends as marks (type Start line end), each course mark with its rounding side, any exclusion zones as barrier zones (with the instruction number in the name), and islands or reefs you must leave on one side as marks on the course.
 2. **Margins.** Safety depth for your draft; Route round dangers on. Give headlands you will round a clearance that reflects the night and the likely sea.
 3. **Weather.** From about five days out, download each new GFS and ECMWF run. Load several and use the agreement displays and Verify runs to see where the models disagree and which has been doing better lately.
-4. **Polar and efficiency.** Your polar at 90–95 % for a well-sailed race boat; tack and gybe times for your crew.
+4. **Polar and efficiency.** In Settings › Vessel › Performance (polar): your polar at 90–95 % for a well-sailed race boat; tack and gybe times for your crew.
 5. **Route it many ways.** With each GRIB at the planned start; then several runs as each new forecast arrives. Watch the compare table: is the route the same (go and sail it) or does it flip between two sides of the course (the decision that matters)?
 6. **Test the big decision.** Where the routings split, put a row of gates across the split with the gate sweep (Wx routing › Gates), with each GRIB. The gate that is nearly best under every model is the one to aim for.
 7. **Night and safety.** Note the bolt holes, the times you'll pass the headlands, and the forecast at each.
-8. **In the race.** Re-route from the boat at each new forecast (Route › From boat), and follow the fleet in Targets & fleets › YB race if the race is on YB tracking: Route on a rival shows what the router would have them do.
+8. **In the race.** Re-route from the boat at each new forecast: while you navigate the course, Wx routing › Run › **Compute** starts from the boat, now, through the marks still to round, and follow the fleet in Targets & fleets › YB race if the race is on YB tracking: Route on a rival shows what the router would have them do.
 
-![A Coastal Classic course: Little Barrier left to starboard with a 1 NM clearance ring, an example exclusion zone across the first leg, and two routings (10:30 and 13:30 starts) with each boat's position at 22:00 on Friday](img/07-race.jpg)
+![A Coastal Classic course from Auckland: the clearance ring round Little Barrier, and two saved routings for starts at 18:00 and 20:00 on Thursday, each boat's position at the chart time and the isochrones of the active one](img/07-race.jpg)
 
 ## Making a power polar
 
-Routing needs a boat speed for every wind angle and strength. For a power boat, a simple table does the job, and it can even capture how the boat slows into a head sea. Save it as a text file ending `.csv`, bring it in with Settings › Vessel › Performance › **Import polar…** (or save it straight into your polar folder: Boat › **Open folder**), then choose it in the Boat drawer.
+Routing needs a boat speed for every wind angle and strength. For a power boat, a simple table does the job, and it can even capture how the boat slows into a head sea. Save it as a text file ending `.csv`, bring it in with Settings › Vessel › Performance › **Import polar…** (or save it straight into your polar folder: **Open folder** beside Import polar…), then choose it under **Polar** in the same section.
 
 The first row lists wind speeds (kn); each following row starts with a true wind angle (0 = straight into the wind) followed by the boat's speed at each wind speed, separated by semicolons. An example for a trailer boat that cruises at 22 kn:
 
@@ -232,7 +258,7 @@ TWA\TWS;0;10;15;20;25;30
 180;22;22;22;20;16;12
 ```
 
-Read across a row: heading into the wind (0°) the boat holds 22 kn up to 10 kn of wind, then slows as the sea builds; downwind (180°) it holds speed much longer. Set **efficiency** to 100 % and the tack and gybe times to 0 in the Boat drawer.
+Read across a row: heading into the wind (0°) the boat holds 22 kn up to 10 kn of wind, then slows as the sea builds; downwind (180°) it holds speed much longer. Set **Polar efficiency** to 100 % and the tack and gybe costs to 0 in the same section.
 
 **What it does and doesn't do**
 

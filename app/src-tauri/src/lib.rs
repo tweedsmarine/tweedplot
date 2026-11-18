@@ -2067,6 +2067,8 @@ fn queue_tile(path: String, responder: tauri::UriSchemeResponder) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // update checks against the signed latest.json of the newest GitHub release (updates.js)
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // the main window is the app: closing it closes any monitor windows too
         .on_window_event(|window, event| {
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {

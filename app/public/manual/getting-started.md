@@ -6,7 +6,7 @@ TweedPlot plans and sails passages: charts, weather, routing, AIS, alarms and fi
 
 Nothing covers the chart: everything else sits beside it.
 
-![The Navigation view under way: the rail, the toolbar, the chart and the data panel](img/12-navigation.jpg)
+![The Navigation view under way through French Pass: the rail, the toolbar, the chart with the route being navigated, and the data panel](img/12-navigation.jpg)
 
 - **The rail** (left edge): the drawers. {icon:weather} Weather, {icon:course} Route, {icon:routing} Wx routing, {icon:fleet} Targets & fleets, {icon:library} Library, {icon:chart} Chart, {icon:inst} Instruments, {icon:alarms} Alarms. {icon:manual} Manual and {icon:settings} Settings are at the bottom. Click one to open it; click it again (or **Esc**) to close it. The **?** in a drawer's title bar opens the manual at that drawer.
 - **The toolbar** (the strip down the chart's left edge): {icon:north} north up, the live data light, live or paused, {icon:follow} follow the boat, {icon:ruler} ruler, {icon:ebl} EBL/VRM, {icon:targets} target list, {icon:wxpanel} weather, the **View** list, {icon:side} the data panel, {icon:panels} panels, {icon:day} colours (day, dusk, night). Scroll the toolbar when the window is too short to show all buttons. **LIVE**, **PAUSED** or **REPLAY** shows the data mode; **FOLLOW** means the chart follows the boat and **FREE** means it does not. Hover a button for what it does.

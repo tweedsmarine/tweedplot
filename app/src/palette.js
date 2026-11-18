@@ -65,6 +65,9 @@ export function setupPalette(onChange = () => {}) {
     pop.style.top = `${r.top}px`;
     syncPop();
     pop.hidden = false;
+    // the button is low on the toolbar: keep the whole menu on the screen (it ran off the bottom)
+    const h = pop.getBoundingClientRect().height;
+    if (r.top + h > window.innerHeight - 8) pop.style.top = `${Math.max(8, window.innerHeight - 8 - h)}px`;
   }
   pop.addEventListener("click", (e) => { const b = e.target.closest("button[data-m]"); if (b) { p.mode = b.dataset.m; apply(); syncPop(); } });
   popRange.oninput = () => { if (p.mode !== "day") { p.dim[p.mode] = +popRange.value; apply(); syncPop(); } };

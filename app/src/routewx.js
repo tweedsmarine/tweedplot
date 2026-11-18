@@ -17,15 +17,17 @@ const EXTRAS = [
   { key: "rain", label: "Rain", unit: "mm/h", col: "#2a62c9", bars: true },
   { key: "temp", label: "Air temp", unit: "°C", col: "#c0392b" },
   { key: "cape", label: "CAPE", unit: "J/kg", col: "#8e44ad", bars: true },
-  { key: "sst", label: "Sea temp", unit: "°C", col: "#006994" },
-  { key: "cur", label: "Current", unit: "kn", col: "#1abc9c" },
+  { key: "sst", label: "Sea temp", unit: "°C", col: "#006994", sea: true },
+  { key: "cur", label: "Current", unit: "kn", col: "#1abc9c", sea: true },
 ];
 
-export function setupRouteWeather(map, { weather, routing, course, dock }) {
-  let opts = { speed: 6, departure: null, wind: true, waves: true, extras: [], settings: false, layout: "below", fast: false };
+export function setupRouteWeather(map, { weather, routing, course, dock, getSog = () => null }) {
+  // source: which track the plots follow: "nav" (the navigated route, from the boat now at the speed over
+  // ground), "plan" (the route in the editor, from its departure in Route › Plan at its planning speed) or
+  // "routing" (the active weather routing's own times). The departure and speed live with the route, not here.
+  let opts = { wind: true, waves: true, extras: [], settings: false, layout: "below", fast: false, source: "" };
   try { Object.assign(opts, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
-  if (!Number.isFinite(opts.speed) || opts.speed < 0.5 || opts.speed > 40) opts.speed = 6;
-  if (!Number.isFinite(opts.departure) || opts.departure <= 0) opts.departure = null;
+  delete opts.departure; delete opts.speed; // once kept here; now the route's (Route › Plan)
   if (!Array.isArray(opts.extras)) opts.extras = [];
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(opts)); } catch { /* ignore */ } };
   let selected = -1;
@@ -54,24 +56,52 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
     mark(null);
     request.invalidate(status);
   }
+  // The speed over ground for the navigated route: a mean of the last 5 minutes (sampled every 15 s), so a
+  // tack or a wave doesn't throw the times out
+  const sogs = [];
+  setInterval(() => { const v = getSog(); sogs.push(Number.isFinite(v) ? v : null); if (sogs.length > 20) sogs.shift(); }, 15000);
+  function meanSog() {
+    const v = sogs.filter((x) => x != null);
+    const now = getSog();
+    if (!v.length) return Number.isFinite(now) ? now : null;
+    return v.reduce((a, b) => a + b, 0) / v.length;
+  }
+  /** The sources there are now, most useful first, and the one in use. */
+  function trackSources() {
+    const out = [];
+    if (course.navigating?.() && course.navigatedCourse?.()) out.push("nav");
+    const r = routing.activePoints();
+    if (r?.length > 1) out.push("routing");
+    const c = course.get();
+    // the route in the editor, unless it is the navigated one (that one is "nav")
+    if (c.start && c.marks.length && !course.locked?.()) out.push("plan");
+    return out;
+  }
+  const sourceInUse = () => { const s = trackSources(); return s.includes(opts.source) ? opts.source : s[0] ?? ""; };
+  const SOURCE_LABEL = { nav: "Navigated route", plan: "Planned route", routing: "Weather routing" };
   function refetch() {
     clearTimeout(timer);
     selected = -1;
     mark(null);
     const current = weather.current();
     if (!current.path || !weather.sources().length) { request.invalidate("no-forecast"); return; }
-    // a departure saved on an earlier day lies outside today's forecast and would give empty strips:
-    // start again from the chart time (or the start of the forecast)
-    const sp = weather.span?.(current.path);
-    if (opts.departure != null && sp && (opts.departure > sp[1] || opts.departure < sp[0] - 12 * 3600)) opts.departure = null;
-    if (opts.departure == null && current.t > 0) { opts.departure = sp ? Math.min(sp[1], Math.max(sp[0], current.t)) : current.t; save(); }
-    const c = course.get();
+    const from = sourceInUse();
+    if (!from) { request.invalidate("no-route"); return; }
     const active = routing.activePoints();
-    if (!(active?.length > 1) && (!c.start || !c.marks.length)) { request.invalidate("no-route"); return; }
-    const sources = weather.sources();
+    let c = null, kn = null, dep = null, slow = false;
+    if (from === "nav") {
+      c = course.navigatedCourse();
+      const sog = meanSog();
+      // stopped or drifting: the planning speed, said so on the heading
+      slow = !(sog >= 1);
+      kn = slow ? course.planSpeed() : Math.round(sog * 10) / 10;
+      dep = Math.floor(Date.now() / 60000) * 60;
+    } else if (from === "plan") {
+      c = course.get(); kn = course.planSpeed(); dep = course.departure();
+    }
+    const gribs = weather.sources();
     request.run(async () => {
-      const from = active?.length > 1 ? "routing" : "course";
-      const pts = from === "routing" ? active.map((p) => ({ ...p })) : courseTrack(c, opts.departure, opts.speed);
+      const pts = from === "routing" ? active.map((p) => ({ ...p })) : courseTrack(c, dep, kn);
       const rows = sampleTrack(pts, positionAt, from === "routing");
       const vals = await invoke("grib_along", { first: current.path, pts: rows.map((r) => [r.lat, r.lon, r.t]) });
       if (!Array.isArray(vals) || vals.length !== rows.length || vals.some((v) => !v || typeof v !== "object" || Array.isArray(v))) {
@@ -79,11 +109,13 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
       }
       rows.forEach((r, i) => Object.assign(r, vals[i]));
       return { from, name: from === "routing" ? routing.activeName() || "Active routing" : c.name || "Unsaved route",
-        kn: opts.speed, rows, sources, path: current.path };
+        kn, slow, startBoat: from === "plan" && course.startIsBoat?.(), rows, sources: gribs, path: current.path };
     });
   }
   let playTimer = 0; // Play on the dock: steps along the route's forecast points
   const stopPlay = () => { if (playTimer) cancelAnimationFrame(playTimer); playTimer = 0; };
+  // the coverage note closed (✕) this session: not shown again while it says the same
+  let closedNote = "";
   let follow = null, internal = false; // follow(t): move the graph's cursor to a chart time set elsewhere
   weather.onChange(() => { if (follow && dock.current() === "routewx") follow(weather.current().t); });
   const later = () => {
@@ -96,6 +128,8 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
   weather.onChange(() => { const path = weather.current().path; if (path !== lastPath) { lastPath = path; later(); } });
   routing.onDraw?.(later);
   course.onChange?.(later);
+  // the navigated route's weather runs from the boat now: work it out again every 5 minutes while it is shown
+  setInterval(() => { if (dock.current() === "routewx" && sourceInUse() === "nav" && request.state().status === "ready") refetch(); }, 5 * 60000);
 
   dock.register("routewx", {
     title: "Weather on route",
@@ -125,58 +159,50 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
       const state = request.state(), data = state.data;
       const context = document.createElement("div");
       context.className = "rw-context";
-      const active = routing.activePoints();
-      const routeName = active?.length > 1 ? routing.activeName() || "Active routing" : course.get().name || "Unsaved route";
+      // which track: the navigated route, the planned route or the weather routing (where there is a choice)
+      const avail = trackSources(), from = sourceInUse();
       const title = document.createElement("strong");
-      title.textContent = `${active?.length > 1 ? "Routing" : "Route"}: ${routeName}`;
+      title.textContent = from === "routing" ? `Routing: ${routing.activeName() || "Active routing"}`
+        : from === "nav" ? `Navigated route: ${course.navigated()?.name || "Unsaved route"}` : `Planned route: ${course.get().name || "Unsaved route"}`;
       context.append(title);
+      if (avail.length > 1) {
+        const choose = document.createElement("div");
+        choose.className = "rw-source-pick";
+        choose.setAttribute("role", "group");
+        choose.setAttribute("aria-label", "Weather along");
+        for (const k of avail) {
+          const b = document.createElement("button");
+          b.textContent = SOURCE_LABEL[k];
+          b.classList.toggle("on", k === from);
+          b.setAttribute("aria-pressed", String(k === from));
+          b.title = { nav: "The route being navigated: from the boat now, along the marks still to come, at the speed over ground",
+            plan: "The route in the editor: from its departure in Route › Plan, at its planning speed",
+            routing: "The active weather routing: its own times and positions" }[k];
+          b.onclick = () => { if (k !== from) { opts.source = k; save(); refetch(); } };
+          choose.append(b);
+        }
+        context.append(choose);
+      }
+      const info = document.createElement("span");
+      info.textContent = from === "routing" ? "Uses the active routing's own times and positions."
+        : from === "nav" ? "From the boat now, along the marks still to come, at the speed over ground (5-minute mean). Worked out again every 5 minutes."
+        : course.startIsBoat?.() ? "From the boat's position, departing now, at the planning speed. Change the speed in Route › Plan."
+        : "From the departure and at the planning speed set in Route › Plan.";
+      context.append(info);
       const timeNote = document.createElement("span");
       timeNote.textContent = "Passage times are independent of the chart forecast time.";
       context.append(timeNote);
-      if (active?.length > 1) {
-        const info = document.createElement("span");
-        info.textContent = "Uses the active routing's own times and positions.";
-        context.append(info);
-      } else {
-        const departure = document.createElement("label");
-        departure.textContent = "Departure (local): ";
-        const input = document.createElement("input");
-        input.type = "datetime-local";
-        input.value = opts.departure ? toLocalInput(opts.departure) : "";
-        departure.append(input);
-        const speed = document.createElement("label");
-        speed.textContent = "Speed (kn): ";
-        const sp = document.createElement("input");
-        sp.type = "number"; sp.min = "0.5"; sp.max = "40"; sp.step = "0.5"; sp.value = String(opts.speed);
-        speed.append(sp);
-        const apply = document.createElement("button");
-        apply.textContent = "Apply and recalculate";
-        apply.onclick = () => {
-          const t = Date.parse(input.value) / 1000, kn = Number(sp.value);
-          if (!input.value || !Number.isFinite(t) || t <= 0 || !sp.value || !Number.isFinite(kn) || kn < 0.5 || kn > 40) {
-            input.setCustomValidity(!input.value || !Number.isFinite(t) || t <= 0 ? "Enter a valid departure time." : "");
-            sp.setCustomValidity(!sp.value || !Number.isFinite(kn) || kn < 0.5 || kn > 40 ? "Enter a speed from 0.5 to 40 kn." : "");
-            if (!input.reportValidity()) return;
-            sp.reportValidity();
-            return;
-          }
-          input.setCustomValidity(""); sp.setCustomValidity("");
-          opts.departure = Math.round(t); opts.speed = kn; save(); refetch();
-        };
-        input.oninput = () => input.setCustomValidity("");
-        sp.oninput = () => sp.setCustomValidity("");
-        context.append(departure, speed, apply);
-      }
       // the settings and details fold away so the plots have the dock; what matters shows on the summary line
       const set = document.createElement("details");
       set.className = "rw-settings";
       set.open = !!opts.settings;
-      set.ontoggle = () => { if (opts.settings !== set.open) { opts.settings = set.open; save(); } };
+      // opening or closing it changes the room left for the plots: draw them again to fill it
+      set.ontoggle = () => { if (opts.settings !== set.open) { opts.settings = set.open; save(); dock.refresh("routewx"); } };
       const sum = document.createElement("summary");
       sum.textContent = "Settings and details";
       set.append(sum, context);
       body.append(set);
-      if (active?.length > 1 && routing.activeStale()) {
+      if (from === "routing" && routing.activeStale()) {
         const warning = document.createElement("div");
         warning.className = "rw-status";
         warning.textContent = "The active routing was computed for a different route. Recompute it before relying on these results.";
@@ -225,16 +251,18 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
       head.className = "mg-head";
       head.textContent = data.from === "routing"
         ? `Along the active routing: ${fmt(r0.t)} to ${fmt(r1.t)}, ${r1.nm.toFixed(0)} NM`
-        : `Along the course at ${data.kn} kn from ${fmt(r0.t)}: ${r1.nm.toFixed(0)} NM, ${hm(r1.t - r0.t)}`;
+        : data.from === "nav"
+          ? `Along the navigated route from the boat now at ${data.kn} kn${data.slow ? " (the planning speed: SOG is under 1 kn)" : " (SOG)"}: ${r1.nm.toFixed(0)} NM, ${hm(r1.t - r0.t)}`
+          : `Along the planned route at ${data.kn} kn from ${data.startBoat ? "the boat now" : fmt(r0.t)}: ${r1.nm.toFixed(0)} NM, ${hm(r1.t - r0.t)}`;
       const lastWith = data.rows.findLast((r) => ["tws", "gust", "wave", "mslp", "temp", "rain", "cape", "sst"].some((k) => r[k] != null) || r.cur?.kn != null);
       if (lastWith && lastWith !== r1) head.textContent += ` · The forecast ends ${fmt(lastWith.t)}, ${lastWith.nm.toFixed(0)} NM along: the last ${(r1.nm - lastWith.nm).toFixed(0)} NM have no forecast`;
       set.append(head);
-      sum.textContent = `Settings and details · ${data.from === "routing" ? data.name : `${data.kn} kn from ${fmt(r0.t)}`} · ${r1.nm.toFixed(0)} NM · ${[...(opts.wind ? ["Wind"] : []), ...(opts.waves ? ["Waves"] : []), ...EXTRAS.filter((x) => opts.extras.includes(x.key)).map((x) => x.label)].join(", ") || "no plots"}`;
+      sum.textContent = `Settings and details · ${{ routing: "Routing", nav: "Navigated", plan: "Planned" }[data.from]} · ${data.from === "routing" ? data.name : `${data.kn} kn from ${data.from === "nav" || data.startBoat ? "now" : fmt(r0.t)}`} · ${r1.nm.toFixed(0)} NM · ${[...(opts.wind ? ["Wind"] : []), ...(opts.waves ? ["Waves"] : []), ...EXTRAS.filter((x) => opts.extras.includes(x.key)).map((x) => x.label)].join(", ") || "no plots"}`;
       const strips = [];
       if (opts.wind) strips.push({ key: "wind", title: "Wind kn (gusts dashed) · direction", h: 120 });
       if (opts.waves) strips.push({ key: "waves", title: "Waves Hs m · Tp s · direction", h: 90 });
       for (const x of EXTRAS) if (opts.extras.includes(x.key)) strips.push({ ...x, title: `${x.label} ${x.unit}`, h: 64 });
-      const fields = [...(opts.wind ? [{ key: "tws", label: "Wind" }] : []), ...(opts.waves ? [{ key: "wave", label: "Waves" }] : []), ...EXTRAS.filter((x) => opts.extras.includes(x.key))];
+      const fields = [...(opts.wind ? [{ key: "tws", label: "Wind" }] : []), ...(opts.waves ? [{ key: "wave", label: "Waves", sea: true }] : []), ...EXTRAS.filter((x) => opts.extras.includes(x.key))];
       // a route that outlasts the forecast is not a gap (the heading says where the forecast ends): warn only about
       // fields that are missing altogether, start late, have holes, or end before the others
       const warn = fieldGaps(data.rows, fields).flatMap((g) => {
@@ -242,14 +270,23 @@ export function setupRouteWeather(map, { weather, routing, course, dock }) {
         if (g.count === 0) return [`${g.label} is not in the loaded GRIBs`];
         return [
           ...(g.lead ? [`${g.label} starts late: none at the first ${n(g.lead)}`] : []),
-          ...(g.inner ? [`${g.label} has holes at ${n(g.inner)} (over land, or outside that GRIB's area)`] : []),
+          ...(g.inner ? [`${g.label} has holes at ${n(g.inner)} (outside that GRIB's area)`] : []),
           ...(g.earlier ? [`${g.label} ends ${n(g.earlier)} before the other fields`] : []),
         ];
       });
-      if (warn.length) {
+      const noteText = warn.length ? `Forecast coverage: ${warn.join("; ")}. Gaps do not mean calm conditions.` : "";
+      if (noteText && noteText !== closedNote) {
         const warning = document.createElement("div");
-        warning.className = "rw-status";
-        warning.textContent = `Forecast coverage: ${warn.join("; ")}. Gaps do not mean calm conditions.`;
+        warning.className = "rw-status rw-closable";
+        const txt = document.createElement("span");
+        txt.textContent = noteText;
+        const close = document.createElement("button");
+        close.className = "rw-close";
+        close.textContent = "✕";
+        close.title = "Close this note to give the plots its room (it comes back if the coverage changes)";
+        close.setAttribute("aria-label", "Close the coverage note");
+        close.onclick = () => { closedNote = noteText; dock.refresh("routewx"); };
+        warning.append(txt, close);
         body.append(warning);
       }
       const readout = document.createElement("div");
@@ -735,7 +772,10 @@ function drawV(rows, strips, W, H, { pick, release }) {
         add("circle", { cx, cy, r: 3.5, fill: sr.col, stroke: "#fff", "stroke-width": 1.2 }, marks);
         const txt = `${+v.toFixed(Math.abs(v) < 10 ? 1 : 0)}${sr.unit ? ` ${sr.unit}` : ""}`;
         const right = cx + 12 + txt.length * 6.2 < sr.x0 + sr.w;
-        shown.push({ sr, txt, right, cx, y: cy + (sr.above ? -7 : 14) });
+        // above or below the cursor line, never on it: near the top all go below, near the bottom all above
+        const room = { up: cy - padT, down: padT + Hp - cy };
+        const above = room.up < 24 ? false : room.down < 24 ? true : sr.above;
+        shown.push({ sr, txt, right, cx, y: cy + (above ? -7 : 14) });
       }
       // values in one plot keep 13 px apart, within the plot
       for (const sid of new Set(shown.map((l) => l.sr.x0))) {

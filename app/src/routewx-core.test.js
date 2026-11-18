@@ -46,4 +46,10 @@ test("gaps tell a forecast that ends early from holes inside it", () => {
   const [w, v] = gaps(rows, f);
   assert.deepEqual([w.lead, w.inner, w.trail, w.earlier], [0, 0, 2, 0]);   // the route outlasts the forecast: no warning
   assert.deepEqual([v.lead, v.inner, v.trail, v.earlier], [1, 1, 2, 0]);
+  // waves are a sea field: the hole where the wind has a value is land, not missing data
+  const [, s] = gaps(rows, [f[0], { ...f[1], sea: true }]);
+  assert.equal(s.inner, 0);
+  // with neither wind nor waves there, it is still a hole (outside the GRIBs)
+  const [, t] = gaps([{ tws: 1, wave: 1 }, { tws: null, wave: null }, { tws: 1, wave: 1 }], [f[0], { ...f[1], sea: true }]);
+  assert.equal(t.inner, 1);
 });

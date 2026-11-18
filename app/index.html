@@ -152,7 +152,7 @@
           <div class="wx-note">The route being navigated is not the one below. It is drawn heavier in magenta; the route below is orange.</div>
           <div class="wx-row">
             <button id="nav-swap" class="grow" title="Stop navigating the other route and navigate the route below">Navigate the route below instead</button>
-            <button id="nav-edit" title="Put the route being navigated back in the editor (it asks before replacing the route below)">Edit it</button>
+            <button id="nav-edit" title="Stop navigating that route and put it in the editor to change it (it asks first). Start navigating again when it is ready">Stop and edit</button>
           </div>
         </div>
         <h3>Plan</h3>
@@ -167,6 +167,12 @@
           <button id="rt-add" title="Click on the chart to add marks in order; click a library mark to reuse it">Add marks</button>
           <button id="rt-undo" title="Remove the last mark">Undo</button>
         </div>
+        <div id="rt-locked" class="wx-note warn" hidden>Being navigated: this route can't be changed. Press Stop navigating, change it, then Start navigating again.</div>
+        <div class="wx-row dep-row"><label class="grow" for="rt-dep-mode" title="When the route leaves: used by Weather on route and by weather routing">Departure</label>
+          <select id="rt-dep-mode"><option value="now">Now</option><option value="fixed">Set a time</option></select>
+          <input id="rt-dep-time" type="datetime-local" title="Departure, local time of this PC" hidden /></div>
+        <div class="wx-row"><label class="grow" for="rt-speed" title="The speed assumed along the route for Weather on route">Planning speed (kn)</label><input id="rt-speed" type="number" min="0.5" max="40" step="0.5" /></div>
+        <div id="rt-dep-note" class="wx-note"></div>
         <div class="wx-row"><label><input id="rt-great-circle" type="checkbox" /> Draw legs as great circles</label></div>
         <ol id="rt-marklist" class="list"></ol>
         <div class="wx-row"><button id="crs-wx" title="Weather along the active routing, or the route at an assumed speed and departure time">Weather on route</button></div>
@@ -182,6 +188,7 @@
         <div class="tab" data-tab="run">
           <div class="wx-row"><label class="grow" for="rt-tmode">Start time</label>
             <select id="rt-tmode">
+              <option value="route">The route's departure (Route › Plan)</option>
               <option value="slider">Weather slider time</option>
               <option value="now">Now (when computed)</option>
               <option value="fixed">Set a time</option>
@@ -505,7 +512,7 @@
         <div class="ly-head">
           <label for="ly-dispcat" title="What the chart shows, as on an ECDIS: Base, Standard or All (the same as Chart display below)">Chart</label>
           <select id="ly-dispcat" data-mirror="set-dispcat"><option value="base">Base</option><option value="standard">Standard</option><option value="all">All</option></select>
-          <button type="button" data-click="set-std" title="Back to the standard display: Standard, with light sectors, names and soundings">Standard</button>
+          <button type="button" data-click="set-std" title="Back to the standard display: Standard, with light sectors, names and soundings">Reset to standard</button>
           <span class="grow"></span>
           <button class="ly-gear" type="button" data-go="chart|Chart display" title="Chart symbols, text, light sectors, chart date">⚙</button>
         </div>
@@ -585,7 +592,7 @@
         <h3>Chart display</h3>
         <div class="wx-row"><label class="grow" for="set-dispcat" title="What the chart shows, as on an ECDIS. Base: land, depth areas, the safety contour and dangers (can't be reduced further). Standard: adds buoys, beacons, lights, routeing measures, restricted and caution areas. All: adds soundings, other contours, cables and pipelines, names and other detail">Display</label>
           <select id="set-dispcat"><option value="base">Base</option><option value="standard">Standard</option><option value="all">All</option></select>
-          <button id="set-std" title="Back to the standard display: Standard, with light sectors, names and soundings">Standard display</button></div>
+          <button id="set-std" title="Back to the standard display: Standard, with light sectors, names and soundings">Reset to standard</button></div>
         <div class="wx-row checks"><label><input id="set-sectors" type="checkbox" /> Light sectors</label><label title="With the IHO symbols: each light sector's limits drawn out to the light's nominal range, as an ECDIS's full light lines (for pilotage: which sector you'll be in). Off: 25 mm on the screen"><input id="set-full-light-lines" type="checkbox" /> Sector lines to full range</label><label><input id="set-featnames" type="checkbox" /> Names and labels</label><label title="Spot soundings, in Standard and All"><input id="set-soundings" type="checkbox" /> Soundings</label><label title="With the IHO symbols: the IHO &quot;i&quot; on features the chart has notes for (marine farms, lights, restricted areas...). Click one for the notes. Off to start with, as on an ECDIS"><input id="set-info" type="checkbox" /> Information symbols</label><label title="With the IHO symbols: the IHO's important text (S-52 text groups 10-19: vertical clearances, track bearings, radio and pilot information)"><input id="set-text-important" type="checkbox" /> Important text</label><label title="With the IHO symbols: the IHO's other text (S-52 text groups 20 on: light descriptions, nature of the seabed, heights, current rates, berth numbers). Light descriptions then come from the IHO rules instead of TweedPlot's labels"><input id="set-text-other" type="checkbox" /> Other text</label><label title="With the IHO symbols: the IHO date symbol on features charted for a time only (seasonal buoys, temporary changes)"><input id="set-datesym" type="checkbox" /> Date-dependent symbols</label></div>
         <div class="wx-row"><span class="grow wx-note">Symbol sizes are true to the S-52 sizes once the screen is calibrated: Settings › Display › Screen calibration.</span></div>
         <div class="wx-row" title="The chart shows what is charted for this date: seasonal buoys, temporary changes, schemes coming into force. Empty: today. Not kept when TweedPlot restarts"><label for="set-chartdate">Chart date</label> <input id="set-chartdate" type="date" /> <label for="set-chartdate-to">to</label> <input id="set-chartdate-to" type="date" title="Optional: everything charted at some time up to this date" /> <button id="set-chartdate-today" type="button">Today</button></div>
@@ -617,7 +624,7 @@
             <button id="data-hr-del" title="Delete all the downloaded high-resolution depths">✕ All</button></div>
           <div class="data-item"><span class="dot" id="sd-dot"></span><span class="grow"><b>Survey depths</b> (LINZ multibeam and lidar, 1–50 m): <span id="sd-state">—</span></span></div>
           <ul id="sd-list" class="sd-list"></ul>
-          <div class="wx-row"><span class="grow wx-note" id="sd-note">Depth packages come from Tweedsmarine (or your fleet manager) as .tpdepth files: one national package, and regional ones with the full detail.</span></div>
+          <div class="wx-row"><span class="grow wx-note" id="sd-note">Depth packages come from TweedsMarine (or your fleet manager) as .tpdepth files: one national package, and regional ones with the full detail.</span></div>
           <div class="wx-row"><button id="sd-import" title="Import depth packages (.tpdepth files), e.g. from a USB stick or a shared folder. A newer edition replaces the older">Import packages…</button>
             <button id="sd-import-dir" title="Import every depth package in a folder, checked against the manifest.json there">Import folder…</button>
             <span class="grow"></span><button id="sd-del" hidden title="Delete all the depth packages">✕ All</button></div>
@@ -676,17 +683,17 @@
             </div>
           </div>
           <div id="s63-main">
-          <div class="wx-row"><label class="grow" for="s63-inst" title="This computer's installation code: send it to Tweedsmarine for an activation code">Installation code</label>
-            <button id="s63-inst-copy" title="Copy the installation code, to send to Tweedsmarine">Copy</button></div>
+          <div class="wx-row"><label class="grow" for="s63-inst" title="This computer's installation code: send it to TweedsMarine for an activation code">Installation code</label>
+            <button id="s63-inst-copy" title="Copy the installation code, to send to TweedsMarine">Copy</button></div>
           <div class="wx-row"><input id="s63-inst" class="mono grow" readonly spellcheck="false" /></div>
-          <div class="wx-row"><label for="s63-act" title="The activation code from Tweedsmarine (starts TPA2-)">Activation code</label>
+          <div class="wx-row"><label for="s63-act" title="The activation code from TweedsMarine (starts TPA2-)">Activation code</label>
             <input id="s63-act" class="mono grow" spellcheck="false" autocomplete="off" placeholder="TPA2-…" />
             <button id="s63-act-btn" title="Activate TweedPlot for encrypted charts on this computer">Activate</button></div>
-          <div class="wx-row"><span id="s63-act-note" class="grow wx-note"></span><button id="s63-deact" title="Remove this computer's activation and give the seat back (you get a release code for Tweedsmarine)" hidden>Remove</button></div>
+          <div class="wx-row"><span id="s63-act-note" class="grow wx-note"></span><button id="s63-deact" title="Remove this computer's activation and give the seat back (you get a release code for TweedsMarine)" hidden>Remove</button></div>
           <div class="wx-row" id="s63-lic-row" hidden><span id="s63-lic" class="grow wx-note"></span></div>
           <div id="s63-rel-box" hidden>
-            <div class="wx-row"><label class="grow" for="s63-rel" title="Send this to Tweedsmarine so the seat can be used on another computer">Release code</label>
-              <button id="s63-rel-copy" title="Copy the release code, to send to Tweedsmarine">Copy</button></div>
+            <div class="wx-row"><label class="grow" for="s63-rel" title="Send this to TweedsMarine so the seat can be used on another computer">Release code</label>
+              <button id="s63-rel-copy" title="Copy the release code, to send to TweedsMarine">Copy</button></div>
             <div class="wx-row"><input id="s63-rel" class="mono grow" readonly spellcheck="false" /></div>
             <div class="wx-row"><span id="s63-rel-note" class="grow wx-note"></span></div>
           </div>
@@ -906,6 +913,17 @@
 
     <div id="ctx" class="ctx" hidden>
       <button data-act="open-lib" hidden title="Open it in the Library drawer (double-click it on the chart does the same)">Edit in the library</button>
+      <div class="ctx-head rnd-item" hidden>How to reach the mark</div>
+      <button data-act="reach" data-v="" class="rnd-item" hidden>Pass through</button>
+      <button data-act="reach" data-v="port" class="rnd-item" hidden>Leave to port</button>
+      <button data-act="reach" data-v="stbd" class="rnd-item" hidden>Leave to starboard</button>
+      <button data-act="reach" data-v="close" class="rnd-item" hidden>As close as possible</button>
+      <hr class="rnd-item" hidden />
+      <div class="ctx-head wr-item" hidden>Weather routing</div>
+      <button data-act="wr-show" class="wr-item" hidden title="Open Wx routing › Routings with this routing selected">Show in Wx routing › Routings</button>
+      <button data-act="wr-hide" class="wr-item" hidden title="Take it off the chart; it stays on the Routings list">Hide routing</button>
+      <button data-act="wr-del" class="wr-item" hidden>Discard routing</button>
+      <hr class="wr-item" hidden />
       <button data-act="move-sel" class="sel-item">Move mark here</button>
       <button data-act="del-sel" class="sel-item">Remove mark</button>
       <hr class="sel-item" />
@@ -960,6 +978,7 @@
       </div>
     </div>
     <div id="toast" class="toast startup-toast">Initialising - please wait</div>
+    <div id="update-notice" class="update-notice" role="status" aria-live="polite" hidden><span id="update-text"></span><button id="update-install" type="button" title="Close TweedPlot, install the update and open it again (not while a live position is arriving)">Install…</button><button id="update-notes" type="button" title="What's new: the release page on GitHub">What's new</button><button id="update-later" type="button" title="Hide this until TweedPlot is next started">Later</button></div>
     <div id="s63-banner" class="s63-banner" hidden></div>
 
       <section id="settings" class="pane" data-pane="settings" data-title="Settings" hidden>
@@ -1106,14 +1125,19 @@
           <div class="tab" data-tab="diag" hidden>
 <h3>Live NMEA data</h3>
         <div id="nmea-monitor-inline"></div>
+<h3>Software updates</h3>
+        <div class="wx-row"><label class="grow" for="upd-mode">Look for updates</label>
+          <select id="upd-mode" title="TweedPlot looks a minute after it starts and then twice a day, when there is an internet connection"><option value="notify">Look, and tell me</option><option value="download">Look, and download ahead</option><option value="off">Off</option></select></div>
+        <div class="wx-row"><span id="upd-status" class="grow wx-note" role="status" aria-live="polite"></span><button id="upd-check" type="button">Check now</button></div>
+        <div class="wx-note">An update is never installed by itself: a notice asks first, and installing closes TweedPlot, so it can't be done while a live position is arriving. Download ahead fetches the installer quietly, so Install is quick. Updates are signed by TweedsMarine and checked before they install.</div>
 <h3>About this system</h3>
-        <div class="wx-note">Version, computer details and where to put your chart and data files. Copy for support puts all of this, with the activity log, on the clipboard, to paste into an email to Tweedsmarine.</div>
+        <div class="wx-note">Version, computer details and where to put your chart and data files. Copy for support puts all of this, with the activity log, on the clipboard, to paste into an email to TweedsMarine.</div>
         <div class="wx-row"><span class="grow"></span><button id="sys-copy" class="on">Copy for support</button></div>
         <dl id="sys-info" class="sys-info"></dl>
         <h4>Where to install data files</h4>
         <div id="sys-folders" class="sys-folders"></div>
 <h3>Activity log</h3>
-        <div class="wx-note">What TweedPlot has done (imports, deletes, exports, chart changes) and how each went, newest first. Copy for support puts it on the clipboard with the version, to send to Tweedsmarine.</div>
+        <div class="wx-note">What TweedPlot has done (imports, deletes, exports, chart changes) and how each went, newest first. Copy for support puts it on the clipboard with the version, to send to TweedsMarine.</div>
         <div class="wx-row"><span id="act-log-path" class="grow wx-note mono"></span><button id="act-log-refresh">Refresh</button><button id="act-log-copy" class="on">Copy for support</button></div>
         <pre id="act-log" class="act-log"></pre>
 <h3>Radar overlay test</h3>
@@ -1136,6 +1160,7 @@
       <div class="head"><img src="/logo-sails.svg" alt=""><div><h2>Tweed<b>Plot</b></h2><div class="tag">Professional Marine Chart Plotter</div></div></div>
       <p>From TweedsMarine, Nelson: marine electronics design, installation and servicing for commercial fishing and leisure vessels. <a href="#" id="about-site">tweedsmarine.nz</a></p>
       <p id="about-version"></p>
+      <div class="wx-row"><span id="about-update-status" class="grow" role="status" aria-live="polite"></span><button id="about-update" type="button">Check for updates</button></div>
       <p>Free software, GPL-3.0-or-later. The TweedPlot and TweedsMarine names and logos belong to TweedsMarine.</p>
       <details class="credits">
         <summary>Data sources and credits</summary>

@@ -54,8 +54,21 @@ Configure NMEA inputs and the multiplexer in Settings. Enabled sources are monit
 ## Windows builds (GitHub Actions)
 
 - `.github/workflows/build.yml`: builds only when asked, so ordinary pushes use no Actions minutes. Either **Actions › build › Run workflow** (choose **both**, **x64** or **arm64**, and whether to run the tests first), `gh workflow run build.yml -f arch=arm64` from a terminal, or put `[build]` in the message of the last commit you push. It runs the Rust tests (on Linux: half the Windows rate) and builds the NSIS installers for **x64** (`windows-latest`) and **ARM64** (`windows-11-arm`, native). They are on the run page under Artifacts for 30 days.
-- `.github/workflows/release.yml`: push a tag `vX.Y.Z` (matching `version` in `app/src-tauri/tauri.conf.json`) and both installers go on a draft pre-release; check it, add notes, Publish.
+- `.github/workflows/release.yml`: push a tag `vX.Y.Z` (matching `version` in `app/src-tauri/tauri.conf.json`) and both installers go on a draft release, with the updater files; check it, add notes, Publish. Publishing is what offers it to installed copies (below).
 - The installers are not code-signed: SmartScreen warns until they are (More info › Run anyway).
+
+### Updates
+
+Installed copies look for a newer TweedPlot a minute after starting and then twice a day (`app/src/updates.js`, decisions in `updates-core.js`; Settings › Diagnostics › Software updates; Check for updates in the About box). They read `https://github.com/tweedsmarine/tweedplot/releases/latest/download/latest.json`: GitHub's latest *published* release that isn't marked pre-release. Drafts are never offered, so a release reaches users only when you press Publish. The repository must be public for this to work. A notice asks before installing; installing closes the app (the NSIS installer runs passive and reopens it), and is refused while a live position is arriving.
+
+Updates are signed with TweedPlot's own updater key (minisign, through Tauri), separate from Windows code signing. One-time set-up:
+
+1. In PowerShell: `cd app` then `npx tauri signer generate -w "$env:USERPROFILE\.tauri\tweedplot-updater.key"` and choose a password (`%USERPROFILE%` works only in Command Prompt: PowerShell makes a folder of that name in the repository). Never put the key in the repository.
+2. Put the contents of `tweedplot-updater.key.pub` in `app/src-tauri/tauri.conf.json` › `plugins.updater.pubkey` (the release workflow stops while the placeholder is there).
+3. On GitHub: Settings › Secrets and variables › Actions › New repository secret: `TAURI_SIGNING_PRIVATE_KEY` (the contents of `tweedplot-updater.key`) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Or in PowerShell: `Get-Content -Raw "$env:USERPROFILE\.tauri\tweedplot-updater.key" | gh secret set TAURI_SIGNING_PRIVATE_KEY -R tweedsmarine/tweedplot`, then `gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD -R tweedsmarine/tweedplot` (PowerShell has no `<`).
+4. Back up the key and its password somewhere safe (not on the same PC only). Lost, no installed copy can ever be updated again: everyone would have to download and install by hand.
+
+Only `release.yml` makes the updater files (`--config src-tauri/tauri.release.conf.json` sets `createUpdaterArtifacts`), so `build.yml` and local builds need no key. Each release's version must be higher than the last (semver: `1.0.0-beta.1` < `1.0.0-beta.2` < `1.0.0`). The S-63 Charts plugin updates separately, from its own signed index (`plugin.rs`).
 
 ## Chart data
 

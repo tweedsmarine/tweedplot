@@ -22,3 +22,10 @@ signing.key
 
 # simulated passages (tools/nmea-sim make)
 *.nmea
+# updater signing keys (keep them in %USERPROFILE%\.tauri, never here)
+*.key
+*.key.pub
+%USERPROFILE%/
+
+# raw screenshots for the manual (the manual uses the smaller JPEGs in app/public/manual/img)
+/screenshots/

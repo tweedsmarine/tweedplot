@@ -31,6 +31,8 @@ const DEFAULTS = { show: true, names: true, key: "", owKey: "", owSeed: "", owOn
 const FLEET_KEY = "racenav.ownfleet";
 export const GROUP_COLOURS = { Friends: "#2e86de", Company: "#e67e22", "Race fleet": "#d63031", Other: "#8e44ad" };
 /** One colour for every vessel (the night palettes invert the page, so it follows them); red is only for danger. */
+/** TCPA for reading: minutes up to 10 h, then hours, and past 99 h just ">99 h". */
+export function tcpaText(min) { return min < 600 ? `${Math.round(min)} min` : min < 99 * 60 ? `${Math.round(min / 60)} h` : ">99 h"; }
 const TARGET_COL = "#1d2a33", TARGET_HALO = "#ffffff", DANGER_COL = "#d00000";
 /** A turn faster than this (degrees per minute) is marked on the heading line. */
 const ROT_MIN = 3; // °/min: a short barb from here, a long one from ROT_FAST
@@ -450,7 +452,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
           line("cpa", c.own, c.tgt);
           for (const pt of [c.own, c.tgt]) cpaF.push({ type: "Feature", properties: { k: "pt", col: ccol, lvl }, geometry: { type: "Point", coordinates: pt } });
           const mid = [(c.own[0] + c.tgt[0]) / 2, (c.own[1] + c.tgt[1]) / 2];
-          cpaF.push({ type: "Feature", properties: { k: "lbl", text: `CPA ${c.cpa.toFixed(2)} NM · ${Math.round(c.tcpa)} min` }, geometry: { type: "Point", coordinates: mid } });
+          cpaF.push({ type: "Feature", properties: { k: "lbl", text: `CPA ${c.cpa.toFixed(2)} NM · ${tcpaText(c.tcpa)}` }, geometry: { type: "Point", coordinates: mid } });
         }
       }
     }
@@ -521,7 +523,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     add("Position", `${ddm(t.lat, "N", "S")} ${ddm(t.lon, "E", "W")}`);
     if (c) {
       add("Range / bearing", `${c.range.toFixed(2)} NM / ${String(Math.round(bearing(own.pos, [t.lon, t.lat]))).padStart(3, "0")}°T`);
-      if (c.tcpa != null) add("CPA / TCPA", c.tcpa > 0 ? `${c.cpa.toFixed(2)} NM in ${Math.round(c.tcpa)} min` : "Moving apart");
+      if (c.tcpa != null) add("CPA / TCPA", c.tcpa > 0 ? `${c.cpa.toFixed(2)} NM in ${tcpaText(c.tcpa)}` : "Moving apart");
     }
     if (t.last_pos) add("Position age", `${Math.round(Date.now() / 1000 - t.last_pos)} s`);
     add("Heard by", t.source.split("+").map((x) => SRC_NAME[x] || x).join(" and ") + (netOnly(t) ? " (internet: may be late or missing, not for navigation)" : ""));
@@ -622,7 +624,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       li.querySelector("b").textContent = inFleet(t.mmsi)?.name || t.name || `MMSI ${t.mmsi}`;
       const [cat] = t.kind === "vessel" ? category(t.ship_type) : [{ aton: "AtoN", aircraft: "SAR aircraft", base: "Base station", sart: "AIS-SART", mob: "MOB", epirb: "EPIRB" }[t.kind]];
       li.querySelector("small").textContent = [cat, t.sog != null ? `${t.sog.toFixed(1)} kn` : null, c ? `${c.range.toFixed(1)} NM` : null,
-        c && c.tcpa > 0 ? `CPA ${c.cpa.toFixed(2)} NM in ${Math.round(c.tcpa)} min` : null, isLost(t) ? "lost" : null, netOnly(t) ? "internet" : null].filter(Boolean).join(" · ");
+        c && c.tcpa > 0 ? `CPA ${c.cpa.toFixed(2)} NM in ${tcpaText(c.tcpa)}` : null, isLost(t) ? "lost" : null, netOnly(t) ? "internet" : null].filter(Boolean).join(" · ");
       li.querySelector(".main").onclick = () => { map.easeTo({ center: [t.lon, t.lat], zoom: Math.max(map.getZoom(), 12) }); openPopup(t.mmsi); };
       ul.append(li);
     }
@@ -783,7 +785,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       const st = online[id];
       const n = [...targets.values()].filter((t) => String(t.source).split("+").includes(id)).length;
       $(f.dot).className = `dot ${!s[f.on] ? "paused" : st.connected ? "on" : ""}`;
-      $(f.state).textContent = !s[f.on] ? `${f.name}: off` : st.connected ? `${f.name}: connected, ${n} target${n === 1 ? "" : "s"}` : `${f.name}: ${st.detail || "connecting…"}`;
+      $(f.state).textContent = !s[f.on] ? `${f.name}: off` : st.connected ? `${f.name}: connected, ${n} target${n === 1 ? "" : "s"}` : `${f.name}: ${st.detail && st.detail !== "off" ? st.detail : "on, not connected yet"}`; // switched on: never "off"
       $(f.btn).textContent = s[f.on] ? "Go offline" : "Go online";
       $(f.btn).classList.toggle("on", !!s[f.on]);
     }
@@ -916,7 +918,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       tr.className = [r.danger ? "danger" : "", r.net ? "net" : "", r.lost ? "lost" : "", r.id === selected ? "sel" : ""].join(" ");
       if (r.net) tr.title = "Heard over the internet only: may be minutes late or missing. Not for navigation";
       tr.innerHTML = `<td><span class="sw"></span></td><td></td><td class="n">${fmt(r.range, r.range != null && r.range < 10 ? 2 : 1)}</td><td class="n">${deg(r.brg)}</td>
-        <td class="n">${fmt(r.cpa, 2)}</td><td class="n">${r.tcpa == null ? "—" : Math.round(r.tcpa)}</td><td class="n">${fmt(r.sog)}</td><td class="n">${deg(r.cog)}</td><td class="n age">${age(r.age)}</td><td>${r.src}</td><td class="ctl"></td><td class="ctl"></td>`;
+        <td class="n">${fmt(r.cpa, 2)}</td><td class="n">${r.tcpa == null ? "—" : r.tcpa < 600 ? Math.round(r.tcpa) : tcpaText(r.tcpa)}</td><td class="n">${fmt(r.sog)}</td><td class="n">${deg(r.cog)}</td><td class="n age">${age(r.age)}</td><td>${r.src}</td><td class="ctl"></td><td class="ctl"></td>`;
       const locked = fleet.trackAll && !!inFleet(r.id);
       const cb = document.createElement("input");
       cb.type = "checkbox"; cb.checked = !!r.trk; cb.disabled = locked;
@@ -936,7 +938,9 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       for (const c of [cb, grp]) c.onclick = (ev) => ev.stopPropagation();
       tr.cells[0].append(document.createTextNode(r.name));
       tr.cells[0].querySelector(".sw").style.background = r.col;
-      tr.cells[1].textContent = r.type + (r.t.kind === "vessel" && STATUS_SHORT[r.t.status] ? ` · ${STATUS_SHORT[r.t.status]}` : "");
+      // the status after the type, unless it only repeats it (a fishing vessel engaged in fishing)
+      const st = r.t.kind === "vessel" ? STATUS_SHORT[r.t.status] : null;
+      tr.cells[1].textContent = r.type + (st && !r.type.toLowerCase().startsWith(st) ? ` · ${st}` : "");
       if (r.lost) tr.cells[8].title = "Not heard for a while: shown crossed through on the chart at its last position";
       tr.onclick = () => { map.easeTo({ center: [r.t.lon, r.t.lat] }); openPopup(r.id); renderWin(); };
       tb.append(tr);

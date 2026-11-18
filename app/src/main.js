@@ -16,6 +16,7 @@ import * as activity from "./activity.js";
 import { setupWeather, barbImage } from "./weather.js";
 import { setupWeatherPanel } from "./wxpanel.js";
 import { setupBrand } from "./brand.js";
+import { setupUpdates } from "./updates.js";
 import { setupWebMap } from "./webmap.js";
 import { setupLayerVisibility } from "./layervis.js";
 import { setupChartFeatures, featureImage, loadS52Palette, s52PxPerMm } from "./chartfeatures.js";
@@ -472,6 +473,8 @@ const sidePanel = setupSidePanel({ inst, views, use, map,
     setFollow(true);
     map.easeTo({ center: lastBoat, offset: followOffset(), duration: 300 });
   } });
+// the Route drawer opened (rail, Edit the route, the library) in Planning: its planning controls are in the panel
+ui.onChange((name) => { if (name === "course") sidePanel.revealPlan(); });
 window.__inst = inst; window.__side = sidePanel; window.__ais = () => aisApi; window.__rec = histRecorder; window.__map = map; // debugging handles
 setupDisclaimer();
 window.addEventListener("racenav-mob", (e) => { inst.update({ mob: e.detail }); });
@@ -642,6 +645,8 @@ map.on("load", () => {
   setupPublications({ toast });
   setupPalette((mode) => { paletteMode = mode; applyPalette(); });
   setupBrand();
+  // never installs while a live position is arriving (installing closes the app)
+  setupUpdates({ toast, livePosition: () => live && positionWatch.age() != null && !positionWatch.lost() });
   setupWebMap(map);
   layerVis = setupLayerVisibility(map, { ready: () => chartMapLoaded && chartStoreReady });
   alarms = setupAlarms(map, {
@@ -658,6 +663,9 @@ map.on("load", () => {
     },
     onMobMarkDeleted: () => library?.refresh(),
     toast,
+    // no alarm sounds until the screen is ready (alarms raised meanwhile sound then); after two
+    // minutes they sound regardless, so a start-up that never finishes can't keep an alarm quiet
+    soundReady: () => startup.finished || performance.now() > 120000,
   });
   for (const alarm of pendingNmeaAlarms.splice(0)) alarms.raise(...alarm);
   setupMarine(map, {
@@ -715,7 +723,9 @@ map.on("load", () => {
   setupGribDownload(map, { weather, course: route });
   gribTools = setupGribTools(map, { weather, dock });
   setupWeatherPanel(map, weather, sidePanel, ui);
-  const routeWx = setupRouteWeather(map, { weather, routing, course: route, dock });
+  // the navigated route's weather runs at the speed over ground, while live data is arriving
+  const routeWx = setupRouteWeather(map, { weather, routing, course: route, dock,
+    getSog: () => (live && positionWatch.age() != null && !positionWatch.lost() && Number.isFinite(vessel.sog) ? vessel.sog : null) });
   setupRadar(map, { getBoat: () => lastBoat });
   for (const id of ["rt-wx", "crs-wx"]) { const b = document.getElementById(id); if (b) b.onclick = () => routeWx.open(); }
   document.getElementById("wx-verify").onclick = () => gribTools.openVerify();
@@ -1378,7 +1388,7 @@ function openInLibrary(o) {
   if (o.kind === "mark") library?.openMark(o.id);
   else if (o.kind === "barrier") { ui.openTab("library", "barriers"); barriers?.reveal(o.id); }
   else if (o.kind === "track") { ui.openTab("library", "tracks"); tracks?.open(o.id); }
-  else if (o.kind === "route") { if (o.id) library?.openRoute(o.id); else ui.open("course"); } // a course not saved yet is in the Route drawer
+  else if (o.kind === "route") ui.open("course"); // the route on the chart is the one in the editor: Route › Plan (the panel in Planning)
 }
 map.on("dblclick", (e) => {
   // drawing a barrier or measuring uses double-click to finish
@@ -1400,6 +1410,8 @@ let ctxBarrier = null; // barrier under the right-click: { id, i, active, name }
 let ctxObject = null; // library object under the right-click (Edit in the library)
 let ctxRings = null; // what range rings would go round (mariner.js ringTarget)
 let ctxEbl = null; // EBL/VRM under the right-click (index)
+let ctxReach = null; // route mark under the right-click: its index
+let ctxRouting = null; // weather routing under the right-click: { key, name, saved }
 map.on("contextmenu", (e) => {
   e.originalEvent.preventDefault();
   ctxAt = [e.lngLat.lng, e.lngLat.lat];
@@ -1448,7 +1460,7 @@ map.on("contextmenu", (e) => {
   ctxObject = ctxRuler ? null : libraryObjectAt(e.point);
   const openBtn = ctx.querySelector('[data-act="open-lib"]');
   openBtn.hidden = !ctxObject;
-  if (ctxObject) openBtn.textContent = ctxObject.kind === "route" && !ctxObject.id ? "Edit the route (Route drawer)" : `Edit “${ctxObject.name}” in the library`;
+  if (ctxObject) openBtn.textContent = ctxObject.kind === "route" ? "Edit the route" : `Edit “${ctxObject.name}” in the library`;
   for (const el of ctx.querySelectorAll(".bar-item")) el.hidden = !ctxBarrier;
   if (ctxBarrier) {
     ctx.querySelector('[data-act="bar-pt"]').hidden = ctxBarrier.i == null;
@@ -1474,6 +1486,28 @@ map.on("contextmenu", (e) => {
     mv.title = sel.movable ? "" : "Wait for the ring round the mark to turn green";
     ctx.querySelector('[data-act="del-sel"]').textContent = `Delete ${sel.label}`;
   }
+  // a route mark: how the routing reaches it (not the start; not while it is navigated)
+  const wp = route?.waypointAt(e.point);
+  const reach = wp != null && wp >= 0 ? route.reachOf(wp) : null;
+  ctxReach = reach ? wp : null;
+  for (const el of ctx.querySelectorAll(".rnd-item")) el.hidden = !reach;
+  if (reach) {
+    ctx.querySelector(".ctx-head.rnd-item").textContent = `How to reach ${reach.name}`;
+    for (const b of ctx.querySelectorAll('[data-act="reach"]')) {
+      b.classList.toggle("on", b.dataset.v === reach.rounding);
+      b.disabled = reach.locked;
+      b.title = reach.locked ? "The route is being navigated: Stop navigating to change it" : "";
+    }
+  }
+  // a weather routing: find it on the list, hide or discard it
+  ctxRouting = routing?.hitAt(e.point) ?? null;
+  for (const el of ctx.querySelectorAll(".wr-item")) el.hidden = !ctxRouting;
+  if (ctxRouting) {
+    ctx.querySelector(".ctx-head.wr-item").textContent = `Routing “${ctxRouting.name}”`;
+    const del = ctx.querySelector('[data-act="wr-del"]');
+    del.textContent = ctxRouting.saved ? "Take off the Routings list" : "Discard routing";
+    del.title = ctxRouting.saved ? "It stays saved in the library" : "Delete it (it isn't saved)";
+  }
   const boatBtn = ctx.querySelector('[data-act="boat"]');
   boatBtn.disabled = signalKActive();
   boatBtn.title = boatBtn.disabled ? "Signal K is plotting the boat: press Live to pause it first" : "";
@@ -1487,6 +1521,10 @@ document.addEventListener("contextmenu", (e) => e.preventDefault());
 ctx.addEventListener("click", (e) => {
   const act = e.target.dataset.act;
   if (!act || e.target.disabled || !ctxAt) return;
+  if (act === "reach" && ctxReach != null) route?.setReach(ctxReach, e.target.dataset.v);
+  if (act === "wr-show" && ctxRouting) routing?.reveal(ctxRouting.key);
+  if (act === "wr-hide" && ctxRouting) routing?.hide(ctxRouting.key);
+  if (act === "wr-del" && ctxRouting) routing?.discard(ctxRouting.key);
   if (act === "move-sel") route?.moveSelected(ctxAt);
   if (act === "del-sel") route?.deleteSelected();
   if (act === "boat") placeBoat(ctxAt);

@@ -25,7 +25,7 @@ function awText(p) {
 
 const OPTS_KEY = "racenav.route"; // kept from earlier versions: step, radius, current
 const LIMIT_DEFAULTS = { fan: 180, hstep: 4, mintws: 0, maxtws: 0, maxhs: 0, mintwa: 0, maxtwa: 180, barriers: true };
-const OPTS_DEFAULTS = { step: 0, radius: 0.1, current: true, v: 2, tmode: "slider", tfixed: null, hoverTime: false, ...LIMIT_DEFAULTS };
+const OPTS_DEFAULTS = { step: 0, radius: 0.1, current: true, v: 3, tmode: "route", tfixed: null, hoverTime: false, ...LIMIT_DEFAULTS };
 const COLS_KEY = "racenav.compare.cols";
 const COLOURS = ["#c2185b", "#1565c0", "#2e7d32", "#ef6c00", "#6a1b9a", "#00838f", "#5d4037", "#455a64", "#d81b60", "#7cb342"];
 
@@ -35,7 +35,10 @@ function save(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } ca
 export function setupRouting(map, { weather, course, library, dock, ui, getBoat, getSafetyDepth, getAvoid, getBoatSettings }) {
   const $ = (id) => document.getElementById(id);
   const opts = load(OPTS_KEY, OPTS_DEFAULTS);
-  if (opts.v !== 2) { opts.step = 0; opts.v = 2; }
+  if (!(opts.v >= 2)) opts.step = 0;
+  // v3: the route's departure (Route › Plan) is the start time, so From boat leaves no other start time in force
+  if (!(opts.v >= 3)) opts.tmode = "route";
+  opts.v = 3;
   const items = []; // routings in this session's list
   let active = null; // key of the routing shown in detail
   let saved = []; // summaries of saved routings (library)
@@ -55,9 +58,16 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
     // a "working…" line can be replaced by its outcome
     return { set(t, k = "") { li.className = k; li.children[1].textContent = t; } };
   }
+  // While the route in the editor is being navigated, routings go from the boat through the marks still
+  // ahead (the route itself can't change, so it never starts from the beginning again).
+  function routeCourse() {
+    const c = course.get();
+    const n = course.locked?.() ? course.navigatedCourse?.() : null;
+    return n ? { ...c, start: n.start, startRef: null, marks: n.marks, boat: true } : c;
+  }
   course.onChange(() => {
     const a = activeItem();
-    if (a && courseKey(course.get()) !== a.courseKey) $("rt-stale").hidden = false;
+    if (a && courseKey(routeCourse()) !== a.courseKey) $("rt-stale").hidden = false;
   });
 
   // ---------- map layers ----------------------------------------------------------
@@ -144,12 +154,14 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
   $("rt-hovertime").onchange = (e) => { opts.hoverTime = e.target.checked; save(OPTS_KEY, opts); };
 
   // ---------- start time ----------------------------------------------------------
+  // "route": the route's departure (Route › Plan: Now, a set time, or now when it starts from the boat);
   // "slider": the weather slider's time; "now": the clock when Compute is pressed;
   // "fixed": a time typed in (local time of this PC).
   const tmode = $("rt-tmode"), tinput = $("rt-time");
   tmode.value = opts.tmode;
   if (opts.tfixed) tinput.value = toLocalInput(opts.tfixed);
   function startTime() {
+    if (opts.tmode === "route") return course.locked?.() ? Math.floor(Date.now() / 60000) * 60 : course.departure?.() ?? Math.floor(Date.now() / 60000) * 60;
     if (opts.tmode === "now") return Math.floor(Date.now() / 60000) * 60;
     if (opts.tmode === "fixed") return opts.tfixed;
     return weather.current().t || null;
@@ -159,7 +171,7 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
     const t = startTime();
     const w = weather.current();
     const g = weather.all().find((x) => x.path === w.path);
-    let note = t ? `Start ${fmt(t)}` : opts.tmode === "fixed" ? "Type a start time" : "Load a GRIB first";
+    let note = t ? `Start ${fmt(t)}${opts.tmode === "route" ? (course.locked?.() ? " (from the boat, now, to the marks still ahead of the navigated route)" : course.startIsBoat?.() ? " (from the boat, now)" : " (the route's departure)") : ""}` : opts.tmode === "fixed" ? "Type a start time" : "Load a GRIB first";
     if (t && g && (t < g.start || t > g.end)) note += ` · outside the GRIB shown (${fmt(g.start, true)} → ${fmt(g.end, true)})`;
     $("rt-when").textContent = note;
     $("rt-when").classList.toggle("warn", !!(t && g && (t < g.start || t > g.end)));
@@ -176,12 +188,13 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
   };
   $("rt-time-now").onclick = () => { opts.tfixed = Math.floor(Date.now() / 60000) * 60; tinput.value = toLocalInput(opts.tfixed); save(OPTS_KEY, opts); showStart(); };
   weather.onTime(showStart);
-  setInterval(() => { if (opts.tmode === "now") showStart(); }, 30000);
+  course.onChange?.(showStart);
+  setInterval(() => { if (opts.tmode === "now" || opts.tmode === "route") showStart(); }, 30000);
 
   // ---------- compute ----------------------------------------------------------
   /** The router's request for this course and GRIB; `marks` (course marks, e.g. with a gate added) replaces the course's. */
   function request(grib, marks) {
-    const c = course.get();
+    const c = routeCourse();
     if (marks) c.marks = marks;
     const b = getBoatSettings();
     return {
@@ -199,9 +212,10 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
     };
   }
   function ready() {
-    const c = course.get();
-    if (!getBoatSettings().polar) { msg("Choose a polar in Routing › Boat and polar.", "warn"); return false; }
-    if (!c.start || !c.marks.length) { msg("Set a start and at least one mark (Route drawer).", "warn"); return false; }
+    const c = routeCourse();
+    if (course.locked?.() && !c.boat) { msg("The route is being navigated but there is no boat position yet to route from.", "warn"); return false; }
+    if (!getBoatSettings().polar) { msg("Choose a polar in Settings › Vessel › Performance (polar).", "warn"); return false; }
+    if (!c.start || !c.marks.length) { msg("Set a start and at least one mark (Route › Plan).", "warn"); return false; }
     if (!startTime()) { msg("No start time: load a GRIB or set a time.", "warn"); return false; }
     return true;
   }
@@ -250,7 +264,9 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
       const charts = r.obstacles?.charts ? `, land, < ${r.request.safety_depth} m${extra ? `, ${extra}` : ""} avoided` : ", no chart: land not avoided";
       const bars = r.barriers ? `, ${r.barriers} barrier${r.barriers > 1 ? "s" : ""}` : "";
       const waves = typeof r.waves_from === "string" && r.waves_from.startsWith("none") ? ` Wave limit not applied: no wave GRIB loaded.` : "";
-      msg(`${it.name}: arrives ${fmt(r.arrival, true)} (${hm(r.arrival - r.t0)}), ${secs} s${charts}${bars}.${waves}`, waves ? "warn" : "good");
+      // a note on the arrival: as close as possible to a mark it couldn't get right to
+      const note = r.message ? ` ${r.message}` : "";
+      msg(`${it.name}: arrives ${fmt(r.arrival, true)} (${hm(r.arrival - r.t0)}), ${secs} s${charts}${bars}.${waves}${note}`, waves || note ? "warn" : "good");
     } else if (r.status === "grib end") {
       msg(`${it.name}: the weather runs out first. ${r.message}`, "warn");
     } else {
@@ -268,10 +284,10 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
   }
   function add(r, nameExtra) {
     seq += 1;
-    const c = course.get();
+    const c = routeCourse();
     const used = new Set(items.map((x) => x.colour));
     const lab = labelFor(c, r.request?.t0);
-    let name = lab ? `${lab.text}${nameExtra ? ` · ${nameExtra}` : ""}` : `${c.name || "Routing"} · ${nameExtra ?? fmt(r.t0, true)}`;
+    let name = lab ? `${lab.text}${nameExtra ? ` · ${nameExtra}` : ""}` : `${c.name || "Routing"}${c.boat ? " · from boat" : ""} · ${nameExtra ?? fmt(r.t0, true)}`;
     if (items.some((x) => x.name === name)) { let n = 2; while (items.some((x) => x.name === `${name} (${n})`)) n++; name = `${name} (${n})`; }
     const it = {
       key: `k${seq}`,
@@ -393,7 +409,7 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
   $("rt-course").onclick = () => {
     const a = activeItem();
     if (!a) { msg("No routing shown.", "warn"); return; }
-    course.fromRouting(a.r.request);
+    if (course.fromRouting(a.r.request) === false) return; // the navigated route: refused, with the reason
     $("rt-stale").hidden = true;
     msg(`Course set from “${a.name}”.`);
   };
@@ -555,10 +571,31 @@ export function setupRouting(map, { weather, course, library, dock, ui, getBoat,
 
   return {
     msg,
+    /** The routing under a map point (its line, points or boat): { key, name, saved } or null. */
+    hitAt(point) {
+      const layers = ["rt-now", "rt-pts", "rt-line", "rt-multi"].filter((l) => map.getLayer(l));
+      const f = map.queryRenderedFeatures([[point.x - 6, point.y - 6], [point.x + 6, point.y + 6]], { layers })[0];
+      if (!f) return null;
+      const key = f.layer.id === "rt-line" || f.layer.id === "rt-pts" ? active : f.properties.key;
+      const it = items.find((x) => x.key === key);
+      return it ? { key: it.key, name: it.name, saved: !!it.savedId } : null;
+    },
+    /** Take a routing off the chart (it stays on the Routings list). */
+    hide(key) { const it = items.find((x) => x.key === key); if (it) { it.visible = false; draw(); } },
+    /** Take a routing off the list (and the chart); a saved one stays in the library. */
+    discard(key) {
+      const i = items.findIndex((x) => x.key === key);
+      if (i < 0) return;
+      items.splice(i, 1);
+      if (active === key) active = items.at(-1)?.key ?? null;
+      draw();
+    },
+    /** Open the Routings list with this routing made the one shown in detail. */
+    reveal(key) { const it = items.find((x) => x.key === key); if (it) { active = key; it.visible = true; draw(); } ui.openTab("routing", "list"); },
     /** Points of the active routing, for the instruments' targets. */
     activePoints: () => { const a = activeItem(); return a && a.visible ? a.r.points : null; },
     activeName: () => { const a = activeItem(); return a && a.visible ? a.name : null; },
-    activeStale: () => { const a = activeItem(); return !!(a && a.visible && courseKey(course.get()) !== a.courseKey); },
+    activeStale: () => { const a = activeItem(); return !!(a && a.visible && courseKey(routeCourse()) !== a.courseKey); },
     /** Called whenever the routings on the chart change (computed, shown, made active). */
     onDraw: (fn) => drawListeners.push(fn),
     /** Show a saved routing (Library panel). */
@@ -606,7 +643,8 @@ function triangle() {
   return g.getImageData(0, 0, w, h);
 }
 
-function courseKey(c) { return JSON.stringify([c.start, c.marks.map((m) => [m.lon, m.lat])]); }
+// from the boat (navigating): the boat moves on, so only the marks ahead count
+function courseKey(c) { return JSON.stringify([c.boat ? "boat" : c.start, c.marks.map((m) => [m.lon, m.lat])]); }
 function cmp(a, b) {
   if (a === b) return 0;
   if (a === null || a === undefined) return 1;

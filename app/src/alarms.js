@@ -75,7 +75,8 @@ function makeSound(getVolume) {
   return { play };
 }
 
-export function setupAlarms(map, { getBoat, getBow = () => null, getSafetyDepth, getSafetyContour = () => 0, getAirDraft, getNav = () => null, onMobMarkDeleted = () => {}, toast = () => {} }) {
+export function setupAlarms(map, { getBoat, getBow = () => null, getSafetyDepth, getSafetyContour = () => 0, getAirDraft, getNav = () => null, onMobMarkDeleted = () => {}, toast = () => {},
+  soundReady = () => true }) {
   let s = { ...DEFAULTS };
   try { Object.assign(s, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* storage unavailable */ }
   let mob = null;
@@ -97,8 +98,15 @@ export function setupAlarms(map, { getBoat, getBow = () => null, getSafetyDepth,
   const snd = makeSound(() => s.volume);
   /** The sound for each kind of alarm (Alarms › Sound): red alarms, amber warnings, the anchor. */
   const sound = { play: snd.play, alarm: () => snd.play(s.soundAlarm), warn: () => snd.play(s.soundWarn) };
-  /** An alarm's own sound: the anchor has its own; else by level. */
-  const ring = (a) => (a.sound ? snd.play(s[a.sound] ?? a.sound) : a.level === "alarm" ? sound.alarm() : sound.warn());
+  /** An alarm's own sound: the anchor has its own; else by level. Silent while TweedPlot is still
+   * starting (`soundReady`): the alarm is still raised and listed, and the repeat below sounds it
+   * within a few seconds of the screen being ready if it hasn't been silenced. */
+  const ring = (a) => {
+    if (!soundReady()) return;
+    if (a.sound) snd.play(s[a.sound] ?? a.sound);
+    else if (a.level === "alarm") sound.alarm();
+    else sound.warn();
+  };
 
   /** id → {level: "alarm"|"warn", text, detail, acked, since, onClick} */
   const active = new Map();
@@ -253,6 +261,13 @@ export function setupAlarms(map, { getBoat, getBow = () => null, getSafetyDepth,
     paint: { "line-color": "#d00000", "line-width": 2, "line-dasharray": [2, 1.5] } });
   map.addLayer({ id: "alarm-mob", type: "circle", source: "alarm-geo", filter: ["==", ["get", "k"], "mob"],
     paint: { "circle-radius": 9, "circle-color": "#ffcc00", "circle-stroke-color": "#d00000", "circle-stroke-width": 4 } });
+  // the MOB's name (as its library mark is named): kept on top of the other labels, so a track time
+  // or a mark name gives way to it, and it stands in for the library mark's own label at the spot
+  map.addLayer({ id: "alarm-mob-lbl", type: "symbol", source: "alarm-geo", filter: ["==", ["get", "k"], "mob"],
+    layout: { "icon-image": ["concat", "lbl:", ["get", "name"]], "icon-anchor": "top", "icon-offset": [0, 10],
+              "icon-allow-overlap": true, "icon-ignore-placement": false } });
+  let mobLabelOnTop = false;
+  const mobName = (m) => `MOB ${new Date(m.t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
   function circle(c, rM) {
     const pts = [];
     for (let i = 0; i <= 64; i++) {
@@ -264,10 +279,13 @@ export function setupAlarms(map, { getBoat, getBow = () => null, getSafetyDepth,
   function drawGeo() {
     const f = [];
     if (mob) {
-      f.push({ type: "Feature", properties: { k: "mob" }, geometry: { type: "Point", coordinates: [mob.lon, mob.lat] } });
+      f.push({ type: "Feature", properties: { k: "mob", name: mobName(mob) }, geometry: { type: "Point", coordinates: [mob.lon, mob.lat] } });
+      // symbols higher in the stack are placed first: move the label to the top once per MOB
+      if (!mobLabelOnTop && map.getLayer("alarm-mob-lbl")) { map.moveLayer("alarm-mob-lbl"); mobLabelOnTop = true; }
       const b = getBoat();
       if (b.pos) f.push({ type: "Feature", properties: { k: "mobline" }, geometry: { type: "LineString", coordinates: [b.pos, [mob.lon, mob.lat]] } });
     }
+    if (!mob) mobLabelOnTop = false;
     map.getSource("alarm-geo").setData({ type: "FeatureCollection", features: f });
   }
 
@@ -343,7 +361,7 @@ export function setupAlarms(map, { getBoat, getBow = () => null, getSafetyDepth,
     const when = new Date(mob.t);
     const incident = mob;
     try {
-      const saved = await invoke("mark_save", { mark: { name: `MOB ${when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`, lat: mob.lat, lon: mob.lon, kind: "danger", group: "MOB",
+      const saved = await invoke("mark_save", { mark: { name: mobName(mob), lat: mob.lat, lon: mob.lon, kind: "danger", group: "MOB",
         notes: `Man overboard pressed ${when.toISOString()}` } });
       if (mob === incident) {
         incident.markId = saved.id;

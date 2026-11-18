@@ -46,6 +46,23 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
   const planCard = document.querySelector('.pane[data-pane="course"] .dcard[data-title="Plan"]');
   const planHome = document.createComment("Route planning controls");
   planCard.before(planHome);
+  // in the Route drawer while the planning controls are in the panel: where they went
+  const planAway = document.createElement("div");
+  planAway.className = "wx-note plan-away";
+  planAway.hidden = true;
+  planAway.innerHTML = `Planning this route (name, start, marks, how each is reached, departure) is in the data panel beside the chart while the Planning view is on. <button type="button">Show it</button>`;
+  planHome.after(planAway);
+  /** Open the Plan card in the panel, scroll to it and flash it. */
+  function revealPlan() {
+    if (!side.contains(planCard)) return false;
+    planCard.open = true;
+    planCard.scrollIntoView({ block: "start", behavior: "smooth" });
+    planCard.classList.remove("flash");
+    void planCard.offsetWidth;
+    planCard.classList.add("flash");
+    return true;
+  }
+  planAway.querySelector("button").onclick = revealPlan;
   const statusEl = side.querySelector(".sp-status"), actions = side.querySelector(".sp-actions"), alerts = side.querySelector(".sp-alerts");
   const cursorSlot = side.querySelector(".sp-cursor");
   const menu = $("tile-menu");
@@ -232,10 +249,12 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
     (environment ? envData : filesHome).append(filesSection);
     envTabs.hidden = !environment;
     setEnvironmentTab(envTab);
-    if (view() === "plan") {
+    // the planning controls go in the panel in Planning, if the panel is shown; otherwise they stay in the Route drawer
+    if (view() === "plan" && !side.hidden) {
       planCard.open = true;
       body.append(planCard);
     }
+    planAway.hidden = !side.contains(planCard);
     if (L.some((s) => s.kind === "weatherTime")) {
       const clock = weatherTime.querySelector(".sp-wx-clock");
       clock.insertBefore($("wxp-run"), $("side-wx-time"));
@@ -395,7 +414,9 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
       const list = ais?.closest?.(n) ?? [];
       if (!list.length) html = `<div class="sp-empty">No AIS targets</div>`;
       for (const t of list) {
-        const cpa = t.cpa != null ? `${nm(t.cpa)}<small>NM</small> ${Math.round(t.tcpa)}<small>min</small>` : `<small>not closing</small>`;
+        // TCPA in minutes up to 10 h, then hours, and past 99 h just ">99 h" (a slow closing target far off)
+        const tc = t.tcpa < 600 ? `${Math.round(t.tcpa)}<small>min</small>` : t.tcpa < 99 * 60 ? `${Math.round(t.tcpa / 60)}<small>h</small>` : `>99<small>h</small>`;
+        const cpa = t.cpa != null ? `${nm(t.cpa)}<small>NM</small> ${tc}` : `<small>not closing</small>`;
         html += `<div class="sp-li tgt${t.danger ? " danger" : ""}${t.lost ? " lost" : ""}" data-id="${esc(t.id)}" title="Click to show ${esc(t.name)} and open its card. CPA and TCPA, then range"><span class="sw" style="background:${esc(t.col)}"></span><span class="nm">${esc(t.name)}</span><span class="d">${cpa}</span><span class="t">${nm(t.range)}<small>NM</small></span></div>`;
       }
     }
@@ -631,6 +652,8 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
   visibility();
   build();
   return { toggle, shown: () => !side.hidden, openHistory: (k) => openHistoryCard(k),
+    /** The route's planning controls are in the panel: open them there (true), or false when they are in the Route drawer. */
+    revealPlan,
     openEnvironmentData() {
       if (view() !== "env") views.set("env");
       if (side.hidden) toggle();

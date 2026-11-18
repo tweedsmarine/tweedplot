@@ -19,6 +19,9 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+# Windows' own TLS (as reqwest below): the default rustls needs ring, which needs clang on
+# Windows on Arm; zip is only for macOS/Linux and old-style Windows updates
+tauri-plugin-updater = { version = "2", default-features = false, features = ["native-tls", "system-proxy"] }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

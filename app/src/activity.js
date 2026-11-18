@@ -45,7 +45,10 @@ function movable(el) {
     el.classList.toggle("moved", !!pos);
     if (!pos) { Object.assign(el.style, { left: "", top: "", right: "", bottom: "" }); return; }
     const w = window.innerWidth, h = window.innerHeight, r = el.getBoundingClientRect();
-    const x = Math.min(Math.max(0, pos.x * w), Math.max(0, w - r.width)), y = Math.min(Math.max(0, pos.y * h), Math.max(0, h - Math.max(60, r.height)));
+    // kept over the chart: never over the data panel, the rail or a drawer (it hid the view buttons)
+    const m = document.getElementById("map")?.getBoundingClientRect();
+    const lo = m ? m.left : 0, hi = m ? Math.max(lo, m.right - r.width) : Math.max(0, w - r.width);
+    const x = Math.min(Math.max(lo, pos.x * w), hi), y = Math.min(Math.max(0, pos.y * h), Math.max(0, h - Math.max(60, r.height)));
     Object.assign(el.style, { left: `${x}px`, top: `${y}px`, right: "auto", bottom: "auto" });
   };
   el.addEventListener("pointerdown", (e) => {
@@ -68,6 +71,9 @@ function movable(el) {
     pos = null; try { localStorage.removeItem(POS); } catch { /* ignore */ } place();
   });
   window.addEventListener("resize", place);
+  // the chart narrows when the data panel, a drawer or the dock opens: keep the cards over it
+  const map = document.getElementById("map");
+  if (map && typeof ResizeObserver === "function") new ResizeObserver(place).observe(map);
   place();
 }
 
@@ -109,7 +115,7 @@ function card(title) {
     <div class="act-step"></div><div class="act-bar" hidden><div></div></div>
     <div class="act-result" hidden></div>
     <details class="act-details" hidden><summary>Details</summary><ul></ul></details>
-    <div class="act-buttons"><button class="act-cancel" hidden>Cancel</button><button class="act-copy" hidden title="Copy what happened, with the version, to send to Tweedsmarine">Copy for support</button></div>`;
+    <div class="act-buttons"><button class="act-cancel" hidden>Cancel</button><button class="act-copy" hidden title="Copy what happened, with the version, to send to TweedsMarine">Copy for support</button></div>`;
   el.querySelector(".act-title").textContent = title;
   el.querySelector(".act-close").onclick = () => el.remove();
   container().append(el);

@@ -551,13 +551,11 @@ impl Library {
             v
         };
         tx.execute("DELETE FROM route_marks WHERE mark_id IN (SELECT id FROM gone)", [])?;
+        // The marks left keep their order numbers, gaps and all: only the order matters (routes are read ORDER BY
+        // seq, and saving a route numbers it afresh). Closing the gaps here renumbered row by row, and a row
+        // already renumbered changed the count for the next: "UNIQUE constraint failed: route_marks.route_id,
+        // route_marks.seq", and the mark could not be deleted.
         for r in &touched {
-            // close the gaps in the order
-            tx.execute(
-                "UPDATE route_marks SET seq = (SELECT count(*) FROM route_marks x WHERE x.route_id = route_marks.route_id AND x.seq < route_marks.seq) + 100000 WHERE route_id = ?1",
-                [r],
-            )?;
-            tx.execute("UPDATE route_marks SET seq = seq - 100000 WHERE route_id = ?1", [r])?;
             tx.execute("UPDATE routes SET modified = ?2 WHERE id = ?1", params![r, t])?;
         }
         let n = tx.execute("UPDATE marks SET deleted_at = ?1 WHERE deleted_at IS NULL AND id IN (SELECT id FROM gone)", [t])?;
@@ -2303,6 +2301,31 @@ mod tests {
         assert!(lib.routes().unwrap().is_empty());
         assert!(matches!(lib.route(&r.id), Err(Error::NotFound(_))));
         assert!(matches!(lib.delete_route(&r.id), Err(Error::NotFound(_))));
+    }
+
+    #[test]
+    fn deleting_a_mark_in_the_middle_of_a_route_keeps_the_others_in_order() {
+        // the renumbering that closed the gaps failed here with "UNIQUE constraint failed: route_marks.route_id,
+        // route_marks.seq" once two or more marks came after the deleted one
+        let lib = temp_lib("middle");
+        let m: Vec<Mark> =
+            (0..5).map(|k| lib.save_mark(Mark { name: format!("M{k}"), lat: -41.0 - k as f64 * 0.01, lon: 173.0, ..Default::default() }).unwrap()).collect();
+        let r = lib
+            .save_route(Route {
+                name: "R".into(),
+                marks: m.iter().map(|x| RouteMark { mark: x.id.clone(), ..Default::default() }).collect(),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(lib.delete_marks(&[m[1].id.clone()], true).unwrap(), 1);
+        assert_eq!(lib.delete_marks(&[m[3].id.clone()], true).unwrap(), 1);
+        let left: Vec<String> = lib.route(&r.id).unwrap().marks.iter().map(|x| x.mark.clone()).collect();
+        assert_eq!(left, vec![m[0].id.clone(), m[2].id.clone(), m[4].id.clone()]);
+        // saving the route again numbers it afresh
+        let again = lib.route(&r.id).unwrap();
+        lib.save_route(again).unwrap();
+        let left2: Vec<String> = lib.route(&r.id).unwrap().marks.iter().map(|x| x.mark.clone()).collect();
+        assert_eq!(left2, left);
     }
 
     #[test]

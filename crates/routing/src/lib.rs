@@ -282,6 +282,14 @@ impl MarkSpec {
     }
 }
 
+/// "As close as possible": the circle aimed for (NM).
+const CLOSE_R: f64 = 0.01;
+/// "As close as possible": when land, shallow water or a barrier stop the boat getting into
+/// the circle, the closest point it can reach counts as arriving, if it is within this (NM).
+const CLOSE_ACCEPT_NM: f64 = 0.5;
+/// ... and once the closest approach (within that) hasn't improved for this long (s).
+const CLOSE_STALL_S: f64 = 3600.0;
+
 const ROUND_BLOCKED: &str = "There is no way round the mark on the side asked: land, water shallower than the safety depth, a barrier or the routing limits close it off. Check the rounding side, or lower the safety depth if that is safe.";
 
 /// What ends a leg.
@@ -462,9 +470,10 @@ pub fn route_marks(
         res.message = "The start is inside a barrier (zone or barrier mark). Move it, or switch that barrier off.".into();
         return res;
     }
-    // a mark left to port or starboard may be the rock or island itself: only a
-    // mark the boat must reach (pass through, as close as possible) needs open water
-    let reached = |m: &MarkSpec| matches!(m.rounding, Rounding::Through | Rounding::Close);
+    // a mark left to port or starboard may be the rock or island itself, and one to get
+    // as close as possible to may be in shallow water (an anchorage, a beach): only a
+    // mark the boat must pass through needs open water
+    let reached = |m: &MarkSpec| m.rounding == Rounding::Through;
     // a pass-through mark is reached anywhere inside its radius: it is blocked only
     // when the centre and the whole circle are (a finish given on the shore, say)
     let probe = |m: &MarkSpec| -> Vec<LatLon> {
@@ -507,7 +516,7 @@ pub fn route_marks(
         let prev = if i == 0 { start } else { marks[i - 1].pos };
         let goal = match mark.rounding {
             Rounding::Through => Goal::Circle { c: mark.pos, r: mark.radius_nm.unwrap_or(p.arrival_nm) },
-            Rounding::Close => Goal::Circle { c: mark.pos, r: 0.01 },
+            Rounding::Close => Goal::Circle { c: mark.pos, r: CLOSE_R },
             Rounding::Port | Rounding::Starboard => {
                 let sense = if mark.rounding == Rounding::Starboard { 1.0 } else { -1.0 };
                 let b0 = if prev.distance_to(&mark.pos) > 1e-6 { mark.pos.bearing_to(&prev) } else { mark.pos.bearing_to(&from) };
@@ -614,6 +623,11 @@ pub fn route_marks(
             res.status = leg.status;
             res.message = if marks.len() > 1 { format!("Leg {} of {}: {}", i + 1, marks.len(), leg.message) } else { leg.message };
             break;
+        }
+        // a note on an arrival (as close as possible: how close it got)
+        if !leg.message.is_empty() {
+            let note = if marks.len() > 1 { format!("Mark {}: {}", i + 1, leg.message) } else { leg.message.clone() };
+            res.message = if res.message.is_empty() { note } else { format!("{} {}", res.message, note) };
         }
         let (lat, lon, ta) = leg.arrived.unwrap();
         from = LatLon::new(lat, lon);
@@ -767,6 +781,9 @@ fn route_leg(
     };
     let mut no_wind = false;
     let mut best_approach = (start.distance_to(&dest), 0usize);
+    // as close as possible: the closest point reached counts when the circle can't be got into
+    let close = matches!(goal, Goal::Circle { r, .. } if r <= CLOSE_R);
+    let mut close_stale = 0.0f64;
     let mut status = String::from("too many steps");
     let mut message = format!("No arrival within {} steps.", p.max_steps);
 
@@ -978,6 +995,7 @@ fn route_leg(
             best.into_iter().flatten().map(|(_, n)| n).collect()
         };
         front.clear();
+        let approach_before = best_approach.0;
         for n in survivors {
             let dd = LatLon::new(n.lat, n.lon).distance_to(&dest);
             nodes.push(n);
@@ -987,6 +1005,14 @@ fn route_leg(
             front.push(nodes.len() - 1);
         }
         leg_steps = step as u32 + 1;
+        // as close as possible: an hour without getting any closer, already near the mark, is as close as it gets
+        if close {
+            close_stale = if best_approach.0 < approach_before - 0.005 { 0.0 } else { close_stale + step_s };
+            if best_approach.0 <= CLOSE_ACCEPT_NM && close_stale >= CLOSE_STALL_S {
+                status = "close".into();
+                break;
+            }
+        }
         // going round a mark: how far round the front has got, and when that last grew
         if let Goal::Wrap { .. } = goal {
             let hi = front.iter().map(|&i| nodes[i].wrap).fold(f64::MIN, f64::max);
@@ -1031,6 +1057,17 @@ fn route_leg(
             chain[n - 1].t = end as f64;
             best_approach.0 = pb.distance_to(&dest);
         }
+    }
+    // as close as possible, and the closest point reached is near enough: that is the arrival
+    if close && (status == "close" || status == "blocked" || status == "too many steps") && best_approach.0 <= CLOSE_ACCEPT_NM {
+        let last = *chain.last().expect("the chain holds at least the start");
+        let note = format!(
+            "As close as possible: {:.2} NM from the mark; land, water shallower than the safety depth or a barrier stop it getting closer.",
+            best_approach.0
+        );
+        let mut out = finish(start, dest, t0, chain, Some((last.lat, last.lon, last.t)), "arrived".into(), note);
+        out.leg.step_s = step_s;
+        return out;
     }
     let mut out = finish(start, dest, t0, chain, None, status, message);
     out.leg.step_s = step_s;
@@ -1744,6 +1781,93 @@ mod tests {
         assert_eq!(r.status, "arrived", "{}", r.message);
         assert_eq!(r.legs.len(), 2);
         assert!(r.legs[1].start == r.legs[0].arrival.unwrap());
+    }
+
+    /// An island 2 * `half` NM across centred on `mid`, as a raster.
+    fn island_raster(mid: LatLon, half: f64) -> (Raster, Vec<Vec<[f64; 2]>>) {
+        let d = half / 60.0;
+        let k = mid.lat.to_radians().cos();
+        let island = vec![vec![
+            [mid.lon - d / k, mid.lat - d],
+            [mid.lon + d / k, mid.lat - d],
+            [mid.lon + d / k, mid.lat + d],
+            [mid.lon - d / k, mid.lat + d],
+            [mid.lon - d / k, mid.lat - d],
+        ]];
+        let mut ras = Raster::new([172.9, -41.2, 173.4, -40.8], 50.0, 4_000_000);
+        ras.fill(&island, raster::BLOCKED);
+        ras.block_outline(&island);
+        (ras, island)
+    }
+
+    #[test]
+    fn as_close_as_possible_stops_at_the_shore() {
+        // the mark a little way inside an island (an anchorage in shallow water, say): the
+        // route ends at the nearest water it can reach, as an arrival, and says how close
+        let pol = test_polar();
+        let mid = LatLon::new(-41.0, 173.1);
+        let (ras, _) = island_raster(mid, 1.0);
+        let mark = mid.destination(90.0, 0.85); // 0.15 NM inside the east shore
+        let start = mid.destination(90.0, 6.0);
+        let r = route_marks(
+            start,
+            0,
+            &[MarkSpec { pos: mark, rounding: Rounding::Close, radius_nm: None }],
+            &pol,
+            &SteadyWind { tws: 10.0, twd: 0.0 },
+            Some(&ras),
+            &Barriers::default(),
+            &Params::default(),
+        );
+        assert_eq!(r.status, "arrived", "{}", r.message);
+        assert!(r.arrival.is_some());
+        assert!(r.message.starts_with("As close as possible"), "{}", r.message);
+        let end = r.points.last().unwrap();
+        let off = LatLon::new(end.lat, end.lon).distance_to(&mark);
+        assert!(off < 0.4, "ended {off:.2} NM from the mark");
+        assert!(!ras.blocked(end.lat, end.lon), "ended on land");
+    }
+
+    #[test]
+    fn as_close_as_possible_far_inland_still_fails() {
+        // the mark in the middle of a 4 NM island: no water near it, so no arrival
+        let pol = test_polar();
+        let mid = LatLon::new(-41.0, 173.1);
+        let (ras, _) = island_raster(mid, 2.0);
+        let start = mid.destination(90.0, 6.0);
+        let r = route_marks(
+            start,
+            0,
+            &[MarkSpec { pos: mid, rounding: Rounding::Close, radius_nm: None }],
+            &pol,
+            &SteadyWind { tws: 10.0, twd: 0.0 },
+            Some(&ras),
+            &Barriers::default(),
+            &Params::default(),
+        );
+        assert_ne!(r.status, "arrived");
+        assert!(r.message.contains("Closest approach"), "{}", r.message);
+    }
+
+    #[test]
+    fn as_close_as_possible_in_open_water_arrives_with_no_note() {
+        let pol = test_polar();
+        let start = LatLon::new(-41.0, 173.0);
+        let mark = start.destination(90.0, 5.0);
+        let r = route_marks(
+            start,
+            0,
+            &[MarkSpec { pos: mark, rounding: Rounding::Close, radius_nm: None }],
+            &pol,
+            &SteadyWind { tws: 10.0, twd: 0.0 },
+            None,
+            &Barriers::default(),
+            &Params::default(),
+        );
+        assert_eq!(r.status, "arrived", "{}", r.message);
+        assert!(r.message.is_empty(), "{}", r.message);
+        let end = r.points.last().unwrap();
+        assert!(LatLon::new(end.lat, end.lon).distance_to(&mark) < 0.02);
     }
 
     #[test]

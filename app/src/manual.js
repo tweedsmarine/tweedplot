@@ -103,6 +103,8 @@ export function keysTable(keys = KEYS) {
 
 export const slug = (s) => s.toLowerCase().replace(/<[^>]+>/g, "").replace(/&[a-z#0-9]+;/g, "").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "");
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+/** The reverse of esc (and of marked's own escaping, which also writes ' as &#39;). */
+const unesc = (s) => s.replace(/&(amp|lt|gt|quot|#39|#x27);/g, (m, e) => ({ amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'", "#x27": "'" })[e]);
 
 export function setupManual({ image = null } = {}) {
   let book = null; // { title, updated, tabs: [{ id, title, file, md, html, sections }] }
@@ -239,7 +241,12 @@ export function setupManual({ image = null } = {}) {
         const text = marked.Parser.parseInline(tokens);
         return `<h${depth} id="${slug(text)}">${text}</h${depth}>`;
       };
-      renderer.image = ({ href, text }) => `<figure><img src="${esc(href)}" alt="${esc(text)}" loading="lazy"><figcaption>${esc(text)}</figcaption></figure>`;
+      // marked hands over the caption already escaped (& as &amp;, ' as &#39;): undo that before escaping it once,
+      // or the caption shows "Targets &amp; fleets"
+      renderer.image = ({ href, text }) => {
+        const cap = esc(unesc(text));
+        return `<figure><img src="${esc(href)}" alt="${cap}" loading="lazy"><figcaption>${cap}</figcaption></figure>`;
+      };
       renderer.link = ({ href, tokens }) => `<a href="${esc(href)}"${/^https?:/.test(href) ? ' class="ext" title="Opens in your browser"' : ""}>${marked.Parser.parseInline(tokens)}</a>`;
       const md = t.md.replace(TOKENS, (m, kind, id) => (kind === "icon" ? iconHtml(id) : imgHtml(id, image)));
       t.html = marked.parse(md, { renderer, gfm: true });

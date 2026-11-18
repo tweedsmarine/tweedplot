@@ -42,17 +42,26 @@ export function coverage(rows, fields) {
   });
 }
 
+/** Weather over land and sea: a point with one of these but no sea value (waves, sea temperature, current) is land. */
+const AIR = ["tws", "mslp", "temp"];
+
 /** Where each field's values are missing along the route: before its first value (lead), after its last (trail: the
- *  forecast has ended) or between values (inner: a real gap, such as land for waves). A route that outlasts the
- *  forecast is not a gap, so only lead, inner and ending-earlier-than-the-others are worth a warning. */
+ *  forecast has ended) or between values (inner: a real gap). A route that outlasts the forecast is not a gap, so only
+ *  lead, inner and ending-earlier-than-the-others are worth a warning. For a sea field (`sea: true`) a hole where the
+ *  wind or pressure has a value is land (a headland, an isthmus), not missing data: it is left out of `inner`. */
 export function gaps(rows, fields) {
   const lastAny = Math.max(-1, ...fields.map(({ key }) => rows.findLastIndex((r) => r[key] != null)));
-  return fields.map(({ key, label }) => {
+  return fields.map(({ key, label, sea = false }) => {
     const idx = rows.map((r, i) => (r[key] != null ? i : -1)).filter((i) => i >= 0);
     const total = rows.length, count = idx.length;
     const lead = count ? idx[0] : total, last = count ? idx.at(-1) : -1;
     const trail = count ? total - 1 - last : 0;
-    return { key, label, total, count, lead: count ? lead : 0, trail, inner: count ? last - idx[0] + 1 - count : 0, earlier: count > 0 && last < lastAny ? lastAny - last : 0 };
+    let inner = 0;
+    for (let i = count ? idx[0] + 1 : total; i < last; i++) {
+      const r = rows[i];
+      if (r[key] == null && !(sea && AIR.some((k) => r[k] != null))) inner++;
+    }
+    return { key, label, total, count, lead: count ? lead : 0, trail, inner, earlier: count > 0 && last < lastAny ? lastAny - last : 0 };
   });
 }
 

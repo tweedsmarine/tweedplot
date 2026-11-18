@@ -1,6 +1,12 @@
 # A tagged release: push a tag like v0.2.0 (matching the version in
 # app/src-tauri/tauri.conf.json) and the x64 and ARM64 installers are built and
 # put on a draft GitHub release. Check it, write the notes, then Publish.
+#
+# Updates: the installers are signed with the updater key (secrets
+# TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD) and latest.json
+# goes on the release. Installed copies look at the latest *published, non-pre-release*
+# release (releases/latest/download/latest.json), so nobody is offered a release until
+# it is published. See DEVELOPING.md › Updates.
 name: release
 
 on:
@@ -32,6 +38,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.arch }}
+      - name: Updater key set up
+        shell: bash
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if grep -q REPLACE_WITH_THE_UPDATER_PUBLIC_KEY app/src-tauri/tauri.conf.json; then
+            echo "::error::Put the updater public key in app/src-tauri/tauri.conf.json (plugins.updater.pubkey)"; exit 1; fi
+          if [ -z "$KEY" ]; then
+            echo "::error::Add the TAURI_SIGNING_PRIVATE_KEY secret (Settings › Secrets and variables › Actions)"; exit 1; fi
       - name: Front-end dependencies
         working-directory: app
         run: npm ci
@@ -39,14 +54,19 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: app
           tauriScript: npx tauri
+          # adds the updater files (.sig) to this build only; ordinary builds (build.yml) don't need the key
+          args: --config src-tauri/tauri.release.conf.json
           tagName: v__VERSION__
           releaseName: TweedPlot v__VERSION__
           releaseBody: |
-            Alpha test build. Not for navigation.
+            Test build. Not for navigation.
             TweedPlot_*_x64-setup.exe for most Windows PCs; TweedPlot_*_arm64-setup.exe for Windows on Arm (Snapdragon, Surface Pro X …).
             The installer is not code-signed yet: Windows SmartScreen will warn ("Windows protected your PC") — choose More info › Run anyway.
           releaseDraft: true
-          prerelease: true
+          # not a pre-release: GitHub's "latest" (which installed copies look at) skips pre-releases
+          prerelease: false

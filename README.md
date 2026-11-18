@@ -2,7 +2,7 @@
 
 **A chart plotter, passage planner and weather router for Windows, built for racing, cruising and fishing.** Free and open source, from [TweedsMarine](https://tweedsmarine.nz), Nelson, New Zealand.
 
-<!-- hero screenshot here: docs/images/hero.jpg (Navigation view under way, day colours) -->
+![TweedPlot under way through French Pass: the chart with the route being navigated, the COG vector and the tidal streams, and the data panel with own ship and the highway to the next mark](docs/images/hero.jpg)
 
 TweedPlot puts charts, forecast weather, ocean data, weather routing, live instruments, AIS and alarms in one window. Your data stays in plain files on your own PC. There are no accounts and no subscriptions, and once your charts and forecasts are downloaded it works with no internet connection at sea.
 
@@ -41,6 +41,16 @@ It began as a tool for racing skippers who wanted routing, weather and instrumen
 
 A full manual is built in (press F1) and works offline.
 
+## Screenshots
+
+| | |
+| --- | --- |
+| ![Planning view](docs/images/planning.jpg) **Planning**: a route from Nelson to Wellington through French Pass, with the forecast wind | ![Environment view](docs/images/environment.jpg) **Environment**: forecast wind, the chart time and an old-run warning |
+| ![Weather on route](docs/images/weather-on-route.jpg) **Weather on route**: wind, waves and rain along the passage | ![Own soundings](docs/images/own-soundings.jpg) **Own soundings**: your own seabed, with a target depth |
+| ![Instruments view](docs/images/instruments.jpg) **Instruments**: wind dial, history plots and sounder | ![AIS targets](docs/images/ais-targets.jpg) **AIS**: the target list and a target's details |
+| ![Man overboard](docs/images/mob.jpg) **Man overboard**: one press, then steer back on the highway | ![Night colours](docs/images/night.jpg) **Night (IHO)**: dim red, to keep your night vision |
+| ![Line shooting](docs/images/line-shooting.jpg) **Fishing**: the line-shooting timer | |
+
 ## What it does not do (yet)
 
 - **It is not certified.** Not for use as a primary means of navigation.
@@ -68,6 +78,8 @@ In roughly this order, driven by what testers ask for:
 ## Download
 
 Installers for Windows 10 and 11 (Intel and ARM) are on the [Releases](../../releases) page. Windows SmartScreen may warn you the first time: choose **More info › Run anyway**.
+
+Once installed, TweedPlot looks for a newer version a minute after it starts and twice a day, when there is an internet connection. It tells you, and installs only when you choose to, never while a live position is arriving. Updates are signed by TweedsMarine and checked before they install. You can turn this off in Settings › Diagnostics › Software updates.
 
 You provide your own chart data. The manual's *Getting started* and *Charts* sections explain how to download the LINZ data and load ENC cells.
 
