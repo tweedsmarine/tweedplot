@@ -1641,7 +1641,9 @@ fn open_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
     std::fs::create_dir_all(&p).map_err(|e| e.to_string())?;
     #[cfg(windows)]
     let prog = "explorer";
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    let prog = "open";
+    #[cfg(all(unix, not(target_os = "macos")))]
     let prog = "xdg-open";
     std::process::Command::new(prog).arg(&p).spawn().map(|_| ()).map_err(|e| e.to_string())
 }

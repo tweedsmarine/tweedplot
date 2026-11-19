@@ -57,6 +57,13 @@ Configure NMEA inputs and the multiplexer in Settings. Enabled sources are monit
 - `.github/workflows/release.yml`: push a tag `vX.Y.Z` (matching `version` in `app/src-tauri/tauri.conf.json`) and both installers go on a draft release, with the updater files; check it, add notes, Publish. Publishing is what offers it to installed copies (below).
 - The installers are not code-signed: SmartScreen warns until they are (More info › Run anyway).
 
+## Mac builds (GitHub Actions)
+
+- `build.yml` builds a Mac app as well when asked: **Run workflow** › **macOS** (**universal**: one app for Apple silicon and Intel Macs; **arm64**; **x64**; or **none**), `gh workflow run build.yml -f macos=universal -f arch=none` from a terminal (Mac only), or put `[build-mac]` in the message of the last commit you push (`[build]` and `[build-mac]` together: both). It runs on `macos-latest` (Apple silicon) and the `.dmg` is on the run page under Artifacts for 30 days.
+- Mac-only settings are in `app/src-tauri/tauri.macos.conf.json`, which Tauri merges over `tauri.conf.json` when building on a Mac: the `.app` and `.dmg` bundles (the Windows build stays NSIS only), the `.icns` icon, macOS 11 or later, and an ad-hoc signature (`signingIdentity: "-"`).
+- The app is not signed with an Apple Developer ID or notarised. The ad-hoc signature lets it run on Apple silicon, but Gatekeeper still blocks the first start ("Apple could not verify…"): Done, then System Settings › Privacy & Security › Open Anyway (or `xattr -dr com.apple.quarantine /Applications/TweedPlot.app`). Proper signing needs an Apple Developer account (US$99 a year).
+- Not yet in `release.yml` (tagged releases and updates are Windows only) until a Mac build has been tried.
+
 ### Updates
 
 Installed copies look for a newer TweedPlot a minute after starting and then twice a day (`app/src/updates.js`, decisions in `updates-core.js`; Settings › Diagnostics › Software updates; Check for updates in the About box). They read `https://github.com/tweedsmarine/tweedplot/releases/latest/download/latest.json`: GitHub's latest *published* release that isn't marked pre-release. Drafts are never offered, so a release reaches users only when you press Publish. The repository must be public for this to work. A notice asks before installing; installing closes the app (the NSIS installer runs passive and reopens it), and is refused while a live position is arriving.

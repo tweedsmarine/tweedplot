@@ -1,19 +1,24 @@
-# Windows installers, only when asked (pushes alone build nothing, so they cost nothing):
-#  - by hand: GitHub › Actions › build › Run workflow (choose which installers), or
-#    `gh workflow run build.yml -f arch=arm64` from a terminal;
-#  - or by putting [build] in the message of the last commit pushed.
+# Windows installers and the Mac app, only when asked (pushes alone build nothing, so they cost nothing):
+#  - by hand: GitHub › Actions › build › Run workflow (choose which Windows installers and
+#    which Mac build), or `gh workflow run build.yml -f arch=arm64 -f macos=none` from a terminal;
+#  - or by putting [build] (Windows) and/or [build-mac] (Mac) in the message of the last commit pushed.
 # The installers are attached to the run as artifacts: Actions › the run › Artifacts.
-# Tagged releases are release.yml.
+# Tagged releases are release.yml (Windows only for now).
 name: build
 
 on:
   workflow_dispatch:
     inputs:
       arch:
-        description: Which installers
+        description: Windows installers
         type: choice
-        options: [both, x64, arm64]
+        options: [both, x64, arm64, none]
         default: both
+      macos:
+        description: Mac app (universal = Apple silicon and Intel in one)
+        type: choice
+        options: [universal, arm64, x64, none]
+        default: universal
       tests:
         description: Run the Rust tests first
         type: boolean
@@ -26,28 +31,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # decides whether anything runs: a run by hand, or [build] in the pushed commit's message
-  # (a job skipped by its `if` takes no runner time)
+  # decides whether anything runs: a run by hand, or [build] / [build-mac] in the pushed
+  # commit's message (a job skipped by its `if` takes no runner time)
   plan:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build]')
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.head_commit.message, '[build]') ||
+      contains(github.event.head_commit.message, '[build-mac]')
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.m.outputs.matrix }}
+      windows: ${{ steps.m.outputs.windows }}
+      mac: ${{ steps.m.outputs.mac }}
+      mac_targets: ${{ steps.m.outputs.mac_targets }}
       tests: ${{ steps.m.outputs.tests }}
     steps:
       - id: m
         shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          MSG: ${{ github.event.head_commit.message }}
+          IN_ARCH: ${{ github.event.inputs.arch }}
+          IN_MAC: ${{ github.event.inputs.macos }}
+          IN_TESTS: ${{ github.event.inputs.tests }}
         run: |
-          arch="${{ github.event.inputs.arch || 'both' }}"
+          if [ "$EVENT" = workflow_dispatch ]; then
+            arch="$IN_ARCH"; mac="$IN_MAC"; tests="$IN_TESTS"
+          else
+            arch=none; mac=none; tests=true
+            case "$MSG" in *"[build]"*) arch=both ;; esac
+            case "$MSG" in *"[build-mac]"*) mac=universal ;; esac
+          fi
           x64='{"arch":"x64","runner":"windows-latest"}'
           arm='{"arch":"arm64","runner":"windows-11-arm"}'
           case "$arch" in
             x64) inc="[$x64]" ;;
             arm64) inc="[$arm]" ;;
+            none) inc="" ;;
             *) inc="[$x64,$arm]" ;;
           esac
-          echo "matrix={\"include\":$inc}" >> "$GITHUB_OUTPUT"
-          echo "tests=${{ github.event.inputs.tests || 'true' }}" >> "$GITHUB_OUTPUT"
+          if [ -n "$inc" ]; then echo "windows={\"include\":$inc}" >> "$GITHUB_OUTPUT"; fi
+          # Mac: the target passed to `tauri build`, and the Rust target(s) to install
+          case "$mac" in
+            universal) echo "mac=universal-apple-darwin" >> "$GITHUB_OUTPUT"
+                       echo "mac_targets=aarch64-apple-darwin,x86_64-apple-darwin" >> "$GITHUB_OUTPUT" ;;
+            arm64)     echo "mac=aarch64-apple-darwin" >> "$GITHUB_OUTPUT"
+                       echo "mac_targets=aarch64-apple-darwin" >> "$GITHUB_OUTPUT" ;;
+            x64)       echo "mac=x86_64-apple-darwin" >> "$GITHUB_OUTPUT"
+                       echo "mac_targets=x86_64-apple-darwin" >> "$GITHUB_OUTPUT" ;;
+          esac
+          echo "tests=${tests:-true}" >> "$GITHUB_OUTPUT"
 
   # the library crates' tests on Linux (billed at half the Windows rate; the app isn't built)
   test:
@@ -78,10 +110,10 @@ jobs:
   windows:
     needs: [plan, test]
     # build even when the tests were skipped, not when they failed
-    if: always() && needs.plan.result == 'success' && (needs.test.result == 'success' || needs.test.result == 'skipped')
+    if: always() && needs.plan.result == 'success' && needs.plan.outputs.windows != '' && (needs.test.result == 'success' || needs.test.result == 'skipped')
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.plan.outputs.windows) }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -107,5 +139,42 @@ jobs:
         with:
           name: TweedPlot-windows-${{ matrix.arch }}-${{ github.sha }}
           path: target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  # The Mac app (.app in a .dmg), on an Apple silicon runner. Mac-only settings (bundles, icon,
+  # minimum macOS, ad-hoc signature) are in app/src-tauri/tauri.macos.conf.json, which Tauri
+  # merges in on a Mac. Not signed with a Developer ID or notarised: see DEVELOPING.md › Mac builds.
+  macos:
+    needs: [plan, test]
+    if: always() && needs.plan.result == 'success' && needs.plan.outputs.mac != '' && (needs.test.result == 'success' || needs.test.result == 'skipped')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ needs.plan.outputs.mac_targets }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: mac-${{ needs.plan.outputs.mac }}
+      - name: Front-end dependencies
+        working-directory: app
+        run: npm ci
+      - name: Build the app
+        uses: tauri-apps/tauri-action@v1
+        with:
+          projectPath: app
+          tauriScript: npx tauri
+          args: --target ${{ needs.plan.outputs.mac }}
+      - name: Keep the disk image
+        uses: actions/upload-artifact@v7
+        with:
+          name: TweedPlot-macos-${{ needs.plan.outputs.mac }}-${{ github.sha }}
+          path: target/${{ needs.plan.outputs.mac }}/release/bundle/dmg/*.dmg
           if-no-files-found: error
           retention-days: 30
