@@ -37,6 +37,9 @@ export function setupWebMap(map) {
       if (src?.setTiles && prefs.on && !prefs.cachedOnly) src.setTiles([...src.tiles]);
     }, 25000);
   });
+  // credits other layers add while they're shown (images.js: imagery and raster charts)
+  const extra = {};
+  window.addEventListener("credit-extra", (e) => { extra[e.detail.key] = e.detail.text; credit(); });
   function credit() {
     const el = $("map-attribution");
     if (!el) return;
@@ -44,6 +47,7 @@ export function setupWebMap(map) {
     if (osmOn() && !prefs.osmUrl) el.append("Map: ", link("© OpenStreetMap contributors", COPYRIGHT), ". ");
     if (seaOn() && !prefs.seaUrl) el.append("Seamarks: ", link("© OpenSeaMap contributors", "https://www.openseamap.org"), ". ");
     if ((osmOn() && prefs.osmUrl) || (seaOn() && prefs.seaUrl)) el.append(prefs.credit ? `${prefs.credit}. ` : "Online map: your own tile server. ");
+    for (const t of Object.values(extra)) if (t) el.append(`${t} `);
     el.append("Not for navigation.");
   }
 

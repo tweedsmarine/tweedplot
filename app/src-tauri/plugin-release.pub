@@ -2,6 +2,8 @@
 # keys in hex, one per line. TweedPlot installs and starts only packages signed with one
 # of these. The Licence Manager shows the real key (Settings › Plugin releases); put it
 # here, and remove the test key below before a public release.
+
+4ea5079c4af0b4c68db381ae4ebff1e7b91a4b94d1eb4d0af9b00ddad6151eea
 #
 # Test key (its secret half is public, in the Licence Manager's test mode):
-d19b2fd780f3a4a3f11cb3166a277fce8d938d35499e40a185c35d032dc3ace9
+# d19b2fd780f3a4a3f11cb3166a277fce8d938d35499e40a185c35d032dc3ace9

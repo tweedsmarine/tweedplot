@@ -43,9 +43,16 @@ export function marinerImage(id) {
   const k = 2 * pxmm(); // image px per mm
   const parts = id.slice(5).split(":");
   if (parts[0] === "own") {
-    // OWNSHP: two circles, 6 and 3 mm across, 0.3 mm line
-    const s = 6.8 * k, [c, g] = canvas(s, s);
-    g.strokeStyle = tokenColour("SHIPS"); g.lineWidth = Math.max(2, 0.32 * k);
+    // OWNSHP: two circles, 6 and 3 mm across, 0.3 mm line. "own:h": with a halo in the page
+    // colour under them, so the symbol shows over a satellite image or a dark raster chart
+    const halo = parts[1] === "h";
+    const s = (halo ? 7.8 : 6.8) * k, [c, g] = canvas(s, s);
+    const lw = Math.max(2, 0.32 * k);
+    if (halo) {
+      g.strokeStyle = tokenColour("UIBCK"); g.lineWidth = lw + 1.0 * k;
+      for (const r of [3, 1.5]) { g.beginPath(); g.arc(s / 2, s / 2, r * k, 0, 2 * Math.PI); g.stroke(); }
+    }
+    g.strokeStyle = tokenColour("SHIPS"); g.lineWidth = lw;
     for (const r of [3, 1.5]) { g.beginPath(); g.arc(s / 2, s / 2, r * k, 0, 2 * Math.PI); g.stroke(); }
     return g.getImageData(0, 0, c.width, c.height);
   }
@@ -92,6 +99,9 @@ export function setupMariner(map, { settings, saveSettings, colours, usingS52, l
   map.addSource("s52-mar", { type: "geojson", data: empty });
   map.addSource("s52-mar-pts", { type: "geojson", data: empty });
   const w = ["get", "px"];
+  // halos under own ship's lines (vector, beam line) while raster images are shown
+  map.addLayer({ id: "s52-mar-halo", type: "line", source: "s52-mar", filter: ["==", ["get", "h"], 1], layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": ["get", "hc"], "line-width": ["+", w, ["get", "hw"]] } });
   map.addLayer({ id: "s52-mar-line", type: "line", source: "s52-mar", filter: ["==", ["get", "d"], 0], layout: { "line-cap": "butt", "line-join": "round" },
     paint: { "line-color": ["get", "c"], "line-width": w } });
   // EBLs: ERBLNA01, 10 mm dashes with 2.2 mm gaps (dash lengths are in line widths)
@@ -138,6 +148,24 @@ export function setupMariner(map, { settings, saveSettings, colours, usingS52, l
 
   // ---------- own ship ---------------------------------------------------------------------
   let boat = null; // { pos, dir, v, big }
+  // Raster charts and satellite images can be dark (images.js says when any is shown): with the
+  // IHO symbols, own ship, its heading line, hull outline and vector then get a halo in the
+  // page colour (UIBCK: white by day, dark at night), as TweedPlot's labels already have.
+  let imagesShown = !!window.tweedplotImagesShown;
+  const halo = () => iho() && imagesShown;
+  window.addEventListener("raster-images", (e) => {
+    const shown = !!e.detail?.shown;
+    if (shown === imagesShown) return;
+    imagesShown = shown;
+    styleMainLayers();
+    drawOwn();
+  });
+  // casings under main.js's heading line and hull outline (named s52-: kept out of the
+  // night darkening, their colour is already the palette's)
+  map.addLayer({ id: "s52-own-halo-hdg", type: "line", source: "hdgline", layout: { visibility: "none", "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#ffffff", "line-width": 4 } }, map.getLayer("hdgline") ? "hdgline" : undefined);
+  map.addLayer({ id: "s52-own-halo-hull", type: "line", source: "boat-hull", filter: ["==", ["get", "k"], "hull"], layout: { visibility: "none", "line-join": "round" },
+    paint: { "line-color": "#ffffff", "line-width": 4 } }, map.getLayer("boat-hull-line") ? "boat-hull-line" : undefined);
   /** main.js layers kept in TweedPlot's look with the paper symbols, restyled with the IHO ones. */
   function styleMainLayers() {
     const on = iho();
@@ -154,6 +182,12 @@ export function setupMariner(map, { settings, saveSettings, colours, usingS52, l
     paint("hdgline", "line-width", on ? Math.max(1, 0.32 * pxmm()) : 1.6);
     paint("track", "line-color", on ? tokenColour("PSTRK") : "#d35400");
     paint("track", "line-width", on ? Math.max(1.5, 0.5 * pxmm()) : 2);
+    const h = halo(), hw = Math.max(1, 0.32 * pxmm()) + Math.max(2, 1.0 * pxmm());
+    for (const id of ["s52-own-halo-hdg", "s52-own-halo-hull"]) {
+      vis(id, h);
+      paint(id, "line-color", tokenColour("UIBCK"));
+      paint(id, "line-width", hw);
+    }
   }
 
   function drawOwn() {
@@ -162,7 +196,7 @@ export function setupMariner(map, { settings, saveSettings, colours, usingS52, l
     if (!boat) return flush();
     const { pos, v } = boat;
     const on = iho();
-    if (on && !boat.big) p.push(ptF(pos, { img: "s52m:own" }));
+    if (on && !boat.big) p.push(ptF(pos, { img: halo() ? "s52m:own:h" : "s52m:own" }));
     // the beam bearing line: through the ship at right angles to the heading, to the edge
     const hdg = v?.heading ?? v?.cog ?? null;
     if (settings.beamLine && hdg != null) {
@@ -198,6 +232,10 @@ export function setupMariner(map, { settings, saveSettings, colours, usingS52, l
           }
         }
       }
+    }
+    if (halo()) {
+      const hc = tokenColour("UIBCK"), hw = Math.max(2, 1.0 * pxmm());
+      for (const f of l) Object.assign(f.properties, { h: 1, hc, hw });
     }
     flush();
   }

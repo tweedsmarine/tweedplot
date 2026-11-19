@@ -1,0 +1,23 @@
+[package]
+name = "imagery"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Raster images on the chart: KAP/BSB charts, GeoTIFFs and Sentinel-2 satellite images (Earth Search on AWS), drawn as web-mercator tiles"
+
+[dependencies]
+flate2 = "1"
+weezl = "0.1"
+zune-jpeg = "0.4"
+zune-core = "0.4"
+png = "0.17"
+lru.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+reqwest = { version = "0.13", default-features = false, features = ["native-tls", "blocking"] }
+
+[dev-dependencies]
+base64 = "0.22"
+
+[lints]
+workspace = true

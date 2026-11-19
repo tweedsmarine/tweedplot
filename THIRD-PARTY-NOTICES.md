@@ -34,6 +34,8 @@ TweedPlot includes or uses the following. Each keeps its own licence and copyrig
 | Weather observations | MetService WIS2, NOAA Aviation Weather Center, NOAA NDBC | Provider terms |
 | AIS | aisstream.io, Signal K servers | Provider terms |
 | Race tracking | YB Tracking (yb.tl) | Provider terms; positions may be delayed |
+| Sentinel-2 satellite images (Chart › Layers › Images, fetched only when the user asks) | Copernicus Sentinel data (ESA/European Union), from Element 84's Earth Search catalogue and the AWS Open Data copy (registry.opendata.aws/sentinel-2-l2a-cogs) | Copernicus Sentinel data licence: free, full and open use including commercial; credit "Contains modified Copernicus Sentinel data [year]" (shown on the chart while the image is visible) |
+| KAP raster charts and GeoTIFFs the user imports | Their publishers | The publisher's terms |
 
 Check the provider's current terms before redistributing downloaded data.
 

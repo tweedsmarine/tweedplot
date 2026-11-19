@@ -562,6 +562,31 @@
           <datalist id="own-ring-steps"><option value="0.1"><option value="1/8"><option value="1/4"><option value="1/2"><option value="3/4"><option value="1"><option value="2"><option value="5"></datalist></div>
                 <div class="wx-row"><label class="grow" title="Live: true (blue) and apparent (orange) wind on the boat. Planning: on the cursor, from the GRIB shown"><input id="inst-arrows" type="checkbox" /> Wind arrows (on the boat when live, at the cursor when planning)</label></div>
         </div>
+        <div class="ly-group"><h4>Images</h4>
+          <div class="ly-row img-head"><button id="img-fold" class="ly-gear" type="button" aria-expanded="true" aria-controls="img-body" title="Collapse or expand the list of images">▾</button><span id="img-count" class="grow wx-note"></span><button id="img-select" type="button" title="Choose several images to show, hide, place or remove together">Select</button></div>
+          <div id="img-body">
+          <div id="img-bulk" class="img-bulk" hidden>
+            <div class="wx-row"><label title="Select every image, or none"><input id="img-all" type="checkbox" /> All</label><span id="img-nsel" class="grow wx-note"></span><button id="img-b-scale" type="button" title="Put the raster charts in scale order, the most detailed on top (satellite images and GeoTIFFs stay where they are). Then ▲ ▼ move any image up or down">Charts by scale</button><button id="img-done" type="button">Done</button></div>
+            <div class="wx-row"><button id="img-b-show" type="button" title="Show the selected images">Show</button><button id="img-b-hide" type="button" title="Hide the selected images">Hide</button><select id="img-b-place" title="Draw the selected images under or over the chart"><option value="">Place…</option><option value="under">Under chart</option><option value="over">Over chart</option></select><input id="img-b-op" type="range" min="10" max="100" step="5" value="85" title="Opacity of the selected images" aria-label="Opacity of the selected images" /><button id="img-b-del" type="button" title="Remove the selected images (deletes TweedPlot's copies)">Remove…</button></div>
+          </div>
+          <div id="img-list" class="img-list"></div>
+          </div>
+          <div class="wx-row"><button id="img-import" type="button" title="Add KAP raster charts or GeoTIFF images from this computer. TweedPlot keeps its own copy in its images folder">Import KAP or GeoTIFF…</button><button id="img-s2-toggle" type="button" title="Find a Sentinel-2 satellite image of the area on the screen (free, from Earth Search on AWS; uses the internet)">Satellite image…</button></div>
+          <div id="img-s2" class="img-s2" hidden>
+            <div id="img-s2-area" class="wx-note"></div>
+            <div class="wx-row"><label for="img-s2-from">From</label> <input id="img-s2-from" type="date" /> <label for="img-s2-to">to</label> <input id="img-s2-to" type="date" /></div>
+            <div class="wx-row"><label class="grow" for="img-s2-cloud" title="Cloud cover of the whole scene (a 110 km tile): a scene with cloud elsewhere can still be clear over your area, so look at the previews">Cloud at most</label>
+              <select id="img-s2-cloud"><option value="5">5%</option><option value="10">10%</option><option value="20" selected>20%</option><option value="50">50%</option><option value="100">Any</option></select>
+              <button id="img-s2-search" type="button">Search</button></div>
+            <div class="wx-row"><label class="grow" for="img-s2-size" title="The largest image kept, in pixels each way. A larger area is kept at a coarser resolution (20 m, 40 m…) so the file stays this size">Largest image</label>
+              <select id="img-s2-size"><option value="2048">2048 px (20 km at 10 m)</option><option value="4096" selected>4096 px (40 km at 10 m)</option><option value="8192">8192 px (80 km, large file)</option></select></div>
+            <div id="img-s2-status" class="wx-note"></div>
+            <div id="img-s2-results" class="img-s2-results"></div>
+            <div class="wx-row" id="img-s2-prog" hidden><progress id="img-s2-bar" class="grow" max="1" value="0"></progress><button id="img-s2-stop" type="button">Stop</button></div>
+            <div class="wx-note">The area is the chart on the screen: zoom to it first. Sentinel-2 true colour, 10 m pixels, from Earth Search on AWS (Element 84). Copernicus licence: free to use, credited on the chart.</div>
+          </div>
+          <div class="wx-note">Images are not surveyed: a satellite image or raster chart is only as good as its georeferencing. Check it against your GPS and your depth sounder.</div>
+        </div>
         <div class="ly-group"><h4>Online maps</h4>
         <div id="wm-box">
           <div class="wx-row checks"><label title="Off (the default): TweedPlot sends no map requests at all. On: OpenStreetMap and OpenSeaMap tiles are fetched from their servers as you pan and zoom, and kept on this computer"><input id="wm-on" type="checkbox" /> Allow online maps (uses the internet)</label></div>

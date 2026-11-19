@@ -11,6 +11,7 @@
 mod chart_texts;
 mod depthpacks;
 mod grib_cmd;
+mod imagery_cmd;
 mod library_cmd;
 mod live;
 mod nmea;
@@ -1865,6 +1866,15 @@ fn chart_info() -> serde_json::Value {
 }
 
 fn tile_response(path: &str) -> Response<Vec<u8>> {
+    // images (KAP charts, GeoTIFFs, satellite images): /img/<id>/<z>/<x>/<y>.png
+    if let Some(rest) = path.trim_start_matches('/').strip_prefix("img/") {
+        return Response::builder()
+            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .header(header::CACHE_CONTROL, "no-store")
+            .header(header::CONTENT_TYPE, "image/png")
+            .body(imagery_cmd::tile_png(rest).unwrap_or_else(|| clear_png().to_vec()))
+            .expect("valid response");
+    }
     // own soundings: /pbathy/<z>/<x>/<y>.png
     if let Some(rest) = path.trim_start_matches('/').strip_prefix("pbathy/") {
         let p: Vec<u32> = rest.trim_end_matches(".png").split('/').filter_map(|v| v.parse().ok()).collect();
@@ -2111,6 +2121,17 @@ pub fn run() {
             webmap::webmap_set,
             webmap::webmap_status,
             webmap::webmap_clear_cache,
+            imagery_cmd::images_list,
+            imagery_cmd::images_import,
+            imagery_cmd::images_update,
+            imagery_cmd::images_reorder,
+            imagery_cmd::images_order_by_scale,
+            imagery_cmd::images_remove,
+            imagery_cmd::images_folder,
+            imagery_cmd::s2_search,
+            imagery_cmd::s2_thumbnail,
+            imagery_cmd::s2_download,
+            imagery_cmd::s2_stop,
             pbathy::pbathy_status,
             pbathy::pbathy_pick_file,
             pbathy::pbathy_import,
@@ -2324,6 +2345,7 @@ pub fn run() {
             if let Ok(dir) = app.path().app_data_dir() {
                 webmap::init(dir.join("webmap-cache"));
             }
+            imagery_cmd::init(app.handle());
             let dd = download_dir(app.handle());
             let _ = std::fs::create_dir_all(&dd);
             let _ = DOWNLOAD_DIR.set(dd);
