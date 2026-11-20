@@ -339,7 +339,10 @@ fn store_catalogues_in_place() {
     assert_eq!(again.list().len(), 2);
     let (x0, y0, _, _) = tile_range(k.bounds, 12);
     assert!((0..3).any(|dx| (0..3).any(|dy| again.tile_png(&k.id, 12, x0 + dx, y0 + dy).is_some())));
-    // the drive unplugged: missing, nothing drawn, still listed
+    // the drive unplugged: missing, nothing drawn, still listed (the stores that have files
+    // open let them go first: Windows won't move a folder with a file open in it)
+    drop(s);
+    drop(again);
     let away = charts.with_file_name("away");
     std::fs::rename(&charts, &away).unwrap();
     let fresh = Store::open(&dir);

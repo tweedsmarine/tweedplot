@@ -235,13 +235,24 @@ impl Store {
         }
     }
 
-    /// The images, with linked files that can't be found now marked `missing`.
+    /// The images, with linked files that can't be found now marked `missing`. A missing
+    /// image's open file is let go, so a drive that was pulled out isn't held on to.
     pub fn list(&self) -> Vec<Entry> {
         let mut l = self.entries.read().unwrap_or_else(|e| e.into_inner()).clone();
+        let mut open = self.open.lock().unwrap_or_else(|e| e.into_inner());
         for e in l.iter_mut() {
             e.missing = e.linked && !Path::new(&e.file).is_file();
+            if e.missing {
+                open.pop(&e.id);
+            }
         }
         l
+    }
+
+    /// Let go of every open image file (before a drive is ejected: Windows won't eject a
+    /// drive with files open on it). They are opened again when next drawn.
+    pub fn close_all(&self) {
+        self.open.lock().unwrap_or_else(|e| e.into_inner()).clear();
     }
 
     fn save(&self, list: &[Entry]) -> Result<()> {
