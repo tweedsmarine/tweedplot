@@ -10,11 +10,11 @@ import { listen } from "@tauri-apps/api/event";
 
 const KEY = "racenav.gribdl";
 const DEFAULTS = { model: "gfs0p25", params: { gfs: ["wind", "gust", "mslp"], wave: ["waves", "period"], mur_sst: ["sst"], hycom_espc: ["sst", "sss", "current"],
-  himawari: ["skin"], chl_viirs: ["chl"] },
+  himawari: ["skin"], chl_viirs: ["chl"], ice_asi: ["ice"] },
   area: null, days: 7, every: 3, depth: 50, himHours: 12, himEvery: 1 };
-const OCEAN = ["mur_sst", "hycom_espc", "himawari", "chl_viirs"];
+const OCEAN = ["mur_sst", "hycom_espc", "himawari", "chl_viirs", "ice_asi"];
 // daily satellite analyses: "the latest N days", no step
-const DAILY = ["mur_sst", "chl_viirs"];
+const DAILY = ["mur_sst", "chl_viirs", "ice_asi"];
 /** Which saved parameter list a model uses. */
 const paramKey = (id) => (OCEAN.includes(id) ? id : id.includes("wave") ? "wave" : "gfs");
 
@@ -213,6 +213,7 @@ export function setupGribDownload(map, { weather, course }) {
     mur_sst: "Source: NASA JPL MUR SST (free to use and share; please acknowledge NASA JPL / PO.DAAC) via NOAA CoastWatch ERDDAP: a daily 1 km analysis from all the satellites, without cloud gaps, usually a day or two old. Shown until four days after its date.",
     himawari: "Source: Himawari-9 (JMA) AHI, processed by NOAA STAR (ACSPO L3C, GHRSST: free and open) via NOAA CoastWatch: hourly, about 2 km, clear sky only (best-quality pixels), two or three hours after the hour. Cloud leaves gaps; each hour keeps the last clear value seen in the hours downloaded.",
     chl_viirs: "Source: NOAA CoastWatch chlorophyll-a from the VIIRS satellites (S-NPP, NOAA-20), gap-filled (DINEOF), daily at about 9 km (free to use and share). Near real time, about three days old. Shown until six days after its date.",
+    ice_asi: "Source: University of Bremen, sea ice concentration from the AMSR2 satellite radiometer (JAXA GCOM-W), ASI algorithm (Spreen, Kaleschke and Heygster 2008): daily, 3.125 km, through cloud and darkness; no warranty. Polar seas only (south of 45°S or north of 45°N); an area across 180° is fine. A day's grid is on the server early the next day (UTC). A microwave view: it misses icebergs, bergy bits and growlers, and is least reliable near coasts and in thin or melting ice. Shown until three days after its date.",
     hycom_espc: "Source: HYCOM ESPC global ocean model (US Navy / HYCOM Consortium, 1/12°, about 9 km) via hycom.org: from the latest analysis out to 8 days. A demonstration service with no guarantee it is up. An area across 180° isn't offered yet.",
   };
   const showSource = () => status(SOURCE_NOTE[OCEAN.includes(prefs.model) ? prefs.model : String(prefs.model).startsWith("ecmwf") ? "ecmwf" : "gfs"]);

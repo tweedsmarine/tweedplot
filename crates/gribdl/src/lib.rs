@@ -17,6 +17,7 @@
 pub mod coastal;
 pub mod data;
 pub mod ecmwf;
+pub mod ice;
 pub mod marine;
 pub mod ocean;
 
@@ -63,6 +64,8 @@ pub enum Model {
     /// Himawari-9 hourly clear-sky sea temperature; daily chlorophyll (VIIRS).
     Himawari,
     ChlViirs,
+    /// Sea ice concentration, daily (AMSR2, University of Bremen): see `ice`.
+    IceAsi,
 }
 
 /// What a model offers, for the download dialog.
@@ -90,7 +93,7 @@ pub struct ParamInfo {
 }
 
 impl Model {
-    pub fn all() -> [Model; 13] {
+    pub fn all() -> [Model; 14] {
         [
             Model::Gfs0p25,
             Model::Gfs0p50,
@@ -105,11 +108,12 @@ impl Model {
             Model::Himawari,
             Model::HycomEspc,
             Model::ChlViirs,
+            Model::IceAsi,
         ]
     }
 
     pub fn is_ocean(self) -> bool {
-        matches!(self, Model::MurSst | Model::HycomEspc | Model::Himawari | Model::ChlViirs)
+        matches!(self, Model::MurSst | Model::HycomEspc | Model::Himawari | Model::ChlViirs | Model::IceAsi)
     }
 
     /// The wave model whose fields can go in the same file as this model's wind.
@@ -230,6 +234,16 @@ impl Model {
                 max_hours: 14 * 24,
                 steps: vec![(14 * 24, 24)],
                 params: vec![ParamInfo { id: "chl", name: "Chlorophyll-a", fields: 1, default: true }],
+                delay_h: 0,
+            },
+            // sea ice: `hours` / 24 = how many of the latest daily grids
+            Model::IceAsi => ModelInfo {
+                id: self,
+                name: "Sea ice concentration 3 km, daily (AMSR2 satellite, University of Bremen; polar seas)",
+                res_deg: 0.025,
+                max_hours: 14 * 24,
+                steps: vec![(14 * 24, 24)],
+                params: vec![ParamInfo { id: "ice", name: "Sea ice concentration", fields: 1, default: true }],
                 delay_h: 0,
             },
             Model::HycomEspc => ModelInfo {
@@ -471,6 +485,13 @@ pub fn estimate_bytes(req: &Request) -> u64 {
         let ny = ((req.area[3] - req.area[1]).abs() / 0.0833).floor() + 1.0;
         return ((nx * ny * 2.0 + 200.0) * (req.hours / 24).clamp(1, 14) as f64) as u64;
     }
+    if req.model == Model::IceAsi {
+        // about a byte a cell (much of it open water or land, packed small), a day each
+        let mid = ((req.area[1] + req.area[3]) / 2.0).to_radians().cos().max(0.05);
+        let nx = ((req.area[2] - req.area[0]).abs() / (0.025 / mid)).floor().min(1600.0) + 1.0;
+        let ny = ((req.area[3] - req.area[1]).abs() / 0.025).floor().min(1600.0) + 1.0;
+        return ((nx * ny * 1.0 + 200.0) * (req.hours / 24).clamp(1, 14) as f64) as u64;
+    }
     let (l, r) = lon_window(req.area[0], req.area[2]);
     let nx = ((r - l) / info.res_deg).floor() + 1.0;
     let ny = ((req.area[3] - req.area[1]).abs() / info.res_deg).floor() + 1.0;
@@ -655,6 +676,7 @@ pub(crate) fn file_name(req: &Request, run: &Run, last: u32) -> String {
         Model::HycomEspc => "HYCOM_ESPC",
         Model::Himawari => "HIMAWARI_SST",
         Model::ChlViirs => "CHL_VIIRS",
+        Model::IceAsi => "SEAICE_AMSR2",
     };
     let lat = |v: f64| format!("{}{}", v.abs().round(), if v < 0.0 { "S" } else { "N" });
     let lon = |v: f64| {

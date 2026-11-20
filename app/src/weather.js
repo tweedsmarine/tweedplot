@@ -97,6 +97,9 @@ function niceStep(lo, hi, n = 8) {
   return [1, 2, 5, 10].map((m) => m * p).find((s) => s >= raw);
 }
 
+// sea ice, per cent: the WMO colours ice charts use (blue open water with some ice, green very open,
+// yellow open, orange close, red very close and compact); under 1 % is left clear
+const ICE = [[1, "#96c8ff"], [10, "#8cff9f"], [40, "#ffff00"], [70, "#ff7d07"], [90, "#ff0000"], [100, "#b40000"]];
 /** What can be shaded: the GRIB parameters it needs, unit, colour scale, and values below `min` left clear.
  * `compare`: a display of how much the loaded GRIBs disagree (grib::compare), not of one GRIB. */
 export const LAYERS = {
@@ -119,6 +122,7 @@ export const LAYERS = {
   chl: { label: "Chlorophyll-a", unit: "mg/m³", params: ["Chlorophyll"], scale: CHL, auto: true, contour: true, ocean: true, log: true },
   current: { label: "Current", unit: "kn", params: ["CurrentU"], scale: CUR, ocean: true },
   ssh: { label: "Sea surface height", unit: "m", params: ["SeaLevel"], scale: SSH, ocean: true },
+  ice: { label: "Sea ice concentration", unit: "%", params: ["SeaIce"], scale: ICE, min: 1, ocean: true },
   agree_vec: { label: "Wind disagreement (vector)", unit: "kn", params: ["WindU", "WindSpeed"], scale: AGREE_KN, compare: "vector",
     help: "RMS distance of each GRIB's wind from their mean wind: speed and direction together." },
   agree_spd: { label: "Wind speed spread", unit: "kn", params: ["WindU", "WindSpeed"], scale: AGREE_KN, compare: "speed",
@@ -181,13 +185,13 @@ export function dataTimeStatus(summary, params, time, allowPastAnalysis = false)
   if (!times.length || !Number.isFinite(time)) return { state: "missing" };
   const first = Math.min(...times), last = Math.max(...times);
   if (time >= first && time <= last) return { state: "valid" };
-  const analysis = /VIIRS|MUR SST|Himawari/i.test(`${summary?.model ?? ""} ${summary?.name ?? ""}`);
+  const analysis = /VIIRS|MUR SST|Himawari|sea ice/i.test(`${summary?.model ?? ""} ${summary?.name ?? ""}`);
   return time > last && analysis && allowPastAnalysis ? { state: "past", time: last } : { state: "missing" };
 }
 
 const SEA_POINT_PARAMS = {
   sst: "SeaTemp", skin: "SkinTemp", sss: "Salinity", subt: "SubTemp",
-  subs: "SubSalinity", chl: "Chlorophyll", ssh: "SeaLevel", cur: "CurrentU",
+  subs: "SubSalinity", chl: "Chlorophyll", ssh: "SeaLevel", cur: "CurrentU", ice: "SeaIce",
 };
 
 export function applyPointTimePolicy(row, summary, time, allowPastAnalysis) {
@@ -500,7 +504,7 @@ export function setupWeather(map, layers) {
       if (!display) display = path;
       // an ocean file: show it (sea temperature first) under whatever weather is shown
       const ps = paramsOf(s);
-      const oceanKey = ["skin", "sst", "chl", "subt", "sss", "current"].find((k) => ps.has(LAYERS[k].params[0]));
+      const oceanKey = ["skin", "sst", "chl", "subt", "sss", "current", "ice"].find((k) => ps.has(LAYERS[k].params[0]));
       if (oceanKey && !LAYERS[wx.layer]?.ocean) {
         wx.layer = oceanKey;
         if (wx.shading === "off") wx.shading = "smooth";
@@ -1060,7 +1064,7 @@ export function setupWeather(map, layers) {
   };
 
   // ---------- comparison table --------------------------------------------------------
-  const SEA_KEYS = ["sst", "skin", "sss", "subt", "subs", "cur", "depth", "chl", "ssh"];
+  const SEA_KEYS = ["sst", "skin", "sss", "subt", "subs", "cur", "depth", "chl", "ssh", "ice"];
   /** The sea values of one file at the cursor, as short labelled pieces. */
   function seaParts(r) {
     const out = [];
@@ -1072,6 +1076,7 @@ export function setupWeather(map, layers) {
     if (r.cur) out.push(`Current ${r.cur.kn.toFixed(1)} kn ${String(r.cur.set).padStart(3, "0")}°`);
     if (r.chl != null) out.push(`Chl-a ${fmtChl(r.chl)} mg/m³`);
     if (r.ssh != null) out.push(`Sea height ${r.ssh >= 0 ? "+" : ""}${r.ssh.toFixed(2)} m`);
+    if (r.ice != null) out.push(`Ice ${Math.round(r.ice)} %`);
     return out;
   }
   let pointTimer = null;

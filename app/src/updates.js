@@ -1,18 +1,18 @@
 // Software updates: looks for a newer TweedPlot (the signed latest.json of the newest
 // GitHub release, through Tauri's updater plugin), shows a notice, and installs only when
-// the skipper says so and no live position is arriving. The decisions are in updates-core.js.
+// the skipper says so. The decisions are in updates-core.js.
 //
 // Where: the notice at the top of the screen (#update-notice), Settings › Diagnostics ›
 // Software updates (#upd-mode, #upd-check, #upd-status) and Check for updates in the About box.
 import { invoke } from "@tauri-apps/api/core";
 import { check } from "@tauri-apps/plugin-updater";
 import { ask } from "./ask.js";
-import { readPrefs, checkDue, installBlock, noticeText, progressPercent, FIRST_CHECK_MS, CHECK_EVERY_MS } from "./updates-core.js";
+import { readPrefs, checkDue, noticeText, progressPercent, FIRST_CHECK_MS, CHECK_EVERY_MS } from "./updates-core.js";
 
 const KEY = "racenav.updates";
 const RELEASES = "https://github.com/tweedsmarine/tweedplot/releases";
 
-export function setupUpdates({ toast = () => {}, livePosition = () => false } = {}) {
+export function setupUpdates() {
   const $ = (id) => document.getElementById(id);
   const inTauri = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
   let prefs = load();
@@ -71,10 +71,9 @@ export function setupUpdates({ toast = () => {}, livePosition = () => false } = 
       }
       status(`TweedPlot ${found.version} is available.`);
       log(`${found.version} available (installed ${found.currentVersion})`);
-      if (prefs.mode === "download" && !downloaded) {
-        busy = false; // let the download run its own busy state
-        await fetchInstaller(false);
-      }
+      // the look is over: the notice drawn below must not show Install greyed out as busy
+      busy = false;
+      if (prefs.mode === "download" && !downloaded) await fetchInstaller(false);
       if (manual || dismissed !== found.version) showNotice();
     } catch (e) {
       // at sea there is often no internet: automatic looks say nothing
@@ -112,8 +111,6 @@ export function setupUpdates({ toast = () => {}, livePosition = () => false } = 
   // ---- installing ----
   async function install() {
     if (!found || busy) return;
-    const block = installBlock({ livePosition: livePosition() });
-    if (block) { toast(block, 10000); return; }
     const ok = await ask({
       title: `Install TweedPlot ${found.version}?`,
       note: "TweedPlot closes, installs the update and opens again. Your charts, library and settings are kept.",
@@ -121,9 +118,6 @@ export function setupUpdates({ toast = () => {}, livePosition = () => false } = 
       cancel: "Not now",
     });
     if (!ok) return;
-    // a position may have started arriving while the question was open
-    const again = installBlock({ livePosition: livePosition() });
-    if (again) { toast(again, 10000); return; }
     if (!downloaded) {
       await fetchInstaller(true);
       if (!downloaded) { showNotice(); return; }

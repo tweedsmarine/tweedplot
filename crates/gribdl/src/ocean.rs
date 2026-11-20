@@ -309,7 +309,7 @@ pub fn fields_from_netcdf(bytes: &[u8], centre: u16, depth: Option<f64>) -> Resu
 }
 
 /// e.g. "MUR_SST_20261015-20261017_42S-40S_172E-175E.grb2", "HYCOM_ESPC_20261019_06z_f000-f192_…grb2"
-fn name(prefix: &str, when: &str, area: [f64; 4]) -> String {
+pub(crate) fn name(prefix: &str, when: &str, area: [f64; 4]) -> String {
     let lat = |v: f64| format!("{}{}", v.abs().round(), if v < 0.0 { "S" } else { "N" });
     let lon = |v: f64| {
         let v = (v + 180.0).rem_euclid(360.0) - 180.0;
@@ -322,7 +322,7 @@ fn ymd(t: i64) -> String {
     chrono::DateTime::from_timestamp(t, 0).unwrap_or_default().format("%Y%m%d").to_string()
 }
 
-fn write(fields: &[Field], process: u8, path: &Path) -> Result<()> {
+pub(crate) fn write(fields: &[Field], process: u8, path: &Path) -> Result<()> {
     let part = path.with_extension("grb2.part");
     let mut bytes = Vec::new();
     for f in fields {
@@ -472,6 +472,7 @@ pub fn download(req: &Request, now: i64, dir: &Path, progress: Progress, cancel:
             write(&fields, grib::write::PROCESS_HIMAWARI_SST, &path)?;
             Ok(path)
         }
+        Model::IceAsi => crate::ice::download(req, now, dir, progress, cancel),
         _ => Err(Error::Bad("not an ocean model".into())),
     }
 }

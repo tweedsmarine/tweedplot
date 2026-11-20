@@ -318,7 +318,7 @@ pub fn download(scene: &Scene, bbox: [f64; 4], max_px: usize, path: &std::path::
     let src: Arc<dyn Source> = Arc::new(HttpSource::new(&scene.visual)?);
     let tiff = Tiff::open(src)?;
     let cut = cut(&tiff, bbox, max_px, 6, progress)?;
-    if !cut.rgba.chunks_exact(4).any(|p| p[3] != 0) {
+    if !cut.rgba.as_chunks::<4>().0.iter().any(|p| p[3] != 0) {
         return err("the scene has no image over this area");
     }
     crate::tiffw::write_geotiff(path, cut.w, cut.h, &cut.rgba, &cut.geo, &format!("TweedPlot; Contains modified Copernicus Sentinel data; {}", scene.id))?;

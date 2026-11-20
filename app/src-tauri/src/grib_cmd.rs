@@ -350,6 +350,11 @@ pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max
             (g, u.iter().zip(&v).map(|(a, b)| (a * a + b * b).sqrt() * KN).collect())
         }
         "ssh" => f.grid_at(P::SeaLevel, t)?,
+        // sea ice: per cent of the sea covered
+        "ice" => {
+            let (g, v) = f.grid_at(P::SeaIce, t)?;
+            (g, v.iter().map(|x| x * 100.0).collect())
+        }
         // the way the water flows, degrees true
         "currentdir" => {
             let ((g, u), (_, v)) = (f.grid_at(P::CurrentU, t)?, f.grid_at(P::CurrentV, t)?);
@@ -592,6 +597,7 @@ pub(crate) fn point_values(f: &grib::GribFile, lat: f64, lon: f64, t: i64) -> se
                     "skin": f.value(grib::Param::SkinTemp, lat, lon, t).map(|k| ((k - 273.15) * 100.0).round() / 100.0),
                     "chl": f.value(grib::Param::Chlorophyll, lat, lon, t).map(|c| (c * 1000.0).round() / 1000.0),
                     "ssh": f.value(grib::Param::SeaLevel, lat, lon, t).map(|h| (h * 100.0).round() / 100.0),
+                    "ice": f.value(grib::Param::SeaIce, lat, lon, t).map(|c| (c * 100.0).round()),
                     "depth": f.series(grib::Param::SubTemp).first().or(f.series(grib::Param::SubSalinity).first()).map(|x| x.surface_value),
                     "cur": f.current(lat, lon, t).map(|(u, v)| serde_json::json!({
                         "kn": ((u * u + v * v).sqrt() * 3600.0 / 1852.0 * 100.0).round() / 100.0,

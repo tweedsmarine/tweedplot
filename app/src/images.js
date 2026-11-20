@@ -84,21 +84,66 @@ export function setupImages(map, { tileUrl, toast }) {
   }
 
   function credit() {
-    const credits = [...new Set(list.filter((e) => e.visible && e.credit).map((e) => e.credit))];
+    const credits = mergeYears([...new Set(list.filter((e) => e.visible && e.credit).map((e) => e.credit))]);
     const kaps = list.some((e) => e.visible && e.kind === "kap");
     const text = [credits.length ? `Imagery: ${credits.join("; ")}.` : "", kaps ? "Raster charts: their publishers." : ""].filter(Boolean).join(" ");
     window.dispatchEvent(new CustomEvent("credit-extra", { detail: { key: "images", text } }));
   }
 
+  /** "… data 2025", "… data 2026" → "… data 2025–2026" (one phrase per source, years run together). */
+  function mergeYears(credits) {
+    const years = new Map(); // text before the year → years
+    const out = [];
+    for (const c of credits) {
+      const m = /^(.*\S)\s+(\d{4})$/.exec(c);
+      if (!m) { out.push(c); continue; }
+      if (!years.has(m[1])) { years.set(m[1], new Set()); out.push(m[1]); }
+      years.get(m[1]).add(Number(m[2]));
+    }
+    return out.map((c) => {
+      const ys = years.get(c);
+      if (!ys) return c;
+      const s = [...ys].sort((a, b) => a - b);
+      const runs = [];
+      for (const y of s) {
+        const last = runs[runs.length - 1];
+        if (last && y === last[1] + 1) last[1] = y; else runs.push([y, y]);
+      }
+      return `${c} ${runs.map(([a, b]) => (a === b ? `${a}` : `${a}–${b}`)).join(", ")}`;
+    });
+  }
+
   const fmtRes = (m) => (m >= 100 ? `${Math.round(m)} m` : m >= 1 ? `${m.toFixed(m >= 10 ? 0 : 1)} m` : `${Math.round(m * 100)} cm`);
+  /** How old a satellite image is: what matters for ice, banks and channels that move. */
+  function age(date) {
+    const t = Date.parse(date);
+    if (!Number.isFinite(t)) return "";
+    const d = Math.floor((Date.now() - t) / 86_400_000);
+    if (d < 1) return "today";
+    if (d < 2) return "1 day old";
+    if (d < 21) return `${d} days old`;
+    if (d < 75) return `${Math.round(d / 7)} weeks old`;
+    if (d < 548) return `${Math.round(d / 30.4)} months old`;
+    return `${(d / 365.25).toFixed(d < 3650 ? 1 : 0).replace(/\.0$/, "")} years old`;
+  }
+  /** The line under an image's name: what the name doesn't already say, most useful first. */
   function meta(e) {
     const parts = [];
-    if (e.kind === "kap") parts.push(e.scale ? `KAP 1:${e.scale.toLocaleString("en-NZ")}` : "KAP chart");
-    else parts.push(e.source);
-    if (e.date) parts.push(e.date);
-    parts.push(`${fmtRes(e.resM)} pixels`);
-    if (e.fitRmsPx != null) parts.push(`fit ${e.fitRmsPx < 0.05 ? "exact" : `${e.fitRmsPx.toFixed(1)} px`}`);
-    return parts.join(" · ");
+    const inName = (s) => s && e.name.toLowerCase().includes(String(s).toLowerCase());
+    if (e.kind === "kap") {
+      if (e.scale && !inName(e.scale.toLocaleString("en-NZ")) && !inName(e.scale)) parts.push(`1:${e.scale.toLocaleString("en-NZ")}`);
+      if (e.fitRmsPx != null) parts.push(e.fitRmsPx < 0.05 ? "fit exact" : `fit ${e.fitRmsPx.toFixed(1)} px`);
+      parts.push(`${fmtRes(e.resM)} pixels`);
+      if (e.date && !inName(e.date)) parts.push(e.date);
+    } else {
+      const sat = /sentinel|landsat/i.test(e.source);
+      parts.push(`${fmtRes(e.resM)} pixels`);
+      if (sat && e.date) parts.push(age(e.date));
+      else if (e.date && !inName(e.date)) parts.push(e.date);
+      if (!inName(e.source) && !(sat && /sentinel|landsat/i.test(e.name))) parts.push(e.source);
+      if (e.fitRmsPx != null) parts.push(e.fitRmsPx < 0.05 ? "fit exact" : `fit ${e.fitRmsPx.toFixed(1)} px`);
+    }
+    return parts.filter(Boolean).join(" · ");
   }
 
   async function update(e, patch) {
@@ -194,6 +239,7 @@ export function setupImages(map, { tileUrl, toast }) {
       const info = document.createElement("span");
       info.className = "wx-note img-meta" + (e.fitRmsPx != null && e.fitRmsPx > 3 ? " warn" : "");
       info.textContent = meta(e);
+      info.title = `${e.source}${e.date ? ` · ${e.date}` : ""}\n${meta(e)}`;
       if (e.fitRmsPx != null && e.fitRmsPx > 3) info.title = "The chart's reference points don't agree well: it may be misplaced by several pixels. Check it against your GPS.";
       const op = document.createElement("input");
       op.type = "range"; op.min = "10"; op.max = "100"; op.step = "5"; op.value = String(Math.round(e.opacity * 100));

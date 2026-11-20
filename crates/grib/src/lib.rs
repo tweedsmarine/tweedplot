@@ -82,6 +82,8 @@ pub enum Param {
     Chlorophyll,
     /// Sea surface height above the geoid (m), 10/3/1 "deviation of sea level from mean".
     SeaLevel,
+    /// Sea ice cover: the proportion (0–1) of the sea covered by ice, 10/2/0.
+    SeaIce,
     Other(u8, u8, u8),
 }
 
@@ -108,6 +110,7 @@ impl Param {
             (10, 3, 192) => Param::SkinTemp,
             (10, 4, 192) => Param::Chlorophyll,
             (10, 3, 1) => Param::SeaLevel,
+            (10, 2, 0) => Param::SeaIce,
             (10, 3, 0) if surface == 160 => Param::SubTemp,
             (10, 3, 0) => Param::SeaTemp,
             (10, 4, 21) if surface == 160 => Param::SubSalinity,
@@ -598,6 +601,7 @@ pub fn scan(path: impl AsRef<Path>) -> Result<FileInfo, GribError> {
                     Param::SkinTemp => "satellite sea temperature",
                     Param::Chlorophyll => "chlorophyll",
                     Param::SeaLevel => "sea surface height",
+                    Param::SeaIce => "sea ice",
                     Param::Salinity | Param::SubSalinity => "salinity",
                     Param::Other(..) => "other",
                 };
@@ -710,6 +714,8 @@ pub fn hold_s(p: Param) -> (i64, i64) {
         Param::SkinTemp => (3600, 12 * 3600),
         // daily, and three days old when published
         Param::Chlorophyll => (12 * 3600, 6 * 86400),
+        // daily, of all the day's passes, on the server early the next day
+        Param::SeaIce => (12 * 3600, 3 * 86400),
         _ => (0, 0),
     }
 }

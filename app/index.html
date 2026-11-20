@@ -557,7 +557,7 @@
         <div class="wx-row"><label class="grow"><input id="set-cog-line" type="checkbox" /> COG line</label><select id="set-cog-len" title="Length: time at SOG, or to the edge of the chart"></select></div>
         <div class="wx-note">Heading line (solid) uses boat speed through the water, else SOG; COG line (dashed orange) uses SOG. With the IHO symbols the COG line is the S-52 vector: time marks every minute (longer every six) and a double arrowhead.</div>
         <div class="wx-row"><label class="grow" title="A line through the boat at right angles to the heading, to the edge of the chart: what is abeam"><input id="set-beam-line" type="checkbox" /> Beam bearing line</label></div>
-        <div class="wx-row" title="Range rings round the boat. Spacing in nautical miles: 0.25, 1/4, 1 1/2 … (for rings round a mark or waypoint, right-click it)"><label class="grow"><input id="set-own-rings" type="checkbox" /> Range rings</label>
+        <div class="wx-row" title="Range rings round the boat. Spacing in nautical miles: 0.25, 1/4, 1 1/2 … (for rings round a mark or waypoint, right-click it)"><label class="grow nowrap"><input id="set-own-rings" type="checkbox" /> Range rings</label>
           <select id="set-own-ring-n" aria-label="Number of rings"></select> every <input id="set-own-ring-step" list="own-ring-steps" style="width:4.5em" aria-label="Ring spacing (NM)" /> NM
           <datalist id="own-ring-steps"><option value="0.1"><option value="1/8"><option value="1/4"><option value="1/2"><option value="3/4"><option value="1"><option value="2"><option value="5"></datalist></div>
                 <div class="wx-row"><label class="grow" title="Live: true (blue) and apparent (orange) wind on the boat. Planning: on the cursor, from the GRIB shown"><input id="inst-arrows" type="checkbox" /> Wind arrows (on the boat when live, at the cursor when planning)</label></div>
@@ -1003,7 +1003,7 @@
       </div>
     </div>
     <div id="toast" class="toast startup-toast">Initialising - please wait</div>
-    <div id="update-notice" class="update-notice" role="status" aria-live="polite" hidden><span id="update-text"></span><button id="update-install" type="button" title="Close TweedPlot, install the update and open it again (not while a live position is arriving)">Install…</button><button id="update-notes" type="button" title="What's new: the release page on GitHub">What's new</button><button id="update-later" type="button" title="Hide this until TweedPlot is next started">Later</button></div>
+    <div id="update-notice" class="update-notice" role="status" aria-live="polite" hidden><span id="update-text"></span><button id="update-install" type="button" title="Close TweedPlot, install the update and open it again">Install…</button><button id="update-notes" type="button" title="What's new: the release page on GitHub">What's new</button><button id="update-later" type="button" title="Hide this until TweedPlot is next started">Later</button></div>
     <div id="s63-banner" class="s63-banner" hidden></div>
 
       <section id="settings" class="pane" data-pane="settings" data-title="Settings" hidden>

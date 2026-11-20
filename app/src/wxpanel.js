@@ -33,6 +33,7 @@ const ROWS = [
   ["Salinity at depth", ["SubSalinity"], (r) => r.subs != null && `${r.subs.toFixed(2)} PSU${r.depth != null ? ` at ${Math.abs(r.depth).toFixed(0)} m` : ""}`, "subs"],
   ["Chlorophyll", ["Chlorophyll"], (r) => r.chl != null && `${r.chl.toFixed(2)} mg/m³`, "chl"],
   ["Sea surface height", ["SeaLevel"], (r) => r.ssh != null && `${r.ssh >= 0 ? "+" : ""}${r.ssh.toFixed(2)} m`, "ssh"],
+  ["Sea ice", ["SeaIce"], (r) => r.ice != null && `${Math.round(r.ice)} %`, "ice"],
   ["Current", ["CurrentU"], (r) => r.cur && `${r.cur.kn.toFixed(1)} kn toward ${deg3(r.cur.set)}° ${compass(r.cur.set)}`, "cur"],
 ];
 
@@ -132,7 +133,7 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
   }
   // Weather, Ocean and Seabed are modes: each keeps its own layer, sources, overlays and filter, put back when
   // you return to it. The first time, a mode starts from sensible defaults for what is loaded.
-  const MODE_LAYERS = { weather: ["wind", "gust", "mslp", "rain", "cape", "temp", "waves", "swell", "period"], ocean: ["sst", "skin", "chl", "sss", "subt", "subs", "current", "ssh"] };
+  const MODE_LAYERS = { weather: ["wind", "gust", "mslp", "rain", "cape", "temp", "waves", "swell", "period"], ocean: ["sst", "skin", "chl", "sss", "subt", "subs", "current", "ssh", "ice"] };
   const modeOf = (key) => Object.keys(MODE_LAYERS).find((m) => MODE_LAYERS[m].includes(key)) ?? null;
   st.modes ??= {};
   function setMode(key) {
@@ -149,7 +150,7 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     } else if (kept && (kept.layer === "none" || options.some((o) => o.key === kept.layer && o.paths.length))) {
       weather.applyConfig(kept);
     } else {
-      const choices = key === "weather" ? ["wind", "gust", "waves"] : ["sst", "skin", "chl", "sss", "current"];
+      const choices = key === "weather" ? ["wind", "gust", "waves"] : ["sst", "skin", "chl", "sss", "current", "ice"];
       const choice = choices.map((name) => options.find((o) => o.key === name && o.paths.length)).find(Boolean);
       if (choice) weather.pickLayer(choice.key, choice.path ?? choice.paths[0]);
       weather.applyConfig({ layer: choice?.key ?? "none", overlays: {
@@ -197,9 +198,9 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
   // The layer chooser: a chip per layer that a loaded GRIB has, in groups, with the source of the chosen layer
   // under it. In Environment the groups follow the mode; elsewhere all are offered.
   const GROUPS = [["Weather", ["wind", "gust", "mslp", "rain", "cape", "temp"]], ["Sea state", ["waves", "swell", "period"]],
-    ["Ocean", ["sst", "skin", "chl", "sss", "subt", "subs", "current", "ssh"]]];
+    ["Ocean", ["sst", "skin", "chl", "sss", "subt", "subs", "current", "ssh", "ice"]]];
   const CHIP = { wind: "Wind", gust: "Gusts", mslp: "Pressure", rain: "Rain", cape: "CAPE", temp: "Air temp", waves: "Waves", swell: "Swell", period: "Period",
-    sst: "Sea temp", skin: "Sea temp (sat)", chl: "Chlorophyll", sss: "Salinity", subt: "Temp at depth", subs: "Salinity at depth", current: "Current", ssh: "Sea height" };
+    sst: "Sea temp", skin: "Sea temp (sat)", chl: "Chlorophyll", sss: "Salinity", subt: "Temp at depth", subs: "Salinity at depth", current: "Current", ssh: "Sea height", ice: "Sea ice" };
   function buildShow(box) {
     const info = weather.layerInfo();
     const opts = weather.layerOptions().filter((x) => !x.compare && !x.verify && x.paths.length);
@@ -394,13 +395,13 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     const over = hi != null && now > hi;
     const outside = hi != null && (cur.t > hi || cur.t < lo);
     // satellite products are analyses of the past, not forecast runs
-    const analysis = /VIIRS|MUR SST|Himawari/i.test(s.model ?? s.name ?? "");
+    const analysis = /VIIRS|MUR SST|Himawari|sea ice/i.test(s.model ?? s.name ?? "");
     const age = (h) => (h < 48 ? `${Math.round(h)} h` : `${Math.round(h / 24)} d`);
     if (analysis) {
       run.textContent = `${s.name} · analysis, ${fmt(lo)} to ${fmt(hi)}`;
       const lastH = (now - hi) / 3600;
       // how late each product normally is when published: VIIRS a couple of days, MUR a day or two, Himawari hours
-      const slackH = /VIIRS/i.test(s.model ?? s.name ?? "") ? 96 : /MUR/i.test(s.model ?? s.name ?? "") ? 72 : 12;
+      const slackH = /VIIRS/i.test(s.model ?? s.name ?? "") ? 96 : /MUR|sea ice/i.test(s.model ?? s.name ?? "") ? 72 : 12;
       if (info.timeStatus?.state === "past") { run.classList.add("stale"); run.textContent += ` · using past analysis from ${fmt(info.timeStatus.time)} where available`; }
       else if (info.timeStatus?.state === "missing" || outside) { run.classList.add("stale"); run.textContent += " · no data at this time"; }
       else if (lastH > slackH) { run.classList.add("stale"); run.textContent += ` · latest data is ${age(lastH)} old: download a newer analysis`; }

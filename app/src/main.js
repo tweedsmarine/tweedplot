@@ -647,7 +647,7 @@ map.on("load", () => {
   setupPalette((mode) => { paletteMode = mode; applyPalette(); });
   setupBrand();
   // never installs while a live position is arriving (installing closes the app)
-  setupUpdates({ toast, livePosition: () => live && positionWatch.age() != null && !positionWatch.lost() });
+  setupUpdates();
   setupWebMap(map);
   setupImages(map, { tileUrl: TILE_URL, toast });
   layerVis = setupLayerVisibility(map, { ready: () => chartMapLoaded && chartStoreReady });

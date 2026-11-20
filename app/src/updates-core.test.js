@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readPrefs, checkDue, installBlock, noticeText, progressPercent, CHECK_EVERY_MS, DEFAULT_MODE } from "./updates-core.js";
+import { readPrefs, checkDue, noticeText, progressPercent, CHECK_EVERY_MS, DEFAULT_MODE } from "./updates-core.js";
 
 test("preferences default to notify, and survive rubbish", () => {
   assert.deepEqual(readPrefs(null), { mode: DEFAULT_MODE, lastCheck: 0 });
@@ -18,11 +18,6 @@ test("automatic checks: never when off, otherwise twice a day", () => {
   assert.equal(checkDue({ mode: "download", lastCheck: now - CHECK_EVERY_MS }, now), true);
   // the clock went back: look anyway
   assert.equal(checkDue({ mode: "notify", lastCheck: now + 5000 }, now), true);
-});
-
-test("never installs while a live position is arriving", () => {
-  assert.match(installBlock({ livePosition: true }), /live position/);
-  assert.equal(installBlock({ livePosition: false }), "");
 });
 
 test("notice text and progress", () => {

@@ -10,7 +10,7 @@ It began as a tool for racing skippers who wanted routing, weather and instrumen
 
 > **Not a certified navigation system.** TweedPlot is a planning and situational-awareness aid, not an ECDIS. Charts and forecasts can be wrong or out of date. Keep a lookout and carry official charts.
 
-> **This is a beta (1.0.0b).** It has been used on the water by its author, but not by many people yet. That is why it is here: please try it, tell us what breaks, and tell us what you need. See [Testing and feedback](#testing-and-feedback).
+> **This is a beta (1.0.0-beta.3).** It has been used on the water by its author, but not by many people yet. That is why it is here: please try it, tell us what breaks, and tell us what you need. See [Testing and feedback](#testing-and-feedback).
 
 ## What it does now
 
@@ -79,7 +79,7 @@ In roughly this order, driven by what testers ask for:
 
 Installers for Windows 10 and 11 (Intel and ARM) are on the [Releases](../../releases) page. Windows SmartScreen may warn you the first time: choose **More info › Run anyway**.
 
-Once installed, TweedPlot looks for a newer version a minute after it starts and twice a day, when there is an internet connection. It tells you, and installs only when you choose to, never while a live position is arriving. Updates are signed by TweedsMarine and checked before they install. You can turn this off in Settings › Diagnostics › Software updates.
+Once installed, TweedPlot looks for a newer version a minute after it starts and twice a day, when there is an internet connection. It tells you, and installs only when you choose to. Updates are signed by TweedsMarine and checked before they install. You can turn this off in Settings › Diagnostics › Software updates.
 
 You provide your own chart data. The manual's *Getting started* and *Charts* sections explain how to download the LINZ data and load ENC cells.
 

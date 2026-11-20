@@ -360,7 +360,7 @@ impl Tiff {
         }
         let mut out = vec![0u8; w * h * 4];
         let nd = self.nodata;
-        for (i, o) in out.chunks_exact_mut(4).enumerate() {
+        for (i, o) in out.as_chunks_mut::<4>().0.iter_mut().enumerate() {
             let s = &px[i * l.spp..(i + 1) * l.spp];
             let rgba = match l.spp {
                 1 | 2 => {
@@ -371,7 +371,7 @@ impl Tiff {
                 _ => [s[0], s[1], s[2], if l.alpha { s[3] } else { 255 }],
             };
             let blank = nd.is_some_and(|v| s[..l.spp.min(3)].iter().all(|&b| b == v));
-            o.copy_from_slice(&if blank { [0, 0, 0, 0] } else { rgba });
+            *o = if blank { [0, 0, 0, 0] } else { rgba };
         }
         Block { w, h, data: out, palette: None }
     }

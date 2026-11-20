@@ -5,7 +5,7 @@
 //   notify   - look at start-up and twice a day, and show a notice (the default)
 //   download - as notify, and fetch the installer quietly first, so Install is quick
 // An update is never installed by itself: installing closes TweedPlot, so the skipper
-// chooses when, and never while a live position is arriving.
+// chooses when (and is asked first).
 
 export const MODES = ["off", "notify", "download"];
 export const DEFAULT_MODE = "notify";
@@ -31,12 +31,6 @@ export function checkDue(prefs, now) {
   // a clock set back (a PC with a flat battery) mustn't stop the checks for months
   if (prefs.lastCheck > now) return true;
   return now - prefs.lastCheck >= CHECK_EVERY_MS;
-}
-
-/** Why an update can't be installed now ("" = it can). Installing closes TweedPlot. */
-export function installBlock({ livePosition }) {
-  if (livePosition) return "Not while a live position is arriving: installing closes TweedPlot. Install in port, or pause the live data first.";
-  return "";
 }
 
 /** The notice text for an update that has been found. */

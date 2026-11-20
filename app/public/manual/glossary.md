@@ -138,6 +138,7 @@ Terms and abbreviations used in TweedPlot and in this manual.
 | Scale band | The range of scales a chart is made for: overview, general, coastal, approach, harbour, berthing |
 | SCAMIN | Scale minimum: the scale below which a chart feature is not drawn |
 | Scope | The length of chain or rode let out when anchored |
+| Sea ice concentration | How much of the sea is covered by ice, in per cent (ice charts use tenths). From a satellite's microwave radiometer it is an average over a cell a few kilometres across: it does not show icebergs or growlers |
 | Sea surface height | The height of the sea surface above its long-term mean, with the tide left out; its slopes show eddies and currents |
 | Seat | One of the (up to three) computers on a vessel covered by its encrypted-chart licence |
 | Secondary port | A place whose tides are worked out from a standard port's by time and height differences |

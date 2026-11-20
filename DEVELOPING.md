@@ -66,7 +66,7 @@ Configure NMEA inputs and the multiplexer in Settings. Enabled sources are monit
 
 ### Updates
 
-Installed copies look for a newer TweedPlot a minute after starting and then twice a day (`app/src/updates.js`, decisions in `updates-core.js`; Settings › Diagnostics › Software updates; Check for updates in the About box). They read `https://github.com/tweedsmarine/tweedplot/releases/latest/download/latest.json`: GitHub's latest *published* release that isn't marked pre-release. Drafts are never offered, so a release reaches users only when you press Publish. The repository must be public for this to work. A notice asks before installing; installing closes the app (the NSIS installer runs passive and reopens it), and is refused while a live position is arriving.
+Installed copies look for a newer TweedPlot a minute after starting and then twice a day (`app/src/updates.js`, decisions in `updates-core.js`; Settings › Diagnostics › Software updates; Check for updates in the About box). They read `https://github.com/tweedsmarine/tweedplot/releases/latest/download/latest.json`: GitHub's latest *published* release that isn't marked pre-release. Drafts are never offered, so a release reaches users only when you press Publish. The repository must be public for this to work. A notice asks before installing; installing closes the app (the NSIS installer runs passive and reopens it). It isn't blocked by live data: nobody unplugs the boat's network to update.
 
 Updates are signed with TweedPlot's own updater key (minisign, through Tauri), separate from Windows code signing. One-time set-up:
 

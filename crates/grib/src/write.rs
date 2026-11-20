@@ -67,6 +67,7 @@ fn decimals(f: &Field) -> i32 {
         Param::Salinity | Param::SubSalinity => 3,
         Param::SkinTemp => 2,
         Param::Chlorophyll | Param::SeaLevel => 3,
+        Param::SeaIce => 2,
         _ => 3,
     }
 }
@@ -111,10 +112,13 @@ pub const PROCESS_MUR_SST: u8 = 204;
 pub const PROCESS_HYCOM_ESPC: u8 = 205;
 pub const PROCESS_HIMAWARI_SST: u8 = 206;
 pub const PROCESS_VIIRS_CHL: u8 = 207;
+pub const PROCESS_ASI_ICE: u8 = 208;
 /// GRIB2 originating centres used with them: NASA, US Navy FNMOC, NOAA NESDIS.
 pub const CENTRE_NASA: u16 = 173;
 pub const CENTRE_FNMOC: u16 = 58;
 pub const CENTRE_NESDIS: u16 = 160;
+/// "Missing" in the WMO list: for sources with no centre code of their own (University of Bremen).
+pub const CENTRE_LOCAL: u16 = 255;
 
 /// The model name for a centre and racenav process code, if it is one of ours.
 pub fn process_name(centre: u16, process: u8) -> Option<&'static str> {
@@ -126,6 +130,7 @@ pub fn process_name(centre: u16, process: u8) -> Option<&'static str> {
         (CENTRE_FNMOC, PROCESS_HYCOM_ESPC) => Some("HYCOM ESPC ocean"),
         (CENTRE_NESDIS, PROCESS_HIMAWARI_SST) => Some("Himawari-9 SST hourly"),
         (CENTRE_NESDIS, PROCESS_VIIRS_CHL) => Some("VIIRS chlorophyll"),
+        (CENTRE_LOCAL, PROCESS_ASI_ICE) => Some("AMSR2 sea ice (Bremen)"),
         _ => None,
     }
 }

@@ -29,6 +29,7 @@ TweedPlot includes or uses the following. Each keeps its own licence and copyrig
 | MUR SST | NASA JPL, via NOAA CoastWatch | Free to use and share; acknowledge NASA JPL / PO.DAAC |
 | Himawari-9 SST | JMA, processed by NOAA STAR (ACSPO L3C, GHRSST) | Free and open |
 | Chlorophyll-a (VIIRS) | NOAA CoastWatch | Free to use and share |
+| Sea ice concentration (AMSR2, ASI) | University of Bremen, Institute of Environmental Physics (data.seaice.uni-bremen.de), from JAXA GCOM-W AMSR2 | Free; no warranty; cite Spreen, Kaleschke and Heygster (2008), J. Geophys. Res. 113, C02S03 |
 | HYCOM ESPC | US Navy / HYCOM Consortium (hycom.org) | Public release; acknowledge HYCOM |
 | Fishing rules | Ministry for Primary Industries | CC BY 4.0 |
 | Weather observations | MetService WIS2, NOAA Aviation Weather Center, NOAA NDBC | Provider terms |
