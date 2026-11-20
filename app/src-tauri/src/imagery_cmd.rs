@@ -1,14 +1,15 @@
 //! Images on the chart (Chart › Layers › Images): KAP raster charts and GeoTIFFs the user
-//! imports, and Sentinel-2 satellite images downloaded from Earth Search on AWS. The files
-//! live in the images folder; the imagery crate draws them as tiles on the chart protocol
-//! (`/img/<id>/<z>/<x>/<y>.png`).
+//! imports (copied into the images folder, or catalogued where they are, such as another
+//! program's chart folder), and Sentinel-2 satellite images downloaded from Earth Search on
+//! AWS. Copies and downloads live in the images folder; the imagery crate draws every image
+//! as tiles on the chart protocol (`/img/<id>/<z>/<x>/<y>.png`).
 
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use imagery::s2::{Progress, Scene};
-use imagery::store::{Entry, Patch, Store};
+use imagery::store::{Entry, How, Patch, Report, Store, MAX_FOLDER_FILES};
 use tauri::{Emitter, Manager};
 
 static STORE: OnceLock<Store> = OnceLock::new();
@@ -53,33 +54,51 @@ pub(crate) fn images_list() -> Result<Vec<Entry>, String> {
     Ok(store()?.list())
 }
 
-/// Pick KAP charts or GeoTIFFs and copy them in. Each file that can't be shown is reported
-/// and the rest still added.
+/// Pick KAP charts or GeoTIFFs, or a folder of them (looked through with its subfolders),
+/// and add them: copied into the images folder (`how: "copy"`) or catalogued where they are
+/// (`"inPlace"`: another program's chart folder, an external drive). Each file that can't be
+/// shown is reported and the rest still added. Nothing picked: an empty report.
 #[tauri::command]
-pub(crate) async fn images_import(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+pub(crate) async fn images_import(app: tauri::AppHandle, how: How, folder: bool) -> Result<Report, String> {
     use tauri_plugin_dialog::DialogExt;
-    let picked = app
-        .dialog()
-        .file()
-        .set_title("Import KAP charts or GeoTIFF images")
+    let dialog = app.dialog().file();
+    if folder {
+        let title = match how {
+            How::Copy => "Copy the KAP charts and GeoTIFFs in a folder into TweedPlot",
+            How::InPlace => "Use the KAP charts and GeoTIFFs in a folder where they are",
+        };
+        let Some(dir) = dialog.set_title(title).blocking_pick_folder() else { return Ok(Report::default()) };
+        let dir = dir.into_path().map_err(|e| e.to_string())?;
+        let s = store()?;
+        let images = s.dir().to_path_buf();
+        let (found, truncated) =
+            tauri::async_runtime::spawn_blocking(move || imagery::store::find_images(&dir, Some(&images), MAX_FOLDER_FILES).map_err(|e| e.to_string()))
+                .await
+                .map_err(|e| e.to_string())??;
+        if found.is_empty() {
+            return Err("No KAP charts or TIFFs in that folder or the folders inside it.".into());
+        }
+        let _ = app.emit("images-import-count", found.len());
+        let mut r = import_blocking(found, how, true).await?;
+        r.truncated = truncated;
+        return Ok(r);
+    }
+    let title = match how {
+        How::Copy => "Copy KAP charts or GeoTIFF images into TweedPlot",
+        How::InPlace => "Use KAP charts or GeoTIFF images where they are",
+    };
+    let picked = dialog
+        .set_title(title)
         .add_filter("KAP charts and GeoTIFFs", &["kap", "KAP", "tif", "tiff", "TIF", "TIFF"])
         .add_filter("All files", &["*"])
         .blocking_pick_files();
-    let Some(list) = picked else { return Ok(serde_json::json!({ "added": [], "errors": [] })) };
+    let Some(list) = picked else { return Ok(Report::default()) };
     let paths: Vec<PathBuf> = list.into_iter().filter_map(|f| f.into_path().ok()).collect();
-    tauri::async_runtime::spawn_blocking(move || {
-        let s = store()?;
-        let (mut added, mut errors) = (Vec::new(), Vec::new());
-        for p in paths {
-            match s.import(&p) {
-                Ok(e) => added.push(e),
-                Err(e) => errors.push(format!("{}: {e}", p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())),
-            }
-        }
-        Ok(serde_json::json!({ "added": added, "errors": errors }))
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    import_blocking(paths, how, false).await
+}
+
+async fn import_blocking(paths: Vec<PathBuf>, how: How, from_folder: bool) -> Result<Report, String> {
+    tauri::async_runtime::spawn_blocking(move || Ok(store()?.import_many(&paths, how, from_folder))).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

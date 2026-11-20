@@ -274,10 +274,10 @@ fn store_imports_and_draws() {
     let dir = std::env::temp_dir().join(format!("imagery-store-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let s = imagery::store::Store::open(&dir);
-    let k = s.import(&data("test.kap")).unwrap();
+    let k = s.import(&data("test.kap"), imagery::store::How::Copy).unwrap();
     assert_eq!(k.kind, "kap");
     assert_eq!(k.name, "TEST1 Test Harbour");
-    let g = s.import(&data("utm_deflate.tif")).unwrap();
+    let g = s.import(&data("utm_deflate.tif"), imagery::store::How::Copy).unwrap();
     assert_eq!(g.kind, "geotiff");
     assert_eq!(s.list().len(), 2);
     let again = imagery::store::Store::open(&dir);
@@ -297,6 +297,64 @@ fn store_imports_and_draws() {
     assert_eq!(again.list().len(), 1);
     assert!(!dir.join(&k.file).exists());
     std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Images catalogued where they are: read from their own folder, found again by the full
+/// path, not added twice, reported missing while the file is away, and never deleted.
+#[test]
+fn store_catalogues_in_place() {
+    use imagery::store::{find_images, How, Store};
+    let base = std::env::temp_dir().join(format!("imagery-linked-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let dir = base.join("tweedplot-images");
+    // another program's chart folder, with a subfolder, a hidden folder and something else
+    let charts = base.join("OpenCPN charts");
+    std::fs::create_dir_all(charts.join("NZ").join("Nelson")).unwrap();
+    std::fs::create_dir_all(charts.join(".cache")).unwrap();
+    std::fs::copy(data("test.kap"), charts.join("NZ").join("Nelson").join("NZ61.KAP")).unwrap();
+    std::fs::copy(data("utm_deflate.tif"), charts.join("NZ").join("sat.tif")).unwrap();
+    std::fs::copy(data("test.kap"), charts.join(".cache").join("hidden.kap")).unwrap();
+    std::fs::write(charts.join("readme.txt"), "not an image").unwrap();
+
+    let (found, more) = find_images(&charts, Some(&dir), 100).unwrap();
+    assert!(!more);
+    let names: Vec<_> = found.iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
+    assert_eq!(names, ["NZ61.KAP", "sat.tif"]);
+    let (one, more) = find_images(&charts, None, 1).unwrap();
+    assert!(more && one.len() == 1);
+
+    let s = Store::open(&dir);
+    let r = s.import_many(&found, How::InPlace, true);
+    assert_eq!(r.added.len(), 2, "{:?}", r.errors);
+    let k = r.added.iter().find(|e| e.kind == "kap").unwrap().clone();
+    assert!(k.linked && std::path::Path::new(&k.file).is_absolute());
+    assert_eq!(k.name, "TEST1 Test Harbour");
+    // nothing copied in
+    assert!(std::fs::read_dir(&dir).unwrap().flatten().all(|e| e.file_name() == "images.json"));
+    // again: nothing new
+    let r = s.import_many(&found, How::InPlace, true);
+    assert!(r.added.is_empty() && r.already.len() == 2);
+    // reopened from images.json, and drawn from where it is
+    let again = Store::open(&dir);
+    assert_eq!(again.list().len(), 2);
+    let (x0, y0, _, _) = tile_range(k.bounds, 12);
+    assert!((0..3).any(|dx| (0..3).any(|dy| again.tile_png(&k.id, 12, x0 + dx, y0 + dy).is_some())));
+    // the drive unplugged: missing, nothing drawn, still listed
+    let away = charts.with_file_name("away");
+    std::fs::rename(&charts, &away).unwrap();
+    let fresh = Store::open(&dir);
+    assert!(fresh.list().iter().all(|e| e.missing));
+    assert!(fresh.tile_png(&k.id, 12, x0, y0).is_none());
+    std::fs::rename(&away, &charts).unwrap();
+    assert!(fresh.list().iter().all(|e| !e.missing));
+    // removing it leaves the other program's file alone
+    fresh.remove(&k.id).unwrap();
+    assert_eq!(fresh.list().len(), 1);
+    assert!(charts.join("NZ").join("Nelson").join("NZ61.KAP").is_file());
+    // copying in still works next to linked images
+    let c = fresh.import(&data("test.kap"), How::Copy).unwrap();
+    assert!(!c.linked && dir.join(&c.file).is_file());
+    std::fs::remove_dir_all(&base).ok();
 }
 
 /// The download path end to end over HTTP range requests, from a tiny server on this

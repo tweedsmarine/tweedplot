@@ -1628,6 +1628,7 @@ html.cur-edge:not(#n1):not(#n2):not(#n3), html.cur-edge:not(#n1):not(#n2):not(#n
 .img-row.picked { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .img-row .img-pick { flex: none; margin: 0; }
 .img-row { border-bottom: 1px solid var(--line); padding-bottom: 2px; }
+.img-row.missing .img-name { opacity: 0.55; font-style: italic; }
 .wx-row label.nowrap { white-space: nowrap; flex-shrink: 0; min-width: max-content; }
 .img-row .img-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .img-sub { display: flex; align-items: center; gap: 6px; padding: 0 2px 4px 26px; }

@@ -1,10 +1,16 @@
 //! The user's images: a folder of image files (copied in on import, or downloaded) and
-//! `images.json` listing them with how they are shown. Opened images are kept for drawing.
+//! `images.json` listing them with how they are shown. An image can also be catalogued where
+//! it is (`linked`): a chart folder another program already uses, or an external drive. Then
+//! the entry holds the file's full path, TweedPlot never copies, moves or deletes it, and the
+//! image is reported `missing` while the file can't be found (a drive not plugged in).
+//! Recently drawn images are kept open (a KAP is read into memory whole).
 
-use std::collections::HashMap;
+use std::collections::HashSet;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 
+use lru::LruCache;
 use serde::{Deserialize, Serialize};
 
 use crate::kap::Kap;
@@ -20,8 +26,15 @@ pub struct Entry {
     pub name: String,
     /// "kap" or "geotiff".
     pub kind: String,
-    /// File name inside the images folder.
+    /// File name inside the images folder, or the file's full path when `linked`.
     pub file: String,
+    /// Catalogued where it is rather than copied in: TweedPlot reads the file there and never
+    /// deletes it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub linked: bool,
+    /// A linked file that can't be found now (worked out when the list is read, not saved).
+    #[serde(default, skip_deserializing, skip_serializing_if = "std::ops::Not::not")]
+    pub missing: bool,
     /// Where it came from: "KAP chart", "GeoTIFF", "Sentinel-2".
     pub source: String,
     /// The image's date (the scene's date for satellite images, the edition for charts).
@@ -59,10 +72,40 @@ pub struct Patch {
     pub placement: Option<String>,
 }
 
+/// How an image comes in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum How {
+    /// Copied into the images folder (from a USB stick, a download…).
+    Copy,
+    /// Catalogued and read where it is (another program's chart folder, an external drive).
+    InPlace,
+}
+
+/// What an import of several files did.
+#[derive(Serialize, Default, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Report {
+    pub added: Vec<Entry>,
+    /// Files already in the list (catalogued from the same place before).
+    pub already: Vec<String>,
+    /// Files that can't be shown, with why.
+    pub errors: Vec<String>,
+    /// TIFFs found in a folder that aren't georeferenced (plain pictures), skipped quietly.
+    pub not_geo: usize,
+    /// A folder had more image files than are looked at in one go.
+    pub truncated: bool,
+}
+
+/// How many images are kept open for drawing (the rest are opened again when next shown).
+const KEEP_OPEN: usize = 32;
+/// The most image files catalogued from one folder at a time.
+pub const MAX_FOLDER_FILES: usize = 5000;
+
 pub struct Store {
     dir: PathBuf,
     entries: RwLock<Vec<Entry>>,
-    open: Mutex<HashMap<String, Arc<dyn Raster>>>,
+    open: Mutex<LruCache<String, Arc<dyn Raster>>>,
 }
 
 fn now() -> String {
@@ -111,18 +154,94 @@ pub fn sniff(path: &Path) -> Result<&'static str> {
     err("not a KAP chart or a GeoTIFF")
 }
 
+/// Whether a file name looks like a KAP chart or a TIFF (for looking through folders).
+pub fn looks_like_image(path: &Path) -> bool {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    matches!(ext.as_str(), "kap" | "tif" | "tiff")
+}
+
+/// The KAP charts and TIFFs in a folder and the folders inside it (sorted, at most `max`;
+/// true when there were more). Hidden folders and `skip` (the images folder) are left out.
+pub fn find_images(folder: &Path, skip: Option<&Path>, max: usize) -> Result<(Vec<PathBuf>, bool)> {
+    if !folder.is_dir() {
+        return err(format!("{} is not a folder", folder.display()));
+    }
+    let skip = skip.and_then(|p| p.canonicalize().ok());
+    let mut out = Vec::new();
+    let mut stack = vec![folder.to_path_buf()];
+    let mut seen = HashSet::new();
+    while let Some(d) = stack.pop() {
+        // a folder linked into itself is looked at once
+        let Ok(canon) = d.canonicalize() else { continue };
+        if !seen.insert(canon.clone()) || skip.as_ref() == Some(&canon) {
+            continue;
+        }
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        let mut subdirs = Vec::new();
+        for ent in rd.flatten() {
+            let p = ent.path();
+            let hidden = ent.file_name().to_string_lossy().starts_with('.');
+            let Ok(ft) = ent.file_type() else { continue };
+            let is_dir = ft.is_dir() || (ft.is_symlink() && p.is_dir());
+            if is_dir {
+                if !hidden {
+                    subdirs.push(p);
+                }
+            } else if !hidden && looks_like_image(&p) {
+                out.push(p);
+                if out.len() > max {
+                    out.sort();
+                    out.truncate(max);
+                    return Ok((out, true));
+                }
+            }
+        }
+        subdirs.sort();
+        stack.extend(subdirs.into_iter().rev());
+    }
+    out.sort();
+    Ok((out, false))
+}
+
+/// A path to compare against others: canonical where the file exists.
+fn same_file_key(p: &Path) -> PathBuf {
+    let c = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    // Windows paths compare without regard to case, and with or without the \\?\ prefix
+    // canonical paths have (a file that can't be found now isn't made canonical)
+    if cfg!(windows) {
+        let t = c.to_string_lossy().to_lowercase();
+        PathBuf::from(t.strip_prefix(r"\\?\").unwrap_or(&t))
+    } else {
+        c
+    }
+}
+
 impl Store {
     pub fn open(dir: &Path) -> Store {
         let entries = std::fs::read(dir.join("images.json")).ok().and_then(|b| serde_json::from_slice::<Vec<Entry>>(&b).ok()).unwrap_or_default();
-        Store { dir: dir.to_path_buf(), entries: RwLock::new(entries), open: Mutex::new(HashMap::new()) }
+        Store { dir: dir.to_path_buf(), entries: RwLock::new(entries), open: Mutex::new(LruCache::new(NonZeroUsize::new(KEEP_OPEN).expect("not zero"))) }
     }
 
     pub fn dir(&self) -> &Path {
         &self.dir
     }
 
+    /// Where an image's file is.
+    pub fn path_of(&self, e: &Entry) -> PathBuf {
+        if e.linked {
+            PathBuf::from(&e.file)
+        } else {
+            self.dir.join(&e.file)
+        }
+    }
+
+    /// The images, with linked files that can't be found now marked `missing`.
     pub fn list(&self) -> Vec<Entry> {
-        self.entries.read().unwrap_or_else(|e| e.into_inner()).clone()
+        let mut l = self.entries.read().unwrap_or_else(|e| e.into_inner()).clone();
+        for e in l.iter_mut() {
+            e.missing = e.linked && !Path::new(&e.file).is_file();
+        }
+        l
     }
 
     fn save(&self, list: &[Entry]) -> Result<()> {
@@ -138,14 +257,19 @@ impl Store {
         if let Some(r) = self.open.lock().unwrap_or_else(|e| e.into_inner()).get(id) {
             return Some(r.clone());
         }
-        let e = self.list().into_iter().find(|e| e.id == id)?;
-        match open_raster(&e.kind, &self.dir.join(&e.file)) {
+        let e = self.entries.read().unwrap_or_else(|e| e.into_inner()).iter().find(|e| e.id == id).cloned()?;
+        let path = self.path_of(&e);
+        if e.linked && !path.is_file() {
+            // a drive that isn't plugged in: nothing to draw, and no message on every tile
+            return None;
+        }
+        match open_raster(&e.kind, &path) {
             Ok(r) => {
-                self.open.lock().unwrap_or_else(|e| e.into_inner()).insert(id.to_string(), r.clone());
+                self.open.lock().unwrap_or_else(|e| e.into_inner()).put(id.to_string(), r.clone());
                 Some(r)
             }
             Err(err) => {
-                eprintln!("image {}: {err}", e.file);
+                eprintln!("image {}: {err}", path.display());
                 None
             }
         }
@@ -168,33 +292,78 @@ impl Store {
         name
     }
 
-    /// Copy a KAP chart or GeoTIFF into the folder and add it.
-    pub fn import(&self, path: &Path) -> Result<Entry> {
+    /// The linked image already catalogued from this file, if any.
+    fn linked_to(&self, path: &Path) -> Option<Entry> {
+        let key = same_file_key(path);
+        self.entries.read().unwrap_or_else(|e| e.into_inner()).iter().find(|e| e.linked && same_file_key(Path::new(&e.file)) == key).cloned()
+    }
+
+    /// Add a KAP chart or GeoTIFF: copied into the folder, or catalogued where it is.
+    pub fn import(&self, path: &Path, how: How) -> Result<Entry> {
+        self.import_one(path, how, true)
+    }
+
+    fn import_one(&self, path: &Path, how: How, keep_open: bool) -> Result<Entry> {
         let kind = sniff(path)?;
-        // open it where it is first, so a file that can't be shown is never copied
-        let raster = open_raster(kind, path)?;
-        std::fs::create_dir_all(&self.dir)?;
-        let fname = self.free_name(&path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "image".into()));
-        std::fs::copy(path, self.dir.join(&fname)).map_err(|e| Error(format!("copying {}: {e}", path.display())))?;
-        let (name, date, scale, fit, source) = if kind == "kap" {
-            let k = Kap::open(&self.dir.join(&fname))?;
+        if how == How::InPlace && self.linked_to(path).is_some() {
+            return err("already in the list");
+        }
+        // open it where it is first, so a file that can't be shown is never copied; a KAP is
+        // read once, for both its header and drawing
+        let (raster, name, date, scale, fit, source): (Arc<dyn Raster>, _, _, _, _, _) = if kind == "kap" {
+            let k = Kap::open(path)?;
             let name = match (k.number.is_empty(), k.name.is_empty()) {
                 (false, false) => format!("{} {}", k.number, k.name),
                 (true, false) => k.name.clone(),
                 _ => stem(path),
             };
-            (name, k.edition.clone(), k.scale, Some(k.fit_rms_px), "KAP chart")
+            let (date, scale, fit) = (k.edition.clone(), k.scale, Some(k.fit_rms_px));
+            (Arc::new(k), name, date, scale, fit, "KAP chart")
         } else {
-            (stem(path), String::new(), None, None, "GeoTIFF")
+            (open_raster(kind, path)?, stem(path), String::new(), None, None, "GeoTIFF")
         };
-        let e = self.add(&fname, kind, &name, source, &date, "", scale, fit, raster.as_ref())?;
-        self.open.lock().unwrap_or_else(|e| e.into_inner()).insert(e.id.clone(), raster);
+        let file = match how {
+            How::Copy => {
+                std::fs::create_dir_all(&self.dir)?;
+                let fname = self.free_name(&path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "image".into()));
+                std::fs::copy(path, self.dir.join(&fname)).map_err(|e| Error(format!("copying {}: {e}", path.display())))?;
+                fname
+            }
+            How::InPlace => {
+                // the full path, so it is found again whatever folder TweedPlot runs from
+                let full = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+                full.to_string_lossy().into_owned()
+            }
+        };
+        let e = self.add_entry(&file, how == How::InPlace, kind, &name, source, &date, "", scale, fit, raster.as_ref())?;
+        if keep_open {
+            self.open.lock().unwrap_or_else(|e| e.into_inner()).put(e.id.clone(), raster);
+        }
         if kind == "kap" {
             let mut list = self.entries.write().unwrap_or_else(|e| e.into_inner());
             place_by_scale(&mut list, &e.id);
             self.save(&list)?;
         }
         Ok(e)
+    }
+
+    /// Add several files, reporting each that can't be shown and going on with the rest.
+    /// `from_folder`: the files were found by looking through a folder, so TIFFs that are
+    /// plain pictures are counted, not reported one by one.
+    pub fn import_many(&self, paths: &[PathBuf], how: How, from_folder: bool) -> Report {
+        let mut r = Report::default();
+        // a few files are kept open to draw at once; a whole chart folder is opened as shown
+        let keep_open = paths.len() <= 8;
+        for p in paths {
+            let label = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.display().to_string());
+            match self.import_one(p, how, keep_open) {
+                Ok(e) => r.added.push(e),
+                Err(e) if e.0 == "already in the list" => r.already.push(label),
+                Err(e) if from_folder && e.0.contains("no georeferencing") => r.not_geo += 1,
+                Err(e) => r.errors.push(format!("{label}: {e}")),
+            }
+        }
+        r
     }
 
     /// Put the raster charts in scale order (the most detailed on top), each in one of the
@@ -206,9 +375,27 @@ impl Store {
     }
 
     /// Add a file already in the folder.
+    #[allow(clippy::too_many_arguments)]
     pub fn add(
         &self,
         file: &str,
+        kind: &str,
+        name: &str,
+        source: &str,
+        date: &str,
+        credit: &str,
+        scale: Option<u64>,
+        fit: Option<f64>,
+        raster: &dyn Raster,
+    ) -> Result<Entry> {
+        self.add_entry(file, false, kind, name, source, date, credit, scale, fit, raster)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn add_entry(
+        &self,
+        file: &str,
+        linked: bool,
         kind: &str,
         name: &str,
         source: &str,
@@ -224,6 +411,8 @@ impl Store {
             name: name.to_string(),
             kind: kind.to_string(),
             file: file.to_string(),
+            linked,
+            missing: false,
             source: source.to_string(),
             date: date.to_string(),
             credit: credit.to_string(),
@@ -278,14 +467,16 @@ impl Store {
         self.save(&list)
     }
 
-    /// Remove an image and delete its file.
+    /// Remove an image, deleting TweedPlot's copy. A linked image's file is left alone.
     pub fn remove(&self, id: &str) -> Result<()> {
         let mut list = self.entries.write().unwrap_or_else(|e| e.into_inner());
         let Some(i) = list.iter().position(|e| e.id == id) else { return Ok(()) };
         let e = list.remove(i);
         self.save(&list)?;
-        self.open.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
-        let _ = std::fs::remove_file(self.dir.join(&e.file));
+        self.open.lock().unwrap_or_else(|e| e.into_inner()).pop(id);
+        if !e.linked {
+            let _ = std::fs::remove_file(self.dir.join(&e.file));
+        }
         Ok(())
     }
 
@@ -347,6 +538,8 @@ mod tests {
             name: id.into(),
             kind: kind.into(),
             file: String::new(),
+            linked: false,
+            missing: false,
             source: String::new(),
             date: String::new(),
             credit: String::new(),

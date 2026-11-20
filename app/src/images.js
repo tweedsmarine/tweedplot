@@ -1,4 +1,6 @@
-// Chart › Layers › Images: KAP raster charts and GeoTIFFs imported from the computer, and
+// Chart › Layers › Images: KAP raster charts and GeoTIFFs from the computer (copied into
+// TweedPlot's images folder, or catalogued where they are: charts already installed for another
+// program, or on an external drive, are read there and never copied or deleted), and
 // Sentinel-2 satellite images downloaded from Earth Search on AWS (imagery_cmd.rs). Rust draws
 // each image as tiles on the chart protocol (/img/<id>/<z>/<x>/<y>.png); here they become
 // raster layers, under the chart (over the depth shading, under the contours, land and
@@ -66,7 +68,7 @@ export function setupImages(map, { tileUrl, toast }) {
       const r = zoomRange(e);
       map.addLayer({ id, type: "raster", source: id,
         ...(r ? { minzoom: Math.max(0, r.from - 0.5), maxzoom: Math.min(24, r.to + 1) } : {}),
-        layout: { visibility: e.visible ? "visible" : "none" },
+        layout: { visibility: e.visible && !e.missing ? "visible" : "none" },
         paint: { "raster-opacity": opacityOf(e), "raster-resampling": "linear", "raster-fade-duration": 0 } },
         e.placement === "over" ? OVER : UNDER);
     }
@@ -78,14 +80,14 @@ export function setupImages(map, { tileUrl, toast }) {
     }
     credit();
     // own ship gets a halo over images (mariner.js)
-    const shown = list.some((e) => e.visible);
+    const shown = list.some((e) => e.visible && !e.missing);
     window.tweedplotImagesShown = shown; // for modules set up after this one
     window.dispatchEvent(new CustomEvent("raster-images", { detail: { shown } }));
   }
 
   function credit() {
-    const credits = mergeYears([...new Set(list.filter((e) => e.visible && e.credit).map((e) => e.credit))]);
-    const kaps = list.some((e) => e.visible && e.kind === "kap");
+    const credits = mergeYears([...new Set(list.filter((e) => e.visible && !e.missing && e.credit).map((e) => e.credit))]);
+    const kaps = list.some((e) => e.visible && !e.missing && e.kind === "kap");
     const text = [credits.length ? `Imagery: ${credits.join("; ")}.` : "", kaps ? "Raster charts: their publishers." : ""].filter(Boolean).join(" ");
     window.dispatchEvent(new CustomEvent("credit-extra", { detail: { key: "images", text } }));
   }
@@ -128,6 +130,7 @@ export function setupImages(map, { tileUrl, toast }) {
   }
   /** The line under an image's name: what the name doesn't already say, most useful first. */
   function meta(e) {
+    if (e.missing) return "File not found: is its drive connected?";
     const parts = [];
     const inName = (s) => s && e.name.toLowerCase().includes(String(s).toLowerCase());
     if (e.kind === "kap") {
@@ -143,8 +146,11 @@ export function setupImages(map, { tileUrl, toast }) {
       if (!inName(e.source) && !(sat && /sentinel|landsat/i.test(e.name))) parts.push(e.source);
       if (e.fitRmsPx != null) parts.push(e.fitRmsPx < 0.05 ? "fit exact" : `fit ${e.fitRmsPx.toFixed(1)} px`);
     }
+    if (e.linked) parts.push("in place");
     return parts.filter(Boolean).join(" · ");
   }
+  /** Where an image's file is, for tooltips. */
+  const whereText = (e) => (e.linked ? `Used where it is: ${e.file}` : "TweedPlot's copy, in its images folder");
 
   async function update(e, patch) {
     try {
@@ -154,8 +160,9 @@ export function setupImages(map, { tileUrl, toast }) {
   }
 
   function head() {
-    const shown = list.filter((e) => e.visible).length;
-    $("img-count").textContent = list.length ? `${list.length} image${list.length === 1 ? "" : "s"}, ${shown} shown` : "";
+    const shown = list.filter((e) => e.visible && !e.missing).length;
+    const away = list.filter((e) => e.missing).length;
+    $("img-count").textContent = list.length ? `${list.length} image${list.length === 1 ? "" : "s"}, ${shown} shown${away ? `, ${away} not found` : ""}` : "";
     $("img-fold").textContent = folded ? "▸" : "▾";
     $("img-fold").setAttribute("aria-expanded", String(!folded));
     $("img-fold").hidden = !list.length;
@@ -185,7 +192,7 @@ export function setupImages(map, { tileUrl, toast }) {
     // top of the list = drawn on top
     [...list].reverse().forEach((e) => {
       const row = document.createElement("div");
-      row.className = "img-row" + (selecting && picked.has(e.id) ? " picked" : "");
+      row.className = "img-row" + (selecting && picked.has(e.id) ? " picked" : "") + (e.missing ? " missing" : "");
       const top = document.createElement("div");
       top.className = "ly-row";
       if (selecting) {
@@ -200,7 +207,8 @@ export function setupImages(map, { tileUrl, toast }) {
       const lab = document.createElement("label");
       const zr = zoomRange(e);
       lab.title = `${e.name}\n${meta(e)}\n${e.width.toLocaleString("en-NZ")} × ${e.height.toLocaleString("en-NZ")} pixels`
-        + (zr ? `\nShown from zoom ${zr.from} to ${zr.to + 1}, as its scale suits` : "");
+        + (zr ? `\nShown from zoom ${zr.from} to ${zr.to + 1}, as its scale suits` : "")
+        + `\n${whereText(e)}`;
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.checked = e.visible;
@@ -213,9 +221,13 @@ export function setupImages(map, { tileUrl, toast }) {
       go.type = "button"; go.className = "ly-gear"; go.textContent = "⌖"; go.title = "Show the whole image";
       go.onclick = () => showWhole(e);
       const del = document.createElement("button");
-      del.type = "button"; del.className = "ly-gear"; del.textContent = "✕"; del.title = "Remove the image (deletes TweedPlot's copy)";
+      del.type = "button"; del.className = "ly-gear"; del.textContent = "✕";
+      del.title = e.linked ? "Remove the image from the list (its file is left where it is)" : "Remove the image (deletes TweedPlot's copy)";
       del.onclick = async () => {
-        const ok = await ask({ title: "Remove image", note: `Remove “${e.name}” from TweedPlot? Its copy in the images folder is deleted (the file you imported it from is not).`, ok: "Remove" });
+        const note = e.linked
+          ? `Remove “${e.name}” from TweedPlot's list? Its file is left where it is, untouched.`
+          : `Remove “${e.name}” from TweedPlot? Its copy in the images folder is deleted (the file you imported it from is not).`;
+        const ok = await ask({ title: "Remove image", note, ok: "Remove" });
         if (!ok) return;
         try { await invoke("images_remove", { id: e.id }); } catch (err) { toast(String(err), 5000); return; }
         await refresh();
@@ -241,6 +253,7 @@ export function setupImages(map, { tileUrl, toast }) {
       info.textContent = meta(e);
       info.title = `${e.source}${e.date ? ` · ${e.date}` : ""}\n${meta(e)}`;
       if (e.fitRmsPx != null && e.fitRmsPx > 3) info.title = "The chart's reference points don't agree well: it may be misplaced by several pixels. Check it against your GPS.";
+      if (e.missing) { info.className = "wx-note img-meta warn"; info.title = `${e.file}\nTweedPlot uses this file where it is, and can't find it now. It shows again when the drive or folder is back.`; }
       const op = document.createElement("input");
       op.type = "range"; op.min = "10"; op.max = "100"; op.step = "5"; op.value = String(Math.round(e.opacity * 100));
       op.title = "Opacity"; op.setAttribute("aria-label", `Opacity of ${e.name}`);
@@ -319,7 +332,13 @@ export function setupImages(map, { tileUrl, toast }) {
     const sel = list.filter((e) => picked.has(e.id));
     if (!sel.length) return;
     const names = sel.slice(0, 5).map((e) => e.name).join(", ") + (sel.length > 5 ? ` and ${sel.length - 5} more` : "");
-    const ok = await ask({ title: `Remove ${sel.length} image${sel.length === 1 ? "" : "s"}`, note: `Remove ${names} from TweedPlot? TweedPlot's copies in the images folder are deleted (the files you imported them from are not).`, ok: "Remove" });
+    const linked = sel.filter((e) => e.linked).length;
+    const what = linked === sel.length
+      ? "Their files are left where they are, untouched."
+      : linked
+        ? "TweedPlot's copies in the images folder are deleted; images used in place keep their files, untouched (as do the files copies were made from)."
+        : "TweedPlot's copies in the images folder are deleted (the files you imported them from are not).";
+    const ok = await ask({ title: `Remove ${sel.length} image${sel.length === 1 ? "" : "s"}`, note: `Remove ${names} from TweedPlot? ${what}`, ok: "Remove" });
     if (!ok) return;
     const errors = [];
     for (const e of sel) {
@@ -329,18 +348,72 @@ export function setupImages(map, { tileUrl, toast }) {
     await refresh();
   };
 
+  // ---- importing: copied in, or catalogued where they are ----
+  let importing = false;
+  let lastHow = "copy", lastWhat = "files";
+  try {
+    const v = JSON.parse(localStorage.getItem("tweedplot.images.import") || "{}");
+    if (v.how === "copy" || v.how === "inPlace") lastHow = v.how;
+    if (v.what === "files" || v.what === "folder") lastWhat = v.what;
+  } catch { /* storage unavailable */ }
   $("img-import").onclick = async () => {
+    if (importing) return;
+    const v = await ask({
+      title: "Add KAP charts or GeoTIFFs",
+      note: "Copy in: TweedPlot keeps its own copy in its images folder, so the images stay when a USB stick or drive is taken away. "
+        + "Use where they are: nothing is copied. Good for charts already installed for another program (OpenCPN and others) or kept on a large drive. "
+        + "They show while that folder can be reached, and removing them from TweedPlot leaves the files alone.",
+      fields: [
+        { key: "how", label: "How", type: "select", value: lastHow, options: [["copy", "Copy into TweedPlot's images folder"], ["inPlace", "Use them where they are (catalogue only)"]] },
+        { key: "what", label: "Pick", type: "select", value: lastWhat, options: [["files", "Files…"], ["folder", "A folder, with the folders inside it…"]] },
+      ],
+      ok: "Choose…",
+    });
+    if (!v) return;
+    lastHow = v.how; lastWhat = v.what;
+    try { localStorage.setItem("tweedplot.images.import", JSON.stringify({ how: lastHow, what: lastWhat })); } catch { /* ignore */ }
+    importing = true;
+    const btn = $("img-import");
+    btn.disabled = true;
     let r;
-    try { r = await invoke("images_import"); } catch (err) { toast(String(err), 6000); return; }
-    if (r.errors?.length) toast(`Could not import: ${r.errors.join("; ")}`, 9000);
-    if (r.added?.length) {
+    try { r = await invoke("images_import", { how: v.how, folder: v.what === "folder" }); } catch (err) { toast(String(err), 7000); }
+    btn.disabled = false;
+    importing = false;
+    if (!r) return;
+    const msgs = [];
+    const n = r.added?.length ?? 0;
+    const verb = v.how === "inPlace" ? "Catalogued" : "Added";
+    if (n) msgs.push(n === 1 ? `${verb} ${r.added[0].name}` : `${verb} ${n} images`);
+    if (r.already?.length) msgs.push(`${r.already.length} already in the list`);
+    if (r.notGeo) msgs.push(`${r.notGeo} TIFF${r.notGeo === 1 ? " isn't" : "s aren't"} georeferenced (skipped)`);
+    if (r.truncated) msgs.push("only the first 5,000 image files were looked at: pick a smaller folder for the rest");
+    if (r.errors?.length) {
+      const shown = r.errors.slice(0, 4).join("; ");
+      msgs.push(`could not add ${r.errors.length}: ${shown}${r.errors.length > 4 ? "; …" : ""}`);
+    }
+    if (n) {
       folded = false;
       await refresh();
-      const b = lonLatBounds(r.added[r.added.length - 1].bounds);
-      map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 40, maxZoom: 15 });
-      toast(r.added.length === 1 ? `Added ${r.added[0].name}` : `Added ${r.added.length} images`, 3000);
+      // one image: go to it; many: go to the area they cover
+      const bs = r.added.map((e) => lonLatBounds(e.bounds));
+      const b = [Math.min(...bs.map((x) => x[0])), Math.min(...bs.map((x) => x[1])), Math.max(...bs.map((x) => x[2])), Math.max(...bs.map((x) => x[3]))];
+      if (n === 1) showWhole(r.added[0]);
+      else if (b[2] - b[0] < 90) map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 40, maxZoom: 15 });
     }
+    if (msgs.length) toast(msgs.join(". ") + ".", r.errors?.length || r.truncated ? 10000 : 4000);
   };
+  // a folder being looked through: say how many files (cataloguing a big chart folder takes a while)
+  listen("images-import-count", ({ payload: count }) => {
+    toast(`Reading ${count.toLocaleString("en-NZ")} image file${count === 1 ? "" : "s"}…`, 4000);
+  });
+  // a linked drive plugged back in shows again when the window is next used
+  window.addEventListener("focus", async () => {
+    if (!list.some((e) => e.linked)) return;
+    let now;
+    try { now = await invoke("images_list"); } catch { return; }
+    const was = new Map(list.map((e) => [e.id, !!e.missing]));
+    if (now.length !== list.length || now.some((e) => was.get(e.id) !== !!e.missing)) { list = now; render(); syncMap(); }
+  });
 
   // ---- Sentinel-2 ----
   const iso = (d) => d.toISOString().slice(0, 10);
