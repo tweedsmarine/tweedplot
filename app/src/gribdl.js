@@ -357,16 +357,23 @@ export function setupGribDownload(map, { weather, course }) {
   $("gf-tidy").onclick = async () => {
     const days = Number($("gf-days").value) || 7, cut = Date.now() / 1000 - days * 86400;
     const isLoaded = new Set(weather.sources().map((x) => x.path));
-    // by run time; never a loaded file, and never qtVlm's own folder
-    const old = files.filter((f) => !isLoaded.has(f.path) && !/qtvlm/i.test(f.path) && (f.info?.runs?.[0]?.ref_time ?? f.mtime ?? Infinity) < cut);
-    if (!old.length) { fileStatus(`Nothing to tidy: no unloaded GRIB has a run more than ${days} days old.`); return; }
+    // old = its data ran out more than `days` ago (a forecast's last step, an analysis's last day), not its run
+    // time: a satellite analysis is a day or two old when it is published but still current
+    const ends = (f) => Math.max(...(f.info?.runs ?? []).map((r) => r.last ?? r.ref_time ?? -Infinity), -Infinity);
+    const endOf = (f) => (Number.isFinite(ends(f)) ? ends(f) : f.mtime ?? Infinity);
+    const old = files.filter((f) => !/qtvlm/i.test(f.path) && endOf(f) < cut);
+    if (!old.length) { fileStatus(`Nothing to tidy: no GRIB's data ended more than ${days} days ago.`); return; }
     const mb = old.reduce((a, f) => a + (f.size || 0), 0) / 1e6;
+    const nLoaded = old.filter((f) => isLoaded.has(f.path)).length;
     const v = await ask({ title: `Delete ${old.length} old GRIB file${old.length === 1 ? "" : "s"}?`,
-      note: `Runs more than ${days} days old, ${mb.toFixed(1)} MB in all. Loaded files and qtVlm's folder are left alone. This cannot be undone.`, ok: "Delete" });
+      note: `Files whose data ended more than ${days} days ago, ${mb.toFixed(1)} MB in all${nLoaded ? `; ${nLoaded} of them ${nLoaded === 1 ? "is" : "are"} loaded and will be unloaded first` : ""}. qtVlm's folder is left alone. This cannot be undone.`, ok: "Delete" });
     if (!v) return;
     try {
-      const n = await invoke("grib_delete", { paths: old.map((f) => f.path) });
-      fileStatus(`Deleted ${n} old GRIB file${n === 1 ? "" : "s"} (${mb.toFixed(1)} MB).`);
+      for (const f of old) if (isLoaded.has(f.path)) await weather.unload(f.path, { quiet: true });
+      const still = new Set(weather.sources().map((x) => x.path));
+      const n = await invoke("grib_delete", { paths: old.map((f) => f.path).filter((p) => !still.has(p)) });
+      const left = old.length - n;
+      fileStatus(`Deleted ${n} old GRIB file${n === 1 ? "" : "s"}${left ? `; ${left} could not be unloaded or deleted` : ""}.`);
     } catch (e) { fileStatus(`Could not delete: ${e}`); }
     await weather.refreshFiles();
     renderTable();

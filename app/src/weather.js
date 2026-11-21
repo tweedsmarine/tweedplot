@@ -596,7 +596,7 @@ export function setupWeather(map, layers) {
     for (const fn of loadedListeners) fn();
   }
 
-  async function unload(path) {
+  async function unload(path, { quiet = false } = {}) {
     if (!loaded.has(path) || loadingPath || unloadingPath) {
       const message = loadingPath || unloadingPath ? "A GRIB operation is already in progress." : "Select a loaded GRIB to unload.";
       alertLine(message);
@@ -614,9 +614,11 @@ export function setupWeather(map, layers) {
       renderLoaded();
       setTimes();
       if (wasShown) changed();
-      const message = `Unloaded ${name}. The file remains on disk.`;
-      alertLine(message);
-      fileMessage(message);
+      if (!quiet) {
+        const message = `Unloaded ${name}. The file remains on disk.`;
+        alertLine(message);
+        fileMessage(message);
+      }
       await refreshFiles();
     } catch (e) {
       const message = `Could not unload GRIB: ${e}`;
@@ -1596,7 +1598,7 @@ export function setupWeather(map, layers) {
     /** Called when a GRIB is loaded or unloaded. */
     onLoaded: (fn) => { loadedListeners.push(fn); },
     /** Unload a loaded GRIB (the file stays on disk). */
-    unload: (path) => unload(path),
+    unload: (path, opts) => unload(path, opts),
     /** Make a loaded GRIB the shown one. */
     show: (path) => { if (loaded.has(path)) { showGrib(path); changed(); } },
     /** Loaded GRIBs ticked for the agreement displays. */
