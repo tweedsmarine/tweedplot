@@ -29,7 +29,7 @@ pub(crate) fn gribdl_models() -> Vec<gribdl::ModelInfo> {
 #[tauri::command]
 pub(crate) fn gribdl_estimate(req: gribdl::Request) -> serde_json::Value {
     let steps = req.model.hours(req.hours, req.every);
-    serde_json::json!({ "bytes": gribdl::estimate_bytes(&req), "download": gribdl::download_bytes(&req), "steps": steps.len(), "last": steps.last() })
+    serde_json::json!({ "bytes": gribdl::estimate_bytes(&req), "download": gribdl::download_bytes(&req), "steps": steps.len(), "last": steps.last(), "step": gribdl::ocean_step(&req).map(|(res, k)| serde_json::json!({ "res": res, "k": k })) })
 }
 
 /// Find the newest complete run and download it, cut to the area. Progress
