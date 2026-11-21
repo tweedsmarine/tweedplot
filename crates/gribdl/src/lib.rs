@@ -463,25 +463,37 @@ pub fn download_bytes(req: &Request) -> u64 {
     fields as u64 * req.model.hours(req.hours, req.every).len() as u64 * per + waves
 }
 
+/// Satellite sea temperature: (source spacing in degrees, the step taken), so
+/// the Get data line can say whether a file comes at full resolution.
+pub fn ocean_step(req: &Request) -> Option<(f64, usize)> {
+    match req.model {
+        Model::MurSst => Some((0.01, ocean::mur_stride(req.area, (req.hours / 24).clamp(1, 14)))),
+        Model::Himawari => Some((0.02, ocean::him_stride(req.area, (req.hours / req.every.max(1)).max(1) as usize))),
+        _ => None,
+    }
+}
+
 /// Rough size of the file written, bytes: grid points × fields × steps at about
 /// 1.4 bytes a point after packing, plus headers.
 pub fn estimate_bytes(req: &Request) -> u64 {
     let info = req.model.info();
     if req.model == Model::MurSst {
-        // 0.01° thinned to at most 1200 a side, one field a day
-        let k = ocean::mur_stride(req.area) as f64;
-        let nx = ((req.area[2] - req.area[0]).abs() / 0.01 / k).floor() + 1.0;
+        // 0.01°, full resolution unless over the budget, one field a day
+        let days = (req.hours / 24).clamp(1, 14);
+        let k = ocean::mur_stride(req.area, days) as f64;
+        let nx = (ocean::width(req.area) / 0.01 / k).floor() + 1.0;
         let ny = ((req.area[3] - req.area[1]).abs() / 0.01 / k).floor() + 1.0;
-        return ((nx * ny * 1.6 + 200.0) * (req.hours / 24).clamp(1, 14) as f64) as u64;
+        return ((nx * ny * 1.6 + 200.0) * days as f64) as u64;
     }
     if req.model == Model::Himawari {
-        let k = ocean::him_stride(req.area) as f64;
-        let nx = ((req.area[2] - req.area[0]).abs() / 0.02 / k).floor() + 1.0;
+        let fields = (req.hours / req.every.max(1)).max(1);
+        let k = ocean::him_stride(req.area, fields as usize) as f64;
+        let nx = (ocean::width(req.area) / 0.02 / k).floor() + 1.0;
         let ny = ((req.area[3] - req.area[1]).abs() / 0.02 / k).floor() + 1.0;
-        return ((nx * ny * 1.6 + 200.0) * (req.hours / req.every.max(1)).max(1) as f64) as u64;
+        return ((nx * ny * 1.6 + 200.0) * fields as f64) as u64;
     }
     if req.model == Model::ChlViirs {
-        let nx = ((req.area[2] - req.area[0]).abs() / 0.0833).floor() + 1.0;
+        let nx = (ocean::width(req.area) / 0.0833).floor() + 1.0;
         let ny = ((req.area[3] - req.area[1]).abs() / 0.0833).floor() + 1.0;
         return ((nx * ny * 2.0 + 200.0) * (req.hours / 24).clamp(1, 14) as f64) as u64;
     }
