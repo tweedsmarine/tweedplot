@@ -2045,7 +2045,10 @@ html.side-strip body:has(.ss-alerts .alarm:not(.warn):not(.acked):not(.summary))
 .sp-pinned-point { max-height: 38vh; }
 #wxp-filter .none, .sea-filter .none { margin-top: 4px; color: #ffb74d; }
 
-.wx-key.dup { display: none; }
+/* One colour key on the panel: the one beside the chart time while that section is on the panel and
+   open; otherwise the one in Weather layers and filters (e.g. Navigation without a Chart time section).
+   Decided by CSS so it follows every rebuild, view change and fold without a script having to notice. */
+body:has(.sp-sec:not(.collapsed) #side-wx-clock[open] #side-wx-key:not([hidden])) #wxp-key { display: none; }
 .wx-error { color: #ff8a80; font-weight: 600; margin-top: 4px; }
 .wx-error[hidden] { display: none; }
 

@@ -330,14 +330,16 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     if (tl.hidden) return;
     const pc = (t) => `${Math.min(100, Math.max(0, ((t - a) / (b - a)) * 100)).toFixed(2)}%`;
     const days = (b - a) / 86400;
-    const every = days > 12 ? 4 : days > 6 ? 2 : 1;
+    // a label every so many days, so the labels (about 46 px each) never run into each other
+    const width = tl.clientWidth || 240, LAB = 46;
+    const every = Math.max(1, Math.ceil(LAB / (width / days)));
     let html = "";
     // local midnights
     const d0 = new Date(a * 1000); d0.setHours(24, 0, 0, 0);
     for (let d = d0, n = 0; d.getTime() / 1000 < b; d = new Date(d.getTime()), d.setDate(d.getDate() + 1), n++) {
       const t = d.getTime() / 1000;
       html += `<i class="day" style="left:${pc(t)}"></i>`;
-      if (n % every === 0 && (t - a) / (b - a) < 0.93) html += `<span class="lab" style="left:${pc(t)}">${d.toLocaleDateString(undefined, { weekday: "short" })} ${d.getDate()}</span>`;
+      if (n % every === 0 && ((t - a) / (b - a)) * width < width - LAB + 6) html += `<span class="lab" style="left:${pc(t)}">${d.toLocaleDateString(undefined, { weekday: "short" })} ${d.getDate()}</span>`;
     }
     srcs.forEach((x, i) => {
       html += `<b class="cov${x.shown ? " shown" : ""}" style="left:${pc(x.span[0])};width:calc(${pc(x.span[1])} - ${pc(x.span[0])});top:${16 + i * 5}px" title="${x.name.replace(/"/g, "&quot;")}"></b>`;
@@ -350,6 +352,11 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
   }
   weather.onTime(renderTimeline);
   weather.onLoaded?.(renderTimeline);
+  // the panel's width decides how many day labels fit
+  if (typeof ResizeObserver === "function") {
+    let lastWidth = 0;
+    new ResizeObserver(() => { if (tl.clientWidth !== lastWidth) { lastWidth = tl.clientWidth; renderTimeline(); } }).observe(tl);
+  }
   weather.onChange(renderTimeline);
 
   function renderPresets() {
@@ -521,8 +528,6 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
       visible: weather.visible(), sources: weather.sources(), layerInfo: weather.layerInfo(),
       layerOptions: weather.layerOptions(), overlayOptions: weather.overlayOptions(), view: document.documentElement.dataset.view,
     });
-    // the key here only when the one beside the chart time is not on the panel (Navigation without that section)
-    $("wxp-key").classList.toggle("dup", $("side-wx-key").getClientRects().length > 0);
   }
   weather.onChange(renderChartState);
   weather.onLoaded(renderChartState);
