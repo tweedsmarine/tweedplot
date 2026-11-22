@@ -77,8 +77,15 @@ export function autoScale(lo, hi) {
   return TURBO.map((c, i) => [Math.round((start + i * step) * 1000) / 1000, c]);
 }
 
-/** The colours for a sea filter: lo..target over the cool half of TURBO, target..hi over the warm half. */
+/** The colours for a sea filter: lo..target over the cool half of TURBO, target..hi over the warm half.
+ * With a highlight band the whole palette runs over the band (target in it, if there is one), and
+ * below and above the band take the first and last colours, for the most detail where it matters. */
 export function seaScale(f) {
+  const band = filterBand(f);
+  if (band) {
+    const tg = Number.isFinite(f.tg) && f.tg > band[0] && f.tg < band[1] ? f.tg : null;
+    return seaScale({ lo: band[0], hi: band[1], tg });
+  }
   const half = TURBO.length / 2;
   const lo = f.lo, hi = f.hi > f.lo ? f.hi : f.lo + 1e-3;
   const out = [];
