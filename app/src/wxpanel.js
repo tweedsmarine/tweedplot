@@ -319,6 +319,20 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
       row.append(c, name);
       if (o.paths.length > 1) row.append(sourceSelect(o.paths, o.path, (p) => weather.setOverlay(o.key, null, p)));
       box.append(row);
+      // the contour interval: Auto (about ten lines over the band, else over what is in view) or fixed
+      if (o.key === "isotherms" && o.on) {
+        const r = document.createElement("label");
+        r.className = "wxp-row wxp-sub";
+        const sel = document.createElement("select");
+        sel.title = "Contour interval. Auto: about ten lines across the band, or across the values in view";
+        for (const v of ["auto", 0.1, 0.2, 0.25, 0.5, 1, 2]) sel.append(new Option(v === "auto" ? "Auto" : String(v), String(v)));
+        sel.value = String(weather.contourStep());
+        sel.onchange = () => weather.setContourStep(sel.value);
+        const t = document.createElement("span");
+        t.textContent = "Interval";
+        r.append(t, sel);
+        box.append(r);
+      }
     }
     put($("wxp-over"), box);
   }

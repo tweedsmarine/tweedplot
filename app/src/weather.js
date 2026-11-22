@@ -100,9 +100,34 @@ export function seaScale(f) {
   return out;
 }
 
+/** Decimals to label a contour interval with (0.25 → 2, 0.5 → 1, 2 → 0). */
+export const stepDecimals = (step) => (String(+step.toFixed(6)).split(".")[1] ?? "").length;
+
+/** Values in view of a grid (as grib_grid sends it): [min, max], or null. */
+function viewRange(g) {
+  let lo = Infinity, hi = -Infinity;
+  for (const v of g?.values ?? []) if (v != null && Number.isFinite(v)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  return lo <= hi ? [lo, hi] : null;
+}
+
+/**
+ * The contour interval: the one chosen, else about ten lines over the highlight band if there is
+ * one, else over the values in view (not the whole file: a 1° step over 15–23 °C leaves a view of
+ * 18–19.5 °C with one line). Never more than about 60 lines in view.
+ */
+export function contourStepFor(filter, grid, chosen) {
+  const r = viewRange(grid) ?? [filter.lo, filter.hi];
+  const band = filterBand(filter);
+  const [lo, hi] = band ?? [Math.max(r[0], filter.lo), Math.min(r[1], filter.hi)];
+  let step = Number(chosen) > 0 ? Number(chosen) : niceStep(lo, hi > lo ? hi : lo + 1, 10, 0.01);
+  const span = Math.max(r[1] - r[0], 0);
+  if (span / step > 60) step = niceStep(r[0], r[1], 60, 0.01);
+  return step;
+}
+
 /** A tidy contour interval giving about `n` lines over lo..hi. */
-function niceStep(lo, hi, n = 8) {
-  const raw = Math.max((hi - lo) / n, 0.05);
+function niceStep(lo, hi, n = 8, min = 0.05) {
+  const raw = Math.max((hi - lo) / n, min);
   const p = 10 ** Math.floor(Math.log10(raw));
   return [1, 2, 5, 10].map((m) => m * p).find((s) => s >= raw);
 }
@@ -247,6 +272,9 @@ const WX_DEFAULTS = { density: 5, size: 1.0, shading: "2", opacity: 0.45, land: 
   isoStep: 4, isoAuto: true,
   // contours over sea temperature and salinity (fronts)
   isotherms: true,
+  // contour interval for the ocean layers: "auto" (about ten lines over the band, else over what is in
+  // view) or a number in the layer's unit
+  contourStep: "auto",
   // per sea layer: { lo, tg, hi } (see seaScale)
   seaFilter: {},
   // loaded GRIBs left out of the agreement displays
@@ -1015,8 +1043,8 @@ export function setupWeather(map, layers) {
           for (const x of pick) contours.push(...isobars(gs, 0, [Math.log10(x)]).map((c) => ({ ...c, properties: { hpa: fmtChl(x) } })));
           if (f.tg != null) contours.push(...isobars(gs, 0, [f.tg]).map((c) => ({ ...c, properties: { hpa: fmtChl(10 ** f.tg), target: 1 } })));
         } else if (f && layer.contour && wx.isotherms) {
-          const step = niceStep(f.lo, f.hi);
-          const dp = step < 0.1 ? 2 : step < 1 ? 1 : 0;
+          const step = contourStepFor(f, gs, wx.contourStep);
+          const dp = stepDecimals(step);
           contours = isobars(gs, step)
             .map((x) => ({ ...x, properties: { hpa: +(Math.round(x.properties.hpa / step) * step).toFixed(dp) } }))
             .filter((x) => x.properties.hpa >= f.lo - 1e-9 && x.properties.hpa <= f.hi + 1e-9);
@@ -1737,6 +1765,9 @@ export function setupWeather(map, layers) {
       }).filter((o) => o.paths.length || LAYERS[o.key].compare || LAYERS[o.key].verify);
     },
     /** Overlays with the files that can draw them: [{ key, label, on, paths, path }]. */
+    /** Contour interval for the ocean layers: "auto" or a number. */
+    contourStep: () => wx.contourStep ?? "auto",
+    setContourStep(v) { wx.contourStep = v === "auto" ? "auto" : Number(v) || "auto"; saveWx(); draw(); },
     overlayOptions() {
       const defs = [
         ["arrows", "Wind barbs", ["WindU", "WindSpeed"], "arrows"],
