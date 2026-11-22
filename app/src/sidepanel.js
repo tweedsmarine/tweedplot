@@ -180,7 +180,9 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
   const home = document.body;
   const put = (el, where) => { if (el && el.parentElement !== where) where.append(el); };
   function placeChrome(on, line, focus) {
-    const where = on && !focus ? actions : line ? strip.querySelector(".ss-actions") : home;
+    // at the top of the panel in every view that has it (Planning and Environment too); on the line under
+    // the chart when the panel is hidden; back over the screen in the views without a chart
+    const where = on ? actions : line ? strip.querySelector(".ss-actions") : home;
     for (const b of chrome) put(b, where);
     // the alerts: in the panel, or on the line under the chart (never over the chart)
     put(banner, on && !focus ? alerts : line ? strip.querySelector(".ss-alerts") : home);
@@ -257,7 +259,7 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
     planAway.hidden = !side.contains(planCard);
     if (L.some((s) => s.kind === "weatherTime")) {
       const clock = weatherTime.querySelector(".sp-wx-clock");
-      clock.insertBefore($("wxp-run"), $("side-wx-time"));
+      $("side-wx-gribs").append($("wxp-run"));
       clock.insertBefore(routeWeather, $("side-wx-time-status"));
     } else {
       $("wxp-run-fallback").append($("wxp-run"));
@@ -616,28 +618,32 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
   // The display mode is part of the IMO display base (always shown); Standard is the S-Mode one
   // press back to the standard display. A standard category the mariner has changed is "changed"
   // (IMO ECDIS PS 10.5: permanently indicated). Base alone isn't enough to navigate by (S-52).
+  // a list beside the view icons; "Standard *" when the standard categories have been changed
   const disp = side.querySelector(".sp-disp"), dispNote = side.querySelector(".sp-disp-note"), ssDisp = strip.querySelector(".ss-disp");
-  disp.addEventListener("click", (e) => {
-    const b = e.target.closest("button[data-cat]");
-    if (b) window.dispatchEvent(new CustomEvent("racenav-set-dispcat", { detail: { cat: b.dataset.cat } }));
-  });
+  disp.addEventListener("change", () => window.dispatchEvent(new CustomEvent("racenav-set-dispcat", { detail: { cat: disp.value } })));
+  // a list takes two clicks: off the standard display, one button takes it back in one (IMO S-Mode)
+  const stdBtn = side.querySelector(".sp-std");
+  stdBtn.onclick = () => window.dispatchEvent(new CustomEvent("racenav-set-dispcat", { detail: { cat: "standard" } }));
   window.addEventListener("racenav-dispcat", (e) => {
     const d = e.detail || {};
     disp.hidden = !d.enabled;
-    for (const b of disp.querySelectorAll("button[data-cat]")) {
-      const on = b.dataset.cat === d.cat;
-      b.classList.toggle("on", on);
-      b.classList.toggle("changed", on && d.cat === "standard" && !d.standard);
-      b.setAttribute("aria-pressed", String(on));
-    }
+    disp.value = d.cat ?? "standard";
+    const std = disp.querySelector('option[value="standard"]');
+    if (std) std.textContent = d.cat === "standard" && !d.standard ? "Standard *" : "Standard";
     const note = [d.cat === "standard" && !d.standard ? "Standard changed" : d.cat === "base" ? "Base only: not enough to navigate by" : "", d.dated].filter(Boolean).join(" · ");
     dispNote.textContent = note;
     dispNote.classList.toggle("warn", d.cat === "base" || !!d.dated);
-    disp.classList.toggle("has-note", !!note);
+    disp.classList.toggle("warn", d.cat === "base" || !!d.dated);
+    stdBtn.hidden = !d.enabled || (d.cat === "standard" && !!d.standard);
     ssDisp.hidden = !d.enabled;
     ssDisp.textContent = { base: "BASE", standard: d.standard ? "STD" : "STD*", all: "ALL" }[d.cat] ?? "";
     ssDisp.classList.toggle("warn", d.cat === "base" || !!d.dated);
   });
+  // the view icons
+  for (const b of side.querySelectorAll(".sp-views [data-view-select]")) {
+    const v = VIEWS.find((x) => x.id === b.dataset.viewSelect);
+    if (v) b.querySelector("svg").innerHTML = v.icon;
+  }
 
   // ---------- follow the view and the Use ----------
   let lastView = view();

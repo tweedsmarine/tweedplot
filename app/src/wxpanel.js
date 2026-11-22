@@ -83,9 +83,11 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
         <h5>Check against what happened</h5><div id="wxp-cmp-verify"></div>
       </details>
       <div class="wxp-presets"><select id="wxp-preset" title="Presets"></select><button id="wxp-psave" title="Save what is shown as a preset">Save…</button><button id="wxp-pdel" title="Delete the chosen saved preset">Delete</button></div>
-      <button id="wxp-data" type="button">Download or manage GRIBs…</button>
-      <button id="wxp-visible">Hide weather on chart</button>
-      <button id="wxp-snap" title="Save the chart as a picture" aria-label="Save the chart as a picture"><svg viewBox="0 0 24 24" class="ic"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg> Save picture</button>
+      <div class="wxp-actions">
+        <button id="wxp-data" type="button" title="Download or manage GRIB files (Get data)">GRIBs…</button>
+        <button id="wxp-visible" title="Hide or show the weather on the chart">Hide weather</button>
+        <button id="wxp-snap" title="Save the chart as a picture" aria-label="Save the chart as a picture"><svg viewBox="0 0 24 24" class="ic"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg> Picture</button>
+      </div>
     </div>`;
   weather.mountLegend($("wxp-legend"));
   weather.mountLegend($("side-wx-key"), { always: true });
@@ -432,6 +434,8 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     const s = weather.sources().find((x) => x.path === (info.path ?? cur.path));
     const run = $("wxp-run");
     run.className = "wxp-run";
+    // the folded "Loaded GRIBs" in the panel turns amber when the run is old or has no data at chart time
+    queueMicrotask(() => $("side-wx-gribs")?.classList.toggle("stale", run.classList.contains("stale")));
     if (!s) { run.textContent = "No GRIB loaded"; return; }
     const now = Date.now() / 1000;
     const ageH = s.ref ? (now - s.ref) / 3600 : null;
@@ -548,7 +552,7 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     clearTimeout(timer);
     timer = setTimeout(() => {
       renderHead(); renderShow(); renderOver(); renderCompare(); renderPoint();
-      $("wxp-visible").textContent = weather.visible() ? "Hide weather on chart" : "Show weather on chart";
+      $("wxp-visible").textContent = weather.visible() ? "Hide weather" : "Show weather";
       $("wxp-visible").setAttribute("aria-pressed", String(weather.visible()));
     }, 60);
   }

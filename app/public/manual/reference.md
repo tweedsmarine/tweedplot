@@ -221,9 +221,9 @@ The boat's numbers are in the **data panel**, a column beside the chart that nev
 From top to bottom:
 
 - **Status line**: **GO TO** while a Go to is set; **LIVE**, **PAUSED** or **REPLAY**; the orientation (**N UP**, or **ROT 045°** when the chart is turned); the motion (**RM**, relative motion: Follow is on and the chart moves under the boat; **TM**, true motion: the boat moves across the chart); and the display scale on this screen. **✎** edits the panel; **⟩** hides it.
-- **Navigation**, **Planning**, **Instruments**: select a view; the current one is highlighted and marked with a check.
-- **Base**, **Standard** and **All**: how much of the chart is shown, with the one in use lit (see *Display: Base, Standard and All* under Charts).
-- **MOB**, **Drop** and (when switched on) the **anchor** button.
+- **MOB**, **Drop** and (when switched on) the **anchor** button, at the top in Navigation, Planning and Environment alike (on the line under the chart when the panel is hidden).
+- The **view icons**: Navigation (compass), Planning (route), Environment (waves) and Instruments (dial); the current one is lit, and hovering names it (F2, F3, F6, F4). Beside them, the **chart detail** list: **Base**, **Standard** or **All** (see *Display: Base, Standard and All* under Charts).
+- In Environment and Planning, **Chart time** shows the time, with **Loaded GRIBs** folded under it: its summary line gives how many and the one shown, amber when the chart time is outside it or the run is old; open it for each file's times and run.
 - **Own ship**, always shown, in the order IMO's S-Mode guidelines give: HDG (°T), COG, SOG, STW (boat speed through the water), depth, position, and the date and time, local and UTC. A reading with no data shows a dash, and one from live data that has stopped greys out after 10 seconds, so a failed sensor is seen, not hidden.
 - **Man overboard**, while a MOB is set: the highway steering back to it (course to steer and distance), the time since, and where and when it was pressed, in red, whatever the layout.
 - **Sections** that change with the view and the Use: Navigation and Planning each have a layout for Cruising, Fishing and Racing.
@@ -478,7 +478,7 @@ As on an ECDIS (IHO S-52), **Display** decides how much of the chart is shown:
 | **Standard** | Base, plus lights (with their sectors), leading lines and recommended tracks, fairways and ferry routes, restricted, caution and anchorage areas, wharves and other constructions, chart objects TweedPlot has no symbol for (a magenta ?), and spot soundings if **Soundings** is ticked |
 | **All** | Standard, plus every spot sounding, the other depth contours, submarine cables and pipelines, dumping grounds and kelp |
 
-The display in use is always shown (the IMO ECDIS performance standard puts the display mode in the display base): at the top of the data panel, three buttons, **Base**, **Standard** and **All**, under the view buttons, with the one in use highlighted and checked; with the panel hidden, BASE, STD or ALL at the left of the line under the chart. Press one to change the display. **Standard** is the one press back to the standard display (below). If you have changed the standard display since (light sectors, names or soundings off), its button shows **Standard \*** with "Standard changed" under it, as an ECDIS must indicate a changed standard display. Selecting **Base** shows an amber warning: S-52 warns that the display base alone isn't enough to navigate by, so use it briefly to declutter, then go back. The same choice is in **Chart › Chart display** and on the Layers header.
+The display in use is always shown (the IMO ECDIS performance standard puts the display mode in the display base): at the top of the data panel, the chart detail list beside the view icons (**Base**, **Standard** or **All**); with the panel hidden, BASE, STD or ALL at the left of the line under the chart. Choose one from the list to change the display. Whenever the display isn't the unchanged standard one, a **Std** button shows beside the list: the one press back to the standard display (below). If you have changed the standard display since (light sectors, names or soundings off), the list shows **Standard \*** with "Standard changed" under it, as an ECDIS must indicate a changed standard display. Selecting **Base** shows an amber warning: S-52 warns that the display base alone isn't enough to navigate by, so use it briefly to declutter, then go back. The same choice is in **Chart › Chart display** and on the Layers header.
 
 **Names and labels** (light characteristics, names of marks and places, depths over dangers) and **Light sectors** go on and off separately in Standard and All. **Reset to standard** (Chart › Chart display), like **Standard** in the data panel, puts everything back in one press: Standard, with light sectors, names and soundings, the display to come back to when the chart has been changed for a particular job (S-Mode, IMO's standard user interface for navigation equipment, asks for this). The button is highlighted while the chart is at the standard display.
 
@@ -1105,7 +1105,7 @@ Weather comes from GRIB files: gridded forecasts from computer models, one value
 
 The list shows every GRIB in the GRIB folders, described by model, run time, area and how far ahead it goes rather than by file name. Choose one and **Load** (↻ rescans the folders). Load as many as you like: different models, or several runs of one. One is shown on the chart (its radio button). A tick beside each loaded GRIB includes it in the agreement displays; × unloads it without deleting the file.
 
-The list reads the configured GRIB folders; put files from elsewhere in one of those folders first. The toolbar's Weather button opens Environment; **Download or manage GRIBs** opens Get data.
+The list reads the configured GRIB folders; put files from elsewhere in one of those folders first. The toolbar's Weather button opens Environment; **GRIBs…** opens Get data.
 
 TweedPlot reads GRIB2 (including ECMWF's compressed files) and GRIB1 (Saildocs and older tools): wind, gusts, pressure, waves (height, period, direction, swell, wind waves), rain, CAPE, air temperature and ocean currents. Outside a file's area or forecast time span there is no value: a short forecast never shows as calm. Some ocean analyses can be held beyond their last sample, subject to the Environment option below.
 
@@ -1137,7 +1137,7 @@ The data panel offers layers and overlays supplied by the loaded GRIBs, and a wa
 
 **Weather in the data panel**
 
-{icon:wxpanel} **Weather** in the toolbar opens the data panel's Weather layers and filters section. **Hide weather on chart** hides the layers without unloading data; **Show weather on chart** restores them.
+{icon:wxpanel} **Weather** in the toolbar opens the data panel's Weather layers and filters section. **Hide weather** hides the layers without unloading data; **Show weather** restores them; **Picture** saves the chart as a picture.
 
 - **Run line**: the loaded file being shown, when its run was made and how old it is. It turns red and bold when the run is more than a day old, or the slider is past the end of the forecast.
 - **Forecast time**: the slider, steps, play, start, end and Now stay above the scrolling panel in Planning and Environment.

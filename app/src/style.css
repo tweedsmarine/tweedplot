@@ -1121,7 +1121,7 @@ html.no-map #zoom-btns { display: none; }
 #wxp .wxp-head { font-weight: 600; padding: 4px 0 2px; border-top: 1px solid var(--line); }
 #wxp-run { padding: 3px 0; font-size: calc(2.7 * var(--u)); overflow-wrap: anywhere; }
 #wxp-run.stale { color: #ffb347; font-weight: 600; }
-#wxp-data { width: 100%; min-height: var(--btn-h); background: #22343f; color: var(--tile-ink); border: 1px solid #6c8490; }
+#wxp-data { min-height: var(--btn-h); background: #22343f; color: var(--tile-ink); border: 1px solid #6c8490; }
 #wx-cmp-note { padding: calc(1 * var(--u)) calc(1.5 * var(--u)); color: var(--tile-ink); }
 .wxp-compare { padding: 0 calc(1.5 * var(--u)) calc(1 * var(--u)); color: var(--tile-ink); }
 .wxp-compare > summary { cursor: pointer; }
@@ -1755,7 +1755,7 @@ html.side-left .sp-grip { left: auto; right: 0; }
 /* one even gap (--sp-gap) above and below the display buttons, below MOB/Drop/Anchor and between
    them; their black and white rings stand 4 px outside them, so that is added (8 px between two) */
 #side { --sp-gap: calc(1.5 * var(--u)); }
-.sp-actions { display: flex; gap: calc(var(--sp-gap) + 8px); padding: calc(var(--sp-gap) + 4px) calc(1.5 * var(--u)) calc(var(--sp-gap) + 4px); border-bottom: 1px solid #2c3d48; }
+.sp-actions { display: flex; gap: 8px; padding: 6px calc(1.5 * var(--u)); border-bottom: 1px solid #2c3d48; }
 .sp-actions:empty { display: none; }
 :is(.sp-actions, .ss-actions) :is(#mob-btn, #drop-btn, #anchor-btn) { position: static; flex: 1; min-width: 0; height: calc(8 * var(--u)); min-height: 0; padding: 0 4px; font-size: calc(3.4 * var(--u)); }
 :is(.sp-actions, .ss-actions) #mob-btn { flex: 1.4; }
@@ -1867,13 +1867,11 @@ html.weather-focus #side-strip :is(#mob-btn, #drop-btn, #anchor-btn) { height: c
 html.weather-focus #side-strip .sp-row.own .v { font-size: calc(5 * var(--u) * var(--ss-k, 1)); }
 html.weather-focus #side-strip .sp-row .l { font-size: calc(2.7 * var(--u) * var(--ss-k, 1)); }
 html.weather-focus #side-strip .ss-show { display: none; }
-html.weather-focus #side :is(.sp-views, .sp-disp, .sp-own, .sp-alerts) { display: none; }
+html.weather-focus #side :is(.sp-own, .sp-alerts) { display: none; }
 html.weather-focus #side .sp-body:not([hidden]) { display: flex; flex-direction: column; }
 html.weather-focus #side .sp-body > * { flex-shrink: 0; }
 html.side-narrow.weather-focus:not(.side-left) :is(#side-strip, #dock) { right: var(--side-w); }
 html.side-narrow.weather-focus.side-left :is(#side-strip, #dock) { left: calc(var(--rail-w) + var(--drawer-x) + var(--side-w)); }
-html.weather-focus #side .sp-views { display: flex; }
-html.weather-focus #side .sp-disp:not([hidden]) { display: flex; }
 html.weather-focus .ss-alerts #alarm-banner:has(.alarm ~ .alarm)::after { content: "+ more · open alerts"; }
 .sp-env-tabs { display: flex; gap: 4px; padding: 6px; border-bottom: 1px solid #2c3d48; }
 .sp-env-tabs[hidden], #side .sp-body[hidden], .sp-env-data[hidden] { display: none; }
@@ -1985,16 +1983,16 @@ html.side-strip body:has(.ss-alerts .alarm:not(.warn):not(.acked):not(.summary))
 @keyframes edge-flash { 50% { opacity: 0; } }
 
 /* View and chart display selectors remain distinct, with the current choice labelled. */
-:is(.sp-views, .sp-disp) { display: flex; gap: calc(0.8 * var(--u)); padding: var(--sp-gap) calc(1.5 * var(--u)) 0; }
-:is(.sp-views, .sp-disp) button { flex: 1; min-width: 0; min-height: var(--btn-h); padding: 3px 1px; font-size: calc(2.5 * var(--u)); font-weight: 600; background: #22343f; color: var(--tile-quiet); border: 1px solid #6c8490; border-radius: 4px; overflow-wrap: anywhere; }
-:is(.sp-views, .sp-disp) button.on { background: var(--accent); border: 2px solid #fff; color: #fff; }
-:is(.sp-views, .sp-disp) button.on::before { content: "✓ "; }
-.sp-views { flex-wrap: wrap; }
-.sp-views button { flex: 1 1 40%; white-space: nowrap; overflow-wrap: normal; }
-.sp-disp { flex-wrap: wrap; }
-.sp-disp[hidden] { display: none; }
-.sp-disp button.on.changed::after { content: " *"; }
-.sp-disp-note { flex-basis: 100%; font-size: calc(2.4 * var(--u)); color: var(--tile-quiet); }
+.sp-viewbar { display: flex; align-items: center; gap: 6px; padding: var(--sp-gap) calc(1.5 * var(--u)) 0; }
+.sp-views { display: flex; gap: 4px; flex: none; }
+.sp-views button { flex: none; width: 38px; min-height: var(--btn-h); padding: 0; display: grid; place-items: center; }
+.sp-views svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.sp-views svg .fill { fill: currentColor; }
+#side select.sp-disp { flex: 1; min-width: 0; min-height: var(--btn-h); border-radius: 5px; background: #1d2f3a; color: var(--tile-ink, #e8f0f4); border: 1px solid var(--btn-line); font-size: 13px; font-weight: 600; padding: 0 4px; }
+#side select.sp-disp.warn { border-color: #e3b341; color: #e3b341; }
+.sp-disp[hidden], .sp-std[hidden] { display: none; }
+#side .sp-std { flex: none; min-height: var(--btn-h); padding: 0 8px; font-weight: 700; }
+.sp-disp-note { padding: 2px calc(1.5 * var(--u)) 0; font-size: 12px; color: var(--tile-quiet); }
 .sp-disp-note:empty { display: none; }
 .sp-disp-note.warn { color: #e3b341; }
 .ss-disp { flex: none; font-size: calc(2.6 * var(--u)); font-weight: 700; padding: 0 5px; border: 1px solid #3a4f5c; border-radius: 3px; color: var(--tile-quiet); }
@@ -2138,7 +2136,7 @@ html[data-view="env"] #side :is(.sp-env-tabs, .env-start-buttons) button:is(.on,
 #side #wxp .wxp-chip { min-height: var(--chip-h); padding: 2px 10px; border-radius: 12px; background: var(--btn-bg); border: 1px solid var(--btn-line); font-size: calc(2.8 * var(--u, 4px)); font-weight: 600; }
 #side #wxp .wxp-chip.on { background: var(--btn-on); color: #fff; border-color: #fff; }
 /* rows of equal buttons share the width; a button alone on a row takes all of it, so it is not missed */
-#side :is(.sp-views, .sp-disp, .sp-env-tabs, .env-start-buttons, .sp-wx-transport) { gap: 4px; }
+#side :is(.sp-views, .sp-env-tabs, .env-start-buttons, .sp-wx-transport) { gap: 4px; }
 #side #side-route-wx { display: block; width: 100%; margin: 4px 0 2px; text-align: center; }
 #side .gf-acts button { min-height: var(--chip-h); padding: 2px 8px; }
 #side .gf-tools button { flex: 1 1 auto; }
@@ -2267,3 +2265,29 @@ html:is([data-palette="night-red"], [data-palette="night-green"]) .flow-canvas {
 .sect-key { display: flex; align-items: center; gap: 8px; font-size: 11px; margin-top: 4px; flex-wrap: wrap; }
 .sect-bar { width: 120px; height: 9px; border-radius: 2px; }
 .sect-thermo { font-weight: 600; }
+
+/* ---------- the panel's GRIB pieces and the dock, compact (mouse and keyboard) ---------- */
+.sp-wx-gribs { font-size: 12px; color: var(--tile-quiet); margin: 2px 0; }
+.sp-wx-gribs > summary { cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-wx-gribs.warn > summary, .sp-wx-gribs.stale > summary { color: #e3b341; }
+.sp-wx-gribs > :not(summary) { margin-left: 12px; }
+.sp-env-data { font-size: 13px; }
+.sp-env-data h3 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; margin: 8px 0 4px; }
+.sp-env-data .gf-main b { font-size: 13px; }
+.sp-env-data .gf-main small { font-size: 12px; }
+.sp-env-data summary { font-size: 12px; }
+.dock-tabs { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.dock-tabs button, .dock-tools button, .dock-tools select { min-height: var(--chip-h); padding: 2px 8px; font-size: 12px; }
+.dock-tools { display: flex; gap: 4px; flex: none; }
+
+/* the weather panel's own actions on one row */
+.wxp-actions { display: flex; gap: 4px; margin-top: 4px; }
+.wxp-actions button { flex: 1 1 0; min-width: 0; white-space: nowrap; }
+/* the route's Plan card in the data panel (Planning): the panel's compact text, not the drawer's */
+#side .dcard[data-title="Plan"] { font-size: 13px; }
+#side .dcard[data-title="Plan"] > summary { min-height: var(--btn-h); padding: 2px calc(1.5 * var(--u)); }
+#side .dcard[data-title="Plan"] > summary .dc-title { font-size: 12px; }
+#side .dcard[data-title="Plan"] :is(button, select, input:not([type="checkbox"])) { font-size: 13px; min-height: var(--btn-h); }
+#side .dcard[data-title="Plan"] .wx-note, #side .dcard[data-title="Plan"] .hint { font-size: 12px; }
+/* Environment isn't for navigating and starts with Base: the list's amber is warning enough there */
+html[data-view="env"] #side .sp-disp-note { display: none; }

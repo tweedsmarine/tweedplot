@@ -823,6 +823,10 @@ export function setupWeather(map, layers) {
     slider.disabled = !times.length;
     $("side-wx-when").textContent = times.length ? fmt(t) : "—";
     $("side-wx-source").textContent = display ? `Shown GRIB: ${loaded.get(display)?.name ?? display}` : "No GRIB loaded";
+    // the summary of the folded "Loaded GRIBs": how many, and a warning colour when chart time is outside the shown one
+    const gsum = document.querySelector("#side-wx-gribs .sp-wx-gribs-sum");
+    if (gsum) gsum.textContent = loaded.size ? `· ${loaded.size}${display ? ` · ${loaded.get(display)?.name ?? ""}` : ""}` : "· none";
+    document.getElementById("side-wx-gribs")?.classList.toggle("warn", !!outside);
     document.getElementById("side")?.classList.toggle("no-grib", !loaded.size); // nothing to step through, time or compare
     $("side-wx-start").disabled = !span;
     $("side-wx-end").disabled = !span;
