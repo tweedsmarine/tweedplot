@@ -124,8 +124,9 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     d.ontoggle = () => { st.sec[d.dataset.sec] = d.open; save(); };
   }
 
-  $("wx-pop-btn").title = "Open weather controls in Environment";
-  $("wx-pop-btn").onclick = () => sidePanel.openWeather();
+  // Chart › Layers › Weather controls… (the toolbar's Weather button has gone: Environment is on the view icons)
+  const open = $("ly-wx-open");
+  if (open) open.onclick = () => sidePanel.openWeather();
   $("wx-open-controls").onclick = () => sidePanel.openWeather();
   $("wxp-data").onclick = () => sidePanel.openEnvironmentData();
   $("wxp-visible").onclick = () => weather.setVisible(!weather.visible());

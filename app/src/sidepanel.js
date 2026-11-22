@@ -68,8 +68,9 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
   const menu = $("tile-menu");
 
   const prefs = { side: "right", text: 1, width: "normal", ...load(PKEY, {}) };
-  if (![1, 1.25, 1.5].includes(Number(prefs.text))) prefs.text = 1;
-  prefs.text = Number(prefs.text);
+  // the panel text is one fixed size (13 px at the calibrated scale), the same as the rest of the app;
+  // the old Text size choice is ignored
+  prefs.text = 1;
   if (!WIDTHS_MM[prefs.width]) prefs.width = "normal";
   let hidden = load(HKEY, {}) || {}; // { nav: true } = hidden in Navigation
   let data = load(KEY, null);
@@ -117,8 +118,6 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
     root.style.setProperty("--side-w", `${w}px`);
     root.classList.toggle("side-left", prefs.side === "left");
     for (const id of ["sp-side", "set-side"]) { const el = $(id); if (el) el.value = prefs.side; }
-    const t = $("sp-text");
-    if (t) t.value = String(prefs.text);
     if ($("sp-width")) $("sp-width").value = prefs.width;
     for (const g of side.querySelectorAll(".sp-g")) g.style.height = `${Math.round(Number(g.dataset.h) * pxmm * prefs.text)}px`;
     requestAnimationFrame(() => map.resize());
@@ -126,7 +125,6 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
   window.addEventListener("racenav-calibration", geometry);
   const setPref = (k, v) => { prefs[k] = v; store(PKEY, prefs); geometry(); };
   for (const id of ["sp-side", "set-side"]) $(id)?.addEventListener("change", (e) => setPref("side", e.target.value));
-  $("sp-text")?.addEventListener("change", (e) => setPref("text", Number(e.target.value)));
   $("sp-width")?.addEventListener("change", (e) => {
     if (WIDTHS_MM[e.target.value]) setPref("width", e.target.value);
   });
@@ -153,6 +151,8 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
     root.classList.toggle("side-strip", line);
     root.classList.toggle("weather-focus", focus);
     $("side-btn")?.classList.toggle("on", on);
+    const sb = $("side-btn");
+    if (sb) sb.title = `${root.classList.contains("side-left") ? "Data panel (on the left)" : "Right panel"}: ${on ? "hide" : "show"} the data panel (O)`;
     placeChrome(on, !strip.hidden, focus);
     requestAnimationFrame(() => map.resize());
   }
@@ -423,6 +423,11 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
       }
     }
     if (g._html !== html) { g.innerHTML = html; g._html = html; }
+    // an empty list folds into its heading ("Marks ahead  none"), not a line of its own
+    const none = g.dataset.kind === "marks" ? (!ctx.nav?.next ? "no route (Route › Navigate)" : "") : (!(getAis()?.closest?.(n) ?? []).length ? "none" : "");
+    const h = g.closest(".sp-sec")?.querySelector("h4");
+    if (h && (h.dataset.none ?? "") !== none) { if (none) h.dataset.none = none; else delete h.dataset.none; }
+    g.hidden = !!none;
   }
 
   // ---------- trend lines (the last three hours from the history recorder) ----------

@@ -400,7 +400,7 @@ export function setupPbathy(map, { ui } = {}) {
     b.querySelector(".tb-count").textContent = recording ? shortCount(st.added || 0) : "";
     b.title = recording
       ? `Recording own soundings: ${fmt(st.added || 0)} added today${(st.warnings || []).length ? ` (${st.warnings.join(" ")})` : ""}. Click to stop (D)`
-      : "Record own soundings from the depth sounder (D). Right-click or hold for the speed limit and settings";
+      : "Record own soundings from the depth sounder (D). Right-click for the speed limit and settings";
   };
   const shortCount = (n) => (n >= 10000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
   const liveRefreshPlain = liveRefresh;

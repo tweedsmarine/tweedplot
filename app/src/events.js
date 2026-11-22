@@ -200,13 +200,13 @@ export function setupEvents(map, { ui, getBoat }) {
     }
   }
 
-  // ---------- the toolbar's Shoot and Haul: left click the last gear, right-click (or hold) to choose ----------
+  // ---------- the toolbar's Shoot and Haul: left click the last gear, right-click to choose ----------
   function renderTools() {
     const g = prefs.lastGear ?? "line";
     for (const [id, verb] of [["shoot-btn", "Shoot"], ["haul-btn", "Haul"]]) {
       const b = $(id);
       if (!b) continue;
-      b.title = `${verb} the ${GEAR_LABEL[g].toLowerCase()} (right-click or hold to choose net, line or pots)`;
+      b.title = `${verb} the ${GEAR_LABEL[g].toLowerCase()} (right-click to choose net, line or pots)`;
       b.querySelector(".tb-gear").textContent = GEAR_LABEL[g][0];
     }
   }
