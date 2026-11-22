@@ -203,3 +203,18 @@ test("a highlight band fades the shading outside it and leaves it alone inside",
   const kept = filterRangeForGrid({ range: [15, 27] }, { lo: 14, hi: 26, tg: null, blo: 19, bhi: 23, set: true });
   assert.deepEqual(filterBand(kept.filter), [19, 23]);
 });
+
+test("with a band the whole palette runs over the band, the ends taking the end colours", () => {
+  const f = { lo: 14, hi: 26, tg: null, blo: 19, bhi: 23, set: true };
+  const s = seaScale(f);
+  assert.equal(s[0][0], 19);
+  assert.equal(s.at(-1)[0], 23);
+  // a target inside the band is the middle of the palette; one outside it is left out of the colours
+  const withTarget = seaScale({ ...f, tg: 21.5 });
+  assert.ok(withTarget.some(([v]) => Math.abs(v - 21.5) < 1e-9));
+  assert.deepEqual(seaScale({ ...f, tg: 25 }), s);
+  // stepped shading: below the band is the first colour, above it the last
+  const { expression } = filterColourStyle({ auto: false }, f, "2");
+  assert.equal(expression[0], "step");
+  assert.ok(expression[3] >= 19 && expression.at(-2) <= 23);
+});
