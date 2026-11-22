@@ -2236,3 +2236,6 @@ html.dock-right .dock-close { margin-left: auto; }
 html[data-palette="iho-night"][data-iho] .flow-canvas { filter: url(#pal-red) brightness(.55); }
 html[data-palette="iho-night"]:not([data-iho]) .flow-canvas { filter: invert(1) hue-rotate(180deg) url(#pal-red) brightness(.55); }
 html:is([data-palette="night-red"], [data-palette="night-green"]) .flow-canvas { filter: invert(1) brightness(.8); }
+/* contour interval under "Contours and target line" */
+.wxp-row.wxp-sub { padding-left: 28px; gap: 8px; }
+.wxp-row.wxp-sub select { flex: 0 0 auto; width: auto; min-width: 5.5em; }

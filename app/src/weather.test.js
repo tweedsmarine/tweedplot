@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { seaScale, seaTrackRange, filterRangeForGrid, filterColourStyle, fronts, filterable, forecastSpan, sliderStepForTime, weatherSelectionSummary, weatherVisibleInView, filterInUse, filterBounds, dataTimeStatus, applyPointTimePolicy, LAYERS, filterBand, bandDefault, bandOpacity, BAND_FADE } from "./weather.js";
+import { seaScale, seaTrackRange, filterRangeForGrid, filterColourStyle, fronts, filterable, forecastSpan, sliderStepForTime, weatherSelectionSummary, weatherVisibleInView, filterInUse, filterBounds, dataTimeStatus, applyPointTimePolicy, LAYERS, filterBand, bandDefault, bandOpacity, BAND_FADE, contourStepFor, stepDecimals } from "./weather.js";
 
 test("automatic filter follows the complete grid at each time without losing extremes", () => {
   const earlier = filterRangeForGrid({ range: [0, 22], values: [0, 20] }, null);
@@ -218,4 +218,19 @@ test("with a band the whole palette runs over the band, the ends taking the end 
   const { expression } = filterColourStyle({ auto: false }, f, "2");
   assert.equal(expression[0], "step");
   assert.ok(expression[3] >= 19 && expression.at(-2) <= 23);
+});
+
+test("contour interval follows the view, the band, or the choice", () => {
+  const grid = (lo, hi) => ({ values: [lo, (lo + hi) / 2, hi, null] });
+  const f = { lo: 15.1, hi: 22.7, tg: null };
+  // the whole file spans 15–23 °C but the view only 18–19.5: lines every 0.1 or 0.2, not 1
+  assert.ok(contourStepFor(f, grid(18, 19.5), "auto") <= 0.2);
+  // with a band, about ten lines over the band
+  assert.equal(contourStepFor({ ...f, blo: 19, bhi: 23 }, grid(15, 23), "auto"), 0.5);
+  // a fixed choice is kept, unless it would draw a forest of lines
+  assert.equal(contourStepFor(f, grid(18, 19.5), "0.25"), 0.25);
+  assert.ok(contourStepFor(f, grid(5, 25), 0.1) > 0.1);
+  assert.equal(stepDecimals(0.25), 2);
+  assert.equal(stepDecimals(0.5), 1);
+  assert.equal(stepDecimals(2), 0);
 });
