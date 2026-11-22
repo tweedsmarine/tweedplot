@@ -84,6 +84,42 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
   weather.mountLegend($("side-wx-key"), { always: true });
   weather.mountLegend($("wxp-key"), { always: true });
   weather.mountFilter($("wxp-filter"));
+  // The colour key beside the chart time carries the filter too, so it can be adjusted in any view
+  // that shows it (a filter set in Planning, say, with no Weather layers section there). Its pointers
+  // open with Adjust, remembered per view (open in Environment to begin with); Clear removes the filter.
+  {
+    const clock = $("side-wx-clock"), key = $("side-wx-key");
+    const tools = document.createElement("div");
+    tools.id = "side-wx-keytools";
+    tools.className = "wx-key-tools";
+    tools.innerHTML = `<button type="button" id="side-wx-adjust" aria-pressed="false" title="Show the filter pointers: lowest and highest shown, and a target contour">Adjust filter</button><button type="button" id="side-wx-clear" title="Remove the filter: the layer's own colour scale again">Clear filter</button>`;
+    const box = document.createElement("div");
+    box.id = "side-wx-filter";
+    key.after(tools, box);
+    weather.mountFilter(box);
+    const OPEN_KEY = "tweedplot.wx.keyFilterOpen";
+    const openState = () => { try { return JSON.parse(localStorage.getItem(OPEN_KEY) || "{}"); } catch { return {}; } };
+    const viewNow = () => document.documentElement.dataset.view || "nav";
+    const isOpen = () => openState()[viewNow()] ?? viewNow() === "env";
+    const syncTools = () => {
+      const open = isOpen();
+      clock.classList.toggle("filter-open", open);
+      $("side-wx-adjust").setAttribute("aria-pressed", String(open));
+      $("side-wx-adjust").textContent = open ? "Hide filter" : "Adjust filter";
+      $("side-wx-clear").disabled = !weather.layerInfo()?.filter?.set;
+    };
+    $("side-wx-adjust").onclick = () => {
+      const st = openState();
+      st[viewNow()] = !isOpen();
+      try { localStorage.setItem(OPEN_KEY, JSON.stringify(st)); } catch { /* storage unavailable: not remembered */ }
+      syncTools();
+    };
+    $("side-wx-clear").onclick = () => { weather.resetFilter(); syncTools(); };
+    weather.onChange(syncTools);
+    weather.onLoaded(syncTools);
+    window.addEventListener("racenav-view", () => queueMicrotask(syncTools));
+    syncTools();
+  }
   $("wxp-isobar-controls").append($("wx-isobar-controls"));
   // everything for comparing GRIBs in one place: the files, the agreement displays and their note,
   // each GRIB's values at the cursor, and Verify runs

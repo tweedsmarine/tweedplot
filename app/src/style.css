@@ -2048,6 +2048,16 @@ html.side-strip body:has(.ss-alerts .alarm:not(.warn):not(.acked):not(.summary))
    open; otherwise the one in Weather layers and filters (e.g. Navigation without a Chart time section).
    Decided by CSS so it follows every rebuild, view change and fold without a script having to notice. */
 body:has(.sp-sec:not(.collapsed) #side-wx-clock[open] #side-wx-key:not([hidden])) #wxp-key { display: none; }
+/* The filter under that key: its tools show with the key; its pointers only while Adjust is on; and
+   then the key's own bar steps aside (the filter's bar shows the same colours). The filter widget in
+   Weather layers and filters stands aside whenever the key's tools are on the panel, so there is one. */
+#side-wx-key[hidden] + .wx-key-tools, #side-wx-key[hidden] ~ #side-wx-filter { display: none; }
+#side-wx-clock:not(.filter-open) #side-wx-filter { display: none; }
+#side-wx-clock.filter-open:has(#side-wx-filter:not([hidden])) #side-wx-key > :not(.wx-key-title) { display: none; }
+#side-wx-clock:has(#side-wx-filter[hidden]) #side-wx-adjust { display: none; }
+body:has(.sp-sec:not(.collapsed) #side-wx-clock[open] #side-wx-key:not([hidden])) #wxp-filter { display: none; }
+.wx-key-tools { display: flex; gap: 6px; margin: 4px 0 2px; }
+.wx-key-tools button { flex: 1; min-height: 28px; font-size: calc(2.6 * var(--u, 4px)); }
 .wx-error { color: #ff8a80; font-weight: 600; margin-top: 4px; }
 .wx-error[hidden] { display: none; }
 
