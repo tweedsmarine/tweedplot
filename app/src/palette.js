@@ -43,7 +43,7 @@ export function setupPalette(onChange = () => {}) {
   $("pal-dim").oninput = (e) => { if (p.mode !== "day") { p.dim[p.mode] = +e.target.value; apply(); } };
   $("pal-full").onclick = () => toggleFullscreen();
 
-  // right-click or long-press the colours button: colours and brightness at once,
+  // right-click the colours button: colours and brightness at once,
   // without opening a drawer (S-Mode keeps day/night and brilliance one action away)
   const pop = document.createElement("div");
   pop.id = "pal-pop";
@@ -72,10 +72,6 @@ export function setupPalette(onChange = () => {}) {
   pop.addEventListener("click", (e) => { const b = e.target.closest("button[data-m]"); if (b) { p.mode = b.dataset.m; apply(); syncPop(); } });
   popRange.oninput = () => { if (p.mode !== "day") { p.dim[p.mode] = +popRange.value; apply(); syncPop(); } };
   $("palette-btn").addEventListener("contextmenu", (e) => { e.preventDefault(); openPop(); });
-  let press = null;
-  $("palette-btn").addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse") press = setTimeout(() => { press = "done"; openPop(); }, 550); });
-  $("palette-btn").addEventListener("pointerup", () => { if (press && press !== "done") clearTimeout(press); });
-  $("palette-btn").addEventListener("click", (e) => { if (press === "done") { e.stopImmediatePropagation(); press = null; } }, true);
   document.addEventListener("pointerdown", (e) => { if (!pop.hidden && !pop.contains(e.target) && e.target.closest("#palette-btn") == null) pop.hidden = true; });
   window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !pop.hidden) { pop.hidden = true; e.preventDefault(); } });
   installFullscreenKey();

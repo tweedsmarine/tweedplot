@@ -227,11 +227,8 @@ export function setupEvents(map, { ui, getBoat }) {
   for (const [id, verb] of [["shoot-btn", "Shoot"], ["haul-btn", "Haul"]]) {
     const b = $(id);
     if (!b) continue;
-    let press = null;
-    b.onclick = (e) => { if (press === "done") { press = null; e.preventDefault(); return; } const g = prefs.lastGear ?? "line"; if (verb === "Shoot") shoot(g); else openHaul(g); };
+    b.onclick = () => { const g = prefs.lastGear ?? "line"; if (verb === "Shoot") shoot(g); else openHaul(g); };
     b.addEventListener("contextmenu", (e) => { e.preventDefault(); openGearPop(b, verb); });
-    b.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse") press = setTimeout(() => { press = "done"; openGearPop(b, verb); }, 550); });
-    b.addEventListener("pointerup", () => { if (press && press !== "done") { clearTimeout(press); press = null; } });
   }
   renderTools();
 

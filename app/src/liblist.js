@@ -63,7 +63,7 @@ function byLabel(opts, f) {
 }
 
 export function libList(root, cfg) {
-  const ROW = cfg.rowHeight ?? 50;
+  const ROW = cfg.rowHeight ?? 42;
   const [one, many] = cfg.noun ?? ["item", "items"];
   const KEY = `racenav.list.${cfg.key}`;
   let state = { q: "", sort: cfg.sorts?.[0]?.key ?? "", f: {} };

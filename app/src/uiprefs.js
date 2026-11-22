@@ -1,35 +1,28 @@
-// Screen-control preferences for this window: zoom buttons and large touch-size
-// controls. "auto" follows whether a touch screen is present.
+// Screen-control preferences for this window: the zoom buttons on the chart (for a trackball or
+// a mouse without a wheel). TweedPlot is laid out for a mouse and keyboard, at one size.
 import { own } from "./role.js";
 
 const KEY = own("racenav.ui");
-const touch = window.matchMedia("(any-pointer: coarse)");
 
 function load() {
-  try { return { zoom: "auto", large: "auto", ...JSON.parse(localStorage.getItem(KEY) || "{}") }; }
-  catch { return { zoom: "auto", large: "auto" }; }
+  try { return { zoom: "off", ...JSON.parse(localStorage.getItem(KEY) || "{}") }; }
+  catch { return { zoom: "off" }; }
 }
 
-const on = (mode) => (mode === "auto" ? touch.matches : mode === "on");
-
 function apply(p) {
-  const root = document.documentElement;
-  root.classList.toggle("ui-zoom", on(p.zoom));
-  root.classList.toggle("ui-large", on(p.large));
+  document.documentElement.classList.toggle("ui-zoom", p.zoom === "on");
 }
 
 export function setupUiPrefs() {
   const p = load();
+  if (p.zoom === "auto") p.zoom = "off"; // "auto" followed a touch screen, no longer supported
   apply(p);
-  touch.addEventListener("change", () => apply(p));
-  for (const k of ["zoom", "large"]) {
-    const el = document.getElementById(`ui-${k}`);
-    if (!el) continue;
-    el.value = p[k];
-    el.onchange = () => {
-      p[k] = el.value;
-      localStorage.setItem(KEY, JSON.stringify(p));
-      apply(p);
-    };
-  }
+  const el = document.getElementById("ui-zoom");
+  if (!el) return;
+  el.value = p.zoom;
+  el.onchange = () => {
+    p.zoom = el.value;
+    localStorage.setItem(KEY, JSON.stringify(p));
+    apply(p);
+  };
 }

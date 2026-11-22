@@ -382,7 +382,6 @@ let initialPositionChosen = false;
 for (const eventName of ["pointerdown", "wheel", "keydown"]) {
   map.getCanvasContainer().addEventListener(eventName, () => { chartPositionChosen = true; }, { passive: true });
 }
-map.getCanvasContainer().addEventListener("touchstart", () => { chartPositionChosen = true; }, { passive: true });
 function useReferencePosition([lon, lat]) {
   if (!hasPositionFix && !chartPositionChosen) {
     startupCamera = { center: [lon, lat], zoom: defaultCamera.zoom };
@@ -1095,7 +1094,7 @@ map.on("mousemove", (e) => {
   surveyDepthAt(map, e.lngLat.lng, e.lngLat.lat, (t) => { cursorSurvey = t; showCursor(); });
   setCursor([e.lngLat.lng, e.lngLat.lat]);
 });
-// touch screens have no hover: a tap sets the cursor
+// a click sets the cursor too (it then stays put while the hover moves on)
 map.on("click", (e) => setCursor([e.lngLat.lng, e.lngLat.lat]));
 map.getCanvas().addEventListener("mouseleave", () => { setCursor(null); inst.update({ sounding: null }); arrowsAtCursor = false; boatArrows(); });
 
@@ -1156,11 +1155,8 @@ function endBoatDrag() {
   saveFollowFrac();
 }
 map.on("mousedown", startBoatDrag);
-map.on("touchstart", startBoatDrag);
 map.on("mousemove", moveBoatDrag);
-map.on("touchmove", moveBoatDrag);
 map.on("mouseup", endBoatDrag);
-map.on("touchend", endBoatDrag);
 window.addEventListener("blur", endBoatDrag);
 map.on("dblclick", (e) => {
   if (!follow || !onBoat(e.point)) return;

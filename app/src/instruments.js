@@ -657,16 +657,6 @@ export function setupInstruments() {
     e.stopPropagation();
     openHistoryCard(h, [e.clientX, e.clientY]);
   }, true);
-  let hold = null;
-  document.addEventListener("pointerdown", (e) => {
-    if (e.pointerType === "mouse") return;
-    const h = histFrom(e.target);
-    if (!h) return;
-    const at = [e.clientX, e.clientY];
-    hold = setTimeout(() => { hold = "done"; openHistoryCard(h, at); }, 600);
-  });
-  document.addEventListener("pointerup", () => { if (hold && hold !== "done") clearTimeout(hold); setTimeout(() => { hold = null; }, 0); });
-  document.addEventListener("click", (e) => { if (hold === "done" && histFrom(e.target)) { e.stopPropagation(); e.preventDefault(); } }, true);
   document.addEventListener("pointerdown", (e) => { if (!menu.hidden && !menu.contains(e.target) && !e.target.closest(".itile")) menu.hidden = true; });
   window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !menu.hidden) { menu.hidden = true; e.preventDefault(); } });
 

@@ -321,6 +321,8 @@ export function setupGribDownload(map, { weather, course }) {
     return Date.now() / 1000 - run.ref_time > (cycle + (m.delay_h ?? 0)) * 3600;
   }
   let files = [];
+  /** A file in qtVlm's own GRIB folder (under Program Files): read, never deleted, from here. */
+  const qtvlm = (f) => /qtvlm/i.test(f.path);
   async function renderTable() {
     files = (await invoke("grib_files").catch(() => [])) ?? [];
     const shown = weather.sources().find((x) => x.shown)?.path;
@@ -335,7 +337,7 @@ export function setupGribDownload(map, { weather, course }) {
       row.innerHTML = `<div class="gf-main"><b>${esc(run ? `${run.model} · run ${utc(run.ref_time)}` : f.file)}</b>
         ${run ? `<small>${esc(local(run.first))} → ${esc(local(run.last))}</small><small>${esc(area)}</small>` : `<small>Could not be read</small>`}
         <small>${esc([run?.contents?.join(", "), f.size ? `${(f.size / 1e6).toFixed(1)} MB` : "", run ? age(run.ref_time) : ""].filter(Boolean).join(" · "))}</small>
-        <small class="gf-state">${f.path === shown ? "Shown on the chart" : on ? "Loaded" : ""}</small></div><div class="gf-acts"></div>`;
+        <small class="gf-state">${[f.path === shown ? "Shown on the chart" : on ? "Loaded" : "", qtvlm(f) ? "in qtVlm's folder (TweedPlot does not delete there)" : ""].filter(Boolean).join(" · ")}</small></div><div class="gf-acts"></div>`;
       const acts = row.querySelector(".gf-acts");
       const btn = (text, title, fn, cls = "") => { const b = document.createElement("button"); b.type = "button"; b.textContent = text; b.title = title; b.className = cls; b.onclick = fn; acts.append(b); return b; };
       if (on && f.path !== shown) btn("Show", "Make this the GRIB shown on the chart", () => weather.show(f.path));
@@ -373,19 +375,21 @@ export function setupGribDownload(map, { weather, course }) {
     // time: a satellite analysis is a day or two old when it is published but still current
     const ends = (f) => Math.max(...(f.info?.runs ?? []).map((r) => r.last ?? r.ref_time ?? -Infinity), -Infinity);
     const endOf = (f) => (Number.isFinite(ends(f)) ? ends(f) : f.mtime ?? Infinity);
-    const old = files.filter((f) => !/qtvlm/i.test(f.path) && endOf(f) < cut);
-    if (!old.length) { fileStatus(`Nothing to tidy: no GRIB's data ended more than ${days} days ago.`); return; }
+    const oldQt = files.filter((f) => qtvlm(f) && endOf(f) < cut);
+    const qtNote = oldQt.length ? ` ${oldQt.length} old file${oldQt.length === 1 ? " is" : "s are"} in qtVlm's own folder (C:\\Program Files (x86)\\qtVlm\\grib), which TweedPlot reads but does not delete (Windows needs administrator rights there): delete ${oldQt.length === 1 ? "it" : "them"} in qtVlm or File Explorer.` : "";
+    const old = files.filter((f) => !qtvlm(f) && endOf(f) < cut);
+    if (!old.length) { fileStatus(`Nothing to tidy in TweedPlot's GRIB folder: no GRIB's data there ended more than ${days} days ago.${qtNote}`); return; }
     const mb = old.reduce((a, f) => a + (f.size || 0), 0) / 1e6;
     const nLoaded = old.filter((f) => isLoaded.has(f.path)).length;
     const v = await ask({ title: `Delete ${old.length} old GRIB file${old.length === 1 ? "" : "s"}?`,
-      note: `Files whose data ended more than ${days} days ago, ${mb.toFixed(1)} MB in all${nLoaded ? `; ${nLoaded} of them ${nLoaded === 1 ? "is" : "are"} loaded and will be unloaded first` : ""}. qtVlm's folder is left alone. This cannot be undone.`, ok: "Delete" });
+      note: `Files whose data ended more than ${days} days ago, ${mb.toFixed(1)} MB in all${nLoaded ? `; ${nLoaded} of them ${nLoaded === 1 ? "is" : "are"} loaded and will be unloaded first` : ""}. This cannot be undone.${qtNote}`, ok: "Delete" });
     if (!v) return;
     try {
       for (const f of old) if (isLoaded.has(f.path)) await weather.unload(f.path, { quiet: true });
       const still = new Set(weather.sources().map((x) => x.path));
       const n = await invoke("grib_delete", { paths: old.map((f) => f.path).filter((p) => !still.has(p)) });
       const left = old.length - n;
-      fileStatus(`Deleted ${n} old GRIB file${n === 1 ? "" : "s"}${left ? `; ${left} could not be unloaded or deleted` : ""}.`);
+      fileStatus(`Deleted ${n} old GRIB file${n === 1 ? "" : "s"}${left ? `; ${left} could not be unloaded or deleted` : ""}.${qtNote}`);
     } catch (e) { fileStatus(`Could not delete: ${e}`); }
     await weather.refreshFiles();
     renderTable();
