@@ -31,72 +31,144 @@ export function niceTicks(lo, hi, n = 5) {
 
 const finite = (a) => a.filter((v) => v != null && Number.isFinite(v));
 
-/** The water column as an SVG: temperature (red, bottom axis) and current (blue, top axis) against depth. */
-export function profileSvg(p, { w = 280, h = 230 } = {}) {
-  const m = { l: 34, r: 10, t: 22, b: 22 };
-  const deep = Math.max(...p.depths.filter((_, i) => p.temp[i] != null || p.kn[i] != null), 10);
-  const ts = finite(p.temp), ks = finite(p.kn);
-  const tlo = ts.length ? Math.floor(Math.min(...ts)) : 0, thi = ts.length ? Math.ceil(Math.max(...ts)) : 1;
-  const khi = ks.length ? Math.max(0.5, Math.ceil(Math.max(...ks) * 4) / 4) : 1;
+/** The water column as an SVG, three panels side by side on one depth axis: temperature (°C),
+ *  salinity (PSU) and current (kn), with the thermocline (dashed) and the shear (dotted) across them. */
+export function profileSvg(p, { w = 560, h = 240 } = {}) {
+  const m = { l: 40, r: 8, t: 20, b: 18 }, gap = 14;
+  const deep = Math.max(...p.depths.filter((_, i) => p.temp[i] != null || p.kn[i] != null || p.sal[i] != null), 10);
   const y = (d) => m.t + (d / deep) * (h - m.t - m.b);
-  const xT = (v) => m.l + ((v - tlo) / Math.max(thi - tlo, 0.5)) * (w - m.l - m.r);
-  const xK = (v) => m.l + (v / khi) * (w - m.l - m.r);
-  const line = (vals, x) => {
-    let d = "", pen = false;
-    p.depths.forEach((z, i) => { const v = vals[i]; if (v == null) { pen = false; return; } d += `${pen ? "L" : "M"}${x(v).toFixed(1)},${y(z).toFixed(1)}`; pen = true; });
-    return d;
-  };
-  let s = `<svg class="wx-profile-svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="Temperature and current against depth">`;
-  for (const d of niceTicks(0, deep, 5)) s += `<line x1="${m.l}" x2="${w - m.r}" y1="${y(d)}" y2="${y(d)}" class="grid"/><text x="${m.l - 4}" y="${y(d) + 3}" text-anchor="end">${d}</text>`;
-  for (const v of niceTicks(tlo, thi, 4)) s += `<text x="${xT(v)}" y="${h - 6}" text-anchor="middle" class="t">${v}°</text>`;
-  if (ks.length) for (const v of niceTicks(0, khi, 3)) s += `<text x="${xK(v)}" y="${m.t - 8}" text-anchor="middle" class="k">${v}</text>`;
-  if (p.thermocline) s += `<line x1="${m.l}" x2="${w - m.r}" y1="${y(p.thermocline[0])}" y2="${y(p.thermocline[0])}" class="thermo"/>`;
-  if (p.shear) s += `<line x1="${m.l}" x2="${w - m.r}" y1="${y(p.shear[0])}" y2="${y(p.shear[0])}" class="shear"/>`;
-  if (ks.length) s += `<path d="${line(p.kn, xK)}" class="kn"/>`;
-  if (ts.length) s += `<path d="${line(p.temp, xT)}" class="temp"/>`;
+  const panels = [
+    { key: "temp", label: "Temperature °C", cls: "temp", dp: 1 },
+    { key: "sal", label: "Salinity PSU", cls: "sal", dp: 2 },
+    { key: "kn", label: "Current kn", cls: "kn", dp: 1, zero: true },
+  ].filter((q) => finite(p[q.key]).length);
+  const pw = (w - m.l - m.r - gap * (panels.length - 1)) / Math.max(panels.length, 1);
+  let s = `<svg class="wx-profile-svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="Temperature, salinity and current against depth">`;
+  for (const d of niceTicks(0, deep, 5)) s += `<text x="${m.l - 4}" y="${y(d) + 3}" text-anchor="end">${d}</text>`;
   s += `<text x="${m.l - 4}" y="${m.t - 8}" text-anchor="end" class="u">m</text>`;
-  if (ks.length) s += `<text x="${w - m.r}" y="10" text-anchor="end" class="k">current kn</text>`;
+  panels.forEach((q, k) => {
+    const x0 = m.l + k * (pw + gap), x1 = x0 + pw;
+    const vs = finite(p[q.key]);
+    let lo = q.zero ? 0 : Math.min(...vs), hi = Math.max(...vs);
+    const ticks = niceTicks(lo, hi > lo ? hi : lo + 1, 3);
+    lo = Math.min(lo, ticks[0]); hi = Math.max(hi, ticks.at(-1), lo + 1e-6);
+    const x = (v) => x0 + ((v - lo) / (hi - lo)) * pw;
+    s += `<rect x="${x0}" y="${m.t}" width="${pw}" height="${h - m.t - m.b}" class="frame"/>`;
+    for (const d of niceTicks(0, deep, 5)) s += `<line x1="${x0}" x2="${x1}" y1="${y(d)}" y2="${y(d)}" class="grid"/>`;
+    for (const v of ticks) s += `<text x="${x(v)}" y="${h - 5}" text-anchor="middle" class="${q.cls}">${+v.toFixed(q.dp + 1)}</text>`;
+    s += `<text x="${x0 + pw / 2}" y="${m.t - 7}" text-anchor="middle" class="${q.cls} h">${q.label}</text>`;
+    if (p.thermocline) s += `<line x1="${x0}" x2="${x1}" y1="${y(p.thermocline[0])}" y2="${y(p.thermocline[0])}" class="thermo"/>`;
+    if (p.shear) s += `<line x1="${x0}" x2="${x1}" y1="${y(p.shear[0])}" y2="${y(p.shear[0])}" class="shear"/>`;
+    let d = "", pen = false;
+    p.depths.forEach((z, i) => { const v = p[q.key][i]; if (v == null) { pen = false; return; } d += `${pen ? "L" : "M"}${x(v).toFixed(1)},${y(z).toFixed(1)}`; pen = true; });
+    s += `<path d="${d}" class="${q.cls}"/>`;
+  });
+  s += `<line class="hover" x1="${m.l}" x2="${w - m.r}" y1="0" y2="0" visibility="hidden"/>`;
   return s + `</svg>`;
+}
+/** The depth (m) under a y position of profileSvg's picture. */
+export function profileDepthAt(p, py, h = 240) {
+  const m = { t: 20, b: 18 };
+  const deep = Math.max(...p.depths.filter((_, i) => p.temp[i] != null || p.kn[i] != null || p.sal[i] != null), 10);
+  return ((py - m.t) / (h - m.t - m.b)) * deep;
 }
 
 export function setupDepthStack(map, { weather, dock }) {
   const $ = (id) => document.getElementById(id);
-  // ---------- the water column at the cursor ----------------------------------------------
+  // ---------- the water column at the cursor (a dock view) ------------------------------------
+  // In the side panel: a one-line summary at the cursor and the buttons; the picture is in the dock,
+  // where it can be seen while the mouse is on the chart. It follows the cursor and keeps the last
+  // place with water when the cursor leaves the chart; a click on the chart pins it there.
   const box = document.createElement("div");
   box.id = "wx-profile";
   box.className = "wx-profile";
   box.hidden = true;
-  box.innerHTML = `<div class="wx-profile-head"><b>Water column at the cursor</b></div><div class="wx-profile-plot"></div><div class="wx-profile-note"></div>
-    <button type="button" class="wx-section-btn" title="Draw a line on the chart: a section along it shows the water from the surface down">Section along a line…</button>`;
+  box.innerHTML = `<div class="wx-profile-head"><b>Below the surface</b> <span class="wx-profile-note"></span></div>
+    <div class="wx-profile-btns"><button type="button" class="wx-wc-btn" title="Temperature, salinity and current against depth at the cursor, in the dock">Water column</button>
+    <button type="button" class="wx-section-btn" title="Draw a line on the chart: a section along it shows the water from the surface down, in the dock">Section along a line…</button></div>`;
   ($("wxp-point") ?? $("side-grib-point"))?.after(box);
-  let busy = false, again = null;
-  async function showProfile(at) {
+  const note = box.querySelector(".wx-profile-note");
+  map.addSource("wc-pin", { type: "geojson", data: empty });
+  map.addLayer({ id: "wc-pin", type: "circle", source: "wc-pin", paint: { "circle-radius": 6, "circle-color": "#e4572e", "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
+  let prof = null, profAt = null, pinned = null, busy = false, again = null, wcBody = null;
+  const fmtPos = (c) => `${Math.abs(c[1]).toFixed(3)}°${c[1] < 0 ? "S" : "N"} ${Math.abs(c[0]).toFixed(3)}°${c[0] < 0 ? "W" : "E"}`;
+  const summary = (p) => !p ? "" : [
+    p.thermocline ? `thermocline ${Math.round(p.thermocline[0])} m (${p.thermocline[1].toFixed(2)} °C/10 m)` : "well mixed: no thermocline",
+    p.shear ? `shear ${Math.round(p.shear[0])} m (${p.shear[1].toFixed(2)} kn/10 m)` : null,
+  ].filter(Boolean).join(" · ");
+  async function fetchProfile(at) {
     const path = weather.stackPath();
-    if (!path || !at) { box.hidden = !path; if (!at) { box.querySelector(".wx-profile-plot").innerHTML = ""; box.querySelector(".wx-profile-note").textContent = path ? "Move the cursor over the sea." : ""; } return; }
+    box.hidden = !path;
+    if (!path || !at) return;
     if (busy) { again = at; return; }
     busy = true;
     try {
       const p = await invoke("grib_profile", { path, lat: at[1], lon: at[0], t: weather.current().t });
-      box.hidden = false;
-      const plot = box.querySelector(".wx-profile-plot"), note = box.querySelector(".wx-profile-note");
-      if (!p) { plot.innerHTML = ""; note.textContent = "No water column here (land, or outside the file)."; }
-      else {
-        plot.innerHTML = profileSvg(p);
-        const top = p.temp.find((v) => v != null);
-        note.textContent = [
-          p.thermocline ? `Thermocline ${Math.round(p.thermocline[0])} m (${p.thermocline[1].toFixed(2)} °C per 10 m)` : "No thermocline to speak of (well mixed)",
-          p.shear ? `shear ${Math.round(p.shear[0])} m (${p.shear[1].toFixed(2)} kn per 10 m)` : null,
-          top != null ? `surface ${top.toFixed(1)} °C` : null,
-        ].filter(Boolean).join(" · ");
-      }
-    } catch { /* not loaded any more */ }
+      // over land the last place with water stays (unless pinned there)
+      if (p || pinned) { prof = p; profAt = at; }
+      note.textContent = p ? `· ${summary(p)}` : "";
+      drawProfile();
+    } catch { /* unloaded */ }
     busy = false;
-    if (again) { const a = again; again = null; showProfile(a); }
+    if (again) { const a = again; again = null; fetchProfile(a); }
   }
-  let lastAt = null;
-  weather.onPoint((_row, at) => { lastAt = at; showProfile(at); });
-  weather.onLoaded(() => { box.hidden = !weather.stackPath(); showProfile(lastAt); });
+  weather.onPoint((_row, at) => { if (!pinned && at) fetchProfile(at); });
+  weather.onTime(() => { if (profAt) fetchProfile(profAt); });
+  weather.onLoaded(() => { box.hidden = !weather.stackPath(); if (!box.hidden && profAt) fetchProfile(profAt); });
+  box.querySelector(".wx-wc-btn").onclick = () => dock.show("watercol");
   box.querySelector(".wx-section-btn").onclick = () => startDrawing();
+  map.on("click", (e) => {
+    if (drawing || dock.current() !== "watercol") return;
+    pinned = [e.lngLat.lng, e.lngLat.lat];
+    map.getSource("wc-pin").setData({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: pinned } });
+    fetchProfile(pinned);
+    dock.refresh("watercol");
+  });
+  const unpin = () => { pinned = null; map.getSource("wc-pin").setData(empty); };
+  function drawProfile() {
+    if (!wcBody?.isConnected) return;
+    const host = wcBody.parentElement ?? wcBody;
+    const W = Math.max(360, host.clientWidth - 24), H = Math.max(150, host.clientHeight - 34);
+    const head = `<div class="wc-head">${profAt ? `${pinned ? "Pinned at" : "At the cursor,"} ${fmtPos(profAt)}` : "Move the cursor over the sea"}${prof ? ` · ${summary(prof)}` : ""}</div>`;
+    if (!prof) { wcBody.innerHTML = head + `<p class="wx-note">${profAt ? "No water column here (land, or outside the file)." : ""}</p>`; return; }
+    wcBody.innerHTML = head + `<div class="wc-plot">${profileSvg(prof, { w: W, h: H })}<div class="sect-tip" hidden></div></div>`;
+    const svg = wcBody.querySelector("svg"), tip = wcBody.querySelector(".sect-tip"), line = svg.querySelector(".hover");
+    svg.onmousemove = (e) => {
+      const r = svg.getBoundingClientRect(), py = ((e.clientY - r.top) / r.height) * H;
+      const z = profileDepthAt(prof, py, H);
+      const i = prof.depths.reduce((b, d, k) => (Math.abs(d - z) < Math.abs(prof.depths[b] - z) ? k : b), 0);
+      const yy = 20 + (prof.depths[i] / Math.max(...prof.depths.filter((_, k) => prof.temp[k] != null || prof.kn[k] != null || prof.sal[k] != null), 10)) * (H - 38);
+      line.setAttribute("y1", yy); line.setAttribute("y2", yy); line.setAttribute("visibility", "visible");
+      const v = (x, dp, u) => (x == null ? null : `${x.toFixed(dp)} ${u}`);
+      tip.hidden = false;
+      tip.style.left = `${e.clientX - r.left + 12}px`; tip.style.top = `${e.clientY - r.top + 8}px`;
+      tip.textContent = [`${prof.depths[i] < 10 ? prof.depths[i].toFixed(1) : Math.round(prof.depths[i])} m`, v(prof.temp[i], 1, "°C"), v(prof.sal[i], 2, "PSU"),
+        prof.kn[i] == null ? null : `${prof.kn[i].toFixed(1)} kn toward ${String(prof.set[i]).padStart(3, "0")}°`].filter(Boolean).join(" · ");
+    };
+    svg.onmouseleave = () => { tip.hidden = true; line.setAttribute("visibility", "hidden"); };
+  }
+  dock.register("watercol", {
+    title: "Water column",
+    render(body, tools) {
+      const follow = document.createElement("button");
+      follow.textContent = pinned ? "Follow the cursor" : "Click the chart to pin";
+      follow.disabled = !pinned;
+      follow.title = "The water column follows the cursor; a click on the chart pins it to that place";
+      follow.onclick = () => { unpin(); dock.refresh("watercol"); };
+      tools.append(follow);
+      wcBody = document.createElement("div");
+      wcBody.className = "wc-body";
+      body.append(wcBody);
+      requestAnimationFrame(drawProfile);
+    },
+  });
+  dock.onChange((cur) => { if (cur !== "watercol") { unpin(); wcBody = null; } });
+  // the dock resized: draw again to fit
+  let fitTimer = null;
+  window.addEventListener("racenav-layout", () => {
+    clearTimeout(fitTimer);
+    fitTimer = setTimeout(() => { if (dock.current() === "watercol") drawProfile(); else if (dock.current() === "section" && section) dock.refresh("section"); }, 150);
+  });
 
   // ---------- a section along a line --------------------------------------------------------
   map.addSource("sect-line", { type: "geojson", data: empty });
@@ -117,7 +189,7 @@ export function setupDepthStack(map, { weather, dock }) {
     drawing = true; line = []; rubber = null; showLine();
     map.getCanvas().style.cursor = "crosshair";
     map.doubleClickZoom.disable();
-    box.querySelector(".wx-profile-note").textContent = "Click along the line; double-click (or Enter) to finish, Esc to cancel.";
+    note.textContent = "· click along the line; double-click (or Enter) to finish, Esc to cancel";
   }
   function stopDrawing(keep) {
     drawing = false; rubber = null;

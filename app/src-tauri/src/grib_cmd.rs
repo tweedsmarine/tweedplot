@@ -586,12 +586,12 @@ pub(crate) fn grib_verify_grid(
 
 /// Every loaded GRIB at one point and time: the quick agreement check.
 #[tauri::command]
-pub(crate) fn grib_point(lat: f64, lon: f64, t: i64) -> Vec<serde_json::Value> {
+pub(crate) fn grib_point(lat: f64, lon: f64, t: i64, depth: Option<f64>) -> Vec<serde_json::Value> {
     let files: Vec<(String, Arc<grib::GribFile>)> = GRIBS.lock().unwrap().iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     files
         .into_iter()
         .map(|(k, f)| {
-            let mut j = point_values(&f, lat, lon, t);
+            let mut j = point_values(&f, lat, lon, t, depth);
             j["path"] = k.clone().into();
             j["name"] = f.summary().name.into();
             j
@@ -615,11 +615,16 @@ pub(crate) async fn grib_section(path: String, line: Vec<[f64; 2]>, t: i64, n: u
 }
 
 /// Every value a GRIB has at a point and time, in display units (kn, hPa, m, s, °C…).
-pub(crate) fn point_values(f: &grib::GribFile, lat: f64, lon: f64, t: i64) -> serde_json::Value {
+/// With a depth stack, the values "at depth" are at the depth in the file nearest `depth` (50 m if none given).
+pub(crate) fn point_values(f: &grib::GribFile, lat: f64, lon: f64, t: i64, depth: Option<f64>) -> serde_json::Value {
     let w = f.wind(lat, lon, t);
     let kn = |x: Option<f64>| x.map(|v| (v * 3600.0 / 1852.0 * 10.0).round() / 10.0);
-    // a file with a whole depth stack shows it as a profile (grib_profile), not as one depth here
-    let one_depth = |p: grib::Param| f.depths(p).len() <= 1;
+    // a file with a depth stack: its values at the depth chosen (the profile shows the rest)
+    let stack_depth = f.nearest_depth(grib::Param::SubTemp, depth.unwrap_or(50.0)).filter(|_| f.depths(grib::Param::SubTemp).len() > 1);
+    let sub = |p: grib::Param| match stack_depth {
+        Some(d) => f.value_at_depth(p, d, lat, lon, t),
+        None => f.value(p, lat, lon, t),
+    };
     serde_json::json!({
                     "tws": w.map(|w| (w.tws * 10.0).round() / 10.0),
                     "twd": w.map(|w| w.twd.round()),
@@ -633,8 +638,8 @@ pub(crate) fn point_values(f: &grib::GribFile, lat: f64, lon: f64, t: i64) -> se
                     "sst": f.value(grib::Param::SeaTemp, lat, lon, t).map(|k| ((k - 273.15) * 100.0).round() / 100.0),
                     "sst_err": f.value(grib::Param::SeaTempError, lat, lon, t).map(|e| (e * 100.0).round() / 100.0),
                     "sss": f.value(grib::Param::Salinity, lat, lon, t).map(|s| (s * 100.0).round() / 100.0),
-                    "subt": f.value(grib::Param::SubTemp, lat, lon, t).filter(|_| one_depth(grib::Param::SubTemp)).map(|k| ((k - 273.15) * 100.0).round() / 100.0),
-                    "subs": f.value(grib::Param::SubSalinity, lat, lon, t).filter(|_| one_depth(grib::Param::SubSalinity)).map(|s| (s * 100.0).round() / 100.0),
+                    "subt": sub(grib::Param::SubTemp).map(|k| ((k - 273.15) * 100.0).round() / 100.0),
+                    "subs": sub(grib::Param::SubSalinity).map(|s| (s * 100.0).round() / 100.0),
                     "skin": f.value(grib::Param::SkinTemp, lat, lon, t).map(|k| ((k - 273.15) * 100.0).round() / 100.0),
                     "chl": f.value(grib::Param::Chlorophyll, lat, lon, t).map(|c| (c * 1000.0).round() / 1000.0),
                     "ssh": f.value(grib::Param::SeaLevel, lat, lon, t).map(|h| (h * 100.0).round() / 100.0),
@@ -644,7 +649,11 @@ pub(crate) fn point_values(f: &grib::GribFile, lat: f64, lon: f64, t: i64) -> se
                     "o2": f.value(grib::Param::Oxygen, lat, lon, t).map(|c| (c * 10.0).round() / 10.0),
                     "ph": f.value(grib::Param::Ph, lat, lon, t).map(|c| (c * 1000.0).round() / 1000.0),
                     "ice": f.value(grib::Param::SeaIce, lat, lon, t).map(|c| (c * 100.0).round()),
-                    "depth": f.series(grib::Param::SubTemp).first().or(f.series(grib::Param::SubSalinity).first()).map(|x| x.surface_value),
+                    "depth": stack_depth.or_else(|| f.series(grib::Param::SubTemp).first().or(f.series(grib::Param::SubSalinity).first()).map(|x| x.surface_value)),
+                    "subcur": sub(grib::Param::SubCurrentU).zip(sub(grib::Param::SubCurrentV)).map(|(u, v)| serde_json::json!({
+                        "kn": ((u * u + v * v).sqrt() * 3600.0 / 1852.0 * 100.0).round() / 100.0,
+                        "set": nav_core::norm360(u.atan2(v).to_degrees()).round(),
+                    })),
                     "cur": f.current(lat, lon, t).map(|(u, v)| serde_json::json!({
                         "kn": ((u * u + v * v).sqrt() * 3600.0 / 1852.0 * 100.0).round() / 100.0,
                         "set": nav_core::norm360(u.atan2(v).to_degrees()).round(),
@@ -665,7 +674,7 @@ pub(crate) async fn grib_along(first: Option<String>, pts: Vec<(f64, f64, i64)>)
                 let mut out = serde_json::Map::new();
                 let mut sources = serde_json::Map::new();
                 for (path, f) in &files {
-                    if let serde_json::Value::Object(m) = point_values(f, lat, lon, t) {
+                    if let serde_json::Value::Object(m) = point_values(f, lat, lon, t, None) {
                         for (k, v) in m {
                             if !v.is_null() && !out.contains_key(&k) {
                                 sources.insert(k.clone(), path.clone().into());

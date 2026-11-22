@@ -678,15 +678,24 @@ pub fn download(req: &Request, now: i64, dir: &Path, progress: Progress, cancel:
         }
         let ds_vars: Vec<&Var> = vars.iter().filter(|v| v.dataset == ds).collect();
         let res = (o.lons[o.lons.len() - 1] - o.lons[0]) / (o.lons.len() - 1) as f64;
-        let nlev = if vars.iter().any(|v| v.stack) { stack_levels(&o.elev).len().max(1) } else { 1 };
-        let k = stride_for(req.area, res, tix.len() * vars.len() * nlev);
-        let rows = lat_rows(&o.lats, req.area[1].min(req.area[3]), req.area[1].max(req.area[3]), k);
-        if rows.len() < 2 {
-            return Err(bad("the area is too small for this dataset's grid"));
-        }
-        let (col0, ncols, lon0, dlon) = lon_window(&o.lons, req.area, k)?;
-        let dlat = (o.lats[rows[1]] - o.lats[rows[0]]).abs();
-        let grid = Grid::regular(ncols, rows.len(), o.lats[rows[0]], lon0, dlat, dlon);
+        // the depth stack has its own budget, so the surface fields keep their resolution beside it
+        let nlev = stack_levels(&o.elev).len().max(1);
+        let n_stack = vars.iter().filter(|v| v.stack).count();
+        let n_flat = vars.len() - n_stack;
+        let k_flat = stride_for(req.area, res, tix.len() * n_flat.max(1));
+        let k_stack = stride_for(req.area, res, tix.len() * n_stack.max(1) * nlev);
+        let window = |k: usize| -> Result<(Vec<usize>, usize, usize, Grid)> {
+            let rows = lat_rows(&o.lats, req.area[1].min(req.area[3]), req.area[1].max(req.area[3]), k);
+            if rows.len() < 2 {
+                return Err(bad("the area is too small for this dataset's grid"));
+            }
+            let (col0, ncols, lon0, dlon) = lon_window(&o.lons, req.area, k)?;
+            let dlat = (o.lats[rows[1]] - o.lats[rows[0]]).abs();
+            let grid = Grid::regular(ncols, rows.len(), o.lats[rows[0]], lon0, dlat, dlon);
+            Ok((rows, col0, ncols, grid))
+        };
+        let flat_win = window(k_flat)?;
+        let stack_win = window(k_stack)?;
         let surface = nearest_level(&o.elev, 0.0);
         let deep = nearest_level(&o.elev, if req.depth > 0.0 { req.depth } else { 50.0 });
         let jobs: Vec<(&Var, Option<usize>)> = ds_vars
@@ -706,7 +715,9 @@ pub fn download(req: &Request, now: i64, dir: &Path, progress: Progress, cancel:
             .collect();
         total += jobs.len() - ds_vars.len();
         for (var, level) in jobs {
-            let w = Window { times: &tix, level, rows: &rows, col0, ncols, k, nlon: o.lons.len() };
+            let (k, (rows, col0, ncols, grid)) = if var.stack { (k_stack, &stack_win) } else { (k_flat, &flat_win) };
+            let (col0, ncols, grid) = (*col0, *ncols, *grid);
+            let w = Window { times: &tix, level, rows, col0, ncols, k, nlon: o.lons.len() };
             // the cheaper chunking
             let a_t = o.time.array(var.name)?;
             let z = match &o.geo {
