@@ -84,6 +84,9 @@ pub enum Param {
     SeaLevel,
     /// Sea ice cover: the proportion (0–1) of the sea covered by ice, 10/2/0.
     SeaIce,
+    /// Estimated error (standard deviation, K = °C) of a sea temperature
+    /// analysis (Geo-Polar Blended), local code 10/3/193.
+    SeaTempError,
     Other(u8, u8, u8),
 }
 
@@ -108,6 +111,7 @@ impl Param {
             (0, 1, 7) => Param::Rain,
             (0, 7, 6) => Param::Cape,
             (10, 3, 192) => Param::SkinTemp,
+            (10, 3, 193) => Param::SeaTempError,
             (10, 4, 192) => Param::Chlorophyll,
             (10, 3, 1) => Param::SeaLevel,
             (10, 2, 0) => Param::SeaIce,
@@ -602,6 +606,7 @@ pub fn scan(path: impl AsRef<Path>) -> Result<FileInfo, GribError> {
                     Param::Chlorophyll => "chlorophyll",
                     Param::SeaLevel => "sea surface height",
                     Param::SeaIce => "sea ice",
+                    Param::SeaTempError => "sea temperature error",
                     Param::Salinity | Param::SubSalinity => "salinity",
                     Param::Other(..) => "other",
                 };
@@ -708,7 +713,7 @@ pub fn fmt_area(b: &[f64; 4]) -> String {
 /// or two old by the time it is published. Weather fields stand only at their times.
 pub fn hold_s(p: Param) -> (i64, i64) {
     match p {
-        Param::SeaTemp | Param::Salinity | Param::SubTemp | Param::SubSalinity => (12 * 3600, 4 * 86400),
+        Param::SeaTemp | Param::SeaTempError | Param::Salinity | Param::SubTemp | Param::SubSalinity => (12 * 3600, 4 * 86400),
         Param::SeaLevel => (3600, 12 * 3600),
         // hourly satellite views: the last stands half a day
         Param::SkinTemp => (3600, 12 * 3600),

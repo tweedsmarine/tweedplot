@@ -66,6 +66,11 @@ pub enum Model {
     ChlViirs,
     /// Sea ice concentration, daily (AMSR2, University of Bremen): see `ice`.
     IceAsi,
+    /// Daily sea temperature from NOAA CoastWatch: ACSPO L3S-LEO (2 km, clear-sky
+    /// observations from all the polar orbiters) and Geo-Polar Blended (5 km,
+    /// gap-free analysis with its error): see `ocean`.
+    AcspoSst,
+    BlendedSst,
 }
 
 /// What a model offers, for the download dialog.
@@ -93,7 +98,7 @@ pub struct ParamInfo {
 }
 
 impl Model {
-    pub fn all() -> [Model; 14] {
+    pub fn all() -> [Model; 16] {
         [
             Model::Gfs0p25,
             Model::Gfs0p50,
@@ -105,6 +110,8 @@ impl Model {
             Model::EcmwfWave0p25,
             Model::EcmwfWave0p1,
             Model::MurSst,
+            Model::AcspoSst,
+            Model::BlendedSst,
             Model::Himawari,
             Model::HycomEspc,
             Model::ChlViirs,
@@ -113,7 +120,7 @@ impl Model {
     }
 
     pub fn is_ocean(self) -> bool {
-        matches!(self, Model::MurSst | Model::HycomEspc | Model::Himawari | Model::ChlViirs | Model::IceAsi)
+        matches!(self, Model::MurSst | Model::HycomEspc | Model::Himawari | Model::ChlViirs | Model::IceAsi | Model::AcspoSst | Model::BlendedSst)
     }
 
     /// The wave model whose fields can go in the same file as this model's wind.
@@ -214,6 +221,28 @@ impl Model {
                 max_hours: 14 * 24,
                 steps: vec![(14 * 24, 24)],
                 params: vec![ParamInfo { id: "sst", name: "Sea surface temperature", fields: 1, default: true }],
+                delay_h: 0,
+            },
+            // ACSPO and Geo-Polar: `hours` / 24 = how many of the latest daily files
+            Model::AcspoSst => ModelInfo {
+                id: self,
+                name: "ACSPO sea temperature 2 km, daily (all polar satellites, clear sky)",
+                res_deg: 0.02,
+                max_hours: 14 * 24,
+                steps: vec![(14 * 24, 24)],
+                params: vec![ParamInfo { id: "sst", name: "Sea surface temperature (clear sky)", fields: 1, default: true }],
+                delay_h: 0,
+            },
+            Model::BlendedSst => ModelInfo {
+                id: self,
+                name: "Geo-Polar Blended sea temperature 5 km, daily (gap-free analysis, with its error)",
+                res_deg: 0.05,
+                max_hours: 14 * 24,
+                steps: vec![(14 * 24, 24)],
+                params: vec![
+                    ParamInfo { id: "sst", name: "Sea surface temperature", fields: 1, default: true },
+                    ParamInfo { id: "sst_err", name: "Estimated error of the analysis", fields: 1, default: true },
+                ],
                 delay_h: 0,
             },
             // Himawari: `hours` = how many hours back from now, `every` = 1, 2, 3 or 6
@@ -468,6 +497,8 @@ pub fn download_bytes(req: &Request) -> u64 {
 pub fn ocean_step(req: &Request) -> Option<(f64, usize)> {
     match req.model {
         Model::MurSst => Some((0.01, ocean::mur_stride(req.area, (req.hours / 24).clamp(1, 14)))),
+        Model::AcspoSst => Some((0.02, ocean::stride_for(req.area, 0.02, (req.hours / 24).clamp(1, 14) as usize))),
+        Model::BlendedSst => Some((0.05, ocean::stride_for(req.area, 0.05, 2 * (req.hours / 24).clamp(1, 14) as usize))),
         Model::Himawari => Some((0.02, ocean::him_stride(req.area, (req.hours / req.every.max(1)).max(1) as usize))),
         _ => None,
     }
@@ -484,6 +515,14 @@ pub fn estimate_bytes(req: &Request) -> u64 {
         let nx = (ocean::width(req.area) / 0.01 / k).floor() + 1.0;
         let ny = ((req.area[3] - req.area[1]).abs() / 0.01 / k).floor() + 1.0;
         return ((nx * ny * 1.6 + 200.0) * days as f64) as u64;
+    }
+    if let Some((res, k)) = ocean_step(req).filter(|_| matches!(req.model, Model::AcspoSst | Model::BlendedSst)) {
+        let days = (req.hours / 24).clamp(1, 14) as f64;
+        let k = k as f64;
+        let nx = (ocean::width(req.area) / res / k).floor() + 1.0;
+        let ny = ((req.area[3] - req.area[1]).abs() / res / k).floor() + 1.0;
+        let fields = if req.model == Model::BlendedSst { 2.0 } else { 1.0 };
+        return ((nx * ny * 1.6 + 200.0) * days * fields) as u64;
     }
     if req.model == Model::Himawari {
         let fields = (req.hours / req.every.max(1)).max(1);
@@ -689,6 +728,8 @@ pub(crate) fn file_name(req: &Request, run: &Run, last: u32) -> String {
         Model::Himawari => "HIMAWARI_SST",
         Model::ChlViirs => "CHL_VIIRS",
         Model::IceAsi => "SEAICE_AMSR2",
+        Model::AcspoSst => "ACSPO_SST",
+        Model::BlendedSst => "BLENDED_SST",
     };
     let lat = |v: f64| format!("{}{}", v.abs().round(), if v < 0.0 { "S" } else { "N" });
     let lon = |v: f64| {

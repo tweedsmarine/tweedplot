@@ -61,6 +61,10 @@ pub const HYCOM_NCSS: &str = "https://ncss.hycom.org/thredds/ncss";
 pub const COASTWATCH: &str = "https://coastwatch.noaa.gov";
 const HIMAWARI_DS: &str = "gridH09AHINRTL3CWW00";
 const CHL_DS: &str = "noaacwNPPN20VIIRSDINEOFDaily";
+/// ACSPO L3S-LEO, near real time, daily, °C (latitude north to south).
+const ACSPO_DS: &str = "noaacwLEOACSPOSSTL3SnrtCDaily";
+/// Geo-Polar Blended, night-only foundation temperature, daily, °C, with its error.
+const BLENDED_DS: &str = "noaacwBLENDEDCsstDaily";
 /// The quality level kept (5 = clear sky, "recommended for operational use").
 pub const HIM_MIN_QUALITY: f64 = 5.0;
 
@@ -149,6 +153,28 @@ pub fn chl_url(part: [f64; 4], days: u32) -> Result<String> {
     let [w, s, e, n] = area_ok(part)?;
     let days = days.clamp(1, 14);
     Ok(format!("{COASTWATCH}/erddap/griddap/{CHL_DS}.nc?chlor_a%5Blast-{}:1:last%5D%5B0%5D%5B({n:.3}):1:({s:.3})%5D%5B({w:.3}):1:({e:.3})%5D", days - 1))
+}
+
+/// The CoastWatch ERDDAP request for the last `days` daily fields of `vars` over one part of an
+/// area, every `k`th point. `north_first`: the dataset's latitude runs north to south (ERDDAP wants
+/// the range in the dataset's own order).
+pub fn coastwatch_url(ds: &str, vars: &[&str], part: [f64; 4], days: u32, k: usize, north_first: bool) -> Result<String> {
+    let [w, s, e, n] = area_ok(part)?;
+    let days = days.clamp(1, 14);
+    let lat = if north_first { format!("({n:.3}):{k}:({s:.3})") } else { format!("({s:.3}):{k}:({n:.3})") };
+    let one = |v: &str| format!("{v}%5Blast-{}:1:last%5D%5B{lat}%5D%5B({w:.3}):{k}:({e:.3})%5D", days - 1);
+    Ok(format!("{COASTWATCH}/erddap/griddap/{ds}.nc?{}", vars.iter().map(|v| one(v)).collect::<Vec<_>>().join(",")))
+}
+
+/// ACSPO L3S-LEO: sea temperature and its quality level (only "best quality" kept).
+pub fn acspo_url(part: [f64; 4], days: u32, k: usize) -> Result<String> {
+    coastwatch_url(ACSPO_DS, &["sea_surface_temperature", "quality_level"], part, days, k, true)
+}
+
+/// Geo-Polar Blended: analysed temperature and its estimated error. `north_first` is tried both
+/// ways by the download, as the dataset's latitude order isn't published.
+pub fn blended_url(part: [f64; 4], days: u32, k: usize, north_first: bool) -> Result<String> {
+    coastwatch_url(BLENDED_DS, &["analysed_sst", "analysis_error"], part, days, k, north_first)
 }
 
 /// The THREDDS catalogue of one day's Himawari files.
@@ -349,6 +375,8 @@ fn kind_of(var: &str, depth: Option<f64>) -> Option<Kind> {
         "sea_surface_temperature" => Kind { param: Param::SkinTemp, category: 3, number: 192, surface_type: 1, kelvin: true },
         "chlor_a" => Kind { param: Param::Chlorophyll, category: 4, number: 192, surface_type: 1, kelvin: false },
         "surf_el" => Kind { param: Param::SeaLevel, category: 3, number: 1, surface_type: 1, kelvin: false },
+        // an error (standard deviation) in K is the same in °C: no offset
+        "analysis_error" => Kind { param: Param::SeaTempError, category: 3, number: 193, surface_type: 1, kelvin: false },
         _ => return None,
     })
 }
@@ -406,8 +434,9 @@ pub fn fields_from_netcdf_ex(bytes: &[u8], centre: u16, depth: Option<f64>, keep
                 let src_row = if north_first { nj - 1 - j } else { j };
                 for i in 0..ni {
                     let x = vals[base + src_row * ni + i];
-                    let good = match (&quality, k.param) {
-                        (Some(q), Param::SkinTemp) => q.get(base + src_row * ni + i).is_some_and(|&q| q >= HIM_MIN_QUALITY),
+                    // satellite (clear-sky) temperatures: only "best quality" pixels
+                    let good = match &quality {
+                        Some(q) if v.name == "sea_surface_temperature" => q.get(base + src_row * ni + i).is_some_and(|&q| q >= HIM_MIN_QUALITY),
                         _ => true,
                     };
                     if x.is_finite() && good {
@@ -439,6 +468,12 @@ pub fn fields_from_netcdf_ex(bytes: &[u8], centre: u16, depth: Option<f64>, keep
         return Err(Error::Bad("no sea values in the area (all land, or all cloud?)".into()));
     }
     Ok(out)
+}
+
+/// ACSPO's daily clear-sky temperature is a sea temperature like MUR's (shown under "Sea
+/// temperature", with the source chosen), not the hourly satellite view (Himawari's SkinTemp).
+fn as_sea_temp(fields: Vec<Field>) -> Vec<Field> {
+    fields.into_iter().map(|f| if f.param == Param::SkinTemp { Field { param: Param::SeaTemp, category: 3, number: 0, ..f } } else { f }).collect()
 }
 
 /// e.g. "MUR_SST_20261015-20261017_42S-40S_172E-175E.grb2", "HYCOM_ESPC_20261019_06z_f000-f192_…grb2"
@@ -578,6 +613,59 @@ pub fn download(req: &Request, now: i64, dir: &Path, progress: Progress, cancel:
             write(&fields, grib::write::PROCESS_VIIRS_CHL, &path)?;
             Ok(path)
         }
+        Model::AcspoSst => {
+            let days = (req.hours / 24).clamp(1, 14);
+            let k = stride_for(req.area, 0.02, days as usize);
+            let parts = area_parts(req.area)?.len();
+            let (mut done, mut bytes) = (0, 0u64);
+            progress(0, parts, 0);
+            let fields = fetch_area(
+                req.area,
+                |part| {
+                    let data = get_retry(&c, &acspo_url(part, days, k)?, cancel)?;
+                    done += 1;
+                    bytes += data.len() as u64;
+                    progress(done, parts, bytes);
+                    Ok(data)
+                },
+                |b| fields_from_netcdf_ex(b, grib::write::CENTRE_NESDIS, None, true).map(as_sea_temp),
+            )?;
+            let (t0, t1) = (fields.iter().map(|f| f.valid_time).min().unwrap(), fields.iter().map(|f| f.valid_time).max().unwrap());
+            let path = dir.join(name("ACSPO_SST", &format!("{}-{}", ymd(t0), ymd(t1)), req.area));
+            write(&fields, grib::write::PROCESS_ACSPO_SST, &path)?;
+            Ok(path)
+        }
+        Model::BlendedSst => {
+            let days = (req.hours / 24).clamp(1, 14);
+            let k = stride_for(req.area, 0.05, 2 * days as usize);
+            let parts = area_parts(req.area)?.len();
+            let (mut done, mut bytes) = (0, 0u64);
+            progress(0, parts, 0);
+            // the latitude order isn't published: south to north first, and if the server
+            // refuses the range, north to south (then that order for the rest)
+            let mut north_first = false;
+            let fields = fetch_area(
+                req.area,
+                |part| {
+                    let data = match get_retry(&c, &blended_url(part, days, k, north_first)?, cancel) {
+                        Err(Error::Http(first)) => {
+                            north_first = !north_first;
+                            get_retry(&c, &blended_url(part, days, k, north_first)?, cancel).map_err(|_| Error::Http(first))?
+                        }
+                        r => r?,
+                    };
+                    done += 1;
+                    bytes += data.len() as u64;
+                    progress(done, parts, bytes);
+                    Ok(data)
+                },
+                |b| fields_from_netcdf_ex(b, grib::write::CENTRE_NESDIS, None, true),
+            )?;
+            let (t0, t1) = (fields.iter().map(|f| f.valid_time).min().unwrap(), fields.iter().map(|f| f.valid_time).max().unwrap());
+            let path = dir.join(name("BLENDED_SST", &format!("{}-{}", ymd(t0), ymd(t1)), req.area));
+            write(&fields, grib::write::PROCESS_BLENDED_SST, &path)?;
+            Ok(path)
+        }
         Model::Himawari => {
             let hours = req.hours.clamp(1, 72) as i64;
             let every = req.every.clamp(1, 6) as i64;
@@ -669,6 +757,34 @@ mod tests {
         let d = hycom_url("ts3z", &["water_temp"], [172.0, -42.0, 175.0, -40.0], 0, 24, 6, Some(50.0)).unwrap();
         assert!(d.contains("timeStride=2&vertCoord=50&accept=netcdf"), "{d}");
         assert!(area_ok([170.0, -45.0, 190.0, -30.0]).is_err());
+    }
+
+    #[test]
+    fn coastwatch_sea_temperature_requests() {
+        let a = acspo_url([172.0, -42.0, 175.0, -40.0], 2, 1).unwrap();
+        assert_eq!(
+            a,
+            "https://coastwatch.noaa.gov/erddap/griddap/noaacwLEOACSPOSSTL3SnrtCDaily.nc?sea_surface_temperature%5Blast-1:1:last%5D%5B(-40.000):1:(-42.000)%5D%5B(172.000):1:(175.000)%5D,quality_level%5Blast-1:1:last%5D%5B(-40.000):1:(-42.000)%5D%5B(172.000):1:(175.000)%5D"
+        );
+        let b = blended_url([172.0, -42.0, 175.0, -40.0], 1, 2, false).unwrap();
+        assert!(
+            b.starts_with("https://coastwatch.noaa.gov/erddap/griddap/noaacwBLENDEDCsstDaily.nc?analysed_sst%5Blast-0:1:last%5D%5B(-42.000):2:(-40.000)%5D")
+        );
+        assert!(b.contains(",analysis_error%5Blast-0:1:last%5D"));
+        assert!(blended_url([172.0, -42.0, 175.0, -40.0], 1, 1, true).unwrap().contains("%5B(-40.000):1:(-42.000)%5D"));
+        // the error is in kelvin and stays as it is (no 273.15)
+        let k = kind_of("analysis_error", None).unwrap();
+        assert_eq!(k.param, Param::SeaTempError);
+        assert!(!k.kelvin);
+        // ACSPO's clear-sky temperature is filed as a sea temperature
+        let f = as_sea_temp(vec![Field { param: Param::SkinTemp, category: 3, number: 192, ..join_test_field() }]);
+        assert_eq!((f[0].param, f[0].number), (Param::SeaTemp, 0));
+        let g = grib::write::encode(&f[0], grib::write::PROCESS_ACSPO_SST);
+        assert_eq!(grib::GribFile::from_bytes(&g).fields[0].param, Param::SeaTemp);
+    }
+
+    fn join_test_field() -> Field {
+        field(172.0, 4, 1_800_000_000, |_, _| 290.0)
     }
 
     #[test]
