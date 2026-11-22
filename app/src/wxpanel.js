@@ -55,11 +55,10 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
   const win = $("wxp");
   win.innerHTML = `<div id="wxp-key" class="wx-key" hidden></div>
     <div class="env-start">
-      <div class="env-start-buttons" role="group" aria-label="What the Environment view is showing">
-        <button type="button" data-env-preset="weather" aria-pressed="false" title="Wind, pressure, rain and sea state. Remembers its own layer and overlays">Weather</button>
-        <button type="button" data-env-preset="ocean" aria-pressed="false" title="Sea temperature, salinity, chlorophyll and currents. Remembers its own layer and overlays">Ocean</button>
-        <button type="button" data-env-preset="seabed" aria-pressed="false" title="Depth layers, with no weather shading">Seabed</button>
-      </div>
+      <label class="env-start-row" title="What the Environment view is showing. Weather: wind, pressure, rain and sea state; Ocean: sea temperature, salinity, chlorophyll, currents and below the surface; Seabed: depth layers, with no weather shading. Each remembers its own layer, overlays and filter">Showing
+        <select class="env-start-select" aria-label="What the Environment view is showing">
+          <option value="weather">Weather</option><option value="ocean">Ocean</option><option value="seabed">Seabed</option>
+        </select></label>
       <div id="env-start-status" class="wx-note" role="status"></div>
       <details class="env-seabed"><summary>Seabed layers</summary>
         <label><input type="checkbox" data-seabed="sd-show"> Survey depths (LINZ)</label>
@@ -144,13 +143,9 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     if (seabed.some((input) => input.dataset.seabed === event.target.id)) syncSeabed();
   });
   window.addEventListener("racenav-view", () => queueMicrotask(syncSeabed));
-  const startButtons = win.querySelector(".env-start-buttons");
+  const startSelect = win.querySelector(".env-start-select");
   function syncStartingPoint() {
-    for (const button of startButtons.querySelectorAll("[data-env-preset]")) {
-      const selected = button.dataset.envPreset === st.envStart;
-      button.classList.toggle("on", selected);
-      button.setAttribute("aria-pressed", String(selected));
-    }
+    startSelect.value = st.envStart ?? "weather";
     // the seabed layers belong to the Seabed mode
     win.querySelector(".env-seabed").hidden = st.envStart !== "seabed";
   }
@@ -187,10 +182,7 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     syncStartingPoint();
     refresh();
   }
-  startButtons.addEventListener("click", (event) => {
-    const key = event.target.closest("[data-env-preset]")?.dataset.envPreset;
-    if (key) setMode(key);
-  });
+  startSelect.addEventListener("change", () => setMode(startSelect.value));
   syncStartingPoint();
   syncSeabed();
 

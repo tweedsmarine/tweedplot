@@ -327,7 +327,7 @@ export function setupGribDownload(map, { weather, course }) {
     files = (await invoke("grib_files").catch(() => [])) ?? [];
     const shown = weather.sources().find((x) => x.shown)?.path;
     const isLoaded = new Set(weather.sources().map((x) => x.path));
-    table.innerHTML = files.length ? "" : `<div class="wx-note">No GRIB files yet. Download one below, or use Add file…</div>`;
+    table.innerHTML = files.length ? "" : `<div class="wx-note">No GRIB files yet. Download one above, or use Add file…</div>`;
     for (const f of files) {
       const run = f.info?.runs?.[0], on = isLoaded.has(f.path);
       const row = document.createElement("div");
