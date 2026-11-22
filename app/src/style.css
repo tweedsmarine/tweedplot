@@ -1104,7 +1104,7 @@ html.no-map #zoom-btns { display: none; }
 .float-win footer { padding: 3px 8px; border-top: 1px solid var(--line); }
 /* the pop-up Weather panel */
 .sp-weather { border-bottom: 1px solid #2c3d48; }
-.sp-weather > summary { padding: calc(1.5 * var(--u)); font-size: calc(2.8 * var(--u)); font-weight: 700; color: var(--tile-ink); cursor: pointer; }
+.sp-weather > summary { padding: 4px calc(1.5 * var(--u)); font-size: 13px; font-weight: 700; color: var(--tile-ink); cursor: pointer; }
 #side-weather-state { display: block; margin-top: 3px; color: var(--tile-quiet); font-size: calc(2.5 * var(--u)); font-weight: 400; overflow-wrap: anywhere; }
 #wxp { padding: calc(1 * var(--u)) calc(1.5 * var(--u)); color: var(--tile-ink); }
 #wxp .wxp-body { padding: 0 0 6px; }
@@ -1812,9 +1812,9 @@ html.side-left .sp-grip { left: auto; right: 0; }
 html[data-view="plan"] #side-wx-source { display: none; }
 #side-wx-time-status:not(:empty) { color: #ffb347; margin-top: 4px; }
 .sp-wx-clock input[type="range"] { width: 100%; min-height: var(--chip-h); margin: 0; }
-.sp-wx-transport { display: flex; gap: 2px; }
-.sp-wx-transport button { flex: 1; min-width: 0; min-height: var(--btn-h); padding: 2px; background: #22343f; color: var(--tile-ink); border: 1px solid #6c8490; }
-.sp-wx-transport svg { display: block; width: 20px; height: 20px; margin: auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+.sp-wx-transport { display: flex; gap: 2px; flex: none; }
+.sp-wx-transport button { flex: none; width: 28px; min-width: 0; min-height: var(--btn-h); padding: 2px; background: #22343f; color: var(--tile-ink); border: 1px solid #6c8490; }
+.sp-wx-transport svg { display: block; width: 16px; height: 16px; margin: auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
 .sp-sec.collapsed h4 { padding-bottom: calc(0.8 * var(--u)); }
 .sp-g { position: relative; overflow: hidden; contain: size layout; margin: calc(0.6 * var(--u)) calc(1.5 * var(--u)) calc(1 * var(--u)); }
 .sp-g > svg, .sp-g > .dial { width: 100%; height: 100%; display: block; }
@@ -2292,3 +2292,19 @@ html:is([data-palette="night-red"], [data-palette="night-green"]) .flow-canvas {
 #side .dcard[data-title="Plan"] .wx-note, #side .dcard[data-title="Plan"] .hint { font-size: 12px; }
 /* Environment isn't for navigating and starts with Base: the list's amber is warning enough there */
 html[data-view="env"] #side .sp-disp-note { display: none; }
+
+/* Chart time: play and now beside the time, back and forward either side of the slider (and its timeline) */
+.sp-wx-when-row { display: flex; align-items: center; gap: 6px; }
+.sp-wx-when-row > label { flex: 1; min-width: 0; }
+.sp-wx-slide-row { display: flex; align-items: flex-start; gap: 4px; margin-top: 2px; }
+.sp-wx-slide { flex: 1; min-width: 0; }
+.sp-wx-slide input[type="range"] { width: 100%; min-height: var(--btn-h); margin: 0; }
+/* Explore and Get data as two small tabs */
+#side .sp-env-tabs { padding: 4px calc(1.5 * var(--u)) 0; gap: 0; border-bottom: 1px solid #2c3d48; }
+#side .sp-env-tabs button, html[data-view="env"] #side .sp-env-tabs button { flex: none; min-height: var(--chip-h); padding: 2px 12px; font-size: 12px; border-radius: 5px 5px 0 0; border-bottom: 0; background: transparent; }
+#side .sp-env-tabs button[aria-pressed="true"], html[data-view="env"] #side .sp-env-tabs button[aria-pressed="true"] { background: var(--accent); color: #fff; border: 1px solid var(--accent); border-bottom: 0; }
+/* Weather, Ocean or Seabed: a list */
+.env-start-row { display: flex; align-items: center; gap: 6px; margin: 4px 0; font-size: 13px; }
+.env-start-row select { flex: 1; min-width: 0; min-height: var(--btn-h); background: #1d2f3a; color: var(--tile-ink, #e8f0f4); border: 1px solid var(--btn-line); border-radius: 5px; font-size: 13px; }
+/* Planning has Weather on route in the Plan card: not twice */
+html[data-view="plan"] #side .sp-routewx { display: none !important; }
