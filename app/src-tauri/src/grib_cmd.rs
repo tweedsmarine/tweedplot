@@ -289,9 +289,15 @@ fn shading_range(values: &[f32], precision: f32) -> Option<(f32, f32)> {
 /// contours: "wind" and "gust" (kn), "waves", "swell", "windwaves" (m),
 /// "period" (s), "wavedir" (deg from), "rain" (mm/h), "cape" (J/kg), "mslp" (hPa), "temp" (°C).
 #[tauri::command]
-pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max_points: usize) -> Option<serde_json::Value> {
+pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max_points: usize, depth: Option<f64>) -> Option<serde_json::Value> {
+    use grib::stack::Derived;
     use grib::Param as P;
     let f = GRIBS.lock().unwrap().get(&path)?.clone();
+    // a layer at depth: the chosen depth when the file has several, else its one depth
+    let at_depth = |p: P| match depth {
+        Some(d) if f.depths(p).len() > 1 => f.grid_at_depth(p, d, t),
+        _ => f.grid_at(p, t),
+    };
     const KN: f32 = 3600.0 / 1852.0;
     // the grid(s) and how to turn their values into the quantity shown
     let (g, vals): (grib::Grid, Vec<f32>) = match layer.as_str() {
@@ -333,10 +339,18 @@ pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max
         "sst_err" => f.grid_at(P::SeaTempError, t)?,
         "sss" => f.grid_at(P::Salinity, t)?,
         "subt" => {
-            let (g, v) = f.grid_at(P::SubTemp, t)?;
+            let (g, v) = at_depth(P::SubTemp)?;
             (g, v.iter().map(|x| x - 273.15).collect())
         }
-        "subs" => f.grid_at(P::SubSalinity, t)?,
+        "subs" => at_depth(P::SubSalinity)?,
+        "subcur" => {
+            let ((g, u), (_, v)) = (at_depth(P::SubCurrentU)?, at_depth(P::SubCurrentV)?);
+            (g, u.iter().zip(&v).map(|(a, b)| (a * a + b * b).sqrt() * KN).collect())
+        }
+        "thermo_depth" => grib::stack::derived_grid(&f, Derived::ThermoDepth, t)?,
+        "thermo_str" => grib::stack::derived_grid(&f, Derived::ThermoStrength, t)?,
+        "shear_depth" => grib::stack::derived_grid(&f, Derived::ShearDepth, t)?,
+        "shear_str" => grib::stack::derived_grid(&f, Derived::ShearStrength, t)?,
         "skin" => {
             let (g, v) = f.grid_at(P::SkinTemp, t)?;
             (g, v.iter().map(|x| x - 273.15).collect())
@@ -373,7 +387,7 @@ pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max
     };
     // Include both the original values and the rounded values returned for shading.
     let precision = match layer.as_str() {
-        "sst" | "sst_err" | "subt" | "sss" | "subs" | "skin" => 100.0,
+        "sst" | "sst_err" | "subt" | "sss" | "subs" | "skin" | "thermo_str" | "shear_str" | "subcur" => 100.0,
         "chl" | "phyc" | "nppv" | "ph" => 1000.0,
         "ssh" => 100.0,
         _ => 10.0,
@@ -585,10 +599,27 @@ pub(crate) fn grib_point(lat: f64, lon: f64, t: i64) -> Vec<serde_json::Value> {
         .collect()
 }
 
+/// The water column at a point and time from a file with a depth stack (temperature, salinity,
+/// current at each depth, with the thermocline and shear), or null.
+#[tauri::command]
+pub(crate) fn grib_profile(path: String, lat: f64, lon: f64, t: i64) -> Option<grib::stack::Profile> {
+    let f = GRIBS.lock().unwrap().get(&path)?.clone();
+    grib::stack::profile(&f, lat, lon, t)
+}
+
+/// A section through the depth stack along a line ([lon, lat] corners) at time `t`, `n` points.
+#[tauri::command]
+pub(crate) async fn grib_section(path: String, line: Vec<[f64; 2]>, t: i64, n: usize) -> Option<grib::stack::Section> {
+    let f = GRIBS.lock().unwrap().get(&path)?.clone();
+    tauri::async_runtime::spawn_blocking(move || grib::stack::section(&f, &line, n, t)).await.ok().flatten()
+}
+
 /// Every value a GRIB has at a point and time, in display units (kn, hPa, m, s, °C…).
 pub(crate) fn point_values(f: &grib::GribFile, lat: f64, lon: f64, t: i64) -> serde_json::Value {
     let w = f.wind(lat, lon, t);
     let kn = |x: Option<f64>| x.map(|v| (v * 3600.0 / 1852.0 * 10.0).round() / 10.0);
+    // a file with a whole depth stack shows it as a profile (grib_profile), not as one depth here
+    let one_depth = |p: grib::Param| f.depths(p).len() <= 1;
     serde_json::json!({
                     "tws": w.map(|w| (w.tws * 10.0).round() / 10.0),
                     "twd": w.map(|w| w.twd.round()),
@@ -602,8 +633,8 @@ pub(crate) fn point_values(f: &grib::GribFile, lat: f64, lon: f64, t: i64) -> se
                     "sst": f.value(grib::Param::SeaTemp, lat, lon, t).map(|k| ((k - 273.15) * 100.0).round() / 100.0),
                     "sst_err": f.value(grib::Param::SeaTempError, lat, lon, t).map(|e| (e * 100.0).round() / 100.0),
                     "sss": f.value(grib::Param::Salinity, lat, lon, t).map(|s| (s * 100.0).round() / 100.0),
-                    "subt": f.value(grib::Param::SubTemp, lat, lon, t).map(|k| ((k - 273.15) * 100.0).round() / 100.0),
-                    "subs": f.value(grib::Param::SubSalinity, lat, lon, t).map(|s| (s * 100.0).round() / 100.0),
+                    "subt": f.value(grib::Param::SubTemp, lat, lon, t).filter(|_| one_depth(grib::Param::SubTemp)).map(|k| ((k - 273.15) * 100.0).round() / 100.0),
+                    "subs": f.value(grib::Param::SubSalinity, lat, lon, t).filter(|_| one_depth(grib::Param::SubSalinity)).map(|s| (s * 100.0).round() / 100.0),
                     "skin": f.value(grib::Param::SkinTemp, lat, lon, t).map(|k| ((k - 273.15) * 100.0).round() / 100.0),
                     "chl": f.value(grib::Param::Chlorophyll, lat, lon, t).map(|c| (c * 1000.0).round() / 1000.0),
                     "ssh": f.value(grib::Param::SeaLevel, lat, lon, t).map(|h| (h * 100.0).round() / 100.0),

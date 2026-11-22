@@ -466,10 +466,27 @@ pub struct Var {
     pub kelvin: bool,
     /// at the chosen depth (else the top level)
     pub at_depth: bool,
+    /// at every depth down to `STACK_DEPTH`
+    pub stack: bool,
 }
 
 const fn v(dataset: &'static str, name: &'static str, param: Param, category: u8, number: u8, kelvin: bool, at_depth: bool) -> Var {
-    Var { dataset, name, param, category, number, kelvin, at_depth }
+    Var { dataset, name, param, category, number, kelvin, at_depth, stack: false }
+}
+
+const fn stack(dataset: &'static str, name: &'static str, param: Param, category: u8, number: u8, kelvin: bool) -> Var {
+    Var { dataset, name, param, category, number, kelvin, at_depth: true, stack: true }
+}
+
+/// The depth stack goes down to here (m): the seasonal thermocline and below it, where
+/// longlines and midwater trawls fish (31 of the model's 50 levels, 0.5 to 454 m).
+pub const STACK_DEPTH: f64 = 500.0;
+
+/// The levels of the stack: indices of the elevation axis (negative down) within `STACK_DEPTH`.
+pub fn stack_levels(elev: &[f64]) -> Vec<usize> {
+    let mut l: Vec<usize> = (0..elev.len()).filter(|&i| elev[i].is_finite() && elev[i].abs() <= STACK_DEPTH).collect();
+    l.sort_by(|&a, &b| elev[a].abs().partial_cmp(&elev[b].abs()).unwrap_or(std::cmp::Ordering::Equal));
+    l
 }
 
 pub const PHY_T: &str = "cmems_mod_glo_phy-thetao_anfc_0.083deg_PT6H-i";
@@ -508,9 +525,16 @@ pub fn vars_for(model: Model, params: &[String]) -> Vec<Var> {
             if has("ssh") {
                 out.push(v(PHY_DAY, "zos", Param::SeaLevel, 3, 1, false, false));
             }
-            if has("depth") {
+            if has("stack") {
+                out.push(stack(PHY_T, "thetao", Param::SubTemp, 3, 0, true));
+                out.push(stack(PHY_S, "so", Param::SubSalinity, 4, 21, false));
+                out.push(stack(PHY_UV, "uo", Param::SubCurrentU, 1, 192, false));
+                out.push(stack(PHY_UV, "vo", Param::SubCurrentV, 1, 193, false));
+            } else if has("depth") {
                 out.push(v(PHY_T, "thetao", Param::SubTemp, 3, 0, true, true));
                 out.push(v(PHY_S, "so", Param::SubSalinity, 4, 21, false, true));
+                out.push(v(PHY_UV, "uo", Param::SubCurrentU, 1, 192, false, true));
+                out.push(v(PHY_UV, "vo", Param::SubCurrentV, 1, 193, false, true));
             }
         }
         Model::CmemsBgc => {
@@ -641,7 +665,7 @@ pub fn download(req: &Request, now: i64, dir: &Path, progress: Progress, cancel:
     datasets.dedup();
     datasets.sort();
     datasets.dedup();
-    let total = vars.len();
+    let mut total = vars.len();
     let mut bytes = 0u64;
     progress(0, total, 0);
     let mut fields: Vec<Field> = Vec::new();
@@ -654,7 +678,8 @@ pub fn download(req: &Request, now: i64, dir: &Path, progress: Progress, cancel:
         }
         let ds_vars: Vec<&Var> = vars.iter().filter(|v| v.dataset == ds).collect();
         let res = (o.lons[o.lons.len() - 1] - o.lons[0]) / (o.lons.len() - 1) as f64;
-        let k = stride_for(req.area, res, tix.len() * vars.len());
+        let nlev = if vars.iter().any(|v| v.stack) { stack_levels(&o.elev).len().max(1) } else { 1 };
+        let k = stride_for(req.area, res, tix.len() * vars.len() * nlev);
         let rows = lat_rows(&o.lats, req.area[1].min(req.area[3]), req.area[1].max(req.area[3]), k);
         if rows.len() < 2 {
             return Err(bad("the area is too small for this dataset's grid"));
@@ -664,8 +689,23 @@ pub fn download(req: &Request, now: i64, dir: &Path, progress: Progress, cancel:
         let grid = Grid::regular(ncols, rows.len(), o.lats[rows[0]], lon0, dlat, dlon);
         let surface = nearest_level(&o.elev, 0.0);
         let deep = nearest_level(&o.elev, if req.depth > 0.0 { req.depth } else { 50.0 });
-        for var in ds_vars {
-            let level = if o.elev.is_empty() { None } else if var.at_depth { deep } else { surface };
+        let jobs: Vec<(&Var, Option<usize>)> = ds_vars
+            .iter()
+            .flat_map(|var| {
+                let levels: Vec<Option<usize>> = if o.elev.is_empty() {
+                    vec![None]
+                } else if var.stack {
+                    stack_levels(&o.elev).into_iter().map(Some).collect()
+                } else if var.at_depth {
+                    vec![deep]
+                } else {
+                    vec![surface]
+                };
+                levels.into_iter().map(move |l| (*var, l))
+            })
+            .collect();
+        total += jobs.len() - ds_vars.len();
+        for (var, level) in jobs {
             let w = Window { times: &tix, level, rows: &rows, col0, ncols, k, nlon: o.lons.len() };
             // the cheaper chunking
             let a_t = o.time.array(var.name)?;
@@ -740,8 +780,11 @@ fn chunk_span(a: i64, b: i64, c: f64, n: i64) -> f64 {
     }
 }
 
+/// What a chunk compresses to, roughly (a quarter at the surface, much less at depth).
+const COMPRESSED: f64 = 0.3;
+
 /// Roughly how much a request downloads, bytes: for each variable, the
-/// cheaper of the two chunkings, at about half the raw size after compression.
+/// cheaper of the two chunkings, at about a third of the raw size after compression.
 /// (Chunk shapes and grids as published in November 2026; the download itself reads them.)
 pub fn download_estimate(req: &Request) -> u64 {
     let res = res_of(req.model);
@@ -771,7 +814,8 @@ pub fn download_estimate(req: &Request) -> u64 {
         let by_time = nt * tiles(tc.0, tc.1) * tc.0 * tc.1 * 4.0;
         // the times asked span one time chunk, or two where they straddle a boundary
         let by_geo = gc.map(|(ct, cy, cx)| (nt * (req.every as f64).max(step) / step / ct + 1.0).floor().max(1.0) * tiles(cy, cx) * ct * cy * cx * 4.0).unwrap_or(f64::MAX);
-        total += by_time.min(by_geo) * 0.5;
+        let levels = if var.stack { 31.0 } else { 1.0 };
+        total += by_time.min(by_geo) * COMPRESSED * levels;
     }
     total as u64
 }
@@ -909,6 +953,8 @@ mod tests {
         assert_eq!(nearest_level(&elev, 0.0), Some(5));
         assert_eq!(nearest_level(&elev, 50.0), Some(2));
         assert_eq!(nearest_level(&elev, 42.0), Some(3));
+        // the stack: shallowest first, nothing below 500 m
+        assert_eq!(stack_levels(&elev), vec![5, 4, 3, 2, 1]);
     }
 
     #[test]
@@ -926,8 +972,11 @@ mod tests {
     fn what_is_read() {
         let p = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         let v = vars_for(Model::CmemsPhy, &p(&["sst", "current", "depth"]));
-        assert_eq!(v.iter().map(|x| x.name).collect::<Vec<_>>(), vec!["thetao", "uo", "vo", "thetao", "so"]);
+        assert_eq!(v.iter().map(|x| x.name).collect::<Vec<_>>(), vec!["thetao", "uo", "vo", "thetao", "so", "uo", "vo"]);
         assert!(v[3].at_depth && v[3].param == Param::SubTemp);
+        let s = vars_for(Model::CmemsPhy, &p(&["stack", "depth"]));
+        assert_eq!(s.iter().map(|x| x.param).collect::<Vec<_>>(), vec![Param::SubTemp, Param::SubSalinity, Param::SubCurrentU, Param::SubCurrentV]);
+        assert!(s.iter().all(|x| x.stack));
         assert_eq!(product_of(BGC_BIO), BGC);
         assert_eq!(product_of(OC_CHL), OC);
         assert_eq!(product_of(PHY_TOTAL), PHY);
