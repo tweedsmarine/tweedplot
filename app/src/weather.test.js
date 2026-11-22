@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { seaScale, seaTrackRange, filterRangeForGrid, filterColourStyle, fronts, filterable, forecastSpan, sliderStepForTime, weatherSelectionSummary, weatherVisibleInView, filterInUse, filterBounds, dataTimeStatus, applyPointTimePolicy, LAYERS } from "./weather.js";
+import { seaScale, seaTrackRange, filterRangeForGrid, filterColourStyle, fronts, filterable, forecastSpan, sliderStepForTime, weatherSelectionSummary, weatherVisibleInView, filterInUse, filterBounds, dataTimeStatus, applyPointTimePolicy, LAYERS, filterBand, bandDefault, bandOpacity, BAND_FADE } from "./weather.js";
 
 test("automatic filter follows the complete grid at each time without losing extremes", () => {
   const earlier = filterRangeForGrid({ range: [0, 22], values: [0, 20] }, null);
@@ -187,4 +187,19 @@ test("the filter is for single-file layers, not the agreement or error displays"
   assert.ok(filterable(LAYERS.wind));
   assert.ok(!filterable(LAYERS.agree_vec));
   assert.ok(!filterable(undefined));
+});
+
+test("a highlight band fades the shading outside it and leaves it alone inside", () => {
+  assert.equal(filterBand({ lo: 14, hi: 26 }), null);
+  assert.equal(filterBand({ lo: 14, hi: 26, blo: 20, bhi: 20 }), null);
+  assert.deepEqual(filterBand({ lo: 14, hi: 26, blo: 19, bhi: 23 }), [19, 23]);
+  assert.deepEqual(bandDefault({ lo: 14, hi: 26 }), [17, 23]);
+  // no band: the plain opacity
+  assert.equal(bandOpacity({ lo: 14, hi: 26 }, 0.7), 0.7);
+  assert.equal(bandOpacity(null, 0.7), 0.7);
+  const e = bandOpacity({ lo: 14, hi: 26, blo: 19, bhi: 23 }, 0.8);
+  assert.deepEqual(e, ["case", ["all", [">=", ["get", "v"], 19], ["<=", ["get", "v"], 23]], 0.8, +(0.8 * BAND_FADE).toFixed(3)]);
+  // a band survives the automatic range: a set filter is kept when the data's range moves
+  const kept = filterRangeForGrid({ range: [15, 27] }, { lo: 14, hi: 26, tg: null, blo: 19, bhi: 23, set: true });
+  assert.deepEqual(filterBand(kept.filter), [19, 23]);
 });

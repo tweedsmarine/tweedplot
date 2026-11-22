@@ -253,6 +253,18 @@ export const weatherVisibleInView = (view, hidden, shownInNav = false) => (view 
 export const filterInUse = (layer, filter) => !!filter && filterable(layer) && (!!layer.auto || !!filter.set);
 /** Which ends of a filter hide values: only the ends that were set (an older filter without the marks: both). */
 export const filterBounds = (filter) => ({ lo: filter.loSet ?? !!filter.set, hi: filter.hiSet ?? !!filter.set });
+/** How much of the shading's opacity is kept outside the highlight band. */
+export const BAND_FADE = 0.25;
+/** The band of a filter, [from, to], or null when none is set. */
+export const filterBand = (filter) => (filter && Number.isFinite(filter.blo) && Number.isFinite(filter.bhi) && filter.bhi > filter.blo ? [filter.blo, filter.bhi] : null);
+/** Where a new band starts: the middle half of the shown range. */
+export const bandDefault = (filter) => { const w = filter.hi - filter.lo; return [+(filter.lo + w * 0.25).toFixed(6), +(filter.lo + w * 0.75).toFixed(6)]; };
+/** fill-opacity for the shading: full inside the band, faded outside it; plain with no band. */
+export function bandOpacity(filter, opacity) {
+  const band = filterBand(filter);
+  if (!band) return opacity;
+  return ["case", ["all", [">=", ["get", "v"], band[0]], ["<=", ["get", "v"], band[1]]], opacity, +(opacity * BAND_FADE).toFixed(3)];
+}
 function loadWx() {
   try { return { ...WX_DEFAULTS, ...JSON.parse(localStorage.getItem("racenav.wx") || "{}") }; } catch { return { ...WX_DEFAULTS }; }
 }
@@ -1181,11 +1193,16 @@ export function setupWeather(map, layers) {
   showVals();
   dens.oninput = () => { wx.density = Number(dens.value); showVals(); saveWx(); draw(); };
   size.oninput = () => { wx.size = Number(size.value); showVals(); saveWx(); map.setLayoutProperty("wx-barbs", "icon-size", wx.size); map.setLayoutProperty("wx-currdir", "icon-size", ["*", wx.size, ["get", "s"]]); };
-  opac.oninput = () => { wx.opacity = Number(opac.value); showVals(); saveWx(); map.setPaintProperty("wx-cells", "fill-opacity", wx.opacity); };
+  opac.oninput = () => { wx.opacity = Number(opac.value); showVals(); saveWx(); map.setPaintProperty("wx-cells", "fill-opacity", cellOpacity()); };
   const landSel = $("wx-land");
   landSel.value = wx.land;
   landSel.onchange = () => { wx.land = landSel.value; saveWx(); moveShading(); };
-  // ---------- sea filter: low, target, high ----------------------------------------------
+  // ---------- sea filter: low, band, target, high ----------------------------------------
+  /** Cell opacity: the shading opacity, faded outside the highlight band when one is set. */
+  function cellOpacity() {
+    const lay = LAYERS[wx.layer] ?? LAYERS.wind, f = wx.seaFilter[wx.layer];
+    return bandOpacity(filterInUse(lay, f) ? f : null, wx.opacity);
+  }
   // The full grid range at the current chart time, independent of the map bounds.
   const seaRange = {};
   function updateSeaRange(key, path, grid) {
@@ -1236,11 +1253,27 @@ export function setupWeather(map, layers) {
       const th = box.querySelector(".h.tg");
       th.style.left = pc(f.tg ?? (f.lo + f.hi) / 2);
       th.classList.toggle("off", f.tg == null);
+      // the highlight band: its two pointers above the track, and the track dimmed outside it
+      const band = filterBand(f);
+      const [bl, bh] = band ?? bandDefault(f);
+      for (const [k, v] of [["blo", bl], ["bhi", bh]]) {
+        const h = box.querySelector(`.h.${k}`);
+        h.style.left = pc(v);
+        h.classList.toggle("off", !band);
+      }
+      const dl = box.querySelector(".dim.l"), dr = box.querySelector(".dim.r");
+      dl.hidden = dr.hidden = !band;
+      if (band) {
+        dl.style.left = pc(f.lo); dl.style.width = `calc(${pc(bl)} - ${pc(f.lo)})`;
+        dr.style.left = pc(bh); dr.style.width = `calc(${pc(f.hi)} - ${pc(bh)})`;
+      }
       const q = seaQuantum(r.min, r.max);
       const dp = Math.max(0, -Math.round(Math.log10(q)));
       const fmtv = (v) => (layer.log ? fmtChl(10 ** v) : `${v.toFixed(dp)}${layer.unit === "°C" ? "°" : ""}`);
       box.querySelector(".v.lo").textContent = fmtv(f.lo);
       box.querySelector(".v.tg").textContent = f.tg == null ? "no target" : `target ${fmtv(f.tg)}`;
+      box.querySelector(".v.blo").textContent = band ? `band ${fmtv(bl)}` : "no band";
+      box.querySelector(".v.bhi").textContent = band ? `–${fmtv(bh)}` : "";
       box.querySelector(".v.hi").textContent = fmtv(f.hi);
       box.querySelector(".v.min").textContent = fmtv(r.min);
       box.querySelector(".v.max").textContent = fmtv(r.max);
@@ -1254,9 +1287,9 @@ export function setupWeather(map, layers) {
       if (!none) { none = document.createElement("div"); none.className = "wx-note none"; box.append(none); }
       none.hidden = !nothing;
       if (nothing) none.textContent = `Nothing ${ends.lo && ends.hi ? `between ${fmtv(f.lo)} and ${fmtv(f.hi)}` : ends.lo ? `above ${fmtv(f.lo)}` : `below ${fmtv(f.hi)}`} at this time: the data runs from ${fmtv(raw.min)} to ${fmtv(raw.max)}. Press Fit to show it all.`;
-      box.querySelector("[data-filter-clear]").disabled = f.tg == null;
+      box.querySelector("[data-filter-clear]").disabled = f.tg == null && !band;
       box.dataset.unit = layer.unit;
-      box.title = `${layer.label} (${layer.unit}): drag the outer pointers to set the lowest and highest shown, the middle one to the target (bold contour); click a number to type it. Fit: back to the full range at chart time.`;
+      box.title = `${layer.label} (${layer.unit}): the pointers under the bar set the lowest and highest shown and the target (bold contour); the two above it set a band shown at full strength, the rest faded. Drag a pointer, or click a number to type it. Fit: back to the full range at chart time.`;
     }
   }
   /** Make a filter widget work: drag the pointers, click the numbers to type them, Fit. */
@@ -1268,10 +1301,12 @@ export function setupWeather(map, layers) {
       if (!f || !r) return;
       const rect = track.getBoundingClientRect();
       const v = r.min + ((e.clientX - rect.left) / rect.width) * (r.max - r.min);
-      // the pointer clicked, else the nearest one (the target wins a tie)
-      // with no target set, only the target pointer itself can set one
-      const k = e.target.classList.contains("h") ? [...e.target.classList].find((c) => ["lo", "tg", "hi"].includes(c))
-        : (f.tg == null ? ["lo", "hi"] : ["tg", "lo", "hi"]).reduce((a, b) => (Math.abs(f[b] - v) < Math.abs(f[a] - v) ? b : a));
+      // the pointer clicked, else the nearest one (the target, then the band, win a tie);
+      // with no target or band set, only that pointer itself can start one
+      const band = filterBand(f);
+      const at = { lo: f.lo, hi: f.hi, tg: f.tg, blo: band?.[0], bhi: band?.[1] };
+      const k = e.target.classList.contains("h") ? [...e.target.classList].find((c) => ["lo", "blo", "tg", "bhi", "hi"].includes(c))
+        : [...(f.tg == null ? [] : ["tg"]), ...(band ? ["blo", "bhi"] : []), "lo", "hi"].reduce((a, b) => (Math.abs(at[b] - v) < Math.abs(at[a] - v) ? b : a));
       drag = { k, rect };
       track.setPointerCapture(e.pointerId);
       move(e);
@@ -1283,13 +1318,22 @@ export function setupWeather(map, layers) {
       v = Math.min(r.max, Math.max(r.min, roundTo(v, q)));
       if (!f.set) { f.loSet = false; f.hiSet = false; }
       if (k === "lo") f.loSet = true; else if (k === "hi") f.hiSet = true;
-      if (k === "lo") f.lo = Math.min(v, f.tg == null ? f.hi - q : f.tg - q);
-      else if (k === "hi") f.hi = Math.max(v, f.tg == null ? f.lo + q : f.tg + q);
+      // a band pointer picked up with no band yet starts one at its faded place
+      if ((k === "blo" || k === "bhi") && !filterBand(f)) [f.blo, f.bhi] = bandDefault(f);
+      const band = filterBand(f);
+      if (k === "lo") f.lo = Math.min(v, f.tg == null ? f.hi - q : f.tg - q, band ? band[0] : Infinity);
+      else if (k === "hi") f.hi = Math.max(v, f.tg == null ? f.lo + q : f.tg + q, band ? band[1] : -Infinity);
+      else if (k === "blo") f.blo = Math.min(Math.max(v, f.lo), f.bhi - q);
+      else if (k === "bhi") f.bhi = Math.max(Math.min(v, f.hi), f.blo + q);
       else f.tg = Math.min(Math.max(v, f.lo + q), f.hi - q);
       f.lo = +f.lo.toFixed(6); f.hi = +f.hi.toFixed(6);
       if (f.tg != null) {
         f.tg = Math.min(Math.max(f.tg, f.lo), f.hi);
         f.tg = +f.tg.toFixed(6);
+      }
+      if (filterBand(f)) {
+        f.blo = +Math.min(Math.max(f.blo, f.lo), f.hi).toFixed(6);
+        f.bhi = +Math.min(Math.max(f.bhi, f.blo), f.hi).toFixed(6);
       }
       f.set = true;
       applyLayer();
@@ -1310,17 +1354,20 @@ export function setupWeather(map, layers) {
     };
     track.addEventListener("pointerup", finishDrag);
     track.addEventListener("pointercancel", finishDrag);
-    // double-click the target pointer to clear the target (the track captures the pointer, so the event arrives at the track)
+    // double-click the target pointer to clear the target, a band pointer to clear the band
+    // (the track captures the pointer, so the event arrives at the track)
     track.addEventListener("dblclick", (e) => {
       const f = wx.seaFilter[wx.layer];
-      if (!f || f.tg == null) return;
-      const h = box.querySelector(".h.tg").getBoundingClientRect();
-      if (Math.abs(e.clientX - (h.left + h.width / 2)) > Math.max(14, h.width)) return;
-      f.tg = null;
+      if (!f) return;
+      const near = (k) => { const h = box.querySelector(`.h.${k}`).getBoundingClientRect(); return Math.abs(e.clientX - (h.left + h.width / 2)) <= Math.max(14, h.width); };
+      const band = filterBand(f);
+      if (band && (near("blo") || near("bhi"))) { delete f.blo; delete f.bhi; }
+      else if (f.tg != null && near("tg")) f.tg = null;
+      else return;
       saveWx(); applyLayer(); draw();
     });
     // typing a value: click the number, Enter to set (a chlorophyll value is typed in mg/m³)
-    for (const k of ["lo", "tg", "hi"]) {
+    for (const k of ["lo", "blo", "bhi", "tg", "hi"]) {
       const span = box.querySelector(`.v.${k}`);
       span.style.cursor = "text";
       span.addEventListener("click", () => {
@@ -1329,8 +1376,9 @@ export function setupWeather(map, layers) {
         const input = document.createElement("input");
         input.type = "number";
         input.step = "any";
-        input.setAttribute("aria-label", `${{ lo: "Low", tg: "Target", hi: "High" }[k]} ${layer.label} (${layer.unit}). Press Enter to apply`);
-        const cur = f[k] ?? (f.lo + f.hi) / 2;
+        input.setAttribute("aria-label", `${{ lo: "Low", blo: "Band from", bhi: "Band to", tg: "Target", hi: "High" }[k]} ${layer.label} (${layer.unit}). Press Enter to apply`);
+        const band = filterBand(f) ?? bandDefault(f);
+        const cur = k === "blo" ? band[0] : k === "bhi" ? band[1] : f[k] ?? (f.lo + f.hi) / 2;
         input.value = String(+(layer.log ? 10 ** cur : cur).toPrecision(4));
         input.style.width = "64px";
         span.textContent = "";
@@ -1355,8 +1403,9 @@ export function setupWeather(map, layers) {
     }
     box.querySelector("[data-filter-clear]").onclick = () => {
       const f = wx.seaFilter[wx.layer];
-      if (!f || f.tg == null) return;
+      if (!f || (f.tg == null && !filterBand(f))) return;
       f.tg = null;
+      delete f.blo; delete f.bhi;
       saveWx(); applyLayer(); draw();
     };
     box.querySelector(".fit").onclick = () => {
@@ -1371,13 +1420,15 @@ export function setupWeather(map, layers) {
   function mountFilter(el) {
     el.className = "seafilter";
     el.innerHTML = `
-      <div class="track"><div class="grad"></div><span class="h lo"></span><span class="h tg"></span><span class="h hi"></span></div>
-      <div class="vals"><span class="v min"></span><span class="v lo"></span><span class="v tg"></span><span class="v hi"></span><span class="v max"></span><button class="fit" title="Back to the full range at chart time">Fit</button></div>
+      <div class="track"><div class="grad"></div><div class="dim l"></div><div class="dim r"></div><span class="h lo"></span><span class="h blo"></span><span class="h tg"></span><span class="h bhi"></span><span class="h hi"></span></div>
+      <div class="vals"><span class="v min"></span><span class="v lo"></span><span class="v mid"><span class="v blo"></span><span class="v bhi"></span><span class="v tg"></span></span><span class="v hi"></span><span class="v max"></span><button class="fit" title="Back to the full range at chart time: no band, no target">Fit</button></div>
       <div class="filter-actions">
-      <button type="button" data-filter-edit="lo" title="Set low" aria-label="Set low"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 20h16"/></svg></button>
-      <button type="button" data-filter-edit="hi" title="Set high" aria-label="Set high"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21V9m-5 5 5-5 5 5M4 4h16"/></svg></button>
-      <button type="button" data-filter-edit="tg" title="Set target" aria-label="Set target"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v5m0 10v5M2 12h5m10 0h5"/><circle cx="12" cy="12" r="2"/></svg></button>
-      <button type="button" data-filter-clear title="Clear target" aria-label="Clear target"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v5m0 10v5M2 12h5m10 0h5M4 4l16 16"/></svg></button></div>`;
+      <button type="button" data-filter-edit="lo" title="Type the lowest shown" aria-label="Type the lowest shown"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 20h16"/></svg></button>
+      <button type="button" data-filter-edit="blo" title="Type where the highlighted band starts" aria-label="Type where the highlighted band starts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4v16M8 12h12m-4-4 4 4-4 4"/></svg></button>
+      <button type="button" data-filter-edit="bhi" title="Type where the highlighted band ends" aria-label="Type where the highlighted band ends"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 4v16M16 12H4m4-4-4 4 4 4"/></svg></button>
+      <button type="button" data-filter-edit="hi" title="Type the highest shown" aria-label="Type the highest shown"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21V9m-5 5 5-5 5 5M4 4h16"/></svg></button>
+      <button type="button" data-filter-edit="tg" title="Type the target (bold contour)" aria-label="Type the target"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v5m0 10v5M2 12h5m10 0h5"/><circle cx="12" cy="12" r="2"/></svg></button>
+      <button type="button" data-filter-clear title="Clear the band and the target" aria-label="Clear the band and the target"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v5m0 10v5M2 12h5m10 0h5M4 4l16 16"/></svg></button></div>`;
     wireFilter(el);
     filterBoxes.push({ el, all: true });
     drawLegend();
@@ -1396,6 +1447,7 @@ export function setupWeather(map, layers) {
     if (sf && filterBounds(sf).lo) limits.push([">=", ["get", "v"], sf.lo]);
     if (sf && filterBounds(sf).hi) limits.push(["<=", ["get", "v"], sf.hi]);
     map.setFilter("wx-cells", limits.length ? ["all", ...limits] : null);
+    map.setPaintProperty("wx-cells", "fill-opacity", cellOpacity());
     if (wx.shading !== "off") map.setPaintProperty("wx-cells", "fill-color", sf
       ? filterColourStyle(lay, sf, wx.shading).expression
       : shadingExpression(lay.auto ? "smooth" : wx.shading, lay));
@@ -1499,7 +1551,8 @@ export function setupWeather(map, layers) {
       if (!always) { swatches(el, layer); continue; }
       const cap = document.createElement("div");
       cap.className = "wx-key-title";
-      cap.textContent = `${layer.label} (${layer.unit})${f?.set ? " · filter set" : ""}`;
+      const bnd = filterBand(f);
+      cap.textContent = `${layer.label} (${layer.unit})${bnd ? ` · band ${+bnd[0].toFixed(2)}–${+bnd[1].toFixed(2)}` : f?.set ? " · filter set" : ""}`;
       const bar = document.createElement("div");
       bar.className = "wx-legend";
       el.append(cap, bar);
@@ -1555,7 +1608,7 @@ export function setupWeather(map, layers) {
     showVals();
     map.setLayoutProperty("wx-barbs", "icon-size", wx.size);
     map.setLayoutProperty("wx-currdir", "icon-size", ["*", wx.size, ["get", "s"]]);
-    map.setPaintProperty("wx-cells", "fill-opacity", wx.opacity);
+    map.setPaintProperty("wx-cells", "fill-opacity", cellOpacity());
     moveShading();
     applyLayer();
     renderLoaded();

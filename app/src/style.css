@@ -162,9 +162,21 @@ details.sub summary { cursor: pointer; font-size: 11px; color: var(--quiet); tex
 .seafilter .h { position: absolute; top: 18px; width: 0; height: 0; margin-left: -7px; border: 7px solid transparent; border-bottom: 10px solid #1d2a33; border-top: 0; cursor: ew-resize; }
 .seafilter .h.tg { border-bottom-color: #c0392b; }
 .seafilter .h.tg::after { content: ""; position: absolute; left: -1px; top: -18px; width: 2px; height: 18px; background: #c0392b; }
+.seafilter .track { margin-top: 12px; }
+.seafilter .dim { position: absolute; top: 0; bottom: 0; background: rgba(20, 30, 36, .62); pointer-events: none; }
+.seafilter .dim[hidden] { display: none; }
+/* the band pointers sit above the track, pointing down */
+.seafilter .h.blo, .seafilter .h.bhi { top: -11px; border-top: 10px solid #1d2a33; border-bottom: 0; }
+.seafilter .h.blo.off, .seafilter .h.bhi.off { opacity: .35; }
+:is(#wxp, #side-wx-clock) .seafilter .h:is(.blo, .bhi) { border-top-color: #7fe3a0; border-bottom-color: transparent; }
+.seafilter .vals .mid { flex: 1; display: flex; flex-wrap: wrap; justify-content: center; column-gap: 6px; text-align: center; }
+.seafilter .vals .mid .v { flex: none; }
+.seafilter .vals .blo, .seafilter .vals .bhi { color: #2e8b57; font-weight: 600; }
+:is(#wxp, #side-wx-clock) .seafilter .vals :is(.blo, .bhi) { color: #7fe3a0; }
+.seafilter .vals .bhi:empty { display: none; }
 .seafilter .vals { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--quiet); }
 .seafilter .vals .lo, .seafilter .vals .hi { color: #1d2a33; font-weight: 600; }
-.seafilter .vals .tg { color: #c0392b; font-weight: 600; flex: 1; text-align: center; }
+.seafilter .vals .tg { color: #c0392b; font-weight: 600; }
 .seafilter .vals .fit { flex: none; padding: 2px 8px; font-size: 11px; }
 .seafilter .filter-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .seafilter .filter-actions button { flex: 1 1 45%; min-height: 40px; }
@@ -1108,10 +1120,10 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 #wxp .wxp-row input { flex: none; }
 #wxp .wxp-row span { min-width: 0; overflow-wrap: anywhere; }
 #wxp .wxp-row select { min-width: 0; }
-#wxp .seafilter .vals { color: var(--tile-quiet); }
-#wxp .seafilter .vals .lo, #wxp .seafilter .vals .hi { color: var(--tile-ink); }
-#wxp .seafilter .h { border-bottom-color: #d6e4ec; }
-#wxp .seafilter .h.tg { border-bottom-color: #ff886d; }
+#wxp .seafilter .vals, #side-wx-clock .seafilter .vals { color: var(--tile-quiet); }
+#wxp .seafilter .vals .lo, #wxp .seafilter .vals .hi, #side-wx-clock .seafilter .vals :is(.lo, .hi, .blo, .bhi) { color: var(--tile-ink); }
+#wxp .seafilter .h, #side-wx-clock .seafilter .h { border-bottom-color: #d6e4ec; }
+#wxp .seafilter .h.tg, #side-wx-clock .seafilter .h.tg { border-bottom-color: #ff886d; }
 #wxp .wxp-head { font-weight: 600; padding: 4px 0 2px; border-top: 1px solid var(--line); }
 #wxp-run { padding: 3px 0; font-size: calc(2.7 * var(--u)); overflow-wrap: anywhere; }
 #wxp-run.stale { color: #ffb347; font-weight: 600; }
@@ -1136,10 +1148,10 @@ html.ui-large #zoom-btns button { width: 64px; height: 64px; }
 #side-grib-point .wxp-grid b { text-align: right; }
 #side-grib-point .wxp-grid span { color: var(--tile-quiet); }
 #side-grib-point .wxp-warn:not(:empty) { margin-top: 4px; padding: 4px; background: #4a2d0b; color: #ffcf82; font-weight: 700; }
-#wxp .seafilter { margin-top: 4px; }
-#wxp .seafilter .filter-actions { flex-wrap: nowrap; }
-#wxp .seafilter .filter-actions button { flex: 1 1 0; min-width: 0; min-height: 36px; padding: 5px 2px; background: #22343f; color: var(--tile-ink); border: 1px solid #6c8490; }
-#wxp .seafilter .filter-actions svg { display: block; width: 20px; height: 20px; margin: auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+#wxp .seafilter, #side-wx-clock .seafilter { margin-top: 4px; }
+#wxp .seafilter .filter-actions, #side-wx-clock .seafilter .filter-actions { flex-wrap: nowrap; }
+:is(#wxp, #side-wx-clock) .seafilter .filter-actions button { flex: 1 1 0; min-width: 0; min-height: 28px; padding: 3px 2px; background: #22343f; color: var(--tile-ink); border: 1px solid #6c8490; }
+:is(#wxp, #side-wx-clock) .seafilter .filter-actions svg { display: block; width: 18px; height: 18px; margin: auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
 .tgt-scroll { flex: 1; overflow: auto; }
 #tgt-table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
 #tgt-table th { position: sticky; top: 0; z-index: 2; background: #fff; box-shadow: 0 1px 0 var(--line); text-align: left; padding: 3px 5px; border-bottom: 1px solid var(--line); cursor: pointer; white-space: nowrap; font-weight: 600; }
@@ -1906,6 +1918,7 @@ html[data-view="env"] #side #wxp :is(button, select, input[type="number"]),
 html[data-view="env"] #side .wxp-compare :is(#wx-point th, .seapoint, .seapoint .src) { font-size: inherit; }
 html[data-view="env"] #side .wxp-compare > summary { font-weight: 600; }
 html[data-view="env"] #side #wxp :is(.wx-note, .seafilter .vals) { font-size: calc(2.5 * var(--u)); }
+#side #side-wx-clock .seafilter .vals { font-size: calc(2.5 * var(--u)); }
 html[data-view="env"] #side #wxp .wxp-row { min-height: 28px; }
 html[data-view="env"] #side #wxp .wxp-body :is(button, select),
 html[data-view="env"] #side #wxp .seafilter .filter-actions button { min-height: 28px; }
@@ -2048,16 +2061,12 @@ html.side-strip body:has(.ss-alerts .alarm:not(.warn):not(.acked):not(.summary))
    open; otherwise the one in Weather layers and filters (e.g. Navigation without a Chart time section).
    Decided by CSS so it follows every rebuild, view change and fold without a script having to notice. */
 body:has(.sp-sec:not(.collapsed) #side-wx-clock[open] #side-wx-key:not([hidden])) #wxp-key { display: none; }
-/* The filter under that key: its tools show with the key; its pointers only while Adjust is on; and
-   then the key's own bar steps aside (the filter's bar shows the same colours). The filter widget in
-   Weather layers and filters stands aside whenever the key's tools are on the panel, so there is one. */
-#side-wx-key[hidden] + .wx-key-tools, #side-wx-key[hidden] ~ #side-wx-filter { display: none; }
-#side-wx-clock:not(.filter-open) #side-wx-filter { display: none; }
-#side-wx-clock.filter-open:has(#side-wx-filter:not([hidden])) #side-wx-key > :not(.wx-key-title) { display: none; }
-#side-wx-clock:has(#side-wx-filter[hidden]) #side-wx-adjust { display: none; }
+/* The filter under that key, with its pointers: the key's own bar steps aside while it shows (the
+   filter's bar has the same colours), and the filter in Weather layers and filters stands aside
+   whenever this one is on the panel, so there is one bar. */
+#side-wx-key[hidden] ~ #side-wx-filter { display: none; }
+#side-wx-clock:has(#side-wx-filter:not([hidden])) #side-wx-key > :not(.wx-key-title) { display: none; }
 body:has(.sp-sec:not(.collapsed) #side-wx-clock[open] #side-wx-key:not([hidden])) #wxp-filter { display: none; }
-.wx-key-tools { display: flex; gap: 6px; margin: 4px 0 2px; }
-.wx-key-tools button { flex: 1; min-height: 28px; font-size: calc(2.6 * var(--u, 4px)); }
 .wx-error { color: #ff8a80; font-weight: 600; margin-top: 4px; }
 .wx-error[hidden] { display: none; }
 
@@ -2217,3 +2226,6 @@ html.dock-right .rw-inspect .rw-readout { min-height: 5em; } /* room for the lon
 html.dock-right #dock header { gap: 4px; }
 html.dock-right :is(.dock-tabs, .dock-tools) { display: contents; }
 html.dock-right .dock-close { margin-left: auto; }
+/* filter buttons: small, all six across the panel */
+#side :is(#side-wx-clock, #wxp) .seafilter .filter-actions button { min-height: 28px; padding: 2px; }
+.seafilter .vals .mid .bhi { margin-left: -6px; }
