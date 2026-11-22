@@ -52,18 +52,21 @@ export function sampleField(f, lon, lat) {
 }
 
 /**
- * Particles over `map`. Options: `pxPerKnot` screen speed of one knot (pixels a second),
+ * Particles over `map`. Options: `pxPerKnot` screen speed of one knot (pixels a second; weak
+ * flow is helped along by `speedPower` < 1 so half a knot still visibly moves),
  * `colour` (a function of knots, or a fixed CSS colour), `density` particles per 10 000 px².
  * Returns { setField(field|null), setOptions(o), destroy() }.
  */
 export function createFlow(map, opts = {}) {
-  const o = { pxPerKnot: 28, density: 6, life: [60, 140], fade: 0.09, width: 1.3, maxKn: 4, colour: (kn) => speedColour(kn), ...opts };
+  // tuned on the boat PC (22 Nov): faster, longer trails, thicker, with a dark edge so they show on
+  // pale shading as well as dark water
+  const o = { pxPerKnot: 55, speedPower: 0.7, density: 5, life: [90, 200], fade: 0.028, width: 2.2, casing: "rgba(10,20,28,0.8)", maxKn: 4, colour: (kn) => speedColour(kn), ...opts };
   const canvas = document.createElement("canvas");
   canvas.className = "flow-canvas";
   Object.assign(canvas.style, { position: "absolute", left: "0", top: "0", pointerEvents: "none" });
   // over the chart's own canvas, under the markers and pop-ups MapLibre adds after it
   map.getCanvasContainer().insertBefore(canvas, map.getCanvas().nextSibling);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   let field = null, grid = null, parts = [], raf = 0, moving = false, last = 0, dpr = 1, frames = 0;
   const CELL = 6; // screen velocity grid spacing, px
 
@@ -95,8 +98,10 @@ export function createFlow(map, opts = {}) {
         // east is +x, north is -y on a north-up screen; turned with the chart's bearing
         const ex = s[0], ny_ = -s[1];
         const k = j * nx + i;
-        vx[k] = (ex * cb - ny_ * sb) * o.pxPerKnot;
-        vy[k] = (ex * sb + ny_ * cb) * o.pxPerKnot;
+        const knots = Math.hypot(s[0], s[1]);
+        const scale = knots > 0 ? (o.pxPerKnot * knots ** o.speedPower) / knots : 0;
+        vx[k] = (ex * cb - ny_ * sb) * scale;
+        vy[k] = (ex * sb + ny_ * cb) * scale;
         kn[k] = Math.hypot(s[0], s[1]);
         any = true;
       }
@@ -130,9 +135,9 @@ export function createFlow(map, opts = {}) {
     if (!grid || moving || document.hidden) return;
     const dt = Math.min(0.1, last ? (now - last) / 1000 : 1 / 30);
     last = now;
-    // trails: fade what is there; canvas alpha can't fade below a few 1/255ths, so now and then
-    // (every 20 s or so) start clean rather than leave faint ghost trails behind
-    if (++frames % 600 === 0) ctx.clearRect(0, 0, grid.w, grid.h);
+    // trails: fade what is there. Canvas alpha can't fade below a few 1/255ths, so every 30 frames
+    // whatever has faded to almost nothing is wiped, rather than left as faint ghost trails
+    if (++frames % 30 === 0) sweep();
     ctx.save();
     ctx.globalCompositeOperation = "destination-out";
     ctx.fillStyle = `rgba(0,0,0,${o.fade})`;
@@ -153,13 +158,29 @@ export function createFlow(map, opts = {}) {
       seg.push(p.x, p.y, nx, ny);
       p.x = nx; p.y = ny;
     }
+    const path = (seg) => { ctx.beginPath(); for (let i = 0; i < seg.length; i += 4) { ctx.moveTo(seg[i], seg[i + 1]); ctx.lineTo(seg[i + 2], seg[i + 3]); } };
+    // a dark edge first, under every line, then the light lines
+    if (o.casing) {
+      // square-ended, so it doesn't cover the end of the line drawn on the last frame
+      ctx.lineWidth = o.width + 2.4;
+      ctx.lineCap = "butt";
+      ctx.strokeStyle = o.casing;
+      for (const seg of buckets.values()) { path(seg); ctx.stroke(); }
+      ctx.lineWidth = o.width;
+      ctx.lineCap = "round";
+    }
     for (const [c, seg] of buckets) {
       ctx.strokeStyle = c;
-      ctx.beginPath();
-      for (let i = 0; i < seg.length; i += 4) { ctx.moveTo(seg[i], seg[i + 1]); ctx.lineTo(seg[i + 2], seg[i + 3]); }
+      path(seg);
       ctx.stroke();
     }
     raf = requestAnimationFrame(frame);
+  }
+  function sweep() {
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height), d = img.data;
+    let changed = false;
+    for (let i = 3; i < d.length; i += 4) if (d[i] && d[i] < 14) { d[i] = 0; changed = true; }
+    if (changed) ctx.putImageData(img, 0, 0);
   }
   const run = () => { if (!raf && grid && !moving) { last = 0; raf = requestAnimationFrame(frame); } };
   const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; };
@@ -197,8 +218,8 @@ export function createFlow(map, opts = {}) {
 
 /** Particle colour by speed: pale and see-through when slack, bright white in a strong current. */
 export function speedColour(kn) {
-  const a = Math.min(1, 0.35 + kn * 0.45);
+  const a = Math.min(1, 0.6 + kn * 0.4);
   const b = Math.round(Math.min(1, kn / 2) * 10) / 10; // ten steps
-  const g = Math.round(225 + 30 * b);
+  const g = Math.round(235 + 20 * b);
   return `rgba(${g},${g},255,${(Math.round(a * 10) / 10).toFixed(1)})`;
 }
