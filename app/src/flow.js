@@ -60,7 +60,7 @@ export function sampleField(f, lon, lat) {
 export function createFlow(map, opts = {}) {
   // tuned on the boat PC (22 Nov): faster, longer trails, thicker, with a dark edge so they show on
   // pale shading as well as dark water
-  const o = { pxPerKnot: 55, speedPower: 0.7, density: 5, life: [90, 200], fade: 0.028, width: 2.2, casing: "rgba(10,20,28,0.8)", maxKn: 4, colour: (kn) => speedColour(kn), ...opts };
+  const o = { pxPerKnot: 55, speedPower: 0.7, density: 5, life: [180, 400], fade: 0.015, width: 2.2, casing: "rgba(10,20,28,0.8)", maxKn: 4, colour: (kn) => speedColour(kn), ...opts };
   const canvas = document.createElement("canvas");
   canvas.className = "flow-canvas";
   Object.assign(canvas.style, { position: "absolute", left: "0", top: "0", pointerEvents: "none" });
@@ -135,9 +135,10 @@ export function createFlow(map, opts = {}) {
     if (!grid || moving || document.hidden) return;
     const dt = Math.min(0.1, last ? (now - last) / 1000 : 1 / 30);
     last = now;
-    // trails: fade what is there. Canvas alpha can't fade below a few 1/255ths, so every 30 frames
-    // whatever has faded to almost nothing is wiped, rather than left as faint ghost trails
-    if (++frames % 30 === 0) sweep();
+    // trails: fade what is there. Canvas alpha (0–255) stops fading once a·fade rounds to nothing
+    // (below about 0.5/fade), so every 20 frames whatever is that faint is wiped, rather than left
+    // as ghost trails: a trail lasts about ln(floor/255)/ln(1 − fade) frames (≈ 2 s at 0.015).
+    if (++frames % 20 === 0) sweep();
     ctx.save();
     ctx.globalCompositeOperation = "destination-out";
     ctx.fillStyle = `rgba(0,0,0,${o.fade})`;
@@ -179,7 +180,8 @@ export function createFlow(map, opts = {}) {
   function sweep() {
     const img = ctx.getImageData(0, 0, canvas.width, canvas.height), d = img.data;
     let changed = false;
-    for (let i = 3; i < d.length; i += 4) if (d[i] && d[i] < 14) { d[i] = 0; changed = true; }
+    const floor = Math.ceil(0.5 / o.fade) + 2;
+    for (let i = 3; i < d.length; i += 4) if (d[i] && d[i] < floor) { d[i] = 0; changed = true; }
     if (changed) ctx.putImageData(img, 0, 0);
   }
   const run = () => { if (!raf && grid && !moving) { last = 0; raf = requestAnimationFrame(frame); } };
