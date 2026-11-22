@@ -254,7 +254,7 @@ export function dataTimeStatus(summary, params, time, allowPastAnalysis = false)
 
 const SEA_POINT_PARAMS = {
   sst: "SeaTemp", sst_err: "SeaTempError", skin: "SkinTemp", sss: "Salinity", subt: "SubTemp",
-  subs: "SubSalinity", chl: "Chlorophyll", ssh: "SeaLevel", cur: "CurrentU", ice: "SeaIce",
+  subs: "SubSalinity", subcur: "SubCurrentU", chl: "Chlorophyll", ssh: "SeaLevel", cur: "CurrentU", ice: "SeaIce",
   mld: "MixedLayer", phyc: "Phytoplankton", nppv: "PrimaryProduction", o2: "Oxygen", ph: "Ph",
 };
 
@@ -1161,7 +1161,7 @@ export function setupWeather(map, layers) {
   };
 
   // ---------- comparison table --------------------------------------------------------
-  const SEA_KEYS = ["sst", "sst_err", "skin", "sss", "subt", "subs", "cur", "depth", "chl", "ssh", "ice", "mld", "phyc", "nppv", "o2", "ph"];
+  const SEA_KEYS = ["sst", "sst_err", "skin", "sss", "subt", "subs", "subcur", "cur", "depth", "chl", "ssh", "ice", "mld", "phyc", "nppv", "o2", "ph"];
   /** The sea values of one file at the cursor, as short labelled pieces. */
   function seaParts(r) {
     const out = [];
@@ -1170,6 +1170,7 @@ export function setupWeather(map, layers) {
     if (r.sss != null) out.push(`Salinity ${r.sss.toFixed(2)}`);
     if (r.subt != null) out.push(`${r.depth ?? "?"} m ${r.subt.toFixed(1)} °C`);
     if (r.subs != null) out.push(`${r.depth ?? "?"} m salinity ${r.subs.toFixed(2)}`);
+    if (r.subcur) out.push(`${r.depth ?? "?"} m current ${r.subcur.kn.toFixed(1)} kn ${String(r.subcur.set).padStart(3, "0")}°`);
     if (r.cur) out.push(`Current ${r.cur.kn.toFixed(1)} kn ${String(r.cur.set).padStart(3, "0")}°`);
     if (r.chl != null) out.push(`Chl-a ${fmtChl(r.chl)} mg/m³`);
     if (r.ssh != null) out.push(`Sea height ${r.ssh >= 0 ? "+" : ""}${r.ssh.toFixed(2)} m`);
@@ -1194,7 +1195,7 @@ export function setupWeather(map, layers) {
         return;
       }
       const at = cursor, tt = t, shownPath = display, requestedView = weatherView, requestedPast = allowPastAnalysis;
-      const result = await invoke("grib_point", { lat: at[1], lon: at[0], t: tt }).catch(() => []) || [];
+      const result = await invoke("grib_point", { lat: at[1], lon: at[0], t: tt, depth: wx.depth }).catch(() => []) || [];
       if (at !== cursor || tt !== t || shownPath !== display || requestedView !== weatherView || requestedPast !== allowPastAnalysis) { updatePoint(); return; }
       const rows = result.filter((r) => loaded.has(r.path)).map((r) =>
         weatherView === "env" ? applyPointTimePolicy(r, loaded.get(r.path), tt, allowPastAnalysis) : r);

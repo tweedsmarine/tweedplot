@@ -32,6 +32,7 @@ const ROWS = [
   ["Temp at depth", ["SubTemp"], (r) => r.subt != null && `${r.subt.toFixed(1)} °C${r.depth != null ? ` at ${Math.abs(r.depth).toFixed(0)} m` : ""}`, "subt"],
   ["Salinity", ["Salinity"], (r) => r.sss != null && `${r.sss.toFixed(2)} PSU`, "sss"],
   ["Salinity at depth", ["SubSalinity"], (r) => r.subs != null && `${r.subs.toFixed(2)} PSU${r.depth != null ? ` at ${Math.abs(r.depth).toFixed(0)} m` : ""}`, "subs"],
+  ["Current at depth", ["SubCurrentU"], (r) => r.subcur != null && `${r.subcur.kn.toFixed(1)} kn toward ${deg3(r.subcur.set)}° ${compass(r.subcur.set)}${r.depth != null ? ` at ${Math.abs(r.depth).toFixed(0)} m` : ""}`, "subcur"],
   ["Chlorophyll", ["Chlorophyll"], (r) => r.chl != null && `${r.chl.toFixed(2)} mg/m³`, "chl"],
   ["Mixed layer", ["MixedLayer"], (r) => r.mld != null && `${Math.round(r.mld)} m`, "mld"],
   ["Phytoplankton", ["Phytoplankton"], (r) => r.phyc != null && `${r.phyc.toFixed(2)} mmol/m³`, "phyc"],
