@@ -19,7 +19,7 @@ Nothing covers the chart: everything else sits beside it.
   - readings that suit the view: route, marks ahead, AIS targets, wind, weather;
   - the cursor's position, and the **alerts** at the bottom.
 - **✎** at the top of the panel changes what it shows. **O** hides it to one line under the chart, which keeps MOB, Drop and the main readings.
-- **Right-click the chart** (or hold a finger on it): move the boat, start a route, new mark, drop anchor, go to, meteogram, ruler… Most things start here.
+- **Right-click the chart**: move the boat, start a route, new mark, drop anchor, go to, meteogram, ruler… Most things start here.
 - **Click** a light, buoy, AIS target or area for its details.
 
 **Views.** The buttons at the top of the data panel switch between **Navigation** (F2, under way), **Planning** (F3, route building), **Environment** (weather, ocean and seabed) and **Instruments** (F4, large readings without the chart). The toolbar's **View** button also switches views, including when the data panel is hidden. TweedPlot starts in Navigation. The raw NMEA monitor is in **Settings › Diagnostics › Live NMEA data**, or open it in a separate window from **Settings › Connections › NMEA 0183 inputs › Pop out live NMEA data**.

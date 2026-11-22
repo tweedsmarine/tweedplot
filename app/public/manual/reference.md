@@ -114,8 +114,8 @@ Nothing covers the chart. The rail, the open drawer, the toolbar, the data panel
 | Beside the chart, on the right | **The data panel**: status, Base / Standard / All, MOB and Drop, own ship, readings, the cursor readout and the alerts | **O** hides it to one line under the chart; **✎** changes what it shows. It can go on the left: Settings › Display › **Data panel side** |
 | Under the chart | **The dock**: Compare routings, Gates, Fleet, Meteogram, Verify, Weather on route | Opens from buttons in the drawers or Weather on route in the Planning data panel; drag its top edge to resize; **✕** closes it |
 | Over the chart, when asked for | Info windows, the target list, history cards, the own soundings card and activity cards | Drag one by its title bar or grip; **✕** closes it. Each remembers where you put it |
-| Bottom centre of the chart | **Zoom out** and **Zoom in**, two round buttons well apart | Shown on touch screens only, unless you change it in Settings › Display › Screen controls |
-| Right-click the chart (or hold a finger on it) | **The chart menu** | Move the boat, start a route or add a mark to it, a new library mark, record soundings, drop anchor, go to, laylines, EBL/VRM, centre the chart, a meteogram, a ruler. On a mark, ruler, barrier or EBL/VRM: the actions for it |
+| Bottom centre of the chart | **Zoom out** and **Zoom in**, two round buttons well apart | Off unless you choose Show in Settings › Display › Screen controls (for a trackball or a mouse without a wheel) |
+| Right-click the chart | **The chart menu** | Move the boat, start a route or add a mark to it, a new library mark, record soundings, drop anchor, go to, laylines, EBL/VRM, centre the chart, a meteogram, a ruler. On a mark, ruler, barrier or EBL/VRM: the actions for it |
 
 **The rail**
 
@@ -157,7 +157,7 @@ In the Instruments view, three buttons at the top right (Navigation, Planning, E
 With no GRIB loaded, the chart-time slider, transport buttons, Weather on route and the compare controls are hidden. A new information window opens beside any already open instead of over it.
 | {icon:side} | **Data panel** | Shows the data panel beside the chart, or hides it to a line under the chart (also **O**) |
 | {icon:panels} | **Panels** | Shows or hides the rail and drawers in this view (also **P**). The dock remains independent |
-| {icon:day} {icon:night} | **Colours** | Steps through day, dusk, night (IHO), night red and night green (also **N**). Right-click it (or hold it on a touch screen) for all five and the brightness at once |
+| {icon:day} {icon:night} | **Colours** | Steps through day, dusk, night (IHO), night red and night green (also **N**). Right-click it for all five and the brightness at once |
 | {icon:clear-track} | **Clear track** | Clears the short trail behind the boat |
 
 In the Instruments and Live data views the toolbar stays at the left edge, so the View button is always there.
@@ -179,7 +179,7 @@ Use the view buttons at the top of the data panel or the toolbar's View button. 
 - Each view remembers, in each window, whether its rail and drawers are shown, whether the data panel is shown, and whether own soundings are shown. Survey depths and survey outlines also have separate visibility choices for each view. The dock opens and closes independently.
 - Navigation, Planning and Environment remember their chart centre and zoom independently while the window is open. The first time you enter a view it starts at the current centre and zoom; switching back restores that view's last centre and zoom, including when returning from Instruments or after the inactivity timeout. Follow is shared between views: if it is on, subsequent boat position updates move the chart to follow the boat.
 - AIS chart visibility is selected per view in **Targets & fleets** or **Chart › Layers**. Planning starts with AIS hidden; the other views keep the previous AIS setting until changed. Reception, target lists and AIS alarms continue when chart symbols are hidden.
-- **Settings › Display › Return to Navigation after Planning inactivity** also applies to Environment. It defaults to five minutes, and can be set from one to ten minutes or Off for this window. Mouse, touch, wheel and keyboard input in that window resets the timer. It applies only while a live position is arriving, so nothing happens at the desk. For the last 30 seconds a notice counts down at the top of the window; **Stay**, or any input, cancels it. The switch occurs even with an edit or dialog open; check any unfinished work afterwards. Other windows have their own timers.
+- **Settings › Display › Return to Navigation after Planning inactivity** also applies to Environment. It defaults to five minutes, and can be set from one to ten minutes or Off for this window. Mouse, wheel and keyboard input in that window resets the timer. It applies only while a live position is arriving, so nothing happens at the desk. For the last 30 seconds a notice counts down at the top of the window; **Stay**, or any input, cancels it. The switch occurs even with an edit or dialog open; check any unfinished work afterwards. Other windows have their own timers.
 - Navigation, Planning and Environment each keep their own chart display: **Base**, **Standard** or **All**, and the switches of Chart › Chart display (light sectors, names and labels, soundings, information symbols, important and other text, date-dependent symbols). Environment starts with Base; other views start with the display of the view you came from. Changes are remembered per view. Base is not sufficient for navigation: use Standard or All for planning and monitoring. The symbols, their size and the safety depth and contour are the same in every view.
 - **Esc** leaves the Instruments or Live data view for the view you came from.
 - **Show the chart in this view**, in the View button's list, turns the chart on or off in the view you are in. The Instruments and Live data views start without it.
@@ -194,10 +194,10 @@ Use the view buttons at the top of the data panel or the toolbar's View button. 
 - Each window can be closed, minimised, maximised and restored with the normal window buttons.
 - The main window does the work that must happen once, whatever the number of windows: it checks the alarms, plays their sound, and keeps the MOB and the anchor watch. Keep it open.
 
-**Mouse and touch**
+**Mouse and keyboard**
 
-- Drag to pan, scroll or pinch to zoom, right-drag or two-finger twist to rotate (the **North up** button at the top of the toolbar turns the chart back to north at the top; its needle shows which way north is).
-- On a touch screen a tap sets the cursor (there is no hover), and a long press opens the chart menu.
+- Drag to pan, scroll to zoom, right-drag to rotate (the **North up** button at the top of the toolbar turns the chart back to north at the top; its needle shows which way north is).
+- TweedPlot is laid out for a mouse (or trackball) and keyboard: every control is the same compact size throughout, hover shows what a button does, and right-click opens the menus. A touch-screen layout may come later as a separate mode.
 - To move a course mark, library mark, ruler point or barrier point: click it (amber ring), wait for the ring to turn green, then drag. The pause stops marks being moved by accident. A library mark's new position is saved straight away, and every route using it follows.
 
 **Info windows**
@@ -1427,7 +1427,7 @@ Laylines and the tacking cone are not drawn in the Fishing use. Everything else 
 
 **Screen calibration.** A bar that is 50 mm long on a typical screen: measure it on yours with a ruler and enter what you measure. The IHO chart symbols and the data panel's text are then drawn true to size in millimetres (see *Chart symbols at a glance* under Charts).
 
-**Colours: day, dusk and night.** The colours button {icon:day} in the toolbar (or **Settings › Display › Colours**) steps through five sets of colours; it shows a moon {icon:night} while dusk or night colours are on. Right-click it (or hold it on a touch screen) for all five and the brightness in one small panel:
+**Colours: day, dusk and night.** The colours button {icon:day} in the toolbar (or **Settings › Display › Colours**) steps through five sets of colours; it shows a moon {icon:night} while dusk or night colours are on. Right-click it for all five and the brightness in one small panel:
 
 | Colours | Use |
 | --- | --- |
@@ -1443,7 +1443,7 @@ With the IHO dusk and night colours, what TweedPlot draws over the chart (routes
 
 **Each window has its own colours.** A monitor window in a lit office can stay on day colours while the one on the fly bridge is on night red. Each window remembers its own setting.
 
-**Night cursors.** In the night modes the mouse pointer is drawn in the night colour (an arrow, a ring over things you can click, a cross while drawing and a four-way mark for dragging the chart), because the system's white pointer would spoil night vision. The pointer is drawn at a fixed brightness; the resize pointers and the text caret stay as Windows draws them. A touch screen has no pointer.
+**Night cursors.** In the night modes the mouse pointer is drawn in the night colour (an arrow, a ring over things you can click, a cross while drawing and a four-way mark for dragging the chart), because the system's white pointer would spoil night vision. The pointer is drawn at a fixed brightness; the resize pointers and the text caret stay as Windows draws them.
 
 ![Night (IHO): the chart in the IHO night colours and the rail, toolbar and data panel in dim red, with the colours menu open](img/18-night-iho.jpg)
 
@@ -1453,8 +1453,7 @@ With dusk and night colours the window's title bar turns dark as well. To get ri
 
 **Screen controls** are kept for each window:
 
-- **Zoom buttons**: **Auto** shows them only where a touch screen is found; **Show** or **Hide** forces it. They are two round buttons at the bottom centre of the chart, well apart.
-- **Large buttons**: **Auto** enlarges the toolbar, MOB, Drop and zoom buttons on a touch screen; **On** does it on any screen, for gloves.
+- **Zoom buttons**: **Show** puts two round buttons at the bottom centre of the chart, well apart, for a trackball or a mouse without a wheel; **Hide** (the default) leaves them off.
 - **Return to Navigation after Planning inactivity**: five minutes by default, adjustable from one to ten minutes or Off. It applies to Planning and Environment in this window while a live position is arriving, gives a 30-second notice with a **Stay** button, and changes view even if a dialog or edit is open.
 
 **Diagnostics**

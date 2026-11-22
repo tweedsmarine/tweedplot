@@ -103,10 +103,6 @@ export function setupViews(map, { onPlanningTimeout = () => {}, livePosition = (
   pop.addEventListener("click", (e) => { const b = e.target.closest("button[data-v]"); if (b) { api.set(b.dataset.v); pop.hidden = true; } });
   const vb = $("view-btn");
   vb.addEventListener("contextmenu", (e) => { e.preventDefault(); openPop(); });
-  let press = null;
-  vb.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse") press = setTimeout(() => { press = "done"; openPop(); }, 550); });
-  vb.addEventListener("pointerup", () => { if (press && press !== "done") clearTimeout(press); });
-  vb.addEventListener("click", (e) => { if (press === "done") { e.stopImmediatePropagation(); press = null; } }, true);
   document.addEventListener("pointerdown", (e) => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest("#view-btn")) pop.hidden = true; });
   window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !pop.hidden) { pop.hidden = true; e.preventDefault(); } });
 

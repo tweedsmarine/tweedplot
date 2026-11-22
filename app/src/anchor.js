@@ -181,7 +181,6 @@ export function setupAnchor(map, { library, alarms, getBoat, getVessel, getAnten
     window.addEventListener("pointercancel", up);
   }
   map.on("mousedown", "anc-sym", startDrag);
-  map.on("touchstart", "anc-sym", startDrag);
   async function moveTo(p) {
     const a = alarms.anchor.get();
     if (!a) return;
