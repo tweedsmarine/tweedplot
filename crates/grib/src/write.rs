@@ -59,7 +59,7 @@ pub fn crop(f: &Field, area: [f64; 4]) -> Option<Field> {
 /// Decimal scale used when packing: enough for each quantity, no more.
 fn decimals(f: &Field) -> i32 {
     match f.param {
-        Param::WindU | Param::WindV | Param::WindSpeed | Param::Gust | Param::CurrentU | Param::CurrentV => 2,
+        Param::WindU | Param::WindV | Param::WindSpeed | Param::Gust | Param::CurrentU | Param::CurrentV | Param::SubCurrentU | Param::SubCurrentV => 2,
         Param::Mslp => 0,
         Param::WaveHeight | Param::SwellHeight | Param::WindWaveHeight | Param::WavePeriod => 2,
         Param::WaveDir | Param::WindDir => 1,

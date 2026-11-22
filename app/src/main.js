@@ -50,6 +50,7 @@ import { setupMariner, marinerImage, tokenColour } from "./mariner.js";
 import { setupRouting } from "./routing.js";
 import { setupBoat } from "./boat.js";
 import { setupDock } from "./dock.js";
+import { setupDepthStack } from "./depthstack.js";
 import { createDamping } from "./damping.js";
 import { setupFleet } from "./fleet.js";
 import { setupGribDownload } from "./gribdl.js";
@@ -508,6 +509,7 @@ let features = null;
 let ruler = null;
 let mariner = null; // own ship, vectors, range rings, EBL/VRM, scale bar (mariner.js)
 let gribTools = null;
+let depthStack = null;
 let arrows = null;
 let barriers = null;
 let anchor = null;
@@ -725,6 +727,7 @@ map.on("load", () => {
   setupGribDownload(map, { weather, course: route });
   gribTools = setupGribTools(map, { weather, dock });
   setupWeatherPanel(map, weather, sidePanel, ui);
+  depthStack = setupDepthStack(map, { weather, dock });
   // the navigated route's weather runs at the speed over ground, while live data is arriving
   const routeWx = setupRouteWeather(map, { weather, routing, course: route, dock,
     getSog: () => (live && positionWatch.age() != null && !positionWatch.lost() && Number.isFinite(vessel.sog) ? vessel.sog : null) });
@@ -1394,7 +1397,7 @@ function openInLibrary(o) {
 }
 map.on("dblclick", (e) => {
   // drawing a barrier or measuring uses double-click to finish
-  if (placing() || barriers?.isDrawing() || ruler?.isArmed()) return;
+  if (placing() || barriers?.isDrawing() || ruler?.isArmed() || depthStack?.isDrawing()) return;
   const o = libraryObjectAt(e.point, true); // inside a big zone, a double-click still zooms
   if (!o) return;
   e.preventDefault(); // not a zoom

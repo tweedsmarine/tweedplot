@@ -72,6 +72,11 @@ const NPPV = [[-0.5, "#30123b"], [0, "#4675ed"], [0.5, "#1bcfd4"], [1, "#61fc6c"
 // dissolved oxygen, mmol/m³ (cold water holds more); pH (lower = more acidic)
 const O2 = [[180, "#a50026"], [200, "#f46d43"], [220, "#fee090"], [240, "#e0f3f8"], [260, "#74add1"], [300, "#313695"]];
 const PH = [[7.9, "#a50026"], [7.95, "#f46d43"], [8.0, "#fee090"], [8.05, "#e0f3f8"], [8.1, "#74add1"], [8.15, "#313695"]];
+// below the surface (Copernicus depth stack): the thermocline and shear depth (m, shallow light,
+// deep dark), how strong the thermocline is (°C per 10 m) and the shear (knots per 10 m)
+const LAYER_DEPTH = [[10, "#ffffcc"], [25, "#c7e9b4"], [50, "#7fcdbb"], [75, "#41b6c4"], [100, "#1d91c0"], [150, "#225ea8"], [200, "#253494"], [300, "#081d58"]];
+const THERMO_S = [[0, "#f7f7f7"], [0.1, "#fee391"], [0.25, "#fec44f"], [0.5, "#fe9929"], [1, "#ec7014"], [2, "#cc4c02"], [3, "#8c2d04"]];
+const SHEAR = [[0, "#f7f7f7"], [0.05, "#d4b9da"], [0.1, "#c994c7"], [0.2, "#df65b0"], [0.4, "#e7298a"], [0.7, "#ce1256"], [1, "#91003f"]];
 const CUR = [[0, "#f7fbff"], [0.25, "#c6dbef"], [0.5, "#9ecae1"], [0.75, "#6baed6"], [1, "#4292c6"], [1.5, "#2171b5"], [2, "#08519c"], [3, "#08306b"]];
 // the colours an auto range is spread over ("turbo": dark blue, cyan, green, yellow, red)
 const TURBO = ["#30123b", "#4145ab", "#4675ed", "#39a2fc", "#1bcfd4", "#24eca6", "#61fc6c", "#a4fc3b", "#d1e834", "#f3c63a", "#fe9b2d", "#f36315", "#d93806", "#a51301"];
@@ -158,8 +163,15 @@ export const LAYERS = {
   // ocean layers come from whichever loaded file has them, under the shown GRIB's wind barbs
   sst: { label: "Sea temperature", unit: "°C", params: ["SeaTemp"], scale: SST, auto: true, contour: true, ocean: true },
   sss: { label: "Salinity", unit: "PSU", params: ["Salinity"], scale: SSS, auto: true, contour: true, ocean: true },
-  subt: { label: "Sea temperature at depth", unit: "°C", params: ["SubTemp"], scale: SST, auto: true, contour: true, ocean: true },
-  subs: { label: "Salinity at depth", unit: "PSU", params: ["SubSalinity"], scale: SSS, auto: true, contour: true, ocean: true },
+  // at a depth: the one in the file, or the one chosen under the key when the file has a depth stack
+  subt: { label: "Sea temperature at depth", unit: "°C", params: ["SubTemp"], scale: SST, auto: true, contour: true, ocean: true, depth: true },
+  subs: { label: "Salinity at depth", unit: "PSU", params: ["SubSalinity"], scale: SSS, auto: true, contour: true, ocean: true, depth: true },
+  subcur: { label: "Current at depth", unit: "kn", params: ["SubCurrentU"], scale: CUR, ocean: true, depth: true },
+  // worked out from a depth stack (three or more depths)
+  thermo_depth: { label: "Thermocline depth", unit: "m", params: ["SubTemp"], scale: LAYER_DEPTH, auto: true, contour: true, ocean: true, stack: true },
+  thermo_str: { label: "Thermocline strength", unit: "°C/10 m", params: ["SubTemp"], scale: THERMO_S, auto: true, contour: true, ocean: true, stack: true },
+  shear_depth: { label: "Shear depth", unit: "m", params: ["SubCurrentU"], scale: LAYER_DEPTH, auto: true, contour: true, ocean: true, stack: true },
+  shear_str: { label: "Shear strength", unit: "kn/10 m", params: ["SubCurrentU"], scale: SHEAR, auto: true, contour: true, ocean: true, stack: true },
   // the estimated error of a sea temperature analysis (Geo-Polar Blended): where it is sure, where it fills in
   sst_err: { label: "Sea temperature error (analysis)", unit: "°C", params: ["SeaTempError"], scale: SST_ERR, auto: true, ocean: true },
   skin: { label: "Sea temperature, satellite hourly (Himawari)", unit: "°C", params: ["SkinTemp"], scale: SST, auto: true, contour: true, ocean: true },
@@ -298,6 +310,8 @@ const WX_DEFAULTS = { density: 5, size: 1.0, shading: "2", opacity: 0.45, land: 
   src: {},
   // highlight sea temperature fronts (where the temperature changes fastest)
   breaks: false,
+  // the depth (m) shown for the layers at depth when a file has a depth stack
+  depth: 50,
   // all weather layers hidden from the chart (the toolbar button)
   hidden: false };
 const DENSITY_POINTS = [80, 150, 300, 500, 900, 1400, 2200, 3500, 6000, 1e9];
@@ -730,6 +744,10 @@ export function setupWeather(map, layers) {
 
   // ---------- time -------------------------------------------------------------
   const paramsOf = (s) => new Set(s.params.map((p) => (typeof p.param === "string" ? p.param : "")));
+  /** The depths a loaded GRIB has a parameter at (empty if not at depths). */
+  const depthsIn = (path, name) => loaded.get(path)?.params.find((p) => p.param === name)?.depths ?? [];
+  /** A loaded GRIB has what a layer needs (a layer worked out from a depth stack needs three or more depths). */
+  const hasLayer = (path, l) => !!path && loaded.has(path) && paramsOf(loaded.get(path)).has(l.params[0]) && (!l.stack || depthsIn(path, l.params[0]).length >= 3);
   /** Loaded GRIBs ticked for the agreement displays. */
   const comparePaths = () => [...loaded.keys()].filter((p) => !wx.cmpOff.includes(p));
   /** Layers the shown GRIB has data for; agreement layers when two or more ticked GRIBs have the data. */
@@ -761,7 +779,7 @@ export function setupWeather(map, layers) {
   const keyOf = (l) => Object.keys(LAYERS).find((k) => LAYERS[k] === l);
   /** The file an ocean layer comes from: the one chosen, else the shown GRIB if it has it, else the newest loaded one that does. */
   function oceanPath(l) {
-    const has = (p) => p && loaded.has(p) && paramsOf(loaded.get(p)).has(l.params[0]);
+    const has = (p) => hasLayer(p, l);
     if (has(wx.src[keyOf(l)])) return wx.src[keyOf(l)];
     if (has(display)) return display;
     return [...loaded.keys()].reverse().find(has) ?? null;
@@ -1010,7 +1028,7 @@ export function setupWeather(map, layers) {
           : layer.compare
           ? invoke("grib_compare", { paths: comparePaths(), metric: layer.compare, t, bbox, maxPoints: 20000 }).catch((e) => ({ error: String(e) }))
           : timeAllowed(shadePath(layer), layer.params)
-          ? invoke("grib_grid", { path: shadePath(layer), layer: wx.layer, t, bbox, maxPoints: 20000 }).catch(failed) : null,
+          ? invoke("grib_grid", { path: shadePath(layer), layer: wx.layer, t, bbox, maxPoints: 20000, depth: layer.depth ? wx.depth : null }).catch(failed) : null,
         wx.waveArrows && hasIn(pWaves, "WaveDir") ? invoke("grib_grid", { path: pWaves, layer: "wavedir", t, bbox, maxPoints: Math.max(40, arrowPts / 2) }).catch(failed) : null,
         wx.isobars && hasIn(pIso, "Mslp") ? invoke("grib_grid", { path: pIso, layer: "mslp", t, bbox, maxPoints: 20000 }).catch(failed) : null,
         curPath && timeAllowed(curPath, ["CurrentU"])
@@ -1025,6 +1043,7 @@ export function setupWeather(map, layers) {
       if (version !== drawVersion) return;
       showDrawError();
       drawLegend(); // the key and the filter bar follow what was just drawn (a newly loaded GRIB too)
+      drawDepth();
       const cells = [], barbs = [], waves = [], currents = [];
       if (g) {
         for (let j = 0; j < g.nj; j++) {
@@ -1647,6 +1666,41 @@ export function setupWeather(map, layers) {
   }
   changeListeners.push(drawLegend);
   loadedListeners.push(drawLegend);
+
+  // the depth shown, for a layer at depth from a file with a depth stack
+  const depthBoxes = new Set();
+  function drawDepth() {
+    const layer = LAYERS[wx.layer];
+    const path = layer?.depth ? oceanPath(layer) : null;
+    const depths = path ? depthsIn(path, layer.params[0]) : [];
+    const near = depths.length ? depths.reduce((b, d) => (Math.abs(d - wx.depth) < Math.abs(b - wx.depth) ? d : b), depths[0]) : null;
+    const sig = `${wx.shading}|${depths.join(",")}|${near}`;
+    for (const el of depthBoxes) {
+      if (!el.isConnected) { depthBoxes.delete(el); continue; }
+      el.hidden = wx.shading === "off" || depths.length < 2;
+      if (el.dataset.sig === sig) continue;
+      el.dataset.sig = sig;
+      el.innerHTML = "";
+      if (el.hidden) continue;
+      const lab = document.createElement("label");
+      lab.textContent = "Depth ";
+      const sel = document.createElement("select");
+      for (const d of depths) sel.append(new Option(`${d < 10 ? d.toFixed(1) : Math.round(d)} m`, String(d)));
+      sel.value = String(near);
+      sel.title = "The depth shown: the model's levels, closer together near the surface";
+      sel.onchange = () => { wx.depth = Number(sel.value); saveWx(); draw(); changed(); };
+      const up = document.createElement("button"), down = document.createElement("button");
+      up.type = down.type = "button";
+      up.textContent = "▲"; up.title = "Shallower";
+      down.textContent = "▼"; down.title = "Deeper";
+      const step = (k) => { const i = depths.indexOf(near) + k; if (i >= 0 && i < depths.length) { wx.depth = depths[i]; saveWx(); draw(); changed(); } };
+      up.onclick = () => step(-1); down.onclick = () => step(1);
+      lab.append(sel);
+      el.append(lab, up, down);
+    }
+  }
+  changeListeners.push(drawDepth);
+  loadedListeners.push(drawDepth);
   applyLayer();
   allowPastAnalysis = pastDefault();
   $("env-use-past").checked = allowPastAnalysis;
@@ -1755,6 +1809,10 @@ export function setupWeather(map, layers) {
     setVisible(on) { if (weatherView === "nav") wx.navShow = !!on; else wx.hidden = !on; saveWx(); applyLayer(); draw(); changed(); },
     visible: () => weatherVisibleInView(weatherView, wx.hidden, wx.navShow),
     mountFilter,
+    /** A chooser for the depth shown by the layers at depth (shown when the file has a depth stack). */
+    mountDepth(el) { el.classList.add("wx-depth"); depthBoxes.add(el); drawDepth(); },
+    /** The loaded GRIB with a depth stack (three or more depths) to draw profiles and sections from, or null. */
+    stackPath: () => oceanPath(LAYERS.thermo_depth) ?? oceanPath(LAYERS.shear_depth),
     /** Names of every parameter in the loaded GRIBs. */
     loadedParams: () => new Set([...loaded.values()].flatMap((s) => [...paramsOf(s)])),
     /** A colour-bar legend for the shown layer, kept current. */
@@ -1778,7 +1836,7 @@ export function setupWeather(map, layers) {
       const av = available(); // once, not for every layer
       return Object.entries(LAYERS).filter(([key, l]) => !(l.compare || l.verify) || av.includes(key)).map(([key, l]) => {
         if (l.compare || l.verify) return { key, label: l.label, unit: l.unit, paths: [], path: null, help: l.help, compare: !!l.compare, verify: !!l.verify };
-        const paths = [...loaded].filter(([, s]) => l.params.some((p) => paramsOf(s).has(p))).map(([p]) => p);
+        const paths = [...loaded].filter(([path, s]) => l.params.some((p) => paramsOf(s).has(p)) && (!l.stack || hasLayer(path, l))).map(([p]) => p);
         // the shown GRIB if it has the layer, else the newest loaded one that does
         const path = l.ocean ? oceanPath(l) : paths.includes(display) ? display : paths.at(-1);
         return { key, label: l.label, unit: l.unit, paths, path };

@@ -12,6 +12,7 @@ pub mod compare;
 mod decode;
 mod grib1;
 pub mod netcdf;
+pub mod stack;
 #[doc(hidden)]
 pub use netcdf::testdata::sample as netcdf_sample_for_tests;
 pub mod verify;
@@ -74,6 +75,11 @@ pub enum Param {
     /// field's `surface_value` (surface type 160) is the depth in metres.
     SubTemp,
     SubSalinity,
+    /// Current (m/s) at a depth below the surface (surface type 160, the depth in `surface_value`),
+    /// local codes 10/1/192 and 193: kept apart from surface currents that some files give at
+    /// the model's top level (type 160, 0.5 m).
+    SubCurrentU,
+    SubCurrentV,
     /// Sea surface (sub-skin) temperature seen by a satellite in clear sky, hourly
     /// (Himawari-9 AHI, K). Local code 10/3/192: kept apart from the analyses
     /// (MUR, HYCOM) so both can be loaded and read out side by side.
@@ -133,6 +139,8 @@ impl Param {
             (10, 3, 0) => Param::SeaTemp,
             (10, 4, 21) if surface == 160 => Param::SubSalinity,
             (10, 4, 21) => Param::Salinity,
+            (10, 1, 192) => Param::SubCurrentU,
+            (10, 1, 193) => Param::SubCurrentV,
             (10, 1, 2) => Param::CurrentU,
             (10, 1, 3) => Param::CurrentV,
             (d, c, n) => Param::Other(d, c, n),
@@ -288,7 +296,10 @@ pub struct GribFile {
     pub fields: Vec<Field>,
     pub skipped: Vec<String>,
     /// Sorted field indices per parameter, built once (queries are hot in routing).
+    /// A parameter at several depths is indexed here at its shallowest depth.
     index: std::collections::BTreeMap<Param, Vec<usize>>,
+    /// Parameters at depths: per (parameter, depth in decimetres), sorted by time.
+    levels: std::collections::BTreeMap<(Param, i64), Vec<usize>>,
     /// The same per ensemble member (ensemble files only).
     member_index: std::collections::BTreeMap<(Param, u16), Vec<usize>>,
 }
@@ -312,6 +323,18 @@ pub struct ParamSummary {
     pub bbox: [f64; 4],
     pub dlat: f64,
     pub dlon: f64,
+    /// For a parameter at depths below the surface: the depths in the file (m), shallowest first.
+    pub depths: Vec<f64>,
+}
+
+/// Parameters given at depths below the surface (surface type 160).
+pub fn is_depth_param(p: Param) -> bool {
+    matches!(p, Param::SubTemp | Param::SubSalinity | Param::SubCurrentU | Param::SubCurrentV)
+}
+
+/// A depth as a key (decimetres).
+fn depth_key(d: f64) -> i64 {
+    (d * 10.0).round() as i64
 }
 
 impl GribFile {
@@ -360,8 +383,19 @@ impl GribFile {
     fn build(path: PathBuf, mut fields: Vec<Field>, skipped: Vec<String>) -> Self {
         fields.extend(uv_from_speed_dir(&fields));
         let mut index: std::collections::BTreeMap<Param, Vec<usize>> = std::collections::BTreeMap::new();
+        let mut levels: std::collections::BTreeMap<(Param, i64), Vec<usize>> = std::collections::BTreeMap::new();
         for (i, f) in fields.iter().enumerate() {
-            if f.member.unwrap_or(0) == 0 {
+            if f.member.unwrap_or(0) == 0 && is_depth_param(f.param) {
+                levels.entry((f.param, depth_key(f.surface_value))).or_default().push(i);
+            }
+        }
+        for v in levels.values_mut() {
+            v.sort_by_key(|&i| (fields[i].valid_time, std::cmp::Reverse(fields[i].ref_time)));
+            v.dedup_by_key(|i| fields[*i].valid_time);
+        }
+        let shallowest = |p: Param| levels.keys().filter(|k| k.0 == p).map(|k| k.1).min();
+        for (i, f) in fields.iter().enumerate() {
+            if f.member.unwrap_or(0) == 0 && (!is_depth_param(f.param) || shallowest(f.param) == Some(depth_key(f.surface_value))) {
                 index.entry(f.param).or_default().push(i);
             }
         }
@@ -384,11 +418,50 @@ impl GribFile {
                 v.dedup_by_key(|i| fields[*i].valid_time);
             }
         }
-        GribFile { path, fields, skipped, index, member_index }
+        GribFile { path, fields, skipped, index, levels, member_index }
     }
 
     pub fn series(&self, p: Param) -> Vec<&Field> {
         self.index.get(&p).map(|v| v.iter().map(|&i| &self.fields[i]).collect()).unwrap_or_default()
+    }
+
+    /// The depths (m) a parameter is given at, shallowest first (empty if not at depths).
+    pub fn depths(&self, p: Param) -> Vec<f64> {
+        self.levels.keys().filter(|k| k.0 == p).map(|k| k.1 as f64 / 10.0).collect()
+    }
+
+    /// The depth in the file nearest `depth` (m) for a parameter.
+    pub fn nearest_depth(&self, p: Param, depth: f64) -> Option<f64> {
+        self.depths(p).into_iter().min_by(|a, b| (a - depth).abs().partial_cmp(&(b - depth).abs()).unwrap_or(std::cmp::Ordering::Equal))
+    }
+
+    /// The fields of a parameter at the depth in the file nearest `depth`, sorted by time.
+    pub fn series_at_depth(&self, p: Param, depth: f64) -> Vec<&Field> {
+        let Some(d) = self.nearest_depth(p, depth) else { return self.series(p) };
+        self.levels.get(&(p, depth_key(d))).map(|v| v.iter().map(|&i| &self.fields[i]).collect()).unwrap_or_default()
+    }
+
+    /// A whole grid of a parameter at the depth nearest `depth` (m) and time `t`.
+    pub fn grid_at_depth(&self, p: Param, depth: f64, t: i64) -> Option<(Grid, Vec<f32>)> {
+        let s = self.series_at_depth(p, depth);
+        let (a, b, w) = bracket(&s, t)?;
+        if w == 0.0 || a.grid != b.grid {
+            return Some((a.grid, a.values.clone()));
+        }
+        let w = w as f32;
+        Some((a.grid, a.values.iter().zip(&b.values).map(|(x, y)| x + (y - x) * w).collect()))
+    }
+
+    /// A parameter at the depth nearest `depth` (m), at a point and time.
+    pub fn value_at_depth(&self, p: Param, depth: f64, lat: f64, lon: f64, t: i64) -> Option<f64> {
+        let s = self.series_at_depth(p, depth);
+        let (a, b, w) = bracket(&s, t)?;
+        let va = a.grid.sample(&a.values, lat, lon)?;
+        if w == 0.0 {
+            return Some(va);
+        }
+        let vb = b.grid.sample(&b.values, lat, lon)?;
+        Some(va + (vb - va) * w)
     }
 
     /// Bracketing fields for time `t` without allocating.
@@ -522,7 +595,7 @@ impl GribFile {
             .filter_map(|p| {
                 let s = self.series(p);
                 let g = s.first()?.grid;
-                Some(ParamSummary { param: p, times: s.iter().map(|f| f.valid_time).collect(), bbox: g.bbox(), dlat: g.dlat, dlon: g.dlon })
+                Some(ParamSummary { param: p, times: s.iter().map(|f| f.valid_time).collect(), bbox: g.bbox(), dlat: g.dlat, dlon: g.dlon, depths: self.depths(p) })
             })
             .collect();
         Summary {
@@ -614,6 +687,7 @@ pub fn scan(path: impl AsRef<Path>) -> Result<FileInfo, GribError> {
                     Param::Rain => "rain",
                     Param::Cape => "CAPE",
                     Param::CurrentU | Param::CurrentV => "currents",
+                    Param::SubCurrentU | Param::SubCurrentV => "currents at depth",
                     Param::AirTemp => "temperature",
                     Param::SeaTemp | Param::SubTemp => "sea temperature",
                     Param::SkinTemp => "satellite sea temperature",

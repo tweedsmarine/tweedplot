@@ -2163,6 +2163,8 @@ pub fn run() {
             grib_loaded,
             grib_wind_grid,
             grib_grid,
+            grib_cmd::grib_profile,
+            grib_cmd::grib_section,
             grib_compare,
             grib_meteogram,
             grib_verify_times,

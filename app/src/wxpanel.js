@@ -98,6 +98,11 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     box.id = "side-wx-filter";
     $("side-wx-key").after(box);
     weather.mountFilter(box);
+    // the depth shown, for the layers at depth when the file has a depth stack: between the key and the filter
+    const depth = document.createElement("div");
+    depth.id = "side-wx-depth";
+    $("side-wx-key").after(depth);
+    weather.mountDepth(depth);
   }
   $("wxp-isobar-controls").append($("wx-isobar-controls"));
   // everything for comparing GRIBs in one place: the files, the agreement displays and their note,
@@ -148,7 +153,7 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
   }
   // Weather, Ocean and Seabed are modes: each keeps its own layer, sources, overlays and filter, put back when
   // you return to it. The first time, a mode starts from sensible defaults for what is loaded.
-  const MODE_LAYERS = { weather: ["wind", "gust", "mslp", "rain", "cape", "temp", "waves", "swell", "period"], ocean: ["sst", "skin", "chl", "sss", "subt", "subs", "current", "ssh", "ice", "mld", "phyc", "nppv", "o2", "ph"] };
+  const MODE_LAYERS = { weather: ["wind", "gust", "mslp", "rain", "cape", "temp", "waves", "swell", "period"], ocean: ["sst", "skin", "chl", "sss", "subt", "subs", "subcur", "thermo_depth", "thermo_str", "shear_depth", "shear_str", "current", "ssh", "ice", "mld", "phyc", "nppv", "o2", "ph"] };
   const modeOf = (key) => Object.keys(MODE_LAYERS).find((m) => MODE_LAYERS[m].includes(key)) ?? null;
   st.modes ??= {};
   function setMode(key) {
@@ -213,9 +218,11 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
   // The layer chooser: a chip per layer that a loaded GRIB has, in groups, with the source of the chosen layer
   // under it. In Environment the groups follow the mode; elsewhere all are offered.
   const GROUPS = [["Weather", ["wind", "gust", "mslp", "rain", "cape", "temp"]], ["Sea state", ["waves", "swell", "period"]],
-    ["Ocean", ["sst", "sst_err", "skin", "chl", "sss", "subt", "subs", "current", "ssh", "ice", "mld", "phyc", "nppv", "o2", "ph"]]];
+    ["Ocean", ["sst", "sst_err", "skin", "chl", "sss", "current", "ssh", "ice", "mld", "phyc", "nppv", "o2", "ph"]],
+    ["Below the surface", ["subt", "subs", "subcur", "thermo_depth", "thermo_str", "shear_depth", "shear_str"]]];
   const CHIP = { wind: "Wind", gust: "Gusts", mslp: "Pressure", rain: "Rain", cape: "CAPE", temp: "Air temp", waves: "Waves", swell: "Swell", period: "Period",
-    sst: "Sea temp", sst_err: "SST error", skin: "Sea temp (sat)", chl: "Chlorophyll", sss: "Salinity", subt: "Temp at depth", subs: "Salinity at depth", current: "Current", ssh: "Sea height", ice: "Sea ice", mld: "Mixed layer", phyc: "Phytoplankton", nppv: "Production", o2: "Oxygen", ph: "pH" };
+    sst: "Sea temp", sst_err: "SST error", skin: "Sea temp (sat)", chl: "Chlorophyll", sss: "Salinity", subt: "Temp at depth", subs: "Salinity at depth", current: "Current", ssh: "Sea height", ice: "Sea ice", mld: "Mixed layer", phyc: "Phytoplankton", nppv: "Production", o2: "Oxygen", ph: "pH",
+    subcur: "Current at depth", thermo_depth: "Thermocline", thermo_str: "Thermocline strength", shear_depth: "Shear depth", shear_str: "Shear strength" };
   function buildShow(box) {
     const info = weather.layerInfo();
     const opts = weather.layerOptions().filter((x) => !x.compare && !x.verify && x.paths.length);
