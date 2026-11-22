@@ -2229,3 +2229,9 @@ html.dock-right .dock-close { margin-left: auto; }
 /* filter buttons: small, all six across the panel */
 #side :is(#side-wx-clock, #wxp) .seafilter .filter-actions button { min-height: 28px; padding: 2px; }
 .seafilter .vals .mid .bhi { margin-left: -6px; }
+/* Animated flow particles (flow.js): pale on the day chart; at night kept dim, and the inversions the
+   night palettes apply to the chart are undone for them so they stay light lines, not black ones. */
+.flow-canvas { z-index: 0; }
+html[data-palette="iho-night"][data-iho] .flow-canvas { filter: url(#pal-red) brightness(.55); }
+html[data-palette="iho-night"]:not([data-iho]) .flow-canvas { filter: invert(1) hue-rotate(180deg) url(#pal-red) brightness(.55); }
+html:is([data-palette="night-red"], [data-palette="night-green"]) .flow-canvas { filter: invert(1) brightness(.8); }
