@@ -64,6 +64,14 @@ const CHL = [[-1.5, "#30123b"], [-1.2, "#4145ab"], [-1, "#4675ed"], [-0.7, "#39a
 /** A chlorophyll value for people: two figures. */
 export const fmtChl = (v) => (v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v >= 0.1 ? v.toFixed(2) : v.toFixed(3));
 const CHL_LEVELS = [0.02, 0.03, 0.05, 0.07, 0.1, 0.15, 0.2, 0.3, 0.5, 0.7, 1, 1.5, 2, 3, 5, 7, 10, 15, 20, 30, 50];
+// mixed layer depth, m: shallow (warm, stratified) light, deep (mixed) dark
+const MLD = [[5, "#ffffcc"], [10, "#c7e9b4"], [20, "#7fcdbb"], [40, "#41b6c4"], [70, "#1d91c0"], [100, "#225ea8"], [200, "#0c2c84"]];
+// log10 of phytoplankton (mmol C/m³) and of primary production (mg C/m³/day)
+const PHYC = [[-1, "#30123b"], [-0.7, "#4675ed"], [-0.4, "#1bcfd4"], [-0.1, "#61fc6c"], [0.2, "#d1e834"], [0.5, "#fe9b2d"], [0.8, "#a51301"]];
+const NPPV = [[-0.5, "#30123b"], [0, "#4675ed"], [0.5, "#1bcfd4"], [1, "#61fc6c"], [1.5, "#d1e834"], [2, "#fe9b2d"], [2.5, "#a51301"]];
+// dissolved oxygen, mmol/m³ (cold water holds more); pH (lower = more acidic)
+const O2 = [[180, "#a50026"], [200, "#f46d43"], [220, "#fee090"], [240, "#e0f3f8"], [260, "#74add1"], [300, "#313695"]];
+const PH = [[7.9, "#a50026"], [7.95, "#f46d43"], [8.0, "#fee090"], [8.05, "#e0f3f8"], [8.1, "#74add1"], [8.15, "#313695"]];
 const CUR = [[0, "#f7fbff"], [0.25, "#c6dbef"], [0.5, "#9ecae1"], [0.75, "#6baed6"], [1, "#4292c6"], [1.5, "#2171b5"], [2, "#08519c"], [3, "#08306b"]];
 // the colours an auto range is spread over ("turbo": dark blue, cyan, green, yellow, red)
 const TURBO = ["#30123b", "#4145ab", "#4675ed", "#39a2fc", "#1bcfd4", "#24eca6", "#61fc6c", "#a4fc3b", "#d1e834", "#f3c63a", "#fe9b2d", "#f36315", "#d93806", "#a51301"];
@@ -157,6 +165,12 @@ export const LAYERS = {
   skin: { label: "Sea temperature, satellite hourly (Himawari)", unit: "°C", params: ["SkinTemp"], scale: SST, auto: true, contour: true, ocean: true },
   // chlorophyll is shaded, filtered and contoured on a log scale (the grid comes as log10 mg/m³)
   chl: { label: "Chlorophyll-a", unit: "mg/m³", params: ["Chlorophyll"], scale: CHL, auto: true, contour: true, ocean: true, log: true },
+  // Copernicus Marine models: the mixed layer, and the biology behind the chlorophyll
+  mld: { label: "Mixed layer depth", unit: "m", params: ["MixedLayer"], scale: MLD, auto: true, contour: true, ocean: true },
+  phyc: { label: "Phytoplankton", unit: "mmol/m³", params: ["Phytoplankton"], scale: PHYC, auto: true, contour: true, ocean: true, log: true },
+  nppv: { label: "Primary production", unit: "mg C/m³/day", params: ["PrimaryProduction"], scale: NPPV, auto: true, contour: true, ocean: true, log: true },
+  o2: { label: "Dissolved oxygen", unit: "mmol/m³", params: ["Oxygen"], scale: O2, auto: true, contour: true, ocean: true },
+  ph: { label: "pH", unit: "", params: ["Ph"], scale: PH, auto: true, contour: true, ocean: true },
   current: { label: "Current", unit: "kn", params: ["CurrentU"], scale: CUR, ocean: true },
   ssh: { label: "Sea surface height", unit: "m", params: ["SeaLevel"], scale: SSH, ocean: true },
   ice: { label: "Sea ice concentration", unit: "%", params: ["SeaIce"], scale: ICE, min: 1, ocean: true },
@@ -222,13 +236,14 @@ export function dataTimeStatus(summary, params, time, allowPastAnalysis = false)
   if (!times.length || !Number.isFinite(time)) return { state: "missing" };
   const first = Math.min(...times), last = Math.max(...times);
   if (time >= first && time <= last) return { state: "valid" };
-  const analysis = /VIIRS|MUR SST|ACSPO|Geo-Polar|Himawari|sea ice/i.test(`${summary?.model ?? ""} ${summary?.name ?? ""}`);
+  const analysis = /VIIRS|MUR SST|ACSPO|Geo-Polar|Himawari|sea ice|Copernicus chlorophyll/i.test(`${summary?.model ?? ""} ${summary?.name ?? ""}`);
   return time > last && analysis && allowPastAnalysis ? { state: "past", time: last } : { state: "missing" };
 }
 
 const SEA_POINT_PARAMS = {
   sst: "SeaTemp", sst_err: "SeaTempError", skin: "SkinTemp", sss: "Salinity", subt: "SubTemp",
   subs: "SubSalinity", chl: "Chlorophyll", ssh: "SeaLevel", cur: "CurrentU", ice: "SeaIce",
+  mld: "MixedLayer", phyc: "Phytoplankton", nppv: "PrimaryProduction", o2: "Oxygen", ph: "Ph",
 };
 
 export function applyPointTimePolicy(row, summary, time, allowPastAnalysis) {
@@ -558,7 +573,7 @@ export function setupWeather(map, layers) {
       if (!display) display = path;
       // an ocean file: show it (sea temperature first) under whatever weather is shown
       const ps = paramsOf(s);
-      const oceanKey = ["skin", "sst", "chl", "subt", "sss", "current", "ice"].find((k) => ps.has(LAYERS[k].params[0]));
+      const oceanKey = ["skin", "sst", "chl", "subt", "sss", "current", "ice", "mld", "phyc"].find((k) => ps.has(LAYERS[k].params[0]));
       if (oceanKey && !LAYERS[wx.layer]?.ocean) {
         wx.layer = oceanKey;
         if (wx.shading === "off") wx.shading = "smooth";
@@ -1127,7 +1142,7 @@ export function setupWeather(map, layers) {
   };
 
   // ---------- comparison table --------------------------------------------------------
-  const SEA_KEYS = ["sst", "sst_err", "skin", "sss", "subt", "subs", "cur", "depth", "chl", "ssh", "ice"];
+  const SEA_KEYS = ["sst", "sst_err", "skin", "sss", "subt", "subs", "cur", "depth", "chl", "ssh", "ice", "mld", "phyc", "nppv", "o2", "ph"];
   /** The sea values of one file at the cursor, as short labelled pieces. */
   function seaParts(r) {
     const out = [];
@@ -1140,6 +1155,11 @@ export function setupWeather(map, layers) {
     if (r.chl != null) out.push(`Chl-a ${fmtChl(r.chl)} mg/m³`);
     if (r.ssh != null) out.push(`Sea height ${r.ssh >= 0 ? "+" : ""}${r.ssh.toFixed(2)} m`);
     if (r.ice != null) out.push(`Ice ${Math.round(r.ice)} %`);
+    if (r.mld != null) out.push(`Mixed layer ${Math.round(r.mld)} m`);
+    if (r.phyc != null) out.push(`Phytoplankton ${fmtChl(r.phyc)} mmol/m³`);
+    if (r.nppv != null) out.push(`Production ${fmtChl(r.nppv)} mg C/m³/d`);
+    if (r.o2 != null) out.push(`Oxygen ${Math.round(r.o2)} mmol/m³`);
+    if (r.ph != null) out.push(`pH ${r.ph.toFixed(3)}`);
     return out;
   }
   let pointTimer = null;

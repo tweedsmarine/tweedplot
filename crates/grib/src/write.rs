@@ -69,6 +69,11 @@ fn decimals(f: &Field) -> i32 {
         Param::Chlorophyll | Param::SeaLevel => 3,
         Param::SeaIce => 2,
         Param::SeaTempError => 2,
+        Param::MixedLayer => 1,
+        Param::Phytoplankton => 3,
+        Param::Oxygen => 1,
+        Param::PrimaryProduction => 2,
+        Param::Ph => 3,
         _ => 3,
     }
 }
@@ -116,6 +121,10 @@ pub const PROCESS_VIIRS_CHL: u8 = 207;
 pub const PROCESS_ASI_ICE: u8 = 208;
 pub const PROCESS_ACSPO_SST: u8 = 209;
 pub const PROCESS_BLENDED_SST: u8 = 210;
+/// Copernicus Marine: global physics (Mercator 1/12°), biogeochemistry (1/4°), ocean colour (4 km).
+pub const PROCESS_CMEMS_PHY: u8 = 211;
+pub const PROCESS_CMEMS_BGC: u8 = 212;
+pub const PROCESS_CMEMS_OC: u8 = 213;
 /// GRIB2 originating centres used with them: NASA, US Navy FNMOC, NOAA NESDIS.
 pub const CENTRE_NASA: u16 = 173;
 pub const CENTRE_FNMOC: u16 = 58;
@@ -136,6 +145,9 @@ pub fn process_name(centre: u16, process: u8) -> Option<&'static str> {
         (CENTRE_LOCAL, PROCESS_ASI_ICE) => Some("AMSR2 sea ice (Bremen)"),
         (CENTRE_NESDIS, PROCESS_ACSPO_SST) => Some("ACSPO SST 2 km"),
         (CENTRE_NESDIS, PROCESS_BLENDED_SST) => Some("Geo-Polar SST 5 km"),
+        (CENTRE_LOCAL, PROCESS_CMEMS_PHY) => Some("Copernicus ocean 1/12°"),
+        (CENTRE_LOCAL, PROCESS_CMEMS_BGC) => Some("Copernicus biology 1/4°"),
+        (CENTRE_LOCAL, PROCESS_CMEMS_OC) => Some("Copernicus chlorophyll 4 km"),
         _ => None,
     }
 }

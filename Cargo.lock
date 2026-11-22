@@ -1631,6 +1631,7 @@ dependencies = [
  "chrono",
  "flate2",
  "grib",
+ "lz4_flex",
  "nav-core",
  "reqwest",
  "serde",
@@ -2477,6 +2478,12 @@ dependencies = [
  "cc",
  "which",
 ]
+
+[[package]]
+name = "lz4_flex"
+version = "0.11.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13591d77a9b6d941f7e6fcade7f9dfd9e801308752bde50c0a9bb5852778c22c"
 
 [[package]]
 name = "mach2"

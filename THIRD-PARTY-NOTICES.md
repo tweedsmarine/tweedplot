@@ -28,6 +28,7 @@ TweedPlot includes or uses the following. Each keeps its own licence and copyrig
 | ECMWF IFS and AIFS open data | ECMWF | CC BY 4.0, © ECMWF |
 | MUR SST | NASA JPL, via NOAA CoastWatch | Free to use and share; acknowledge NASA JPL / PO.DAAC |
 | ACSPO L3S-LEO and Geo-Polar Blended SST | NOAA NESDIS (STAR, OSPO), GHRSST, via NOAA CoastWatch | US Government data, free and open; acknowledge NOAA CoastWatch |
+| Copernicus Marine (global physics and biogeochemistry models, GlobColour chlorophyll) | E.U. Copernicus Marine Service Information; Mercator Ocean International; ACRI-ST | Free and open under the Copernicus Marine Service licence; credit "E.U. Copernicus Marine Service Information" |
 | Himawari-9 SST | JMA, processed by NOAA STAR (ACSPO L3C, GHRSST) | Free and open |
 | Chlorophyll-a (VIIRS) | NOAA CoastWatch | Free to use and share |
 | Sea ice concentration (AMSR2, ASI) | University of Bremen, Institute of Environmental Physics (data.seaice.uni-bremen.de), from JAXA GCOM-W AMSR2 | Free; no warranty; cite Spreen, Kaleschke and Heygster (2008), J. Geophys. Res. 113, C02S03 |
