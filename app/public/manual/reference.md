@@ -1129,6 +1129,7 @@ In Planning, forecast time stays above the scrolling panel. Cursor values identi
 | Wind barbs | Arrows with feathers: each full feather 10 kn, half feather 5 kn, flag 50 kn |
 | Wave direction | Arrows pointing the way the waves travel |
 | Current direction | Blue arrows pointing the way the current flows, longer where it is stronger. Needs a GRIB with currents (ECMWF surface currents or HYCOM) |
+| Current flow (animated) | Moving particles that drift with the current, faster and brighter where it runs harder, so eddies, rips and where two flows meet show at a glance. Off to begin with. They pause while the chart is moved and start again when it stops, and follow the chart time as it steps or plays. Same data as Current direction; dim at night |
 | Isobars | Pressure lines at 1 to 10 hPa intervals (2 hPa suits the tropics, 4 hPa higher latitudes); **Auto** widens the interval when zoomed out |
 | Display | Barb density and size, shading opacity and steps (smooth, or 1, 2 or 5 kn bands), shading under the land or under the coastline only |
 

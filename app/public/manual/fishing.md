@@ -81,7 +81,7 @@ Sea surface height (SSH) is how high the sea surface stands above its long-term 
 
 ### Currents
 
-Turn on **Current direction** for blue arrows that point the way the water flows, longer where it flows faster, and shade **Current** for the speed.
+Turn on **Current direction** for blue arrows that point the way the water flows, longer where it flows faster, or **Current flow (animated)** for particles drifting with it, and shade **Current** for the speed.
 
 - A current running across the temperature break holds bait to the edge; a current running along it moves the whole edge. The arrows and contours show which.
 - The set and rate at the cursor appear in **At the cursor** as, for example, *0.8 kn toward 135°*.

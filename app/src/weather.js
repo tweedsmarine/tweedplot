@@ -1,5 +1,6 @@
 // Weather panel: GRIB files, time slider, wind barbs and speed shading,
 // and a table comparing every loaded run at the cursor.
+import { createFlow, fieldFromDirSpeed } from "./flow.js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -230,7 +231,7 @@ export function fronts(gs, min = 0.02) {
 }
 
 // Display settings (per viewer)
-const WX_DEFAULTS = { density: 5, size: 1.0, shading: "2", opacity: 0.45, land: "land", layer: "wind", arrows: true, waveArrows: true, currArrows: true, isobars: false,
+const WX_DEFAULTS = { density: 5, size: 1.0, shading: "2", opacity: 0.45, land: "land", layer: "wind", arrows: true, waveArrows: true, currArrows: true, currFlow: false, isobars: false,
   // isobar interval (hPa), and whether to widen it when zoomed out
   isoStep: 4, isoAuto: true,
   // contours over sea temperature and salinity (fronts)
@@ -433,6 +434,8 @@ export function setupWeather(map, layers) {
   map.addSource("wx-breaks", { type: "geojson", data: fc([]) });
   map.addLayer({ id: "wx-breaks", type: "fill", source: "wx-breaks",
     paint: { "fill-color": "#d81b60", "fill-antialias": false, "fill-opacity": ["interpolate", ["linear"], ["get", "g"], 0.02, 0.2, 0.12, 0.8] } }, beforeTop);
+  // animated current flow: particles on a canvas over the chart (flow.js)
+  const flow = createFlow(map);
   map.addSource("wx-currdir", { type: "geojson", data: fc([]) });
   if (!map.hasImage("current-arrow")) map.addImage("current-arrow", waveArrow("#1e7bff"), { pixelRatio: 2 });
   map.addLayer({ id: "wx-currdir", type: "symbol", source: "wx-currdir",
@@ -922,6 +925,7 @@ export function setupWeather(map, layers) {
         map.getSource("wx-barbs").setData(fc([]));
         map.getSource("wx-wavedir").setData(fc([]));
         map.getSource("wx-currdir").setData(fc([]));
+        flow.setField(null);
         map.getSource("wx-breaks").setData(fc([]));
         map.getSource("wx-isobars").setData(fc([]));
         map.getSource("wx-isotherms").setData(fc([]));
@@ -938,12 +942,13 @@ export function setupWeather(map, layers) {
       // Barbs and wave arrows at the chosen density; shading at full GRIB resolution (up to 20 000 cells).
       const curPath = wx.currArrows ? oceanPath(LAYERS.current) : null;
       const curPts = Math.max(40, arrowPts / 2);
+      const flowPath = wx.currFlow ? oceanPath(LAYERS.current) : null;
       const pBarbs = srcOf("arrows"), pWaves = srcOf("waveArrows"), pIso = srcOf("isobars");
       const bsrc = loaded.has(wx.src.breaks) ? wx.src.breaks : null;
       const breakKey = wx.breaks ? ["sst", "skin"].find((k) => (bsrc ? hasIn(bsrc, LAYERS[k].params[0]) : oceanPath(LAYERS[k]))) : null;
       const breakPath = breakKey ? bsrc ?? oceanPath(LAYERS[breakKey]) : null;
       drawError = null;
-      const [g, gs, gw, gp, [gcd, gcs], gb] = await Promise.all([
+      const [g, gs, gw, gp, [gcd, gcs], gb, [gfd, gfs]] = await Promise.all([
         wx.arrows && (hasIn(pBarbs, "WindU") || hasIn(pBarbs, "WindSpeed")) ? invoke("grib_wind_grid", { path: pBarbs, t, bbox, maxPoints: arrowPts }).catch(failed) : null,
         !shade ? null : layer.verify
           ? (verifyTarget ? invoke("grib_verify_grid", { paths: [], t: verifyTarget.t, at: t, forecast: verifyTarget.path, kind: layer.verify, bbox, maxPoints: 20000 })
@@ -958,6 +963,10 @@ export function setupWeather(map, layers) {
           ? Promise.all(["currentdir", "current"].map((layer) => invoke("grib_grid", { path: curPath, layer, t, bbox, maxPoints: curPts }).catch(failed)))
           : [null, null],
         breakPath && timeAllowed(breakPath, LAYERS[breakKey].params) ? invoke("grib_grid", { path: breakPath, layer: breakKey, t, bbox, maxPoints: 20000 }).catch(failed) : null,
+        // the flow at the file's own resolution in view (up to 6 000 points)
+        flowPath && timeAllowed(flowPath, ["CurrentU"])
+          ? Promise.all(["currentdir", "current"].map((layer) => invoke("grib_grid", { path: flowPath, layer, t, bbox, maxPoints: 6000 }).catch(failed)))
+          : [null, null],
       ]);
       if (version !== drawVersion) return;
       showDrawError();
@@ -1039,6 +1048,7 @@ export function setupWeather(map, layers) {
         }
       }
       map.getSource("wx-currdir").setData(fc(currents));
+      flow.setField(gfd && gfs && !gfd.error && !gfs.error ? fieldFromDirSpeed(gfd, gfs) : null);
       map.getSource("wx-breaks").setData(fc(gb && !gb.error ? fronts(gb) : []));
       map.getSource("wx-cells").setData(fc(cells));
       map.getSource("wx-barbs").setData(fc(barbs));
@@ -1721,13 +1731,14 @@ export function setupWeather(map, layers) {
         ["arrows", "Wind barbs", ["WindU", "WindSpeed"], "arrows"],
         ["waveArrows", "Wave direction", ["WaveDir"], "waveArrows"],
         ["currArrows", "Current direction", ["CurrentU"], "current"],
+        ["currFlow", "Current flow (animated)", ["CurrentU"], "current"],
         ["isobars", "Isobars", ["Mslp"], "isobars"],
         ["breaks", "Temperature breaks", ["SeaTemp", "SkinTemp"], "breaks"],
         ["isotherms", "Contours and target line", null, null],
       ];
       return defs.map(([key, label, params, sk]) => {
         const paths = params ? [...loaded].filter(([, s]) => params.some((p) => paramsOf(s).has(p))).map(([p]) => p) : [...loaded.keys()];
-        const path = key === "currArrows" ? oceanPath(LAYERS.current) :
+        const path = key === "currArrows" || key === "currFlow" ? oceanPath(LAYERS.current) :
           key === "breaks" ? (loaded.has(wx.src.breaks) ? wx.src.breaks : oceanPath(LAYERS.sst) ?? oceanPath(LAYERS.skin)) :
           sk ? srcOf(sk) : null;
         const timeStatus = weatherView === "env" && params && path
@@ -1746,7 +1757,7 @@ export function setupWeather(map, layers) {
     /** Switch an overlay on or off, and optionally the file it is drawn from. */
     setOverlay(key, on, path) {
       if (on != null) wx[key] = on;
-      const sk = { arrows: "arrows", waveArrows: "waveArrows", currArrows: "current", isobars: "isobars", breaks: "breaks" }[key];
+      const sk = { arrows: "arrows", waveArrows: "waveArrows", currArrows: "current", currFlow: "current", isobars: "isobars", breaks: "breaks" }[key];
       if (path && sk) wx.src[sk] = path;
       saveWx(); draw(); changed();
     },
@@ -1754,7 +1765,7 @@ export function setupWeather(map, layers) {
     config: () => ({
       layer: wx.shading === "off" ? "none" : wx.layer,
       src: { ...wx.src },
-      overlays: Object.fromEntries(["arrows", "waveArrows", "currArrows", "isobars", "isotherms", "breaks"].map((k) => [k, !!wx[k]])),
+      overlays: Object.fromEntries(["arrows", "waveArrows", "currArrows", "currFlow", "isobars", "isotherms", "breaks"].map((k) => [k, !!wx[k]])),
       filter: wx.seaFilter[wx.layer]?.set || LAYERS[wx.layer]?.auto ? { ...wx.seaFilter[wx.layer] } : null,
     }),
     applyConfig(c) {
