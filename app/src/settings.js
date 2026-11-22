@@ -178,9 +178,8 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       onReferencePosition?.([profile.referenceLon, profile.referenceLat]);
     }
   }
-  ui.onChange((pane) => {
-    if (pane === "settings") form.querySelector("input")?.focus();
-  });
+  // opening Settings no longer puts the cursor in Vessel name: an empty field with a focus ring read as
+  // an error, and a stray key press would type into it
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();

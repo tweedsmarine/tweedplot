@@ -71,7 +71,7 @@ export function setupViews(map, { onPlanningTimeout = () => {}, livePosition = (
     }
     const tb = $("tools-btn");
     tb.classList.toggle("on", tools);
-    tb.title = tools ? `Hide the rail and drawers in the ${v.name} view` : `Show the rail and drawers in the ${v.name} view`;
+    tb.title = `Left panels: ${tools ? "hide" : "show"} the rail and drawers in the ${v.name} view (P)`;
     save();
     if (!PRIMARY) patchWindow(LABEL, { view: v.id });
     window.dispatchEvent(new CustomEvent("racenav-view", { detail: { id: v.id, tools } }));
@@ -84,7 +84,7 @@ export function setupViews(map, { onPlanningTimeout = () => {}, livePosition = (
   $("view-btn").onclick = () => (pop.hidden ? openPop() : (pop.hidden = true));
   $("tools-btn").onclick = () => { s.tools[s.current] = !toolsOn(s.current); apply(); };
 
-  // right-click (or hold) the view button: pick a view, and show or hide the chart in this one
+  // right-click the view button: pick a view, and show or hide the chart in this one
   const pop = document.createElement("div");
   pop.id = "view-pop";
   pop.className = "ctx view-pop";

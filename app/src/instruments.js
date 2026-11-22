@@ -38,7 +38,7 @@ export const ITEMS = {
   TRIP: { label: "Trip", unit: "NM", group: "Navigation", live: true, get: (c) => c.v.trip, fmt: f1 },
   // local and UTC time together (the data panel's own-ship block)
   TIME: { label: "Time", unit: "", group: "Navigation", wide: true, get: (c) => c.now,
-    fmt: (t) => { const d = new Date(t); return `${d.toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "short" })} ${d.toLocaleTimeString("en-NZ", { hour12: false })}<span class="u">local</span> ${d.toISOString().slice(11, 19)}<span class="u">UTC</span>`; } },
+    fmt: (t) => { const d = new Date(t); return `${d.toLocaleDateString("en-NZ", { day: "numeric", month: "short" })} ${d.toLocaleTimeString("en-NZ", { hour12: false })}<span class="u">local</span> ${d.toISOString().slice(11, 16)}<span class="u">UTC</span>`; } },
   UTC: { label: "UTC", unit: "", group: "Navigation", get: (c) => c.now, fmt: (t) => new Date(t).toISOString().slice(11, 19) },
   LOCAL: { label: "Local", unit: "", group: "Navigation", get: (c) => c.now, fmt: (t) => new Date(t).toLocaleTimeString("en-NZ", { hour12: false }) },
 
@@ -642,7 +642,7 @@ export function setupInstruments() {
     render();
   }, 250);
 
-  // right-click (or hold) a reading: its history in a floating card
+  // right-click a reading: its history in a floating card
   const histFrom = (el) => {
     const t = el?.closest?.("#itiles .itile, #side .sp-row, #side-strip .sp-row");
     if (!t) return null;

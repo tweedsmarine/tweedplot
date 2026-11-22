@@ -31,7 +31,7 @@ export function setupPalette(onChange = () => {}) {
     $("pal-dim").disabled = p.mode === "day";
     $("pal-dim-v").textContent = p.mode === "day" ? "" : `${dim} %`;
     const next = MODES[(MODES.indexOf(p.mode) + 1) % MODES.length];
-    $("palette-btn").title = `Colours for this window: ${NAMES[p.mode]} (click for ${NAMES[next]}; right-click or hold for brightness)`;
+    $("palette-btn").title = `Colours for this window: ${NAMES[p.mode]} (click for ${NAMES[next]}; right-click for brightness)`;
     $("palette-btn").classList.toggle("night", p.mode !== "day");
     setWindowDark(p.mode !== "day");
     if (persist) { try { localStorage.setItem(own(KEY), JSON.stringify(p)); } catch { /* ignore */ } }

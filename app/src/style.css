@@ -244,8 +244,23 @@ details.dcard.flash { animation: plan-flash 1.6s ease-out; }
 .ctl-col button:focus-visible { outline: 2px solid #fff; outline-offset: -3px; }
 .ctl-col svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .ctl-col svg .fill { fill: currentColor; stroke: none; }
-#sk-state, #sk-live, #follow, #wx-pop-btn, #side-btn, #view-btn, #ruler-btn { display: flex; flex-direction: column; justify-content: center; gap: 2px; }
-#sk-state::after, #sk-live::after, #follow::after, #wx-pop-btn::after, #side-btn::after, #view-btn::after, #ruler-btn::after { font-size: 9px; font-weight: 700; line-height: 1; }
+/* every toolbar button carries a short label under its icon; three groups (status, tools, display)
+   are set apart by a wider rule */
+.ctl-col button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; position: relative; }
+.ctl-col button::after { font-size: 9px; font-weight: 700; line-height: 1; letter-spacing: 0.01em; white-space: nowrap; }
+.ctl-col button.tb-group { border-top: 3px solid #5d6a72; }
+#north-btn::after { content: "North"; }
+#ebl-btn::after { content: "EBL"; }
+#shoot-btn::after { content: "Shoot"; }
+#haul-btn::after { content: "Haul"; }
+#pb-rec::after { content: "Record"; }
+#pb-tb::after { content: "Sndgs"; }
+#targets-btn::after { content: "Targets"; }
+#clear-track::after { content: "Clear"; }
+#tools-btn::after { content: "Left"; }
+#palette-btn::after { content: "Day"; }
+html[data-palette="dusk"] #palette-btn::after { content: "Dusk"; }
+html:is([data-palette="iho-night"], [data-palette^="night"]) #palette-btn::after { content: "Night"; }
 #sk-state::after { content: "NO LINK"; }
 #sk-state.good::after { content: "DATA"; }
 #sk-state.stale::after { content: "QUIET"; }
@@ -255,8 +270,8 @@ details.dcard.flash { animation: plan-flash 1.6s ease-out; }
 body.replaying #sk-live::after { content: "REPLAY"; }
 #follow::after { content: "FREE"; }
 #follow.on::after { content: "FOLLOW"; }
-#wx-pop-btn::after { content: "Weather"; }
-#side-btn::after { content: "Panel"; }
+#side-btn::after { content: "Right"; }
+html.side-left #side-btn::after { content: "Data"; }
 #view-btn::after { content: "View"; }
 #ruler-btn::after { content: "Ruler"; }
 /* Signal K status: the colour is the state; a slash too when there is no link */
@@ -799,7 +814,7 @@ html[data-palette="dusk"][data-iho] { filter: invert(1) hue-rotate(180deg) brigh
 html[data-palette="dusk"][data-iho] body { background: #fff; }
 /* things already dark (the rail, instrument panels, the title bars of floating boxes, the
    about box, messages) are turned back, so they stay dark rather than going light grey */
-html[data-palette="dusk"][data-iho] :is(#rail, #toolbar, #itiles, #side, #side-strip, .hist-float, .dot, #replay-bar, #tip,
+html[data-palette="dusk"][data-iho] :is(#rail, #drawer, #toolbar, #itiles, #side, #side-strip, .hist-float, .dot, #replay-bar, #tip,
   .float-win header, .about, .toast, .update-notice, .startup-splash) { filter: invert(1) hue-rotate(180deg); }
 html[data-palette="dusk"][data-iho] #map .maplibregl-canvas-container { filter: hue-rotate(180deg) invert(1); }
 /* Night (IHO): the chart is drawn in the IHO night palette, so it is left out of the colour
@@ -808,7 +823,7 @@ html[data-palette="dusk"][data-iho] #map .maplibregl-canvas-container { filter: 
    With the paper chart symbols the map goes through the dark page filter as before. */
 html[data-palette="iho-night"] body { background: #000; }
 html[data-palette="iho-night"] body > :not(#map) { filter: invert(1) url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
-html[data-palette="iho-night"] body > :is(#rail, #toolbar, #itiles, #side, #side-strip, .hist-float, #replay-bar, #tip, .startup-splash) { filter: url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
+html[data-palette="iho-night"] body > :is(#rail, #drawer, #toolbar, #itiles, #side, #side-strip, .hist-float, #replay-bar, #tip, .startup-splash) { filter: url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
 html[data-palette="iho-night"] .dot { filter: invert(1); }
 html[data-palette="iho-night"] #map > :not(.maplibregl-canvas-container, .maplibregl-control-container, .maplibregl-canvas) { filter: invert(1) url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
 html[data-palette="iho-night"] #map :is(.maplibregl-ctrl, .maplibregl-popup) { filter: invert(1) url(#pal-red) brightness(calc(var(--pal-dim, 1) * 0.6)); }
@@ -819,7 +834,7 @@ html[data-palette="iho-night"]:not([data-iho]) #map .maplibregl-canvas-container
    (the rail, instrument panels) are inverted first so they stay dark. */
 html[data-palette="night-red"] { filter: invert(1) url(#pal-red) brightness(var(--pal-dim, 0.6)); }
 html[data-palette="night-green"] { filter: invert(1) url(#pal-green) brightness(var(--pal-dim, 0.6)); }
-html[data-palette^="night"] #rail, html[data-palette^="night"] #toolbar, html[data-palette^="night"] #itiles, html[data-palette^="night"] #side, html[data-palette^="night"] #side-strip, html[data-palette^="night"] .hist-float, html[data-palette^="night"] .dot,
+html[data-palette^="night"] #rail, html[data-palette^="night"] #drawer, html[data-palette^="night"] #toolbar, html[data-palette^="night"] #itiles, html[data-palette^="night"] #side, html[data-palette^="night"] #side-strip, html[data-palette^="night"] .hist-float, html[data-palette^="night"] .dot,
 html[data-palette^="night"] #replay-bar, html[data-palette^="night"] #tip, html[data-palette^="night"] .startup-splash { filter: invert(1); }
 #tip { position: fixed; z-index: 100; max-width: 320px; padding: 5px 9px; border-radius: 5px; background: #1d2a33; color: #fff; font-size: 12.5px; line-height: 1.35; pointer-events: none; box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
 #tip[hidden] { display: none; }
@@ -1442,9 +1457,9 @@ html:not([data-use="fish"]):not([data-rec-all]) #pb-rec:not(.rec) { display: non
 #pb-rec.rec { color: #ff9a91; }
 #pb-rec.rec .rec-dot { fill: #ff9a91; stroke: #ff9a91; animation: rec-blink 2s steps(2) infinite; }
 @keyframes rec-blink { 50% { opacity: 0.35; } }
-#pb-rec .tb-count { position: absolute; right: 0; bottom: -1px; font-size: 9px; font-weight: 700; line-height: 1; color: #ff9a91; }
+#pb-rec .tb-count { position: absolute; right: 1px; top: 2px; font-size: 9px; font-weight: 700; line-height: 1; color: #ff9a91; }
 html:not([data-use="fish"]) .tb-fish { display: none; }
-.tb-fish .tb-gear { position: absolute; right: 1px; bottom: 0; font-size: 9px; font-weight: 700; line-height: 1; color: #b6e4f7; }
+.tb-fish .tb-gear { position: absolute; right: 2px; top: 2px; font-size: 9px; font-weight: 700; line-height: 1; color: #b6e4f7; }
 .gear-pop { position: fixed; z-index: 30; min-width: 170px; }
 /* the haul box */
 .haul-box { display: flex; flex-direction: column; gap: 8px; padding: 2px; }
@@ -2307,3 +2322,75 @@ html[data-view="env"] #side .sp-disp-note { display: none; }
 .env-start-row select { flex: 1; min-width: 0; min-height: var(--btn-h); background: #1d2f3a; color: var(--tile-ink, #e8f0f4); border: 1px solid var(--btn-line); border-radius: 5px; font-size: 13px; }
 /* Planning has Weather on route in the Plan card: not twice */
 html[data-view="plan"] #side .sp-routewx { display: none !important; }
+
+/* ---------- dark drawers ----------
+   The drawers take the data panel's dark surface, so the rail, drawer and panel read as one
+   dark frame round the chart. The colour variables are reset inside #drawer; the few light
+   colours written into individual rules are overridden here. #drawer is in the palette lists
+   above as already dark, so dusk and night turn it back rather than inverting it to light. */
+#drawer {
+  --panel-bg: #14222b; --ink: #e8f0f4; --quiet: #9fb2bd; --line: #2c3d48;
+  --btn-bg: #2f4a59; --btn-bg-hover: #3b5d70; --btn-line: #5f7a88; --btn-ink: #e8f0f4;
+  --in-bg: #0e1920; --in-line: #4a6372; --card-bg: #1a2b35;
+  --accent-text: #7cc4ea;
+  background: var(--panel-bg); color: var(--ink); border-right: 1px solid var(--line); color-scheme: dark;
+}
+#drawer header button { color: var(--quiet); }
+#drawer header button:hover { color: var(--ink); background: none; }
+#drawer :is(input[type="text"], input[type="search"], input[type="number"], input[type="date"], input[type="time"],
+  input[type="datetime-local"], input[type="url"], input[type="password"], input:not([type]), textarea, select) {
+  background: var(--in-bg); color: var(--ink); border-color: var(--in-line);
+}
+#drawer select option { background: var(--in-bg); color: var(--ink); }
+#drawer a { color: var(--accent-text); }
+#drawer .dcard { background: var(--card-bg); border-color: var(--line); }
+#drawer :is(hr) { border-color: var(--line); }
+#drawer ::placeholder { color: #6f8693; }
+/* light fills written into single rules, given dark equivalents inside the drawer */
+#drawer :is(.list li.active, .list li.editing, .list li.edit-row) { background: #203644; }
+#drawer :is(.edit, .lib-manage, .ly-head, .anc-card .anc-state) { background: var(--card-bg); border-color: var(--line); }
+#drawer .anc-card .anc-state.on { background: #4a2e14; color: #ffd2a6; }
+#drawer .progress { background: #0e1920; }
+#drawer table.cmp th, #drawer #tgt-table th { background: #1a2b35; }
+#drawer table.cmp tr:hover td { background: #1d3140; }
+#drawer :is(table.cmp tr.active td, table.vf-table tr.on td) { background: #21405a; }
+#drawer table.gt-table tr.gt-best td { background: #3a2a4d; }
+#drawer .wx-mini .chip { background: var(--in-bg); border-color: var(--in-line); }
+#drawer .wx-mini .chip.on { background: #21405a; border-color: var(--accent-text); }
+#drawer .wx-combine { background: #1a3040; border-color: #2f5670; }
+#drawer .lib-filter select.filtering { background: #1a3040; border-color: var(--accent-text); }
+#drawer :is(.ly-gear:hover, .ll-ftog.on) { background: #21405a; color: var(--accent-text); border-color: var(--accent-text); }
+#drawer .ly-get { background: transparent; color: #ff9d57; border-color: #ff9d57; }
+#drawer .ll-body .main input.nm:is(:hover, :focus) { background: var(--in-bg); }
+#drawer .dcard > summary .dc-info:hover { color: var(--accent-text); }
+#drawer .wx-row button.armed { color: #1d2a33; }
+#drawer .trip-now .trip-on { background: #183a28; }
+#drawer .evt-open { background: #17324a; }
+#drawer .evt-buttons .evt-btn.shot { background: #17324a; color: #9fd0ff; border-color: #4a90d0; }
+#drawer .evt-buttons .evt-btn.haul { background: #45250f; color: #ffbd8a; border-color: #d35400; }
+#drawer .haul-buttons .haul-catch { background: #123d33; color: #8fe8cf; }
+@keyframes ly-flash-dark { 0%, 40% { background: #5a4a10; } 100% { background: transparent; } }
+#drawer .ly-flash { animation-name: ly-flash-dark; }
+/* drawer tabs: small tabs like the data panel's Explore / Get data, a line under the row;
+   the Library's seven wrap onto a second row rather than squeezing */
+#drawer .tabs { gap: 2px; flex-wrap: wrap; margin: 0 0 8px; padding-top: 2px; border-bottom: 1px solid var(--line); }
+#drawer .tabs button, #drawer .pane[data-pane="library"] .tabs button {
+  flex: none; min-height: var(--chip-h); padding: 2px 10px; font-size: 12px; border-radius: 5px 5px 0 0;
+  background: transparent; border: 1px solid transparent; border-bottom: 0; color: var(--quiet);
+}
+#drawer .tabs button:hover:not(.on) { background: #1d3140; color: var(--ink); }
+#drawer .tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+/* drawer text: 13 px body, 12 px headings, as in the data panel */
+#drawer h2 { font-size: 12px; }
+#drawer .pane h3 { font-size: 12px; }
+#drawer .dcard > summary .dc-title { font-size: 12px; }
+/* in-app jumps ("change", "Alarms"…) are small text buttons; underlined links are kept for web pages */
+button.link-btn { flex: none; display: inline-flex; align-items: center; min-height: var(--chip-h); width: auto; padding: 1px 8px;
+  font-size: 12px; font-weight: 600; border-radius: 5px; vertical-align: middle; }
+/* an empty list in the data panel says so in its heading */
+.sp-sec h4[data-none]::after { content: attr(data-none); flex: none; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--tile-quiet); }
+.sp-sec h4[data-none] { padding-bottom: calc(0.8 * var(--u)); }
+.sp-list[hidden] { display: none; }
+#drawer .pane[data-pane="library"] .lib-tabs { display: flex; gap: 2px; }
+#drawer .pane[data-pane="library"] .lib-tabs button { padding: 2px 9px; white-space: nowrap; }
+#drawer .pane[data-pane="library"] .tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }

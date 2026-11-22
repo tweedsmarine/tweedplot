@@ -136,7 +136,7 @@ Nothing covers the chart. The rail, the open drawer, the toolbar, the data panel
 
 **The toolbar**
 
-From top to bottom:
+From top to bottom. Every button has a short label under its icon (**North**, **LIVE**, **Ruler**, **Targets**, **Left**, **Right**…), and the three groups (status, tools, display) are set apart by a wider line:
 
 | | Button | What it does |
 | --- | --- | --- |
@@ -146,19 +146,20 @@ From top to bottom:
 | {icon:follow} | **Follow** | Keeps the boat in the same place on the screen (centred to begin with); dragging the chart turns it off. Drag the boat to put it anywhere you like, to see more chart ahead; double-click the boat to centre it again (also **F**) |
 | {icon:ruler} | **Ruler** | Measure: click points on the chart, double-click to finish, Esc to stop (also **M**; see Measuring) |
 | {icon:ebl} | **EBL/VRM** | An electronic bearing line and range ring from the boat: move the cursor to set them, click to fix (also **V**; see Measuring) |
-| {icon:shoot} | **Shoot** | Logs the gear going in (net, line or pots); a line opens the line-shooting window. Right-click or hold to choose the gear. Fishing use only |
-| {icon:haul} | **Haul** | Opens the haul box for the gear. Right-click or hold to choose the gear. Fishing use only |
+| {icon:shoot} | **Shoot** | Logs the gear going in (net, line or pots); a line opens the line-shooting window. Right-click to choose the gear. Fishing use only |
+| {icon:haul} | **Haul** | Opens the haul box for the gear. Right-click to choose the gear. Fishing use only |
 | {icon:rec} | **Record soundings** | Starts and stops recording your own soundings from the depth sounder; the dot is red while it records (also **D**). Shown in the Fishing use, in every use if you tick it in Settings › Display, and always while recording |
 | {icon:soundings} | **Own soundings** | Shows or hides your soundings as a seabed in this view, with the depth range card. Fishing use only (in other uses: Chart › Layers › Own soundings) |
 | {icon:targets} | **Target list** | Opens the AIS target list over the chart (also **T**) |
-| {icon:wxpanel} | **Weather** | Opens the weather controls in the data panel (see Weather and tides) |
-| {icon:view-nav} {icon:view-plan} {icon:view-inst} | **View** | Lists Navigation, Planning and Instruments and **Show the chart in this view**. The icon shows the view you are in (also **F2**, **F3**, **F4**) |
-In the Instruments view, three buttons at the top right (Navigation, Planning, Environment) return you to those views. In Environment the chart background (depth shading) is switched off while weather is shaded, so the colours are true; the key always shows the same bands as the chart, with round numbers when a filter is set.
-With no GRIB loaded, the chart-time slider, transport buttons, Weather on route and the compare controls are hidden. A new information window opens beside any already open instead of over it.
-| {icon:side} | **Data panel** | Shows the data panel beside the chart, or hides it to a line under the chart (also **O**) |
-| {icon:panels} | **Panels** | Shows or hides the rail and drawers in this view (also **P**). The dock remains independent |
-| {icon:day} {icon:night} | **Colours** | Steps through day, dusk, night (IHO), night red and night green (also **N**). Right-click it for all five and the brightness at once |
 | {icon:clear-track} | **Clear track** | Clears the short trail behind the boat |
+| {icon:view-nav} {icon:view-plan} {icon:view-inst} | **View** | Lists Navigation, Planning and Instruments and **Show the chart in this view**. The icon shows the view you are in (also **F2**, **F3**, **F4**) |
+| {icon:side} | **Right** | The right panel: shows the data panel beside the chart, or hides it to a line under the chart (also **O**). Labelled **Data** when the panel is on the left |
+| {icon:panels} | **Left** | The left panels: shows or hides the rail and drawers in this view (also **P**). The dock remains independent |
+| {icon:day} {icon:night} | **Colours** | Steps through day, dusk, night (IHO), night red and night green (also **N**). Right-click it for all five and the brightness at once |
+
+In the Instruments view, three buttons at the top right (Navigation, Planning, Environment) return you to those views. In Environment the chart background (depth shading) is switched off while weather is shaded, so the colours are true; the key always shows the same bands as the chart, with round numbers when a filter is set.
+
+With no GRIB loaded, the chart-time slider, transport buttons, Weather on route and the compare controls are hidden. A new information window opens beside any already open instead of over it.
 
 In the Instruments and Live data views the toolbar stays at the left edge, so the View button is always there.
 
@@ -251,9 +252,9 @@ From top to bottom:
 
 ![The data panel being edited (✎): each section has its name, ▲ ▼, columns, trend lines and ✕, and + Add a reading](img/15-panel-edit.jpg)
 
-**Right-click** (or hold) a reading for its history in a card (see *History plots*).
+**Right-click** a reading for its history in a card (see *History plots*).
 
-**Sizes.** The panel's text is sized in millimetres from the screen calibration (Settings › Display), as the chart symbols are, so it is the same size on every screen. **Instruments › Text size** makes it larger for reading from further away: **Normal** (for about 1 m), **Large** (1.3 m) or **Extra large** (1.6 m). Choose **Instruments › Panel width** for narrow, normal or wide, or drag the panel's inner edge; it snaps to the nearest. **Side** (Instruments, or Settings › Display › **Data panel side**) puts it to the right of the chart (to begin with) or the left, between the drawers and the chart.
+**Sizes.** The panel's text is sized in millimetres from the screen calibration (Settings › Display), as the chart symbols are, so it is the same size on every screen. It is one fixed size, matching the rest of TweedPlot; for reading from further away, use the Instruments view, whose readings are much larger. Choose **Instruments › Panel width** for narrow, normal or wide, or drag the panel's inner edge; it snaps to the nearest. **Side** (Instruments, or Settings › Display › **Data panel side**) puts it to the right of the chart (to begin with) or the left, between the drawers and the chart.
 
 **The Instruments view**
 
@@ -300,7 +301,7 @@ Some readings are drawn, not written. They are in the Graphic group of a tile's 
 
 TweedPlot keeps a record of the boat's readings for nowcasting: watching the barometer and the wind for the weather coming, as you would with a barograph. It records TWS, TWD, AWS, AWA, SOG, boat speed, barometric pressure, air temperature, humidity, water temperature and depth from the live data, for 24 hours to begin with (6, 12, 24, 48 or 72 hours: **Instruments › History › Keep history for**; **Clear** beside it empties the record). Each minute keeps the average and, for speeds and the other readings, the lowest and highest, so the wind plot shows the gusts and lulls as a band around the average; directions are averaged as directions (350° and 010° average to 000°, not 180°). The last hour is also kept in five-second steps, so a short window shows the detail. A day of every reading is about 16,000 small records: recording, keeping and drawing it takes very little of the PC. The record is kept when TweedPlot closes (written every five minutes and on closing), and the time it was closed shows as a gap; a replay and stale data are not recorded.
 
-- **Right-click (or hold) a reading** in the data panel or on the Instruments screen (TWS, TWD, Pressure, SOG…) for its history in a card. Drag the card by its title and size it by its corner; choose how much history it shows (15 minutes to 72 hours); ✕ closes it. Cards stay open where they were when TweedPlot starts again. **Show … history** in a reading's menu does the same.
+- **Right-click a reading** in the data panel or on the Instruments screen (TWS, TWD, Pressure, SOG…) for its history in a card. Drag the card by its title and size it by its corner; choose how much history it shows (15 minutes to 72 hours); ✕ closes it. Cards stay open where they were when TweedPlot starts again. **Show … history** in a reading's menu does the same.
 - **The History group** of a tile's menu puts a plot on the Instruments screen (a plot gets a tile 4 × 2 to begin with; size it as you like); in the data panel, **+ Add a section** offers the same plots. The small button in its corner steps through the time shown.
 - Each plot shows the latest value, times along the bottom in local time, and the scale on the right. The wind and its plots use the true (blue) and apparent (orange) colours of the dial and the chart arrows.
 - **Pressure** shows its change over the last three hours, in hPa and in the shipping forecast's words: steady (less than 0.1 hPa), rising or falling slowly (0.1 to 1.5), rising or falling (1.6 to 3.5), quickly (3.6 to 6) and very rapidly (more than 6). It turns amber when falling quickly or faster. **Pressure 3 h** in the Weather group is the same change as a single reading (amber falling quickly, red very rapidly). It needs three hours of record. As a rule of thumb, a fall of 3 hPa or more in three hours means a front or low close by and wind to come.
@@ -1066,7 +1067,7 @@ The Marks list shows each mark's date, depth, sea temperature and tags.
 
 The fishing tools that log what the boat does are here. Ocean data, own soundings and how to use them together are in the **Fishing tools** tab.
 
-**Shoot and Haul on the toolbar.** Left click shoots or hauls the gear used last (the small letter on the button: N net, L line, P pots); right-click (or hold) chooses **net**, **line** or **pots**. Shooting a line opens the line-shooting window; shooting a net or pots logs it at once. Hauling any of them opens the haul box.
+**Shoot and Haul on the toolbar.** Left click shoots or hauls the gear used last (the small letter on the button: N net, L line, P pots); right-click chooses **net**, **line** or **pots**. Shooting a line opens the line-shooting window; shooting a net or pots logs it at once. Hauling any of them opens the haul box.
 
 ![The line-shooting window during a set: the beeps to the next snood, hooks, floats, baskets and time, with Pause, Radio buoy and Finish](img/27-line-shooting.jpg)
 
@@ -1137,7 +1138,7 @@ The data panel offers layers and overlays supplied by the loaded GRIBs, and a wa
 
 **Weather in the data panel**
 
-{icon:wxpanel} **Weather** in the toolbar opens the data panel's Weather layers and filters section. **Hide weather** hides the layers without unloading data; **Show weather** restores them; **Picture** saves the chart as a picture.
+The Environment icon at the top of the data panel (or **Chart › Layers › Weather controls…**) opens the Weather layers and filters section. **Hide weather** hides the layers without unloading data; **Show weather** restores them; **Picture** saves the chart as a picture.
 
 - **Run line**: the loaded file being shown, when its run was made and how old it is. It turns red and bold when the run is more than a day old, or the slider is past the end of the forecast.
 - **Forecast time**: the slider, steps, play, start, end and Now stay above the scrolling panel in Planning and Environment.
@@ -1330,7 +1331,7 @@ A routing is the fastest way from the start through your marks, given a forecast
 
 | Control | What it does |
 | --- | --- |
-| **Start time** | The route's departure (Route › Plan: Now, a set time, or now when it starts from the boat), the weather slider time, Now (when you press Compute), or a time you type. The route's departure is the default |
+| **Start time** | **Route's departure** (Route › Plan: Now, a set time, or now when it starts from the boat), **Chart time** (the weather slider), **Now** (when you press Compute), or **A set time** you type. Route's departure is the default |
 | Settings › **Time step** | Minutes per isochrone; 0 = automatic (about 80 steps per leg, 5 minutes to 3 hours) |
 | Settings › **Arrival radius** | How close counts as reaching a mark without a radius of its own |
 | Settings › **Use GRIB currents** | Adds available ocean currents from the GRIB to the boat's speed; ECMWF does not document its 0.1° currents as tidal-stream predictions |

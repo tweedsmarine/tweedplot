@@ -36,7 +36,7 @@ const ICONS = {
   fleet: ['#rail [data-pane="fleet"] svg'], library: ['#rail [data-pane="library"] svg'], chart: ['#rail [data-pane="chart"] svg'],
   inst: ['#rail [data-pane="inst"] svg'], alarms: ['#rail [data-pane="alarms"] svg'], manual: ["#manual-btn svg"], targets: ["#targets-btn svg"], settings: ["#settings-btn svg"],
   ruler: ["#ruler-btn svg"], ebl: ["#ebl-btn svg"],
-  shoot: ["#shoot-btn svg"], haul: ["#haul-btn svg"], rec: ["#pb-rec svg"], soundings: ["#pb-tb svg"], wxpanel: ["#wx-pop-btn svg"], side: ["#side-btn svg"],
+  shoot: ["#shoot-btn svg"], haul: ["#haul-btn svg"], rec: ["#pb-rec svg"], soundings: ["#pb-tb svg"], side: ["#side-btn svg"],
   north: ["#north-btn svg"], sk: ["#sk-state svg", "ok"], "sk-off": ["#sk-state svg", "off"], live: ["#sk-live svg", "play"], paused: ["#sk-live svg", "pause"],
   follow: ["#follow svg"], panels: ["#tools-btn svg"], day: ["#palette-btn svg", "sun"], night: ["#palette-btn svg", "moon"],
   "clear-track": ["#clear-track svg"], snap: ["#wxp-snap svg"],

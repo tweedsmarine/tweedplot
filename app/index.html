@@ -186,16 +186,16 @@
           <button data-tab="gates">Gates</button>
         </div>
         <div class="tab" data-tab="run">
-          <div class="wx-row"><label class="grow" for="rt-tmode">Start time</label>
-            <select id="rt-tmode">
-              <option value="route">The route's departure (Route › Plan)</option>
-              <option value="slider">Weather slider time</option>
-              <option value="now">Now (when computed)</option>
-              <option value="fixed">Set a time</option>
+          <div class="wx-row"><label for="rt-tmode">Start time</label>
+            <select id="rt-tmode" class="grow" title="When the routing starts: the route's departure (set in Route › Plan), the chart time on the weather slider, now (when computed) or a time you set">
+              <option value="route">Route's departure</option>
+              <option value="slider">Chart time</option>
+              <option value="now">Now</option>
+              <option value="fixed">A set time</option>
             </select></div>
           <div class="wx-row"><input id="rt-time" class="grow" type="datetime-local" title="Local time of this PC" hidden /><button id="rt-time-now" title="Fill in the time now" hidden>Now</button></div>
           <div class="wx-row"><span id="rt-when" class="grow wx-note">—</span></div>
-          <div class="wx-row rt-boat"><span id="rt-polar" class="grow wx-note"></span><a href="#" id="rt-polar-change">change</a></div>
+          <div class="wx-row rt-boat"><span id="rt-polar" class="grow wx-note"></span><button type="button" class="link-btn" id="rt-polar-change">change</button></div>
           <details class="sub">
             <summary>Settings</summary>
             <div class="wx-row"><label class="grow" for="rt-step" title="0 = automatic: about 80 steps per leg, 5 min to 3 h">Time step (min, 0 = auto)</label><input id="rt-step" type="number" min="0" max="360" step="5" /></div>
@@ -286,7 +286,7 @@
             <select id="ais-net-mode" title="Which targets to ask the internet for (both online sources)"><option value="view">Chart view</option><option value="centre">Range round the chart centre</option><option value="boat">Range round my boat</option></select></div>
           <div class="wx-row" id="ais-net-range-row"><label class="grow" for="ais-net-range">Range (NM)</label><input id="ais-net-range" type="number" min="1" max="180" step="1" /></div>
           <div class="wx-note">Online AIS shows what volunteer shore stations hear (for the chart view, a wider area when zoomed out, up to about 6°). Not for navigation: coverage has gaps and positions can be minutes old. See Manual › AIS.</div>
-          <div class="wx-note">Collision and distress alarms are set in <a href="#" data-goto="alarms">Alarms</a>.</div>
+          <div class="wx-note">Collision and distress alarms are set in <button type="button" class="link-btn" data-goto="alarms">Alarms</button>.</div>
           <h3>On the chart</h3>
           <div class="wx-row"><label class="grow" for="ais-vec-min">Course vectors (min)</label><input id="ais-vec-min" type="number" min="1" max="60" step="1" title="How far ahead each target's course line reaches" /></div>
           <div class="wx-row"><label class="grow" for="ais-curve">Curve course vectors by rate of turn</label><input id="ais-curve" type="checkbox" title="Bend the course line into an arc for a ship that is turning" /></div>
@@ -533,12 +533,12 @@
           <div class="ly-row"><label title="Wind at weather stations, airports and buoys, every 10 minutes"><input id="ly-stn" type="checkbox" data-mirror="stn-show" /> Weather stations and buoys</label><button class="ly-gear" type="button" data-go="weather|Weather stations and buoys" title="Its settings">⚙</button></div>
         </div>
         <div class="ly-group" id="ly-wx"><h4>Weather and ocean <small>the loaded GRIB</small></h4>
-          <div class="ly-row"><button type="button" data-click="wx-pop-btn">Weather controls…</button></div>
+          <div class="ly-row"><button type="button" id="ly-wx-open" title="Open the weather controls in the Environment view">Weather controls…</button></div>
         </div>
         <div class="ly-group" id="mar-box"><h4>Boundaries and fishing</h4>
           <div class="ly-row"><label title="Territorial sea (12 NM), contiguous zone (24 NM), EEZ (200 NM) and the boundaries agreed with Australia (LINZ)"><input id="mar-bounds" type="checkbox" /> Maritime boundaries</label><button class="ly-get" type="button" data-dot="data-mb-dot" data-go="chart|Get data|data-mb" hidden title="Not downloaded yet: get it in Chart › Get data">Get…</button></div>
           <div class="ly-row"><label title="Areas closed to commercial fishing, from MPI. Click an area for the rule"><input id="mar-rules" type="checkbox" /> Fishing closures</label><select id="mar-mine-sel" title="Which closures: to every method, or only those that close the methods you fish (Settings › Vessel › Fishing)"><option value="all">All methods</option><option value="mine">My methods</option></select><button class="ly-get" type="button" data-dot="data-mpi-dot" data-go="chart|Get data|data-mpi" hidden title="Not downloaded yet: get it in Chart › Get data">Get…</button></div>
-          <div class="ly-sub" id="mar-mine-row"><span id="mar-mine-note" class="wx-note"></span> <a href="#" id="mar-mine-change">change</a><input id="mar-mine" type="checkbox" hidden /></div>
+          <div class="ly-sub" id="mar-mine-row"><span id="mar-mine-note" class="wx-note"></span> <button type="button" class="link-btn" id="mar-mine-change">change</button><input id="mar-mine" type="checkbox" hidden /></div>
           <div class="ly-row"><label title="Also show restrictions: species, mesh sizes, seasons, gear limits (orange; they cover large areas, often the whole EEZ)"><input id="mar-restr" type="checkbox" /> Restrictions too</label></div>
           <div class="ly-row"><label title="MPI's fisheries management and statistical areas, with their codes (for catch reporting)"><input id="mar-fareas" type="checkbox" /> Fisheries areas</label></div>
           <div class="ly-row"><label title="Mātaitai, taiāpure and other customary areas"><input id="mar-cust" type="checkbox" /> Customary areas</label></div>
@@ -756,7 +756,6 @@
         <h3>Data panel</h3>
         <div class="wx-row"><button id="sp-edit-btn" title="Add, move and remove the readings in the data panel beside the chart">Edit the data panel</button><button id="sp-reset-btn" title="Back to the starting layout for this view and Use">Reset this layout</button></div>
         <div class="wx-row"><label class="grow" title="Which side of the chart the data panel is on">Side</label><select id="sp-side"><option value="right">Right</option><option value="left">Left</option></select></div>
-        <div class="wx-row"><label class="grow" title="Text size in the data panel, to suit how far you sit from the screen. Sizes follow the screen calibration (Settings › Display), so they are the same on every screen">Text size</label><select id="sp-text"><option value="1">Normal (1 m)</option><option value="1.25">Large (1.3 m)</option><option value="1.5">Extra large (1.6 m)</option></select></div>
         <div class="wx-row"><label class="grow" for="sp-width">Panel width</label><select id="sp-width"><option value="narrow">Narrow</option><option value="normal">Normal</option><option value="wide">Wide</option></select></div>
         <div class="wx-note">The data panel sits beside the chart (on narrow screens it opens over the chart). HDG, COG, SOG, STW, depth, position and the time are always at its top, and the alerts at its bottom; what is in between has its own layout for each view (Navigation, Planning) and each Use (Cruising, Fishing, Racing). Choose a panel width above or drag its inner edge. <b>O</b> (or the panel button in the toolbar) hides it to a single line under the chart.</div>
         <h3>Instruments view</h3>
@@ -768,7 +767,7 @@
         <h3>History</h3>
         <div class="wx-row"><label class="grow" title="How long the history of each reading is kept (wind, pressure, temperatures, speeds, depth)">Keep history for</label><select id="hist-keep"></select><button id="hist-clear" title="Forget the history recorded so far">Clear</button></div>
         <div id="hist-info" class="wx-note"></div>
-        <div class="wx-note">Right-click (or hold) any reading — TWS, TWD, pressure… — for its history in a card you can move and size anywhere, or choose a plot from the History group of a tile's menu. Pressure shows its three-hour tendency (Falling quickly is 3.6 to 6 hPa in 3 hours). The history is recorded from live data while TweedPlot runs, and kept when it is closed.</div>
+        <div class="wx-note">Right-click any reading — TWS, TWD, pressure… — for its history in a card you can move and size anywhere, or choose a plot from the History group of a tile's menu. Pressure shows its three-hour tendency (Falling quickly is 3.6 to 6 hPa in 3 hours). The history is recorded from live data while TweedPlot runs, and kept when it is closed.</div>
       </section>
       <section class="pane" data-pane="alarms" data-title="Alarms">
         <h3>Active <span id="al-count" class="wx-note"></span></h3>
@@ -795,7 +794,7 @@
         <h3>Areas</h3>
 <div class="wx-row"><label class="grow" title="A warning when the boat is inside, or heading into, an area closed to the fishing methods in Settings › Vessel › Fishing (every closed area if none are set)"><input id="mar-alarm" type="checkbox" /> Closed-area alarm, looking ahead</label>
             <select id="mar-ahead"><option value="5">5 min</option><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option></select></div>
-        <div class="wx-note"><span id="mar-alarm-note"></span> · <a href="#" class="mar-methods-link">change</a>. The closed areas come from MPI's fishing rules (Chart › Get data).</div>
+        <div class="wx-note"><span id="mar-alarm-note"></span> · <button type="button" class="link-btn mar-methods-link">change</button>. The closed areas come from MPI's fishing rules (Chart › Get data).</div>
         <h3>Sound</h3>
         <div class="wx-row"><label class="grow" for="al-watchdog" title="A silenced shallow-water, air-draft, anchor, man-overboard, AIS-SART/EPIRB, position-lost or inside-a-closed-area alarm sounds again after this long if its cause still lasts">Watchdog: sound again after (min, 1 to 20)</label><input id="al-watchdog" type="number" min="1" max="20" step="1" /></div>
         <div class="wx-row"><label class="grow" for="al-volume">Alarm volume</label><input id="al-volume" type="range" min="0" max="100" step="5" /><button id="al-test" title="Play the alarm sound">Test</button></div>
@@ -837,26 +836,25 @@
         <svg viewBox="0 0 24 24"><path class="play fill" d="M8 5.5v13l10-6.5z"/><path class="pause" d="M9 6v12M15 6v12"/></svg></button>
       <button id="follow" class="on" aria-label="Follow the boat" title="Follow: keep the boat in the same place on the screen (dragging the chart turns it off). Drag the boat to see more chart ahead; double-click the boat to centre it again">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="1.6" class="fill"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
-      <button id="ruler-btn" aria-label="Ruler" title="Ruler: click points on the chart, double-click to finish (Esc stops)">
+      <button id="ruler-btn" class="tb-group" aria-label="Ruler" title="Ruler: click points on the chart, double-click to finish (Esc stops)">
         <svg viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg></button>
       <button id="ebl-btn" aria-label="EBL/VRM" title="EBL/VRM: a bearing line and range ring from the boat; move the cursor to set them, click to fix (V). Right-click the chart for one from another point">
         <svg viewBox="0 0 24 24"><circle cx="9" cy="15" r="6.5"/><path d="M9 15L21 3" stroke-dasharray="3 2"/><circle cx="9" cy="15" r="1.3" class="fill"/></svg></button>
-      <button id="shoot-btn" class="tb-fish" aria-label="Shoot" title="Shoot (right-click or hold to choose net, line or pots)"><svg viewBox="0 0 24 24"><path d="M3 8c2 1.5 4 1.5 6 0s4-1.5 6 0 4 1.5 6 0"/><path d="M12 11v10M8 17l4 4 4-4"/></svg><span class="tb-gear"></span></button>
-      <button id="haul-btn" class="tb-fish" aria-label="Haul" title="Haul (right-click or hold to choose net, line or pots)"><svg viewBox="0 0 24 24"><path d="M3 8c2 1.5 4 1.5 6 0s4-1.5 6 0 4 1.5 6 0"/><path d="M12 21V11M8 15l4-4 4 4"/></svg><span class="tb-gear"></span></button>
+      <button id="shoot-btn" class="tb-fish" aria-label="Shoot" title="Shoot (right-click to choose net, line or pots)"><svg viewBox="0 0 24 24"><path d="M3 8c2 1.5 4 1.5 6 0s4-1.5 6 0 4 1.5 6 0"/><path d="M12 11v10M8 17l4 4 4-4"/></svg><span class="tb-gear"></span></button>
+      <button id="haul-btn" class="tb-fish" aria-label="Haul" title="Haul (right-click to choose net, line or pots)"><svg viewBox="0 0 24 24"><path d="M3 8c2 1.5 4 1.5 6 0s4-1.5 6 0 4 1.5 6 0"/><path d="M12 21V11M8 15l4-4 4 4"/></svg><span class="tb-gear"></span></button>
       <button id="pb-rec" aria-label="Record soundings" title="Record own soundings from the depth sounder (D)"><svg viewBox="0 0 24 24"><path d="M2 6c2.5 1.5 5 1.5 7.5 0s5-1.5 7.5 0"/><path d="M8 9v6M8 18v.5"/><path d="M4 21h8"/><circle class="rec-dot fill" cx="18" cy="16" r="4"/></svg><span class="tb-count"></span></button>
       <button id="pb-tb" class="tb-fish" aria-label="Own soundings" title="Own soundings: show or hide your soundings as a seabed in this view, with the depth range card (on in Planning, off in Navigation to begin with)"><svg viewBox="0 0 24 24"><path d="M2 7c2.5 1.5 5 1.5 7.5 0s5-1.5 7.5 0 3.5 1.5 5 0"/><path d="M2 20l4-5 3 2 4-6 3 3 3-4 3 2v8z" class="fill" opacity=".55"/></svg></button>
       <button id="targets-btn" title="Target list: AIS targets with range, bearing, CPA and TCPA (T)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/><circle cx="16" cy="9" r="1.2" fill="currentColor"/></svg></button>
-      <button id="wx-pop-btn" aria-label="Weather panel" title="Weather panel: time slider, what to show from the loaded GRIBs, the filter and the readout at the cursor"><svg viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .6-7.95A5.5 5.5 0 0 0 7 9.5 4.3 4.3 0 0 0 7 18z"/><path d="M8 21l1-2M12 21l1-2M16 21l1-2"/></svg></button>
-      <button id="view-btn" aria-label="View" title="View: choose Navigation, Planning or Instruments, and whether the chart shows (F2, F3, F4)">
+      <button id="clear-track" aria-label="Clear the track trail" title="Clear the trail behind the boat">
+        <svg viewBox="0 0 24 24"><path d="M3 18c3-1 4-5 7-6s5 1 7-1" stroke-dasharray="2.2 2.2"/><path d="M15 15l6 6M21 15l-6 6"/></svg></button>
+      <button id="view-btn" class="tb-group" aria-label="View" title="View: choose Navigation, Planning or Instruments, and whether the chart shows (F2, F3, F4)">
         <svg viewBox="0 0 24 24"></svg></button>
-      <button id="side-btn" aria-label="Data panel" title="Show or hide the data panel beside the chart (O)">
+      <button id="side-btn" aria-label="Show or hide the data panel" title="Right panel: show or hide the data panel (O)">
         <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M15 4.5v15M17 8h1.5M17 11h1.5M17 14h1.5"/></svg></button>
-      <button id="tools-btn" aria-label="Show or hide the rail and drawers" title="Show or hide the rail and drawers in this view">
+      <button id="tools-btn" aria-label="Show or hide the rail and drawers" title="Left panels: show or hide the rail and drawers in this view (P)">
         <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="M9 4.5v15"/></svg></button>
       <button id="palette-btn" aria-label="Day or night colours" title="Colours: day (click for dusk, night (IHO), night red, night green)">
         <svg viewBox="0 0 24 24"><path class="sun" d="M12 7a5 5 0 1 0 0 10a5 5 0 1 0 0-10zM12 1v3M12 20v3M1 12h3M20 12h3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/><path class="moon" d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg></button>
-      <button id="clear-track" aria-label="Clear the track trail" title="Clear the trail behind the boat">
-        <svg viewBox="0 0 24 24"><path d="M3 18c3-1 4-5 7-6s5 1 7-1" stroke-dasharray="2.2 2.2"/><path d="M15 15l6 6M21 15l-6 6"/></svg></button>
     </div>
 
     <!-- The Instruments view's tiles -->
@@ -1202,7 +1200,7 @@
         </ul>
         <p>Providers do not endorse TweedPlot. Full credits: Manual › Reference › Data sources and credits.</p>
       </details>
-      <p class="about-warn"><b>Not for navigation:</b> always keep official charts and a proper lookout. TweedPlot is provided "as is", without warranty. <a href="#" id="about-disclaimer">Read the disclaimer</a></p>
+      <p class="about-warn"><b>Not for navigation:</b> always keep official charts and a proper lookout. TweedPlot is provided "as is", without warranty. <button type="button" class="link-btn" id="about-disclaimer">Read the disclaimer</button></p>
       <div class="wx-row"><button id="about-close">Close</button></div>
     </div>
   </body>
