@@ -351,6 +351,14 @@ pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max
             (g, u.iter().zip(&v).map(|(a, b)| (a * a + b * b).sqrt() * KN).collect())
         }
         "ssh" => f.grid_at(P::SeaLevel, t)?,
+        "mld" => f.grid_at(P::MixedLayer, t)?,
+        // plankton and production span decades too: log10, like chlorophyll
+        "phyc" | "nppv" => {
+            let (g, v) = f.grid_at(if layer == "phyc" { P::Phytoplankton } else { P::PrimaryProduction }, t)?;
+            (g, v.iter().map(|x| if *x > 0.0 { x.log10() } else { f32::NAN }).collect())
+        }
+        "o2" => f.grid_at(P::Oxygen, t)?,
+        "ph" => f.grid_at(P::Ph, t)?,
         // sea ice: per cent of the sea covered
         "ice" => {
             let (g, v) = f.grid_at(P::SeaIce, t)?;
@@ -366,7 +374,7 @@ pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max
     // Include both the original values and the rounded values returned for shading.
     let precision = match layer.as_str() {
         "sst" | "sst_err" | "subt" | "sss" | "subs" | "skin" => 100.0,
-        "chl" => 1000.0,
+        "chl" | "phyc" | "nppv" | "ph" => 1000.0,
         "ssh" => 100.0,
         _ => 10.0,
     };
@@ -599,6 +607,11 @@ pub(crate) fn point_values(f: &grib::GribFile, lat: f64, lon: f64, t: i64) -> se
                     "skin": f.value(grib::Param::SkinTemp, lat, lon, t).map(|k| ((k - 273.15) * 100.0).round() / 100.0),
                     "chl": f.value(grib::Param::Chlorophyll, lat, lon, t).map(|c| (c * 1000.0).round() / 1000.0),
                     "ssh": f.value(grib::Param::SeaLevel, lat, lon, t).map(|h| (h * 100.0).round() / 100.0),
+                    "mld": f.value(grib::Param::MixedLayer, lat, lon, t).map(|d| (d * 10.0).round() / 10.0),
+                    "phyc": f.value(grib::Param::Phytoplankton, lat, lon, t).map(|c| (c * 1000.0).round() / 1000.0),
+                    "nppv": f.value(grib::Param::PrimaryProduction, lat, lon, t).map(|c| (c * 100.0).round() / 100.0),
+                    "o2": f.value(grib::Param::Oxygen, lat, lon, t).map(|c| (c * 10.0).round() / 10.0),
+                    "ph": f.value(grib::Param::Ph, lat, lon, t).map(|c| (c * 1000.0).round() / 1000.0),
                     "ice": f.value(grib::Param::SeaIce, lat, lon, t).map(|c| (c * 100.0).round()),
                     "depth": f.series(grib::Param::SubTemp).first().or(f.series(grib::Param::SubSalinity).first()).map(|x| x.surface_value),
                     "cur": f.current(lat, lon, t).map(|(u, v)| serde_json::json!({

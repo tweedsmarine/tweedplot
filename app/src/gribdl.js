@@ -10,11 +10,14 @@ import { listen } from "@tauri-apps/api/event";
 
 const KEY = "racenav.gribdl";
 const DEFAULTS = { model: "gfs0p25", params: { gfs: ["wind", "gust", "mslp"], wave: ["waves", "period"], mur_sst: ["sst"], hycom_espc: ["sst", "sss", "current"],
-  himawari: ["skin"], chl_viirs: ["chl"], ice_asi: ["ice"], acspo_sst: ["sst"], blended_sst: ["sst", "sst_err"] },
+  himawari: ["skin"], chl_viirs: ["chl"], ice_asi: ["ice"], acspo_sst: ["sst"], blended_sst: ["sst", "sst_err"],
+    cmems_phy: ["sst", "current"], cmems_bgc: ["chl", "phyc"], cmems_chl: ["chl"] },
   area: null, days: 7, every: 3, depth: 50, himHours: 12, himEvery: 1 };
-const OCEAN = ["mur_sst", "acspo_sst", "blended_sst", "hycom_espc", "himawari", "chl_viirs", "ice_asi"];
+const OCEAN = ["mur_sst", "acspo_sst", "blended_sst", "hycom_espc", "cmems_phy", "cmems_bgc", "cmems_chl", "himawari", "chl_viirs", "ice_asi"];
 // daily satellite analyses: "the latest N days", no step
-const DAILY = ["mur_sst", "acspo_sst", "blended_sst", "chl_viirs", "ice_asi"];
+const DAILY = ["mur_sst", "acspo_sst", "blended_sst", "chl_viirs", "ice_asi", "cmems_chl"];
+// Copernicus Marine: read from its cloud store, a whole chunk at a time, so the download is larger than the file
+const CMEMS = ["cmems_phy", "cmems_bgc", "cmems_chl"];
 /** Which saved parameter list a model uses. */
 const paramKey = (id) => (OCEAN.includes(id) ? id : id.includes("wave") ? "wave" : "gfs");
 
@@ -167,13 +170,13 @@ export function setupGribDownload(map, { weather, course }) {
     const ev = $("dl-every");
     ev.innerHTML = "";
     const fine = m.steps[0][1];
-    for (const h of (him ? [1, 2, 3, 6] : [1, 3, 6, 12])) if (h >= fine) ev.append(new Option(h === 1 ? "1 hour" : `${h} hours`, String(h)));
+    for (const h of (him ? [1, 2, 3, 6] : [1, 3, 6, 12, 24])) if (h >= fine) ev.append(new Option(h === 1 ? "1 hour" : `${h} hours`, String(h)));
     ev.value = String(him ? prefs.himEvery ?? 1 : Math.max(prefs.every, fine));
     if (!ev.value) ev.value = String(fine);
   }
   function showDepth() {
     const m = model();
-    $("dl-depth-row").hidden = !(m?.id === "hycom_espc" && prefs.params.hycom_espc.includes("depth"));
+    $("dl-depth-row").hidden = !(["hycom_espc", "cmems_phy"].includes(m?.id) && prefs.params[m.id].includes("depth"));
   }
   $("dl-depth").onchange = (e) => { prefs.depth = Number(e.target.value); save(); };
   function request() {
@@ -202,7 +205,11 @@ export function setupGribDownload(map, { weather, course }) {
           ? ` · full resolution (${km(r.step.res)})`
           : ` · every ${r.step.k === 2 ? "2nd" : r.step.k === 3 ? "3rd" : `${r.step.k}th`} point (${km(r.step.res * r.step.k)}): a smaller area${mur ? " or fewer days" : " or fewer hours"} gives full resolution (${km(r.step.res)})`
         : "";
-      $("dl-size").textContent = him
+      const cm = CMEMS.includes(request().model);
+      $("dl-size").textContent = cm
+        ? `File about ${size(r.bytes)}; downloads about ${size(r.download)} · ` + (mur ? `the latest ${Number($("dl-days").value)} daily map${Number($("dl-days").value) > 1 ? "s" : ""}` : `${r.steps} times to +${r.last} h`) +
+          (r.download > 100e6 ? " · a big download: a smaller area, a longer step or fewer days cuts it" : "")
+        : him
         ? `About ${size(r.bytes)} if clear${res} · up to ${hrs} hourly view${hrs === 1 ? "" : "s"} (one request each; under cloud there is no value, and each hour keeps the last clear value seen)`
         : hycom
         ? `About ${size(r.bytes)} · ${r.steps} times to +${r.last} h · ${reqs} request${reqs === 1 ? "" : "s"} (one a day; HYCOM's server takes from a few seconds to a minute or two for each)`
@@ -223,6 +230,9 @@ export function setupGribDownload(map, { weather, course }) {
     himawari: "Source: Himawari-9 (JMA) AHI, processed by NOAA STAR (ACSPO L3C, GHRSST: free and open) via NOAA CoastWatch: hourly, about 2 km, clear sky only (best-quality pixels), two or three hours after the hour. Cloud leaves gaps; each hour keeps the last clear value seen in the hours downloaded.",
     chl_viirs: "Source: NOAA CoastWatch chlorophyll-a from the VIIRS satellites (S-NPP, NOAA-20), gap-filled (DINEOF), daily at about 9 km (free to use and share). Near real time, about three days old. Shown until six days after its date.",
     ice_asi: "Source: University of Bremen, sea ice concentration from the AMSR2 satellite radiometer (JAXA GCOM-W), ASI algorithm (Spreen, Kaleschke and Heygster 2008): daily, 3.125 km, through cloud and darkness; no warranty. Polar seas only (south of 45°S or north of 45°N); an area across 180° is fine. A day's grid is on the server early the next day (UTC). A microwave view: it misses icebergs, bergy bits and growlers, and is least reliable near coasts and in thin or melting ice. Shown until three days after its date.",
+    cmems_phy: "Source: E.U. Copernicus Marine Service Information (Mercator Ocean global analysis and forecast, 1/12°, about 9 km; free and open): from the latest analysis out to 10 days. Sea temperature, salinity and currents 6-hourly; the total surface current (ocean circulation plus tides plus wave drift) hourly; mixed layer depth and sea height as daily means. Read from Copernicus Marine's cloud store a block at a time (no account needed), so the download is several times the file: use a longer step for a large area. An area across 180° is fine.",
+    cmems_bgc: "Source: E.U. Copernicus Marine Service Information (Mercator Ocean global biogeochemistry analysis and forecast, 1/4°, about 28 km; free and open): daily means at the surface from the latest analysis out to 10 days: chlorophyll-a and phytoplankton (where the food chain starts), net primary production, dissolved oxygen and pH. A model, so smoother than the satellite pictures but never clouded over. An area across 180° is fine.",
+    cmems_chl: "Source: E.U. Copernicus Marine Service Information (GlobColour, ACRI-ST: ocean colour from all the satellites, gap-filled; free and open): daily chlorophyll-a at 4 km, a day or two old. Shown until six days after its date. An area across 180° is fine.",
     hycom_espc: "Source: HYCOM ESPC global ocean model (US Navy / HYCOM Consortium, 1/12°, about 9 km) via hycom.org: from the latest analysis out to 8 days. A demonstration service with no guarantee it is up. An area across 180° is fine (fetched as two requests and joined).",
   };
   const showSource = () => status(SOURCE_NOTE[OCEAN.includes(prefs.model) ? prefs.model : String(prefs.model).startsWith("ecmwf") ? "ecmwf" : "gfs"]);

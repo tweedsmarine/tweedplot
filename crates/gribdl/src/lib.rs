@@ -14,6 +14,8 @@
 //!
 //! ECMWF open data (IFS, AIFS, IFS wave) comes as global files; see `ecmwf`.
 
+pub mod blosc;
+pub mod cmems;
 pub mod coastal;
 pub mod data;
 pub mod ecmwf;
@@ -71,6 +73,14 @@ pub enum Model {
     /// gap-free analysis with its error): see `ocean`.
     AcspoSst,
     BlendedSst,
+    /// Copernicus Marine (see `cmems`): the global physics model (Mercator 1/12°:
+    /// temperature, salinity, currents, mixed layer, at the surface or a depth; a
+    /// 10-day forecast), the biogeochemistry model (1/4°: chlorophyll,
+    /// phytoplankton, primary production, oxygen, pH) and gap-free ocean colour
+    /// chlorophyll (4 km, daily observations).
+    CmemsPhy,
+    CmemsBgc,
+    CmemsChl,
 }
 
 /// What a model offers, for the download dialog.
@@ -98,7 +108,7 @@ pub struct ParamInfo {
 }
 
 impl Model {
-    pub fn all() -> [Model; 16] {
+    pub fn all() -> [Model; 19] {
         [
             Model::Gfs0p25,
             Model::Gfs0p50,
@@ -113,14 +123,21 @@ impl Model {
             Model::AcspoSst,
             Model::BlendedSst,
             Model::Himawari,
+            Model::CmemsPhy,
             Model::HycomEspc,
+            Model::CmemsBgc,
+            Model::CmemsChl,
             Model::ChlViirs,
             Model::IceAsi,
         ]
     }
 
     pub fn is_ocean(self) -> bool {
-        matches!(self, Model::MurSst | Model::HycomEspc | Model::Himawari | Model::ChlViirs | Model::IceAsi | Model::AcspoSst | Model::BlendedSst)
+        matches!(self, Model::MurSst | Model::HycomEspc | Model::Himawari | Model::ChlViirs | Model::IceAsi | Model::AcspoSst | Model::BlendedSst | Model::CmemsPhy | Model::CmemsBgc | Model::CmemsChl)
+    }
+
+    pub fn is_cmems(self) -> bool {
+        matches!(self, Model::CmemsPhy | Model::CmemsBgc | Model::CmemsChl)
     }
 
     /// The wave model whose fields can go in the same file as this model's wind.
@@ -273,6 +290,49 @@ impl Model {
                 max_hours: 14 * 24,
                 steps: vec![(14 * 24, 24)],
                 params: vec![ParamInfo { id: "ice", name: "Sea ice concentration", fields: 1, default: true }],
+                delay_h: 0,
+            },
+            Model::CmemsPhy => ModelInfo {
+                id: self,
+                name: "Copernicus ocean model 1/12° (Mercator: temperature, salinity, currents, mixed layer; 10-day forecast)",
+                res_deg: 1.0 / 12.0,
+                max_hours: 240,
+                // 6-hourly, the total surface current (with tides and wave drift) hourly
+                steps: vec![(240, 1)],
+                params: vec![
+                    ParamInfo { id: "sst", name: "Sea surface temperature", fields: 1, default: true },
+                    ParamInfo { id: "sss", name: "Sea surface salinity", fields: 1, default: false },
+                    ParamInfo { id: "current", name: "Surface currents (ocean circulation, 6-hourly)", fields: 2, default: true },
+                    ParamInfo { id: "total", name: "Total surface current, hourly (circulation + tides + wave drift)", fields: 2, default: false },
+                    ParamInfo { id: "mld", name: "Mixed layer depth (daily)", fields: 1, default: false },
+                    ParamInfo { id: "ssh", name: "Sea surface height (daily)", fields: 1, default: false },
+                    ParamInfo { id: "depth", name: "Temperature and salinity at a depth", fields: 2, default: false },
+                ],
+                delay_h: 0,
+            },
+            Model::CmemsBgc => ModelInfo {
+                id: self,
+                name: "Copernicus biology model 1/4° (chlorophyll, plankton, oxygen, pH; daily, 10-day forecast)",
+                res_deg: 0.25,
+                max_hours: 240,
+                steps: vec![(240, 24)],
+                params: vec![
+                    ParamInfo { id: "chl", name: "Chlorophyll-a", fields: 1, default: true },
+                    ParamInfo { id: "phyc", name: "Phytoplankton", fields: 1, default: true },
+                    ParamInfo { id: "nppv", name: "Primary production", fields: 1, default: false },
+                    ParamInfo { id: "o2", name: "Dissolved oxygen", fields: 1, default: false },
+                    ParamInfo { id: "ph", name: "pH", fields: 1, default: false },
+                ],
+                delay_h: 0,
+            },
+            // `hours` / 24 = how many of the latest daily maps
+            Model::CmemsChl => ModelInfo {
+                id: self,
+                name: "Copernicus chlorophyll-a 4 km, daily (ocean colour satellites, gap-free)",
+                res_deg: 1.0 / 24.0,
+                max_hours: 14 * 24,
+                steps: vec![(14 * 24, 24)],
+                params: vec![ParamInfo { id: "chl", name: "Chlorophyll-a", fields: 1, default: true }],
                 delay_h: 0,
             },
             Model::HycomEspc => ModelInfo {
@@ -471,6 +531,9 @@ pub fn step_url(req: &Request, run: &Run, f: u32) -> String {
 /// Rough amount downloaded, bytes: the file for NOMADS (cut on the server);
 /// for ECMWF whole global fields of about 600 kB (wave 300 kB) each.
 pub fn download_bytes(req: &Request) -> u64 {
+    if req.model.is_cmems() {
+        return cmems::download_estimate(req);
+    }
     if !req.model.is_ecmwf() {
         return estimate_bytes(req);
     }
@@ -607,6 +670,9 @@ pub struct Downloaded {
 /// file ("…+waves.grb2"). If the waves fail, the wind file is kept and `note` says why.
 pub fn download_ex(req: &Request, run: &Run, dir: &Path, progress: Progress, cancel: &AtomicBool) -> Result<Downloaded> {
     if req.model.is_ocean() {
+        if req.model.is_cmems() {
+            return cmems::download(req, run.t, dir, progress, cancel).map(|path| Downloaded { path, note: None });
+        }
         return ocean::download(req, run.t, dir, progress, cancel).map(|path| Downloaded { path, note: None });
     }
     let wave_model = req.model.wave_companion().filter(|_| req.params.iter().any(|p| p == "waves"));
@@ -730,6 +796,9 @@ pub(crate) fn file_name(req: &Request, run: &Run, last: u32) -> String {
         Model::IceAsi => "SEAICE_AMSR2",
         Model::AcspoSst => "ACSPO_SST",
         Model::BlendedSst => "BLENDED_SST",
+        Model::CmemsPhy => "CMEMS_PHY",
+        Model::CmemsBgc => "CMEMS_BGC",
+        Model::CmemsChl => "CMEMS_CHL",
     };
     let lat = |v: f64| format!("{}{}", v.abs().round(), if v < 0.0 { "S" } else { "N" });
     let lon = |v: f64| {

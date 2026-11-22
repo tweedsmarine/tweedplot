@@ -87,6 +87,15 @@ pub enum Param {
     /// Estimated error (standard deviation, K = °C) of a sea temperature
     /// analysis (Geo-Polar Blended), local code 10/3/193.
     SeaTempError,
+    /// Ocean mixed layer depth (m), local code 10/4/193 (Copernicus Marine `mlotst`).
+    MixedLayer,
+    /// Phytoplankton (mmol C m-3), net primary production (mg C m-3 day-1),
+    /// dissolved oxygen (mmol m-3) and pH, at the surface: local codes 10/4/194–197
+    /// (Copernicus Marine biogeochemistry model).
+    Phytoplankton,
+    PrimaryProduction,
+    Oxygen,
+    Ph,
     Other(u8, u8, u8),
 }
 
@@ -113,6 +122,11 @@ impl Param {
             (10, 3, 192) => Param::SkinTemp,
             (10, 3, 193) => Param::SeaTempError,
             (10, 4, 192) => Param::Chlorophyll,
+            (10, 4, 193) => Param::MixedLayer,
+            (10, 4, 194) => Param::Phytoplankton,
+            (10, 4, 195) => Param::PrimaryProduction,
+            (10, 4, 196) => Param::Oxygen,
+            (10, 4, 197) => Param::Ph,
             (10, 3, 1) => Param::SeaLevel,
             (10, 2, 0) => Param::SeaIce,
             (10, 3, 0) if surface == 160 => Param::SubTemp,
@@ -607,6 +621,11 @@ pub fn scan(path: impl AsRef<Path>) -> Result<FileInfo, GribError> {
                     Param::SeaLevel => "sea surface height",
                     Param::SeaIce => "sea ice",
                     Param::SeaTempError => "sea temperature error",
+                    Param::MixedLayer => "mixed layer",
+                    Param::Phytoplankton => "phytoplankton",
+                    Param::PrimaryProduction => "primary production",
+                    Param::Oxygen => "oxygen",
+                    Param::Ph => "pH",
                     Param::Salinity | Param::SubSalinity => "salinity",
                     Param::Other(..) => "other",
                 };
@@ -721,6 +740,8 @@ pub fn hold_s(p: Param) -> (i64, i64) {
         Param::Chlorophyll => (12 * 3600, 6 * 86400),
         // daily, of all the day's passes, on the server early the next day
         Param::SeaIce => (12 * 3600, 3 * 86400),
+        // daily means from a model: each stands its day
+        Param::MixedLayer | Param::Phytoplankton | Param::PrimaryProduction | Param::Oxygen | Param::Ph => (12 * 3600, 12 * 3600),
         _ => (0, 0),
     }
 }
