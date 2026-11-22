@@ -68,6 +68,7 @@ fn decimals(f: &Field) -> i32 {
         Param::SkinTemp => 2,
         Param::Chlorophyll | Param::SeaLevel => 3,
         Param::SeaIce => 2,
+        Param::SeaTempError => 2,
         _ => 3,
     }
 }
@@ -113,6 +114,8 @@ pub const PROCESS_HYCOM_ESPC: u8 = 205;
 pub const PROCESS_HIMAWARI_SST: u8 = 206;
 pub const PROCESS_VIIRS_CHL: u8 = 207;
 pub const PROCESS_ASI_ICE: u8 = 208;
+pub const PROCESS_ACSPO_SST: u8 = 209;
+pub const PROCESS_BLENDED_SST: u8 = 210;
 /// GRIB2 originating centres used with them: NASA, US Navy FNMOC, NOAA NESDIS.
 pub const CENTRE_NASA: u16 = 173;
 pub const CENTRE_FNMOC: u16 = 58;
@@ -131,6 +134,8 @@ pub fn process_name(centre: u16, process: u8) -> Option<&'static str> {
         (CENTRE_NESDIS, PROCESS_HIMAWARI_SST) => Some("Himawari-9 SST hourly"),
         (CENTRE_NESDIS, PROCESS_VIIRS_CHL) => Some("VIIRS chlorophyll"),
         (CENTRE_LOCAL, PROCESS_ASI_ICE) => Some("AMSR2 sea ice (Bremen)"),
+        (CENTRE_NESDIS, PROCESS_ACSPO_SST) => Some("ACSPO SST 2 km"),
+        (CENTRE_NESDIS, PROCESS_BLENDED_SST) => Some("Geo-Polar SST 5 km"),
         _ => None,
     }
 }

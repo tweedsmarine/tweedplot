@@ -10,11 +10,11 @@ import { listen } from "@tauri-apps/api/event";
 
 const KEY = "racenav.gribdl";
 const DEFAULTS = { model: "gfs0p25", params: { gfs: ["wind", "gust", "mslp"], wave: ["waves", "period"], mur_sst: ["sst"], hycom_espc: ["sst", "sss", "current"],
-  himawari: ["skin"], chl_viirs: ["chl"], ice_asi: ["ice"] },
+  himawari: ["skin"], chl_viirs: ["chl"], ice_asi: ["ice"], acspo_sst: ["sst"], blended_sst: ["sst", "sst_err"] },
   area: null, days: 7, every: 3, depth: 50, himHours: 12, himEvery: 1 };
-const OCEAN = ["mur_sst", "hycom_espc", "himawari", "chl_viirs", "ice_asi"];
+const OCEAN = ["mur_sst", "acspo_sst", "blended_sst", "hycom_espc", "himawari", "chl_viirs", "ice_asi"];
 // daily satellite analyses: "the latest N days", no step
-const DAILY = ["mur_sst", "chl_viirs", "ice_asi"];
+const DAILY = ["mur_sst", "acspo_sst", "blended_sst", "chl_viirs", "ice_asi"];
 /** Which saved parameter list a model uses. */
 const paramKey = (id) => (OCEAN.includes(id) ? id : id.includes("wave") ? "wave" : "gfs");
 
@@ -218,6 +218,8 @@ export function setupGribDownload(map, { weather, course }) {
     gfs: "Source: NOAA National Centers for Environmental Prediction (NOMADS: GFS, GFS-Wave; US Government data), cut to the area on the server. The newest complete run is used.",
     ecmwf: "Source: ECMWF open data (CC BY 4.0, © ECMWF), from data.ecmwf.int or its AWS mirror. The free 0.1° IFS (~9 km) data arrives about two hours after the 0.25° products; ECMWF does not document the surface currents as tidal-stream predictions. The newest complete run is used.",
     mur_sst: "Source: NASA JPL MUR SST (free to use and share; please acknowledge NASA JPL / PO.DAAC) via NOAA CoastWatch ERDDAP: a daily 1 km analysis from all the satellites, without cloud gaps, usually a day or two old. Shown until four days after its date.",
+    acspo_sst: "Source: NOAA ACSPO L3S-LEO (NOAA STAR / CoastWatch, GHRSST: free and open): each day's clear-sky sea temperature from all the polar-orbiting satellites (VIIRS on S-NPP, NOAA-20 and NOAA-21; AVHRR on MetOp), gridded at 0.02° (about 2 km), best-quality pixels only. Real observations, so fronts are sharp, but there are gaps where it was cloudy all day. Usually a day old. Shown until four days after its date. An area across 180° is fine.",
+    blended_sst: "Source: NOAA Geo-Polar Blended analysis (NOAA OSPO / CoastWatch, GHRSST: free and open): a daily gap-free night-time (foundation) sea temperature at 0.05° (about 5 km) from the geostationary satellites (Himawari-9 over NZ) and the polar orbiters, with the estimated error of every cell (Sea temp error) so you can see where it is sure and where it is filling in under cloud. Usually two days old. Shown until four days after its date. An area across 180° is fine.",
     himawari: "Source: Himawari-9 (JMA) AHI, processed by NOAA STAR (ACSPO L3C, GHRSST: free and open) via NOAA CoastWatch: hourly, about 2 km, clear sky only (best-quality pixels), two or three hours after the hour. Cloud leaves gaps; each hour keeps the last clear value seen in the hours downloaded.",
     chl_viirs: "Source: NOAA CoastWatch chlorophyll-a from the VIIRS satellites (S-NPP, NOAA-20), gap-filled (DINEOF), daily at about 9 km (free to use and share). Near real time, about three days old. Shown until six days after its date.",
     ice_asi: "Source: University of Bremen, sea ice concentration from the AMSR2 satellite radiometer (JAXA GCOM-W), ASI algorithm (Spreen, Kaleschke and Heygster 2008): daily, 3.125 km, through cloud and darkness; no warranty. Polar seas only (south of 45°S or north of 45°N); an area across 180° is fine. A day's grid is on the server early the next day (UTC). A microwave view: it misses icebergs, bergy bits and growlers, and is least reliable near coasts and in thin or melting ice. Shown until three days after its date.",

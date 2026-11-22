@@ -330,6 +330,7 @@ pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max
             let (g, v) = f.grid_at(P::SeaTemp, t)?;
             (g, v.iter().map(|x| x - 273.15).collect())
         }
+        "sst_err" => f.grid_at(P::SeaTempError, t)?,
         "sss" => f.grid_at(P::Salinity, t)?,
         "subt" => {
             let (g, v) = f.grid_at(P::SubTemp, t)?;
@@ -364,7 +365,7 @@ pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max
     };
     // Include both the original values and the rounded values returned for shading.
     let precision = match layer.as_str() {
-        "sst" | "subt" | "sss" | "subs" | "skin" => 100.0,
+        "sst" | "sst_err" | "subt" | "sss" | "subs" | "skin" => 100.0,
         "chl" => 1000.0,
         "ssh" => 100.0,
         _ => 10.0,
@@ -591,6 +592,7 @@ pub(crate) fn point_values(f: &grib::GribFile, lat: f64, lon: f64, t: i64) -> se
                     "temp": f.value(grib::Param::AirTemp, lat, lon, t).map(|k| ((k - 273.15) * 10.0).round() / 10.0),
                     "rain": f.value(grib::Param::Rain, lat, lon, t).map(|r| (r * 36000.0).round() / 10.0),
                     "sst": f.value(grib::Param::SeaTemp, lat, lon, t).map(|k| ((k - 273.15) * 100.0).round() / 100.0),
+                    "sst_err": f.value(grib::Param::SeaTempError, lat, lon, t).map(|e| (e * 100.0).round() / 100.0),
                     "sss": f.value(grib::Param::Salinity, lat, lon, t).map(|s| (s * 100.0).round() / 100.0),
                     "subt": f.value(grib::Param::SubTemp, lat, lon, t).map(|k| ((k - 273.15) * 100.0).round() / 100.0),
                     "subs": f.value(grib::Param::SubSalinity, lat, lon, t).map(|s| (s * 100.0).round() / 100.0),

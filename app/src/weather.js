@@ -54,6 +54,8 @@ const SST = [[8, "#30123b"], [10, "#4145ab"], [12, "#4675ed"], [14, "#39a2fc"], 
   [22, "#a4fc3b"], [24, "#d1e834"], [26, "#f3c63a"], [28, "#fe9b2d"], [30, "#f36315"]];
 const SSS = [[33.5, "#30123b"], [34, "#4145ab"], [34.3, "#39a2fc"], [34.6, "#1bcfd4"], [34.9, "#61fc6c"], [35.2, "#d1e834"], [35.5, "#fe9b2d"], [36, "#f36315"]];
 // metres above the geoid: blue low, red high (eddies and ridges of the ocean surface)
+// estimated error of a sea temperature analysis (°C): green where it is sure, red where it is filling in
+const SST_ERR = [[0, "#1a9850"], [0.2, "#91cf60"], [0.4, "#fee08b"], [0.6, "#fc8d59"], [1, "#d73027"]];
 const SSH = [[-1, "#2166ac"], [-0.6, "#4393c3"], [-0.3, "#92c5de"], [-0.1, "#d1e5f0"], [0.1, "#f7f7f7"], [0.3, "#fddbc7"], [0.6, "#f4a582"],
   [1, "#d6604d"], [1.4, "#b2182b"]];
 // log10 of mg/m³: 0.03 … 10
@@ -125,6 +127,8 @@ export const LAYERS = {
   sss: { label: "Salinity", unit: "PSU", params: ["Salinity"], scale: SSS, auto: true, contour: true, ocean: true },
   subt: { label: "Sea temperature at depth", unit: "°C", params: ["SubTemp"], scale: SST, auto: true, contour: true, ocean: true },
   subs: { label: "Salinity at depth", unit: "PSU", params: ["SubSalinity"], scale: SSS, auto: true, contour: true, ocean: true },
+  // the estimated error of a sea temperature analysis (Geo-Polar Blended): where it is sure, where it fills in
+  sst_err: { label: "Sea temperature error (analysis)", unit: "°C", params: ["SeaTempError"], scale: SST_ERR, auto: true, ocean: true },
   skin: { label: "Sea temperature, satellite hourly (Himawari)", unit: "°C", params: ["SkinTemp"], scale: SST, auto: true, contour: true, ocean: true },
   // chlorophyll is shaded, filtered and contoured on a log scale (the grid comes as log10 mg/m³)
   chl: { label: "Chlorophyll-a", unit: "mg/m³", params: ["Chlorophyll"], scale: CHL, auto: true, contour: true, ocean: true, log: true },
@@ -193,12 +197,12 @@ export function dataTimeStatus(summary, params, time, allowPastAnalysis = false)
   if (!times.length || !Number.isFinite(time)) return { state: "missing" };
   const first = Math.min(...times), last = Math.max(...times);
   if (time >= first && time <= last) return { state: "valid" };
-  const analysis = /VIIRS|MUR SST|Himawari|sea ice/i.test(`${summary?.model ?? ""} ${summary?.name ?? ""}`);
+  const analysis = /VIIRS|MUR SST|ACSPO|Geo-Polar|Himawari|sea ice/i.test(`${summary?.model ?? ""} ${summary?.name ?? ""}`);
   return time > last && analysis && allowPastAnalysis ? { state: "past", time: last } : { state: "missing" };
 }
 
 const SEA_POINT_PARAMS = {
-  sst: "SeaTemp", skin: "SkinTemp", sss: "Salinity", subt: "SubTemp",
+  sst: "SeaTemp", sst_err: "SeaTempError", skin: "SkinTemp", sss: "Salinity", subt: "SubTemp",
   subs: "SubSalinity", chl: "Chlorophyll", ssh: "SeaLevel", cur: "CurrentU", ice: "SeaIce",
 };
 
@@ -262,15 +266,15 @@ export const filterInUse = (layer, filter) => !!filter && filterable(layer) && (
 /** Which ends of a filter hide values: only the ends that were set (an older filter without the marks: both). */
 export const filterBounds = (filter) => ({ lo: filter.loSet ?? !!filter.set, hi: filter.hiSet ?? !!filter.set });
 /** How much of the shading's opacity is kept outside the highlight band. */
-export const BAND_FADE = 0.25;
+export const BAND_FADE = 1; // outside the band at full strength (Chris, 22 Nov): its colours do the work
 /** The band of a filter, [from, to], or null when none is set. */
 export const filterBand = (filter) => (filter && Number.isFinite(filter.blo) && Number.isFinite(filter.bhi) && filter.bhi > filter.blo ? [filter.blo, filter.bhi] : null);
 /** Where a new band starts: the middle half of the shown range. */
 export const bandDefault = (filter) => { const w = filter.hi - filter.lo; return [+(filter.lo + w * 0.25).toFixed(6), +(filter.lo + w * 0.75).toFixed(6)]; };
-/** fill-opacity for the shading: full inside the band, faded outside it; plain with no band. */
+/** fill-opacity for the shading: inside the band, and outside it faded by BAND_FADE (1: not faded). */
 export function bandOpacity(filter, opacity) {
   const band = filterBand(filter);
-  if (!band) return opacity;
+  if (!band || BAND_FADE >= 1) return opacity;
   return ["case", ["all", [">=", ["get", "v"], band[0]], ["<=", ["get", "v"], band[1]]], opacity, +(opacity * BAND_FADE).toFixed(3)];
 }
 function loadWx() {
@@ -1095,11 +1099,11 @@ export function setupWeather(map, layers) {
   };
 
   // ---------- comparison table --------------------------------------------------------
-  const SEA_KEYS = ["sst", "skin", "sss", "subt", "subs", "cur", "depth", "chl", "ssh", "ice"];
+  const SEA_KEYS = ["sst", "sst_err", "skin", "sss", "subt", "subs", "cur", "depth", "chl", "ssh", "ice"];
   /** The sea values of one file at the cursor, as short labelled pieces. */
   function seaParts(r) {
     const out = [];
-    if (r.sst != null) out.push(`Sea ${r.sst.toFixed(1)} °C`);
+    if (r.sst != null) out.push(`Sea ${r.sst.toFixed(1)} °C${r.sst_err != null ? ` ±${r.sst_err.toFixed(2)}` : ""}`);
     if (r.skin != null) out.push(`Satellite ${r.skin.toFixed(1)} °C`);
     if (r.sss != null) out.push(`Salinity ${r.sss.toFixed(2)}`);
     if (r.subt != null) out.push(`${r.depth ?? "?"} m ${r.subt.toFixed(1)} °C`);
@@ -1279,7 +1283,7 @@ export function setupWeather(map, layers) {
         h.classList.toggle("off", !band);
       }
       const dl = box.querySelector(".dim.l"), dr = box.querySelector(".dim.r");
-      dl.hidden = dr.hidden = !band;
+      dl.hidden = dr.hidden = !band || BAND_FADE >= 1;
       if (band) {
         dl.style.left = pc(f.lo); dl.style.width = `calc(${pc(bl)} - ${pc(f.lo)})`;
         dr.style.left = pc(bh); dr.style.width = `calc(${pc(f.hi)} - ${pc(bh)})`;
@@ -1306,7 +1310,7 @@ export function setupWeather(map, layers) {
       if (nothing) none.textContent = `Nothing ${ends.lo && ends.hi ? `between ${fmtv(f.lo)} and ${fmtv(f.hi)}` : ends.lo ? `above ${fmtv(f.lo)}` : `below ${fmtv(f.hi)}`} at this time: the data runs from ${fmtv(raw.min)} to ${fmtv(raw.max)}. Press Fit to show it all.`;
       box.querySelector("[data-filter-clear]").disabled = f.tg == null && !band;
       box.dataset.unit = layer.unit;
-      box.title = `${layer.label} (${layer.unit}): the pointers under the bar set the lowest and highest shown and the target (bold contour); the two above it set a band shown at full strength, the rest faded. Drag a pointer, or click a number to type it. Fit: back to the full range at chart time.`;
+      box.title = `${layer.label} (${layer.unit}): the pointers under the bar set the lowest and highest shown and the target (bold contour); the two above it set a band that takes the whole colour scale (below it the first colour, above it the last). Drag a pointer, or click a number to type it. Fit: back to the full range at chart time.`;
     }
   }
   /** Make a filter widget work: drag the pointers, click the numbers to type them, Fit. */
@@ -1335,7 +1339,7 @@ export function setupWeather(map, layers) {
       v = Math.min(r.max, Math.max(r.min, roundTo(v, q)));
       if (!f.set) { f.loSet = false; f.hiSet = false; }
       if (k === "lo") f.loSet = true; else if (k === "hi") f.hiSet = true;
-      // a band pointer picked up with no band yet starts one at its faded place
+      // a band pointer picked up with no band yet starts one at its faint place
       if ((k === "blo" || k === "bhi") && !filterBand(f)) [f.blo, f.bhi] = bandDefault(f);
       const band = filterBand(f);
       if (k === "lo") f.lo = Math.min(v, f.tg == null ? f.hi - q : f.tg - q, band ? band[0] : Infinity);

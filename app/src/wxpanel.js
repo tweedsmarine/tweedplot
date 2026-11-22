@@ -27,6 +27,7 @@ const ROWS = [
   ["Air temp", ["AirTemp"], (r) => r.temp != null && `${r.temp.toFixed(1)} °C`, "temp"],
   ["Rain", ["Rain"], (r) => r.rain != null && `${r.rain.toFixed(1)} mm/h`, "rain"],
   ["Sea temp", ["SeaTemp"], (r) => r.sst != null && `${r.sst.toFixed(1)} °C`, "sst"],
+  ["Sea temp error", ["SeaTempError"], (r) => r.sst_err != null && `±${r.sst_err.toFixed(2)} °C`, "sst_err"],
   ["Sea temp (sat.)", ["SkinTemp"], (r) => r.skin != null && `${r.skin.toFixed(1)} °C`, "skin"],
   ["Temp at depth", ["SubTemp"], (r) => r.subt != null && `${r.subt.toFixed(1)} °C${r.depth != null ? ` at ${Math.abs(r.depth).toFixed(0)} m` : ""}`, "subt"],
   ["Salinity", ["Salinity"], (r) => r.sss != null && `${r.sss.toFixed(2)} PSU`, "sss"],
@@ -207,9 +208,9 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
   // The layer chooser: a chip per layer that a loaded GRIB has, in groups, with the source of the chosen layer
   // under it. In Environment the groups follow the mode; elsewhere all are offered.
   const GROUPS = [["Weather", ["wind", "gust", "mslp", "rain", "cape", "temp"]], ["Sea state", ["waves", "swell", "period"]],
-    ["Ocean", ["sst", "skin", "chl", "sss", "subt", "subs", "current", "ssh", "ice"]]];
+    ["Ocean", ["sst", "sst_err", "skin", "chl", "sss", "subt", "subs", "current", "ssh", "ice"]]];
   const CHIP = { wind: "Wind", gust: "Gusts", mslp: "Pressure", rain: "Rain", cape: "CAPE", temp: "Air temp", waves: "Waves", swell: "Swell", period: "Period",
-    sst: "Sea temp", skin: "Sea temp (sat)", chl: "Chlorophyll", sss: "Salinity", subt: "Temp at depth", subs: "Salinity at depth", current: "Current", ssh: "Sea height", ice: "Sea ice" };
+    sst: "Sea temp", sst_err: "SST error", skin: "Sea temp (sat)", chl: "Chlorophyll", sss: "Salinity", subt: "Temp at depth", subs: "Salinity at depth", current: "Current", ssh: "Sea height", ice: "Sea ice" };
   function buildShow(box) {
     const info = weather.layerInfo();
     const opts = weather.layerOptions().filter((x) => !x.compare && !x.verify && x.paths.length);
