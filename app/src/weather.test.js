@@ -189,7 +189,7 @@ test("the filter is for single-file layers, not the agreement or error displays"
   assert.ok(!filterable(undefined));
 });
 
-test("a highlight band fades the shading outside it and leaves it alone inside", () => {
+test("a highlight band: limits, defaults and opacity", () => {
   assert.equal(filterBand({ lo: 14, hi: 26 }), null);
   assert.equal(filterBand({ lo: 14, hi: 26, blo: 20, bhi: 20 }), null);
   assert.deepEqual(filterBand({ lo: 14, hi: 26, blo: 19, bhi: 23 }), [19, 23]);
@@ -197,8 +197,9 @@ test("a highlight band fades the shading outside it and leaves it alone inside",
   // no band: the plain opacity
   assert.equal(bandOpacity({ lo: 14, hi: 26 }, 0.7), 0.7);
   assert.equal(bandOpacity(null, 0.7), 0.7);
-  const e = bandOpacity({ lo: 14, hi: 26, blo: 19, bhi: 23 }, 0.8);
-  assert.deepEqual(e, ["case", ["all", [">=", ["get", "v"], 19], ["<=", ["get", "v"], 23]], 0.8, +(0.8 * BAND_FADE).toFixed(3)]);
+  // outside the band at full strength now (BAND_FADE 1): its end colours set it apart
+  assert.equal(BAND_FADE, 1);
+  assert.equal(bandOpacity({ lo: 14, hi: 26, blo: 19, bhi: 23 }, 0.8), 0.8);
   // a band survives the automatic range: a set filter is kept when the data's range moves
   const kept = filterRangeForGrid({ range: [15, 27] }, { lo: 14, hi: 26, tg: null, blo: 19, bhi: 23, set: true });
   assert.deepEqual(filterBand(kept.filter), [19, 23]);
