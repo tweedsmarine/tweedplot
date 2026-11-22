@@ -63,8 +63,9 @@ const HIMAWARI_DS: &str = "gridH09AHINRTL3CWW00";
 const CHL_DS: &str = "noaacwNPPN20VIIRSDINEOFDaily";
 /// ACSPO L3S-LEO, near real time, daily, °C (latitude north to south).
 const ACSPO_DS: &str = "noaacwLEOACSPOSSTL3SnrtCDaily";
-/// Geo-Polar Blended, night-only foundation temperature, daily, °C, with its error.
-const BLENDED_DS: &str = "noaacwBLENDEDCsstDaily";
+/// Geo-Polar Blended, night-only foundation temperature, daily, with its error (the °C copy,
+/// noaacwBLENDEDCsstDaily, is no longer served; units are read from the file).
+const BLENDED_DS: &str = "noaacwBLENDEDsstDaily";
 /// The quality level kept (5 = clear sky, "recommended for operational use").
 pub const HIM_MIN_QUALITY: f64 = 5.0;
 
@@ -767,9 +768,7 @@ mod tests {
             "https://coastwatch.noaa.gov/erddap/griddap/noaacwLEOACSPOSSTL3SnrtCDaily.nc?sea_surface_temperature%5Blast-1:1:last%5D%5B(-40.000):1:(-42.000)%5D%5B(172.000):1:(175.000)%5D,quality_level%5Blast-1:1:last%5D%5B(-40.000):1:(-42.000)%5D%5B(172.000):1:(175.000)%5D"
         );
         let b = blended_url([172.0, -42.0, 175.0, -40.0], 1, 2, false).unwrap();
-        assert!(
-            b.starts_with("https://coastwatch.noaa.gov/erddap/griddap/noaacwBLENDEDCsstDaily.nc?analysed_sst%5Blast-0:1:last%5D%5B(-42.000):2:(-40.000)%5D")
-        );
+        assert!(b.starts_with("https://coastwatch.noaa.gov/erddap/griddap/noaacwBLENDEDsstDaily.nc?analysed_sst%5Blast-0:1:last%5D%5B(-42.000):2:(-40.000)%5D"));
         assert!(b.contains(",analysis_error%5Blast-0:1:last%5D"));
         assert!(blended_url([172.0, -42.0, 175.0, -40.0], 1, 1, true).unwrap().contains("%5B(-40.000):1:(-42.000)%5D"));
         // the error is in kelvin and stays as it is (no 273.15)
