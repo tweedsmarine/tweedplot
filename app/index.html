@@ -864,19 +864,22 @@
     <aside id="side" aria-label="Data panel" hidden>
       <div class="sp-grip" title="Drag for a narrow, normal or wide panel"></div>
       <header class="sp-head"><span class="sp-status"></span><button class="sp-edit" title="Edit the panel: add, move and remove readings">✎</button><button class="sp-hide" title="Hide the panel to a line under the chart (O)">⟩</button></header>
-      <div class="sp-views" role="group" aria-label="View">
-        <button type="button" data-view-select="nav">Navigation</button>
-        <button type="button" data-view-select="plan">Planning</button>
-        <button type="button" data-view-select="env">Environment</button>
-        <button type="button" data-view-select="inst">Instruments</button>
-      </div>
-      <div class="sp-disp" role="group" aria-label="Chart display">
-        <button data-cat="base" title="Display base: land, depth areas, the safety contour and dangers. Not enough for safe navigation on its own (IHO S-52 2.3.3a): use it briefly to declutter">Base</button>
-        <button data-cat="standard" title="The standard display, in one press (IMO S-Mode): Standard with light sectors, names and soundings. The display to use as a minimum for planning and monitoring">Standard</button>
-        <button data-cat="all" title="All other information as well: soundings, other contours, cables and pipelines, names and other detail">All</button>
-        <span class="sp-disp-note"></span>
-      </div>
+      <!-- MOB, Drop and the anchor at the top in every view with the panel (sidepanel.js moves them here) -->
       <div class="sp-actions"></div>
+      <!-- the views as icons, and the chart detail on the same row -->
+      <div class="sp-viewbar">
+        <div class="sp-views" role="group" aria-label="View">
+          <button type="button" data-view-select="nav" title="Navigation view (F2)" aria-label="Navigation view"><svg viewBox="0 0 24 24"></svg></button>
+          <button type="button" data-view-select="plan" title="Planning view (F3)" aria-label="Planning view"><svg viewBox="0 0 24 24"></svg></button>
+          <button type="button" data-view-select="env" title="Environment view (F6)" aria-label="Environment view"><svg viewBox="0 0 24 24"></svg></button>
+          <button type="button" data-view-select="inst" title="Instruments view (F4)" aria-label="Instruments view"><svg viewBox="0 0 24 24"></svg></button>
+        </div>
+        <select class="sp-disp" aria-label="Chart detail" title="Chart detail (IHO display category). Base: land, depth areas, the safety contour and dangers; not enough to navigate by on its own (S-52), use it briefly to declutter. Standard: the IMO standard display (S-Mode), the minimum for planning and monitoring. All: soundings, other contours, cables, pipelines, names and the rest as well">
+          <option value="base">Base</option><option value="standard">Standard</option><option value="all">All</option>
+        </select>
+        <button type="button" class="sp-std" hidden title="Back to the standard display in one press (IMO S-Mode)">Std</button>
+      </div>
+      <div class="sp-disp-note"></div>
       <div class="sp-own"></div>
       <div class="sp-mob" hidden></div>
       <div class="sp-env-tabs" hidden role="group" aria-label="Environment workspace">
@@ -888,8 +891,10 @@
       <details id="side-wx-clock" class="sp-weather" open><summary>Chart time</summary>
         <div class="sp-wx-clock">
           <label for="side-wx-time">Chart time: <span id="side-wx-when">—</span></label>
-          <div id="side-wx-source" class="sp-wx-source"></div>
-          <div id="side-wx-coverage"></div>
+          <details id="side-wx-gribs" class="sp-wx-gribs"><summary>Loaded GRIBs <span class="sp-wx-gribs-sum"></span></summary>
+            <div id="side-wx-source" class="sp-wx-source"></div>
+            <div id="side-wx-coverage"></div>
+          </details>
           <div id="wxp-run" class="wxp-run"></div>
           <input id="side-wx-time" type="range" min="0" max="0" step="3600" value="0" disabled />
           <div class="sp-wx-transport" role="group" aria-label="Chart time controls">

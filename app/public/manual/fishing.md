@@ -30,7 +30,7 @@ HYCOM's server is slow, especially for many time steps: a day's data can take a 
 
 ## The Weather panel
 
-The toolbar's Weather button opens the data panel's Weather layers and filters section. **Hide weather on chart** and **Show weather on chart** switch all weather layers off and on without unloading the files. In the panel:
+The toolbar's Weather button opens the data panel's Weather layers and filters section. **Hide weather** and **Show weather** switch all weather layers off and on without unloading the files. In the panel:
 
 - The **time slider** moves everything together. Today's analyses are shown for a few days after their date, so your slider's "now" works for all of them.
 - The **colour bar with its three pointers** is your *filter*. For whatever layer is shaded, drag the outer pointers to the lowest and highest values you want and nothing outside them is coloured. Drag the middle pointer to your **target**: the colours run from the low limit to the target over the cool half and from the target to the high limit over the warm half, so the water you are after is always the same colour in the middle and has its own bold contour. The track refits around the selected range when you release a pointer; push an outer pointer to an edge to make room to widen it. **Fit** restores the full grid range at chart time; it then follows the range as chart time changes. Manually set limits stay fixed. Click a pointer's number to type a value. Each layer keeps its own filter.

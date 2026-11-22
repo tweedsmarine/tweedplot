@@ -12,9 +12,8 @@ Nothing covers the chart: everything else sits beside it.
 - **The toolbar** (the strip down the chart's left edge): {icon:north} north up, the live data light, live or paused, {icon:follow} follow the boat, {icon:ruler} ruler, {icon:ebl} EBL/VRM, {icon:targets} target list, {icon:wxpanel} weather, the **View** list, {icon:side} the data panel, {icon:panels} panels, {icon:day} colours (day, dusk, night). Scroll the toolbar when the window is too short to show all buttons. **LIVE**, **PAUSED** or **REPLAY** shows the data mode; **FOLLOW** means the chart follows the boat and **FREE** means it does not. Hover a button for what it does.
 - **The data panel** (right of the chart). From the top:
   - the status line: LIVE, PAUSED or REPLAY, north up or turned, and the scale;
-  - **Navigation**, **Planning**, **Environment**, **Instruments**: select a view; the current one is marked;
-  - **Base**, **Standard**, **All**: how much the chart shows;
-  - **MOB** and **Drop** (a mark at the boat), and the anchor button if you turn it on;
+  - **MOB** and **Drop** (a mark at the boat), and the anchor button if you turn it on, in every view;
+  - four view icons (Navigation, Planning, Environment, Instruments; hover for the name), the current one lit, and beside them the chart detail list: **Base**, **Standard** or **All**;
   - own ship: heading, course, speed, depth, position and time, always shown;
   - readings that suit the view: route, marks ahead, AIS targets, wind, weather;
   - the cursor's position, and the **alerts** at the bottom.
@@ -61,7 +60,7 @@ Your own depth soundings build up into a seabed, as on Olex or TimeZero.
 1. Open **Environment › Get data › Download GRIBs**: choose the **model**, the **area** (draw it, the chart view, or round the route), the forecast length and the time step, then **Download**. Away from the internet, **Saildocs email request** writes the email for you.
 2. Choose a file at the top and **Load** it. Select the shown GRIB and unload files here too; loading several lets you compare them.
 3. {icon:wxpanel} in the toolbar opens **Environment › Explore**. Its pinned **Chart time** slider and buttons move through time (also **[** and **]**); the cursor readings are below.
-4. In **Weather layers and filters**, choose shading (wind, gusts, rain, waves, sea temperature…) and overlays such as barbs, isobars and arrows. Weather, Ocean and Seabed are starting points, not restrictions. **Hide weather on chart** hides the layers without unloading the files. **Download or manage GRIBs** opens Get data.
+4. In **Weather layers and filters**, choose shading (wind, gusts, rain, waves, sea temperature…) and overlays such as barbs, isobars and arrows. Weather, Ocean and Seabed are starting points, not restrictions. **Hide weather** hides the layers without unloading the files. **GRIBs…** opens Get data.
 5. Right-click the chart › **Meteogram here** for the forecast at one place.
 6. Planning keeps **Chart time** above the route controls. Press **Weather on route** below the time controls to open or close the forecast along the active routing or planned route. Press anywhere on the graphs and drag: the purple cursor follows, snapping to the route's forecast points, each plot shows its value where the cursor crosses it, and the chart time and boat position follow. This does not change the route's departure. Use Environment for detailed layers, filters and GRIB cursor readings.
 
