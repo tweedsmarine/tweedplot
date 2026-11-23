@@ -250,9 +250,10 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   // CPA graphics: where own boat and the target will be at the closest point of approach
   map.addSource("ais-cpa", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addLayer({ id: "ais-cpa-path", type: "line", source: "ais-cpa", filter: ["==", ["get", "k"], "path"],
-    paint: { "line-color": ["match", ["get", "lvl"], "danger", "#d00000", "#e08a00"], "line-width": 1.4, "line-dasharray": [3, 2], "line-opacity": 0.9 } });
+    // dangerous: red and heavier; to watch: amber and lighter (the width tells them apart where red and amber look alike)
+    paint: { "line-color": ["match", ["get", "lvl"], "danger", "#d00000", "#e08a00"], "line-width": ["match", ["get", "lvl"], "danger", 2.2, 1.2], "line-dasharray": [3, 2], "line-opacity": 0.9 } });
   map.addLayer({ id: "ais-cpa-line", type: "line", source: "ais-cpa", filter: ["==", ["get", "k"], "cpa"],
-    paint: { "line-color": ["match", ["get", "lvl"], "danger", "#d00000", "#e08a00"], "line-width": 2.5 } });
+    paint: { "line-color": ["match", ["get", "lvl"], "danger", "#d00000", "#e08a00"], "line-width": ["match", ["get", "lvl"], "danger", 4, 2] } });
   map.addLayer({ id: "ais-cpa-pt", type: "circle", source: "ais-cpa", filter: ["==", ["get", "k"], "pt"],
     paint: { "circle-radius": 4.5, "circle-color": "#fff", "circle-stroke-color": ["match", ["get", "lvl"], "danger", "#d00000", "#e08a00"], "circle-stroke-width": 2 } });
   map.addLayer({ id: "ais-cpa-lbl", type: "symbol", source: "ais-cpa", filter: ["==", ["get", "k"], "lbl"],

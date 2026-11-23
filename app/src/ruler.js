@@ -4,7 +4,7 @@
 // (the ruler stays on the chart); Esc stops. Each leg is
 // labelled with its rhumb-line bearing (°T, and °M from the instruments' variation
 // near the boat or the World Magnetic Model elsewhere) and distance, with the total at the end. Points move like course
-// marks: click one (amber ring), wait for the ring to turn green, then drag.
+// marks: click one (amber ring), wait for the ring to turn blue and fill, then drag.
 // Right-click a ruler: delete it, delete a point, or save it as a route.
 import { placing } from "./modes.js";
 import { invoke } from "@tauri-apps/api/core";
@@ -153,14 +153,16 @@ export function setupRuler(map, { before, ui, library, route, toast, getVariatio
     const r = sel && find(sel.rid);
     const p = r?.pts[sel.i];
     map.getSource("ruler-sel").setData(p ? { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: p } }] } : empty);
-    map.setPaintProperty("ruler-sel", "circle-stroke-color", movable ? "#2e8b57" : "#f0a500");
+    // ready to drag: solid blue and filled, not only a change of colour (amber to green read alike for many colour-blind eyes)
+    map.setPaintProperty("ruler-sel", "circle-stroke-color", movable ? "#1a73e8" : "#f0a500");
+    map.setPaintProperty("ruler-sel", "circle-color", movable ? "rgba(26,115,232,0.25)" : "rgba(0,0,0,0)");
   }
   function select(rid, i) {
     clearTimeout(armTimer);
     sel = { rid, i };
     movable = false;
     drawSel();
-    toast("Ruler point selected: wait for the ring to turn green, then drag it.");
+    toast("Ruler point selected: wait for the ring to turn blue and fill, then drag it.");
     armTimer = setTimeout(() => { movable = true; drawSel(); toast("Drag the point to move it."); }, ARM_MS);
   }
   function deselect() {

@@ -2335,6 +2335,9 @@ html[data-view="plan"] #side .sp-routewx { display: none !important; }
   --panel-bg: #14222b; --ink: #e8f0f4; --quiet: #9fb2bd; --line: #2c3d48;
   --btn-bg: #2f4a59; --btn-bg-hover: #3b5d70; --btn-line: #5f7a88; --btn-ink: #e8f0f4;
   --in-bg: #0e1920; --in-line: #4a6372; --card-bg: #1a2b35;
+  /* the raised surfaces some rules ask for by name (menus, pop-ups, the mark editor, the NMEA
+     monitor): dark too, else they fall back to white with the drawer's light text on it */
+  --panel-solid: #1d3140; --panel: #1d3140; --panel-raised: #0e1920;
   --accent-text: #7cc4ea;
   background: var(--panel-bg); color: var(--ink); border-right: 1px solid var(--line); color-scheme: dark;
 }
@@ -2439,3 +2442,47 @@ html[data-palette="dusk"][data-iho] #calib-img .maplibregl-canvas-container { fi
 button.link-btn[hidden] { display: none; }
 .img-row .img-cal { font-size: 13px; line-height: 1; }
 .img-wait-row .img-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* menus and pick lists opened inside a drawer: the drawer's dark surface, not white */
+#drawer :is(.ctx, .isel-list, .sel-pop, .gear-pop) { background: #1d3140; color: var(--ink); border-color: var(--line); }
+#drawer .ctx button { color: var(--ink); }
+#drawer .ctx button:hover:not(:disabled) { background: #2a4252; }
+#drawer .ctx button:disabled { color: #6f8693; }
+
+/* ---------- legibility and colour-blind safety (23 Nov audit) ----------
+   Amber warnings carry dark text (white on amber is under 3:1). Inside the dark drawers and
+   data panel the red, green and amber text colours are lighter, so they read on the dark
+   surface. Nothing relies on red against green alone: status dots differ in shape (hollow:
+   off or failing, filled: working, half: paused or partly there), dangerous targets carry ⚠,
+   activity cards ✓ or ⚠, and the compass's bearing to the mark is a hollow diamond in route
+   magenta where course over ground is a filled orange triangle. */
+#alarm-banner .alarm.warn { color: #1d2a33; }
+#alarm-banner .alarm.warn button { color: #1d2a33; background: rgba(255, 255, 255, 0.35); border-color: rgba(0, 0, 0, 0.45); }
+#alarm-banner .alarm.warn .txt small { opacity: 1; }
+.al-active li.al-warn .al-lv { color: #1d2a33; }
+#drawer, #side { --good: #5cc98a; --bad: #ff8a80; }
+#drawer :is(.wx-note.warn, .warn:not(button):not(.dcard)) { color: #f0b429; }
+#side { --quiet: #9fb2bd; --line: #2c3d48; }
+#side .wx-note { color: var(--tile-quiet); }
+/* status dots: the shape says it as well as the colour */
+.dot { background: transparent; box-shadow: inset 0 0 0 2px var(--bad); }
+.dot.on, .dot.ok { background: var(--good); box-shadow: none; }
+.dot.paused { background: linear-gradient(90deg, #d8a500 50%, transparent 50%); box-shadow: inset 0 0 0 2px #d8a500; }
+.dot.part { background: linear-gradient(90deg, var(--good) 50%, transparent 50%); box-shadow: inset 0 0 0 2px var(--good); }
+/* dangerous targets: a warning sign, not only red */
+#ais-list li.danger b::before, #tgt-table tr.danger td:first-child::before, .sp-li.danger .nm::before { content: "⚠ "; }
+#drawer #ais-list li.danger b { color: var(--bad); }
+/* activity cards: ✓ done, ⚠ failed */
+.act-card.ok .act-title::before { content: "✓ "; color: var(--good); }
+.act-card.failed .act-title::before { content: "⚠ "; color: #b86e00; }
+/* compass: bearing to the mark as a hollow magenta diamond, COG a filled orange triangle */
+.dial .m-btw { fill: none; stroke: #e06cf0; stroke-width: 2; stroke-linejoin: round; }
+/* calibration: a point far out from the others is marked, not only red */
+.calib-table td.far::after { content: " ⚠"; }
+/* "alarm" is every banner row's own class as well as the alarm level, so .alarm.alarm matched
+   warnings too: they flashed to dark red. A warning that isn't silenced flashes in amber, light
+   enough for its dark text (IEC 62923: warnings flash yellow-orange, alarms red). */
+#alarm-banner .alarm.warn { animation: warn-flash 1s steps(2, start) infinite; }
+#alarm-banner .alarm.warn.acked { animation: none; }
+@keyframes warn-flash { 50% { background: #f5b83d; } }
+.dot { width: 11px; height: 11px; }

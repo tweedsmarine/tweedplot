@@ -344,7 +344,9 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
   function drawSelection() {
     const p = selected !== null && posOf(selected);
     map.getSource("rt-sel").setData(p ? { type: "FeatureCollection", features: [pt(p, {})] } : empty);
-    map.setPaintProperty("rt-sel", "circle-stroke-color", movable ? "#2e8b57" : "#f0a500");
+    // ready to drag: solid blue and filled, not only a change of colour (amber to green read alike for many colour-blind eyes)
+    map.setPaintProperty("rt-sel", "circle-stroke-color", movable ? "#1a73e8" : "#f0a500");
+    map.setPaintProperty("rt-sel", "circle-color", movable ? "rgba(26,115,232,0.25)" : "rgba(0,0,0,0)");
   }
   function select(k) {
     clearTimeout(armTimer);
@@ -352,7 +354,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     movable = false;
     drawSelection();
     if (locked()) { status(`${cap(labelOf(k))}: ${active.name || "this route"} is being navigated, so its marks can't be moved. Stop navigating to change it.`); return; }
-    status(`Selected ${labelOf(k)}. Wait for the ring to turn green to move it, or right-click to remove it.`);
+    status(`Selected ${labelOf(k)}. Wait for the ring to turn blue and fill to move it, or right-click to remove it.`);
     armTimer = setTimeout(() => {
       movable = true;
       drawSelection();

@@ -285,12 +285,14 @@ export function setupBarriers(map, { before, library, toast, getVariation }) {
     const b = sel && list.find((x) => x.id === sel.id);
     const p = b?.points[sel.i];
     map.getSource("bar-sel").setData(p ? { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: p } } : empty);
-    map.setPaintProperty("bar-sel", "circle-stroke-color", movable ? "#2e8b57" : "#f0a500");
+    // ready to drag: solid blue and filled, not only a change of colour (amber to green read alike for many colour-blind eyes)
+    map.setPaintProperty("bar-sel", "circle-stroke-color", movable ? "#1a73e8" : "#f0a500");
+    map.setPaintProperty("bar-sel", "circle-color", movable ? "rgba(26,115,232,0.25)" : "rgba(0,0,0,0)");
   }
   function select(id, i) {
     clearTimeout(armTimer);
     sel = { id, i }; movable = false; drawSel();
-    toast("Barrier point selected: wait for the ring to turn green, then drag it.");
+    toast("Barrier point selected: wait for the ring to turn blue and fill, then drag it.");
     armTimer = setTimeout(() => { movable = true; drawSel(); toast("Drag the point to move it."); }, ARM_MS);
   }
   function deselect() { clearTimeout(armTimer); if (sel) toast(""); sel = null; movable = false; drawSel(); }

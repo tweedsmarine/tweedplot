@@ -101,7 +101,7 @@ export function setupLibrary(map, { ui, toast = () => {}, getBoat = () => null }
 
   // ---------- selecting and moving marks on the chart ----------------------------------
   // As course marks and barrier points: click a mark (amber ring), wait for the ring to
-  // turn green, then drag it. The new position is saved to the library (and so to every
+  // turn blue and fill, then drag it. The new position is saved to the library (and so to every
   // route using the mark). Clicks while placing course marks or drawing go to those.
   const ARM_MS = 1200;
   let sel = null, movable = false, armTimer = null, dragging = false, dragPos = null;
@@ -111,7 +111,9 @@ export function setupLibrary(map, { ui, toast = () => {}, getBoat = () => null }
   function drawSel() {
     const m = sel && (dragPos ? { lon: dragPos[0], lat: dragPos[1] } : byId(sel));
     map.getSource("lib-sel").setData(m ? { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [m.lon, m.lat] } } : empty);
-    map.setPaintProperty("lib-sel", "circle-stroke-color", movable ? "#2e8b57" : "#f0a500");
+    // ready to drag: solid blue and filled, not only a change of colour (amber to green read alike for many colour-blind eyes)
+    map.setPaintProperty("lib-sel", "circle-stroke-color", movable ? "#1a73e8" : "#f0a500");
+    map.setPaintProperty("lib-sel", "circle-color", movable ? "rgba(26,115,232,0.25)" : "rgba(0,0,0,0)");
     map.setPaintProperty("lib-sel", "circle-color", dragPos ? "rgba(46,139,87,0.45)" : "rgba(0,0,0,0)");
   }
   function selectMark(id) {
@@ -119,7 +121,7 @@ export function setupLibrary(map, { ui, toast = () => {}, getBoat = () => null }
     sel = id; movable = false; drawSel();
     const m = byId(id);
     if (m && isLocked(m)) { toast(`${m.name || "The mark"} is in the locked group “${m.group}”: unlock it (Marks > Groups) to move it.`); return; }
-    toast(`${m?.name || "Mark"} selected: wait for the ring to turn green, then drag it. Esc to let go.`);
+    toast(`${m?.name || "Mark"} selected: wait for the ring to turn blue and fill, then drag it. Esc to let go.`);
     armTimer = setTimeout(() => { movable = true; drawSel(); toast(`Drag ${m?.name || "the mark"} to move it.`); }, ARM_MS);
   }
   function deselectMark() { clearTimeout(armTimer); if (sel) toast(""); sel = null; movable = false; drawSel(); }

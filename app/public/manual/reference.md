@@ -141,7 +141,7 @@ From top to bottom. Every button has a short label under its icon (**North**, **
 | | Button | What it does |
 | --- | --- | --- |
 | {icon:north} | **North up** | The needle shows which way north is; click to turn the chart north up again (also **U**) |
-| {icon:sk} {icon:sk-off} | **Live data** | Green: data arriving. Amber: connected but nothing for 10 s. Red with a slash: not connected. Hover for details, click for **Settings › Connections** |
+| {icon:sk} {icon:sk-off} | **Live data** | Green, labelled **DATA**: data arriving. Amber, **QUIET**: connected but nothing for 10 s. Red with a slash, **NO LINK**: not connected. Hover for details, click for **Settings › Connections** |
 | {icon:live} {icon:paused} | **Live / Paused** | Live: the boat follows the instruments. Paused: planning, the boat stays where you put it (right-click › **Move boat here**). Also **Space** |
 | {icon:follow} | **Follow** | Keeps the boat in the same place on the screen (centred to begin with); dragging the chart turns it off. Drag the boat to put it anywhere you like, to see more chart ahead; double-click the boat to centre it again (also **F**) |
 | {icon:ruler} | **Ruler** | Measure: click points on the chart, double-click to finish, Esc to stop (also **M**; see Measuring) |
@@ -200,7 +200,7 @@ Use the view buttons at the top of the data panel or the toolbar's View button. 
 
 - Drag to pan, scroll to zoom, right-drag to rotate (the **North up** button at the top of the toolbar turns the chart back to north at the top; its needle shows which way north is).
 - TweedPlot is laid out for a mouse (or trackball) and keyboard: every control is the same compact size throughout, hover shows what a button does, and right-click opens the menus. A touch-screen layout may come later as a separate mode.
-- To move a course mark, library mark, ruler point or barrier point: click it (amber ring), wait for the ring to turn green, then drag. The pause stops marks being moved by accident. A library mark's new position is saved straight away, and every route using it follows.
+- To move a course mark, library mark, ruler point or barrier point: click it (amber ring), wait for the ring to turn blue and fill, then drag. The pause stops marks being moved by accident. A library mark's new position is saved straight away, and every route using it follows.
 
 **Info windows**
 
@@ -546,7 +546,7 @@ At small scales the world coastline (GSHHG) is drawn, and east of 180° (the Cha
 
 **Getting chart data: Chart › Get data**
 
-Outside New Zealand, TweedPlot shades the sea by depth from free world data. **Chart › Get data** shows what is installed (a green dot) and downloads the rest.
+Outside New Zealand, TweedPlot shades the sea by depth from free world data. **Chart › Get data** shows what is installed (a filled green dot; a hollow ring is not installed, half filled is partly there) and downloads the rest.
 
 | Data | How you get it | What it shows |
 | --- | --- | --- |

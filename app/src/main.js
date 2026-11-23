@@ -1495,7 +1495,7 @@ map.on("contextmenu", (e) => {
     const mv = ctx.querySelector('[data-act="move-sel"]');
     mv.textContent = `Move ${sel.label} here`;
     mv.disabled = !sel.movable;
-    mv.title = sel.movable ? "" : "Wait for the ring round the mark to turn green";
+    mv.title = sel.movable ? "" : "Wait for the ring round the mark to turn blue and fill";
     ctx.querySelector('[data-act="del-sel"]').textContent = `Delete ${sel.label}`;
   }
   // a route mark: how the routing reaches it (not the start; not while it is navigated)

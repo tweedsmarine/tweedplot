@@ -147,7 +147,7 @@ function windDial(w) {
     <text x="108" y="100" class="wv a end">${ang(w.awa)}</text><text x="108" y="108.5" class="wc a end">AWA</text>
   </svg>`;
 }
-/** Compass: heading up; COG (orange tick) and bearing to the mark (green). */
+/** Compass: heading up; COG (filled orange triangle) and bearing to the mark (hollow magenta diamond). */
 function compassRose(c) {
   const h = c.hdg ?? c.cog;
   let card = ticks(10, 40, 44, "tk") + ticks(30, 36, 44, "tk2");
@@ -156,8 +156,10 @@ function compassRose(c) {
     card += `<text x="${p[0].toFixed(1)}" y="${(p[1] + 3.5).toFixed(1)}" class="card${a === 0 ? " n" : ""}" transform="rotate(${a} ${p[0].toFixed(1)} ${p[1].toFixed(1)})">${l}</text>`;
   }
   const mark = (a, cls) => (a == null ? "" : `<path d="M${pt(polar(46, a))}L${pt(polar(38, a - 5))}L${pt(polar(38, a + 5))}z" class="${cls}"/>`);
+  // the bearing to the mark: a hollow diamond, so it differs from COG by shape as well as colour
+  const diamond = (a, cls) => (a == null ? "" : `<path d="M${pt(polar(47, a))}L${pt(polar(42, a - 4))}L${pt(polar(37, a))}L${pt(polar(42, a + 4))}z" class="${cls}"/>`);
   return `<svg viewBox="0 0 100 100" class="dial">
-    <g transform="rotate(${(-h).toFixed(1)} 50 50)"><circle cx="50" cy="50" r="44" class="ring"/>${card}${mark(c.cog, "m-cog")}${mark(c.btw, "m-btw")}</g>
+    <g transform="rotate(${(-h).toFixed(1)} 50 50)"><circle cx="50" cy="50" r="44" class="ring"/>${card}${mark(c.cog, "m-cog")}${diamond(c.btw, "m-btw")}</g>
     <path d="M50,3 L54,10 L46,10z" class="lubber"/>
     <text x="50" y="56" class="num">${String(Math.round(((h % 360) + 360) % 360) % 360).padStart(3, "0")}°</text>
     <text x="50" y="68" class="cap mid">${c.hdg != null ? "HDG" : "COG"}${c.cog != null && c.hdg != null ? ` · COG ${String(Math.round(c.cog)).padStart(3, "0")}` : ""}</text>
