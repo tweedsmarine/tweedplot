@@ -65,8 +65,9 @@ export function setupData(map, { toast, reloadTiles } = {}) {
       ? `${mpi.files.length} sets, ${fmtMB(mpi.files.reduce((a, f) => a + f.bytes, 0))}${when ? `, from ${new Date(when).toLocaleDateString()}` : ""}${mpi.pieces > 0 ? "" : " (being prepared…)"}`
       : "not downloaded (NZ only)";
     $("data-mpi").textContent = mpi.files.length ? "Update" : "Download";
-    dot("data-linz-dot", status.linz_tables > 0 ? "ok" : "");
-    $("data-linz-state").textContent = status.linz_tables > 0 ? `${status.linz_tables} layers` : "none (optional, NZ only)";
+    dot("data-linz-dot", status.linz_off ? "" : status.linz_tables > 0 ? "ok" : "");
+    $("data-linz-state").textContent = status.linz_off ? "left out (ENC chart sets below): only ENCs are drawn"
+      : status.linz_tables > 0 ? `${status.linz_tables} layers` : "none (optional, NZ only)";
     $("data-linz").title = `Open the LINZ Data Service in your browser (free account) and download the hydrographic layers as GeoPackage into\n${status.dirs.charts}`;
     const list = $("data-etopo-list");
     list.innerHTML = "";
@@ -300,8 +301,11 @@ export function setupData(map, { toast, reloadTiles } = {}) {
     try { sets = await invoke("chart_sets_list"); } catch (e) { $("data-sets-state").textContent = String(e); return; }
     const on = sets.filter((x) => x.in_use);
     dot("data-sets-dot", on.length ? "ok" : "");
+    const encOn = on.filter((x) => !x.linz);
+    const linz = sets.find((x) => x.linz);
     $("data-sets-state").textContent = sets.length
-      ? `${on.length} of ${sets.length} in use, ${on.reduce((a, x) => a + x.cells, 0).toLocaleString()} cells`
+      ? `${on.length} of ${sets.length} in use, ${encOn.reduce((a, x) => a + x.cells, 0).toLocaleString()} ENC cells` +
+        (linz ? (linz.in_use ? "; LINZ open data charts on" : "; LINZ open data charts off: only ENCs are drawn") : "")
       : "none (put S-57 cells or exchange sets in the enc folder)";
     ul.innerHTML = "";
     for (const x of sets) {
@@ -310,8 +314,11 @@ export function setupData(map, { toast, reloadTiles } = {}) {
       const cb = li.querySelector("input");
       cb.checked = x.in_use;
       li.querySelector("b").textContent = x.name;
-      li.querySelector("small").textContent = `${x.cells.toLocaleString()} cell${x.cells === 1 ? "" : "s"} · ${fmtProducers(x.producers)} · ${x.folder}`;
-      li.title = x.path;
+      const unit = x.unit ?? "cell";
+      li.querySelector("small").textContent = `${x.cells.toLocaleString()} ${unit}${x.cells === 1 ? "" : "s"} · ${fmtProducers(x.producers)} · ${x.folder}`;
+      li.title = x.linz
+        ? "TweedPlot's own chart, made from LINZ's open hydrographic data. Untick it to see only official ENCs (S-57 and S-63 cells); where no ENC covers a place, only the world coastline and depths show there. Its tidal diamonds and LINZ-only features go with it."
+        : x.path;
       cb.onchange = async () => {
         cb.disabled = true;
         try {
