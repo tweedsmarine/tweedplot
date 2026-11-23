@@ -49,5 +49,9 @@ marine-nmea.workspace = true
 serialport.workspace = true
 chrono.workspace = true
 
+# screenshots of the window (screenshot.rs): Windows and macOS only, the platforms TweedPlot runs on
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+xcap = { version = "0.9", default-features = false }
+
 [lints]
 workspace = true

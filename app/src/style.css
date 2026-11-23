@@ -257,6 +257,7 @@ details.dcard.flash { animation: plan-flash 1.6s ease-out; }
 #pb-tb::after { content: "Sndgs"; }
 #targets-btn::after { content: "Targets"; }
 #clear-track::after { content: "Clear"; }
+#shot-btn::after { content: "Capture"; }
 #tools-btn::after { content: "Left"; }
 #palette-btn::after { content: "Day"; }
 html[data-palette="dusk"] #palette-btn::after { content: "Dusk"; }

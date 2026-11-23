@@ -172,6 +172,7 @@ export function start(title, { cancel = null, params = "" } = {}) {
   };
   const job = {
     id,
+    el, // the card, for a button of the caller's own (Open folder)
     /** `text` replaces "step: done of total" (e.g. sizes in MB) while the bar still follows done/total. */
     progress(s, done = 0, total = 0, text = "") {
       if (finished) return;
