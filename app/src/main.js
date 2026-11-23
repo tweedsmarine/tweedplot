@@ -737,6 +737,7 @@ map.on("load", () => {
   setupRadar(map, { getBoat: () => lastBoat });
   for (const id of ["rt-wx", "crs-wx"]) { const b = document.getElementById(id); if (b) b.onclick = () => routeWx.open(); }
   document.getElementById("wx-verify").onclick = () => gribTools.openVerify();
+  document.getElementById("wx-sst-verify").onclick = () => gribTools.openSstCheck();
   // the tide gauges (rising / falling) and tidal streams follow the chart time in Planning and
   // Environment, as the weather does; in Navigation and Instruments they show now (live)
   setupTides(map, { before: "track", getTime: tideTime, onTime: (fn) => { weather.onTime(fn); window.addEventListener("racenav-view", fn); } });

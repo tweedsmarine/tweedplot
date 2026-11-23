@@ -1341,6 +1341,22 @@ With two or more GRIBs loaded, the **Compare GRIBs** section lists displays that
 
 **Compare GRIBs** › **Verify runs…** scores earlier forecasts against what a later run says actually happened at its first hour (its analysis), over the sea in the chart view: vector error, speed and direction bias, pressure bias. The track record averages every verify time by model and lead time, so after some days of downloads it shows which model has been doing best in your area. Click a forecast to shade its error on the chart.
 
+**Sea temp v boat**
+
+**Compare GRIBs** › **Sea temp v boat…** scores each sea temperature product against the water temperature your boat logged along its tracks: the one measurement made where you actually fish. It reads every loaded sea temperature file and, with **Files not loaded** ticked, every sea temperature file in the weather folders that covers the tracks, at the boat's positions and times (one reading every 10 minutes or 2 km). Each reading is matched to a product's field nearest in time, up to the age chosen (12, 24, 36 or 72 hours). Choose **All tracks**, **Tracks in the chart view**, **Last 7 days** or **Last 30 days**.
+
+| Column | Meaning |
+| --- | --- |
+| **Bias °C** | Product minus boat, averaged. + means the product reads warmer than the boat |
+| **SD °C** | The spread of the error once the bias is taken off: how well the product follows the changes the boat saw. The table is sorted by it, best first |
+| **RMS °C**, **Mean \|error\| °C** | The whole error, bias included |
+| **Coverage** | Share of the readings inside the product's area and time that got a value. Cloud (ACSPO, Himawari) and coastlines leave gaps |
+| **Data age h** | How old, on average, the fields used were |
+
+Click a product to plot it against the boat's temperature over time and to show its error at each reading on the chart: blue where the product is colder than the boat, red where it is warmer (full colour at 2 °C).
+
+The boat's sensor reads the water 0.5–2 m down; satellites read the skin or a modelled foundation temperature. A steady bias, larger on calm sunny afternoons, is normal and can be allowed for. A low **SD** matters more: that product shows the breaks where they are. The scores need tracks with a water temperature (NMEA 0183 MTW, or Signal K `environment.water.temperature`) and sea temperature files for the same days, so keep the files from the days you are out.
+
 **Weather stations and buoys**
 
 **Weather › Weather stations and buoys** shows what the wind is actually doing at stations around the chart, the quickest way to see which forecast is right today. Tick **Show observations** and the sources:

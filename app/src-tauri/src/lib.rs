@@ -2183,6 +2183,7 @@ pub fn run() {
             grib_verify_scores,
             grib_verify_track,
             grib_verify_grid,
+            sst_verify,
             grib_point,
             grib_along,
             radar_sim::radar_sim_start,
