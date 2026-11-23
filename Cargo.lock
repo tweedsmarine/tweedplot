@@ -2335,6 +2335,7 @@ dependencies = [
  "lru",
  "png 0.17.16",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
  "weezl",

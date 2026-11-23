@@ -1,8 +1,11 @@
-// Chart › Layers › Images: KAP raster charts and GeoTIFFs imported from the computer, and
-// Sentinel-2 satellite images downloaded from Earth Search on AWS (imagery_cmd.rs). Rust draws
-// each image as tiles on the chart protocol (/img/<id>/<z>/<x>/<y>.png); here they become
-// raster layers, under the chart (over the depth shading, under the contours, land and
-// soundings) or over it. Own soundings always stay on top of the images.
+// Chart › Layers › Images: KAP raster charts, GeoTIFFs, MBTiles and pictures (PNG, JPEG, plain
+// TIFF; placed by a world file, or calibrated with control points: calibrate.js) imported from
+// the computer, and Sentinel-2 satellite images downloaded from Earth Search on AWS
+// (imagery_cmd.rs). Rust draws each image as tiles on the chart protocol
+// (/img/<id>/<z>/<x>/<y>.png; MBTiles pass their own tiles through); here they become raster
+// layers, under the chart (over the depth shading, under the contours, land and soundings) or
+// over it. Own soundings always stay on top of the images. Pictures not placed yet wait under
+// "To calibrate", not in the list.
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -15,6 +18,8 @@ const OVER = "img-over-anchor";
 
 export function setupImages(map, { tileUrl, toast }) {
   let list = [];
+  let waiting = []; // pictures not placed yet (state "calibrate" or "crs")
+  let calibrate = null; // set by calibrate.js: (entry) => open the calibration
   let scenes = [];
   // list folded away; choosing images for bulk changes (ids)
   let folded = false;
@@ -59,13 +64,20 @@ export function setupImages(map, { tileUrl, toast }) {
     // later images in the list draw on top
     for (const e of list) {
       const id = layerId(e.id);
+      // a calibration moves the image: its source is made again with the new area
+      const sig = `${e.bounds.join(",")}|${e.nativeZoom}|${e.calibRmsM ?? ""}`;
+      if (map.getSource(id) && map.getSource(id)._tpSig !== sig) { if (map.getLayer(id)) map.removeLayer(id); map.removeSource(id); }
       if (!map.getSource(id)) {
-        map.addSource(id, { type: "raster", tiles: [tiles(e.id)], tileSize: 256, bounds: lonLatBounds(e.bounds), maxzoom: Math.min(22, (e.nativeZoom || 14) + 1) });
+        // MBTiles: their own zooms, enlarged past the deepest; images drawn from pixels: one past full resolution
+        const mb = e.kind === "mbtiles";
+        map.addSource(id, { type: "raster", tiles: [tiles(e.id)], tileSize: 256, bounds: lonLatBounds(e.bounds),
+          ...(mb ? { minzoom: e.minZoom ?? 0, maxzoom: e.nativeZoom } : { maxzoom: Math.min(22, (e.nativeZoom || 14) + 1) }) });
+        map.getSource(id)._tpSig = sig;
       }
       if (map.getLayer(id)) map.removeLayer(id);
       const r = zoomRange(e);
       map.addLayer({ id, type: "raster", source: id,
-        ...(r ? { minzoom: Math.max(0, r.from - 0.5), maxzoom: Math.min(24, r.to + 1) } : {}),
+        ...(r ? { minzoom: Math.max(0, r.from - 0.5), maxzoom: Math.min(24, r.to + 1) } : e.kind === "mbtiles" && e.minZoom ? { minzoom: e.minZoom } : {}),
         layout: { visibility: e.visible ? "visible" : "none" },
         paint: { "raster-opacity": opacityOf(e), "raster-resampling": "linear", "raster-fade-duration": 0 } },
         e.placement === "over" ? OVER : UNDER);
@@ -85,7 +97,7 @@ export function setupImages(map, { tileUrl, toast }) {
 
   function credit() {
     const credits = mergeYears([...new Set(list.filter((e) => e.visible && e.credit).map((e) => e.credit))]);
-    const kaps = list.some((e) => e.visible && e.kind === "kap");
+    const kaps = list.some((e) => e.visible && (e.kind === "kap" || (e.kind === "mbtiles" && !e.credit)));
     const text = [credits.length ? `Imagery: ${credits.join("; ")}.` : "", kaps ? "Raster charts: their publishers." : ""].filter(Boolean).join(" ");
     window.dispatchEvent(new CustomEvent("credit-extra", { detail: { key: "images", text } }));
   }
@@ -135,6 +147,8 @@ export function setupImages(map, { tileUrl, toast }) {
       if (e.fitRmsPx != null) parts.push(e.fitRmsPx < 0.05 ? "fit exact" : `fit ${e.fitRmsPx.toFixed(1)} px`);
       parts.push(`${fmtRes(e.resM)} pixels`);
       if (e.date && !inName(e.date)) parts.push(e.date);
+    } else if (e.kind === "mbtiles") {
+      parts.push(`zoom ${e.minZoom ?? 0}–${e.nativeZoom}`, `${fmtRes(e.resM)} pixels`, "MBTiles");
     } else {
       const sat = /sentinel|landsat/i.test(e.source);
       parts.push(`${fmtRes(e.resM)} pixels`);
@@ -143,6 +157,8 @@ export function setupImages(map, { tileUrl, toast }) {
       if (!inName(e.source) && !(sat && /sentinel|landsat/i.test(e.name))) parts.push(e.source);
       if (e.fitRmsPx != null) parts.push(e.fitRmsPx < 0.05 ? "fit exact" : `fit ${e.fitRmsPx.toFixed(1)} px`);
     }
+    if (e.calibration) parts.push(e.calibRmsM != null ? `calibrated, ±${fmtRes(e.calibRmsM)}` : "calibrated");
+    else if (e.georef) parts.push("world file");
     return parts.filter(Boolean).join(" · ");
   }
 
@@ -175,11 +191,12 @@ export function setupImages(map, { tileUrl, toast }) {
     const box = $("img-list");
     if (!box) return;
     head();
+    renderWaiting();
     box.replaceChildren();
     if (!list.length) {
       const n = document.createElement("div");
       n.className = "wx-note";
-      n.textContent = "No images yet: import a KAP chart or GeoTIFF, or get a satellite image of the area on the screen.";
+      n.textContent = "No images yet: import a chart or picture (KAP, GeoTIFF, MBTiles, PNG, JPEG), or get a satellite image of the area on the screen.";
       box.append(n);
     }
     // top of the list = drawn on top
@@ -212,6 +229,11 @@ export function setupImages(map, { tileUrl, toast }) {
       const go = document.createElement("button");
       go.type = "button"; go.className = "ly-gear"; go.textContent = "⌖"; go.title = "Show the whole image";
       go.onclick = () => showWhole(e);
+      const cal = document.createElement("button");
+      cal.type = "button"; cal.className = "ly-gear img-cal"; cal.textContent = "⊕";
+      cal.title = e.calibration ? "Calibrate: change the control points or nudge it" : "Calibrate: correct where it sits with control points, or nudge it to line up with your track";
+      cal.hidden = e.kind === "mbtiles";
+      cal.onclick = () => calibrate?.(e);
       const del = document.createElement("button");
       del.type = "button"; del.className = "ly-gear"; del.textContent = "✕"; del.title = "Remove the image (deletes TweedPlot's copy)";
       del.onclick = async () => {
@@ -230,9 +252,9 @@ export function setupImages(map, { tileUrl, toast }) {
         down.type = "button"; down.className = "ly-gear"; down.textContent = "▼"; down.title = "Draw below the image under it in the list";
         down.disabled = i === 0;
         down.onclick = () => move(i, i - 1);
-        top.append(lab, up, down, go, del);
+        top.append(lab, up, down, go, cal, del);
       } else {
-        top.append(lab, go, del);
+        top.append(lab, go, cal, del);
       }
       const sub = document.createElement("div");
       sub.className = "img-sub";
@@ -258,9 +280,87 @@ export function setupImages(map, { tileUrl, toast }) {
   }
 
   async function refresh() {
-    try { list = await invoke("images_list"); } catch { list = []; }
+    let all = [];
+    try { all = await invoke("images_list"); } catch { all = []; }
+    list = all.filter((e) => e.state === "ready" || !e.state);
+    waiting = all.filter((e) => e.state === "calibrate" || e.state === "crs");
     render();
     syncMap();
+    window.dispatchEvent(new CustomEvent("images-changed", { detail: { list: all } }));
+  }
+
+  // ---- pictures waiting: to calibrate, or a world file's coordinate system to choose ----
+  function renderWaiting() {
+    const box = $("img-wait");
+    if (!box) return;
+    box.hidden = !waiting.length;
+    box.replaceChildren();
+    if (!waiting.length) return;
+    const h = document.createElement("div");
+    h.className = "wx-note img-wait-head";
+    h.textContent = `To calibrate (${waiting.length}): not on the chart until placed`;
+    box.append(h);
+    for (const e of waiting) {
+      const row = document.createElement("div");
+      row.className = "ly-row img-wait-row";
+      const name = document.createElement("span");
+      name.className = "grow img-name";
+      name.textContent = e.name;
+      name.title = `${e.name}\n${e.width.toLocaleString("en-NZ")} × ${e.height.toLocaleString("en-NZ")} pixels${e.draft ? "\nCalibration started, not saved yet" : ""}`;
+      const go = document.createElement("button");
+      go.type = "button";
+      if (e.state === "crs") {
+        go.textContent = "Coordinates…";
+        go.title = "Its world file places it, but doesn't say in which coordinate system: choose it";
+        go.onclick = () => chooseCrs(e);
+      } else {
+        go.textContent = e.draft ? "Carry on…" : "Calibrate…";
+        go.title = "Place it on the chart with control points";
+        go.onclick = () => calibrate?.(e);
+      }
+      const del = document.createElement("button");
+      del.type = "button"; del.className = "ly-gear"; del.textContent = "✕"; del.title = "Remove the picture (deletes TweedPlot's copy)";
+      del.onclick = async () => {
+        const ok = await ask({ title: "Remove picture", note: `Remove “${e.name}” from TweedPlot? Its copy in the images folder is deleted (the file you imported it from is not).`, ok: "Remove" });
+        if (!ok) return;
+        try { await invoke("images_remove", { id: e.id }); } catch (err) { toast(String(err), 5000); return; }
+        await refresh();
+      };
+      row.append(name, go, del);
+      box.append(row);
+    }
+  }
+
+  // A world file's numbers: degrees if they fit, for the first choice offered.
+  function looksGeographic(e) {
+    const a = e.georef?.aff;
+    if (!a) return false;
+    const pts = [[a[0], a[3]], [a[0] + a[1] * e.width + a[2] * e.height, a[3] + a[4] * e.width + a[5] * e.height]];
+    return pts.every(([x, y]) => Math.abs(x) <= 360 && Math.abs(y) <= 90) && Math.abs(a[1]) < 1;
+  }
+
+  async function chooseCrs(e) {
+    const deg = looksGeographic(e);
+    const v = await ask({
+      title: `Coordinate system: ${e.name}`,
+      note: `Its world file places it, but doesn't say in which coordinate system the numbers are (no .prj file came with it). ${deg ? "The numbers look like degrees." : "The numbers look like metres."} If the picture lands in the wrong place, calibrate it instead.`,
+      fields: [
+        { key: "crs", label: "Coordinates", type: "select", value: deg ? "4326" : "2193", options: [
+          ["4326", "Latitude and longitude (WGS84)"], ["3857", "Web Mercator (Google, Bing, OpenStreetMap)"], ["2193", "NZTM 2000 (LINZ)"],
+          ["32759", "UTM zone 59 south"], ["32760", "UTM zone 60 south"], ["32758", "UTM zone 58 south"], ["other", "Another EPSG code…"]] },
+        { key: "code", label: "EPSG code (for another)", type: "text", placeholder: "e.g. 32701" },
+      ],
+      ok: "Place it",
+      check: (x) => (x.crs === "other" && !/^\d{4,6}$/.test(x.code.trim()) ? "Type the EPSG code: four to six digits." : ""),
+    });
+    if (!v) return;
+    const epsg = Number(v.crs === "other" ? v.code.trim() : v.crs);
+    try {
+      const n = await invoke("images_set_crs", { id: e.id, epsg });
+      await refresh();
+      const b = lonLatBounds(n.bounds);
+      map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 40, maxZoom: 15 });
+    } catch (err) { toast(String(err), 6000); }
   }
 
   // ---- folding and bulk changes ----
@@ -333,13 +433,24 @@ export function setupImages(map, { tileUrl, toast }) {
     let r;
     try { r = await invoke("images_import"); } catch (err) { toast(String(err), 6000); return; }
     if (r.errors?.length) toast(`Could not import: ${r.errors.join("; ")}`, 9000);
-    if (r.added?.length) {
-      folded = false;
-      await refresh();
-      const b = lonLatBounds(r.added[r.added.length - 1].bounds);
+    const added = r.added ?? [];
+    if (!added.length) return;
+    folded = false;
+    await refresh();
+    const ready = added.filter((e) => e.state === "ready");
+    const crs = added.filter((e) => e.state === "crs");
+    const cal = added.filter((e) => e.state === "calibrate");
+    if (ready.length) {
+      const b = lonLatBounds(ready[ready.length - 1].bounds);
       map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 40, maxZoom: 15 });
-      toast(r.added.length === 1 ? `Added ${r.added[0].name}` : `Added ${r.added.length} images`, 3000);
     }
+    const parts = [];
+    if (ready.length) parts.push(ready.length === 1 ? `Added ${ready[0].name}` : `Added ${ready.length} images`);
+    if (crs.length + cal.length > 1 || (crs.length + cal.length === 1 && ready.length)) parts.push(`${crs.length + cal.length} waiting under To calibrate`);
+    if (parts.length) toast(parts.join("; "), 4000);
+    // one picture on its own: straight on to placing it
+    if (added.length === 1 && crs.length === 1) chooseCrs(crs[0]);
+    else if (added.length === 1 && cal.length === 1) calibrate?.(cal[0]);
   };
 
   // ---- Sentinel-2 ----
@@ -438,5 +549,10 @@ export function setupImages(map, { tileUrl, toast }) {
   });
 
   refresh();
-  return { refresh };
+  return {
+    refresh,
+    /** calibrate.js hands over how to open the calibration for an image. */
+    onCalibrate(f) { calibrate = f; },
+    all: () => [...list, ...waiting],
+  };
 }

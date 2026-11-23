@@ -35,8 +35,10 @@ fn store() -> Result<&'static Store, String> {
     STORE.get().ok_or_else(|| "The images folder isn't open yet.".to_string())
 }
 
-/// `/img/<id>/<z>/<x>/<y>.png` → the tile's PNG (None: nothing there).
-pub(crate) fn tile_png(rest: &str) -> Option<Vec<u8>> {
+/// `<id>/<z>/<x>/<y>.png` → the tile and its type (None: nothing there). `how`: "" the image
+/// as drawn (`/img/`), "draft" through the calibration being worked on (`/imgd/`), "px" the
+/// picture itself, flat, for the calibration's image pane (`/imgp/`).
+pub(crate) fn tile(how: &str, rest: &str) -> Option<(Vec<u8>, &'static str)> {
     let mut it = rest.trim_end_matches(".png").split('/');
     let id = it.next()?;
     let z: u8 = it.next()?.parse().ok()?;
@@ -45,7 +47,7 @@ pub(crate) fn tile_png(rest: &str) -> Option<Vec<u8>> {
     if it.next().is_some() || z > 24 || !id.chars().all(|c| c.is_ascii_hexdigit()) {
         return None;
     }
-    STORE.get()?.tile_png(id, z, x, y)
+    STORE.get()?.tile(id, how, z, x, y)
 }
 
 #[tauri::command]
@@ -53,7 +55,8 @@ pub(crate) fn images_list() -> Result<Vec<Entry>, String> {
     Ok(store()?.list())
 }
 
-/// Pick KAP charts or GeoTIFFs and copy them in. Each file that can't be shown is reported
+/// Pick charts and images (KAP, GeoTIFF, MBTiles, PNG or JPEG pictures with or without a
+/// world file) and copy them in. Each file that can't be shown is reported
 /// and the rest still added.
 #[tauri::command]
 pub(crate) async fn images_import(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
@@ -61,8 +64,11 @@ pub(crate) async fn images_import(app: tauri::AppHandle) -> Result<serde_json::V
     let picked = app
         .dialog()
         .file()
-        .set_title("Import KAP charts or GeoTIFF images")
-        .add_filter("KAP charts and GeoTIFFs", &["kap", "KAP", "tif", "tiff", "TIF", "TIFF"])
+        .set_title("Import charts and images")
+        .add_filter(
+            "Charts and images (KAP, GeoTIFF, MBTiles, PNG, JPEG)",
+            &["kap", "KAP", "tif", "tiff", "TIF", "TIFF", "mbtiles", "MBTILES", "png", "PNG", "jpg", "JPG", "jpeg", "JPEG"],
+        )
         .add_filter("All files", &["*"])
         .blocking_pick_files();
     let Some(list) = picked else { return Ok(serde_json::json!({ "added": [], "errors": [] })) };
@@ -80,6 +86,38 @@ pub(crate) async fn images_import(app: tauri::AppHandle) -> Result<serde_json::V
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// The coordinate system of a picture's world file, when nothing beside it said.
+#[tauri::command]
+pub(crate) fn images_set_crs(id: String, epsg: u32) -> Result<Entry, String> {
+    store()?.set_crs(&id, epsg).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn images_calib_info(id: String) -> Result<serde_json::Value, String> {
+    store()?.calib_info(&id).map_err(|e| e.to_string())
+}
+
+/// Fit the calibration being worked on (kept as the image's draft) and report on it.
+#[tauri::command]
+pub(crate) async fn images_calib_fit(id: String, calib: imagery::calib::Calib) -> Result<imagery::calib::FitReport, String> {
+    tauri::async_runtime::spawn_blocking(move || store()?.calib_fit(&id, &calib).map_err(|e| e.to_string())).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub(crate) fn images_calib_save(id: String) -> Result<Entry, String> {
+    store()?.calib_save(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn images_calib_discard(id: String) -> Result<(), String> {
+    store()?.calib_discard(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn images_calib_clear(id: String) -> Result<Entry, String> {
+    store()?.calib_clear(&id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

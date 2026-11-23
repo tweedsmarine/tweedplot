@@ -1,5 +1,7 @@
 // Icon rail and drawer: one panel open at a time, so the chart keeps the screen.
 
+import { placing } from "./modes.js";
+
 const KEY = "racenav.ui";
 
 export function setupRail(map) {

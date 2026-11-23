@@ -567,6 +567,10 @@ impl Raster for Kap {
     fn inside(&self, col: f64, row: f64) -> bool {
         self.border.is_empty() || point_in(&self.border, col, row)
     }
+    fn to_lonlat(&self, col: f64, row: f64) -> Option<(f64, f64)> {
+        let p = self.pixel_to_lonlat(col, row);
+        (p.0.is_finite() && p.1.is_finite()).then_some(p)
+    }
     fn bounds(&self) -> [f64; 4] {
         self.bounds
     }

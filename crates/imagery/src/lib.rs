@@ -5,14 +5,17 @@
 //!
 //! Images are not surveyed: they are only as good as their georeferencing.
 
+pub mod calib;
 pub mod geo;
 pub mod kap;
+pub mod mbtiles;
 pub mod render;
 pub mod s2;
 pub mod source;
 pub mod store;
 pub mod tiff;
 pub mod tiffw;
+pub mod world;
 
 use std::fmt;
 

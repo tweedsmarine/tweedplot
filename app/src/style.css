@@ -44,7 +44,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; color: var(--ink); backg
    panel is hidden) and the dock. The chart's box is narrowed, so MapLibre redraws to fit it. */
 body {
   --tb-w: 46px; --drawer-x: 0px; --side-lx: 0px; --side-rx: 0px; --strip-h: 0px;
-  --chart-l: calc(var(--rail-w) + var(--drawer-x) + var(--side-lx) + var(--tb-w));
+  --calib-x: 0px;
+  --chart-l: calc(var(--rail-w) + var(--drawer-x) + var(--side-lx) + var(--calib-x) + var(--tb-w));
   --chart-r: calc(var(--side-rx) + var(--dock-w, 0px));
   --chart-b: calc(var(--dock-h, 0px) + var(--strip-h));
 }
@@ -2395,3 +2396,45 @@ button.link-btn { flex: none; display: inline-flex; align-items: center; min-hei
 #drawer .pane[data-pane="library"] .lib-tabs { display: flex; gap: 2px; }
 #drawer .pane[data-pane="library"] .lib-tabs button { padding: 2px 9px; white-space: nowrap; }
 #drawer .pane[data-pane="library"] .tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* ---------- calibrating an image (calibrate.js): the picture beside the chart ----------
+   The chart area is split: the picture on the left (its own small map), the toolbar, then the
+   chart. Nothing but the image being placed is laid over the chart. */
+html.calibrating body { --calib-x: calc((100vw - var(--rail-w) - var(--drawer-x) - var(--side-lx) - var(--tb-w) - var(--chart-r)) * 0.5); }
+#calib-img { display: none; position: absolute; top: 0; bottom: var(--chart-b); left: calc(var(--rail-w) + var(--drawer-x) + var(--side-lx)); width: var(--calib-x);
+  z-index: 3; background: #1b2228; border-right: 1px solid #2c3d48; }
+html.calibrating #calib-img { display: block; }
+html.calibrating #map .maplibregl-canvas, #calib-img .maplibregl-canvas { cursor: crosshair; }
+html.calibrating #map.calib-nudging .maplibregl-canvas { cursor: move; }
+html[data-palette="iho-night"] body > #calib-img { filter: brightness(calc(var(--pal-dim, 1) * 0.6)); }
+html[data-palette="dusk"][data-iho] #calib-img .maplibregl-canvas-container { filter: hue-rotate(180deg) invert(1); }
+.calib-pt { width: 22px; height: 22px; border-radius: 50%; box-sizing: border-box; display: grid; place-items: center; cursor: pointer;
+  font: 700 12px/1 "Atkinson Hyperlegible Next", system-ui, sans-serif; color: #fff; border: 2px solid #fff; box-shadow: 0 0 0 1px #000, 0 1px 4px rgba(0,0,0,.6); }
+.calib-pt.img { background: #c45500; }
+.calib-pt.chart { background: #b000b0; }
+.calib-pt.half { border-style: dashed; }
+.calib-pt.off { background: #6c7a83; opacity: .8; }
+.calib-pt.active { width: 28px; height: 28px; font-size: 14px; box-shadow: 0 0 0 2px #000, 0 0 0 5px var(--brand-amber); }
+#calib-pane .calib-name { font-weight: 700; margin: 2px 0 4px; overflow-wrap: anywhere; }
+#calib-pane .calib-help { margin: 2px 0 6px; }
+#calib-pane .calib-help.warn { color: #f0b429; }
+.calib-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; margin: 2px 0 4px; }
+.calib-table th { font-size: 11px; font-weight: 600; color: var(--quiet); text-align: left; padding: 2px 4px; border-bottom: 1px solid var(--line); }
+.calib-table td { padding: 1px 4px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.calib-table td.ll { max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+.calib-table tr { cursor: pointer; }
+.calib-table tr.active td { background: #21405a; }
+.calib-table tr.off td { color: var(--quiet); text-decoration: line-through; }
+.calib-table tr.off td:nth-last-child(-n+2) { text-decoration: none; }
+.calib-table td.far { color: #ff8a80; font-weight: 700; }
+.calib-table .need { color: #f0b429; font-size: 11px; }
+.calib-table button.ly-gear { min-height: 0; padding: 0 3px; }
+.calib-op { width: 90px; flex: none; }
+.calib-actions button { flex: 1; }
+#calib-pane .wx-row select { max-width: 170px; }
+.img-wait { margin: 4px 0; padding: 2px 6px; border-left: 2px solid var(--brand-amber); }
+.img-wait-head { margin: 2px 0; }
+.img-wait-row button:not(.ly-gear) { flex: none; width: auto; }
+button.link-btn[hidden] { display: none; }
+.img-row .img-cal { font-size: 13px; line-height: 1; }
+.img-wait-row .img-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

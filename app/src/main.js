@@ -20,6 +20,7 @@ import { setupBrand } from "./brand.js";
 import { setupUpdates } from "./updates.js";
 import { setupWebMap } from "./webmap.js";
 import { setupImages } from "./images.js";
+import { setupCalibrate } from "./calibrate.js";
 import { setupLayerVisibility } from "./layervis.js";
 import { setupChartFeatures, featureImage, loadS52Palette, s52PxPerMm } from "./chartfeatures.js";
 import { setupTides, tideImage } from "./tides.js";
@@ -651,7 +652,8 @@ map.on("load", () => {
   // never installs while a live position is arriving (installing closes the app)
   setupUpdates();
   setupWebMap(map);
-  setupImages(map, { tileUrl: TILE_URL, toast });
+  const images = setupImages(map, { tileUrl: TILE_URL, toast });
+  setupCalibrate(map, { images, ui, tileUrl: TILE_URL, toast });
   layerVis = setupLayerVisibility(map, { ready: () => chartMapLoaded && chartStoreReady });
   alarms = setupAlarms(map, {
     getBoat: () => ({ pos: lastBoat, v: vessel, live: live && signalKActive(), plottingLive: live, positionLost: positionWatch.lost(),

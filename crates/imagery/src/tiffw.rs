@@ -42,6 +42,27 @@ pub fn write_geotiff(path: &Path, w: usize, h: usize, rgba: &[u8], geo: &GeoRef,
 
 /// The GeoTIFF's bytes.
 pub fn encode(w: usize, h: usize, rgba: &[u8], geo: &GeoRef, software: &str) -> Result<Vec<u8>> {
+    encode_with(w, h, rgba, Some(geo), software)
+}
+
+/// A plain tiled TIFF with overviews and no georeferencing (an image waiting to be calibrated,
+/// or placed by its world file): fast to draw at any zoom, however large the original.
+pub fn write_tiff(path: &Path, w: usize, h: usize, rgba: &[u8], software: &str) -> Result<()> {
+    if rgba.len() != w * h * 4 || w == 0 || h == 0 {
+        return err("image size does not match its pixels");
+    }
+    let bytes = encode_with(w, h, rgba, None, software)?;
+    let tmp = path.with_extension("tif.part");
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(&bytes)?;
+        f.sync_all()?;
+    }
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+fn encode_with(w: usize, h: usize, rgba: &[u8], geo: Option<&GeoRef>, software: &str) -> Result<Vec<u8>> {
     let mut levels: Vec<(usize, usize, Vec<u8>)> = vec![(w, h, rgba.to_vec())];
     while {
         let (lw, lh, _) = levels.last().expect("a level");
@@ -105,7 +126,7 @@ pub fn encode(w: usize, h: usize, rgba: &[u8], geo: &GeoRef, software: &str) -> 
         e.long(324, &offsets);
         e.long(325, &counts);
         e.short(338, &[2]);
-        if li == 0 {
+        if let (0, Some(geo)) = (li, geo) {
             let a = geo.aff;
             e.double(33550, &[a.b, -a.f, 0.0]);
             e.double(33922, &[0.0, 0.0, 0.0, a.a, a.d, 0.0]);

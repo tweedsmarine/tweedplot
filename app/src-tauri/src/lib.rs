@@ -1869,14 +1869,19 @@ fn chart_info() -> serde_json::Value {
 }
 
 fn tile_response(path: &str) -> Response<Vec<u8>> {
-    // images (KAP charts, GeoTIFFs, satellite images): /img/<id>/<z>/<x>/<y>.png
-    if let Some(rest) = path.trim_start_matches('/').strip_prefix("img/") {
-        return Response::builder()
-            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-            .header(header::CACHE_CONTROL, "no-store")
-            .header(header::CONTENT_TYPE, "image/png")
-            .body(imagery_cmd::tile_png(rest).unwrap_or_else(|| clear_png().to_vec()))
-            .expect("valid response");
+    // images (KAP charts, GeoTIFFs, MBTiles, calibrated pictures, satellite images):
+    // /img/<id>/<z>/<x>/<y>.png as drawn, /imgd/ through the calibration being worked on,
+    // /imgp/ the picture itself flat (the calibration's image pane)
+    for (prefix, how) in [("img/", ""), ("imgd/", "draft"), ("imgp/", "px")] {
+        if let Some(rest) = path.trim_start_matches('/').strip_prefix(prefix) {
+            let (body, mime) = imagery_cmd::tile(how, rest).unwrap_or_else(|| (clear_png().to_vec(), "image/png"));
+            return Response::builder()
+                .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                .header(header::CACHE_CONTROL, "no-store")
+                .header(header::CONTENT_TYPE, mime)
+                .body(body)
+                .expect("valid response");
+        }
     }
     // own soundings: /pbathy/<z>/<x>/<y>.png
     if let Some(rest) = path.trim_start_matches('/').strip_prefix("pbathy/") {
@@ -2127,6 +2132,12 @@ pub fn run() {
             imagery_cmd::images_list,
             imagery_cmd::images_import,
             imagery_cmd::images_update,
+            imagery_cmd::images_set_crs,
+            imagery_cmd::images_calib_info,
+            imagery_cmd::images_calib_fit,
+            imagery_cmd::images_calib_save,
+            imagery_cmd::images_calib_discard,
+            imagery_cmd::images_calib_clear,
             imagery_cmd::images_reorder,
             imagery_cmd::images_order_by_scale,
             imagery_cmd::images_remove,
