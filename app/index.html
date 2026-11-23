@@ -91,6 +91,7 @@
           <button id="gf-refresh" type="button" title="Look for new GRIB files">↻</button>
           <button id="gf-tidy" type="button" title="Delete GRIB files whose data ended more than the number of days chosen ago (loaded ones are unloaded first)">Tidy up…</button>
           <select id="gf-days" title="Tidy up: older than"><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option><option value="30">30 days</option></select>
+          <label title="Tidy up by itself on start and every six hours: deletes the GRIB files whose data ended more than the days chosen ago. Loaded files and qtVlm's folder are never touched; the activity log lists what went"><input id="gf-auto" type="checkbox" /> Automatically</label>
         </div>
         <div class="wx-row"><button id="wx-open-controls" type="button">View weather controls</button></div>
         </div></div>
@@ -138,7 +139,7 @@
               <option value="coast">Coastline only (wind over land shows)</option>
             </select></div>
           <div class="wx-row"><label class="grow" for="wx-opacity">Shading strength</label><input id="wx-opacity" type="range" min="0.1" max="0.9" step="0.05" /><span id="wx-opacity-v" class="val"></span></div>
-          <div class="wx-row"><button id="wx-verify" title="Score earlier runs against a later run's hour 0 (opens the Verify dock)">Verify runs…</button></div>
+          <div class="wx-row"><button id="wx-verify" title="Score earlier runs against a later run's hour 0 (opens the Verify dock)">Verify runs…</button><button id="wx-sst-verify" title="Score each sea temperature product against the boat's own water temperature along its tracks">Sea temp v boat…</button></div>
         </details>
       </section>
 
@@ -559,6 +560,7 @@
         <div class="wx-row"><label class="grow"><input id="set-cog-line" type="checkbox" /> COG line</label><select id="set-cog-len" title="Length: time at SOG, or to the edge of the chart"></select></div>
         <div class="wx-note">Heading line (solid) uses boat speed through the water, else SOG; COG line (dashed orange) uses SOG. With the IHO symbols the COG line is the S-52 vector: time marks every minute (longer every six) and a double arrowhead.</div>
         <div class="wx-row"><label class="grow" title="A line through the boat at right angles to the heading, to the edge of the chart: what is abeam"><input id="set-beam-line" type="checkbox" /> Beam bearing line</label></div>
+        <div class="wx-row"><label class="grow" title="The current the boat is in: COG and SOG against heading and boat speed through the water, over the last minute. Same length in time as the COG line; triple arrowhead. Needs a heading and a log"><input id="set-setdrift" type="checkbox" /> Set and drift vector</label></div>
         <div class="wx-row" title="Range rings round the boat. Spacing in nautical miles: 0.25, 1/4, 1 1/2 … (for rings round a mark or waypoint, right-click it)"><label class="grow nowrap"><input id="set-own-rings" type="checkbox" /> Range rings</label>
           <select id="set-own-ring-n" aria-label="Number of rings"></select> every <input id="set-own-ring-step" list="own-ring-steps" style="width:4.5em" aria-label="Ring spacing (NM)" /> NM
           <datalist id="own-ring-steps"><option value="0.1"><option value="1/8"><option value="1/4"><option value="1/2"><option value="3/4"><option value="1"><option value="2"><option value="5"></datalist></div>

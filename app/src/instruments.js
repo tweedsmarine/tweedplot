@@ -8,6 +8,7 @@ import { own } from "./role.js";
 import { setupTiles } from "./insttiles.js";
 import { CHANNELS as HIST, sample as histSample, renderHistoryTile, openHistoryCard, recorder as histRec } from "./history.js";
 import { depthFresh, depthHistoryV } from "./depth-watch.js";
+import { setDrift } from "./setdrift.js";
 
 const KEY = "racenav.instruments";
 const STALE_S = 10;
@@ -34,6 +35,9 @@ export const ITEMS = {
     state: (d, c) => (d < c.safetyDepth ? "alarm" : d < c.safetyDepth + 2 ? "warn" : ""),
   },
   POS: { label: "Position", unit: "", group: "Navigation", live: true, wide: true, get: (c) => (c.v.lat != null && c.v.lon != null ? [c.v.lat, c.v.lon] : null), fmt: (p) => `${ddm(p[0], "N", "S")}<br>${ddm(p[1], "E", "W")}` },
+  // the current the boat is in: ground vector (COG, SOG) minus water vector (heading, BSP), over the last minute (setdrift.js)
+  SET: { label: "Set", unit: "°T", group: "Navigation", live: true, get: (c) => c.setdrift?.set ?? null, fmt: deg3 },
+  DRIFT: { label: "Drift", unit: "kn", group: "Navigation", live: true, get: (c) => c.setdrift?.drift ?? null, fmt: f1 },
   LOG: { label: "Log", unit: "NM", group: "Navigation", live: true, get: (c) => c.v.log, fmt: (x) => x.toFixed(0) },
   TRIP: { label: "Trip", unit: "NM", group: "Navigation", live: true, get: (c) => c.v.trip, fmt: f1 },
   // local and UTC time together (the data panel's own-ship block)
@@ -638,8 +642,11 @@ export function setupInstruments() {
   setInterval(() => {
     ctx.age = (Date.now() - (ctx.dataAt ?? 0)) / 1000;
     sampleDepth(ctx);
+    const fresh = ctx.age <= STALE_S && (ctx.dataAt ?? 0) > 0;
+    if (fresh) setDrift.add(Date.now(), ctx.v);
+    ctx.setdrift = fresh ? setDrift.value(Date.now()) : null;
     // the history records live data only: not a replay, not planning, not stale
-    const historyV = depthHistoryV(ctx.v, ctx.depthAge ?? (() => null));
+    const historyV = { ...depthHistoryV(ctx.v, ctx.depthAge ?? (() => null)), set: ctx.setdrift?.set, drift: ctx.setdrift?.drift };
     histSample(historyV, ctx.age <= STALE_S && !ctx.replay && (ctx.dataAt ?? 0) > 0);
     render();
   }, 250);

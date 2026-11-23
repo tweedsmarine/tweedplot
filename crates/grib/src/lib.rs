@@ -12,6 +12,7 @@ pub mod compare;
 mod decode;
 mod grib1;
 pub mod netcdf;
+pub mod sstverify;
 pub mod stack;
 #[doc(hidden)]
 pub use netcdf::testdata::sample as netcdf_sample_for_tests;

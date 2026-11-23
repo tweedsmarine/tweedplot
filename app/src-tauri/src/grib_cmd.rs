@@ -736,3 +736,178 @@ mod tests {
         assert_eq!(shading_range(&[1.03, 1.06], 10.0), Some((1.0, 1.1)));
     }
 }
+
+// ---------- sea temperature products against the boat (P1.4) ----------
+
+/// The boat's sea temperature readings from the library's tracks (`track_ids`, or every
+/// track that logged a temperature), only inside `bbox` and after `since` when given,
+/// thinned to one every 10 minutes or 2 km.
+fn boat_sst_obs(
+    track_ids: &[String],
+    bbox: Option<[f64; 4]>,
+    since: Option<i64>,
+    windows: &[(i64, i64)],
+) -> Result<(Vec<grib::sstverify::Obs>, usize), String> {
+    let lib = crate::library_cmd::lib()?;
+    let inside = |lat: f64, lon: f64| {
+        bbox.is_none_or(|b| {
+            let lo = grib::sstverify::lon_in(b, lon);
+            lat >= b[1] && lat <= b[3] && lo >= b[0] && lo <= b[2]
+        })
+    };
+    let ids: Vec<String> = if track_ids.is_empty() {
+        lib.tracks()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .filter(|t| t.has_temp)
+            .filter(|t| since.is_none_or(|s| t.stats.end.is_none_or(|e| e >= s)))
+            // only tracks some sea temperature file could match (years of imported tracks are skipped quickly)
+            .filter(|t| match (t.stats.start, t.stats.end) {
+                (Some(a), Some(b)) => windows.iter().any(|w| a <= w.1 && b >= w.0),
+                _ => false,
+            })
+            .filter(|t| match (bbox, t.stats.bbox) {
+                (Some(b), Some(tb)) => {
+                    let w = grib::sstverify::lon_in(b, tb[0]);
+                    tb[1] <= b[3] && tb[3] >= b[1] && (w <= b[2] || grib::sstverify::lon_in(b, tb[2]) >= b[0] || tb[2] - tb[0] >= 360.0)
+                }
+                _ => true,
+            })
+            .map(|t| t.id)
+            .collect()
+    } else {
+        track_ids.to_vec()
+    };
+    let mut obs = Vec::new();
+    let mut tracks = 0;
+    for id in &ids {
+        let Ok(t) = lib.track(id) else { continue };
+        let before = obs.len();
+        for p in t.segments.iter().flatten() {
+            if let (Some(tt), Some(temp)) = (p.t, p.temp) {
+                if since.is_some_and(|s| tt < s) || !inside(p.lat, p.lon) {
+                    continue;
+                }
+                obs.push(grib::sstverify::Obs { t: tt, lat: p.lat, lon: p.lon, temp });
+            }
+        }
+        if obs.len() > before {
+            tracks += 1;
+        }
+    }
+    Ok((grib::sstverify::thin(obs, 600, 2000.0), tracks))
+}
+
+/// The times (± `max_age_s`) the sea temperature files cover: the loaded ones, and with
+/// `from_disk` those in the weather folders (from their header scans).
+fn sst_windows(files: &[(String, Arc<grib::GribFile>)], from_disk: bool, max_age_s: i64) -> Vec<(i64, i64)> {
+    let mut w: Vec<(i64, i64)> = files
+        .iter()
+        .filter_map(|(_, f)| {
+            let ts = f.times(grib::Param::SeaTemp);
+            Some((*ts.first()? - max_age_s, *ts.last()? + max_age_s))
+        })
+        .collect();
+    if from_disk {
+        for f in grib_files_blocking() {
+            for r in f["info"]["runs"].as_array().into_iter().flatten() {
+                let sea = r["contents"].as_array().is_some_and(|c| c.iter().any(|x| x.as_str() == Some("sea temperature")));
+                if let (true, Some(a), Some(b)) = (sea, r["first"].as_i64(), r["last"].as_i64()) {
+                    w.push((a - max_age_s, b + max_age_s));
+                }
+            }
+        }
+    }
+    w
+}
+
+/// Sea temperature files in the weather folders that are not loaded but cover the readings'
+/// times (± `max_age_s`) and area, newest first, at most `limit`.
+fn disk_sst_files(obs: &[grib::sstverify::Obs], max_age_s: i64, limit: usize) -> Vec<String> {
+    let (Some(t0), Some(t1)) = (obs.iter().map(|o| o.t).min(), obs.iter().map(|o| o.t).max()) else { return Vec::new() };
+    let lat = (obs.iter().map(|o| o.lat).fold(f64::INFINITY, f64::min), obs.iter().map(|o| o.lat).fold(f64::NEG_INFINITY, f64::max));
+    let loaded = GRIBS.lock().unwrap().keys().cloned().collect::<std::collections::BTreeSet<String>>();
+    let mut out = Vec::new();
+    for f in grib_files_blocking() {
+        let Some(path) = f["path"].as_str() else { continue };
+        if loaded.contains(path) {
+            continue;
+        }
+        let Some(info) = f.get("info").filter(|i| !i.is_null()) else { continue };
+        let runs = info["runs"].as_array().cloned().unwrap_or_default();
+        let hit = runs.iter().any(|r| {
+            let sea = r["contents"].as_array().is_some_and(|c| c.iter().any(|x| x.as_str() == Some("sea temperature")));
+            let (first, last) = (r["first"].as_i64().unwrap_or(i64::MAX), r["last"].as_i64().unwrap_or(i64::MIN));
+            let b: Vec<f64> = r["bbox"].as_array().map(|a| a.iter().filter_map(|x| x.as_f64()).collect()).unwrap_or_default();
+            let in_time = first - max_age_s <= t1 && last + max_age_s >= t0;
+            let in_lat = b.len() == 4 && b[1] <= lat.1 && b[3] >= lat.0;
+            let in_lon = b.len() == 4
+                && obs.iter().any(|o| {
+                    let lo = grib::sstverify::lon_in([b[0], b[1], b[2], b[3]], o.lon);
+                    lo >= b[0] && lo <= b[2]
+                });
+            sea && in_time && in_lat && in_lon
+        });
+        if hit {
+            out.push(path.to_string());
+        }
+        if out.len() >= limit {
+            break;
+        }
+    }
+    out
+}
+
+/// Score every sea temperature product against the boat's own water temperature along its
+/// tracks: the loaded files, plus (with `from_disk`) the sea temperature files in the weather
+/// folders that cover the tracks. `max_age_h`: the oldest field matched to a reading.
+#[tauri::command]
+pub(crate) async fn sst_verify(
+    track_ids: Vec<String>,
+    bbox: Option<[f64; 4]>,
+    since: Option<i64>,
+    from_disk: bool,
+    max_age_h: Option<f64>,
+) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let max_age_s = (max_age_h.unwrap_or(36.0).clamp(1.0, 240.0) * 3600.0) as i64;
+        let mut files: Vec<(String, Arc<grib::GribFile>)> = loaded(&[]);
+        files.retain(|(_, f)| !f.times(grib::Param::SeaTemp).is_empty());
+        let windows = sst_windows(&files, from_disk, max_age_s);
+        let (obs, tracks) = boat_sst_obs(&track_ids, bbox, since, &windows)?;
+        let mut skipped = 0;
+        if from_disk && !obs.is_empty() {
+            for p in disk_sst_files(&obs, max_age_s, 120) {
+                match grib::GribFile::open(&p) {
+                    Ok(f) => files.push((p, Arc::new(f))),
+                    Err(_) => skipped += 1,
+                }
+            }
+        }
+        let refs: Vec<&grib::GribFile> = files.iter().map(|(_, f)| f.as_ref()).collect();
+        let scores = grib::sstverify::score(&refs, &obs, max_age_s);
+        let r2 = |x: f64| (x * 100.0).round() / 100.0;
+        let products: Vec<serde_json::Value> = scores
+            .iter()
+            .map(|s| {
+                // at most 1,500 pairs for the plot, evenly spaced
+                let step = s.pairs.len().div_ceil(1500).max(1);
+                let pairs: Vec<serde_json::Value> =
+                    s.pairs.iter().step_by(step).map(|p| serde_json::json!([p.t, r2(p.boat), r2(p.product), p.lat, p.lon])).collect();
+                serde_json::json!({
+                    "product": s.product, "n": s.n, "covered": s.covered, "coverage": r2(s.coverage()),
+                    "bias": r2(s.bias), "mae": r2(s.mae), "rms": r2(s.rms), "sd": r2(s.sd), "age_h": (s.age_h * 10.0).round() / 10.0,
+                    "files": s.files.iter().map(|&i| files[i].0.clone()).collect::<Vec<_>>(),
+                    "pairs": pairs,
+                })
+            })
+            .collect();
+        Ok(serde_json::json!({
+            "readings": obs.len(), "tracks": tracks, "files": files.len(), "skipped": skipped,
+            "first": obs.first().map(|o| o.t), "last": obs.last().map(|o| o.t),
+            "products": products,
+        }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

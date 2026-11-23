@@ -28,7 +28,7 @@ cargo --version
 
 ## 3. Node.js (for the map front end and Tauri)
 
-1. Install **Node.js 24 LTS** from https://nodejs.org
+1. Install **Node.js 26 LTS** from https://nodejs.org (24 still works)
 2. Check it in a new PowerShell window: `node --version` and `npm --version`
 
 WebView2, which Tauri uses to show the app window, comes with Windows 10 and 11, so there's nothing to install.

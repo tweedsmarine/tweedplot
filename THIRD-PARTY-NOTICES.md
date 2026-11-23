@@ -24,7 +24,7 @@ TweedPlot includes or uses the following. Each keeps its own licence and copyrig
 | OpenSeaMap seamarks (optional, off by default, fetched at run time, not bundled) | OpenSeaMap contributors (https://www.openseamap.org); not for navigation | ODbL 1.0 (data) |
 | GSHHG coastline 2.3.7 | Wessel and Smith, University of Hawaiʻi and NOAA (https://www.soest.hawaii.edu/pwessel/gshhg) | LGPL 3 |
 | ETOPO 2022 | NOAA NCEI, via NOAA CoastWatch ERDDAP | Free to use and redistribute |
-| GFS and GFS-Wave | NOAA NCEP (NOMADS) | US Government work, free to use |
+| GFS, GFS-Wave and AIGFS | NOAA NCEP (NOMADS) | US Government work, free to use |
 | ECMWF IFS and AIFS open data | ECMWF | CC BY 4.0, © ECMWF |
 | MUR SST | NASA JPL, via NOAA CoastWatch | Free to use and share; acknowledge NASA JPL / PO.DAAC |
 | ACSPO L3S-LEO and Geo-Polar Blended SST | NOAA NESDIS (STAR, OSPO), GHRSST, via NOAA CoastWatch | US Government data, free and open; acknowledge NOAA CoastWatch |

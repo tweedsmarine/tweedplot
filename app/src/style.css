@@ -2488,3 +2488,9 @@ button.link-btn[hidden] { display: none; }
 #alarm-banner .alarm.warn.acked { animation: none; }
 @keyframes warn-flash { 50% { background: #f5b83d; } }
 .dot { width: 11px; height: 11px; }
+/* Sea temp v boat (dock) */
+svg.sv-plot { display: block; margin: 6px 0; color: inherit; }
+svg.sv-plot .grid { stroke: rgba(127, 127, 127, 0.25); stroke-width: 1; }
+svg.sv-plot text { font-size: 11px; fill: currentColor; }
+.sv-key i { display: inline-block; width: 10px; height: 10px; border: 1px solid #444; border-radius: 50%; vertical-align: -1px; margin: 0 2px; }
+.ask .ask-note { white-space: pre-line; }

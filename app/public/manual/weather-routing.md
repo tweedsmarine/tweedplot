@@ -49,7 +49,7 @@ A weather model divides the atmosphere into a 3-D grid, starts from the best est
 | AIFS | ECMWF | 0.25° | 4 | 15 days | Download |
 | ICON | DWD (Germany) | 0.125° through Saildocs | 4 | 7.5 days | Saildocs |
 | UKMO global | Met Office (UK) | About 10 km | 4 | 7 days (00Z, 12Z) | Planned |
-| AIGFS | NOAA | 0.25° | 4 |  | Planned |
+| AIGFS | NOAA | 0.25° (6-hourly) | 4 | 16 days | Download (wind, pressure, air temperature) |
 
 AIFS and AIGFS are machine-learning models: trained on decades of past weather, they forecast the large-scale pattern well and fast, but their fine detail is smoother than a physics model's. Regional models (a few km grid) resolve sea breezes and terrain far better, but cover small areas and short ranges.
 

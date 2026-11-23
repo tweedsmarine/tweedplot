@@ -4,22 +4,23 @@
   "license": "GPL-3.0-or-later",
   "version": "1.0.0-beta.4",
   "type": "module",
+  "engines": { "node": ">=24" },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/gridmath.test.js src/rules.test.js src/weather.test.js src/species.test.js src/keys.test.js src/nightcursor.test.js src/ais-symbols.test.js src/ais-visibility.test.js src/ais-collision.test.js src/wmm.test.js src/navmath.test.js src/marinermath.test.js src/histcore.test.js src/sidepresets.test.js src/routewx-core.test.js src/views.test.js src/planning-idle.test.js src/position-watch.test.js src/depth-watch.test.js src/nmeamonitor.test.js src/varrose.test.js src/windarrows.test.js src/surveydepths.test.js src/updates-core.test.js src/flow.test.js src/depthstack.test.js",
+    "test": "node --test src/gridmath.test.js src/rules.test.js src/weather.test.js src/species.test.js src/keys.test.js src/nightcursor.test.js src/ais-symbols.test.js src/ais-visibility.test.js src/ais-collision.test.js src/wmm.test.js src/navmath.test.js src/marinermath.test.js src/histcore.test.js src/sidepresets.test.js src/routewx-core.test.js src/views.test.js src/planning-idle.test.js src/position-watch.test.js src/depth-watch.test.js src/nmeamonitor.test.js src/varrose.test.js src/windarrows.test.js src/surveydepths.test.js src/updates-core.test.js src/flow.test.js src/depthstack.test.js src/setdrift.test.js src/ais-lost.test.js src/routewx-axis.test.js",
     "tauri": "tauri"
   },
   "dependencies": {
     "@fontsource/atkinson-hyperlegible-next": "^5.3.0",
-    "@tauri-apps/api": "^2.12.0",
+    "@tauri-apps/api": "^2.12.5",
     "@tauri-apps/plugin-updater": "^2.14.1",
-    "maplibre-gl": "^6.14.0",
+    "maplibre-gl": "^6.19.0",
     "marked": "^14.1.4"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.12.0",
-    "vite": "^8.3.0"
+    "@tauri-apps/cli": "^2.12.6",
+    "vite": "^8.3.8"
   }
 }

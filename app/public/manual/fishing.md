@@ -49,6 +49,7 @@ Many fish and the bait they eat gather where water masses meet. A **temperature 
 - Narrow the filter around the temperature you are looking for (a few degrees wide, with the target in the middle) so the colours spread out and the break stands out. A wide filter makes everything look similar.
 - A break that *moves* is as interesting as one that sits still. Step the slider through the days: breaks pushed against a coast or against an eddy often hold fish longer.
 - Compare MUR and Himawari. If they agree, trust the pattern. If Himawari is warmer in the afternoon on a calm day, that is the sun on the skin, not the water.
+- **Which product to trust where you fish:** Environment › Explore › Weather layers and filters › Compare GRIBs › **Sea temp v boat…** scores every sea temperature product (MUR, ACSPO, Geo-Polar, HYCOM, Copernicus) against the water temperature your boat logged along its tracks. See Reference › Sea temp v boat.
 
 ### Cold water at depth
 

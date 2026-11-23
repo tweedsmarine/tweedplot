@@ -192,7 +192,7 @@ export function setupGribDownload(map, { weather, course }) {
     try {
       const r = await invoke("gribdl_estimate", { req: request() });
       const size = (b) => { const mb = b / 1e6; return mb < 1 ? `${Math.max(1, Math.round(b / 1000))} kB` : `${mb.toFixed(mb < 10 ? 1 : 0)} MB`; };
-      const ecmwf = request().model.startsWith("ecmwf");
+      const ecmwf = request().model.startsWith("ecmwf") || request().model === "aigfs0p25";
       const mur = DAILY.includes(request().model);
       const hycom = request().model === "hycom_espc";
       const him = request().model === "himawari";
@@ -216,13 +216,14 @@ export function setupGribDownload(map, { weather, course }) {
         : mur
         ? `About ${size(r.bytes)} · the latest ${Number($("dl-days").value)} daily analys${Number($("dl-days").value) > 1 ? "es" : "is"}${res}`
         : ecmwf
-        ? `File about ${size(r.bytes)}; downloads about ${size(r.download)} (ECMWF publishes whole-globe fields, cut to the area here) · ${r.steps} forecast times to +${r.last} h` +
-          (r.last > 144 && !request().model.includes("aifs") ? " · only the 00Z and 12Z runs go past 144 h" : "")
+        ? `File about ${size(r.bytes)}; downloads about ${size(r.download)} (${request().model === "aigfs0p25" ? "NOAA" : "ECMWF"} publishes whole-globe fields, cut to the area here) · ${r.steps} forecast times to +${r.last} h` +
+          (r.last > 144 && request().model.startsWith("ecmwf") && !request().model.includes("aifs") ? " · only the 00Z and 12Z runs go past 144 h" : "")
         : `About ${size(r.bytes)} · ${r.steps} forecast times to +${r.last} h`;
     } catch (e) { $("dl-size").textContent = String(e); }
   }
   const SOURCE_NOTE = {
     gfs: "Source: NOAA National Centers for Environmental Prediction (NOMADS: GFS, GFS-Wave; US Government data), cut to the area on the server. The newest complete run is used.",
+    aigfs0p25: "Source: NOAA AIGFS (the AI version of GFS, run by NCEP; US Government data), from NOMADS: 0.25°, 6-hourly to 16 days, four runs a day. Wind, pressure and air temperature only (no gusts or waves). NOAA publishes whole-globe fields, so each is fetched and cut to the area here. An AI model: compare it with GFS and ECMWF (Compare GRIBs, Verify runs) before trusting it in your area. The newest complete run is used.",
     ecmwf: "Source: ECMWF open data (CC BY 4.0, © ECMWF), from data.ecmwf.int or its AWS mirror. The free 0.1° IFS (~9 km) data arrives about two hours after the 0.25° products; ECMWF does not document the surface currents as tidal-stream predictions. The newest complete run is used.",
     mur_sst: "Source: NASA JPL MUR SST (free to use and share; please acknowledge NASA JPL / PO.DAAC) via NOAA CoastWatch ERDDAP: a daily 1 km analysis from all the satellites, without cloud gaps, usually a day or two old. Shown until four days after its date.",
     acspo_sst: "Source: NOAA ACSPO L3S-LEO (NOAA STAR / CoastWatch, GHRSST: free and open): each day's clear-sky sea temperature from all the polar-orbiting satellites (VIIRS on S-NPP, NOAA-20 and NOAA-21; AVHRR on MetOp), gridded at 0.02° (about 2 km), best-quality pixels only. Real observations, so fronts are sharp, but there are gaps where it was cloudy all day. Usually a day old. Shown until four days after its date. An area across 180° is fine.",
@@ -235,7 +236,7 @@ export function setupGribDownload(map, { weather, course }) {
     cmems_chl: "Source: E.U. Copernicus Marine Service Information (GlobColour, ACRI-ST: ocean colour from all the satellites, gap-filled; free and open): daily chlorophyll-a at 4 km, a day or two old. Shown until six days after its date. An area across 180° is fine.",
     hycom_espc: "Source: HYCOM ESPC global ocean model (US Navy / HYCOM Consortium, 1/12°, about 9 km) via hycom.org: from the latest analysis out to 8 days. A demonstration service with no guarantee it is up. An area across 180° is fine (fetched as two requests and joined).",
   };
-  const showSource = () => status(SOURCE_NOTE[OCEAN.includes(prefs.model) ? prefs.model : String(prefs.model).startsWith("ecmwf") ? "ecmwf" : "gfs"]);
+  const showSource = () => status(SOURCE_NOTE[OCEAN.includes(prefs.model) || prefs.model === "aigfs0p25" ? prefs.model : String(prefs.model).startsWith("ecmwf") ? "ecmwf" : "gfs"]);
   $("dl-model").onchange = (e) => { prefs.model = e.target.value; save(); renderParams(); estimate(); showSource(); };
   $("dl-days").onchange = (e) => { if (prefs.model === "himawari") prefs.himHours = Number(e.target.value); else prefs.days = Number(e.target.value); save(); estimate(); };
   $("dl-every").onchange = (e) => { if (prefs.model === "himawari") prefs.himEvery = Number(e.target.value); else prefs.every = Number(e.target.value); save(); estimate(); };
@@ -368,13 +369,41 @@ export function setupGribDownload(map, { weather, course }) {
     } catch (e) { fileStatus(`Could not add the file: ${e}`); }
     renderTable();
   };
+  // old = its data ran out more than `days` ago (a forecast's last step, an analysis's last day), not its run
+  // time: a satellite analysis is a day or two old when it is published but still current
+  const ends = (f) => Math.max(...(f.info?.runs ?? []).map((r) => r.last ?? r.ref_time ?? -Infinity), -Infinity);
+  const endOf = (f) => (Number.isFinite(ends(f)) ? ends(f) : f.mtime ?? Infinity);
+  // the days chosen and the automatic tidy-up are remembered
+  if (prefs.tidyDays) $("gf-days").value = String(prefs.tidyDays);
+  $("gf-days").onchange = () => { prefs.tidyDays = Number($("gf-days").value) || 7; save(); };
+  const autoBox = $("gf-auto");
+  if (autoBox) {
+    autoBox.checked = !!prefs.tidyAuto;
+    autoBox.onchange = () => { prefs.tidyAuto = autoBox.checked; save(); if (prefs.tidyAuto) autoTidy(); };
+  }
+  /** Automatic tidy-up (B12): on start and every six hours, delete the GRIB files whose data ended more than the
+   *  chosen days ago. Never a loaded file, never qtVlm's folder; what went is noted in the activity log. */
+  async function autoTidy() {
+    if (!prefs.tidyAuto) return;
+    const days = Number(prefs.tidyDays) || 7, cut = Date.now() / 1000 - days * 86400;
+    const all = (await invoke("grib_files").catch(() => [])) ?? [];
+    const isLoaded = new Set(weather.sources().map((x) => x.path));
+    const old = all.filter((f) => !qtvlm(f) && !isLoaded.has(f.path) && endOf(f) < cut);
+    if (!old.length) return;
+    try {
+      const n = await invoke("grib_delete", { paths: old.map((f) => f.path) });
+      const mb = old.reduce((a, f) => a + (f.size || 0), 0) / 1e6;
+      if (n) activity.note(`Tidied up ${n} GRIB file${n === 1 ? "" : "s"} whose data ended more than ${days} days ago (${mb.toFixed(1)} MB)`,
+        { details: old.map((f) => f.file ?? f.path).slice(0, 50) });
+      await weather.refreshFiles();
+      renderTable();
+    } catch (e) { activity.start("Tidying up GRIB files").fail(`Could not delete: ${e}`); }
+  }
+  setTimeout(autoTidy, 60_000);
+  setInterval(autoTidy, 6 * 3600_000);
   $("gf-tidy").onclick = async () => {
     const days = Number($("gf-days").value) || 7, cut = Date.now() / 1000 - days * 86400;
     const isLoaded = new Set(weather.sources().map((x) => x.path));
-    // old = its data ran out more than `days` ago (a forecast's last step, an analysis's last day), not its run
-    // time: a satellite analysis is a day or two old when it is published but still current
-    const ends = (f) => Math.max(...(f.info?.runs ?? []).map((r) => r.last ?? r.ref_time ?? -Infinity), -Infinity);
-    const endOf = (f) => (Number.isFinite(ends(f)) ? ends(f) : f.mtime ?? Infinity);
     const oldQt = files.filter((f) => qtvlm(f) && endOf(f) < cut);
     const qtNote = oldQt.length ? ` ${oldQt.length} old file${oldQt.length === 1 ? " is" : "s are"} in qtVlm's own folder (C:\\Program Files (x86)\\qtVlm\\grib), which TweedPlot reads but does not delete (Windows needs administrator rights there): delete ${oldQt.length === 1 ? "it" : "them"} in qtVlm or File Explorer.` : "";
     const old = files.filter((f) => !qtvlm(f) && endOf(f) < cut);

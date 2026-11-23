@@ -138,7 +138,7 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     if (old) { $("wxp-cmp-point").append(...old.querySelectorAll(".wxp-compare-table, #wx-sea-point")); old.remove(); }
     $("wx-verify").textContent = "Verify runs…";
     const row = $("wx-verify").parentElement;
-    $("wxp-cmp-verify").append($("wx-verify"));
+    $("wxp-cmp-verify").append($("wx-verify"), $("wx-sst-verify"));
     if (row && !row.children.length) row.remove();
   }
 

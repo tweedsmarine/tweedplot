@@ -110,7 +110,7 @@ const DEFAULTS = {
   // own-boat lines: shown, and length in minutes of travel or "inf" (to the edge of the chart)
   hdgLine: true, hdgLen: "inf", cogLine: true, cogLen: "10",
   // beam bearing line through own ship; range rings round own ship (count, spacing NM)
-  beamLine: false, ownRings: false, ownRingN: 3, ownRingStep: 0.5,
+  beamLine: false, setDrift: false, ownRings: false, ownRingN: 3, ownRingStep: 0.5,
   // damping of Signal K readings, seconds (0 = none)
   dampMotion: 2, dampWind: 5, dampDepth: 0,
 };
@@ -737,6 +737,7 @@ map.on("load", () => {
   setupRadar(map, { getBoat: () => lastBoat });
   for (const id of ["rt-wx", "crs-wx"]) { const b = document.getElementById(id); if (b) b.onclick = () => routeWx.open(); }
   document.getElementById("wx-verify").onclick = () => gribTools.openVerify();
+  document.getElementById("wx-sst-verify").onclick = () => gribTools.openSstCheck();
   // the tide gauges (rising / falling) and tidal streams follow the chart time in Planning and
   // Environment, as the weather does; in Navigation and Instruments they show now (live)
   setupTides(map, { before: "track", getTime: tideTime, onTime: (fn) => { weather.onTime(fn); window.addEventListener("racenav-view", fn); } });

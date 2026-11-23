@@ -276,7 +276,7 @@ The same readings are offered in the data panel (**+ Add a reading**) and on the
 
 | Group | Readings |
 | --- | --- |
-| Navigation | SOG, COG, heading (°T and °M), boat speed through the water (BSP; the own-ship block calls it STW), depth, position, log, trip, UTC and local time, and both together |
+| Navigation | SOG, COG, heading (°T and °M), boat speed through the water (BSP; the own-ship block calls it STW), **Set** and **Drift** (the current the boat is in, see below), depth, position, log, trip, UTC and local time, and both together |
 | Weather | Barometric pressure and its change over 3 hours, air temperature, humidity, water temperature |
 | Wind | AWS, AWA, TWS, TWA, TWD, VMG |
 | Route | Next mark, BTW, DTW, VMC, TTG, ETA, XTE; the active routing's target TWA, boat speed and heading, and boat speed as a percentage of target |
@@ -727,6 +727,7 @@ In **Settings › Vessel**, set the **Length overall** and **Breadth**, and wher
 
 - *Heading line* (solid) and *COG line* (dashed orange): each as long as a set time at the boat's speed, or to the edge of the chart. Set in Chart › Layers › Own ship.
 - *Beam bearing line* (dashed, off to begin with): through the boat at right angles to the heading, to the edge of the chart, so you can see what is abeam. Chart › Layers › Own ship.
+- *Set and drift vector* (off to begin with): the current the boat is in, from the boat, as long in time as the COG line (10 minutes when that runs to the edge), dashed with a triple arrowhead. Chart › Layers › Own ship. TweedPlot works it out as the boat's movement over the ground (COG, SOG) minus its movement through the water (heading, boat speed), averaged over the last minute; the **Set** (where the current flows to) and **Drift** readings and their history come from the same sum. It needs a heading and a log. Leeway isn't allowed for, so under sail it shows as current; a log that isn't calibrated, or reads nothing below a knot, shows as a false current along the heading.
 - *Range rings*: rings round the boat, as many as you choose (1 to 10) and as far apart as you choose, in nautical miles: type 0.25, 1/4, ½ or 1 1/2. Each ring's range is written where it crosses north of the boat, the outermost with "NM". Chart › Layers › Own ship, or right-click the boat › **Range rings round own ship…**. For rings round a mark or a route waypoint, see *Range rings round marks and waypoints*.
 - *Wind arrows*: true wind (blue) and apparent wind (orange), each pointing towards the boat from the direction the wind comes from, longer as the wind gets stronger. They use the same colours as the needles on the **Wind** dial, which point in the opposite direction, towards the source of the wind. With live data they sit on the boat. When planning (the Planning view, paused, or no live data) they follow the cursor instead, wherever it is over the forecast, showing the GRIB's true wind there at the weather slider time. Near a shown routing they show that routing's nearest point instead: the true wind it had at that point's time, and the apparent wind you would feel on its heading and boat speed, matching the point's hover box. Away from a routing there is no boat to feel it, so only the true wind is shown. Expect the apparent wind well forward of the true wind whenever the boat is fast for the wind: at 7 kn on a broad reach (TWA 128°) in 9 kn of true wind, the apparent wind is about 77°, forward of the beam. That is why asymmetric spinnakers are trimmed for a beam reach in light air. Hover a routing point for the exact AWA and AWS. Turn them on or off in **Chart › Layers › Own ship**.
 
@@ -832,7 +833,7 @@ Other AIS targets:
 
 **Sleeping targets.** A busy harbour fills the chart with ships that are tied up or far away. **Targets & fleets › AIS › Sleeping targets** chooses how those are drawn: **Show all as active**, **Small, no vectors** (the small ring) or **Hide**. A target is asleep when it is slower than **Asleep when slower than** (kn), or further away than **Asleep when further than** (NM; 0 for no limit). Dangerous targets, the one you have selected and own-fleet boats are never asleep.
 
-**Not heard: crossed through.** A target that hasn't been heard for a while is drawn crossed through {img:ais-lostx} at its last known position, with no course vector, as radar and ECDIS displays show a lost target (IEC 62288). "A while" is 3 minutes for a moving ship, 10 minutes for one that isn't moving and 20 minutes for an AtoN or base station. Targets go after 20 minutes. In the target list its age shows in red with a ✕.
+**Not heard: crossed through.** A target that hasn't been heard for a while is drawn crossed through {img:ais-lostx} at its last known position, with no course vector, as radar and ECDIS displays show a lost target (IEC 62288). "A while" is six of the target's reporting intervals (ITU-R M.1371), as shipborne radars and ECDIS count it: a class A ship is lost after 60 seconds up to 14 kn, 36 seconds at 14–23 kn, 12 seconds over 23 kn, and 18 minutes at anchor or moored; a class B (carrier-sense) after 3 minutes when moving faster than 2 kn and 18 minutes slower; a class B+ (SOTDMA) after 3 minutes, 90 seconds over 14 kn and 30 seconds over 23 kn; an AtoN after 18 minutes; a SART, MOB or EPIRB after 6 minutes. Targets heard only over the internet arrive less often, so they are lost after 3 minutes moving and 10 minutes stopped (20 for an AtoN or base station). Targets go after 20 minutes. In the target list its age shows in red with a ✕.
 
 **Navigational status.** With **Day shapes for navigational status** ticked in Targets & fleets › AIS (off by default: crews set the status by hand and often don't change it, so don't trust it), a small white tag beside a ship shows the day shape it would show for the status it sends, so it reads as it would on the water (from zoom 8 in):
 
@@ -946,10 +947,10 @@ Everything you make and keep is in the **library**: marks, routes, tracks, trips
 **The tabs.** All times are shown on the 24-hour clock. Each tab has the same list:
 
 - **Find**: by name (marks also by group, notes and tags; tracks also by date).
-- **Order**: by name, newest or oldest first, and others to suit (marks: deepest first, nearest the chart centre; routes and tracks: longest first).
+- **Order**: by name, newest or oldest first, and others to suit (marks: deepest first, nearest the boat, nearest the chart centre; routes and tracks: longest first). With **Nearest the boat** each mark's line starts with its range and bearing from the boat.
 - **Whole library** filters, in the band above the tabs, apply to every tab and to the chart at once: **Dates**, **Months**, **Trip** and **In chart view**. Set Dates to a week and every tab lists only what was made (or ran) that week, the chart shows only those marks, and the tracks that match are drawn (up to 200; past that, only those you show yourself). What counts as when: a mark, when it was made (marks whose date is unknown, moved in from another plotter in one go, are left out); a track or trip, any time it ran; a routing, when computed. Routes and barriers aren't filtered by date (In chart view still applies to routes).
 - **Each tab's own filters**, as buttons under its search: each opens its choices, with how many each has; a filter in use is highlighted and has ✕ to clear it; **Clear filters** clears the tab's own.
-  - Marks: Group, Type, Tag, TimeZero symbol, Routes (in a saved route or not), **Duplicates** (marks that repeat another: the same name within 30 m, or unnamed within 5 m; the oldest of each is left out, so Select these then Delete keeps one of each), Date unknown.
+  - Marks: Group, Type, Tag, TimeZero symbol, **Near the boat** (within 0.5, 1, 2, 5, 10, 20 or 50 NM; with Nearest the boat or this filter the list follows the boat, re-sorted every 15 seconds while it moves), Routes (in a saved route or not), **Duplicates** (marks that repeat another: the same name within 30 m, or unnamed within 5 m; the oldest of each is left out, so Select these then Delete keeps one of each), Date unknown.
   - Tracks: From (logged here, GPX, TimeZero), Sea temperature, Depth (logged along it), On the chart.
   - Routes: From a file. Barriers: Kind, Not used, Imported.
   - When a route has been brought in more than once (the same name and the same marks in the same order), **Remove duplicates** shows in the Routes tab: it keeps the oldest copy of each.
@@ -983,7 +984,7 @@ Marks: click a row to go to the mark; **+ Route** adds it to the route being bui
 | {img:poi:water} | Water filling | {img:poi:fuel} | Fuel |
 | {img:poi:provisions} | Provisions or shop | {img:poi:info} | Note |
 
-**Symbols for your own marks**, drawn in the mark's own colour (a TimeZero mark keeps its red, blue and so on), or when it has none in red (shapes), black (seabed and dangers), teal (fish) or orange (fishing gear):
+**Symbols for your own marks**, drawn in the mark's own colour (a TimeZero mark keeps its red, blue and so on), or when it has none in red (shapes), black (seabed and dangers), teal (fish), orange (fishing gear) or blue (signs):
 
 | Symbol | Type | Symbol | Type |
 | --- | --- | --- | --- |
@@ -992,13 +993,19 @@ Marks: click a row to go to the mark; **+ Route** adds it to the route being bui
 | {img:sym:sym-tri-down:} {img:sym:sym-tri-down-f:} | Triangle down, filled | {img:sym:sym-cross:} {img:sym:sym-x:} | Cross, X |
 | {img:sym:sym-star:} {img:sym:sym-flag:} {img:sym:sym-dot:} | Star, flag, dot | {img:sym:sym-excl:} {img:sym:sym-asterisk:} | Exclamation mark, asterisk |
 | | | {img:sym:sym-rock:} | Rock |
-| {img:sym:sym-wreck:} | Wreck | {img:sym:sym-snag:} | Obstruction or snag |
+| {img:sym:sym-wreck:} | Wreck | {img:sym:sym-snag:} | Obstruction or snag (a hang) |
 | {img:sym:sym-pot:} | Pot or trap (fishing gear) | {img:sym:sym-fish:} {img:sym:sym-school:} | Fish, school of fish |
 | {img:sym:sym-tuna:} | Tuna | {img:sym:sym-swordfish:} | Swordfish |
 | {img:sym:sym-shark:} | Shark | {img:sym:sym-skate:} | Skate or ray |
 | {img:sym:sym-crayfish:} | Crayfish | {img:sym:sym-albacore:} | Albacore |
 | {img:sym:sym-ling:} | Ling | {img:sym:sym-hoki:} | Hoki |
 | {img:sym:sym-squid:} | Squid | {img:sym:sym-trawl:} | Trawl |
+| {img:sym:sym-fish-1:} {img:sym:sym-fish-2:} {img:sym:sym-fish-3:} | Fish, rated one to three stars | {img:sym:sym-lost-gear:} | Lost gear |
+| {img:sym:sym-other-gear:} | Another boat's gear | {img:sym:sym-bait:} | Bait school (signs) |
+| {img:sym:sym-birds:} | Birds working (signs) | {img:sym:sym-break:} | Temperature break or current line (signs) |
+| {img:sym:sym-fad:} | FAD or log (signs) | {img:sym:sym-protected:} | Protected species interaction (signs) |
+| {img:sym:sym-ledge:} | Ledge or drop-off | {img:sym:sym-pinnacle:} | Pinnacle |
+| {img:sym:sym-reef:} | Reef | {img:sym:sym-weed:} | Weed or kelp |
 | {img:sym:sym-longline:} | Longline | {img:sym:sym-hook:} | Hook |
 | {img:sym:sym-float:} | Float | {img:sym:sym-float-flag:} | Float with a flag |
 
@@ -1049,7 +1056,7 @@ Untick a barrier to keep it but not use it; rename it in the list; move its poin
 | New library… | Starts an empty library (another boat, another fishery). The one in use stays as it is, and is in the menu to go back to |
 | Open library… | Uses another TweedPlot library (a `.gpkg` file, or a protected `.tplib`): one shared from another boat, or kept for a different seasonal fishery. The libraries used lately are listed under it. A protected one asks for its passphrase and is unlocked into a `.gpkg` beside it |
 | Save a copy as… | A copy of the whole library, to share or keep. The one in use stays in use |
-| Merge from another library… | Brings another library's marks, routes, tracks, routings and barriers into this one, matched as an import is, so merging twice adds nothing. The other library isn't changed |
+| Merge from another library… | Brings another library's marks, routes, tracks, routings and barriers into this one, matched as an import is, so merging twice adds nothing. After you tick what to bring in, a preview says how many of each are new and how many are already here (and names the new routes and tracks) before anything changes. The other library isn't changed |
 | Import… | Marks, routes and tracks from GPX, TimeZero (`.tzd`, `.TzBackup`), Google Earth (KML, KMZ) or a spreadsheet (CSV) (below) |
 | Export everything as GPX | Every mark and route in one GPX file in the export folder |
 | Back up to… | Copies the whole library to a USB stick or another disk, as `<library> YYYY-MM-DD HHMM.gpkg`, so it survives if this computer fails (TweedPlot's own backups are on the same disk). The folder is remembered: next time the menu offers **Back up to <folder>** (greyed while the stick isn't plugged in) and **Back up to another folder…**, and says when the library was last copied out. If it hasn't been for a week, a card says so once a day. To use a copy: Open library |
@@ -1117,7 +1124,7 @@ The fishing tools that log what the boat does are here. Ocean data, own sounding
 
 In Environment the panel is one list that scrolls as a whole, with Chart time held at the top. **Explore** and **Get data** are two tabs under the view icons. In Chart time, play and **now** sit beside the time, and back (start, previous step) and forward (next step, end) either side of the slider. Under the time slider a timeline shows the days, a mark at now, and a bar for each loaded GRIB over the times it covers (the shown GRIB brighter); click it to go to a time. The **Showing** list picks **Weather**, **Ocean** or **Seabed**. They are modes: each remembers its own layer, sources, overlays and filter and puts them back when you return to it. The layer is chosen from chips grouped as Weather, Sea state and Ocean, one for each layer a loaded GRIB has, with **None** for the overlays alone; the line under the chips says which GRIB the layer comes from and lets you change it when more than one has it. The colour bar and filter come straight after, then Overlays, Compare GRIBs and the presets; the cursor read-out is last. In the Fishing use, **Use latest past analysis outside chart time** starts ticked, so a satellite sea temperature from yesterday shows at today's chart time; the tick is remembered. If a GRIB cannot be read while drawing, a red line under the key says why. While another route is in the editor, a mark of the navigated route can still be moved: click it, then drag it.
 
-**Get data** lists every GRIB file in the GRIB folders, newest run first: the model and run, the times it covers, its area, what it contains, its size and age, and whether it is loaded or shown. **Load**, **Unload** and **Show** act on that file. **Update** appears on a file downloaded with TweedPlot when a newer run is probably out (six hours after its run for forecast models, a day for daily analyses, plus the time the run takes to reach the server): it downloads the same area, parameters and length again. After a download in Environment the panel returns to Explore with the new file shown and the chart time at now. **Add file…** copies GRIB files from anywhere on the PC into the GRIB folder and loads them. **Tidy up…** deletes GRIB files whose data ended more than the number of days chosen ago, after asking: a forecast once its last time has passed, a satellite analysis once its last day has (so yesterday's MUR, which is a day or two old by its date, is kept). Old files that are loaded are unloaded first. qtVlm's own GRIB folder (C:\Program Files (x86)\qtVlm\grib) is listed so its files can be loaded, but TweedPlot never deletes there (Windows needs administrator rights in Program Files, and they are qtVlm's): those rows say *in qtVlm's folder*, and Tidy up names any old ones so you can delete them in qtVlm or File Explorer.
+**Get data** lists every GRIB file in the GRIB folders, newest run first: the model and run, the times it covers, its area, what it contains, its size and age, and whether it is loaded or shown. **Load**, **Unload** and **Show** act on that file. **Update** appears on a file downloaded with TweedPlot when a newer run is probably out (six hours after its run for forecast models, a day for daily analyses, plus the time the run takes to reach the server): it downloads the same area, parameters and length again. After a download in Environment the panel returns to Explore with the new file shown and the chart time at now. **Add file…** copies GRIB files from anywhere on the PC into the GRIB folder and loads them. **Tidy up…** deletes GRIB files whose data ended more than the number of days chosen ago, after asking: a forecast once its last time has passed, a satellite analysis once its last day has (so yesterday's MUR, which is a day or two old by its date, is kept). Old files that are loaded are unloaded first. Tick **Automatically** and TweedPlot tidies up by itself a minute after it starts and every six hours, using the days chosen: it never touches a loaded file, and the activity log lists what went. This covers everything in the GRIB folder: forecasts, ocean analyses and sea ice. qtVlm's own GRIB folder (C:\Program Files (x86)\qtVlm\grib) is listed so its files can be loaded, but TweedPlot never deletes there (Windows needs administrator rights in Program Files, and they are qtVlm's): those rows say *in qtVlm's folder*, and Tidy up names any old ones so you can delete them in qtVlm or File Explorer.
 
 The Weather drawer continues to provide tides and live observations.
 
@@ -1192,7 +1199,7 @@ The Weather drawer manages the loaded files; the data panel controls how their w
 
 | Source | Models | Notes |
 | --- | --- | --- |
-| NOAA NOMADS | GFS 0.25°, 0.5°, 1° (wind, gusts, pressure, rain, CAPE, air temperature); GFS-Wave 0.25° | Cut to your area on the server: small downloads. Free, US government data |
+| NOAA NOMADS | GFS 0.25°, 0.5°, 1° (wind, gusts, pressure, rain, CAPE, air temperature); GFS-Wave 0.25°; AIGFS 0.25° (NOAA's AI model: wind, pressure, air temperature, 6-hourly to 16 days) | GFS is cut to your area on the server: small downloads. AIGFS comes only as whole-globe files, so TweedPlot fetches just the fields you tick (about 1.3 MB each a step) and cuts them to your area. Free, US government data |
 | ECMWF open data | IFS 0.1° (~11 km grid; model about 9 km) and 0.25° (wind, pressure, gusts, air temperature); 0.1° IFS surface currents (non-tidal); AIFS 0.25° (ECMWF's AI model); ECMWF wave 0.1° and 0.25° | Free open data, CC BY 4.0, © ECMWF. The 0.1° products arrive about two hours after the 0.25° products; 0.1° surface and pressure-level data are separate global files. TweedPlot fetches only the fields you tick and crops them to your area. Requested 0.1° global fields are cached for reuse across areas (up to 5 GiB; oldest first). IFS 06Z and 18Z runs stop at 144 h |
 | NOAA CoastWatch ERDDAP | MUR sea surface temperature, 1 km; ACSPO sea temperature, 2 km; Geo-Polar Blended sea temperature, 5 km (ocean, see below) | Satellite analyses and observations, cut to your area on the server. Free to use and share (NASA JPL; NOAA, GHRSST) |
 | NOAA CoastWatch THREDDS | Himawari-9 hourly sea temperature, 2 km (ocean, see below) | One file an hour, cut to your area on the server. GHRSST data, free and open |
@@ -1288,6 +1295,7 @@ Ocean currents (not tidal streams) come from the ECMWF 0.1° and HYCOM downloads
 - **Wind**: true wind speed (solid) and gusts (dashed), with arrows along the top pointing where the wind blows.
 - **Waves**: significant height Hs (solid, left scale) and peak period Tp (dotted, right scale), with arrows for the wave direction.
 - Tick **Pressure**, **Rain**, **Air temp**, **CAPE**, **Sea temp** or **Current** to add their strips; your choice is remembered.
+- **Spread by distance** lays the plots out by distance along the route instead of by time: every mile gets the same room, so a slow stretch (a calm, a foul tide) isn't drawn out and the weather lines up with places on the route. The axis then shows NM, with the time and course at each step below; the cursor still follows the chart time.
 - **Coverage warning**: it names only real gaps (a field missing altogether, starting late, with holes, or ending before the others). A route that simply outlasts the forecast is not a gap: the heading says where the forecast ends.
 - **Previous, Play, Next and Now**: under the plots. Play steps along the route's forecast points about three a second (the 1× button beside it doubles that to 2×). The cursor, values and boat move smoothly on the clock; the chart weather is redrawn at most twice a second, so a slow chart never holds the cursor back, moving the chart time with them, and stops at the end or when you press it again, drag or step. Now goes to the point where the boat is at the real time now (greyed if that is outside the route's times).
 - **Plots beside**: the button at the right of the dock's title row puts the plots in a column on the chart's right, with time running down the screen. This suits a route that runs north-south. Each plot is a column; the time column shows the day or hour, the distance along the route and the route's course there. Drag the dock's left edge to change its width; **Plots below** puts them back.
@@ -1340,6 +1348,22 @@ With two or more GRIBs loaded, the **Compare GRIBs** section lists displays that
 **Verify runs**
 
 **Compare GRIBs** › **Verify runs…** scores earlier forecasts against what a later run says actually happened at its first hour (its analysis), over the sea in the chart view: vector error, speed and direction bias, pressure bias. The track record averages every verify time by model and lead time, so after some days of downloads it shows which model has been doing best in your area. Click a forecast to shade its error on the chart.
+
+**Sea temp v boat**
+
+**Compare GRIBs** › **Sea temp v boat…** scores each sea temperature product against the water temperature your boat logged along its tracks: the one measurement made where you actually fish. It reads every loaded sea temperature file and, with **Files not loaded** ticked, every sea temperature file in the weather folders that covers the tracks, at the boat's positions and times (one reading every 10 minutes or 2 km). Each reading is matched to a product's field nearest in time, up to the age chosen (12, 24, 36 or 72 hours). Choose **All tracks**, **Tracks in the chart view**, **Last 7 days** or **Last 30 days**.
+
+| Column | Meaning |
+| --- | --- |
+| **Bias °C** | Product minus boat, averaged. + means the product reads warmer than the boat |
+| **SD °C** | The spread of the error once the bias is taken off: how well the product follows the changes the boat saw. The table is sorted by it, best first |
+| **RMS °C**, **Mean \|error\| °C** | The whole error, bias included |
+| **Coverage** | Share of the readings inside the product's area and time that got a value. Cloud (ACSPO, Himawari) and coastlines leave gaps |
+| **Data age h** | How old, on average, the fields used were |
+
+Click a product to plot it against the boat's temperature over time and to show its error at each reading on the chart: blue where the product is colder than the boat, red where it is warmer (full colour at 2 °C).
+
+The boat's sensor reads the water 0.5–2 m down; satellites read the skin or a modelled foundation temperature. A steady bias, larger on calm sunny afternoons, is normal and can be allowed for. A low **SD** matters more: that product shows the breaks where they are. The scores need tracks with a water temperature (NMEA 0183 MTW, or Signal K `environment.water.temperature`) and sea temperature files for the same days, so keep the files from the days you are out.
 
 **Weather stations and buoys**
 
@@ -1551,7 +1575,7 @@ TweedPlot downloads open data from the organisations below. They did not make Tw
 | World depths (bundled) | Natural Earth, public domain (naturalearthdata.com) |
 | World coastline | GSHHG 2.3.7: Wessel and Smith, University of Hawaiʻi and NOAA, LGPL 3 |
 | Deep-sea depths | ETOPO 2022, NOAA National Centers for Environmental Information (doi:10.25921/fd45-gt74), free to use and redistribute |
-| Wind, pressure, waves (GFS, GFS-Wave) | NOAA National Centers for Environmental Prediction (NOMADS). US Government data, free to use. Contains NOAA model output |
+| Wind, pressure, waves (GFS, GFS-Wave, AIGFS) | NOAA National Centers for Environmental Prediction (NOMADS). US Government data, free to use. Contains NOAA model output |
 | Wind, pressure, waves, currents (IFS, AIFS) | ECMWF open data, CC BY 4.0, © ECMWF. Downloaded from data.ecmwf.int or its AWS mirror and cropped to your area. TweedPlot changes the file format and the area only |
 | Sea temperature (MUR) | NASA JPL MUR SST, via NOAA CoastWatch (ERDDAP). Free to use and share: please acknowledge NASA JPL / PO.DAAC |
 | Sea temperature (ACSPO L3S-LEO, Geo-Polar Blended) | NOAA NESDIS (STAR, OSPO), GHRSST, via NOAA CoastWatch |

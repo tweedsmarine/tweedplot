@@ -125,6 +125,8 @@ pub const PROCESS_BLENDED_SST: u8 = 210;
 pub const PROCESS_CMEMS_PHY: u8 = 211;
 pub const PROCESS_CMEMS_BGC: u8 = 212;
 pub const PROCESS_CMEMS_OC: u8 = 213;
+/// NOAA AIGFS, cut from NOMADS' global files (see gribdl::aigfs).
+pub const PROCESS_NOAA_AIGFS: u8 = 214;
 /// GRIB2 originating centres used with them: NASA, US Navy FNMOC, NOAA NESDIS.
 pub const CENTRE_NASA: u16 = 173;
 pub const CENTRE_FNMOC: u16 = 58;
@@ -148,6 +150,7 @@ pub fn process_name(centre: u16, process: u8) -> Option<&'static str> {
         (CENTRE_LOCAL, PROCESS_CMEMS_PHY) => Some("Copernicus ocean 1/12°"),
         (CENTRE_LOCAL, PROCESS_CMEMS_BGC) => Some("Copernicus biology 1/4°"),
         (CENTRE_LOCAL, PROCESS_CMEMS_OC) => Some("Copernicus chlorophyll 4 km"),
+        (7, PROCESS_NOAA_AIGFS) => Some("NOAA AIGFS"),
         _ => None,
     }
 }

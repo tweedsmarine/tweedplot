@@ -32,6 +32,7 @@ function fmtRun(t) {
   return `${d.getUTCDate()} ${d.toLocaleString("en-NZ", { month: "short", timeZone: "UTC" })} ${String(d.getUTCHours()).padStart(2, "0")}Z`;
 }
 const label = (f) => `${shortName(f.name)} ${fmtRun(f.run)}${f.members > 1 ? ` (${f.members} members)` : ""}`;
+const SV_COLD = "#2166ac", SV_WARM = "#b2182b"; // product colder / warmer than the boat (red–blue: safe for red-green colour blindness)
 const num = (v, d = 1, plus = false) => (v == null ? "—" : `${plus && v > 0 ? "+" : ""}${v.toFixed(d)}`);
 
 export function setupGribTools(map, { weather, dock }) {
@@ -325,6 +326,123 @@ export function setupGribTools(map, { weather, dock }) {
     },
   });
 
+  // ---------- sea temperature products against the boat (P1.4) ----------
+  // Every sea temperature file (loaded, and with "files not loaded" those in the weather
+  // folders) read at the boat's logged positions and times, scored per product.
+  const SV_KEY = "racenav.sstcheck";
+  let sv = { scope: "all", disk: true, age: 36 };
+  try { sv = { ...sv, ...JSON.parse(localStorage.getItem(SV_KEY) || "{}") }; } catch { /* ignore */ }
+  const svSave = () => { try { localStorage.setItem(SV_KEY, JSON.stringify(sv)); } catch { /* ignore */ } };
+  let svRes = null; // the last result, or { error }
+  let svPick = null; // the product plotted and shown on the chart
+  let svBusy = false;
+  map.addSource("sstv-pts", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addLayer({ id: "sstv-pts", type: "circle", source: "sstv-pts", layout: { visibility: "none" },
+    paint: { "circle-radius": 4, "circle-stroke-width": 0.75, "circle-stroke-color": "#222",
+      "circle-color": ["interpolate", ["linear"], ["get", "d"], -2, SV_COLD, -0.5, "#92c5de", 0, "#f7f7f7", 0.5, "#f4a582", 2, SV_WARM] } });
+  dock.onChange((cur) => map.setLayoutProperty("sstv-pts", "visibility", cur === "sstcheck" && svPick ? "visible" : "none"));
+  function svShow() {
+    const p = svRes?.products?.find((x) => x.product === svPick);
+    map.getSource("sstv-pts").setData({ type: "FeatureCollection", features: (p?.pairs ?? []).map(([t, boat, prod, lat, lon]) =>
+      ({ type: "Feature", properties: { t, d: Math.round((prod - boat) * 100) / 100 }, geometry: { type: "Point", coordinates: [lon, lat] } })) });
+    map.setLayoutProperty("sstv-pts", "visibility", p && dock.current() === "sstcheck" ? "visible" : "none");
+  }
+  async function svLoad() {
+    svBusy = true;
+    svRes = null;
+    dock.refresh("sstcheck");
+    const b = map.getBounds();
+    const now = Math.floor(Date.now() / 1000);
+    const args = {
+      trackIds: [],
+      bbox: sv.scope === "view" ? [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()] : null,
+      since: sv.scope === "7d" ? now - 7 * 86400 : sv.scope === "30d" ? now - 30 * 86400 : null,
+      fromDisk: !!sv.disk,
+      maxAgeH: Number(sv.age) || 36,
+    };
+    svRes = await invoke("sst_verify", args).catch((e) => ({ error: String(e) }));
+    svBusy = false;
+    if (!svRes.products?.some((p) => p.product === svPick)) svPick = svRes.products?.[0]?.product ?? null;
+    svShow();
+    dock.refresh("sstcheck");
+  }
+  const pct = (x) => `${Math.round(x * 100)} %`;
+  const day = (t) => new Date(t * 1000).toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" });
+
+  dock.register("sstcheck", {
+    title: "Sea temp v boat",
+    render(body, tools) {
+      const scope = document.createElement("select");
+      scope.title = "Which of the boat's tracks to use";
+      for (const [v, t] of [["all", "All tracks"], ["view", "Tracks in the chart view"], ["7d", "Last 7 days"], ["30d", "Last 30 days"]]) scope.append(new Option(t, v));
+      scope.value = sv.scope;
+      scope.onchange = () => { sv.scope = scope.value; svSave(); svLoad(); };
+      const age = document.createElement("select");
+      age.title = "The oldest sea temperature field matched to a reading";
+      for (const h of [12, 24, 36, 72]) age.append(new Option(`Data up to ${h} h old`, h));
+      age.value = sv.age;
+      age.onchange = () => { sv.age = Number(age.value); svSave(); svLoad(); };
+      const disk = document.createElement("label");
+      disk.title = "Also read the sea temperature files in the weather folders that cover the tracks, without loading them";
+      disk.innerHTML = `<input type="checkbox"> Files not loaded`;
+      disk.firstChild.checked = !!sv.disk;
+      disk.firstChild.onchange = (e) => { sv.disk = e.target.checked; svSave(); svLoad(); };
+      const again = document.createElement("button");
+      again.textContent = "Score again";
+      again.onclick = svLoad;
+      tools.append(scope, age, disk, again);
+
+      if (svRes == null) { body.innerHTML = `<p class="wx-note">Reading the tracks and sea temperature files…</p>`; if (!svBusy) svLoad(); return; }
+      if (svRes.error) { body.innerHTML = `<p class="wx-note">${esc(svRes.error)}</p>`; return; }
+      if (!svRes.readings) {
+        body.innerHTML = `<p class="wx-note">No water temperature readings to score: none of these tracks logged a sea temperature at the times ` +
+          `your sea temperature files cover${sv.disk ? "" : " (tick Files not loaded to use the ones in the weather folders too)"}. Download MUR, ACSPO or Geo-Polar ` +
+          `for days you were out. TweedPlot logs the sea temperature with the track whenever an instrument sends one (a sounder or a temperature sensor, through NMEA 0183 MTW or Signal K).</p>`;
+        return;
+      }
+      const head = document.createElement("p");
+      head.className = "wx-note";
+      head.textContent = `${svRes.readings.toLocaleString("en-NZ")} readings from ${svRes.tracks} track${svRes.tracks === 1 ? "" : "s"}, ` +
+        `${day(svRes.first)} to ${day(svRes.last)}; ${svRes.files} sea temperature file${svRes.files === 1 ? "" : "s"} read` +
+        (svRes.skipped ? ` (${svRes.skipped} could not be read)` : "") + ".";
+      body.append(head);
+      if (!svRes.products.length) {
+        body.append(Object.assign(document.createElement("p"), { className: "wx-note",
+          textContent: "None of the sea temperature files cover these tracks' places and times. Download MUR, ACSPO or Geo-Polar for the dates you were out " +
+            "(Get data › Ocean, with past dates), or tick Files not loaded." }));
+        return;
+      }
+      const note = document.createElement("p");
+      note.className = "wx-note";
+      note.textContent = "Bias = product minus the boat (+ = product too warm). SD = the spread once the bias is taken off: how well the product " +
+        "follows the changes the boat saw, which is what finds temperature breaks. A hull sensor reads 0.5–2 m down, so a steady bias on calm, sunny " +
+        "days is normal. Coverage = readings that got a value (clouds and coastlines leave gaps). Click a product to plot it and show its error on the chart.";
+      body.append(note);
+      const t = document.createElement("table");
+      t.className = "cmp vf-table";
+      t.innerHTML = `<thead><tr><th>Product</th><th>Bias °C</th><th>SD °C</th><th>RMS °C</th><th>Mean |error| °C</th><th>Coverage</th><th>Data age h</th><th>Readings</th><th>Files</th></tr></thead><tbody></tbody>`;
+      for (const [i, p] of svRes.products.entries()) {
+        const tr = document.createElement("tr");
+        tr.className = "click";
+        tr.classList.toggle("best", i === 0 && svRes.products.length > 1);
+        tr.classList.toggle("on", p.product === svPick);
+        tr.title = p.files.join("\n");
+        tr.innerHTML = `<td>${esc(p.product)}</td><td>${num(p.bias, 2, true)}</td><td>${num(p.sd, 2)}</td><td>${num(p.rms, 2)}</td><td>${num(p.mae, 2)}</td>` +
+          `<td>${pct(p.coverage)}</td><td>${num(p.age_h, 0)}</td><td>${p.n}</td><td>${p.files.length}</td>`;
+        tr.onclick = () => { svPick = p.product; svShow(); dock.refresh("sstcheck"); };
+        t.tBodies[0].append(tr);
+      }
+      body.append(t);
+      const p = svRes.products.find((x) => x.product === svPick);
+      if (p) body.append(drawSstPlot(p, Math.max(480, body.clientWidth - 20)));
+      const key = document.createElement("p");
+      key.className = "wx-note sv-key";
+      key.innerHTML = `On the chart: <i style="background:${SV_COLD}"></i> product colder · <i style="background:#f7f7f7"></i> right · ` +
+        `<i style="background:${SV_WARM}"></i> warmer than the boat (±2 °C at full colour).`;
+      if (p) body.append(key);
+    },
+  });
+
   return {
     /** Show the meteogram for a chart point. */
     meteogramAt(p) {
@@ -334,6 +452,8 @@ export function setupGribTools(map, { weather, dock }) {
       fetchSeries();
     },
     openVerify() { vtimes = null; dock.show("verify"); },
+    /** Score the sea temperature products against the boat's own water temperature. */
+    openSstCheck() { dock.show("sstcheck"); svLoad(); },
   };
 }
 
@@ -578,4 +698,42 @@ function drawMeteogram(series, along, plots, W, { pick, release, primary = 0 }) 
       }
     },
   };
+}
+
+
+/** The boat's water temperature (black) and one product (blue) at the matched readings, over time; lines break at gaps over 3 h. */
+export function drawSstPlot(p, width) {
+  const W = width, H = 170, L = 44, R = 10, T = 10, B = 26;
+  const pts = p.pairs;
+  const ts = pts.map((q) => q[0]);
+  const t0 = Math.min(...ts), t1 = Math.max(...ts, t0 + 1);
+  const vals = pts.flatMap((q) => [q[1], q[2]]);
+  let lo = Math.floor(Math.min(...vals) * 2) / 2, hi = Math.ceil(Math.max(...vals) * 2) / 2;
+  if (hi - lo < 1) { lo -= 0.5; hi += 0.5; }
+  const x = (t) => L + ((t - t0) / (t1 - t0)) * (W - L - R);
+  const y = (v) => T + ((hi - v) / (hi - lo)) * (H - T - B);
+  const path = (k) => {
+    let d = "", prev = null;
+    for (const q of pts) { d += `${prev == null || q[0] - prev > 3 * 3600 ? "M" : "L"}${x(q[0]).toFixed(1)},${y(q[k]).toFixed(1)}`; prev = q[0]; }
+    return d;
+  };
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("width", W); svg.setAttribute("height", H); svg.setAttribute("class", "sv-plot");
+  const step = hi - lo > 6 ? 2 : hi - lo > 3 ? 1 : 0.5;
+  let g = "";
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="grid"/><text x="${L - 4}" y="${y(v) + 4}" text-anchor="end">${v.toFixed(step < 1 ? 1 : 0)}</text>`;
+  const days = Math.max(1, Math.round((t1 - t0) / 86400));
+  const every = Math.max(1, Math.ceil(days / Math.max(1, Math.floor((W - L - R) / 70))));
+  // local midnights
+  const d = new Date(t0 * 1000);
+  d.setHours(24, 0, 0, 0);
+  for (; d.getTime() / 1000 <= t1; d.setDate(d.getDate() + every)) {
+    const t = d.getTime() / 1000;
+    g += `<line x1="${x(t)}" x2="${x(t)}" y1="${T}" y2="${H - B}" class="grid"/><text x="${x(t)}" y="${H - 8}" text-anchor="middle">${d.getDate()} ${d.toLocaleString("en-NZ", { month: "short" })}</text>`;
+  }
+  svg.innerHTML = `<g class="axes">${g}<text x="4" y="${T + 4}">°C</text></g>` +
+    `<path d="${path(1)}" fill="none" stroke="currentColor" stroke-width="1.6"/>` +
+    `<path d="${path(2)}" fill="none" stroke="#1f77b4" stroke-width="1.6" stroke-dasharray="5 3"/>` +
+    `<text x="${W - R}" y="${T + 10}" text-anchor="end" class="lab">— boat   <tspan fill="#1f77b4">- - ${esc(p.product)}</tspan></text>`;
+  return svg;
 }
