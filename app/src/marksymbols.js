@@ -13,16 +13,22 @@ export const MARK_SYMBOLS = [
   ["sym-cross", "Cross", "Shapes"], ["sym-x", "X", "Shapes"], ["sym-star", "Star", "Shapes"],
   ["sym-flag", "Flag", "Shapes"], ["sym-dot", "Dot", "Shapes"], ["sym-excl", "Exclamation mark", "Shapes"], ["sym-asterisk", "Asterisk", "Shapes"],
   ["sym-rock", "Rock", "Seabed and dangers"], ["sym-wreck", "Wreck", "Seabed and dangers"],
-  ["sym-snag", "Obstruction / snag", "Seabed and dangers"],
+  ["sym-snag", "Obstruction / snag (hang)", "Seabed and dangers"],
+  ["sym-ledge", "Ledge / drop-off", "Seabed and dangers"], ["sym-pinnacle", "Pinnacle", "Seabed and dangers"],
+  ["sym-reef", "Reef", "Seabed and dangers"], ["sym-weed", "Weed / kelp", "Seabed and dangers"],
   ["sym-fish", "Fish", "Fish"], ["sym-school", "School of fish", "Fish"], ["sym-tuna", "Tuna", "Fish"],
   ["sym-swordfish", "Swordfish", "Fish"], ["sym-shark", "Shark", "Fish"], ["sym-skate", "Skate / ray", "Fish"],
   ["sym-crayfish", "Crayfish", "Fish"], ["sym-albacore", "Albacore", "Fish"], ["sym-ling", "Ling", "Fish"],
   ["sym-hoki", "Hoki", "Fish"], ["sym-squid", "Squid", "Fish"],
+  ["sym-fish-1", "Fish ★ (some)", "Fish"], ["sym-fish-2", "Fish ★★ (good)", "Fish"], ["sym-fish-3", "Fish ★★★ (very good)", "Fish"],
   ["sym-trawl", "Trawl", "Fishing gear"], ["sym-longline", "Longline", "Fishing gear"], ["sym-hook", "Hook", "Fishing gear"],
   ["sym-float", "Float", "Fishing gear"], ["sym-float-flag", "Float with a flag", "Fishing gear"], ["sym-pot", "Pot / trap", "Fishing gear"],
+  ["sym-lost-gear", "Lost gear", "Fishing gear"], ["sym-other-gear", "Another boat's gear", "Fishing gear"],
+  ["sym-bait", "Bait school", "Signs"], ["sym-birds", "Birds working", "Signs"], ["sym-break", "Temperature break / current line", "Signs"],
+  ["sym-fad", "FAD / log", "Signs"], ["sym-protected", "Protected species interaction", "Signs"],
 ];
 export const SYMBOL_KINDS = Object.fromEntries(MARK_SYMBOLS.map(([k, l]) => [k, l]));
-const DEFAULT = { Shapes: "#c0392b", "Seabed and dangers": "#1d2a33", Fish: "#00838f", "Fishing gear": "#d35400" };
+const DEFAULT = { Shapes: "#c0392b", "Seabed and dangers": "#1d2a33", Fish: "#00838f", "Fishing gear": "#d35400", Signs: "#1565c0" };
 const groupOf = Object.fromEntries(MARK_SYMBOLS.map(([k, , g]) => [k, g]));
 
 /** The default colour a symbol is drawn in when its mark has none. */
@@ -174,6 +180,65 @@ function drawSymbol(kind, colour) {
       P(circ(-2, 8, 7), true);
       P(line([[-2, 1], [-2, -15]]), false, 2);
       P(poly([[-2, -15], [12, -11], [-2, -7]]), true);
+      break;
+    // ---- fishing marks, longline first (D1, 24 Nov) ----
+    case "sym-fish-1": case "sym-fish-2": case "sym-fish-3": { // a fish with one to three stars under it
+      P((h) => { h.beginPath(); h.ellipse(-2, -5, 9, 5, 0, 0, Math.PI * 2); }, true);
+      P(poly([[6, -5], [13, -11], [13, 1]]), true);
+      const n = Number(base.slice(-1));
+      for (let i = 0; i < n; i++) {
+        const cx = (i - (n - 1) / 2) * 9, cy = 9, pts = [];
+        for (let k = 0; k < 10; k++) { const r = k % 2 ? 1.8 : 4.2, a = -Math.PI / 2 + (k * Math.PI) / 5; pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]); }
+        P(poly(pts), true);
+      }
+      break;
+    }
+    case "sym-lost-gear": // a length of longline crossed out
+      P(line([[-14, -3], [14, -3]]), false, 2); P(circ(-14, -6, 2.4), true);
+      for (const x of [-6, 4]) P(line([[x, -3], [x, 5]]), false, 1.4);
+      P(line([[-10, -12], [10, 10]]), false, 3); P(line([[10, -12], [-10, 10]]), false, 3);
+      break;
+    case "sym-other-gear": // a float and flag drawn open, with a question mark: someone else's
+      P(circ(-4, 8, 6), false, 2.2);
+      P(line([[-4, 2], [-4, -15]]), false, 2);
+      P(poly([[-4, -15], [9, -11], [-4, -7]]), false, 2);
+      P((h) => { h.beginPath(); h.arc(9, 3, 3.2, Math.PI, Math.PI * 0.4); h.lineTo(9, 9); }, false, 1.8); P(circ(9, 12.5, 1.1), true);
+      break;
+    case "sym-bait": // a ball of small fish (dots)
+      for (const [x, y, r] of [[0, 0, 2.2], [-6, -3, 1.8], [6, -3, 1.8], [-4, 5, 1.8], [5, 5, 1.8], [0, -8, 1.6], [-10, 2, 1.5], [10, 2, 1.5], [0, 9, 1.5], [-7, -9, 1.3], [7, -9, 1.3]]) P(circ(x, y, r), true);
+      break;
+    case "sym-birds": // gulls diving over a line of water
+      for (const [x, y, w] of [[-6, -9, 7], [7, -12, 5], [3, -1, 6]]) P((h) => { h.beginPath(); h.moveTo(x - w, y - 1); h.quadraticCurveTo(x - w / 2, y - 6, x, y + 1); h.quadraticCurveTo(x + w / 2, y - 6, x + w, y - 1); }, false, 2.2);
+      P((h) => { h.beginPath(); h.moveTo(-14, 10); h.quadraticCurveTo(-10.5, 7, -7, 10); h.quadraticCurveTo(-3.5, 13, 0, 10); h.quadraticCurveTo(3.5, 7, 7, 10); h.quadraticCurveTo(10.5, 13, 14, 10); }, false, 2);
+      break;
+    case "sym-break": // two water masses meeting: a sharp line with warm (solid) and cool (open) dots either side
+      P((h) => { h.beginPath(); h.moveTo(-3, -14); h.bezierCurveTo(5, -6, -5, 6, 3, 14); }, false, 3);
+      for (const y of [-8, 0, 8]) { P(circ(-9, y, 2.4), true); P(circ(10, y, 2.4), false, 1.6); }
+      break;
+    case "sym-fad": // a drifting log with a flag
+      P((h) => { h.beginPath(); h.roundRect(-13, 3, 26, 7, 3.5); }, true);
+      P(line([[0, 3], [0, -14]]), false, 2); P(poly([[0, -14], [11, -10], [0, -6]]), true);
+      break;
+    case "sym-protected": // a turtle: shell, head and flippers
+      P((h) => { h.beginPath(); h.ellipse(0, 1, 8, 10, 0, 0, Math.PI * 2); }, true);
+      P(circ(0, -12, 3), true);
+      for (const [x, y, a] of [[-9, -5, -0.6], [9, -5, 0.6], [-8, 9, 0.5], [8, 9, -0.5]]) P((h) => { h.beginPath(); h.ellipse(x, y, 4.5, 2, a, 0, Math.PI * 2); }, true);
+      break;
+    case "sym-ledge": // a seabed profile stepping down
+      P(line([[-15, -6], [-2, -6], [2, 6], [15, 6]]), false, 3);
+      P(line([[-15, -12], [15, -12]]), false, 1.2);
+      break;
+    case "sym-pinnacle": // a sharp rise from the seabed under the surface line
+      P(line([[-15, -12], [15, -12]]), false, 1.2);
+      P(poly([[-15, 12], [-4, 10], [0, -6], [4, 10], [15, 12]]), true);
+      break;
+    case "sym-reef": // a band of rocks: three small rock crosses
+      for (const [x, y] of [[-8, 3], [0, -4], [8, 3]]) { P(line([[x - 4, y], [x + 4, y]]), false, 2); P(line([[x, y - 4], [x, y + 4]]), false, 2); }
+      P((h) => { h.beginPath(); h.moveTo(-14, 11); h.quadraticCurveTo(0, 6, 14, 11); }, false, 1.6);
+      break;
+    case "sym-weed": // kelp fronds rising from the bottom
+      for (const x of [-7, 0, 7]) P((h) => { h.beginPath(); h.moveTo(x, 13); h.bezierCurveTo(x - 6, 5, x + 6, -3, x - 1, -13); }, false, 2.2);
+      P(line([[-13, 13], [13, 13]]), false, 2);
       break;
     default: return null;
   }

@@ -984,7 +984,7 @@ Marks: click a row to go to the mark; **+ Route** adds it to the route being bui
 | {img:poi:water} | Water filling | {img:poi:fuel} | Fuel |
 | {img:poi:provisions} | Provisions or shop | {img:poi:info} | Note |
 
-**Symbols for your own marks**, drawn in the mark's own colour (a TimeZero mark keeps its red, blue and so on), or when it has none in red (shapes), black (seabed and dangers), teal (fish) or orange (fishing gear):
+**Symbols for your own marks**, drawn in the mark's own colour (a TimeZero mark keeps its red, blue and so on), or when it has none in red (shapes), black (seabed and dangers), teal (fish), orange (fishing gear) or blue (signs):
 
 | Symbol | Type | Symbol | Type |
 | --- | --- | --- | --- |
@@ -993,13 +993,19 @@ Marks: click a row to go to the mark; **+ Route** adds it to the route being bui
 | {img:sym:sym-tri-down:} {img:sym:sym-tri-down-f:} | Triangle down, filled | {img:sym:sym-cross:} {img:sym:sym-x:} | Cross, X |
 | {img:sym:sym-star:} {img:sym:sym-flag:} {img:sym:sym-dot:} | Star, flag, dot | {img:sym:sym-excl:} {img:sym:sym-asterisk:} | Exclamation mark, asterisk |
 | | | {img:sym:sym-rock:} | Rock |
-| {img:sym:sym-wreck:} | Wreck | {img:sym:sym-snag:} | Obstruction or snag |
+| {img:sym:sym-wreck:} | Wreck | {img:sym:sym-snag:} | Obstruction or snag (a hang) |
 | {img:sym:sym-pot:} | Pot or trap (fishing gear) | {img:sym:sym-fish:} {img:sym:sym-school:} | Fish, school of fish |
 | {img:sym:sym-tuna:} | Tuna | {img:sym:sym-swordfish:} | Swordfish |
 | {img:sym:sym-shark:} | Shark | {img:sym:sym-skate:} | Skate or ray |
 | {img:sym:sym-crayfish:} | Crayfish | {img:sym:sym-albacore:} | Albacore |
 | {img:sym:sym-ling:} | Ling | {img:sym:sym-hoki:} | Hoki |
 | {img:sym:sym-squid:} | Squid | {img:sym:sym-trawl:} | Trawl |
+| {img:sym:sym-fish-1:} {img:sym:sym-fish-2:} {img:sym:sym-fish-3:} | Fish, rated one to three stars | {img:sym:sym-lost-gear:} | Lost gear |
+| {img:sym:sym-other-gear:} | Another boat's gear | {img:sym:sym-bait:} | Bait school (signs) |
+| {img:sym:sym-birds:} | Birds working (signs) | {img:sym:sym-break:} | Temperature break or current line (signs) |
+| {img:sym:sym-fad:} | FAD or log (signs) | {img:sym:sym-protected:} | Protected species interaction (signs) |
+| {img:sym:sym-ledge:} | Ledge or drop-off | {img:sym:sym-pinnacle:} | Pinnacle |
+| {img:sym:sym-reef:} | Reef | {img:sym:sym-weed:} | Weed or kelp |
 | {img:sym:sym-longline:} | Longline | {img:sym:sym-hook:} | Hook |
 | {img:sym:sym-float:} | Float | {img:sym:sym-float-flag:} | Float with a flag |
 
