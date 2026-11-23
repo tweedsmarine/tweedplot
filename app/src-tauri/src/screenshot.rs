@@ -4,10 +4,9 @@
 //! begin with) and changed in Settings › Display. The folder is kept here, not by the page,
 //! so the page can only ever write screenshots into the folder the crew picked.
 //!
-//! The window is captured by the operating system (xcap: PrintWindow with full content on
-//! Windows, the window list on macOS), because a web page can't take a picture of itself
-//! with the chart's WebGL canvas and every open box in it. macOS asks once for Screen
-//! Recording permission.
+//! The picture is read from the screen where the window is (xcap), because a web page can't
+//! take a picture of itself with the chart's WebGL canvas and every open box in it. macOS
+//! asks once for Screen Recording permission.
 
 use std::path::{Path, PathBuf};
 use tauri::Manager;
@@ -95,8 +94,15 @@ pub(crate) fn screenshot_open_folder(app: tauri::AppHandle) -> Result<(), String
 #[tauri::command]
 pub(crate) async fn screenshot_take(app: tauri::AppHandle, window: tauri::WebviewWindow) -> Result<String, String> {
     let dir = chosen(&app).ok_or("No screenshots folder has been chosen yet.")?;
-    let pos = window.outer_position().map_err(|e| e.to_string())?;
-    let size = window.outer_size().map_err(|e| e.to_string())?;
+    let pos = window.inner_position().map_err(|e| e.to_string())?;
+    let size = window.inner_size().map_err(|e| e.to_string())?;
+    // macOS screens are measured in points, Windows in pixels
+    #[cfg(target_os = "macos")]
+    let (pos, size) = {
+        let k = window.scale_factor().map_err(|e| e.to_string())?;
+        let (p, s) = (pos.to_logical::<f64>(k), size.to_logical::<f64>(k));
+        (tauri::PhysicalPosition::new(p.x.round() as i32, p.y.round() as i32), tauri::PhysicalSize::new(s.width.round() as u32, s.height.round() as u32))
+    };
     let version = app.package_info().version.to_string();
     tauri::async_runtime::spawn_blocking(move || {
         let img = capture((pos.x, pos.y, size.width, size.height))?;
@@ -123,25 +129,28 @@ struct Shot {
     rgba: Vec<u8>,
 }
 
-/// This process's window nearest to the given place and size (TweedPlot may have several
-/// windows open, the monitor windows among them).
+/// The screen under the window's inside (its client area), from the monitor it is mostly on.
+/// Not the window itself: xcap leaves the calling process's own windows out of its window list
+/// on Windows (asking a window of your own for its title can deadlock), so the screen is read
+/// instead, as Windows' own Win+PrtScn does. The window was just clicked, so it is in front.
+/// Windows works in physical pixels, macOS in points.
 #[cfg(any(windows, target_os = "macos"))]
 fn capture((x, y, w, h): (i32, i32, u32, u32)) -> Result<Shot, String> {
-    let me = std::process::id();
-    let wins = xcap::Window::all().map_err(|e| format!("Can't list the windows: {e}"))?;
-    let off = |v: &xcap::Window| -> Option<i64> {
-        if v.pid().ok()? != me || v.is_minimized().unwrap_or(false) {
-            return None;
-        }
-        let d = |a: i64, b: i64| (a - b).abs();
-        Some(d(v.x().ok()?.into(), x.into()) + d(v.y().ok()?.into(), y.into()) + d(v.width().ok()?.into(), w.into()) + d(v.height().ok()?.into(), h.into()))
-    };
-    let win = wins.iter().filter_map(|v| off(v).map(|o| (o, v))).min_by_key(|(o, _)| *o).map(|(_, v)| v).ok_or("TweedPlot's window wasn't found")?;
-    let img = win.capture_image().map_err(|e| {
+    let (cx, cy) = (x + (w / 2) as i32, y + (h / 2) as i32);
+    let m = xcap::Monitor::from_point(cx, cy).map_err(|e| format!("Can't find the screen TweedPlot is on: {e}"))?;
+    let (mx, my, mw, mh) =
+        (m.x().map_err(|e| e.to_string())?, m.y().map_err(|e| e.to_string())?, m.width().map_err(|e| e.to_string())?, m.height().map_err(|e| e.to_string())?);
+    // the part of the window on that screen (a maximised window's edges stand a little outside it)
+    let (x0, y0) = (x.max(mx), y.max(my));
+    let (x1, y1) = ((x + w as i32).min(mx + mw as i32), (y + h as i32).min(my + mh as i32));
+    if x1 <= x0 || y1 <= y0 {
+        return Err("TweedPlot's window isn't on a screen".into());
+    }
+    let img = m.capture_region((x0 - mx) as u32, (y0 - my) as u32, (x1 - x0) as u32, (y1 - y0) as u32).map_err(|e| {
         if cfg!(target_os = "macos") {
-            format!("The window couldn't be captured ({e}). Allow TweedPlot in System Settings › Privacy & Security › Screen Recording.")
+            format!("The screen couldn't be read ({e}). Allow TweedPlot in System Settings › Privacy & Security › Screen Recording.")
         } else {
-            format!("The window couldn't be captured: {e}")
+            format!("The screen couldn't be read: {e}")
         }
     })?;
     Ok(Shot { w: img.width(), h: img.height(), rgba: img.into_raw() })
