@@ -1073,7 +1073,14 @@ fn open_charts_started(handle: tauri::AppHandle) {
     CHARTS_READY.store(false, std::sync::atomic::Ordering::Release);
     *CHART_ERROR.lock().unwrap() = None;
     let dir = chart_dir(&handle);
-    let mut dirs = vec![dir.clone(), coast_dir(&handle), bathy_dir(&handle), marine_dir(&handle)];
+    let sets_off = chart_sets_off(&handle);
+    // the LINZ open data charts (TweedPlot's own chart) can be left out like an ENC set, so only
+    // official ENCs are drawn
+    let linz_off = sets_off.contains(&dir);
+    let mut dirs = vec![coast_dir(&handle), bathy_dir(&handle), marine_dir(&handle)];
+    if !linz_off {
+        dirs.insert(0, dir.clone());
+    }
     if let Some(w) = world_depth_dir(&handle) {
         dirs.push(w);
     }
@@ -1082,7 +1089,9 @@ fn open_charts_started(handle: tauri::AppHandle) {
     // the first run with a GSHHG download builds the world coastline file (a minute or two)
     let _ = handle.emit("chart-status", serde_json::json!({ "detail": "preparing charts: finding chart files" }));
     log_chart_tile("charts: opening started");
-    let sets_off = chart_sets_off(&handle);
+    if linz_off {
+        log_chart_tile("charts: LINZ open data charts not in use");
+    }
     if !sets_off.is_empty() {
         log_chart_tile(&format!("charts: {} chart set(s) not in use", sets_off.len()));
     }
@@ -1209,6 +1218,23 @@ async fn chart_sets_list(app: tauri::AppHandle) -> Result<Vec<serde_json::Value>
     let a = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let mut v = Vec::new();
+        // TweedPlot's own chart from the LINZ open data (GeoPackages in the charts folder), as a set
+        // of its own, so it can be left out and only official ENCs drawn
+        let cd = chart_dir(&a);
+        let files = std::fs::read_dir(&cd)
+            .map(|rd| {
+                rd.flatten()
+                    .filter(|e| {
+                        let n = e.file_name().to_string_lossy().to_ascii_lowercase();
+                        (n.ends_with(".zip") && !n.starts_with("gshhg")) || n.ends_with(".gpkg")
+                    })
+                    .count()
+            })
+            .unwrap_or(0);
+        if files > 0 {
+            v.push(serde_json::json!({ "path": cd, "name": "LINZ open data charts (TweedPlot's chart, not an official ENC)", "cells": files, "unit": "file",
+                "producers": [["NZ", files]], "folder": cd, "in_use": !off.contains(&cd), "linz": true }));
+        }
         for d in dirs.iter().filter(|d| d.is_dir()) {
             for s in chart::enc::chart_sets(d) {
                 let on = !off.contains(&s.path);
@@ -1299,6 +1325,7 @@ fn data_status(app: tauri::AppHandle) -> serde_json::Value {
         "gshhg_bytes": gribdl::data::GSHHG_BYTES,
         "etopo": etopo,
         "linz_tables": linz,
+        "linz_off": chart_sets_off(&app).contains(&chart_dir(&app)),
         "dirs": { "charts": chart_dir(&app), "coast": coast, "bathy": bdir, "marine": mdir },
         "busy": DATA_BUSY.load(std::sync::atomic::Ordering::SeqCst),
     })
