@@ -216,6 +216,16 @@ pub(crate) async fn library_merge(
     Ok(r)
 }
 
+/// What merging `path` (the categories in `what`) would bring in, changing nothing: the preview
+/// before a merge.
+#[tauri::command]
+pub(crate) async fn library_merge_preview(path: String, what: Option<library::Scope>) -> Result<library::ImportReport, String> {
+    let l = lib()?;
+    tauri::async_runtime::spawn_blocking(move || l.merge_preview(std::path::Path::new(&path), what.unwrap_or_default()).map_err(es))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// What a library file holds, to choose from before bringing it in: how many of each
 /// category, and the own soundings.
 #[tauri::command]

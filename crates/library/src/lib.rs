@@ -607,12 +607,23 @@ impl Library {
     /// trips (by id, and by name and start). Routes need their marks: with marks left out
     /// the marks the chosen routes use still come in.
     pub fn merge_from_scope(&self, other: &Path, scope: Scope, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool) -> Result<ImportReport> {
+        self.merge_inner(other, scope, progress, cancel, false)
+    }
+
+    /// What [`Library::merge_from_scope`] would bring in, worked out the same way but changing
+    /// nothing: the counts of new and matched marks and routes, new tracks (by name), routings,
+    /// barriers, logs and trips. For the preview before a merge.
+    pub fn merge_preview(&self, other: &Path, scope: Scope) -> Result<ImportReport> {
+        self.merge_inner(other, scope, &mut |_, _, _| {}, &AtomicBool::new(false), true)
+    }
+
+    fn merge_inner(&self, other: &Path, scope: Scope, progress: &mut dyn FnMut(&str, usize, usize), cancel: &AtomicBool, dry: bool) -> Result<ImportReport> {
         if other.canonicalize().ok() == self.path().canonicalize().ok() {
             return Err(Error::Store("that's the library already open".into()));
         }
         progress("Reading the other library", 0, 0);
         let o = Library::open_file(other)?;
-        let id = self.begin_import(&other.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), "library")?;
+        let id = if dry { 0 } else { self.begin_import(&other.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(), "library")? };
         let mut rep = ImportReport::default();
         // marks: the same id is the same mark; else matched as an import matches
         let mut theirs = o.marks()?;
@@ -689,7 +700,7 @@ impl Library {
             rep.routes_added.push(r.name.clone());
             new_routes.push(r);
         }
-        {
+        if !dry {
             let mut c = self.db();
             let tx = c.transaction()?;
             for m in &ours[first_new..] {
@@ -712,7 +723,9 @@ impl Library {
             let have_x = ids_here("routings")?;
             for s in o.routings()? {
                 if !have_x.contains(&s.id) {
-                    write_routing(&self.db(), &o.routing(&s.id)?)?;
+                    if !dry {
+                        write_routing(&self.db(), &o.routing(&s.id)?)?;
+                    }
                     rep.routings_added += 1;
                 }
             }
@@ -725,10 +738,12 @@ impl Library {
             for b in o.barriers()? {
                 if !have_b.contains(&b.id) {
                     // with the import's id, so Undo an import takes them out again
-                    self.db().execute(
-                        "INSERT INTO barriers (id, name, kind, points, active, notes, modified, import_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                        params![b.id, b.name, b.kind, serde_json::to_string(&b.points)?, b.active as i64, b.notes, b.modified, id],
-                    )?;
+                    if !dry {
+                        self.db().execute(
+                            "INSERT INTO barriers (id, name, kind, points, active, notes, modified, import_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                            params![b.id, b.name, b.kind, serde_json::to_string(&b.points)?, b.active as i64, b.notes, b.modified, id],
+                        )?;
+                    }
                     rep.barriers_added += 1;
                 }
             }
@@ -746,11 +761,14 @@ impl Library {
                 if have.contains(&e.id) {
                     continue;
                 }
+                rep.events_added += 1;
+                if dry {
+                    continue;
+                }
                 c.execute(
                     "INSERT INTO events (id, kind, name, at, lat, lon, depth, temp, sog, cog, notes, pair, data, import_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                     params![e.id, e.kind, e.name, e.at, e.lat, e.lon, e.depth, e.temp, e.sog, e.cog, e.notes, e.pair, if e.data.is_null() { "{}".to_string() } else { e.data.to_string() }, id],
                 )?;
-                rep.events_added += 1;
             }
         }
         // trips: the same name and start is the same trip. One that was still on comes in ended
@@ -763,12 +781,15 @@ impl Library {
                 if !have.insert(key(&t.name, t.started)) {
                     continue;
                 }
+                rep.trips_added += 1;
+                if dry {
+                    continue;
+                }
                 c.execute(
                     "INSERT INTO trips (name, number, fishery, crew, notes, started, ended) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                     // ended: never left on (only this library's trip can be); with no times at all, ended at the merge
                     params![t.name, t.number, t.fishery, t.crew, t.notes, t.started, t.ended.or(t.started).or(Some(now()))],
                 )?;
-                rep.trips_added += 1;
             }
             if rep.trips_added > 0 {
                 rep.notes.push("Trips can't be taken out again by Undo an import: delete them from the Trips list".into());
@@ -788,6 +809,10 @@ impl Library {
             progress("Tracks", k + 1, total);
             if t.stats.start.zip(t.stats.end).is_some_and(|x| have.contains(&x)) {
                 same += 1;
+                continue;
+            }
+            if dry {
+                rep.tracks_added.push(t.name.clone());
                 continue;
             }
             batch.push(o.track(&t.id)?);
@@ -813,7 +838,9 @@ impl Library {
         if same > 0 {
             rep.notes.push(format!("{same} tracks were already here"));
         }
-        self.finish_import(id, &rep)?;
+        if !dry {
+            self.finish_import(id, &rep)?;
+        }
         Ok(rep)
     }
 
@@ -2188,6 +2215,10 @@ mod tests {
         let p = |t: i64| TrackPoint { t: Some(t), lat: -36.8, lon: 174.8 + t as f64 * 1e-6, sog: Some(6.0), ..Default::default() };
         b.save_track(Track { name: "Trip".into(), segments: vec![vec![p(1000), p(1010), p(1020)]], ..Default::default() }).unwrap();
         let stop = AtomicBool::new(false);
+        // the preview says what would come in and changes nothing
+        let pv = a.merge_preview(&b.path(), Scope::default()).unwrap();
+        assert_eq!((pv.marks_added, pv.marks_matched, pv.routes_added.len(), pv.tracks_added.clone()), (1, 1, 1, vec!["Trip".to_string()]));
+        assert_eq!((a.marks().unwrap().len(), a.routes().unwrap().len(), a.tracks().unwrap().len()), (1, 0, 0));
         let r = a.merge_from(&b.path(), &mut |_, _, _| {}, &stop).unwrap();
         assert_eq!((r.marks_added, r.marks_matched, r.routes_added.len(), r.tracks_added.len()), (1, 1, 1, 1));
         let m = a.marks().unwrap();

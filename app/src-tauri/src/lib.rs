@@ -2273,6 +2273,7 @@ pub fn run() {
             library_save_copy,
             library_merge,
             library_file_contents,
+            library_merge_preview,
             weather_save_png,
             screenshot::screenshot_folder,
             screenshot::screenshot_use_default,

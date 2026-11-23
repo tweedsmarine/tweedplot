@@ -1013,6 +1013,7 @@ export function setupLibrary(map, { ui, toast = () => {}, getBoat = () => null }
     if (!p) return;
     const pick = await chooseFromLibraryFile(p);
     if (!pick) return;
+    if (pick.any && !(await previewMerge(p, pick.scope))) return;
     if (pick.any) {
       const name = p.split(/[\\/]/).pop();
       const job = activity.start(`Merging ${name} into this library`, { params: p, cancel: (id) => invoke("job_cancel", { job: id }) });
@@ -1023,6 +1024,27 @@ export function setupLibrary(map, { ui, toast = () => {}, getBoat = () => null }
       } catch (e) { job.fail(`Merging failed: ${e}`); }
     }
     if (pick.soundings) await importSoundings(p);
+  }
+  /** The preview before a merge (D6): what would come in and what is already here; true to go ahead. */
+  async function previewMerge(p, scope) {
+    const name = p.split(/[\\/]/).pop();
+    let r;
+    try { r = await invoke("library_merge_preview", { path: p, what: scope }); } catch (e) { activity.start(`Reading ${name}`).fail(String(e)); return false; }
+    const n = (x) => x.toLocaleString();
+    const list = (names, max = 8) => (names.length ? `: ${names.slice(0, max).join(", ")}${names.length > max ? ` and ${n(names.length - max)} more` : ""}` : "");
+    const lines = [
+      scope.marks || r.marks_added || r.marks_matched ? `Marks: ${n(r.marks_added)} new, ${n(r.marks_matched)} already here (the same name within about 55 m, or unnamed within 4 m)` : "",
+      scope.routes ? `Routes: ${n(r.routes_added.length)} new${list(r.routes_added)}; ${n(r.routes_matched)} already here` : "",
+      scope.tracks ? `Tracks: ${n(r.tracks_added.length)} new${list(r.tracks_added, 5)}${r.notes.find((x) => / tracks were already here$/.test(x)) ? `; ${r.notes.find((x) => / tracks were already here$/.test(x)).replace(" tracks were already here", "")} already here` : ""}` : "",
+      scope.events ? `Log entries: ${n(r.events_added)} new` : "",
+      scope.trips ? `Trips: ${n(r.trips_added)} new` : "",
+      scope.routings ? `Routings: ${n(r.routings_added)} new` : "",
+      scope.barriers ? `Barriers: ${n(r.barriers_added)} new` : "",
+    ].filter(Boolean);
+    const total = r.marks_added + r.routes_added.length + r.tracks_added.length + r.events_added + r.trips_added + r.routings_added + r.barriers_added;
+    if (!total) { await ask({ title: `Nothing new in ${name}`, note: `Everything ticked is already in this library.\n${lines.join("\n")}`, cancel: "" }); return false; }
+    const v = await ask({ title: `Merge ${name}?`, note: `This is what would come in. Nothing has changed yet; Undo an import can take the marks, routes, tracks, logs and barriers out again afterwards.\n\n${lines.join("\n")}`, ok: "Merge" });
+    return !!v;
   }
   async function showBackups() {
     let list = [];
