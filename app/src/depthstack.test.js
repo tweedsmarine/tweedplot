@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ramp, niceTicks, profileSvg } from "./depthstack.js";
+import { ramp, niceTicks, profileSvg, setArrow } from "./depthstack.js";
 import { LAYERS } from "./weather.js";
 
 test("colour ramp ends and middle", () => {
@@ -26,6 +26,17 @@ test("water column picture", () => {
   // no value at 100 m: the line stops at 50 m (four points, one move and three lines)
   const d = svg.match(/class="temp"/) && svg.match(/<path d="([^"]+)" class="temp"/)[1];
   assert.equal((d.match(/[ML]/g) || []).length, 4);
+});
+
+test("current set arrows in the water column", () => {
+  assert.match(setArrow(10, 20, 90), /translate\(10\.0,20\.0\) rotate\(90\)/);
+  const p = { depths: [0.5, 10, 25, 50, 100], temp: [18, 18, 17, 13, null], sal: [35, 35, 35, 35, null], kn: [0.8, 0.7, 0.4, 0.1, null], set: [90, 90, 80, 70, null] };
+  const svg = profileSvg(p, { w: 560, h: 240 });
+  const rot = [...svg.matchAll(/class="set" transform="[^"]*rotate\((\d+)\)/g)].map((m) => +m[1]);
+  // levels at least 14 px apart: on a 0–50 m axis 202 px tall all four levels with a value get one
+  assert.deepEqual(rot, [90, 90, 80, 70]);
+  // no set: no arrows
+  assert.doesNotMatch(profileSvg({ ...p, set: undefined }), /class="set"/);
 });
 
 test("layers below the surface", () => {

@@ -191,6 +191,8 @@ pub struct Section {
     pub temp: Vec<Vec<Option<f64>>>,
     pub sal: Vec<Vec<Option<f64>>>,
     pub kn: Vec<Vec<Option<f64>>>,
+    /// [depth][point]: the way the current flows, degrees true.
+    pub set: Vec<Vec<Option<f64>>>,
     /// The thermocline depth along the line (m), where there is one.
     pub thermocline: Vec<Option<f64>>,
 }
@@ -248,13 +250,18 @@ pub fn section(f: &GribFile, line: &[[f64; 2]], n: usize, t: i64) -> Option<Sect
     let v = grid_rows(Param::SubCurrentV, &|x| x);
     let kn: Vec<Vec<Option<f64>>> =
         u.iter().zip(&v).map(|(ur, vr)| ur.iter().zip(vr).map(|(a, b)| Some(round(a.as_ref()?.hypot(*b.as_ref()?) * KN, 100.0))).collect()).collect();
+    let set: Vec<Vec<Option<f64>>> = u
+        .iter()
+        .zip(&v)
+        .map(|(ur, vr)| ur.iter().zip(vr).map(|(a, b)| Some((a.as_ref()?.atan2(*b.as_ref()?).to_degrees() + 360.0).rem_euclid(360.0).round())).collect())
+        .collect();
     let thermo = (0..pts.len())
         .map(|x| {
             let col: Vec<f64> = temp.iter().map(|r| r[x].unwrap_or(f64::NAN)).collect();
             thermocline(&depths, &col).filter(|r| r.1 >= THERMO_MIN).map(|r| round(r.0, 10.0))
         })
         .collect();
-    Some(Section { dist: pts.iter().map(|p| round(p.1, 100.0)).collect(), pts: pts.iter().map(|p| p.0).collect(), depths, temp, sal, kn, thermocline: thermo })
+    Some(Section { dist: pts.iter().map(|p| round(p.1, 100.0)).collect(), pts: pts.iter().map(|p| p.0).collect(), depths, temp, sal, kn, set, thermocline: thermo })
 }
 
 #[cfg(test)]

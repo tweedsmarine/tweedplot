@@ -31,10 +31,18 @@ export function niceTicks(lo, hi, n = 5) {
 
 const finite = (a) => a.filter((v) => v != null && Number.isFinite(v));
 
+/** A small arrow in SVG pointing the way the current flows (degrees true, north up), centred on x, y. */
+export function setArrow(x, y, deg, len = 11) {
+  const h = len / 2;
+  return `<g class="set" transform="translate(${x.toFixed(1)},${y.toFixed(1)}) rotate(${Math.round(deg)})"><line x1="0" y1="${h}" x2="0" y2="${-h + 1}"/><path d="M-3.2,${-h + 3.6}L0,${-h}L3.2,${-h + 3.6}"/></g>`;
+}
+
 /** The water column as an SVG, three panels side by side on one depth axis: temperature (°C),
  *  salinity (PSU) and current (kn), with the thermocline (dashed) and the shear (dotted) across them. */
 export function profileSvg(p, { w = 560, h = 240 } = {}) {
-  const m = { l: 40, r: 8, t: 20, b: 18 }, gap = 14;
+  // a narrow column for the set (the way the current flows, north up) beside the current panel
+  const hasSet = !!p.set && p.set.some((v, i) => v != null && p.kn?.[i] != null), setW = hasSet ? 30 : 0;
+  const m = { l: 40, r: 8 + setW, t: 20, b: 18 }, gap = 14;
   const deep = Math.max(...p.depths.filter((_, i) => p.temp[i] != null || p.kn[i] != null || p.sal[i] != null), 10);
   const y = (d) => m.t + (d / deep) * (h - m.t - m.b);
   const panels = [
@@ -50,7 +58,9 @@ export function profileSvg(p, { w = 560, h = 240 } = {}) {
     const x0 = m.l + k * (pw + gap), x1 = x0 + pw;
     const vs = finite(p[q.key]);
     let lo = q.zero ? 0 : Math.min(...vs), hi = Math.max(...vs);
-    const ticks = niceTicks(lo, hi > lo ? hi : lo + 1, 3);
+    // at least two labelled ticks, even on a narrow range
+    let ticks = niceTicks(lo, hi > lo ? hi : lo + 1, 3);
+    if (ticks.length < 2) ticks = niceTicks(lo, hi > lo ? hi : lo + 1, 6);
     lo = Math.min(lo, ticks[0]); hi = Math.max(hi, ticks.at(-1), lo + 1e-6);
     const x = (v) => x0 + ((v - lo) / (hi - lo)) * pw;
     s += `<rect x="${x0}" y="${m.t}" width="${pw}" height="${h - m.t - m.b}" class="frame"/>`;
@@ -63,7 +73,24 @@ export function profileSvg(p, { w = 560, h = 240 } = {}) {
     p.depths.forEach((z, i) => { const v = p[q.key][i]; if (v == null) { pen = false; return; } d += `${pen ? "L" : "M"}${x(v).toFixed(1)},${y(z).toFixed(1)}`; pen = true; });
     s += `<path d="${d}" class="${q.cls}"/>`;
   });
-  s += `<line class="hover" x1="${m.l}" x2="${w - m.r}" y1="0" y2="0" visibility="hidden"/>`;
+  if (hasSet) {
+    const x0 = w - 8 - setW + 4, xc = x0 + (setW - 4) / 2;
+    s += `<rect x="${x0}" y="${m.t}" width="${setW - 4}" height="${h - m.t - m.b}" class="frame"/>`;
+    s += `<text x="${xc}" y="${m.t - 7}" text-anchor="middle" class="kn h">Set</text>`;
+    s += `<text x="${xc}" y="${h - 5}" text-anchor="middle" class="kn">↑N</text>`;
+    for (const d of niceTicks(0, deep, 5)) s += `<line x1="${x0}" x2="${x0 + setW - 4}" y1="${y(d)}" y2="${y(d)}" class="grid"/>`;
+    if (p.thermocline) s += `<line x1="${x0}" x2="${x0 + setW - 4}" y1="${y(p.thermocline[0])}" y2="${y(p.thermocline[0])}" class="thermo"/>`;
+    if (p.shear) s += `<line x1="${x0}" x2="${x0 + setW - 4}" y1="${y(p.shear[0])}" y2="${y(p.shear[0])}" class="shear"/>`;
+    // one arrow per level, thinned so they don't touch
+    let last = -Infinity;
+    p.depths.forEach((z, i) => {
+      const dir = p.set[i];
+      if (dir == null || p.kn[i] == null || y(z) - last < 13) return;
+      last = y(z);
+      s += setArrow(xc, Math.min(Math.max(y(z), m.t + 6), h - m.b - 6), dir);
+    });
+  }
+  s += `<line class="hover" x1="${m.l}" x2="${w - 8}" y1="0" y2="0" visibility="hidden"/>`;
   return s + `</svg>`;
 }
 /** The depth (m) under a y position of profileSvg's picture. */
@@ -295,6 +322,28 @@ export function setupDepthStack(map, { weather, dock }) {
       s.thermocline.forEach((z, x) => { if (z == null) { pen = false; return; } if (pen) g.lineTo(X(s.dist[x]), Y(z)); else g.moveTo(X(s.dist[x]), Y(z)); pen = true; });
       g.stroke(); g.setLineDash([]);
     }
+    // the way the current flows, north up, on a coarse grid over the colours
+    if (kind === "kn" && s.set) {
+      const sx = 46, sy = 26, L = 11;
+      for (let py = m.t + sy / 2; py < H - m.b; py += sy) {
+        const zi = s.depths.reduce((b, v, i) => (Math.abs(Y(v) - py) < Math.abs(Y(s.depths[b]) - py) ? i : b), 0);
+        if (zi >= nz) continue;
+        for (let px = m.l + sx / 2; px < W - m.r; px += sx) {
+          const d = ((px - m.l) / (W - m.l - m.r)) * total;
+          const xi = s.dist.reduce((b, v, i) => (Math.abs(v - d) < Math.abs(s.dist[b] - d) ? i : b), 0);
+          const dir = s.set[zi]?.[xi];
+          if (dir == null || vals[zi]?.[xi] == null) continue;
+          g.save(); g.translate(px, Y(s.depths[zi])); g.rotate((dir * Math.PI) / 180);
+          // dark arrow with a light halo: readable on every colour of the scale
+          for (const [c, lw] of [["rgba(255,255,255,0.85)", 3.6], ["#1d2a33", 1.4]]) {
+            g.strokeStyle = c; g.fillStyle = c; g.lineWidth = lw; g.lineJoin = "round";
+            g.beginPath(); g.moveTo(0, L / 2); g.lineTo(0, -L / 2 + 2); g.stroke();
+            g.beginPath(); g.moveTo(-3.4, -L / 2 + 3.8); g.lineTo(0, -L / 2); g.lineTo(3.4, -L / 2 + 3.8); g.closePath(); g.fill(); g.stroke();
+          }
+          g.restore();
+        }
+      }
+    }
     g.fillStyle = "#1d2a33"; g.font = "11px system-ui, sans-serif"; g.textAlign = "right";
     for (const z of niceTicks(0, deep, 5)) { g.fillText(`${z} m`, m.l - 4, Y(z) + 4); }
     g.textAlign = "center";
@@ -302,7 +351,7 @@ export function setupDepthStack(map, { weather, dock }) {
     const [label, unit] = KINDS[kind];
     const fmt = (v) => (kind === "sal" ? v.toFixed(2) : v.toFixed(1));
     key.innerHTML = `<span>${label} along the line, ${fmt(kind === "kn" ? 0 : lo)}</span><span class="sect-bar" style="background:linear-gradient(to right,${cols.join(",")})"></span><span>${fmt(hi)} ${unit}</span>` +
-      (kind !== "sal" ? `<span class="sect-thermo">- - thermocline</span>` : "") + `<span class="wx-note">at ${new Date(weather.current().t * 1000).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}</span>`;
+      (kind !== "sal" ? `<span class="sect-thermo">- - thermocline</span>` : "") + (kind === "kn" && s.set ? `<span>arrows: set, north up</span>` : "") + `<span class="wx-note">at ${new Date(weather.current().t * 1000).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}</span>`;
     cv.onmousemove = (e) => {
       const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
       const d = ((px - m.l) / (W - m.l - m.r)) * total, z = ((py - m.t) / (H - m.t - m.b)) * deep;
@@ -312,7 +361,8 @@ export function setupDepthStack(map, { weather, dock }) {
       const v = vals[zi]?.[xi];
       tip.hidden = false;
       tip.style.left = `${px + 12}px`; tip.style.top = `${py + 8}px`;
-      tip.textContent = `${v == null ? "sea floor" : `${fmt(v)} ${unit}`} · ${Math.round(s.depths[zi])} m · ${s.dist[xi].toFixed(1)} NM`;
+      const dir = kind === "kn" ? s.set?.[zi]?.[xi] : null;
+      tip.textContent = `${v == null ? "sea floor" : `${fmt(v)} ${unit}${dir == null ? "" : ` toward ${String(dir).padStart(3, "0")}°`}`} · ${Math.round(s.depths[zi])} m · ${s.dist[xi].toFixed(1)} NM`;
       map.getSource("sect-here").setData({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: s.pts[xi] } });
     };
     cv.onmouseleave = () => { tip.hidden = true; map.getSource("sect-here").setData(empty); };
