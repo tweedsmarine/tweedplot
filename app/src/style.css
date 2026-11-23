@@ -801,6 +801,9 @@ html[data-view="inst"] #itiles { display: grid; }
 .itile.highway-card { padding: 2px; }
 .itile.highway-card .v { position: relative; overflow: hidden; contain: strict; }
 .itile.highway-card .hw-dashboard { position: absolute; left: 0; top: 0; width: 680px; height: 470px; transform-origin: 0 0; }
+/* a heading naming a group of instruments (A9) */
+.itile.ihead { display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; padding: 2px 8px 3px; background: transparent; border-color: transparent; box-shadow: none; border-bottom: 2px solid var(--tile-quiet, #8aa); border-radius: 0; }
+.itile.ihead .hd { font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--tile-quiet, #8aa); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .itile-ghost { border: 2px dashed #ffb000; border-radius: 6px; background: rgba(255, 176, 0, 0.12); pointer-events: none; }
 .locked .itile .trsz { display: none; }
 .it-empty { grid-column: 1 / -1; grid-row: 1 / -1; display: flex; align-items: center; justify-content: center; color: #9fb0bb; text-align: center; }
