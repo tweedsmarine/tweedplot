@@ -1893,14 +1893,18 @@ export function setupWeather(map, layers) {
       overlays: Object.fromEntries(["arrows", "waveArrows", "currArrows", "currFlow", "isobars", "isotherms", "breaks"].map((k) => [k, !!wx[k]])),
       filter: wx.seaFilter[wx.layer]?.set || LAYERS[wx.layer]?.auto ? { ...wx.seaFilter[wx.layer] } : null,
     }),
+    /** Show a preset. Returns false when its layer isn't in the loaded files (nothing to show it on). */
     applyConfig(c) {
       Object.assign(wx.src, c.src ?? {});
       for (const [k, v] of Object.entries(c.overlays ?? {})) {
         wx[k] = v;
       }
-      if (c.layer && (c.layer === "none" || available().includes(c.layer))) setLayer(c.layer);
+      if (Number.isFinite(c.depth)) wx.depth = c.depth;
+      const ok = !c.layer || c.layer === "none" || available().includes(c.layer);
+      if (c.layer && ok) setLayer(c.layer);
       if (c.filter && wx.layer === c.layer) { wx.seaFilter[c.layer] = { ...c.filter }; applyLayer(); }
       saveWx(); draw(); changed();
+      return ok;
     },
     /** Resets the shown layer's filter to the file's whole range. */
     resetFilter() { delete wx.seaFilter[wx.layer]; saveWx(); applyLayer(); draw(); },

@@ -3,9 +3,18 @@
 // to hide them). A note outside a card is put in the tooltip of the control above it.
 // Notes that the program fills in (they have an id) are status lines and are left alone.
 
+// A note inside a block the program shows only sometimes (hidden now, and not a drawer, tab or
+// card) is a message for that moment, not help: "the route being navigated is not the one below".
+function inShownLater(n) {
+  for (let e = n.parentElement; e && !e.classList.contains("pane"); e = e.parentElement) {
+    if (e.hidden && !e.classList.contains("tab")) return true;
+  }
+  return false;
+}
+
 export function setupHints() {
   const notes = [...document.querySelectorAll(".pane div.wx-note, .pane p.settings-note")]
-    .filter((n) => !n.id && !n.querySelector("[id]") && n.textContent.trim());
+    .filter((n) => !n.id && !n.querySelector("[id]") && n.textContent.trim() && !inShownLater(n));
   const byCard = new Map();
   for (const n of notes) {
     n.classList.add("hint");
