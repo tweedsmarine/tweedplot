@@ -11,6 +11,29 @@ const PRESETS = {
   Passage: { layer: "wind", overlays: { arrows: true, waveArrows: true, currArrows: true, isobars: true, isotherms: false, breaks: false } },
   Anchorage: { layer: "gust", overlays: { arrows: true, waveArrows: false, currArrows: false, isobars: true, isotherms: false, breaks: false } },
 };
+// Species: the sea temperature band each is usually found in, highlighted on the sea temperature
+// layer with the target marked, isotherms and temperature breaks (fronts) drawn. A starting point,
+// not a rule: fish follow food, fronts and currents as much as temperature, and local knowledge
+// beats any band. Sources are given in the manual (Weather and tides › Species presets).
+//   [name, layer, depth (m, for a layer at depth), band low, band high, target, note]
+export const SPECIES = [
+  ["Albacore", "sst", null, 16, 20, 18, "Juvenile albacore, the fish NZ trollers catch, are found in about 16–21 °C surface water, often along fronts"],
+  ["Southern bluefin", "sst", null, 14, 18, 16, "Tagged in NZ waters in winter at 13.6–18.3 °C surface temperature"],
+  ["Yellowfin", "sst", null, 19.5, 25.5, 21, "Preferred about 20–25.5 °C; they arrive in NZ when offshore water reaches 19–20 °C"],
+  ["Bigeye (at 250 m)", "subt", 250, 10, 14, 12, "By day at 200–400 m in 8–14 °C water; longline catches best at 12–14 °C around 250 m. Needs a file with temperature at depth (Copernicus or HYCOM)"],
+  ["Skipjack", "sst", null, 19, 28, 22, "Found in about 19–28 °C; the main fisheries are in 19–23 °C"],
+  ["Striped marlin", "sst", null, 18, 25, 21, "Prefer 20–25 °C; 18–20 °C is usual NZ marlin water, 21 °C and up in good seasons"],
+  ["Mahi-mahi", "sst", null, 24, 29, 26, "Catch rates are highest in 24–29 °C water"],
+];
+const SPECIES_OVERLAYS = { arrows: false, waveArrows: false, currArrows: true, isobars: false, isotherms: true, breaks: true };
+export function speciesConfig([, layer, depth, blo, bhi, tg]) {
+  return {
+    layer,
+    ...(depth != null ? { depth } : {}),
+    overlays: SPECIES_OVERLAYS,
+    filter: { lo: Math.floor(blo) - 4, hi: Math.ceil(bhi) + 4, tg, blo, bhi, set: true },
+  };
+}
 const DIRS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
 const compass = (d) => DIRS[Math.round((((d % 360) + 360) % 360) / 22.5) % 16];
 const deg3 = (d) => String(Math.round(d) % 360).padStart(3, "0");
@@ -396,12 +419,25 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     sel.innerHTML = "";
     sel.append(new Option("Presets…", ""));
     for (const n of Object.keys(PRESETS)) sel.append(new Option(n, `b:${n}`));
+    const fish = document.createElement("optgroup");
+    fish.label = "Species (sea temperature)";
+    for (const sp of SPECIES) {
+      const o = new Option(`${sp[0]} ${sp[3]}–${sp[4]} °C`, `s:${sp[0]}`);
+      o.title = sp[6];
+      fish.append(o);
+    }
+    sel.append(fish);
     for (const n of Object.keys(st.presets)) sel.append(new Option(`★ ${n}`, `u:${n}`));
   }
   $("wxp-preset").onchange = (e) => {
     const [k, n] = [e.target.value.slice(0, 1), e.target.value.slice(2)];
-    const c = k === "b" ? PRESETS[n] : k === "u" ? st.presets[n] : null;
-    if (c) weather.applyConfig(c);
+    const sp = k === "s" ? SPECIES.find((x) => x[0] === n) : null;
+    const c = k === "b" ? PRESETS[n] : k === "u" ? st.presets[n] : sp ? speciesConfig(sp) : null;
+    if (c && weather.applyConfig(c) === false) {
+      activity.start(`Preset ${n}`).fail(c.layer === "subt"
+        ? "No sea temperature at depth in the loaded files: get Copernicus or HYCOM with depths in Get data."
+        : "No sea temperature in the loaded files: get one in Get data (MUR, ACSPO, Geo-Polar…).");
+    }
   };
   $("wxp-psave").onclick = async () => {
     const v = await ask({ title: "Save a preset", note: "The layer, sources, overlays and filter shown now, under a name.", ok: "Save",

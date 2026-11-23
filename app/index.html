@@ -1142,7 +1142,6 @@
         <div class="wx-row"><select id="replay-log" class="grow" title="Signal K sessions are logged while TweedPlot runs; play one back in place of the live data"></select>
           <button id="replay-play" title="Play this log in place of the live Signal K data">Replay</button></div>
         <div id="replay-note" class="wx-note">Every Signal K session is logged. A replay drives the boat, instruments, AIS targets and alarms as if live; live data waits until it stops. Tracks are not recorded from a replay.</div>
-        <div class="wx-note">The buttons in the toolbar: the live data status (green receiving, amber connected but quiet, red not connected), Live ▶ / Paused ❚❚, Follow and Clear track. Pause to plan: right-click the chart to move the boat.</div>
         <h3>Damping</h3>
         <div class="wx-row"><label class="grow" for="set-damp-motion">Heading, COG, SOG, BSP</label><select id="set-damp-motion"></select></div>
         <div class="wx-row"><label class="grow" for="set-damp-wind">Wind (AWS, AWA, TWS, TWA, TWD)</label><select id="set-damp-wind"></select></div>
@@ -1158,13 +1157,11 @@
         <div class="wx-row"><span id="upd-status" class="grow wx-note" role="status" aria-live="polite"></span><button id="upd-check" type="button">Check now</button></div>
         <div class="wx-note">An update is never installed by itself: a notice asks first, and installing closes TweedPlot, so it can't be done while a live position is arriving. Download ahead fetches the installer quietly, so Install is quick. Updates are signed by TweedsMarine and checked before they install.</div>
 <h3>About this system</h3>
-        <div class="wx-note">Version, computer details and where to put your chart and data files. Copy for support puts all of this, with the activity log, on the clipboard, to paste into an email to TweedsMarine.</div>
         <div class="wx-row"><span class="grow"></span><button id="sys-copy" class="on">Copy for support</button></div>
         <dl id="sys-info" class="sys-info"></dl>
         <h4>Where to install data files</h4>
         <div id="sys-folders" class="sys-folders"></div>
 <h3>Activity log</h3>
-        <div class="wx-note">What TweedPlot has done (imports, deletes, exports, chart changes) and how each went, newest first. Copy for support puts it on the clipboard with the version, to send to TweedsMarine.</div>
         <div class="wx-row"><span id="act-log-path" class="grow wx-note mono"></span><button id="act-log-refresh">Refresh</button><button id="act-log-copy" class="on">Copy for support</button></div>
         <pre id="act-log" class="act-log"></pre>
 <h3>Radar overlay test</h3>
