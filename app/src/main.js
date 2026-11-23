@@ -15,6 +15,7 @@ import { PRIMARY } from "./role.js";
 import * as activity from "./activity.js";
 import { setupWeather, barbImage } from "./weather.js";
 import { setupWeatherPanel } from "./wxpanel.js";
+import { setupScreenshots } from "./screenshot.js";
 import { setupBrand } from "./brand.js";
 import { setupUpdates } from "./updates.js";
 import { setupWebMap } from "./webmap.js";
@@ -726,6 +727,7 @@ map.on("load", () => {
   setupGribDownload(map, { weather, course: route });
   gribTools = setupGribTools(map, { weather, dock });
   setupWeatherPanel(map, weather, sidePanel, ui);
+  setupScreenshots();
   depthStack = setupDepthStack(map, { weather, dock });
   // the navigated route's weather runs at the speed over ground, while live data is arriving
   const routeWx = setupRouteWeather(map, { weather, routing, course: route, dock,

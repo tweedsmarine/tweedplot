@@ -65,6 +65,7 @@ export const KEYS = [
 
   { group: "Help", keys: "F1", label: "User manual", own: true },
   { group: "Help", keys: "?", label: "This list of keys", run: (c) => c.sheet() },
+  { group: "Help", keys: "Ctrl+Shift+S", label: "Screenshot of this window, saved in the screenshots folder", btn: "shot-btn", run: click("shot-btn") },
 ];
 
 /** Parse "Ctrl+Shift+[" into what a keydown must match. */

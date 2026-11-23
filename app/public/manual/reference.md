@@ -152,6 +152,7 @@ From top to bottom. Every button has a short label under its icon (**North**, **
 | {icon:soundings} | **Own soundings** | Shows or hides your soundings as a seabed in this view, with the depth range card. Fishing use only (in other uses: Chart › Layers › Own soundings) |
 | {icon:targets} | **Target list** | Opens the AIS target list over the chart (also **T**) |
 | {icon:clear-track} | **Clear track** | Clears the short trail behind the boat |
+| {icon:screenshot} | **Capture** | Saves a screenshot of this window (also **Ctrl+Shift+S**) in the screenshots folder, for your own records or to send for support. The first time it asks where (TweedPlot-Screenshots on the Desktop to begin with); right-click opens the folder. See *Screenshots* under Settings |
 | {icon:view-nav} {icon:view-plan} {icon:view-inst} | **View** | Lists Navigation, Planning and Instruments and **Show the chart in this view**. The icon shows the view you are in (also **F2**, **F3**, **F4**) |
 | {icon:side} | **Right** | The right panel: shows the data panel beside the chart, or hides it to a line under the chart (also **O**). Labelled **Data** when the panel is on the left |
 | {icon:panels} | **Left** | The left panels: shows or hides the rail and drawers in this view (also **P**). The dock remains independent |
@@ -1425,6 +1426,8 @@ Laylines and the tacking cone are not drawn in the Fishing use. Everything else 
 **Anchor button beside MOB and Drop** (off to begin with) adds the anchor button to the data panel. Without it, drop and weigh anchor from the right-click menu, **K** or Alarms › Anchor watch.
 
 **Welcome screen.** The first time TweedPlot starts it asks what the boat is mostly for and sets the Use from the answer; **Not now** leaves the Use unset. **Show the welcome screen** opens it again.
+
+**Screenshots.** The toolbar's {icon:screenshot} **Capture** button (or **Ctrl+Shift+S**) saves a picture of the whole TweedPlot window as you see it, drawers, data panel and any open box included, as a PNG named by the local date and time (TweedPlot-2026-11-23-125930.png). They all go in one folder: the first screenshot asks where, suggesting **TweedPlot-Screenshots** on the Desktop, which is easy to find when attaching one to an email for support. This section shows the folder, **Change folder…** picks another, and **Open folder** opens it (right-clicking the button does too). Each picture carries TweedPlot's version and the time in UTC. On a Mac, macOS asks once to allow TweedPlot to record the screen (System Settings › Privacy & Security › Screen Recording).
 
 **Screen calibration.** A bar that is 50 mm long on a typical screen: measure it on yours with a ruler and enter what you measure. The IHO chart symbols and the data panel's text are then drawn true to size in millimetres (see *Chart symbols at a glance* under Charts).
 

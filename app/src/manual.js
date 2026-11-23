@@ -39,7 +39,7 @@ const ICONS = {
   shoot: ["#shoot-btn svg"], haul: ["#haul-btn svg"], rec: ["#pb-rec svg"], soundings: ["#pb-tb svg"], side: ["#side-btn svg"],
   north: ["#north-btn svg"], sk: ["#sk-state svg", "ok"], "sk-off": ["#sk-state svg", "off"], live: ["#sk-live svg", "play"], paused: ["#sk-live svg", "pause"],
   follow: ["#follow svg"], panels: ["#tools-btn svg"], day: ["#palette-btn svg", "sun"], night: ["#palette-btn svg", "moon"],
-  "clear-track": ["#clear-track svg"], snap: ["#wxp-snap svg"],
+  "clear-track": ["#clear-track svg"], screenshot: ["#shot-btn svg"], snap: ["#wxp-snap svg"],
 };
 for (const v of VIEWS) ICONS[`view-${v.id}`] = [null, null, v.icon];
 

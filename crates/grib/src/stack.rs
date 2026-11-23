@@ -246,7 +246,8 @@ pub fn section(f: &GribFile, line: &[[f64; 2]], n: usize, t: i64) -> Option<Sect
     let sal = grid_rows(Param::SubSalinity, &|s| round(s, 1000.0));
     let u = grid_rows(Param::SubCurrentU, &|x| x);
     let v = grid_rows(Param::SubCurrentV, &|x| x);
-    let kn: Vec<Vec<Option<f64>>> = u.iter().zip(&v).map(|(ur, vr)| ur.iter().zip(vr).map(|(a, b)| Some(round(a.as_ref()?.hypot(*b.as_ref()?) * KN, 100.0))).collect()).collect();
+    let kn: Vec<Vec<Option<f64>>> =
+        u.iter().zip(&v).map(|(ur, vr)| ur.iter().zip(vr).map(|(a, b)| Some(round(a.as_ref()?.hypot(*b.as_ref()?) * KN, 100.0))).collect()).collect();
     let thermo = (0..pts.len())
         .map(|x| {
             let col: Vec<f64> = temp.iter().map(|r| r[x].unwrap_or(f64::NAN)).collect();
@@ -269,7 +270,7 @@ mod tests {
         let (z, s) = thermocline(&d, &t).unwrap();
         assert_eq!(z, 25.0);
         assert!((s - 2.0).abs() < 1e-9); // 2 °C over 10 m
-        // the top step (0.5 to 10 m, mid 5 m) is above the range looked at
+                                         // the top step (0.5 to 10 m, mid 5 m) is above the range looked at
         let t2 = [25.0, 18.0, 17.95, 17.9, 17.85, 17.8, 17.75];
         assert!(thermocline(&d, &t2).unwrap().1 < THERMO_MIN);
         // no values below the sea floor

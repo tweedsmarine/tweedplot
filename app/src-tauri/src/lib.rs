@@ -21,6 +21,7 @@ mod publications;
 mod radar_sim;
 mod routing_cmd;
 mod s63_cmd;
+mod screenshot;
 mod settings;
 mod stations_cmd;
 mod webmap;
@@ -2261,6 +2262,11 @@ pub fn run() {
             library_merge,
             library_file_contents,
             weather_save_png,
+            screenshot::screenshot_folder,
+            screenshot::screenshot_use_default,
+            screenshot::screenshot_pick_folder,
+            screenshot::screenshot_open_folder,
+            screenshot::screenshot_take,
             pbathy::pbathy_pick_xyz_save,
             pbathy::pbathy_export_xyz,
             pbathy::pbathy_import_from_library,

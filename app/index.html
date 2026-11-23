@@ -847,6 +847,7 @@
       <button id="targets-btn" title="Target list: AIS targets with range, bearing, CPA and TCPA (T)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l6-6"/><circle cx="16" cy="9" r="1.2" fill="currentColor"/></svg></button>
       <button id="clear-track" aria-label="Clear the track trail" title="Clear the trail behind the boat">
         <svg viewBox="0 0 24 24"><path d="M3 18c3-1 4-5 7-6s5 1 7-1" stroke-dasharray="2.2 2.2"/><path d="M15 15l6 6M21 15l-6 6"/></svg></button>
+      <button id="shot-btn" aria-label="Screenshot" title="Screenshot: save a picture of this window, for your records or to send for support (Ctrl+Shift+S). Right-click for the folder"><svg viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3.2"/></svg></button>
       <button id="view-btn" class="tb-group" aria-label="View" title="View: choose Navigation, Planning or Instruments, and whether the chart shows (F2, F3, F4)">
         <svg viewBox="0 0 24 24"></svg></button>
       <button id="side-btn" aria-label="Show or hide the data panel" title="Right panel: show or hide the data panel (O)">
@@ -1076,6 +1077,9 @@
             <div class="wx-row"><label class="grow" title="The Record soundings button shows in the toolbar in Fishing; tick to show it whatever the use"><input id="set-rec-all" type="checkbox" /> Record soundings button in every use</label></div>
             <div class="wx-row"><label class="grow" title="A button beside MOB and Drop that drops anchor, and weighs it when anchored. Without it: right-click the chart, the K key, or Alarms › Anchor watch"><input id="set-anchor-btn" type="checkbox" /> Anchor button beside MOB and Drop</label></div>
             <div class="wx-row"><span class="grow">Start-up questions</span><button id="set-welcome" type="button">Show the welcome screen</button></div>
+            <h3>Screenshots</h3>
+            <div class="wx-row"><span class="grow wx-note" id="shot-dir" title="Where the toolbar's Screenshot button saves its pictures">Not chosen yet: the first screenshot asks</span></div>
+            <div class="wx-row"><button id="shot-change" type="button">Change folder…</button><button id="shot-open" type="button">Open folder</button></div>
             <h3>Screen calibration</h3>
             <div class="wx-row" title="So the IHO symbols, lines and text are their true size (S-52): measure the bar on your screen with a ruler and enter its length. Uncalibrated, it is 50 mm on a typical screen"><label for="set-screen-mm">Screen calibration</label> <span id="cal-bar" style="display:inline-block;height:6px;background:currentColor;vertical-align:middle;width:189px"></span> measures <input id="set-screen-mm" type="number" min="10" max="200" step="0.5" style="width:4.5em" /> mm</div>
             <h3>Screen controls <small>this window</small></h3>
