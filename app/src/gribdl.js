@@ -369,13 +369,41 @@ export function setupGribDownload(map, { weather, course }) {
     } catch (e) { fileStatus(`Could not add the file: ${e}`); }
     renderTable();
   };
+  // old = its data ran out more than `days` ago (a forecast's last step, an analysis's last day), not its run
+  // time: a satellite analysis is a day or two old when it is published but still current
+  const ends = (f) => Math.max(...(f.info?.runs ?? []).map((r) => r.last ?? r.ref_time ?? -Infinity), -Infinity);
+  const endOf = (f) => (Number.isFinite(ends(f)) ? ends(f) : f.mtime ?? Infinity);
+  // the days chosen and the automatic tidy-up are remembered
+  if (prefs.tidyDays) $("gf-days").value = String(prefs.tidyDays);
+  $("gf-days").onchange = () => { prefs.tidyDays = Number($("gf-days").value) || 7; save(); };
+  const autoBox = $("gf-auto");
+  if (autoBox) {
+    autoBox.checked = !!prefs.tidyAuto;
+    autoBox.onchange = () => { prefs.tidyAuto = autoBox.checked; save(); if (prefs.tidyAuto) autoTidy(); };
+  }
+  /** Automatic tidy-up (B12): on start and every six hours, delete the GRIB files whose data ended more than the
+   *  chosen days ago. Never a loaded file, never qtVlm's folder; what went is noted in the activity log. */
+  async function autoTidy() {
+    if (!prefs.tidyAuto) return;
+    const days = Number(prefs.tidyDays) || 7, cut = Date.now() / 1000 - days * 86400;
+    const all = (await invoke("grib_files").catch(() => [])) ?? [];
+    const isLoaded = new Set(weather.sources().map((x) => x.path));
+    const old = all.filter((f) => !qtvlm(f) && !isLoaded.has(f.path) && endOf(f) < cut);
+    if (!old.length) return;
+    try {
+      const n = await invoke("grib_delete", { paths: old.map((f) => f.path) });
+      const mb = old.reduce((a, f) => a + (f.size || 0), 0) / 1e6;
+      if (n) activity.note(`Tidied up ${n} GRIB file${n === 1 ? "" : "s"} whose data ended more than ${days} days ago (${mb.toFixed(1)} MB)`,
+        { details: old.map((f) => f.file ?? f.path).slice(0, 50) });
+      await weather.refreshFiles();
+      renderTable();
+    } catch (e) { activity.start("Tidying up GRIB files").fail(`Could not delete: ${e}`); }
+  }
+  setTimeout(autoTidy, 60_000);
+  setInterval(autoTidy, 6 * 3600_000);
   $("gf-tidy").onclick = async () => {
     const days = Number($("gf-days").value) || 7, cut = Date.now() / 1000 - days * 86400;
     const isLoaded = new Set(weather.sources().map((x) => x.path));
-    // old = its data ran out more than `days` ago (a forecast's last step, an analysis's last day), not its run
-    // time: a satellite analysis is a day or two old when it is published but still current
-    const ends = (f) => Math.max(...(f.info?.runs ?? []).map((r) => r.last ?? r.ref_time ?? -Infinity), -Infinity);
-    const endOf = (f) => (Number.isFinite(ends(f)) ? ends(f) : f.mtime ?? Infinity);
     const oldQt = files.filter((f) => qtvlm(f) && endOf(f) < cut);
     const qtNote = oldQt.length ? ` ${oldQt.length} old file${oldQt.length === 1 ? " is" : "s are"} in qtVlm's own folder (C:\\Program Files (x86)\\qtVlm\\grib), which TweedPlot reads but does not delete (Windows needs administrator rights there): delete ${oldQt.length === 1 ? "it" : "them"} in qtVlm or File Explorer.` : "";
     const old = files.filter((f) => !qtvlm(f) && endOf(f) < cut);

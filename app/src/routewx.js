@@ -25,7 +25,7 @@ export function setupRouteWeather(map, { weather, routing, course, dock, getSog 
   // source: which track the plots follow: "nav" (the navigated route, from the boat now at the speed over
   // ground), "plan" (the route in the editor, from its departure in Route › Plan at its planning speed) or
   // "routing" (the active weather routing's own times). The departure and speed live with the route, not here.
-  let opts = { wind: true, waves: true, extras: [], settings: false, layout: "below", fast: false, source: "" };
+  let opts = { wind: true, waves: true, extras: [], settings: false, layout: "below", fast: false, source: "", axis: "time" };
   try { Object.assign(opts, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* ignore */ }
   delete opts.departure; delete opts.speed; // once kept here; now the route's (Route › Plan)
   if (!Array.isArray(opts.extras)) opts.extras = [];
@@ -245,6 +245,8 @@ export function setupRouteWeather(map, { weather, routing, course, dock, getSog 
       };
       pick.append(box("Wind", opts.wind, (v) => (opts.wind = v)), box("Waves", opts.waves, (v) => (opts.waves = v)));
       for (const x of EXTRAS) pick.append(box(x.label, opts.extras.includes(x.key), (v) => { opts.extras = v ? [...new Set([...opts.extras, x.key])] : opts.extras.filter((k) => k !== x.key); }));
+      pick.append(box("Spread by distance", opts.axis === "distance", (v) => (opts.axis = v ? "distance" : "time"),
+        "Lay the plots out by distance along the route (NM) instead of by time: each mile of the route gets the same room, so a slow stretch isn't drawn out"));
       set.append(pick);
       const r0 = data.rows[0], r1 = data.rows.at(-1);
       const head = document.createElement("div");
@@ -376,8 +378,8 @@ export function setupRouteWeather(map, { weather, routing, course, dock, getSog 
       body.append(inspect); // measured with its readout and buttons, so the plots take all the rest
       const below = inspect.offsetHeight + 8;
       const make = (H) => (beside
-        ? drawV(data.rows, strips, Math.max(300, body.clientWidth - 20), H, handlers)
-        : draw(data.rows, strips, Math.max(520, body.clientWidth - 20), handlers));
+        ? drawV(data.rows, strips, Math.max(300, body.clientWidth - 20), H, { ...handlers, by: opts.axis })
+        : draw(data.rows, strips, Math.max(520, body.clientWidth - 20), { ...handlers, by: opts.axis }));
       let svg = make(Math.max(320, body.clientHeight - above - below - 16));
       body.insertBefore(svg.el, inspect);
       if (beside) { // margins and padding add up to a little more than the sum: trim what still overflows
@@ -428,7 +430,7 @@ function courseAt(rows, i) {
 }
 const crs3 = (c) => (c == null ? "" : `${String(Math.round(c) % 360).padStart(3, "0")}°`);
 
-function draw(rows, strips, W, { pick, release }) {
+function draw(rows, strips, W, { pick, release, by = "time" }) {
   const pad = { l: 46, r: 40 };
   const gap = 20, top = 16, axisH = 34;
   const H = top + strips.reduce((a, p) => a + p.h + gap, 0) + axisH;
@@ -446,7 +448,8 @@ function draw(rows, strips, W, { pick, release }) {
   const hasData = (r) => ["tws", "gust", "wave", "mslp", "temp", "rain", "cape", "sst"].some((k) => r[k] != null) || r.cur?.kn != null;
   const lastWith = rows.findLast(hasData) ?? rows.at(-1);
   const t0 = rows[0].t, t1 = Math.max(lastWith.t, t0 + 600);
-  const x = (t) => pad.l + ((t - t0) / (t1 - t0)) * (W - pad.l - pad.r);
+  const ax = routeAxis(rows, t0, t1, by);
+  const x = (t) => pad.l + ax.f(t) * (W - pad.l - pad.r);
   const val = (r, k) => (k === "cur" ? r.cur?.kn ?? null : r[k] ?? null);
   // arrows along the top of a strip every so many px: pointing where the wind/waves go
   const arrows = (g, y, key, col) => {
@@ -534,6 +537,18 @@ function draw(rows, strips, W, { pick, release }) {
     }
     y0 += st.h + gap;
   }
+  if (ax.dist) {
+    // distance along the bottom (nice NM steps), the time there and the course below it
+    const step = niceNm((ax.nm1 - ax.nm0) / Math.max(1, Math.floor((W - pad.l - pad.r) / 96)));
+    for (let d = Math.ceil(ax.nm0 / step) * step; d <= ax.nm1 + 1e-9; d += step) {
+      const t = ax.tAtNm(d), xx = x(t);
+      for (const b of bands) add("line", { x1: xx, x2: xx, y1: b.y0, y2: b.y0 + b.h, class: "mg-vgrid" });
+      add("text", { x: xx, y: y0 - gap + 14, class: "mg-tick", "text-anchor": "middle" }).textContent = `${+d.toFixed(1)} NM`;
+      const r = rows.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a));
+      add("text", { x: xx, y: y0 - gap + 27, class: "mg-tick", "text-anchor": "middle" }).textContent =
+        `${new Date(t * 1000).toLocaleString("en-NZ", { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false })} · ${crs3(courseAt(rows, rows.indexOf(r)))}`.replace(/ · $/, "");
+    }
+  } else {
   // time along the bottom (local days and 6-hourly ticks), distance below it
   const span = t1 - t0;
   const minor = span > 5 * 86400 ? 21600 : span > 36 * 3600 ? 10800 : 3600;
@@ -553,11 +568,12 @@ function draw(rows, strips, W, { pick, release }) {
     const r = rows.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a));
     add("text", { x: x(t), y: y0 - gap + 27, class: "mg-tick", "text-anchor": "middle" }).textContent = `${r.nm.toFixed(0)} NM · ${crs3(courseAt(rows, rows.indexOf(r)))}`.replace(/ · $/, "");
   }
+  }
   const cur = add("line", { x1: 0, x2: 0, y1: top, y2: y0 - gap, class: "mg-cursor" });
   const marks = add("g", { class: "mg-marks" }); // a dot and a value where the cursor crosses each plot
   const at = (e) => {
     const r = svg.getBoundingClientRect();
-    return t0 + ((e.clientX - r.left - pad.l) / (W - pad.l - pad.r)) * (t1 - t0);
+    return ax.inv((e.clientX - r.left - pad.l) / (W - pad.l - pad.r));
   };
   const nearest = (t) => rows.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a));
   // press anywhere on the plots and drag: the cursor follows, snapping to the route's forecast points
@@ -612,7 +628,7 @@ function draw(rows, strips, W, { pick, release }) {
 
 /** The same plots turned to run down the screen: time (and the route with it) from top to bottom, one column per plot.
  *  For a route that runs north-south, beside the chart. Returns the same { el, cursor } as draw(). */
-function drawV(rows, strips, W, H, { pick, release }) {
+function drawV(rows, strips, W, H, { pick, release, by = "time" }) {
   const padL = 88, padR = 10, padT = 46, padB = 40, gap = 16, arrowCol = 18; // padB: the last time label is three lines
   const Hp = Math.max(120, H - padT - padB);
   const svg = document.createElementNS(NS, "svg");
@@ -627,7 +643,8 @@ function drawV(rows, strips, W, H, { pick, release }) {
   const hasData = (r) => ["tws", "gust", "wave", "mslp", "temp", "rain", "cape", "sst"].some((k) => r[k] != null) || r.cur?.kn != null;
   const lastWith = rows.findLast(hasData) ?? rows.at(-1);
   const t0 = rows[0].t, t1 = Math.max(lastWith.t, t0 + 600);
-  const y = (t) => padT + ((t - t0) / (t1 - t0)) * Hp;
+  const ax = routeAxis(rows, t0, t1, by);
+  const y = (t) => padT + ax.f(t) * Hp;
   const val = (r, k) => (k === "cur" ? r.cur?.kn ?? null : r[k] ?? null);
   const n = Math.max(1, strips.length);
   const sw = (W - padL - padR - gap * (n - 1)) / n;
@@ -707,6 +724,17 @@ function drawV(rows, strips, W, H, { pick, release }) {
       add("path", { d: path(st.key), stroke: st.col, fill: "none", "stroke-width": 1.8 }, g);
     }
   });
+  if (ax.dist) {
+    // distance down the left (nice NM steps), with the time there
+    const step = niceNm((ax.nm1 - ax.nm0) / Math.max(1, Math.floor(Hp / 50)));
+    for (let d = Math.ceil(ax.nm0 / step) * step; d <= ax.nm1 + 1e-9; d += step) {
+      const t = ax.tAtNm(d), yy = y(t);
+      for (const b of bands) add("line", { x1: b.x0, x2: b.x0 + b.w, y1: yy, y2: yy, class: "mg-vgrid" });
+      add("text", { x: padL - 10, y: yy + 4, class: "mg-tick", "text-anchor": "end" }).textContent = `${+d.toFixed(1)} NM`;
+      add("text", { x: padL - 10, y: yy + 16, class: "mg-tick", "text-anchor": "end" }).textContent =
+        new Date(t * 1000).toLocaleString("en-NZ", { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+    }
+  } else {
   // time down the left (local days and hours), with the distance along the route and its course
   const span = t1 - t0;
   const minor = span > 5 * 86400 ? 21600 : span > 36 * 3600 ? 10800 : 3600;
@@ -733,9 +761,10 @@ function drawV(rows, strips, W, H, { pick, release }) {
       add("text", { x: padL - 24, y: yy + 30, class: "mg-tick", "text-anchor": "end" }).textContent = crs3(c);
     }
   }
+  }
   const cur = add("line", { x1: padL - 4, x2: W - padR, y1: 0, y2: 0, class: "mg-cursor" });
   const marks = add("g", { class: "mg-marks" });
-  const at = (e) => t0 + ((e.clientY - svg.getBoundingClientRect().top - padT) / Hp) * (t1 - t0);
+  const at = (e) => ax.inv((e.clientY - svg.getBoundingClientRect().top - padT) / Hp);
   const nearest = (t) => rows.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a));
   let last = null;
   const follow = (e) => {
@@ -787,6 +816,36 @@ function drawV(rows, strips, W, H, { pick, release }) {
     },
   };
 }
+
+/** The plots' axis: time, or distance along the route ("Spread by distance"). f(t) → 0..1 along the axis,
+ *  inv(0..1) → t; with distance, tAtNm(nm) → t. Distance falls back to time when the route hardly moves. */
+export function routeAxis(rows, t0, t1, by = "time") {
+  const lin = { dist: false, f: (t) => (t - t0) / (t1 - t0), inv: (u) => t0 + u * (t1 - t0) };
+  if (by !== "distance") return lin;
+  const pts = rows.filter((r) => r.t >= t0 && r.t <= t1 && Number.isFinite(r.nm));
+  if (pts.length < 2) return lin;
+  const nm0 = pts[0].nm, nm1 = pts.at(-1).nm;
+  if (!(nm1 - nm0 > 0.05)) return lin;
+  // nm at t (piecewise linear between the rows), and back
+  const nmAt = (t) => {
+    if (t <= pts[0].t) return nm0;
+    if (t >= pts.at(-1).t) return nm1;
+    let i = 1;
+    while (pts[i].t < t) i++;
+    const a = pts[i - 1], b = pts[i];
+    return b.t === a.t ? b.nm : a.nm + ((t - a.t) / (b.t - a.t)) * (b.nm - a.nm);
+  };
+  const tAtNm = (d) => {
+    if (d <= nm0) return pts[0].t;
+    if (d >= nm1) return pts.at(-1).t;
+    let i = 1;
+    while (pts[i].nm < d) i++;
+    const a = pts[i - 1], b = pts[i];
+    return b.nm === a.nm ? a.t : a.t + ((d - a.nm) / (b.nm - a.nm)) * (b.t - a.t);
+  };
+  return { dist: true, nm0, nm1, tAtNm, f: (t) => (nmAt(t) - nm0) / (nm1 - nm0), inv: (u) => tAtNm(nm0 + Math.max(0, Math.min(1, u)) * (nm1 - nm0)) };
+}
+const niceNm = (raw) => { const p = 10 ** Math.floor(Math.log10(Math.max(raw, 0.01))); return [1, 2, 2.5, 5, 10].map((m) => m * p).find((q) => q >= raw) ?? 10 * p; };
 
 function toLocalInput(sec) {
   const d = new Date(sec * 1000), z = (n) => String(n).padStart(2, "0");
