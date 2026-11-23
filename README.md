@@ -10,7 +10,7 @@ It began as a tool for racing skippers who wanted routing, weather and instrumen
 
 > **Not a certified navigation system.** TweedPlot is a planning and situational-awareness aid, not an ECDIS. Charts and forecasts can be wrong or out of date. Keep a lookout and carry official charts.
 
-> **This is a beta (1.0.0-beta.3).** It has been used on the water by its author, but not by many people yet. That is why it is here: please try it, tell us what breaks, and tell us what you need. See [Testing and feedback](#testing-and-feedback).
+> **This is a beta (1.0.0-beta.4).** It has been used on the water by its author, but not by many people yet. That is why it is here: please try it, tell us what breaks, and tell us what you need. See [Testing and feedback](#testing-and-feedback).
 
 ## What it does now
 
