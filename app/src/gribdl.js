@@ -192,7 +192,7 @@ export function setupGribDownload(map, { weather, course }) {
     try {
       const r = await invoke("gribdl_estimate", { req: request() });
       const size = (b) => { const mb = b / 1e6; return mb < 1 ? `${Math.max(1, Math.round(b / 1000))} kB` : `${mb.toFixed(mb < 10 ? 1 : 0)} MB`; };
-      const ecmwf = request().model.startsWith("ecmwf");
+      const ecmwf = request().model.startsWith("ecmwf") || request().model === "aigfs0p25";
       const mur = DAILY.includes(request().model);
       const hycom = request().model === "hycom_espc";
       const him = request().model === "himawari";
@@ -216,13 +216,14 @@ export function setupGribDownload(map, { weather, course }) {
         : mur
         ? `About ${size(r.bytes)} · the latest ${Number($("dl-days").value)} daily analys${Number($("dl-days").value) > 1 ? "es" : "is"}${res}`
         : ecmwf
-        ? `File about ${size(r.bytes)}; downloads about ${size(r.download)} (ECMWF publishes whole-globe fields, cut to the area here) · ${r.steps} forecast times to +${r.last} h` +
-          (r.last > 144 && !request().model.includes("aifs") ? " · only the 00Z and 12Z runs go past 144 h" : "")
+        ? `File about ${size(r.bytes)}; downloads about ${size(r.download)} (${request().model === "aigfs0p25" ? "NOAA" : "ECMWF"} publishes whole-globe fields, cut to the area here) · ${r.steps} forecast times to +${r.last} h` +
+          (r.last > 144 && request().model.startsWith("ecmwf") && !request().model.includes("aifs") ? " · only the 00Z and 12Z runs go past 144 h" : "")
         : `About ${size(r.bytes)} · ${r.steps} forecast times to +${r.last} h`;
     } catch (e) { $("dl-size").textContent = String(e); }
   }
   const SOURCE_NOTE = {
     gfs: "Source: NOAA National Centers for Environmental Prediction (NOMADS: GFS, GFS-Wave; US Government data), cut to the area on the server. The newest complete run is used.",
+    aigfs0p25: "Source: NOAA AIGFS (the AI version of GFS, run by NCEP; US Government data), from NOMADS: 0.25°, 6-hourly to 16 days, four runs a day. Wind, pressure and air temperature only (no gusts or waves). NOAA publishes whole-globe fields, so each is fetched and cut to the area here. An AI model: compare it with GFS and ECMWF (Compare GRIBs, Verify runs) before trusting it in your area. The newest complete run is used.",
     ecmwf: "Source: ECMWF open data (CC BY 4.0, © ECMWF), from data.ecmwf.int or its AWS mirror. The free 0.1° IFS (~9 km) data arrives about two hours after the 0.25° products; ECMWF does not document the surface currents as tidal-stream predictions. The newest complete run is used.",
     mur_sst: "Source: NASA JPL MUR SST (free to use and share; please acknowledge NASA JPL / PO.DAAC) via NOAA CoastWatch ERDDAP: a daily 1 km analysis from all the satellites, without cloud gaps, usually a day or two old. Shown until four days after its date.",
     acspo_sst: "Source: NOAA ACSPO L3S-LEO (NOAA STAR / CoastWatch, GHRSST: free and open): each day's clear-sky sea temperature from all the polar-orbiting satellites (VIIRS on S-NPP, NOAA-20 and NOAA-21; AVHRR on MetOp), gridded at 0.02° (about 2 km), best-quality pixels only. Real observations, so fronts are sharp, but there are gaps where it was cloudy all day. Usually a day old. Shown until four days after its date. An area across 180° is fine.",
@@ -235,7 +236,7 @@ export function setupGribDownload(map, { weather, course }) {
     cmems_chl: "Source: E.U. Copernicus Marine Service Information (GlobColour, ACRI-ST: ocean colour from all the satellites, gap-filled; free and open): daily chlorophyll-a at 4 km, a day or two old. Shown until six days after its date. An area across 180° is fine.",
     hycom_espc: "Source: HYCOM ESPC global ocean model (US Navy / HYCOM Consortium, 1/12°, about 9 km) via hycom.org: from the latest analysis out to 8 days. A demonstration service with no guarantee it is up. An area across 180° is fine (fetched as two requests and joined).",
   };
-  const showSource = () => status(SOURCE_NOTE[OCEAN.includes(prefs.model) ? prefs.model : String(prefs.model).startsWith("ecmwf") ? "ecmwf" : "gfs"]);
+  const showSource = () => status(SOURCE_NOTE[OCEAN.includes(prefs.model) || prefs.model === "aigfs0p25" ? prefs.model : String(prefs.model).startsWith("ecmwf") ? "ecmwf" : "gfs"]);
   $("dl-model").onchange = (e) => { prefs.model = e.target.value; save(); renderParams(); estimate(); showSource(); };
   $("dl-days").onchange = (e) => { if (prefs.model === "himawari") prefs.himHours = Number(e.target.value); else prefs.days = Number(e.target.value); save(); estimate(); };
   $("dl-every").onchange = (e) => { if (prefs.model === "himawari") prefs.himEvery = Number(e.target.value); else prefs.every = Number(e.target.value); save(); estimate(); };

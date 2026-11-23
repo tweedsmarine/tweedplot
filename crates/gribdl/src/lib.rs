@@ -14,6 +14,7 @@
 //!
 //! ECMWF open data (IFS, AIFS, IFS wave) comes as global files; see `ecmwf`.
 
+pub mod aigfs;
 pub mod blosc;
 pub mod cmems;
 pub mod coastal;
@@ -54,6 +55,8 @@ pub enum Model {
     Gfs0p25,
     Gfs0p50,
     Gfs1p00,
+    /// NOAA AIGFS (the AI GFS), 0.25°, 6-hourly to 384 h: see `aigfs`.
+    Aigfs0p25,
     GfsWave0p25,
     EcmwfIfs0p25,
     EcmwfIfs0p1,
@@ -108,11 +111,12 @@ pub struct ParamInfo {
 }
 
 impl Model {
-    pub fn all() -> [Model; 19] {
+    pub fn all() -> [Model; 20] {
         [
             Model::Gfs0p25,
             Model::Gfs0p50,
             Model::Gfs1p00,
+            Model::Aigfs0p25,
             Model::GfsWave0p25,
             Model::EcmwfIfs0p25,
             Model::EcmwfIfs0p1,
@@ -184,6 +188,19 @@ impl Model {
             }
             Model::Gfs0p50 => ModelInfo { id: self, name: "GFS 0.5°", res_deg: 0.5, max_hours: 384, steps: vec![(384, 3)], params: atmos(), delay_h: 5 },
             Model::Gfs1p00 => ModelInfo { id: self, name: "GFS 1°", res_deg: 1.0, max_hours: 384, steps: vec![(384, 3)], params: atmos(), delay_h: 5 },
+            Model::Aigfs0p25 => ModelInfo {
+                id: self,
+                name: "NOAA AIGFS 0.25° (AI model)",
+                res_deg: 0.25,
+                max_hours: 384,
+                steps: vec![(384, 6)],
+                params: vec![
+                    ParamInfo { id: "wind", name: "Wind at 10 m", fields: 2, default: true },
+                    ParamInfo { id: "mslp", name: "Pressure (MSL)", fields: 1, default: true },
+                    ParamInfo { id: "temp", name: "Air temperature (2 m)", fields: 1, default: false },
+                ],
+                delay_h: 5,
+            },
             Model::GfsWave0p25 => ModelInfo {
                 id: self,
                 name: "GFS-Wave 0.25°",
@@ -552,6 +569,11 @@ pub fn download_bytes(req: &Request) -> u64 {
     if req.model.is_cmems() {
         return cmems::download_estimate(req);
     }
+    if req.model == Model::Aigfs0p25 {
+        // whole global fields of about 1.3 MB each, cut to the area here
+        let fields: u32 = req.model.info().params.iter().filter(|p| req.params.iter().any(|x| x == p.id)).map(|p| p.fields).sum();
+        return fields as u64 * req.model.hours(req.hours, req.every).len() as u64 * 1_300_000;
+    }
     if !req.model.is_ecmwf() {
         return estimate_bytes(req);
     }
@@ -646,6 +668,9 @@ pub fn latest_run(model: Model, last_hour: u32, now: i64) -> Result<Run> {
     if model.is_ecmwf() {
         return ecmwf::latest_run(model, last_hour, now);
     }
+    if model == Model::Aigfs0p25 {
+        return aigfs::latest_run(last_hour, now);
+    }
     if model.is_ocean() {
         // the servers serve the newest data themselves
         return Ok(Run::at(now - now.rem_euclid(3600)));
@@ -726,6 +751,12 @@ fn merge_notes(first: Option<String>, second: Option<String>) -> Option<String> 
 }
 
 fn download_one(req: &Request, run: &Run, dir: &Path, progress: Progress, cancel: &AtomicBool) -> Result<Downloaded> {
+    if req.model == Model::Aigfs0p25 {
+        if !req.params.iter().any(|p| matches!(p.as_str(), "wind" | "mslp" | "temp")) {
+            return Err(Error::Bad("choose at least one parameter".into()));
+        }
+        return aigfs::download(req, run, dir, progress, cancel).map(|path| Downloaded { path, note: None });
+    }
     if req.model.vars(&req.params).is_empty() {
         return Err(Error::Bad("choose at least one parameter".into()));
     }
@@ -801,6 +832,7 @@ pub(crate) fn file_name(req: &Request, run: &Run, last: u32) -> String {
         Model::Gfs0p25 => "GFS_0p25",
         Model::Gfs0p50 => "GFS_0p50",
         Model::Gfs1p00 => "GFS_1p00",
+        Model::Aigfs0p25 => "AIGFS_0p25",
         Model::GfsWave0p25 => "GFSwave_0p25",
         Model::EcmwfIfs0p25 => "ECMWF_IFS_0p25",
         Model::EcmwfIfs0p1 => "ECMWF_IFS_0p1",

@@ -1193,7 +1193,7 @@ The Weather drawer manages the loaded files; the data panel controls how their w
 
 | Source | Models | Notes |
 | --- | --- | --- |
-| NOAA NOMADS | GFS 0.25°, 0.5°, 1° (wind, gusts, pressure, rain, CAPE, air temperature); GFS-Wave 0.25° | Cut to your area on the server: small downloads. Free, US government data |
+| NOAA NOMADS | GFS 0.25°, 0.5°, 1° (wind, gusts, pressure, rain, CAPE, air temperature); GFS-Wave 0.25°; AIGFS 0.25° (NOAA's AI model: wind, pressure, air temperature, 6-hourly to 16 days) | GFS is cut to your area on the server: small downloads. AIGFS comes only as whole-globe files, so TweedPlot fetches just the fields you tick (about 1.3 MB each a step) and cuts them to your area. Free, US government data |
 | ECMWF open data | IFS 0.1° (~11 km grid; model about 9 km) and 0.25° (wind, pressure, gusts, air temperature); 0.1° IFS surface currents (non-tidal); AIFS 0.25° (ECMWF's AI model); ECMWF wave 0.1° and 0.25° | Free open data, CC BY 4.0, © ECMWF. The 0.1° products arrive about two hours after the 0.25° products; 0.1° surface and pressure-level data are separate global files. TweedPlot fetches only the fields you tick and crops them to your area. Requested 0.1° global fields are cached for reuse across areas (up to 5 GiB; oldest first). IFS 06Z and 18Z runs stop at 144 h |
 | NOAA CoastWatch ERDDAP | MUR sea surface temperature, 1 km; ACSPO sea temperature, 2 km; Geo-Polar Blended sea temperature, 5 km (ocean, see below) | Satellite analyses and observations, cut to your area on the server. Free to use and share (NASA JPL; NOAA, GHRSST) |
 | NOAA CoastWatch THREDDS | Himawari-9 hourly sea temperature, 2 km (ocean, see below) | One file an hour, cut to your area on the server. GHRSST data, free and open |
@@ -1568,7 +1568,7 @@ TweedPlot downloads open data from the organisations below. They did not make Tw
 | World depths (bundled) | Natural Earth, public domain (naturalearthdata.com) |
 | World coastline | GSHHG 2.3.7: Wessel and Smith, University of Hawaiʻi and NOAA, LGPL 3 |
 | Deep-sea depths | ETOPO 2022, NOAA National Centers for Environmental Information (doi:10.25921/fd45-gt74), free to use and redistribute |
-| Wind, pressure, waves (GFS, GFS-Wave) | NOAA National Centers for Environmental Prediction (NOMADS). US Government data, free to use. Contains NOAA model output |
+| Wind, pressure, waves (GFS, GFS-Wave, AIGFS) | NOAA National Centers for Environmental Prediction (NOMADS). US Government data, free to use. Contains NOAA model output |
 | Wind, pressure, waves, currents (IFS, AIFS) | ECMWF open data, CC BY 4.0, © ECMWF. Downloaded from data.ecmwf.int or its AWS mirror and cropped to your area. TweedPlot changes the file format and the area only |
 | Sea temperature (MUR) | NASA JPL MUR SST, via NOAA CoastWatch (ERDDAP). Free to use and share: please acknowledge NASA JPL / PO.DAAC |
 | Sea temperature (ACSPO L3S-LEO, Geo-Polar Blended) | NOAA NESDIS (STAR, OSPO), GHRSST, via NOAA CoastWatch |
