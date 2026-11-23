@@ -15,6 +15,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { s52PxPerMm } from "./chartfeatures.js";
 import { rhumb, rhumbDestination, fmtNm } from "./navmath.js";
 import { infoBox } from "./infobox.js";
+import { setDrift } from "./setdrift.js";
 import { circle, destination, parseSpacing, fmtRange, fmtSpacing, displayScale, metresPerPixel, scaleBar, vectorMarks, trackMarks } from "./marinermath.js";
 
 const empty = { type: "FeatureCollection", features: [] };
@@ -233,6 +234,26 @@ export function setupMariner(map, { settings, saveSettings, colours, usingS52, l
         }
       }
     }
+    // the set and drift vector (the current the boat is in, setdrift.js): from the boat, as long as the
+    // COG vector's time (10 min when that runs to the edge), with the IEC 62288 triple arrowhead
+    const sd = settings.setDrift && v ? setDrift.value(Date.now()) : null;
+    if (sd && sd.drift >= 0.1) {
+      const minutes = settings.cogLen === "inf" ? 10 : Number(settings.cogLen) || 10;
+      const end = rhumbDestination(pos, sd.set, (sd.drift * minutes) / 60);
+      l.push(lineF([pos, end], "SHIPS", 0.32, 1));
+      const P = map.project(pos), E = map.project(end);
+      const len = Math.hypot(E.x - P.x, E.y - P.y);
+      if (len > 6) {
+        const k = pxmm();
+        const u = { x: (E.x - P.x) / len, y: (E.y - P.y) / len }, n = { x: -u.y, y: u.x };
+        const un = (x, y) => { const q = map.unproject([x, y]); return [q.lng, q.lat]; };
+        for (const back of [0, 1.2 * k, 2.4 * k]) {
+          const tip = { x: E.x - u.x * back, y: E.y - u.y * back };
+          const b = { x: tip.x - u.x * 1.6 * k, y: tip.y - u.y * 1.6 * k };
+          l.push(lineF([un(b.x + n.x * k, b.y + n.y * k), un(tip.x, tip.y), un(b.x - n.x * k, b.y - n.y * k)], "SHIPS", 0.32));
+        }
+      }
+    }
     if (halo()) {
       const hc = tokenColour("UIBCK"), hw = Math.max(2, 1.0 * pxmm());
       for (const f of l) Object.assign(f.properties, { h: 1, hc, hw });
@@ -381,6 +402,11 @@ export function setupMariner(map, { settings, saveSettings, colours, usingS52, l
     };
     beam.checked = !!settings.beamLine;
     beam.onchange = () => { settings.beamLine = beam.checked; saveSettings(); drawOwn(); };
+    const sdBox = $("set-setdrift");
+    if (sdBox) {
+      sdBox.checked = !!settings.setDrift;
+      sdBox.onchange = () => { settings.setDrift = sdBox.checked; saveSettings(); drawOwn(); };
+    }
   }
   setupOwnRingsUI();
 

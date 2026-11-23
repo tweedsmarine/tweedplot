@@ -8,7 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import * as activity from "./activity.js";
 import { ask, askPassphrase } from "./ask.js";
 import { fmt } from "./weather.js";
-import { distNm } from "./instruments.js";
+import { distNm, bearing } from "./instruments.js";
 import { POI_KINDS, poiImage } from "./poi.js";
 import { iconSelect, imageUrl } from "./iconselect.js";
 import { featureImage } from "./chartfeatures.js";
@@ -320,10 +320,20 @@ export function setupLibrary(map, { ui, toast = () => {}, getBoat = () => null }
   };
   const tagsOf = (m) => (m.tags ? m.tags.split(",").filter(Boolean) : []);
   const TAG_LABEL = { "at-boat": "made at the boat", "line-set": "floats and buoys of a line set", depth: "depth in its name", event: "event marks", unsure: "unsure (?)", caution: "caution (!)" };
+  // marks near the boat (D8): a sort and a "Within … NM of the boat" filter; the list follows the boat
+  const NEAR_NM = [0.5, 1, 2, 5, 10, 20, 50];
+  const boatNm = (m) => { const b = getBoat(); return b ? distNm(b, [m.lon, m.lat]) : Infinity; };
+  const nearOn = () => markList?.sort === "boat" || markList?.filters?.near != null;
+  const fromBoat = (m) => {
+    const b = getBoat();
+    if (!b || !nearOn()) return "";
+    const d = distNm(b, [m.lon, m.lat]);
+    return `${d < 10 ? d.toFixed(2) : d.toFixed(1)} NM ${String(Math.round(bearing(b, [m.lon, m.lat])) % 360).padStart(3, "0")}°T from the boat`;
+  };
   const markSub = (m) => {
     const used = usedBy.get(m.id) || 0;
     const t = tagsOf(m).filter((x) => x !== "at-boat" && x !== "depth");
-    return [m.group, `${ddm(m.lat, "N", "S")} ${ddm(m.lon, "E", "W")}`,
+    return [fromBoat(m), m.group, `${ddm(m.lat, "N", "S")} ${ddm(m.lon, "E", "W")}`,
       m.created ? (m.date_unknown ? "date unknown" : new Date(m.created * 1000).toLocaleDateString()) : "",
       m.depth != null ? `${Math.round(m.depth)} m` : "", m.temp != null ? `${m.temp.toFixed(1)} °C` : "",
       t.join(", "), used ? `in ${used} route${used > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ");
@@ -348,6 +358,7 @@ export function setupLibrary(map, { ui, toast = () => {}, getBoat = () => null }
       { key: "new", label: "Newest first", cmp: (a, b) => (b.date_unknown ? 0 : b.created || 0) - (a.date_unknown ? 0 : a.created || 0) },
       { key: "old", label: "Oldest first", cmp: (a, b) => (a.date_unknown || !a.created ? Infinity : a.created) - (b.date_unknown || !b.created ? Infinity : b.created) },
       { key: "deep", label: "Deepest first", cmp: (a, b) => (b.depth ?? -1) - (a.depth ?? -1) },
+      { key: "boat", label: "Nearest the boat", cmp: (a, b) => boatNm(a) - boatNm(b) || collate(a.name, b.name) },
       { key: "near", label: "Nearest the chart centre", cmp: (a, b) => { const c = map.getCenter(); return distNm([c.lng, c.lat], [a.lon, a.lat]) - distNm([c.lng, c.lat], [b.lon, b.lat]); } },
     ],
     filters: [
@@ -355,6 +366,9 @@ export function setupLibrary(map, { ui, toast = () => {}, getBoat = () => null }
       { key: "type", label: "Type", type: "choice", options: (ms) => { const L = KIND_LABEL(); return countBy(ms, (m) => m.kind || "mark", (k) => L[k] || k); }, test: (m, v) => (m.kind || "mark") === v },
       { key: "tag", label: "Tag", type: "choice", options: (ms) => countBy(ms, tagsOf, (t) => TAG_LABEL[t] || t), test: (m, v) => tagsOf(m).includes(v) },
       { key: "symbol", label: "TimeZero symbol", type: "choice", options: (ms) => countBy(ms.filter((m) => m.symbol?.startsWith("tz:")), (m) => m.symbol, (s) => `Symbol ${s.slice(3)}`), test: (m, v) => m.symbol === v },
+      { key: "near", label: "Near the boat", type: "choice", keepOrder: true, title: "Only the marks within a distance of the boat; the list follows the boat",
+        options: (ms) => { const b = getBoat(); return NEAR_NM.map((n) => [n, b ? `Within ${n} NM` : `Within ${n} NM (no boat position yet)`, b ? ms.filter((m) => boatNm(m) <= n).length : 0]); },
+        test: (m, v) => boatNm(m) <= Number(v) },
       { key: "route", label: "Routes", type: "choice", options: () => [["used", "In a saved route"], ["unused", "In no route"]], test: (m, v) => inRoute(m) === (v === "used") },
       // the marks in the last box drawn on the chart (Select on chart); not kept between sessions
       { key: "box", label: "In the drawn box", type: "toggle", title: "Only the marks in the box drawn on the chart (Select on chart)", hidden: () => !boxIds, test: (m) => !!boxIds?.has(m.id) },
@@ -425,6 +439,15 @@ export function setupLibrary(map, { ui, toast = () => {}, getBoat = () => null }
     // In chart view (shared) re-filters every tab; Nearest re-sorts the marks
     viewTimer = setTimeout(() => (view ? viewMoved() : markList.refresh()), 200);
   });
+  // Nearest the boat and Near the boat follow the boat: re-sorted every 15 s while the boat moves
+  let boatAt = null;
+  setInterval(() => {
+    if (!nearOn() || document.hidden) return;
+    const b = getBoat();
+    if (!b || (boatAt && distNm(boatAt, b) < 0.02)) return;
+    boatAt = b;
+    markList.refresh();
+  }, 15000);
   $("lib-show").checked = prefs.show;
   $("lib-show").onchange = (e) => { prefs.show = e.target.checked; savePrefs(); draw(); };
   $("lib-f-chart").checked = !!prefs.chartFiltered;

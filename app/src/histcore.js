@@ -21,6 +21,8 @@ export const CHANNELS = {
   HUM: { label: "Humidity", unit: "%", dp: 0, get: (v) => v.humidity },
   WTEMP: { label: "Water temp", unit: "°C", dp: 1, get: (v) => v.water_temp },
   DPT: { label: "Depth", unit: "m", dp: 1, get: (v) => v.depth ?? v.depth_surface },
+  DRIFT: { label: "Drift", unit: "kn", dp: 1, get: (v) => v.drift },
+  SET: { label: "Set", unit: "°T", dp: 0, get: (v) => v.set, dir: "true" },
 };
 
 export const MIN_MS = 60_000;

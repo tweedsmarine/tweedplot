@@ -65,7 +65,7 @@ export function clearHistory() {
 // ---------- drawing ------------------------------------------------------------------
 const cssVar = (name, d) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || d;
 const colourOf = (ch) => (ch.tint === "t" ? cssVar("--wind-true", "#2f8fe6") : ch.tint === "a" ? cssVar("--wind-app", "#f57c00") : "#4fd1c5");
-const MIN_SPAN = { TWS: 6, AWS: 6, SOG: 2, BSP: 2, PRES: 6, AIRT: 3, WTEMP: 1, HUM: 10, DPT: 5, TWD: 30, AWA: 30 };
+const MIN_SPAN = { TWS: 6, AWS: 6, SOG: 2, BSP: 2, PRES: 6, AIRT: 3, WTEMP: 1, HUM: 10, DPT: 5, TWD: 30, AWA: 30, DRIFT: 1, SET: 30 };
 
 const niceStep = (span, n = 4) => {
   const raw = span / n, p = 10 ** Math.floor(Math.log10(raw));

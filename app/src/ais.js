@@ -14,6 +14,7 @@ import { hullSymbolFeatures, targetSymbolFeatures } from "./ais-symbols.js";
 import { s52PxPerMm } from "./chartfeatures.js";
 import { aisVisibleInView } from "./ais-visibility.js";
 import { collisionAlarmEligible } from "./ais-collision.js";
+import { targetLost } from "./ais-lost.js";
 
 const KEY = "racenav.ais";
 const VIEW_VISIBILITY_KEY = "racenav.ais.views";
@@ -292,14 +293,9 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     return { x: c.lng, y: c.lat, hw: ((b.getEast() - b.getWest()) / 2) * 1.3 + 0.02, hh: ((b.getNorth() - b.getSouth()) / 2) * 1.3 + 0.02 };
   }
   const inViewBox = (v, t) => Math.abs(t.lat - v.y) <= v.hh && Math.abs(((t.lon - v.x + 540) % 360) - 180) <= v.hw;
-  const isLost = (t) => {
-    if (t.last_pos == null) return true;
-    const age = Date.now() / 1000 - t.last_pos;
-    const moving = (t.sog ?? 0) > 2;
-    // a distress transmitter sends every minute: lost after six minutes (as its alarm, below)
-    if (["sart", "mob", "epirb"].includes(t.kind)) return age > 6 * 60;
-    return t.kind === "aton" || t.kind === "base" ? age > 20 * 60 : age > (moving ? 3 : 10) * 60;
-  };
+  // lost after six of its reporting intervals for its class, speed and status (ais-lost.js);
+  // a distress transmitter sends every minute: lost after six minutes (as its alarm, below)
+  const isLost = (t) => targetLost(t, Date.now() / 1000, { internetOnly: netOnly(t) });
   /** Heard only over the internet (no receiver on board heard it). */
   const netOnly = (t) => !/signalk|nmea/.test(String(t.source)); // heard on board: Signal K or NMEA 0183
   /** Centre of the internet AIS area when it is a range (chart centre or own boat), else null. */

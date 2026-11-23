@@ -110,7 +110,7 @@ const DEFAULTS = {
   // own-boat lines: shown, and length in minutes of travel or "inf" (to the edge of the chart)
   hdgLine: true, hdgLen: "inf", cogLine: true, cogLen: "10",
   // beam bearing line through own ship; range rings round own ship (count, spacing NM)
-  beamLine: false, ownRings: false, ownRingN: 3, ownRingStep: 0.5,
+  beamLine: false, setDrift: false, ownRings: false, ownRingN: 3, ownRingStep: 0.5,
   // damping of Signal K readings, seconds (0 = none)
   dampMotion: 2, dampWind: 5, dampDepth: 0,
 };
