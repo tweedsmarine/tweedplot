@@ -64,9 +64,11 @@ pub(crate) async fn screenshot_pick_folder(app: tauri::AppHandle) -> Result<Opti
     let a = app.clone();
     let start = chosen(&app).unwrap_or_else(|| default_dir(&app));
     let start = if start.exists() { start } else { start.parent().map(Path::to_path_buf).unwrap_or(start) };
-    let picked = tauri::async_runtime::spawn_blocking(move || a.dialog().file().set_title("Choose the folder for screenshots").set_directory(start).blocking_pick_folder())
-        .await
-        .map_err(|e| e.to_string())?;
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        a.dialog().file().set_title("Choose the folder for screenshots").set_directory(start).blocking_pick_folder()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
     let Some(p) = picked else { return Ok(None) };
     let p = p.into_path().map_err(|e| e.to_string())?;
     choose(&app, &p)?;
@@ -169,7 +171,7 @@ fn encode(s: &Shot, text: &[(&str, String)]) -> Result<Vec<u8>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Shot, encode};
+    use super::{encode, Shot};
 
     #[test]
     fn png_with_text() {

@@ -603,7 +603,9 @@ pub fn pick_times(times: &[i64], from: i64, to: i64, every: i64) -> Vec<usize> {
 
 /// The level nearest a depth (m, positive down) on an elevation axis (negative down).
 pub fn nearest_level(elev: &[f64], depth: f64) -> Option<usize> {
-    (0..elev.len()).filter(|&i| elev[i].is_finite()).min_by(|&a, &b| (elev[a] + depth).abs().partial_cmp(&(elev[b] + depth).abs()).unwrap_or(std::cmp::Ordering::Equal))
+    (0..elev.len())
+        .filter(|&i| elev[i].is_finite())
+        .min_by(|&a, &b| (elev[a] + depth).abs().partial_cmp(&(elev[b] + depth).abs()).unwrap_or(std::cmp::Ordering::Equal))
 }
 
 /// An opened dataset: its axes, in both chunkings.
@@ -624,7 +626,11 @@ fn open(c: &reqwest::blocking::Client, dataset: &str, now: i64, cancel: &AtomicB
         None => None,
     };
     let units = time.array("time")?.units.clone();
-    let times = time.read_1d(c, "time", cancel)?.into_iter().map(|t| cf_time(t, &units).ok_or_else(|| bad(format!("time units “{units}”")))).collect::<Result<Vec<_>>>()?;
+    let times = time
+        .read_1d(c, "time", cancel)?
+        .into_iter()
+        .map(|t| cf_time(t, &units).ok_or_else(|| bad(format!("time units “{units}”"))))
+        .collect::<Result<Vec<_>>>()?;
     let lats = time.read_1d(c, "latitude", cancel)?;
     let lons = time.read_1d(c, "longitude", cancel)?;
     let elev = if time.arrays.contains_key("elevation") { time.read_1d(c, "elevation", cancel)? } else { Vec::new() };
@@ -771,7 +777,9 @@ pub fn download(req: &Request, now: i64, dir: &Path, progress: Progress, cancel:
     let last = fields.iter().map(|f| f.valid_time).max().unwrap_or(r);
     let when = chrono::DateTime::from_timestamp(r, 0).unwrap_or_default();
     let (prefix, span) = match req.model {
-        Model::CmemsChl => ("CMEMS_CHL", format!("{}-{}", when.format("%Y%m%d"), chrono::DateTime::from_timestamp(last, 0).unwrap_or_default().format("%Y%m%d"))),
+        Model::CmemsChl => {
+            ("CMEMS_CHL", format!("{}-{}", when.format("%Y%m%d"), chrono::DateTime::from_timestamp(last, 0).unwrap_or_default().format("%Y%m%d")))
+        }
         Model::CmemsBgc => ("CMEMS_BGC", format!("{}_f000-f{:03}", when.format("%Y%m%d_%Hz"), (last - r) / 3600)),
         _ => ("CMEMS_PHY", format!("{}_f000-f{:03}", when.format("%Y%m%d_%Hz"), (last - r) / 3600)),
     };
@@ -816,15 +824,14 @@ pub fn download_estimate(req: &Request) -> u64 {
             OC_CHL => ((512.0, 1024.0), Some((5.0, 256.0, 256.0)), 24.0),
             _ => ((512.0, 2048.0), Some((526.0, 32.0, 32.0)), 6.0),
         };
-        let nt = if req.model == Model::CmemsChl {
-            (req.hours / 24).clamp(1, 14) as f64
-        } else {
-            (req.hours as f64 / (req.every as f64).max(step)).floor() + 1.0
-        };
+        let nt =
+            if req.model == Model::CmemsChl { (req.hours / 24).clamp(1, 14) as f64 } else { (req.hours as f64 / (req.every as f64).max(step)).floor() + 1.0 };
         let tiles = |cy: f64, cx: f64| chunk_span(j0, j1, cy, i64::MAX) * chunk_span(i0, i1.min(i0 + nlon - 1), cx, nlon);
         let by_time = nt * tiles(tc.0, tc.1) * tc.0 * tc.1 * 4.0;
         // the times asked span one time chunk, or two where they straddle a boundary
-        let by_geo = gc.map(|(ct, cy, cx)| (nt * (req.every as f64).max(step) / step / ct + 1.0).floor().max(1.0) * tiles(cy, cx) * ct * cy * cx * 4.0).unwrap_or(f64::MAX);
+        let by_geo = gc
+            .map(|(ct, cy, cx)| (nt * (req.every as f64).max(step) / step / ct + 1.0).floor().max(1.0) * tiles(cy, cx) * ct * cy * cx * 4.0)
+            .unwrap_or(f64::MAX);
         let levels = if var.stack { 31.0 } else { 1.0 };
         total += by_time.min(by_geo) * COMPRESSED * levels;
     }
@@ -939,7 +946,18 @@ mod tests {
 
     #[test]
     fn chunk_choice() {
-        let mk = |chunks: Vec<usize>| Array { shape: vec![6581, 50, 2041, 4320], chunks, dtype: "f4".into(), compressor: None, fill: None, scale: 1.0, offset: 0.0, dims: vec![], sep: ".".into(), units: String::new() };
+        let mk = |chunks: Vec<usize>| Array {
+            shape: vec![6581, 50, 2041, 4320],
+            chunks,
+            dtype: "f4".into(),
+            compressor: None,
+            fill: None,
+            scale: 1.0,
+            offset: 0.0,
+            dims: vec![],
+            sep: ".".into(),
+            units: String::new(),
+        };
         let rows: Vec<usize> = (1440..1476).collect();
         let times: Vec<usize> = (6500..6540).collect();
         let w = Window { times: &times, level: Some(49), rows: &rows, col0: 4224, ncols: 37, k: 1, nlon: 4320 };
@@ -970,7 +988,14 @@ mod tests {
 
     #[test]
     fn download_size() {
-        let req = |model, params: &[&str], hours, every| Request { model, area: [172.0, -42.0, 176.0, -38.0], params: params.iter().map(|s| s.to_string()).collect(), hours, every, depth: 50.0 };
+        let req = |model, params: &[&str], hours, every| Request {
+            model,
+            area: [172.0, -42.0, 176.0, -38.0],
+            params: params.iter().map(|s| s.to_string()).collect(),
+            hours,
+            every,
+            depth: 50.0,
+        };
         // 5 days of 6-hourly surface temperature round Cook Strait: the geo chunks, tens of MB at most
         let b = download_estimate(&req(Model::CmemsPhy, &["sst"], 120, 6));
         assert!(b > 1_000_000 && b < 60_000_000, "{b}");

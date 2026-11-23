@@ -595,7 +595,14 @@ impl GribFile {
             .filter_map(|p| {
                 let s = self.series(p);
                 let g = s.first()?.grid;
-                Some(ParamSummary { param: p, times: s.iter().map(|f| f.valid_time).collect(), bbox: g.bbox(), dlat: g.dlat, dlon: g.dlon, depths: self.depths(p) })
+                Some(ParamSummary {
+                    param: p,
+                    times: s.iter().map(|f| f.valid_time).collect(),
+                    bbox: g.bbox(),
+                    dlat: g.dlat,
+                    dlon: g.dlon,
+                    depths: self.depths(p),
+                })
             })
             .collect();
         Summary {

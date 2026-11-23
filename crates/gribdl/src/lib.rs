@@ -133,7 +133,19 @@ impl Model {
     }
 
     pub fn is_ocean(self) -> bool {
-        matches!(self, Model::MurSst | Model::HycomEspc | Model::Himawari | Model::ChlViirs | Model::IceAsi | Model::AcspoSst | Model::BlendedSst | Model::CmemsPhy | Model::CmemsBgc | Model::CmemsChl)
+        matches!(
+            self,
+            Model::MurSst
+                | Model::HycomEspc
+                | Model::Himawari
+                | Model::ChlViirs
+                | Model::IceAsi
+                | Model::AcspoSst
+                | Model::BlendedSst
+                | Model::CmemsPhy
+                | Model::CmemsBgc
+                | Model::CmemsChl
+        )
     }
 
     pub fn is_cmems(self) -> bool {
@@ -307,7 +319,12 @@ impl Model {
                     ParamInfo { id: "mld", name: "Mixed layer depth (daily)", fields: 1, default: false },
                     ParamInfo { id: "ssh", name: "Sea surface height (daily)", fields: 1, default: false },
                     ParamInfo { id: "depth", name: "Temperature, salinity and current at a depth", fields: 4, default: false },
-                    ParamInfo { id: "stack", name: "Every depth to 500 m (temperature, salinity, current: thermocline, shear, profiles and sections)", fields: 124, default: false },
+                    ParamInfo {
+                        id: "stack",
+                        name: "Every depth to 500 m (temperature, salinity, current: thermocline, shear, profiles and sections)",
+                        fields: 124,
+                        default: false,
+                    },
                 ],
                 delay_h: 0,
             },
