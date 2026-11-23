@@ -672,6 +672,8 @@ export function setupInstruments() {
   // ---------- drawer controls ----------------------------------------------------------
   document.getElementById("it-add").onclick = () => { if (!tiles.add()) ask({ title: "The Instruments screen is full", note: "Make a tile smaller or remove one first.", cancel: "", fields: [] }); };
   document.getElementById("it-reset").onclick = () => tiles.reset();
+  const headBtn = document.getElementById("it-head");
+  if (headBtn) headBtn.onclick = async () => { if (!(await tiles.addHeading())) ask({ title: "The Instruments screen is full", note: "Make a tile smaller or remove one first.", cancel: "", fields: [] }); };
   const lockBtn = document.getElementById("inst-lock");
   if (lockBtn) lockBtn.onclick = () => { layout.locked = !layout.locked; save(); build(); };
 

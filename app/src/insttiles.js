@@ -1,10 +1,16 @@
 // The Instruments view: one screen of individual readings on a fixed grid. Drag a tile to
 // move it (a tile dropped under another locks to that tile's column), drag its corner to
 // size it, click it to change the reading. The grid always fits the screen.
+// Any tile can be given its own name (A9), and headings (tiles of kind HEAD) name a group of
+// instruments: "Engine", "Wind", "Port winch".
 import { openHistoryCard } from "./history.js";
+import { ask } from "./ask.js";
 import { GRID, fits, clampTile, snapBelow, placeTile, firstFree } from "./gridmath.js";
 
 const PAD = 6, GAP = 4; // must match #itiles in style.css
+/** The kind of a heading tile: a group name over the instruments under or beside it. */
+export const HEAD = "_HEAD";
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 export function defaultTiles(items) {
   const keys = ["SOG", "COG", "HDG", "DPT", "TWS", "TWA", "AWS", "AWA", "BTW", "DTW", "XTE", "TTG"];
@@ -32,12 +38,26 @@ export function setupTiles({ host, menu, items, getLayout, save, paint, historyK
       return;
     }
     for (const t of tiles()) {
+      if (t.k === HEAD) {
+        const el = document.createElement("div");
+        el.className = "tile itile ihead";
+        el.dataset.id = t.id;
+        el.dataset.k = t.k;
+        el.title = locked() ? "" : "Click to rename or remove this heading; drag to move it";
+        el.innerHTML = `<div class="hd"></div>`;
+        el.firstChild.textContent = t.name || "Heading";
+        place(el, t);
+        if (!locked()) { const h = document.createElement("div"); h.className = "trsz"; h.title = "Drag to size this heading"; el.append(h); }
+        host.append(el);
+        continue;
+      }
       const it = items[t.k];
       const el = document.createElement("div");
       el.className = `tile itile${it?.tint ? ` wt-${it.tint}` : ""}${it?.graphic ? " graphic" : ""}${it?.highway ? " highway-card" : ""}${it?.sounder ? " sounder-card" : ""}${it?.history ? " hist-card" : ""}`;
       el.dataset.id = t.id;
       el.dataset.k = t.k;
-      el.innerHTML = `<div class="lbl"><span>${it ? it.label : t.k}</span><span class="sd"></span></div><div class="v">—</div>`;
+      el.innerHTML = `<div class="lbl"><span>${t.name ? esc(t.name) : it ? it.label : t.k}</span><span class="sd"></span></div><div class="v">—</div>`;
+      if (t.name && it) el.title = `${it.label}${it.unit ? ` (${it.unit})` : ""}`;
       place(el, t);
       if (!locked()) {
         const h = document.createElement("div");
@@ -153,7 +173,24 @@ export function setupTiles({ host, menu, items, getLayout, save, paint, historyK
     if (t) openMenu(t, el.getBoundingClientRect());
   });
 
+  async function rename(t) {
+    const isHead = t.k === HEAD;
+    const v = await ask({
+      title: isHead ? "Heading" : `Name for ${items[t.k]?.label ?? "this instrument"}`,
+      note: isHead ? "A name for the group of instruments under or beside it." : "Leave it empty to go back to the reading's own name.",
+      fields: [{ key: "name", label: "Name", value: t.name ?? "", placeholder: isHead ? "e.g. Engine" : items[t.k]?.label ?? "" }],
+      ok: "Save",
+    });
+    if (!v) return;
+    const name = String(v.name ?? "").trim().slice(0, 40);
+    if (name) t.name = name; else delete t.name;
+    save(); build();
+  }
+
   function openMenu(t, rect) {
+    if (t.k === HEAD) {
+      menu.innerHTML = `<button data-act="rename">Rename this heading…</button><hr><button data-act="remove">Remove this heading</button>`;
+    } else {
     const groups = {};
     for (const [k, it] of Object.entries(items)) if (!it.mobOnly) (groups[it.group] ??= []).push([k, it]);
     let html = "";
@@ -164,8 +201,11 @@ export function setupTiles({ host, menu, items, getLayout, save, paint, historyK
     }
     const hk = historyKey(t.k);
     if (hk) html += `<hr><button data-act="hist">Show its history in a card (or right-click it)</button>`;
-    html += `<hr><button data-act="remove">Remove this instrument</button>`;
+    html += `<hr><button data-act="rename">${t.name ? "Rename this instrument…" : "Give this instrument its own name…"}</button>`;
+    html += `<button data-act="remove">Remove this instrument</button>`;
     menu.innerHTML = html;
+    }
+    const hk = historyKey(t.k);
     menu.hidden = false;
     const mw = 300, mh = Math.min(menu.scrollHeight, window.innerHeight * 0.8);
     let x = rect.right + 6, y = rect.top;
@@ -177,6 +217,7 @@ export function setupTiles({ host, menu, items, getLayout, save, paint, historyK
       const b = ev.target.closest("button");
       if (!b) return;
       if (b.dataset.act === "hist") { menu.hidden = true; openHistoryCard(hk, [rect.right, rect.top]); return; }
+      if (b.dataset.act === "rename") { menu.hidden = true; rename(t); return; }
       if (b.dataset.act === "remove") getLayout().tiles = tiles().filter((x) => x !== t);
       else if (b.dataset.set) {
         t.k = b.dataset.set;
@@ -203,5 +244,15 @@ export function setupTiles({ host, menu, items, getLayout, save, paint, historyK
       return true;
     },
     reset() { getLayout().tiles = defaultTiles(items); save(); build(); },
+    /** A heading in the first free place (a whole row if there is one), asked for its name. */
+    async addHeading() {
+      const spot = firstFree(tiles(), 12, 1);
+      if (!spot) return false;
+      const t = { id: `h${Date.now().toString(36)}`, k: HEAD, c: spot.c, r: spot.r, w: spot.w, h: 1, name: "Heading" };
+      tiles().push(t);
+      save(); build();
+      await rename(t);
+      return true;
+    },
   };
 }

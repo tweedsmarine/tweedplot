@@ -265,6 +265,7 @@ The Instruments view is one screen of tiles, each a single reading, on a grid of
 - **Resize**: drag the handle in a tile's bottom right corner. Text and dials scale to fill the tile.
 - **Change a reading**: click (tap) a tile to choose what it shows, or remove it.
 - **Instruments › Add an instrument** puts a new tile in the first free space. **Reset Instruments screen** returns to the default arrangement.
+- **Names and headings.** Click a tile › **Give this instrument its own name…** to label it your way ("Port engine", "Mast TWS"); an empty name goes back to the reading's own. **Instruments › Add a heading** puts a heading across the first free row to name a group of instruments (Engine, Wind, Tanks); drag and size it like a tile, and click it to rename or remove it.
 - Night colours show red (or green) readings on black.
 - **Instruments › Lock layout** stops the screen being changed by accident.
 
