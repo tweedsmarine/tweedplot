@@ -735,7 +735,9 @@ map.on("load", () => {
   setupRadar(map, { getBoat: () => lastBoat });
   for (const id of ["rt-wx", "crs-wx"]) { const b = document.getElementById(id); if (b) b.onclick = () => routeWx.open(); }
   document.getElementById("wx-verify").onclick = () => gribTools.openVerify();
-  setupTides(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn) });
+  // the tide gauges (rising / falling) and tidal streams follow the chart time in Planning and
+  // Environment, as the weather does; in Navigation and Instruments they show now (live)
+  setupTides(map, { before: "track", getTime: tideTime, onTime: (fn) => { weather.onTime(fn); window.addEventListener("racenav-view", fn); } });
   ruler = setupRuler(map, { before: "track", ui, library, route, toast, getVariation: variationAt });
   tracks = setupTracks(map, { before: "track", getTime: boatTime, onTime: (fn) => weather.onTime(fn),
     status: (s) => { if (s) libNote(s); } });
@@ -834,6 +836,11 @@ let vessel = {}; // latest Signal K state
 const positionWatch = createPositionWatch();
 const depthWatch = createDepthWatch();
 const damping = createDamping((g) => Number(settings[{ motion: "dampMotion", wind: "dampWind", depth: "dampDepth" }[g]]) || 0);
+function tideTime() {
+  const v = document.documentElement.dataset.view;
+  if ((v === "plan" || v === "env") && weather?.current().t) return Math.floor(weather.current().t);
+  return boatTime();
+}
 function boatTime() {
   // planning: the weather slider's time; live: the GPS time, else the clock
   if (!live && weather?.current().t) return weather.current().t;
