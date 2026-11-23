@@ -742,7 +742,12 @@ mod tests {
 /// The boat's sea temperature readings from the library's tracks (`track_ids`, or every
 /// track that logged a temperature), only inside `bbox` and after `since` when given,
 /// thinned to one every 10 minutes or 2 km.
-fn boat_sst_obs(track_ids: &[String], bbox: Option<[f64; 4]>, since: Option<i64>) -> Result<(Vec<grib::sstverify::Obs>, usize), String> {
+fn boat_sst_obs(
+    track_ids: &[String],
+    bbox: Option<[f64; 4]>,
+    since: Option<i64>,
+    windows: &[(i64, i64)],
+) -> Result<(Vec<grib::sstverify::Obs>, usize), String> {
     let lib = crate::library_cmd::lib()?;
     let inside = |lat: f64, lon: f64| {
         bbox.is_none_or(|b| {
@@ -756,6 +761,11 @@ fn boat_sst_obs(track_ids: &[String], bbox: Option<[f64; 4]>, since: Option<i64>
             .into_iter()
             .filter(|t| t.has_temp)
             .filter(|t| since.is_none_or(|s| t.stats.end.is_none_or(|e| e >= s)))
+            // only tracks some sea temperature file could match (years of imported tracks are skipped quickly)
+            .filter(|t| match (t.stats.start, t.stats.end) {
+                (Some(a), Some(b)) => windows.iter().any(|w| a <= w.1 && b >= w.0),
+                _ => false,
+            })
             .filter(|t| match (bbox, t.stats.bbox) {
                 (Some(b), Some(tb)) => {
                     let w = grib::sstverify::lon_in(b, tb[0]);
@@ -786,6 +796,29 @@ fn boat_sst_obs(track_ids: &[String], bbox: Option<[f64; 4]>, since: Option<i64>
         }
     }
     Ok((grib::sstverify::thin(obs, 600, 2000.0), tracks))
+}
+
+/// The times (± `max_age_s`) the sea temperature files cover: the loaded ones, and with
+/// `from_disk` those in the weather folders (from their header scans).
+fn sst_windows(files: &[(String, Arc<grib::GribFile>)], from_disk: bool, max_age_s: i64) -> Vec<(i64, i64)> {
+    let mut w: Vec<(i64, i64)> = files
+        .iter()
+        .filter_map(|(_, f)| {
+            let ts = f.times(grib::Param::SeaTemp);
+            Some((*ts.first()? - max_age_s, *ts.last()? + max_age_s))
+        })
+        .collect();
+    if from_disk {
+        for f in grib_files_blocking() {
+            for r in f["info"]["runs"].as_array().into_iter().flatten() {
+                let sea = r["contents"].as_array().is_some_and(|c| c.iter().any(|x| x.as_str() == Some("sea temperature")));
+                if let (true, Some(a), Some(b)) = (sea, r["first"].as_i64(), r["last"].as_i64()) {
+                    w.push((a - max_age_s, b + max_age_s));
+                }
+            }
+        }
+    }
+    w
 }
 
 /// Sea temperature files in the weather folders that are not loaded but cover the readings'
@@ -838,9 +871,10 @@ pub(crate) async fn sst_verify(
 ) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let max_age_s = (max_age_h.unwrap_or(36.0).clamp(1.0, 240.0) * 3600.0) as i64;
-        let (obs, tracks) = boat_sst_obs(&track_ids, bbox, since)?;
         let mut files: Vec<(String, Arc<grib::GribFile>)> = loaded(&[]);
         files.retain(|(_, f)| !f.times(grib::Param::SeaTemp).is_empty());
+        let windows = sst_windows(&files, from_disk, max_age_s);
+        let (obs, tracks) = boat_sst_obs(&track_ids, bbox, since, &windows)?;
         let mut skipped = 0;
         if from_disk && !obs.is_empty() {
             for p in disk_sst_files(&obs, max_age_s, 120) {

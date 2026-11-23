@@ -335,6 +335,7 @@ export function setupGribTools(map, { weather, dock }) {
   const svSave = () => { try { localStorage.setItem(SV_KEY, JSON.stringify(sv)); } catch { /* ignore */ } };
   let svRes = null; // the last result, or { error }
   let svPick = null; // the product plotted and shown on the chart
+  let svBusy = false;
   map.addSource("sstv-pts", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addLayer({ id: "sstv-pts", type: "circle", source: "sstv-pts", layout: { visibility: "none" },
     paint: { "circle-radius": 4, "circle-stroke-width": 0.75, "circle-stroke-color": "#222",
@@ -347,6 +348,7 @@ export function setupGribTools(map, { weather, dock }) {
     map.setLayoutProperty("sstv-pts", "visibility", p && dock.current() === "sstcheck" ? "visible" : "none");
   }
   async function svLoad() {
+    svBusy = true;
     svRes = null;
     dock.refresh("sstcheck");
     const b = map.getBounds();
@@ -359,6 +361,7 @@ export function setupGribTools(map, { weather, dock }) {
       maxAgeH: Number(sv.age) || 36,
     };
     svRes = await invoke("sst_verify", args).catch((e) => ({ error: String(e) }));
+    svBusy = false;
     if (!svRes.products?.some((p) => p.product === svPick)) svPick = svRes.products?.[0]?.product ?? null;
     svShow();
     dock.refresh("sstcheck");
@@ -389,11 +392,12 @@ export function setupGribTools(map, { weather, dock }) {
       again.onclick = svLoad;
       tools.append(scope, age, disk, again);
 
-      if (svRes == null) { body.innerHTML = `<p class="wx-note">Reading the tracks and sea temperature files…</p>`; return; }
+      if (svRes == null) { body.innerHTML = `<p class="wx-note">Reading the tracks and sea temperature files…</p>`; if (!svBusy) svLoad(); return; }
       if (svRes.error) { body.innerHTML = `<p class="wx-note">${esc(svRes.error)}</p>`; return; }
       if (!svRes.readings) {
-        body.innerHTML = `<p class="wx-note">No water temperature in these tracks. TweedPlot logs the sea temperature with the track ` +
-          `whenever an instrument sends one (a sounder or a temperature sensor, through NMEA 0183 MTW or Signal K).</p>`;
+        body.innerHTML = `<p class="wx-note">No water temperature readings to score: none of these tracks logged a sea temperature at the times ` +
+          `your sea temperature files cover${sv.disk ? "" : " (tick Files not loaded to use the ones in the weather folders too)"}. Download MUR, ACSPO or Geo-Polar ` +
+          `for days you were out. TweedPlot logs the sea temperature with the track whenever an instrument sends one (a sounder or a temperature sensor, through NMEA 0183 MTW or Signal K).</p>`;
         return;
       }
       const head = document.createElement("p");
@@ -720,9 +724,12 @@ export function drawSstPlot(p, width) {
   for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="grid"/><text x="${L - 4}" y="${y(v) + 4}" text-anchor="end">${v.toFixed(step < 1 ? 1 : 0)}</text>`;
   const days = Math.max(1, Math.round((t1 - t0) / 86400));
   const every = Math.max(1, Math.ceil(days / Math.max(1, Math.floor((W - L - R) / 70))));
-  for (let t = Math.ceil(t0 / 86400) * 86400; t <= t1; t += every * 86400) {
-    const d = new Date(t * 1000);
-    g += `<line x1="${x(t)}" x2="${x(t)}" y1="${T}" y2="${H - B}" class="grid"/><text x="${x(t)}" y="${H - 8}" text-anchor="middle">${d.getUTCDate()} ${d.toLocaleString("en-NZ", { month: "short", timeZone: "UTC" })}</text>`;
+  // local midnights
+  const d = new Date(t0 * 1000);
+  d.setHours(24, 0, 0, 0);
+  for (; d.getTime() / 1000 <= t1; d.setDate(d.getDate() + every)) {
+    const t = d.getTime() / 1000;
+    g += `<line x1="${x(t)}" x2="${x(t)}" y1="${T}" y2="${H - B}" class="grid"/><text x="${x(t)}" y="${H - 8}" text-anchor="middle">${d.getDate()} ${d.toLocaleString("en-NZ", { month: "short" })}</text>`;
   }
   svg.innerHTML = `<g class="axes">${g}<text x="4" y="${T + 4}">°C</text></g>` +
     `<path d="${path(1)}" fill="none" stroke="currentColor" stroke-width="1.6"/>` +
