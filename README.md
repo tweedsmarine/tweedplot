@@ -17,13 +17,14 @@ It began as a tool for racing skippers who wanted routing, weather and instrumen
 **Charts**
 - LINZ New Zealand vector charts, drawn with IHO S-52 colours and symbols, with safety depth and contour, Base / Standard / All display and light sectors.
 - Unencrypted S-57 ENCs (NOAA and other hydrographic offices) with no plugin needed.
+- Legacy Kap/BSB charts, Geotiff, satellite photos (direct in-app download from Sentinel), MBTiles, KMZ/KML.
 - Worldwide coastline and depths, 1 m LINZ high-resolution depths, marine boundaries and fishing rules.
 - **Own soundings:** build your own depth picture from your tracks and TimeZero PBG/XYZ files, reduced to chart datum.
 - Optional OpenStreetMap and OpenSeaMap layers, off by default and sending nothing while off.
 
 **Weather, ocean and tides**
 - A GRIB viewer for many runs at once: time slider, comparison between models, meteograms, and a check of where the models agree.
-- Downloads of GFS, ECMWF and other models, plus sea surface temperature, currents, chlorophyll and satellite sea data for fishing.
+- Downloads of GFS, ECMWF and other models, plus sea surface temperature, currents, chlorophyll, water-column temperature, salinity, currents, and satellite sea data for fishing.
 - Weather stations, buoys, tide predictions and tidal streams.
 
 **Routing and planning**
@@ -54,13 +55,13 @@ A full manual is built in (press F1) and works offline.
 ## What it does not do (yet)
 
 - **It is not certified.** Not for use as a primary means of navigation.
-- **Windows only** (10 and 11, Intel and ARM). No macOS, Linux, tablet or phone version yet.
+- **Windows and Mac** Windows 10 and 11, Intel and ARM. A universal Mac installer is built in the latest releases but it's untested. No Linux, tablet or phone version yet.
 - **No NMEA 2000 connection of its own.** NMEA 2000 data comes in through Signal K or a gateway that gives NMEA 0183. A direct connection is the next big job.
-- **Encrypted S-63 charts** work through a separate plugin that is still being finalised and needs an agreement with the IHO before it can be used with real chart data. It has been tested with the IHO's own test data.
+- **Encrypted S-63 charts** work through a separate plugin that is still being finalised before it can be used with real chart data. It has been tested with the IHO's own test data. Once this confirmed working there will be a small charge for the admin involved in issuing user permits.
 - **S-100 / S-101 charts** are not read yet. (The IHO S-101 symbols are used to draw the charts we do read.)
-- **No radar overlay, and no autopilot or instrument control.** TweedPlot reads your instruments; it does not send to them.
-- **Touch screens:** it is designed for touch, but has not been tested on touch hardware. Reports welcome.
-- Installers are **not yet code-signed**, so Windows may warn you the first time.
+- **No radar overlay, and no autopilot or instrument control.** TweedPlot reads your instruments; it does not send to them. There is a Radar simulator built into the app that tests the framerate achievable on your hardware. Run it and let me know how it runs on your hardware. 
+- **Touch screens:** For now I am not supporting touch screen so that I can concentrate on getting the keyboard and mouse interface tuned up. A touch screen option can follow.
+- Installers are **not yet code-signed**, so Windows may warn you the first time. Mac will complain too, right click on the app and run that way.
 
 ## What is coming
 
@@ -72,12 +73,11 @@ In roughly this order, driven by what testers ask for:
 4. **More for racing:** start line tools and laylines with current, target speeds against your polar, a recorder with replay and analysis.
 5. **Better routing:** tidal streams and ocean currents as routing input, ensembles, and a time-lost map.
 6. **More weather:** more models and servers, and historical weather and pilot-chart style climatology for passage planning.
-7. **More charts and data:** satellite imagery and raster charts.
-8. **macOS, Linux and a tablet companion.**
+7. **macOS, Linux and a tablet companion.**
 
 ## Download
 
-Installers for Windows 10 and 11 (Intel and ARM) are on the [Releases](../../releases) page. Windows SmartScreen may warn you the first time: choose **More info › Run anyway**.
+Installers for Windows 10 and 11 (Intel and ARM) and a universal Mac installer are on the [Releases](../../releases) page. Windows SmartScreen may warn you the first time: choose **More info › Run anyway**.
 
 Once installed, TweedPlot looks for a newer version a minute after it starts and twice a day, when there is an internet connection. It tells you, and installs only when you choose to. Updates are signed by TweedsMarine and checked before they install. You can turn this off in Settings › Diagnostics › Software updates.
 
