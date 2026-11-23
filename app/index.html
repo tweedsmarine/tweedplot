@@ -15,6 +15,8 @@
       <filter id="pal-green" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.06 0.12 0.02 0 0  0.299 0.587 0.114 0 0  0.03 0.06 0.01 0 0  0 0 0 1 0"/></filter>
     </defs></svg>
     <div id="map"></div>
+    <!-- calibrating an image: the picture itself, beside the chart (calibrate.js) -->
+    <div id="calib-img" aria-label="The picture being calibrated"></div>
     <main id="nmea-monitor-window" aria-label="Live NMEA monitor"></main>
 
     <!-- Icon rail: one drawer open at a time -->
@@ -571,7 +573,8 @@
           </div>
           <div id="img-list" class="img-list"></div>
           </div>
-          <div class="wx-row"><button id="img-import" type="button" title="Add KAP raster charts or GeoTIFF images from this computer, as files or a whole folder: copied into TweedPlot's images folder, or used where they are (charts already installed for another program, or on an external drive)">Import KAP or GeoTIFF…</button><button id="img-s2-toggle" type="button" title="Find a Sentinel-2 satellite image of the area on the screen (free, from Earth Search on AWS; uses the internet)">Satellite image…</button></div>
+          <div id="img-wait" class="img-wait" hidden></div>
+          <div class="wx-row"><button id="img-import" type="button" title="Add charts and pictures from this computer, as files or a whole folder: KAP raster charts, GeoTIFFs, MBTiles, and PNG or JPEG pictures (with a world file they are placed; without, you calibrate them). Copied into TweedPlot's images folder, or used where they are (charts already installed for another program, or on an external drive)">Import…</button><button id="img-s2-toggle" type="button" title="Find a Sentinel-2 satellite image of the area on the screen (free, from Earth Search on AWS; uses the internet)">Satellite image…</button></div>
           <div id="img-s2" class="img-s2" hidden>
             <div id="img-s2-area" class="wx-note"></div>
             <div class="wx-row"><label for="img-s2-from">From</label> <input id="img-s2-from" type="date" /> <label for="img-s2-to">to</label> <input id="img-s2-to" type="date" /></div>
@@ -1007,6 +1010,7 @@
     <div id="update-notice" class="update-notice" role="status" aria-live="polite" hidden><span id="update-text"></span><button id="update-install" type="button" title="Close TweedPlot, install the update and open it again">Install…</button><button id="update-notes" type="button" title="What's new: the release page on GitHub">What's new</button><button id="update-later" type="button" title="Hide this until TweedPlot is next started">Later</button></div>
     <div id="s63-banner" class="s63-banner" hidden></div>
 
+      <section class="pane" data-pane="calibrate" data-title="Calibrate image" hidden><div id="calib-pane"></div></section>
       <section id="settings" class="pane" data-pane="settings" data-title="Settings" hidden>
         <div class="settings-content">
           <div class="tabs"><button data-tab="vessel" class="on">Vessel</button><button data-tab="conn">Connections</button><button data-tab="display">Display</button><button data-tab="diag">Diagnostics</button></div>

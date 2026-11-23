@@ -4,6 +4,10 @@
 //! the entry holds the file's full path, TweedPlot never copies, moves or deletes it, and the
 //! image is reported `missing` while the file can't be found (a drive not plugged in).
 //! Recently drawn images are kept open (a KAP is read into memory whole).
+//!
+//! Besides KAP charts and GeoTIFFs: MBTiles (ready-made tiles, passed through), and pictures
+//! (PNG, JPEG, plain TIFF) placed by a world file or by a calibration (control points,
+//! calib.rs). A PNG or JPEG is always kept as a tiled TIFF in the images folder.
 
 use std::collections::HashSet;
 use std::num::NonZeroUsize;
@@ -13,7 +17,10 @@ use std::sync::{Arc, Mutex, RwLock};
 use lru::LruCache;
 use serde::{Deserialize, Serialize};
 
+use crate::calib::{Calib, Calibrated, FitReport};
+use crate::geo::{Affine, Crs};
 use crate::kap::Kap;
+use crate::mbtiles::MbTiles;
 use crate::render::{native_zoom, Raster};
 use crate::source::FileSource;
 use crate::tiff::Tiff;
@@ -24,7 +31,7 @@ use crate::{err, Error, Result};
 pub struct Entry {
     pub id: String,
     pub name: String,
-    /// "kap" or "geotiff".
+    /// "kap", "geotiff" or "mbtiles".
     pub kind: String,
     /// File name inside the images folder, or the file's full path when `linked`.
     pub file: String,
@@ -60,6 +67,46 @@ pub struct Entry {
     /// "under" (over the depth shading, under the chart's lines and land) or "over".
     pub placement: String,
     pub added: String,
+    /// Placed by a world file: its EPSG code (0 while the coordinate system isn't known) and
+    /// the affine [a, b, c, d, e, f] from pixel corners to map coordinates.
+    #[serde(default)]
+    pub georef: Option<WorldGeo>,
+    /// The calibration in use (control points), if the image has been calibrated.
+    #[serde(default)]
+    pub calibration: Option<Calib>,
+    /// A calibration being worked on and not yet saved.
+    #[serde(default)]
+    pub draft: Option<Calib>,
+    /// MBTiles: the first zoom with tiles.
+    #[serde(default)]
+    pub min_zoom: Option<u8>,
+    /// How well the calibration's points agree (RMS, ground metres).
+    #[serde(default)]
+    pub calib_rms_m: Option<f64>,
+    /// For the page: "ready", "calibrate" (no position yet) or "crs" (the world file's
+    /// coordinate system is needed). Worked out when listed.
+    #[serde(default, skip_deserializing)]
+    pub state: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+pub struct WorldGeo {
+    pub epsg: u32,
+    pub aff: [f64; 6],
+}
+
+impl WorldGeo {
+    fn affine(&self) -> Affine {
+        let a = self.aff;
+        Affine { a: a[0], b: a[1], c: a[2], d: a[3], e: a[4], f: a[5] }
+    }
+}
+
+/// An opened image: drawn from its pixels, or ready-made tiles.
+#[derive(Clone)]
+enum Opened {
+    Raster(Arc<dyn Raster>),
+    Tiles(Arc<MbTiles>),
 }
 
 /// What the page may change.
@@ -91,7 +138,8 @@ pub struct Report {
     pub already: Vec<String>,
     /// Files that can't be shown, with why.
     pub errors: Vec<String>,
-    /// TIFFs found in a folder that aren't georeferenced (plain pictures), skipped quietly.
+    /// TIFFs found in a folder that aren't georeferenced and have no world file (plain
+    /// pictures), skipped quietly: import them one by one to calibrate them.
     pub not_geo: usize,
     /// A folder had more image files than are looked at in one go.
     pub truncated: bool,
@@ -105,7 +153,8 @@ pub const MAX_FOLDER_FILES: usize = 5000;
 pub struct Store {
     dir: PathBuf,
     entries: RwLock<Vec<Entry>>,
-    open: Mutex<LruCache<String, Arc<dyn Raster>>>,
+    /// Recently drawn images, by id ("<id>:draft" and "<id>:base" while calibrating).
+    open: Mutex<LruCache<String, Opened>>,
 }
 
 fn now() -> String {
@@ -121,6 +170,56 @@ fn new_id() -> String {
     format!("{:x}{:x}", t & 0xffff_ffff_ffff, N.fetch_add(1, Ordering::Relaxed) & 0xff)
 }
 
+/// The image's own pixels and georeferencing, before any calibration: a KAP, or a TIFF with
+/// its GeoKeys or world file. `true` with it: the image has no position of its own (a plain
+/// picture), so a calibration works in its pixels.
+fn open_base(e: &Entry, path: &Path) -> Result<(Arc<dyn Raster>, bool)> {
+    match e.kind.as_str() {
+        "kap" => Ok((Arc::new(Kap::open(path)?), false)),
+        "geotiff" => {
+            let mut t = Tiff::open(Arc::new(FileSource::open(path)?))?;
+            match e.georef {
+                Some(g) if g.epsg != 0 => {
+                    let Some(crs) = Crs::from_epsg(g.epsg) else { return err(format!("EPSG:{} is not supported", g.epsg)) };
+                    t.set_geo(crs, g.affine());
+                }
+                Some(_) => t.clear_geo(),
+                None => {}
+            }
+            let plain = t.geo.is_none();
+            Ok((Arc::new(t), plain))
+        }
+        k => err(format!("unknown image kind {k}")),
+    }
+}
+
+/// The image as drawn: with its calibration (or the draft being worked on), MBTiles as tiles.
+fn open_entry(e: &Entry, path: &Path, draft: bool) -> Result<Opened> {
+    if e.kind == "mbtiles" {
+        return Ok(Opened::Tiles(Arc::new(MbTiles::open(path)?)));
+    }
+    let (base, plain) = open_base(e, path)?;
+    let cal = if draft { e.draft.as_ref().or(e.calibration.as_ref()) } else { e.calibration.as_ref() };
+    match cal {
+        Some(c) => Ok(Opened::Raster(Arc::new(Calibrated::wrap(base, plain, c)?))),
+        None if plain => err("not placed yet: calibrate it"),
+        None => Ok(Opened::Raster(base)),
+    }
+}
+
+fn state_of(e: &Entry) -> &'static str {
+    if e.kind == "mbtiles" || e.kind == "kap" || e.calibration.is_some() {
+        return "ready";
+    }
+    match e.georef {
+        Some(g) if g.epsg == 0 => "crs",
+        Some(_) => "ready",
+        // a TIFF that had no georeferencing of its own is marked by an empty bounds
+        None if e.bounds == [0.0; 4] => "calibrate",
+        None => "ready",
+    }
+}
+
 /// Opens an image file by its kind.
 pub fn open_raster(kind: &str, path: &Path) -> Result<Arc<dyn Raster>> {
     Ok(match kind {
@@ -128,7 +227,7 @@ pub fn open_raster(kind: &str, path: &Path) -> Result<Arc<dyn Raster>> {
         "geotiff" => {
             let t = Tiff::open(Arc::new(FileSource::open(path)?))?;
             if t.geo.is_none() {
-                return err("this TIFF has no georeferencing (it is not a GeoTIFF): calibrating plain images comes later");
+                return err("this TIFF has no georeferencing (it is not a GeoTIFF)");
             }
             Arc::new(t)
         }
@@ -138,26 +237,33 @@ pub fn open_raster(kind: &str, path: &Path) -> Result<Arc<dyn Raster>> {
 
 /// The kind of an image file, from its first bytes.
 pub fn sniff(path: &Path) -> Result<&'static str> {
-    let mut head = [0u8; 4];
+    let mut head = [0u8; 16];
     {
         use std::io::Read;
         let mut f = std::fs::File::open(path).map_err(|e| Error(format!("{}: {e}", path.display())))?;
         let _ = f.read(&mut head)?;
     }
+    if crate::mbtiles::is_sqlite(&head) {
+        return Ok("mbtiles");
+    }
     if &head[..2] == b"II" || &head[..2] == b"MM" {
         return Ok("geotiff");
+    }
+    if head.starts_with(&[0x89, b'P', b'N', b'G']) || head.starts_with(&[0xff, 0xd8]) {
+        return Ok("picture");
     }
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
     if ext == "kap" || head.is_ascii() {
         return Ok("kap");
     }
-    err("not a KAP chart or a GeoTIFF")
+    err("not a KAP chart, GeoTIFF, MBTiles file, or PNG or JPEG picture")
 }
 
-/// Whether a file name looks like a KAP chart or a TIFF (for looking through folders).
+/// Whether a file name looks like a KAP chart, a TIFF or MBTiles (for looking through
+/// folders; PNG and JPEG pictures are imported one by one).
 pub fn looks_like_image(path: &Path) -> bool {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-    matches!(ext.as_str(), "kap" | "tif" | "tiff")
+    matches!(ext.as_str(), "kap" | "tif" | "tiff" | "mbtiles")
 }
 
 /// The KAP charts and TIFFs in a folder and the folders inside it (sorted, at most `max`;
@@ -243,10 +349,56 @@ impl Store {
         for e in l.iter_mut() {
             e.missing = e.linked && !Path::new(&e.file).is_file();
             if e.missing {
-                open.pop(&e.id);
+                for k in [e.id.clone(), format!("{}:draft", e.id), format!("{}:base", e.id)] {
+                    open.pop(&k);
+                }
             }
+            e.state = state_of(e).to_string();
         }
         l
+    }
+
+    fn entry(&self, id: &str) -> Result<Entry> {
+        self.list().into_iter().find(|e| e.id == id).ok_or_else(|| Error("no such image".into()))
+    }
+
+    fn forget(&self, id: &str) {
+        let mut o = self.open.lock().unwrap_or_else(|e| e.into_inner());
+        for k in [id.to_string(), format!("{id}:draft"), format!("{id}:base")] {
+            o.pop(&k);
+        }
+    }
+
+    /// The image opened (kept among the recently drawn): "" as drawn, "draft" with the
+    /// calibration being worked on, "base" its own pixels for the calibration's image pane.
+    fn opened(&self, id: &str, how: &str) -> Option<Opened> {
+        let key = if how.is_empty() { id.to_string() } else { format!("{id}:{how}") };
+        if let Some(o) = self.open.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
+            return Some(o.clone());
+        }
+        let e = self.entries.read().unwrap_or_else(|e| e.into_inner()).iter().find(|e| e.id == id).cloned()?;
+        let path = self.path_of(&e);
+        if e.linked && !path.is_file() {
+            // a drive that isn't plugged in: nothing to draw, and no message on every tile
+            return None;
+        }
+        let o = match how {
+            "base" => open_base(&e, &path).map(|(r, _)| Opened::Raster(r)),
+            "draft" => open_entry(&e, &path, true),
+            _ => open_entry(&e, &path, false),
+        };
+        match o {
+            Ok(o) => {
+                self.open.lock().unwrap_or_else(|e| e.into_inner()).put(key, o.clone());
+                Some(o)
+            }
+            Err(err) => {
+                if how.is_empty() && state_of(&e) == "ready" {
+                    eprintln!("image {}: {err}", path.display());
+                }
+                None
+            }
+        }
     }
 
     /// Let go of every open image file (before a drive is ejected: Windows won't eject a
@@ -263,26 +415,12 @@ impl Store {
         Ok(())
     }
 
-    /// The drawable image for an id (opened on first use).
+    /// The drawable image for an id (opened on first use); None for MBTiles, images not placed
+    /// yet, and linked files that can't be found now.
     pub fn raster(&self, id: &str) -> Option<Arc<dyn Raster>> {
-        if let Some(r) = self.open.lock().unwrap_or_else(|e| e.into_inner()).get(id) {
-            return Some(r.clone());
-        }
-        let e = self.entries.read().unwrap_or_else(|e| e.into_inner()).iter().find(|e| e.id == id).cloned()?;
-        let path = self.path_of(&e);
-        if e.linked && !path.is_file() {
-            // a drive that isn't plugged in: nothing to draw, and no message on every tile
-            return None;
-        }
-        match open_raster(&e.kind, &path) {
-            Ok(r) => {
-                self.open.lock().unwrap_or_else(|e| e.into_inner()).put(id.to_string(), r.clone());
-                Some(r)
-            }
-            Err(err) => {
-                eprintln!("image {}: {err}", path.display());
-                None
-            }
+        match self.opened(id, "")? {
+            Opened::Raster(r) => Some(r),
+            Opened::Tiles(_) => None,
         }
     }
 
@@ -309,15 +447,43 @@ impl Store {
         self.entries.read().unwrap_or_else(|e| e.into_inner()).iter().find(|e| e.linked && same_file_key(Path::new(&e.file)) == key).cloned()
     }
 
-    /// Add a KAP chart or GeoTIFF: copied into the folder, or catalogued where it is.
+    /// Add an image: a KAP chart, GeoTIFF or MBTiles copied into the folder or catalogued where
+    /// it is; or a picture (PNG, JPEG, a TIFF without georeferencing) placed by its world file
+    /// or waiting to be calibrated.
     pub fn import(&self, path: &Path, how: How) -> Result<Entry> {
-        self.import_one(path, how, true)
+        self.import_one(path, how, true, false)
     }
 
-    fn import_one(&self, path: &Path, how: How, keep_open: bool) -> Result<Entry> {
+    fn import_one(&self, path: &Path, how: How, keep_open: bool, from_folder: bool) -> Result<Entry> {
         let kind = sniff(path)?;
-        if how == How::InPlace && self.linked_to(path).is_some() {
+        if how == How::InPlace && kind != "picture" && self.linked_to(path).is_some() {
             return err("already in the list");
+        }
+        match kind {
+            "mbtiles" => return self.import_mbtiles(path, how),
+            // a PNG or JPEG is always copied in, as a tiled TIFF
+            "picture" => {
+                let (w, h, rgba) = crate::world::decode_picture(path)?;
+                std::fs::create_dir_all(&self.dir)?;
+                let fname = self.free_name(&format!("{}.tif", stem(path)));
+                crate::tiffw::write_tiff(&self.dir.join(&fname), w, h, &rgba, "TweedPlot")?;
+                drop(rgba);
+                return self.add_picture(path, &fname, false, w, h);
+            }
+            "geotiff" => {
+                let t = Tiff::open(Arc::new(FileSource::open(path)?))?;
+                if t.geo.is_none() {
+                    // a plain picture: placed by a world file, else (one by one) to calibrate
+                    let has_world = crate::world::find_world_file(path).is_some();
+                    if from_folder && !has_world {
+                        return err("this TIFF has no georeferencing");
+                    }
+                    let (w, h) = t.size();
+                    let file = self.bring_in(path, how)?;
+                    return self.add_picture(path, &file, how == How::InPlace, w, h);
+                }
+            }
+            _ => {}
         }
         // open it where it is first, so a file that can't be shown is never copied; a KAP is
         // read once, for both its header and drawing
@@ -333,7 +499,22 @@ impl Store {
         } else {
             (open_raster(kind, path)?, stem(path), String::new(), None, None, "GeoTIFF")
         };
-        let file = match how {
+        let file = self.bring_in(path, how)?;
+        let e = self.add_entry(&file, how == How::InPlace, kind, &name, source, &date, "", scale, fit, raster.as_ref())?;
+        if keep_open {
+            self.open.lock().unwrap_or_else(|e| e.into_inner()).put(e.id.clone(), Opened::Raster(raster));
+        }
+        if kind == "kap" {
+            let mut list = self.entries.write().unwrap_or_else(|e| e.into_inner());
+            place_by_scale(&mut list, &e.id);
+            self.save(&list)?;
+        }
+        Ok(e)
+    }
+
+    /// The file as the entry holds it: copied into the folder (its name there), or its full path.
+    fn bring_in(&self, path: &Path, how: How) -> Result<String> {
+        Ok(match how {
             How::Copy => {
                 std::fs::create_dir_all(&self.dir)?;
                 let fname = self.free_name(&path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "image".into()));
@@ -345,16 +526,105 @@ impl Store {
                 let full = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
                 full.to_string_lossy().into_owned()
             }
+        })
+    }
+
+    fn import_mbtiles(&self, path: &Path, how: How) -> Result<Entry> {
+        let m = MbTiles::open(path)?;
+        let file = self.bring_in(path, how)?;
+        let name = if m.name.trim().is_empty() { stem(path) } else { m.name.trim().to_string() };
+        let e = Entry {
+            id: new_id(),
+            name,
+            kind: "mbtiles".into(),
+            file,
+            linked: how == How::InPlace,
+            missing: false,
+            source: "MBTiles".into(),
+            date: String::new(),
+            credit: m.attribution.clone(),
+            bounds: m.bounds,
+            width: 0,
+            height: 0,
+            res_m: m.resolution_m(),
+            native_zoom: m.max_zoom,
+            fit_rms_px: None,
+            scale: None,
+            visible: true,
+            opacity: 1.0,
+            placement: "under".into(),
+            added: now(),
+            georef: None,
+            calibration: None,
+            draft: None,
+            min_zoom: Some(m.min_zoom),
+            calib_rms_m: None,
+            state: String::new(),
         };
-        let e = self.add_entry(&file, how == How::InPlace, kind, &name, source, &date, "", scale, fit, raster.as_ref())?;
-        if keep_open {
-            self.open.lock().unwrap_or_else(|e| e.into_inner()).put(e.id.clone(), raster);
+        self.push(e)
+    }
+
+    /// A picture (as a TIFF without georeferencing, in the folder or linked): placed by its
+    /// world file when it has one (its coordinate system from a .prj or .aux.xml, else asked),
+    /// else to calibrate.
+    fn add_picture(&self, orig: &Path, file: &str, linked: bool, w: usize, h: usize) -> Result<Entry> {
+        let georef = match crate::world::find_world_file(orig) {
+            Some(wf) => {
+                let aff = crate::world::read_world_file(&wf)?;
+                let epsg = crate::world::find_crs(orig).unwrap_or(0);
+                Some(WorldGeo { epsg, aff: [aff.a, aff.b, aff.c, aff.d, aff.e, aff.f] })
+            }
+            None => None,
+        };
+        let mut e = Entry {
+            id: new_id(),
+            name: stem(orig),
+            kind: "geotiff".into(),
+            file: file.to_string(),
+            linked,
+            missing: false,
+            source: "Picture".into(),
+            date: String::new(),
+            credit: String::new(),
+            bounds: [0.0; 4],
+            width: w,
+            height: h,
+            res_m: 0.0,
+            native_zoom: 0,
+            fit_rms_px: None,
+            scale: None,
+            visible: true,
+            opacity: 0.85,
+            placement: "under".into(),
+            added: now(),
+            georef,
+            calibration: None,
+            draft: None,
+            min_zoom: None,
+            calib_rms_m: None,
+            state: String::new(),
+        };
+        self.measure(&mut e);
+        self.push(e)
+    }
+
+    /// Where an image now is (bounds, resolution, zooms), after it is placed or calibrated.
+    fn measure(&self, e: &mut Entry) {
+        if let Ok(Opened::Raster(r)) = open_entry(e, &self.path_of(e), false) {
+            e.bounds = r.bounds();
+            e.res_m = r.resolution_m();
+            e.native_zoom = native_zoom(r.as_ref());
+        } else if e.kind != "mbtiles" && e.kind != "kap" {
+            e.bounds = [0.0; 4];
         }
-        if kind == "kap" {
-            let mut list = self.entries.write().unwrap_or_else(|e| e.into_inner());
-            place_by_scale(&mut list, &e.id);
-            self.save(&list)?;
-        }
+    }
+
+    fn push(&self, e: Entry) -> Result<Entry> {
+        let mut list = self.entries.write().unwrap_or_else(|e| e.into_inner());
+        list.push(e.clone());
+        self.save(&list)?;
+        let mut e = e;
+        e.state = state_of(&e).to_string();
         Ok(e)
     }
 
@@ -367,7 +637,7 @@ impl Store {
         let keep_open = paths.len() <= 8;
         for p in paths {
             let label = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.display().to_string());
-            match self.import_one(p, how, keep_open) {
+            match self.import_one(p, how, keep_open, from_folder) {
                 Ok(e) => r.added.push(e),
                 Err(e) if e.0 == "already in the list" => r.already.push(label),
                 Err(e) if from_folder && e.0.contains("no georeferencing") => r.not_geo += 1,
@@ -375,6 +645,112 @@ impl Store {
             }
         }
         r
+    }
+
+    /// The coordinate system of an image's world file (when the files beside it didn't say).
+    pub fn set_crs(&self, id: &str, epsg: u32) -> Result<Entry> {
+        if Crs::from_epsg(epsg).is_none() {
+            return err(format!("EPSG:{epsg} is not supported"));
+        }
+        let mut list = self.entries.write().unwrap_or_else(|e| e.into_inner());
+        let Some(e) = list.iter_mut().find(|e| e.id == id) else { return err("no such image") };
+        let Some(g) = e.georef.as_mut() else { return err("this image has no world file") };
+        g.epsg = epsg;
+        self.measure(e);
+        let mut out = e.clone();
+        self.save(&list)?;
+        drop(list);
+        self.forget(id);
+        out.state = state_of(&out).to_string();
+        Ok(out)
+    }
+
+    // ---------- calibration ----------
+
+    /// What the calibration needs to show the image: its size, the flat zoom of its pixel
+    /// tiles, whether it has a position of its own, and the saved and draft calibrations.
+    pub fn calib_info(&self, id: &str) -> Result<serde_json::Value> {
+        let e = self.entry(id)?;
+        if e.kind == "mbtiles" {
+            return err("MBTiles are ready-made map tiles: they can't be calibrated");
+        }
+        let (base, plain) = open_base(&e, &self.path_of(&e))?;
+        let (w, h) = base.size();
+        Ok(serde_json::json!({
+            "id": e.id, "name": e.name, "width": w, "height": h,
+            "pixelZoom": crate::render::pixel_zoom(base.as_ref()),
+            "plain": plain,
+            "calibration": e.calibration, "draft": e.draft,
+        }))
+    }
+
+    /// Fit a calibration being worked on; it is kept as the image's draft (drawn by the
+    /// draft tiles) until saved or discarded.
+    pub fn calib_fit(&self, id: &str, c: &Calib) -> Result<FitReport> {
+        let e = self.entry(id)?;
+        let (base, plain) = open_base(&e, &self.path_of(&e))?;
+        let (_, report) = crate::calib::fit(base.as_ref(), plain, c);
+        {
+            let mut list = self.entries.write().unwrap_or_else(|e| e.into_inner());
+            if let Some(x) = list.iter_mut().find(|x| x.id == id) {
+                x.draft = Some(c.clone());
+            }
+            self.save(&list)?;
+        }
+        self.open.lock().unwrap_or_else(|e| e.into_inner()).pop(&format!("{id}:draft"));
+        Ok(report)
+    }
+
+    /// Use the draft: it becomes the image's calibration.
+    pub fn calib_save(&self, id: &str) -> Result<Entry> {
+        let mut list = self.entries.write().unwrap_or_else(|e| e.into_inner());
+        let Some(e) = list.iter_mut().find(|e| e.id == id) else { return err("no such image") };
+        let Some(d) = e.draft.take() else { return err("nothing to save") };
+        let (base, plain) = open_base(e, &self.path_of(e))?;
+        let (warp, report) = crate::calib::fit(base.as_ref(), plain, &d);
+        if warp.is_none() {
+            e.draft = Some(d);
+            return err(report.note);
+        }
+        let points = d.points.iter().any(|p| p.px.is_some() && p.ll.is_some());
+        let moved = d.nudge != crate::calib::Nudge::default();
+        e.calibration = (points || moved).then_some(d);
+        e.calib_rms_m = if e.calibration.is_some() { report.rms_m } else { None };
+        self.measure(e);
+        let mut out = e.clone();
+        self.save(&list)?;
+        drop(list);
+        self.forget(id);
+        out.state = state_of(&out).to_string();
+        Ok(out)
+    }
+
+    /// Drop the draft (the saved calibration, if any, stays).
+    pub fn calib_discard(&self, id: &str) -> Result<()> {
+        let mut list = self.entries.write().unwrap_or_else(|e| e.into_inner());
+        if let Some(e) = list.iter_mut().find(|e| e.id == id) {
+            e.draft = None;
+        }
+        self.save(&list)?;
+        drop(list);
+        self.forget(id);
+        Ok(())
+    }
+
+    /// Remove an image's calibration: back to its own georeferencing (or to calibrate).
+    pub fn calib_clear(&self, id: &str) -> Result<Entry> {
+        let mut list = self.entries.write().unwrap_or_else(|e| e.into_inner());
+        let Some(e) = list.iter_mut().find(|e| e.id == id) else { return err("no such image") };
+        e.calibration = None;
+        e.draft = None;
+        e.calib_rms_m = None;
+        self.measure(e);
+        let mut out = e.clone();
+        self.save(&list)?;
+        drop(list);
+        self.forget(id);
+        out.state = state_of(&out).to_string();
+        Ok(out)
     }
 
     /// Put the raster charts in scale order (the most detailed on top), each in one of the
@@ -438,11 +814,14 @@ impl Store {
             opacity: if kind == "kap" { 1.0 } else { 0.85 },
             placement: "under".to_string(),
             added: now(),
+            georef: None,
+            calibration: None,
+            draft: None,
+            min_zoom: None,
+            calib_rms_m: None,
+            state: String::new(),
         };
-        let mut list = self.entries.write().unwrap_or_else(|e| e.into_inner());
-        list.push(e.clone());
-        self.save(&list)?;
-        Ok(e)
+        self.push(e)
     }
 
     pub fn update(&self, id: &str, p: Patch) -> Result<Entry> {
@@ -484,7 +863,8 @@ impl Store {
         let Some(i) = list.iter().position(|e| e.id == id) else { return Ok(()) };
         let e = list.remove(i);
         self.save(&list)?;
-        self.open.lock().unwrap_or_else(|e| e.into_inner()).pop(id);
+        drop(list);
+        self.forget(id);
         if !e.linked {
             let _ = std::fs::remove_file(self.dir.join(&e.file));
         }
@@ -493,8 +873,20 @@ impl Store {
 
     /// A map tile of an image (PNG), or None.
     pub fn tile_png(&self, id: &str, z: u8, x: u32, y: u32) -> Option<Vec<u8>> {
-        let r = self.raster(id)?;
-        crate::render::render_tile(r.as_ref(), z, x, y)
+        self.tile(id, "", z, x, y).map(|t| t.0)
+    }
+
+    /// A map tile and its type: "" the image as drawn, "draft" through the calibration being
+    /// worked on, "px" the picture itself flat (the calibration's image pane).
+    pub fn tile(&self, id: &str, how: &str, z: u8, x: u32, y: u32) -> Option<(Vec<u8>, &'static str)> {
+        if how == "px" {
+            let Opened::Raster(r) = self.opened(id, "base")? else { return None };
+            return crate::render::render_pixel_tile(r.as_ref(), z, x, y).map(|b| (b, "image/png"));
+        }
+        match self.opened(id, how)? {
+            Opened::Tiles(m) => m.tile(z, x, y).map(|b| (b, m.mime())),
+            Opened::Raster(r) => crate::render::render_tile(r.as_ref(), z, x, y).map(|b| (b, "image/png")),
+        }
     }
 }
 
@@ -565,6 +957,12 @@ mod tests {
             opacity: 1.0,
             placement: "under".into(),
             added: String::new(),
+            georef: None,
+            calibration: None,
+            draft: None,
+            min_zoom: None,
+            calib_rms_m: None,
+            state: String::new(),
         }
     }
     fn ids(l: &[Entry]) -> Vec<&str> {
@@ -588,5 +986,102 @@ mod tests {
         let mut m = vec![e("harbour", "kap", 2.0), e("sat", "geotiff", 10.0), e("ocean", "kap", 500.0), e("coastal", "kap", 50.0)];
         order_by_scale(&mut m);
         assert_eq!(ids(&m), ["ocean", "sat", "coastal", "harbour"]);
+    }
+}
+
+#[cfg(test)]
+mod picture_tests {
+    use super::*;
+    use crate::calib::Point;
+    use crate::geo::{web_mercator, web_mercator_inv};
+
+    fn tmp(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("tp-store-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// A 64 × 48 picture, opaque, a colour gradient.
+    fn picture(path: &Path) {
+        let (w, h) = (64u32, 48u32);
+        let mut px = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                px.extend([(x * 4) as u8, (y * 5) as u8, 128, 255]);
+            }
+        }
+        std::fs::write(path, crate::render::encode_png(&px, w, h)).unwrap();
+    }
+
+    #[test]
+    fn world_file_places_a_picture_and_asks_for_its_crs() {
+        let d = tmp("wld");
+        let src = d.join("in");
+        std::fs::create_dir_all(&src).unwrap();
+        let img = src.join("bay.png");
+        picture(&img);
+        // NZTM, 10 m pixels, near Nelson
+        std::fs::write(src.join("bay.pgw"), "10\n0\n0\n-10\n1623005\n5431995\n").unwrap();
+        let s = Store::open(&d.join("images"));
+        let e = s.import(&img, How::Copy).unwrap();
+        assert_eq!(e.state, "crs");
+        assert!(s.tile("x", "", 10, 0, 0).is_none());
+        let e = s.set_crs(&e.id, 2193).unwrap();
+        assert_eq!(e.state, "ready");
+        assert!(e.bounds[0] > 173.2 && e.bounds[2] < 173.4 && e.bounds[1] > -41.4 && e.bounds[3] < -41.2, "{:?}", e.bounds);
+        assert!((e.res_m - 10.0).abs() < 0.5, "{}", e.res_m);
+        // it draws: a position inside it maps to a pixel inside the picture
+        let r = s.raster(&e.id).unwrap();
+        let (c, row) = r.to_pixel((e.bounds[0] + e.bounds[2]) / 2.0, (e.bounds[1] + e.bounds[3]) / 2.0).unwrap();
+        assert!((0.0..64.0).contains(&c) && (0.0..48.0).contains(&row), "{c} {row}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_plain_picture_waits_then_is_calibrated() {
+        let d = tmp("cal");
+        let img = d.join("sketch.png");
+        picture(&img);
+        let s = Store::open(&d.join("images"));
+        let e = s.import(&img, How::Copy).unwrap();
+        assert_eq!(e.state, "calibrate");
+        assert!(s.raster(&e.id).is_none());
+        let info = s.calib_info(&e.id).unwrap();
+        assert_eq!(info["plain"], true);
+        assert_eq!(info["width"], 64);
+        // the picture's own tiles show in the image pane
+        assert!(s.tile(&e.id, "px", 0, 0, 0).is_some());
+        // two points: 1 pixel = 2 mercator metres, north up
+        let (x0, y0) = web_mercator(173.25, -41.25);
+        let ll = |c: f64, r: f64| {
+            let (lon, lat) = web_mercator_inv(x0 + 2.0 * c, y0 - 2.0 * r);
+            Some([lon, lat])
+        };
+        let c = Calib {
+            points: vec![
+                Point { px: Some([0.0, 0.0]), ll: ll(0.0, 0.0), off: false, from: "typed".into() },
+                Point { px: Some([64.0, 48.0]), ll: ll(64.0, 48.0), off: false, from: "chart".into() },
+            ],
+            ..Default::default()
+        };
+        let r = s.calib_fit(&e.id, &c).unwrap();
+        assert_eq!(r.model, "similarity");
+        assert!(r.rms_m.unwrap() < 0.01);
+        // the draft draws before it is saved; the image itself doesn't yet
+        let n = 1u32 << 16;
+        let tx = ((173.2505 + 180.0) / 360.0 * n as f64) as u32;
+        let lat = (-41.2502f64).to_radians();
+        let ty = ((1.0 - (lat.tan() + 1.0 / lat.cos()).ln() / std::f64::consts::PI) / 2.0 * n as f64) as u32;
+        assert!(s.tile(&e.id, "draft", 16, tx, ty).is_some());
+        assert!(s.tile(&e.id, "", 16, tx, ty).is_none());
+        let e = s.calib_save(&e.id).unwrap();
+        assert_eq!(e.state, "ready");
+        assert!(e.draft.is_none() && e.calibration.is_some());
+        assert!(s.tile(&e.id, "", 16, tx, ty).is_some());
+        // taken off again, it waits to be calibrated
+        let e = s.calib_clear(&e.id).unwrap();
+        assert_eq!(e.state, "calibrate");
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

@@ -42,6 +42,10 @@ pub trait Raster: Send + Sync {
     fn block(&self, level: usize, bx: usize, by: usize) -> Option<Arc<Block>>;
     /// Full-resolution pixel coordinates (column, row; 0,0 the top-left corner) of a WGS84 point.
     fn to_pixel(&self, lon: f64, lat: f64) -> Option<(f64, f64)>;
+    /// The WGS84 position of a full-resolution pixel position, when the image has a georeference.
+    fn to_lonlat(&self, _col: f64, _row: f64) -> Option<(f64, f64)> {
+        None
+    }
     /// Whether a full-resolution pixel position is inside the image's charted area (a KAP's border).
     fn inside(&self, _col: f64, _row: f64) -> bool {
         true
@@ -221,4 +225,81 @@ pub fn tile_range(b: [f64; 4], z: u8) -> (u32, u32, u32, u32) {
         (((1.0 - (p.tan() + 1.0 / p.cos()).ln() / PI) / 2.0 * n as f64).floor() as i64).clamp(0, n as i64 - 1) as u32
     };
     (tx(b[0]), ty(b[3]), tx(b[2]), ty(b[1]))
+}
+
+/// The zoom at which a picture shown flat (its pixels as the map's, for calibration) is at
+/// full resolution: the picture fills the top-left of a square world 256·2^zoom pixels across.
+pub fn pixel_zoom(r: &dyn Raster) -> u8 {
+    let (w, h) = r.size();
+    let m = w.max(h).max(1) as f64 / T as f64;
+    m.log2().ceil().clamp(0.0, 22.0) as u8
+}
+
+/// A 256 px tile of the picture itself (not on the chart): at the flat world's zoom `z` each
+/// tile pixel covers 2^(pixel_zoom − z) image pixels. For the calibration's image pane.
+pub fn render_pixel_tile(r: &dyn Raster, z: u8, x: u32, y: u32) -> Option<Vec<u8>> {
+    let top = pixel_zoom(r);
+    let (w0, h0) = r.size();
+    let s = 2f64.powi(top as i32 - z as i32); // image pixels a tile pixel
+    let (x0, y0) = (x as f64 * T as f64 * s, y as f64 * T as f64 * s);
+    if x0 >= w0 as f64 || y0 >= h0 as f64 {
+        return None;
+    }
+    let mut level = 0;
+    for l in 1..r.levels() {
+        let (lw, _) = r.level_size(l);
+        if w0 as f64 / lw as f64 <= s * 1.01 {
+            level = l;
+        }
+    }
+    let (lw, lh) = r.level_size(level);
+    let (sx, sy) = (w0 as f64 / lw as f64, h0 as f64 / lh as f64);
+    let (bw, bh) = r.block_size(level);
+    let mut blocks: HashMap<(usize, usize), Option<Arc<Block>>> = HashMap::new();
+    let mut fetch = |px: i64, py: i64| -> [u8; 4] {
+        if px < 0 || py < 0 || px as usize >= lw || py as usize >= lh {
+            return [0; 4];
+        }
+        let (px, py) = (px as usize, py as usize);
+        let key = (px / bw, py / bh);
+        let blk = blocks.entry(key).or_insert_with(|| r.block(level, key.0, key.1));
+        match blk {
+            Some(b) => b.px(px - key.0 * bw, py - key.1 * bh),
+            None => [0; 4],
+        }
+    };
+    let mut out = vec![0u8; T * T * 4];
+    for oy in 0..T {
+        let fr = y0 + (oy as f64 + 0.5) * s;
+        if fr > h0 as f64 {
+            break;
+        }
+        for ox in 0..T {
+            let fc = x0 + (ox as f64 + 0.5) * s;
+            if fc > w0 as f64 {
+                break;
+            }
+            let (lc, lr) = (fc / sx - 0.5, fr / sy - 0.5);
+            let (ix, iy) = (lc.floor() as i64, lr.floor() as i64);
+            let (tx, ty) = (lc - ix as f64, lr - iy as f64);
+            // enlarged far past full resolution: sharp pixels, so a point can be put on one
+            let c = if s < 0.25 {
+                fetch(lc.round() as i64, lr.round() as i64)
+            } else {
+                let q = [fetch(ix, iy), fetch(ix + 1, iy), fetch(ix, iy + 1), fetch(ix + 1, iy + 1)];
+                let wts = [(1.0 - tx) * (1.0 - ty), tx * (1.0 - ty), (1.0 - tx) * ty, tx * ty];
+                let mut acc = [0.0f64; 4];
+                for (c, wt) in q.iter().zip(wts) {
+                    for k in 0..4 {
+                        acc[k] += c[k] as f64 * wt;
+                    }
+                }
+                [acc[0].round() as u8, acc[1].round() as u8, acc[2].round() as u8, acc[3].round() as u8]
+            };
+            let o = (oy * T + ox) * 4;
+            // a picture without transparency shows its own pixels; transparent parts stay clear
+            out[o..o + 4].copy_from_slice(&c);
+        }
+    }
+    Some(encode_png(&out, T as u32, T as u32))
 }

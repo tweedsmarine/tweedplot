@@ -1,4 +1,5 @@
-//! Images on the chart (Chart › Layers › Images): KAP raster charts and GeoTIFFs the user
+//! Images on the chart (Chart › Layers › Images): KAP raster charts, GeoTIFFs, MBTiles and
+//! pictures (placed by a world file or calibrated with control points) the user
 //! imports (copied into the images folder, or catalogued where they are, such as another
 //! program's chart folder), and Sentinel-2 satellite images downloaded from Earth Search on
 //! AWS. Copies and downloads live in the images folder; the imagery crate draws every image
@@ -36,8 +37,10 @@ fn store() -> Result<&'static Store, String> {
     STORE.get().ok_or_else(|| "The images folder isn't open yet.".to_string())
 }
 
-/// `/img/<id>/<z>/<x>/<y>.png` → the tile's PNG (None: nothing there).
-pub(crate) fn tile_png(rest: &str) -> Option<Vec<u8>> {
+/// `<id>/<z>/<x>/<y>.png` → the tile and its type (None: nothing there). `how`: "" the image
+/// as drawn (`/img/`), "draft" through the calibration being worked on (`/imgd/`), "px" the
+/// picture itself, flat, for the calibration's image pane (`/imgp/`).
+pub(crate) fn tile(how: &str, rest: &str) -> Option<(Vec<u8>, &'static str)> {
     let mut it = rest.trim_end_matches(".png").split('/');
     let id = it.next()?;
     let z: u8 = it.next()?.parse().ok()?;
@@ -46,7 +49,7 @@ pub(crate) fn tile_png(rest: &str) -> Option<Vec<u8>> {
     if it.next().is_some() || z > 24 || !id.chars().all(|c| c.is_ascii_hexdigit()) {
         return None;
     }
-    STORE.get()?.tile_png(id, z, x, y)
+    STORE.get()?.tile(id, how, z, x, y)
 }
 
 #[tauri::command]
@@ -64,8 +67,8 @@ pub(crate) async fn images_import(app: tauri::AppHandle, how: How, folder: bool)
     let dialog = app.dialog().file();
     if folder {
         let title = match how {
-            How::Copy => "Copy the KAP charts and GeoTIFFs in a folder into TweedPlot",
-            How::InPlace => "Use the KAP charts and GeoTIFFs in a folder where they are",
+            How::Copy => "Copy the KAP charts, GeoTIFFs and MBTiles in a folder into TweedPlot",
+            How::InPlace => "Use the KAP charts, GeoTIFFs and MBTiles in a folder where they are",
         };
         let Some(dir) = dialog.set_title(title).blocking_pick_folder() else { return Ok(Report::default()) };
         let dir = dir.into_path().map_err(|e| e.to_string())?;
@@ -76,7 +79,7 @@ pub(crate) async fn images_import(app: tauri::AppHandle, how: How, folder: bool)
                 .await
                 .map_err(|e| e.to_string())??;
         if found.is_empty() {
-            return Err("No KAP charts or TIFFs in that folder or the folders inside it.".into());
+            return Err("No KAP charts, TIFFs or MBTiles in that folder or the folders inside it.".into());
         }
         let _ = app.emit("images-import-count", found.len());
         let mut r = import_blocking(found, how, true).await?;
@@ -84,12 +87,15 @@ pub(crate) async fn images_import(app: tauri::AppHandle, how: How, folder: bool)
         return Ok(r);
     }
     let title = match how {
-        How::Copy => "Copy KAP charts or GeoTIFF images into TweedPlot",
-        How::InPlace => "Use KAP charts or GeoTIFF images where they are",
+        How::Copy => "Copy charts and images into TweedPlot",
+        How::InPlace => "Use charts and images where they are (PNG and JPEG pictures are always copied)",
     };
     let picked = dialog
         .set_title(title)
-        .add_filter("KAP charts and GeoTIFFs", &["kap", "KAP", "tif", "tiff", "TIF", "TIFF"])
+        .add_filter(
+            "Charts and images (KAP, GeoTIFF, MBTiles, PNG, JPEG)",
+            &["kap", "KAP", "tif", "tiff", "TIF", "TIFF", "mbtiles", "MBTILES", "png", "PNG", "jpg", "JPG", "jpeg", "JPEG"],
+        )
         .add_filter("All files", &["*"])
         .blocking_pick_files();
     let Some(list) = picked else { return Ok(Report::default()) };
@@ -99,6 +105,38 @@ pub(crate) async fn images_import(app: tauri::AppHandle, how: How, folder: bool)
 
 async fn import_blocking(paths: Vec<PathBuf>, how: How, from_folder: bool) -> Result<Report, String> {
     tauri::async_runtime::spawn_blocking(move || Ok(store()?.import_many(&paths, how, from_folder))).await.map_err(|e| e.to_string())?
+}
+
+/// The coordinate system of a picture's world file, when nothing beside it said.
+#[tauri::command]
+pub(crate) fn images_set_crs(id: String, epsg: u32) -> Result<Entry, String> {
+    store()?.set_crs(&id, epsg).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn images_calib_info(id: String) -> Result<serde_json::Value, String> {
+    store()?.calib_info(&id).map_err(|e| e.to_string())
+}
+
+/// Fit the calibration being worked on (kept as the image's draft) and report on it.
+#[tauri::command]
+pub(crate) async fn images_calib_fit(id: String, calib: imagery::calib::Calib) -> Result<imagery::calib::FitReport, String> {
+    tauri::async_runtime::spawn_blocking(move || store()?.calib_fit(&id, &calib).map_err(|e| e.to_string())).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub(crate) fn images_calib_save(id: String) -> Result<Entry, String> {
+    store()?.calib_save(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn images_calib_discard(id: String) -> Result<(), String> {
+    store()?.calib_discard(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn images_calib_clear(id: String) -> Result<Entry, String> {
+    store()?.calib_clear(&id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -514,6 +514,12 @@ impl Raster for Tiff {
         let (x, y) = crs.forward(lon, lat);
         aff.invert(x, y)
     }
+    fn to_lonlat(&self, col: f64, row: f64) -> Option<(f64, f64)> {
+        let (crs, aff) = self.geo.as_ref()?;
+        let (x, y) = aff.apply(col, row);
+        let p = crs.inverse(x, y);
+        (p.0.is_finite() && p.1.is_finite()).then_some(p)
+    }
     fn bounds(&self) -> [f64; 4] {
         self.bounds
     }
@@ -523,6 +529,19 @@ impl Raster for Tiff {
 }
 
 impl Tiff {
+    /// Place the image (from a world file): replaces any georeferencing in the file.
+    pub fn set_geo(&mut self, crs: Crs, aff: Affine) {
+        self.geo = Some((crs, aff));
+        self.bounds = crate::render::bounds_of(&crs, &aff, self.levels[0].width, self.levels[0].height);
+        self.res_m = crate::render::resolution_of(&crs, &aff, self.levels[0].width, self.levels[0].height);
+    }
+
+    /// Forget the file's georeferencing (an internal copy of a plain picture).
+    pub fn clear_geo(&mut self) {
+        self.geo = None;
+        self.epsg = None;
+    }
+
     /// Every block of a level, decoded (for copying a window out of a remote image).
     pub fn block_bytes(&self, level: usize, bx: usize, by: usize) -> Result<Option<Block>> {
         self.decode(level, bx, by)
