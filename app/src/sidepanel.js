@@ -182,7 +182,8 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
   function placeChrome(on, line, focus) {
     // at the top of the panel in every view that has it (Planning and Environment too); on the line under
     // the chart when the panel is hidden; back over the screen in the views without a chart
-    const where = on ? actions : line ? strip.querySelector(".ss-actions") : home;
+    // with the OpenBridge frame: always in the top bar
+    const where = document.getElementById("ob-actions") ?? (on ? actions : line ? strip.querySelector(".ss-actions") : home);
     for (const b of chrome) put(b, where);
     // the alerts: in the panel, or on the line under the chart (never over the chart)
     put(banner, on && !focus ? alerts : line ? strip.querySelector(".ss-alerts") : home);

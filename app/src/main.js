@@ -2,9 +2,9 @@
 import { placing } from "./modes.js";
 import "./clock24.js";
 import * as maplibregl from "maplibre-gl";
-import "@fontsource/atkinson-hyperlegible-next/400.css";
-import "@fontsource/atkinson-hyperlegible-next/600.css";
-import "@fontsource/atkinson-hyperlegible-next/700.css";
+import "@fontsource/noto-sans/400.css";
+import "@fontsource/noto-sans/600.css";
+import "@fontsource/noto-sans/700.css";
 // Bundle MapLibre's web worker with the app so the map works offline.
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 maplibregl.setWorkerUrl(workerUrl);
@@ -78,6 +78,7 @@ import { setupS63 } from "./s63.js";
 import { setupPublications } from "./publications.js";
 import { setupReplay } from "./replay.js";
 import { setupPalette } from "./palette.js";
+import { setupOpenBridgeShell } from "./obshell.js";
 import { setupMapPalette } from "./mappalette.js";
 import { setupAlarms } from "./alarms.js";
 import { createPositionWatch } from "./position-watch.js";
@@ -452,6 +453,7 @@ let route = null; // the course being edited
 let routing = null;
 let aisApi = null; // AIS targets (ais.js), for the data panel's Targets section
 let library = null;
+setupOpenBridgeShell();
 const ui = setupRail(map);
 const views = setupViews(map, { livePosition: () => live && positionWatch.age() != null && !positionWatch.lost(), onPlanningTimeout: (view) => toast(`${view === "env" ? "Environment" : "Planning"} inactive: returned to Navigation`, 8000) });
 setupCards();

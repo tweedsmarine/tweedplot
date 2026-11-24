@@ -4,7 +4,9 @@
   "license": "GPL-3.0-or-later",
   "version": "1.0.0-beta.5",
   "type": "module",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -13,7 +15,8 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@fontsource/atkinson-hyperlegible-next": "^5.3.0",
+    "@fontsource/noto-sans": "^5.3.0",
+    "@oicl/openbridge-webcomponents": "2.1.1",
     "@tauri-apps/api": "^2.12.5",
     "@tauri-apps/plugin-updater": "^2.14.1",
     "maplibre-gl": "^6.19.0",

@@ -1,5 +1,5 @@
 @import "maplibre-gl/dist/maplibre-gl.css";
-@import "./openbridge/palettes.css";
+@import "@oicl/openbridge-webcomponents/dist/openbridge.css";
 
 :root {
   --sea: #cfe3ef;
@@ -35,7 +35,7 @@
   --alarm-ink: var(--on-alarm-color);
   --rail-w: 56px;
   --drawer-w: 360px;
-  font-family: "Atkinson Hyperlegible Next", "Segoe UI", system-ui, sans-serif;
+  font-family: "Noto Sans", "Segoe UI", system-ui, sans-serif;
 }
 
 html, body { margin: 0; height: 100%; overflow: hidden; color: var(--ink); background: var(--sea); }
@@ -1553,13 +1553,13 @@ html.cur-edge:not(#n1):not(#n2):not(#n3), html.cur-edge:not(#n1):not(#n2):not(#n
 #man-print { display: none; }
 @media print {
   @page { size: A4; margin: 16mm 15mm 18mm 18mm;
-    @bottom-center { content: counter(page); font: 9pt "Atkinson Hyperlegible Next", system-ui, sans-serif; color: var(--element-neutral-color); }
-    @top-right { content: "TweedPlot User Manual"; font: 8pt "Atkinson Hyperlegible Next", system-ui, sans-serif; color: var(--element-inactive-color); } }
+    @bottom-center { content: counter(page); font: 9pt "Noto Sans", system-ui, sans-serif; color: var(--element-neutral-color); }
+    @top-right { content: "TweedPlot User Manual"; font: 8pt "Noto Sans", system-ui, sans-serif; color: var(--element-inactive-color); } }
   @page :first { @bottom-center { content: none; } @top-right { content: none; } }
   html, html *, body, body > * { filter: none !important; }
   html, body { background: var(--container-global-color) !important; color: var(--element-active-color) !important; height: auto !important; overflow: visible !important; }
   body > :not(#man-print) { display: none !important; }
-  #man-print { display: block; font: 10.5pt/1.45 "Atkinson Hyperlegible Next", system-ui, sans-serif; color: var(--element-active-color); }
+  #man-print { display: block; font: 10.5pt/1.45 "Noto Sans", system-ui, sans-serif; color: var(--element-active-color); }
   #man-print .mp-cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; break-after: page; }
   #man-print .mp-cover img { width: 130mm; margin-bottom: 18mm; }
   #man-print .mp-cover h1 { font-size: 26pt; margin: 0 0 4mm; color: var(--base-blue-500); }
@@ -1605,8 +1605,8 @@ html.cur-edge:not(#n1):not(#n2):not(#n3), html.cur-edge:not(#n1):not(#n2):not(#n
   #man-print.a5 table { font-size: 9.5pt; }
 }
 @page a5 { size: A5; margin: 12mm 11mm 14mm 12mm;
-  @bottom-center { content: counter(page); font: 8pt "Atkinson Hyperlegible Next", system-ui, sans-serif; color: var(--element-neutral-color); }
-  @top-right { content: "TweedPlot Quick start"; font: 7.5pt "Atkinson Hyperlegible Next", system-ui, sans-serif; color: var(--element-inactive-color); } }
+  @bottom-center { content: counter(page); font: 8pt "Noto Sans", system-ui, sans-serif; color: var(--element-neutral-color); }
+  @top-right { content: "TweedPlot Quick start"; font: 7.5pt "Noto Sans", system-ui, sans-serif; color: var(--element-inactive-color); } }
 
 /* the anchor's card (anchor.js) */
 .anc-card fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 6px 0; padding: 4px 8px 6px; }
@@ -2402,7 +2402,7 @@ html.calibrating #map .maplibregl-canvas, #calib-img .maplibregl-canvas { cursor
 html.calibrating #map.calib-nudging .maplibregl-canvas { cursor: move; }
 html[data-palette="iho-night"] body > #calib-img { filter: brightness(0.6); }
 .calib-pt { width: 22px; height: 22px; border-radius: 50%; box-sizing: border-box; display: grid; place-items: center; cursor: pointer;
-  font: 700 12px/1 "Atkinson Hyperlegible Next", system-ui, sans-serif; color: var(--element-active-color); border: 2px solid var(--border-divider-color); box-shadow: 0 0 0 1px #000, 0 1px 4px rgba(0,0,0,.6); }
+  font: 700 12px/1 "Noto Sans", system-ui, sans-serif; color: var(--element-active-color); border: 2px solid var(--border-divider-color); box-shadow: 0 0 0 1px #000, 0 1px 4px rgba(0,0,0,.6); }
 .calib-pt.img { background: var(--alert-warning-color); }
 .calib-pt.chart { background: var(--base-purple-400); }
 .calib-pt.half { border-style: dashed; }
@@ -2533,3 +2533,75 @@ html:is([data-obc-theme="dusk"], [data-obc-theme="night"]) { color-scheme: dark;
 #rail #settings-btn { border-top-color: var(--border-divider-color); }
 /* the brand at the top of the rail keeps the TweedsMarine navy in every palette (the logo is white) */
 #rail .brand { background: var(--brand-navy); color: #fff; }
+
+/* ---------- OpenBridge frame (obshell.js) ----------
+   OpenBridge web components and palettes (@oicl/openbridge-webcomponents 2.1.1). Sizes: TweedPlot's
+   compact setting, OpenBridge's own size variables brought down from their smallest set (48 px
+   click targets) to 32 px, for a mouse or trackball; the safety buttons stay larger. */
+:root {
+  --global-size-spacing-touch-target-min: 32px;
+  --global-size-spacing-visual-target-min: 24px;
+  --global-size-spacing-touch-target-min-two-story: 37px;
+  --menu-navigation-components-navigation-item-touch-target-size-large: 43px;
+  --app-components-topbar-message-item-visual-target-size-tall: 42px;
+  --app-components-clock-touch-target-size-double: 43px;
+  --app-components-clock-visual-target-size-double: 42px;
+  --app-components-topbar-touch-target-tall: 43px;
+  --app-components-topbar-height-double: 64px;
+  --ui-components-app-button-touch-target-size-enhanced: 48px;
+  --app-components-alert-menu-item-button-size: 59px;
+  --ui-components-user-button-touch-target-size-enhanced: 48px;
+  --automation-components-button-visual-target: 24px;
+  --automation-components-button-touch-target-size: 32px;
+  --ui-components-elevated-card-touch-target-min: 43px;
+  --instrument-components-readout-touch-target: 32px;
+  --maneuvering-components-poi-button-touch-target: 32px;
+  --maneuvering-components-poi-button-visual-target-round: 27px;
+  --app-components-alert-button-touch-target-min: 37px;
+  --maneuvering-components-poi-button-visual-target-square: 24px;
+  --maneuvering-components-poi-button-large-touch-target: 43px;
+  --maneuvering-components-poi-button-large-visual-target-round: 39px;
+  --maneuvering-components-poi-button-large-visual-target-round-overlap: 27px;
+  --maneuvering-components-poi-button-large-visual-target-square: 36px;
+  --maneuvering-components-poi-button-visual-target-round-overlap: 24px;
+  --maneuvering-components-poi-button-large-visual-target-square-overlap: 30px;
+  --maneuvering-components-poi-button-visual-target-square-overlap: 21px;
+  --maneuvering-components-poi-button-location-visual-target-size: 27px;
+  --maneuvering-components-poi-group-touch-target: 32px;
+  --maneuvering-components-poi-ruler-button-visual-target: 24px;
+  --maneuvering-components-poi-ruler-button-touch-target: 32px;
+  --automation-components-button-visual-target-round: 27px;
+  --maneuvering-components-poi-button-people-touch-target: 32px;
+  --maneuvering-components-poi-button-people-visual-target-width-remote: 27px;
+  --maneuvering-components-poi-button-people-visual-target-height-remote: 21px;
+  --ui-components-tag-visual-target: 20px;
+  --app-components-integration-system-icon-button-visual-target: 30px;
+  --app-components-integration-system-navigation-item-horizontal-visual-target: 30px;
+  --app-components-integration-system-navigation-item-vertical-visual-target: 30px;
+  --ui-components-tag-visual-target-large: 24px;
+  --automation-components-button-new-visual-target: 24px;
+  --automation-components-button-new-visual-target-round: 27px;
+  --pui-components-button-button-size-min: 32px;
+  --pui-components-button-button-size: 35px;  --ob-top-h: 44px;
+  font-family: var(--font-family-main, "Noto Sans"), "Segoe UI", system-ui, sans-serif;
+}
+/* everything under the top bar: the page's absolute layout keeps working, measured from below it */
+html.ob-shell { --rail-w: 0px; }
+html.ob-shell body { position: fixed; inset: var(--ob-top-h) 0 0 0; height: auto; }
+html.ob-shell #rail, html.ob-shell #palette-btn { display: none !important; }
+#ob-topbar { position: fixed; top: 0; left: 0; right: 0; height: var(--ob-top-h); z-index: 60; }
+#ob-nav { position: fixed; top: var(--ob-top-h); left: 0; bottom: 0; z-index: 59; }
+#ob-brilliance { position: fixed; top: var(--ob-top-h); right: 8px; z-index: 59; }
+#ob-nav[hidden], #ob-brilliance[hidden] { display: none; }
+/* MOB, Drop and the anchor: always in the top bar, in every view */
+#ob-actions { display: flex; align-items: center; gap: 6px; height: var(--ob-top-h); padding: 0 6px; }
+#ob-actions :is(#mob-btn, #drop-btn, #anchor-btn) {
+  position: static; inset: auto; flex: none; min-width: 0; min-height: 0; height: calc(var(--ob-top-h) - 6px); padding: 0 14px;
+  font-size: 15px; font-weight: 700; border-radius: var(--border-radius-br-2, 4px); box-shadow: none; border: 1px solid transparent;
+}
+#ob-actions #mob-btn { min-width: 84px; background: var(--alert-alarm-color); border-color: var(--alert-alarm-color); color: var(--on-alarm-color); }
+#ob-actions #mob-btn.on { background: var(--alert-caution-color); border-color: var(--alert-caution-color); color: var(--on-caution-color); }
+#ob-actions :is(#drop-btn, #anchor-btn) { background: var(--raised-enabled-background-color); border-color: var(--raised-enabled-border-color); color: var(--on-raised-active-color); }
+#ob-actions :is(#drop-btn, #anchor-btn):hover { background: var(--raised-hover-background-color); }
+#ob-actions #anchor-btn.on { background: var(--alert-warning-color); border-color: var(--alert-warning-color); color: var(--on-warning-color); }
+#ob-actions #anchor-btn svg { width: 26px; height: 20px; }

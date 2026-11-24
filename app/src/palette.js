@@ -16,6 +16,9 @@ const $ = (id) => document.getElementById(id);
 export const OBC_THEME = { bright: "bright", day: "day", dusk: "dusk", "iho-night": "night", "night-red": "day", "night-green": "day" };
 const LIGHT = (m) => m === "day" || m === "bright";
 
+/** The colours control, once setupPalette has run (the OpenBridge brilliance menu uses it). */
+export let paletteApi = null;
+
 /** Each window (monitor) keeps its own colours: an office well and a fly bridge differ.
  *  Everything shown in a window, whatever its view, uses that window's colours. */
 export function setupPalette(onChange = () => {}) {
@@ -41,8 +44,10 @@ export function setupPalette(onChange = () => {}) {
     setWindowDark(!LIGHT(p.mode));
     if (persist) { try { localStorage.setItem(own(KEY), JSON.stringify(p)); } catch { /* ignore */ } }
     if (p.mode !== lastMode) { lastMode = p.mode; onChange(p.mode); }
+    for (const f of changeListeners) f(p.mode);
   }
   let lastMode = null;
+  const changeListeners = [];
   $("palette-btn").onclick = () => { p.mode = MODES[(MODES.indexOf(p.mode) + 1) % MODES.length]; apply(); };
   $("pal-mode").onchange = (e) => { p.mode = e.target.value; apply(); };
   $("pal-dim").oninput = (e) => { if (!LIGHT(p.mode)) { p.dim[p.mode] = +e.target.value; apply(); } };
@@ -82,5 +87,14 @@ export function setupPalette(onChange = () => {}) {
   installFullscreenKey();
   apply();
   setupNightCursor();
-  return { mode: () => p.mode, set: (m) => { if (MODES.includes(m)) { p.mode = m; apply(); } } };
+  const api = {
+    mode: () => p.mode,
+    set: (m) => { if (MODES.includes(m)) { p.mode = m; apply(); } },
+    /** brightness for the mode in use, 20–100 % (Day and Bright are always 100) */
+    dim: () => (LIGHT(p.mode) ? 100 : p.dim[p.mode] ?? 100),
+    setDim: (v) => { if (!LIGHT(p.mode)) { p.dim[p.mode] = Math.max(20, Math.min(100, Math.round(v))); apply(); } },
+    onChange: (f) => changeListeners.push(f),
+  };
+  paletteApi = api;
+  return api;
 }
