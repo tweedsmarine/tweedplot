@@ -2618,3 +2618,32 @@ html.ob-shell .ctl-col button.on:hover { background: var(--selected-hover-backgr
 /* the views are in the navigation menu: the floating view buttons of the Instruments view are not needed */
 html.ob-shell #inst-views { display: none !important; }
 #ob-nav .ob-sep { height: 1px; margin: 6px 12px; background: var(--border-divider-color); }
+
+/* ---------- the data panel in OpenBridge's instrument readout style ----------
+   As obc-instrument-field draws a reading: the label in the neutral colour, the value in the
+   instrument "enhanced" colour (blue by day), the unit in the inactive colour; sections as
+   OpenBridge accordion cards (sentence case, no capitals). Sizes stay TweedPlot's (scaled for the
+   viewing distance). The highway's tiles and drawing in the same colours, with a grid that shows. */
+html.ob-shell #side { font-family: var(--global-typography-font-family, "Noto Sans"), sans-serif; }
+html.ob-shell .sp-row .l { color: var(--element-neutral-color); font-weight: var(--global-typography-instrument-label-font-weight, 570); }
+html.ob-shell .sp-row .v { color: var(--instrument-enhanced-secondary-color); font-weight: var(--font-weight-semibold, 570); font-variant-numeric: tabular-nums; }
+html.ob-shell .sp-row .v .u { color: var(--element-inactive-color); font-weight: var(--font-weight-regular, 370); }
+html.ob-shell .sp-row.stale .v { color: var(--element-inactive-color); opacity: 1; }
+html.ob-shell .sp-row.warn .v { color: var(--alert-warning-color); }
+html.ob-shell .sp-row.alarm .v { color: var(--alert-alarm-color); }
+html.ob-shell .sp-sec { border-bottom: 1px solid var(--border-divider-color); }
+html.ob-shell .sp-sec h4 { text-transform: none; letter-spacing: 0; color: var(--element-active-color); font-weight: var(--font-weight-semibold, 570); }
+html.ob-shell .sp-sec h4 .chev { color: var(--element-neutral-color); }
+/* the highway */
+html.ob-shell { --hw-road: var(--container-section-color); --hw-grid: var(--element-neutral-color); --hw-good: var(--alert-running-color); --hw-accent: var(--instrument-enhanced-secondary-color); }
+html.ob-shell .hw-metric { background: var(--container-section-color); border: 1px solid var(--border-outline-color); border-radius: var(--border-radius-br-2, 4px); }
+html.ob-shell .hw-metric > span, html.ob-shell .hw-metric small { color: var(--element-neutral-color); }
+html.ob-shell .hw-metric strong { color: var(--instrument-enhanced-secondary-color); font-family: inherit; font-variant-numeric: tabular-nums; font-weight: var(--font-weight-semibold, 570); }
+html.ob-shell :is(.hw-ribbon-label, .hw-ribbon-current) { font-family: var(--global-typography-font-family, "Noto Sans"), sans-serif; fill: var(--element-active-color); }
+html.ob-shell .hw-ribbon-current { stroke: var(--container-background-color); }
+html.ob-shell .hw-canvas { background: var(--container-section-color); border-color: var(--border-outline-color); }
+html.ob-shell :is(.hw-gridline, .hw-lane) { opacity: 0.45; }
+html.ob-shell .hw-vessel { stroke: var(--element-active-color); }
+html.ob-shell .hw-vessel .hw-boat { fill: var(--container-background-color); }
+/* true and apparent wind keep their colours (the same as the dial and the chart's arrows) */
+html.ob-shell .sp-row.wt-t .l { color: var(--wind-true); } html.ob-shell .sp-row.wt-a .l { color: var(--wind-app); }
