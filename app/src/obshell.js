@@ -174,6 +174,9 @@ export function setupOpenBridgeShell() {
     if (c?.type === "checkbox") { c.classList.add("ob-toggle"); c.setAttribute("role", "switch"); }
   }
 
+  // a label holding a check box or toggle: the text wraps beside the box, not under it
+  for (const c of document.querySelectorAll('label > input[type="checkbox"]')) c.parentElement.classList.add("ob-check");
+
   // ---------- page name: the view ----------
   const page = () => { bar.pageName = VIEW_NAMES[root.dataset.view] ?? ""; syncNav(); };
   new MutationObserver(page).observe(root, { attributes: true, attributeFilter: ["data-view"] });

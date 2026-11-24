@@ -2757,3 +2757,17 @@ html.ob-shell .ctx button:disabled { color: var(--element-disabled-color); }
 html.ob-shell .ctx hr { border: 0; border-top: 1px solid var(--border-divider-color); margin: 4px 0; }
 html.ob-shell :is(.float-win, .ask, .readout) { border: 1px solid var(--border-outline-color); border-radius: var(--ob-radius); }
 html.ob-shell .ask h3, html.ob-shell .float-win :is(h3, h4) { text-transform: none; letter-spacing: 0; }
+/* menus and windows placed from the mouse or the chart's box (viewport coordinates): fixed, so the
+   top bar's height doesn't push them down (the page under the top bar starts 44 px down) */
+html.ob-shell :is(.ctx, .isel-list, .hist-float, .float-win) { position: fixed; }
+html.ob-shell .ctx button { min-height: 32px; }
+/* a check box or toggle and its words: the words wrap beside it */
+html.ob-shell label.ob-check { display: inline-flex; align-items: center; gap: 0; }
+html.ob-shell .wx-row > label.ob-check.grow { display: flex; }
+/* the dock's edge: a visible line with a grip in the middle, to grab and drag */
+html.ob-shell .dock-grip { position: relative; height: 8px; background: var(--container-section-color); border-top: 1px solid var(--border-outline-color); border-bottom: 1px solid var(--border-divider-color); box-sizing: border-box; }
+html.ob-shell .dock-grip::after { content: ""; position: absolute; left: 50%; top: 50%; width: 40px; height: 3px; transform: translate(-50%, -50%); border-radius: 2px; background: var(--element-neutral-color); }
+html.ob-shell .dock-grip:hover { background: var(--flat-hover-background-color); }
+html.ob-shell .dock-grip:hover::after { background: var(--selected-enabled-background-color); }
+html.ob-shell.dock-right .dock-grip { width: 8px; height: auto; border-top: 0; border-bottom: 0; border-left: 1px solid var(--border-outline-color); border-right: 1px solid var(--border-divider-color); }
+html.ob-shell.dock-right .dock-grip::after { width: 3px; height: 40px; }
