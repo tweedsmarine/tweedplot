@@ -382,11 +382,12 @@ function s52Layers() {
         paint: { "fill-color": "#ff00ff", "fill-opacity": ["-", 1, ["coalesce", ["get", "ct"], 0]] } },
       { id: `s52-pat-${p}`, type: "fill", ...src, "source-layer": "far", filter: ["all", minz, ["has", "af"], band("pf", 3)],
         paint: { "fill-pattern": ["concat", "s52f:", ["get", "af"]] } },
-      // area boundaries and lines: a line style drawn as a pattern, or a plain solid line
-      // (`lc` colour, `lw` mm)
-      { id: `s52-aline-${p}`, type: "line", ...src, "source-layer": "far", filter: ["all", minz, ["has", "sl"], band("pl", 15)],
+      // area boundaries ("fab": an area's outline without the pieces along chart limits, so the
+      // charts' outlines aren't drawn where an area is split between them) and lines: a line
+      // style drawn as a pattern, or a plain solid line (`lc` colour, `lw` mm)
+      { id: `s52-aline-${p}`, type: "line", ...src, "source-layer": "fab", filter: ["all", minz, ["has", "sl"], band("pl", 15)],
         paint: { "line-pattern": ["concat", "s52l:", ["get", "sl"]], "line-width": lineW } },
-      { id: `s52-aline-solid-${p}`, type: "line", ...src, "source-layer": "far", filter: ["all", minz, ["has", "lc"], band("pl", 15)],
+      { id: `s52-aline-solid-${p}`, type: "line", ...src, "source-layer": "fab", filter: ["all", minz, ["has", "lc"], band("pl", 15)],
         paint: { "line-color": "#000", "line-width": solidW } },
       { id: `s52-line-${p}`, type: "line", ...src, "source-layer": "fln", filter: ["all", minz, ["has", "sl"], band("pl", 15)],
         paint: { "line-pattern": ["concat", "s52l:", ["get", "sl"]], "line-width": lineW } },
@@ -439,7 +440,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       paint: { "fill-color": ["match", ["get", "cls"], "OBSTRN", "#7fb8e8", MAGENTA], "fill-opacity": ["match", ["get", "cls"], "OBSTRN", 0.5, 0.08] } },
     { id: "f-area-hit", type: "fill", ...src, "source-layer": "far", filter: ["all", minz, ["!", cls("SEAARE")]],
       paint: { "fill-color": "#000", "fill-opacity": 0.01 } },
-    { id: "f-area-dash", type: "line", ...src, "source-layer": "far", filter: ["all", minz, cls("RESARE", "ACHARE", "MARCUL", "CBLARE", "CTNARE", "PRCARE", "ISTZNE", "TSSCRS", "TSSRON", "FAIRWY", "FERYRT", "UNKNWN")],
+    { id: "f-area-dash", type: "line", ...src, "source-layer": "fab", filter: ["all", minz, cls("RESARE", "ACHARE", "MARCUL", "CBLARE", "CTNARE", "PRCARE", "ISTZNE", "TSSCRS", "TSSRON", "FAIRWY", "FERYRT", "UNKNWN")],
       paint: { "line-color": ["match", ["get", "cls"], ["FAIRWY", "FERYRT"], "#5b6b75", MAGENTA], "line-width": ["match", ["get", "cls"], "RESARE", 1.4, 1], "line-dasharray": [4, 2.5] } },
     // ships' routeing: separation zones and lines (S-52 TSEZNE, TSELNE: translucent magenta), boundaries
     { id: "f-tss-fill", type: "fill", ...src, "source-layer": "far", filter: ["all", minz, cls("TSEZNE")],
@@ -453,7 +454,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       paint: { "fill-color": "#b9b2a3", "fill-outline-color": INK } },
     { id: "f-bridge", type: "fill", ...src, "source-layer": "far", filter: ["all", minz, cls("BRIDGE")],
       paint: { "fill-color": "#9a9a9a", "fill-outline-color": INK } },
-    { id: "f-area-grey", type: "line", ...src, "source-layer": "far", filter: ["all", minz, cls("DMPGRD", "OBSTRN", "WEDKLP")],
+    { id: "f-area-grey", type: "line", ...src, "source-layer": "fab", filter: ["all", minz, cls("DMPGRD", "OBSTRN", "WEDKLP")],
       paint: { "line-color": "#5b6b75", "line-width": 0.9, "line-dasharray": [2, 2] } },
     // lines
     { id: "f-line-mag", type: "line", ...src, "source-layer": "fln", filter: ["all", minz, cls("CBLSUB", "PIPSOL", "RDOCAL")],

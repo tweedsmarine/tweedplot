@@ -80,6 +80,124 @@ impl CoverageIndex {
     }
 }
 
+/// Area classes the app outlines itself when the IHO rules don't (chartfeatures.js: f-area-dash,
+/// f-area-grey).
+fn outlined_class(code: &str) -> bool {
+    matches!(
+        code,
+        "RESARE" | "ACHARE" | "MARCUL" | "CBLARE" | "CTNARE" | "PRCARE" | "ISTZNE" | "TSSCRS" | "TSSRON" | "FAIRWY" | "FERYRT" | "UNKNWN" | "DMPGRD" | "OBSTRN" | "WEDKLP"
+    )
+}
+
+/// How close (degrees, about half a metre) a boundary has to run to a chart limit to be taken
+/// for it.
+const EDGE_TOL: f64 = 5e-6;
+
+/// The chart limits near a tile: every cell's coverage outline (S-57 M_COVR), whatever its
+/// band. An area is cut at its cell's limit (where the next cell carries on with it) and, from
+/// a coarser chart, at a finer chart's coverage: those cuts are not the area's boundary, and an
+/// ECDIS doesn't draw them (S-57 masks such edges).
+pub(crate) struct CoverEdges(RTree<GeomWithData<Rectangle<(f64, f64)>, ([f64; 2], [f64; 2])>>);
+
+impl CoverEdges {
+    pub(crate) fn new(store: &ChartStore, bbox: [f64; 4]) -> Self {
+        let mut segs = Vec::new();
+        for (_, _, poly) in store.coverage().intersecting(bbox) {
+            for ring in std::iter::once(poly.exterior()).chain(poly.interiors()) {
+                for w in ring.0.windows(2) {
+                    let (a, b) = ([w[0].x, w[0].y], [w[1].x, w[1].y]);
+                    // only the edges reaching the tile (with the tolerance)
+                    if a[0].max(b[0]) + EDGE_TOL < bbox[0] || a[0].min(b[0]) - EDGE_TOL > bbox[2] || a[1].max(b[1]) + EDGE_TOL < bbox[1] || a[1].min(b[1]) - EDGE_TOL > bbox[3] {
+                        continue;
+                    }
+                    segs.push(GeomWithData::new(
+                        Rectangle::from_corners((a[0].min(b[0]) - EDGE_TOL, a[1].min(b[1]) - EDGE_TOL), (a[0].max(b[0]) + EDGE_TOL, a[1].max(b[1]) + EDGE_TOL)),
+                        (a, b),
+                    ));
+                }
+            }
+        }
+        Self(RTree::bulk_load(segs))
+    }
+
+    #[cfg(test)]
+    fn from_rings(rings: &[Ring]) -> Self {
+        let mut segs = Vec::new();
+        for r in rings {
+            for w in r.windows(2) {
+                let (a, b) = (w[0], w[1]);
+                segs.push(GeomWithData::new(
+                    Rectangle::from_corners((a[0].min(b[0]) - EDGE_TOL, a[1].min(b[1]) - EDGE_TOL), (a[0].max(b[0]) + EDGE_TOL, a[1].max(b[1]) + EDGE_TOL)),
+                    (a, b),
+                ));
+            }
+        }
+        Self(RTree::bulk_load(segs))
+    }
+
+    /// Whether `p` lies on a chart limit.
+    fn on(&self, p: [f64; 2]) -> bool {
+        let env = AABB::from_corners((p[0] - EDGE_TOL, p[1] - EDGE_TOL), (p[0] + EDGE_TOL, p[1] + EDGE_TOL));
+        self.0.locate_in_envelope_intersecting(&env).any(|s| seg_dist(p, s.data.0, s.data.1) <= EDGE_TOL)
+    }
+
+    /// Whether the segment a-b runs along a chart limit (its ends and middle all on one).
+    fn along(&self, a: [f64; 2], b: [f64; 2]) -> bool {
+        self.0.size() > 0 && self.on(a) && self.on(b) && self.on([(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0])
+    }
+}
+
+/// Distance from p to the segment a-b (degrees, flat: only compared with a tiny tolerance).
+fn seg_dist(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
+    let d = [b[0] - a[0], b[1] - a[1]];
+    let l2 = d[0] * d[0] + d[1] * d[1];
+    let t = if l2 == 0.0 { 0.0 } else { (((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1]) / l2).clamp(0.0, 1.0) };
+    let q = [a[0] + d[0] * t, a[1] + d[1] * t];
+    ((p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2)).sqrt()
+}
+
+/// An area's boundary as lines, without the pieces along chart limits (cell limits and the
+/// cuts at a finer chart's coverage): those would draw the charts' outlines across the sea
+/// wherever the area is split between charts.
+pub(crate) fn real_outline(g: &Geom, edges: &CoverEdges) -> Geom {
+    let Geom::Polygons(polys) = g else { return Geom::Lines(vec![]) };
+    let mut out: Vec<Vec<[f64; 2]>> = Vec::new();
+    for rings in polys {
+        for r in rings {
+            let n = r.len();
+            if n < 2 {
+                continue;
+            }
+            let keep: Vec<bool> = r.windows(2).map(|w| !edges.along(w[0], w[1])).collect();
+            if keep.iter().all(|k| *k) {
+                out.push(r.clone());
+                continue;
+            }
+            // the runs of kept segments, joined round the ring's start
+            let m = keep.len();
+            let Some(start) = (0..m).find(|&i| !keep[i]) else { continue };
+            let mut cur: Vec<[f64; 2]> = Vec::new();
+            for k in 1..=m {
+                let i = (start + k) % m;
+                if keep[i] {
+                    if cur.is_empty() {
+                        cur.push(r[i]);
+                    }
+                    cur.push(r[i + 1]);
+                } else if cur.len() >= 2 {
+                    out.push(std::mem::take(&mut cur));
+                } else {
+                    cur.clear();
+                }
+            }
+            if cur.len() >= 2 {
+                out.push(cur);
+            }
+        }
+    }
+    Geom::Lines(out)
+}
+
 /// Hazards to the vessel: shown at every zoom (see the module notes).
 pub fn is_hazard(code: &str) -> bool {
     matches!(code, "UWTROC" | "WRECKS" | "OBSTRN" | "PILPNT" | "OFSPLF" | "MARCUL" | "HULKES" | "BRIDGE" | "CBLOHD" | "PIPOHD")
@@ -599,9 +717,12 @@ impl ChartStore {
             .any(|(band, b, poly)| bands.contains(band) && p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3] && poly.contains(&pt))
     }
 
-    /// The feature layers of one tile: [areas, lines, points, light sectors, IHO texts].
-    pub(crate) fn render_features(&self, tp: &TileProj, z: u8, starts: &[u8; 8]) -> [Layer; 5] {
+    /// The feature layers of one tile: [areas, lines, points, light sectors, IHO texts, area
+    /// outlines]. The outlines ("fab") are the areas' boundaries without the pieces along a
+    /// chart's limits or a finer chart's coverage (see [`real_outline`]).
+    pub(crate) fn render_features(&self, tp: &TileProj, z: u8, starts: &[u8; 8]) -> [Layer; 6] {
         let mut far = Layer::new("far");
+        let mut fab = Layer::new("fab");
         let mut fln = Layer::new("fln");
         let mut fpt = Layer::new("fpt");
         let mut lsec = Layer::new("lsec");
@@ -609,7 +730,7 @@ impl ChartStore {
         let bbox = tp.lonlat_bbox(crate::BUFFER);
         let all = self.feature_tables(z, bbox, starts);
         if all.is_empty() {
-            return [far, fln, fpt, lsec, ftx];
+            return [far, fln, fpt, lsec, ftx, fab];
         }
         // classes in the order of s57::CLASSES, tables finest band first
         let mut groups: Vec<(&'static s57::FeatureClass, Vec<(usize, &TableInfo)>)> = Vec::new();
@@ -633,6 +754,8 @@ impl ChartStore {
                 }
             }
         }
+        // the chart limits near the tile: an area's boundary along them isn't drawn
+        let edges = CoverEdges::new(self, bbox);
         let keep = |minz: f64| z >= 16 || (z as f64 + 1.0) > minz;
         let e = EXTENT as f64;
         let inside = |p: [f64; 2]| p[0] >= 0.0 && p[0] < e && p[1] >= 0.0 && p[1] < e;
@@ -1131,8 +1254,14 @@ impl ChartStore {
                                     }
                                 }
                             }
+                            let outlined = class.geo == Geo::Area && (outlined_class(class.code) || props.iter().any(|(k, _)| matches!(*k, "sl" | "lc")));
                             if let Some(tg) = tg {
                                 layer.add(&tg, &props);
+                                if outlined {
+                                    if let Some(ot) = tp.lines(&real_outline(geom, &edges)) {
+                                        fab.add(&ot, &props);
+                                    }
+                                }
                             }
                             // the part a finer chart covers, until its copy shows
                             if let Some(ig) = inside_part {
@@ -1141,6 +1270,11 @@ impl ChartStore {
                                     let mut pp = props.clone();
                                     pp.push(("maxz", Value::F64((takeover.min(30.0) * 10.0).round() / 10.0)));
                                     layer.add(&itg, &pp);
+                                    if outlined {
+                                        if let Some(ot) = tp.lines(&real_outline(&ig, &edges)) {
+                                            fab.add(&ot, &pp);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1176,7 +1310,7 @@ impl ChartStore {
         if let Some((_, tables)) = groups.iter().find(|(c, _)| c.code == "LIGHTS") {
             self.render_lights(tp, z, tables, &marks, &mut fpt, &mut lsec, &mut ftx);
         }
-        [far, fln, fpt, lsec, ftx]
+        [far, fln, fpt, lsec, ftx, fab]
     }
 
     /// `marks`: the buoys and beacons drawn in this tile. A light whose mark comes from
@@ -1789,4 +1923,39 @@ fn room_around(hz: &[([i32; 2], Vec<(&'static str, Value)>)], others: &[[i32; 2]
             Some((best as f64).sqrt().round() as u32)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod outline_tests {
+    use super::*;
+
+    #[test]
+    fn an_area_cut_at_a_chart_limit_has_no_boundary_along_it() {
+        // a chart covering x 0..1; an area running past its east limit, cut there
+        let edges = CoverEdges::from_rings(&[vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0], [0.0, 0.0]]]);
+        let area = Geom::Polygons(vec![vec![vec![[0.5, 0.2], [1.0, 0.2], [1.0, 0.6], [0.5, 0.6], [0.5, 0.2]]]]);
+        let Geom::Lines(l) = real_outline(&area, &edges) else { panic!() };
+        // one line round the three real sides, from the limit back to it
+        assert_eq!(l, vec![vec![[1.0, 0.6], [0.5, 0.6], [0.5, 0.2], [1.0, 0.2]]]);
+    }
+
+    #[test]
+    fn an_area_inside_the_chart_keeps_its_whole_boundary() {
+        let edges = CoverEdges::from_rings(&[vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0], [0.0, 0.0]]]);
+        let ring = vec![[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.2, 0.2]];
+        let Geom::Lines(l) = real_outline(&Geom::Polygons(vec![vec![ring.clone()]]), &edges) else { panic!() };
+        assert_eq!(l, vec![ring]);
+    }
+
+    #[test]
+    fn a_chord_between_two_points_on_the_limit_is_kept() {
+        // a boundary leaving the limit at (1, 0.2) and coming back at (1, 0.6) in one straight
+        // line across the chart is real (its middle is off the limit)
+        let edges = CoverEdges::from_rings(&[vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0], [0.0, 0.0]]]);
+        assert!(!edges.along([1.0, 0.2], [0.0, 0.6]));
+        assert!(edges.along([1.0, 0.2], [1.0, 0.6]));
+        // a stepped limit, cut into pieces that span two of its segments
+        let steps = CoverEdges::from_rings(&[vec![[0.0, 0.0], [0.5, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 0.0]]]);
+        assert!(steps.along([0.25, 0.0], [0.75, 0.0]));
+    }
 }

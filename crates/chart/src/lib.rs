@@ -747,9 +747,9 @@ impl ChartStore {
                 wland.add(&TileGeom::Rings(world_land), &[]);
             }
         }
-        let [far, fln, fpt, lsec, ftx] = self.render_features(&tp, z, &starts);
+        let [far, fln, fpt, lsec, ftx, fab] = self.render_features(&tp, z, &starts);
         let [mbound, rules, rules_ln, fareas] = self.render_marine(&tp, z, bbox);
-        mvt::encode_tile(&[wland, wdepth, wdcnt, depare, unsare, depcnt, far, land, wcoast, fln, soundg, lsec, fpt, ftx, mbound, rules, rules_ln, fareas])
+        mvt::encode_tile(&[wland, wdepth, wdcnt, depare, unsare, depcnt, far, fab, land, wcoast, fln, soundg, lsec, fpt, ftx, mbound, rules, rules_ln, fareas])
     }
 
     /// Maritime boundaries ("mbound": `kind`, `name`), fishing rule areas ("rules") and
