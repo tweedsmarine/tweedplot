@@ -813,8 +813,16 @@ pub(crate) fn get_retry(c: &reqwest::blocking::Client, url: &str, cancel: &Atomi
                 // ERDDAP says 404 both for a dataset it no longer serves and for a query with no data
                 let why = if url.contains("/erddap/") {
                     let body = r.text().unwrap_or_default();
-                    let line = body.lines().find(|l| l.contains("Not Found") || l.contains("Error")).unwrap_or("").trim().chars().take(160).collect::<String>();
-                    format!("the server has no data for this request{}", if line.is_empty() { String::new() } else { format!(": {line}") })
+                    // ERDDAP's own answer ("Error { … }"); a web site's HTML page means the dataset isn't there
+                    let line = if body.contains("<html") || body.contains("<!DOCTYPE") {
+                        String::new()
+                    } else {
+                        body.lines().find(|l| l.contains("Not Found") || l.contains("Error")).unwrap_or("").trim().chars().take(160).collect::<String>()
+                    };
+                    format!(
+                        "the server has no data for this request{}",
+                        if line.is_empty() { " (the dataset may have moved or been withdrawn)".to_string() } else { format!(": {line}") }
+                    )
                 } else {
                     "not on the server yet".to_string()
                 };
