@@ -17,6 +17,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./clock24.js";
 import { setWindowDark } from "./winchrome.js";
+// the OpenBridge palette for each colour mode (as palette.js)
+const OBC_THEME = { bright: "bright", day: "day", dusk: "dusk", "iho-night": "night", "night-red": "day", "night-green": "day" };
 
 const $ = (id) => document.getElementById(id);
 const KEY = "racenav.setter";
@@ -31,8 +33,9 @@ function palette() {
   try {
     const p = JSON.parse(localStorage.getItem("racenav.palette") || "{}");
     document.documentElement.dataset.palette = p.mode || "day";
+    document.documentElement.dataset.obcTheme = OBC_THEME[p.mode] || "day";
     document.documentElement.style.setProperty("--pal-dim", String((p.dim?.[p.mode] ?? 100) / 100));
-    setWindowDark((p.mode || "day") !== "day"); // the title bar too
+    setWindowDark(!["day", "bright"].includes(p.mode || "day")); // the title bar too
   } catch { /* day */ }
 }
 palette();
