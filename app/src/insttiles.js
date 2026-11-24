@@ -67,6 +67,11 @@ export function setupTiles({ host, menu, items, getLayout, save, paint, historyK
       }
       host.append(el);
     }
+    // the rows the tiles use fill the screen (and, while the layout can be changed, one row more to
+    // drag a tile into): no empty band at the bottom
+    const used = Math.max(1, ...tiles().map((t) => t.r + t.h - 1));
+    host._rows = Math.min(GRID.rows, used + (locked() ? 0 : 1));
+    host.style.gridTemplateRows = `repeat(${host._rows}, minmax(0, 1fr))`;
     render();
   }
 
@@ -81,7 +86,7 @@ export function setupTiles({ host, menu, items, getLayout, save, paint, historyK
   // ---------- geometry ----------------------------------------------------------
   function metrics() {
     const r = host.getBoundingClientRect();
-    return { left: r.left + PAD, top: r.top + PAD, pw: (r.width - 2 * PAD + GAP) / GRID.cols, ph: (r.height - 2 * PAD + GAP) / GRID.rows };
+    return { left: r.left + PAD, top: r.top + PAD, pw: (r.width - 2 * PAD + GAP) / GRID.cols, ph: (r.height - 2 * PAD + GAP) / (host._rows || GRID.rows) };
   }
   const ghostFor = (t) => {
     let g = host.querySelector(".itile-ghost");

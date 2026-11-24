@@ -2615,7 +2615,7 @@ html.ob-shell #rail, html.ob-shell #palette-btn { display: none !important; }
 #ob-actions #anchor-btn svg { width: 26px; height: 20px; }
 /* alerts in the top bar (obalerts.js): the message, the alert button, and the alert menu under it */
 html.ob-shell #alarm-banner { display: none !important; }
-#ob-alert-msg { --app-components-topbar-message-item-width: min(560px, 36vw); min-width: 0; }
+#ob-alert-msg { --app-components-topbar-message-item-width: min(520px, 28vw); min-width: 0; }
 #ob-alert-msg[hidden], #ob-alert-menu[hidden] { display: none; }
 #ob-alert-menu { position: fixed; top: var(--ob-top-h); right: 8px; z-index: 59; max-height: calc(100vh - var(--ob-top-h) - 16px); }
 /* the chart toolbar: OpenBridge icons and the OpenBridge selected state */
@@ -2771,3 +2771,29 @@ html.ob-shell .dock-grip:hover { background: var(--flat-hover-background-color);
 html.ob-shell .dock-grip:hover::after { background: var(--selected-enabled-background-color); }
 html.ob-shell.dock-right .dock-grip { width: 8px; height: auto; border-top: 0; border-bottom: 0; border-left: 1px solid var(--border-outline-color); border-right: 1px solid var(--border-divider-color); }
 html.ob-shell.dock-right .dock-grip::after { width: 3px; height: 40px; }
+
+/* ---------- the workspace switch in the top bar ---------- */
+#ob-views { display: flex; align-items: center; gap: 2px; height: var(--ob-top-h); margin-left: 12px; }
+#ob-views .ob-ws { display: inline-flex; align-items: center; gap: 6px; height: 34px; min-height: 0; padding: 0 12px; border: 0; border-radius: var(--ob-radius);
+  background: var(--flat-enabled-background-color); color: var(--element-neutral-color); font-size: 14px; font-weight: var(--font-weight-semibold, 570); box-shadow: inset 0 -3px transparent; }
+#ob-views .ob-ws .ob-ic { width: 20px; height: 20px; line-height: 0; }
+#ob-views .ob-ws:hover { background: var(--flat-hover-background-color); color: var(--element-active-color); }
+#ob-views .ob-ws.on { color: var(--element-active-color); background: var(--flat-enabled-background-color); box-shadow: inset 0 -3px var(--selected-enabled-background-color); border-radius: var(--ob-radius) var(--ob-radius) 0 0; }
+/* a narrow window: icons only (the name in the tooltip) */
+@media (max-width: 1600px) { #ob-views .ob-ws span { display: none; } #ob-views .ob-ws { padding: 0 9px; } }
+
+/* ---------- the Instruments view ----------
+   The grid fills the space under the top bar (the gaps above and below were for the floating MOB and
+   Drop buttons, now in the top bar); tiles as OpenBridge instrument cards; values in the instrument
+   colour; OpenBridge's compass (obinstruments.js). */
+html.ob-shell #itiles { grid-auto-rows: minmax(0, 1fr); top: 6px; bottom: calc(var(--dock-h, 0px) + 6px); left: calc(var(--chart-l) + 6px); right: calc(var(--chart-r) + 6px); }
+html.ob-shell .itile { background: var(--container-global-color); border: 1px solid var(--border-outline-color); border-radius: var(--ob-radius); }
+html.ob-shell .tile .lbl { text-transform: none; letter-spacing: 0; font-size: 13px; color: var(--element-neutral-color); font-weight: var(--font-weight-semibold, 570); }
+html.ob-shell .itile .v { color: var(--instrument-enhanced-secondary-color); font-weight: var(--font-weight-semibold, 570); }
+html.ob-shell .itile .v .u { color: var(--element-inactive-color); font-weight: var(--font-weight-regular, 370); }
+html.ob-shell .itile .v > obc-compass { display: block; width: 100%; height: 100%; }
+html.ob-shell .itile:has(> .v > obc-compass) .v { position: absolute; inset: 22px 4px 4px; }
+html.ob-shell .dial :is(.ring, .tk, .hull) { stroke: var(--element-neutral-color); }
+html.ob-shell .dial .tk2 { stroke: var(--element-active-color); }
+html.ob-shell .dial :is(text, .num, .card) { font-family: var(--global-typography-font-family, "Noto Sans"), sans-serif; }
+html.ob-shell .snd-ctl button { color: #fff; }

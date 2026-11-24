@@ -40,6 +40,7 @@ import "@oicl/openbridge-webcomponents/dist/icons/icon-own-ship-iec.js";
 import "@oicl/openbridge-webcomponents/dist/icons/icon-waypoint-edit-iec.js";
 import { paletteApi } from "./palette.js";
 import { setupOpenBridgeAlerts } from "./obalerts.js";
+import { setupOpenBridgeInstruments } from "./obinstruments.js";
 
 // the drawers, in the rail's order: [pane, label, icon]
 const PANES = [
@@ -104,7 +105,11 @@ export function setupOpenBridgeShell() {
   bar.showDimmingButton = true;
   bar.showAppsButton = false;
   bar.showUserButton = false;
-  bar.innerHTML = `<div slot="alerts" id="ob-actions"></div><obc-clock slot="clock" show-date></obc-clock>`;
+  // the workspaces, always one click away: a switch beside the title (it names the view in use)
+  const switcher = VIEWS.slice(0, 4).map(([v, label, icon]) =>
+    `<button type="button" class="ob-ws" data-view-select="${v}" title="${label}"><${icon} class="ob-ic"></${icon}><span>${label}</span></button>`).join("");
+  bar.innerHTML = `<div slot="command-button" id="ob-views" role="group" aria-label="Workspace">${switcher}</div>` +
+    `<div slot="alerts" id="ob-actions"></div><obc-clock slot="clock" show-date></obc-clock>`;
   setupOpenBridgeAlerts(bar.querySelector("#ob-actions"));
   bar.tall = true; // the taller bar: room for MOB, Drop and the anchor at a safe size
   document.body.prepend(bar);
@@ -168,6 +173,8 @@ export function setupOpenBridgeShell() {
     b.insertAdjacentHTML("afterbegin", names.map((n, i) => `<${n} class="ob-ic${names.length > 1 ? (i ? " ob-off" : " ob-on") : ""}"></${n}>`).join(""));
   }
 
+  setupOpenBridgeInstruments();
+
   // ---------- toggle switches ----------
   for (const id of TOGGLES) {
     const c = $(id);
@@ -178,7 +185,13 @@ export function setupOpenBridgeShell() {
   for (const c of document.querySelectorAll('label > input[type="checkbox"]')) c.parentElement.classList.add("ob-check");
 
   // ---------- page name: the view ----------
-  const page = () => { bar.pageName = VIEW_NAMES[root.dataset.view] ?? ""; syncNav(); };
+  // the page name only for views the switch doesn't show (Live data); the switch marks the others
+  const page = () => {
+    const v = root.dataset.view;
+    bar.pageName = bar.querySelector(`#ob-views [data-view-select="${v}"]`) ? "" : VIEW_NAMES[v] ?? "";
+    for (const b of bar.querySelectorAll("#ob-views .ob-ws")) b.classList.toggle("on", b.dataset.viewSelect === v);
+    syncNav();
+  };
   new MutationObserver(page).observe(root, { attributes: true, attributeFilter: ["data-view"] });
   page();
 
