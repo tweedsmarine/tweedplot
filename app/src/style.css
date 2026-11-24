@@ -2605,3 +2605,8 @@ html.ob-shell #rail, html.ob-shell #palette-btn { display: none !important; }
 #ob-actions :is(#drop-btn, #anchor-btn):hover { background: var(--raised-hover-background-color); }
 #ob-actions #anchor-btn.on { background: var(--alert-warning-color); border-color: var(--alert-warning-color); color: var(--on-warning-color); }
 #ob-actions #anchor-btn svg { width: 26px; height: 20px; }
+/* alerts in the top bar (obalerts.js): the message, the alert button, and the alert menu under it */
+html.ob-shell #alarm-banner { display: none !important; }
+#ob-alert-msg { --app-components-topbar-message-item-width: min(560px, 36vw); min-width: 0; }
+#ob-alert-msg[hidden], #ob-alert-menu[hidden] { display: none; }
+#ob-alert-menu { position: fixed; top: var(--ob-top-h); right: 8px; z-index: 59; max-height: calc(100vh - var(--ob-top-h) - 16px); }

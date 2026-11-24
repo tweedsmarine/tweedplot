@@ -21,6 +21,7 @@ import "@oicl/openbridge-webcomponents/dist/icons/icon-manual.js";
 import "@oicl/openbridge-webcomponents/dist/icons/icon-settings-iec.js";
 import "@oicl/openbridge-webcomponents/dist/icons/icon-info.js";
 import { paletteApi } from "./palette.js";
+import { setupOpenBridgeAlerts } from "./obalerts.js";
 
 // the drawers, in the rail's order: [pane, label, icon]
 const PANES = [
@@ -54,6 +55,7 @@ export function setupOpenBridgeShell() {
   bar.showAppsButton = false;
   bar.showUserButton = false;
   bar.innerHTML = `<div slot="alerts" id="ob-actions"></div><obc-clock slot="clock" show-date></obc-clock>`;
+  setupOpenBridgeAlerts(bar.querySelector("#ob-actions"));
   bar.tall = true; // the taller bar: room for MOB, Drop and the anchor at a safe size
   document.body.prepend(bar);
   const clock = bar.querySelector("obc-clock");

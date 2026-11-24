@@ -226,6 +226,15 @@ export function setupAlarms(map, { getBoat, getBow = () => null, getSafetyDepth,
     }
     if (PRIMARY) publish();
     renderDrawer();
+    // the OpenBridge top bar (obalerts.js): every active alarm, with its actions
+    window.dispatchEvent(new CustomEvent("racenav-alerts", { detail: {
+      ackAll,
+      alerts: all.map(([id, a]) => ({ id, level: a.level, text: a.text, detail: a.detail, acked: !!a.acked, since: a.since,
+        held: a.heldUntil != null, mob: id === "mob",
+        ack: () => ack(id), click: a.onClick ? () => a.onClick() : null,
+        dismiss: a.dismiss && !(a.heldUntil && id !== "mob") ? () => a.dismiss() : null,
+        dismissLabel: id === "mob" && Date.now() < mobSureUntil ? "Sure?" : a.dismissLabel || "Dismiss" })),
+    } }));
   }
   // the Alarms drawer's list of everything active, silenced ones included
   function renderDrawer() {
