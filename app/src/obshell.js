@@ -20,6 +20,24 @@ import "@oicl/openbridge-webcomponents/dist/icons/icon-alarm-general.js";
 import "@oicl/openbridge-webcomponents/dist/icons/icon-manual.js";
 import "@oicl/openbridge-webcomponents/dist/icons/icon-settings-iec.js";
 import "@oicl/openbridge-webcomponents/dist/icons/icon-info.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-connection-4-bars.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-media-live.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-media-pause.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-center-iec.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-center-off-iec.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-measure-google.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-radar-electronic-range-and-bearing-proposal.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-media-record.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-chart-seabed-proposal.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-table.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-ais-target-activated-iec.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-delete.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-camera.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-view-gallery-google.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-panel-right-open.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-panel-left-open.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-own-ship-iec.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-waypoint-edit-iec.js";
 import { paletteApi } from "./palette.js";
 import { setupOpenBridgeAlerts } from "./obalerts.js";
 
@@ -31,9 +49,25 @@ const PANES = [
   ["fleet", "Targets and fleets", "obi-fleet-proposal"],
   ["library", "Library", "obi-media-library"],
   ["chart", "Chart", "obi-chart-layers"],
-  ["inst", "Instruments", "obi-dashboard"],
+  ["inst", "Data panel and instruments", "obi-dashboard"],
   ["alarms", "Alarms", "obi-alarm-general"],
 ];
+// the views, at the top of the navigation menu: [view, label, icon]
+const VIEWS = [
+  ["nav", "Navigation", "obi-own-ship-iec"],
+  ["plan", "Planning", "obi-waypoint-edit-iec"],
+  ["env", "Environment", "obi-chart-seabed-proposal"],
+  ["inst", "Instruments", "obi-view-gallery-google"],
+  ["nmea", "Live data", "obi-table"],
+];
+// the chart toolbar's buttons and their OpenBridge icons; two icons: the first when the button is on
+const TOOL_ICONS = {
+  "sk-state": ["obi-connection-4-bars"], "sk-live": ["obi-media-live", "obi-media-pause"],
+  follow: ["obi-center-iec", "obi-center-off-iec"], "ruler-btn": ["obi-measure-google"],
+  "ebl-btn": ["obi-radar-electronic-range-and-bearing-proposal"], "pb-rec": ["obi-media-record"], "pb-tb": ["obi-chart-seabed-proposal"],
+  "readout-btn": ["obi-table"], "targets-btn": ["obi-ais-target-activated-iec"], "clear-track": ["obi-delete"], "shot-btn": ["obi-camera"],
+  "side-btn": ["obi-panel-right-open"], "tools-btn": ["obi-panel-left-open"],
+};
 const VIEW_NAMES = { nav: "Navigation", plan: "Planning", env: "Environment", inst: "Instruments", nmea: "Live data" };
 // OpenBridge palettes and TweedPlot's colour modes (Night (red) and (green) are TweedPlot's own: Settings › Display)
 const TO_OBC = { bright: "bright", day: "day", dusk: "dusk", "iho-night": "night", "night-red": "night", "night-green": "night" };
@@ -66,7 +100,10 @@ export function setupOpenBridgeShell() {
   const nav = document.createElement("obc-navigation-menu");
   nav.id = "ob-nav";
   nav.softDismiss = true;
-  nav.innerHTML = PANES.map((p) => item(...p)).join("") +
+  nav.innerHTML = VIEWS.map(([v, label, icon]) =>
+    `<obc-navigation-item slot="main" label="${label}" data-view-select="${v}"><${icon} slot="icon"></${icon}></obc-navigation-item>`).join("") +
+    '<div slot="main" class="ob-sep" role="separator"></div>' +
+    PANES.map((p) => item(...p)).join("") +
     `<obc-navigation-item slot="footer" has-icon label="Manual" data-act="manual"><obi-manual slot="icon"></obi-manual></obc-navigation-item>
      <obc-navigation-item slot="footer" has-icon label="Settings" data-pane="settings"><obi-settings-iec slot="icon"></obi-settings-iec></obc-navigation-item>
      <obc-navigation-item slot="footer" has-icon label="About TweedPlot" data-act="about"><obi-info slot="icon"></obi-info></obc-navigation-item>`;
@@ -90,14 +127,16 @@ export function setupOpenBridgeShell() {
   }
   function syncNav() {
     const on = document.querySelector("#rail button.on")?.dataset.pane;
-    for (const it of nav.querySelectorAll("obc-navigation-item")) it.checked = !!it.dataset.pane && it.dataset.pane === on;
+    for (const it of nav.querySelectorAll("obc-navigation-item")) {
+      it.checked = it.dataset.viewSelect ? it.dataset.viewSelect === root.dataset.view : !!it.dataset.pane && it.dataset.pane === on;
+    }
   }
   bar.addEventListener("menu-button-clicked", () => setNav(nav.hidden));
   nav.addEventListener("close", () => setNav(false));
   nav.addEventListener("click", (e) => {
     const it = e.target.closest("obc-navigation-item");
     if (!it) return;
-    if (it.dataset.pane) document.querySelector(`#rail button[data-pane="${it.dataset.pane}"]`)?.click();
+    if (it.dataset.viewSelect) { /* views.js switches the view */ } else if (it.dataset.pane) document.querySelector(`#rail button[data-pane="${it.dataset.pane}"]`)?.click();
     else if (it.dataset.act === "manual") $("manual-btn")?.click();
     else if (it.dataset.act === "about") $("brand-btn")?.click();
     setNav(false);
@@ -105,8 +144,16 @@ export function setupOpenBridgeShell() {
   // the drawers can be opened from elsewhere too (keys, links): keep the menu's tick right
   new MutationObserver(syncNav).observe($("rail"), { subtree: true, attributes: true, attributeFilter: ["class"] });
 
+  // ---------- chart toolbar: OpenBridge icons (the buttons and what they do are unchanged) ----------
+  for (const [id, names] of Object.entries(TOOL_ICONS)) {
+    const b = $(id);
+    if (!b) continue;
+    b.querySelector("svg")?.remove();
+    b.insertAdjacentHTML("afterbegin", names.map((n, i) => `<${n} class="ob-ic${names.length > 1 ? (i ? " ob-off" : " ob-on") : ""}"></${n}>`).join(""));
+  }
+
   // ---------- page name: the view ----------
-  const page = () => { bar.pageName = VIEW_NAMES[root.dataset.view] ?? ""; };
+  const page = () => { bar.pageName = VIEW_NAMES[root.dataset.view] ?? ""; syncNav(); };
   new MutationObserver(page).observe(root, { attributes: true, attributeFilter: ["data-view"] });
   page();
 

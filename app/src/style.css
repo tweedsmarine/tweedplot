@@ -2610,3 +2610,11 @@ html.ob-shell #alarm-banner { display: none !important; }
 #ob-alert-msg { --app-components-topbar-message-item-width: min(560px, 36vw); min-width: 0; }
 #ob-alert-msg[hidden], #ob-alert-menu[hidden] { display: none; }
 #ob-alert-menu { position: fixed; top: var(--ob-top-h); right: 8px; z-index: 59; max-height: calc(100vh - var(--ob-top-h) - 16px); }
+/* the chart toolbar: OpenBridge icons and the OpenBridge selected state */
+.ctl-col .ob-ic { display: block; width: 22px; height: 22px; line-height: 0; }
+.ctl-col button.on .ob-off, .ctl-col button:not(.on) .ob-on { display: none; }
+html.ob-shell .ctl-col button.on { background: var(--selected-enabled-background-color); color: var(--on-selected-active-color); box-shadow: none; }
+html.ob-shell .ctl-col button.on:hover { background: var(--selected-hover-background-color); }
+/* the views are in the navigation menu: the floating view buttons of the Instruments view are not needed */
+html.ob-shell #inst-views { display: none !important; }
+#ob-nav .ob-sep { height: 1px; margin: 6px 12px; background: var(--border-divider-color); }
