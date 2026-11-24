@@ -2264,6 +2264,9 @@ html:is([data-palette="night-red"], [data-palette="night-green"]) .flow-canvas {
 .wx-profile[hidden] { display: none; }
 .wx-profile-head { margin-bottom: 4px; }
 .wx-profile-note { opacity: 0.85; }
+#side .wx-profile { padding: 0 calc(1.5 * var(--u, 4px)); }
+.wx-profile-head { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sect-draw { margin: 8px 2px; font-size: 13px; }
 .wx-profile-btns { display: flex; gap: 4px; }
 .wx-profile-btns button { min-height: 26px; padding: 2px 8px; font-size: 12px; }
 .wc-body { height: 100%; display: flex; flex-direction: column; font-size: 12px; }
@@ -2288,7 +2291,10 @@ html:is([data-palette="night-red"], [data-palette="night-green"]) .flow-canvas {
 .sect-tip { position: absolute; pointer-events: none; background: rgba(16, 28, 36, 0.9); color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
 .sect-tip[hidden] { display: none; }
 .sect-key { display: flex; align-items: center; gap: 8px; font-size: 11px; margin-top: 4px; flex-wrap: wrap; }
-.sect-bar { width: 120px; height: 9px; border-radius: 2px; }
+.sect-bar { position: relative; width: 120px; height: 9px; border-radius: 2px; }
+.sect-tg { position: absolute; top: -3px; bottom: -3px; width: 3px; margin-left: -1.5px; background: #111; box-shadow: 0 0 0 1px #fff; }
+.sect-target { font-weight: 700; }
+.sect-out { display: inline-block; width: 12px; height: 9px; border-radius: 2px; background: #dfe4e6; border: 1px solid #b7c0c4; vertical-align: -1px; }
 .sect-thermo { font-weight: 600; }
 
 /* ---------- the panel's GRIB pieces and the dock, compact (mouse and keyboard) ---------- */
@@ -2302,6 +2308,11 @@ html:is([data-palette="night-red"], [data-palette="night-green"]) .flow-canvas {
 .sp-env-data .gf-main small { font-size: 12px; }
 .sp-env-data summary { font-size: 12px; }
 .dock-tabs { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+/* along the bottom: every tab in view, wrapping onto a second row rather than sliding under the
+   view's own tools; the tools and the close button stay at the right of the first row */
+html:not(.dock-right) #dock header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: start; padding-top: 2px; }
+html:not(.dock-right) .dock-tabs { flex-wrap: wrap; overflow: visible; row-gap: 4px; }
+html:not(.dock-right) .dock-tools { flex-wrap: wrap; justify-content: flex-end; max-width: 46vw; }
 .dock-tabs button, .dock-tools button, .dock-tools select { min-height: var(--chip-h); padding: 2px 8px; font-size: 12px; }
 .dock-tools { display: flex; gap: 4px; flex: none; }
 

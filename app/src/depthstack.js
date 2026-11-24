@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 const empty = { type: "FeatureCollection", features: [] };
 const TURBO = ["#30123b", "#4145ab", "#4675ed", "#39a2fc", "#1bcfd4", "#24eca6", "#61fc6c", "#a4fc3b", "#d1e834", "#f3c63a", "#fe9b2d", "#f36315", "#d93806", "#a51301"];
+const OUTSIDE = "#dfe4e6"; // water outside the filter's set ends (hidden on the chart)
 const CURRENT = ["#f7fbff", "#c6dbef", "#9ecae1", "#6baed6", "#4292c6", "#2171b5", "#08519c", "#08306b"];
 
 /** A colour from a list, for t in 0..1. */
@@ -73,6 +74,30 @@ export function profileDepthAt(p, py, h = 240) {
   return ((py - m.t) / (h - m.t - m.b)) * deep;
 }
 
+/** Line segments [[x,y],[x,y]] where a grid (vals[row][col], null for none) crosses `level`,
+ *  the grid's points at xs (columns) and ys (rows): marching squares, linear along the edges. */
+export function isoSegments(vals, xs, ys, level) {
+  const out = [];
+  for (let z = 0; z + 1 < ys.length; z++) {
+    for (let x = 0; x + 1 < xs.length; x++) {
+      const v = [vals[z]?.[x], vals[z]?.[x + 1], vals[z + 1]?.[x + 1], vals[z + 1]?.[x]];
+      if (v.some((a) => a == null)) continue;
+      const p = [[xs[x], ys[z]], [xs[x + 1], ys[z]], [xs[x + 1], ys[z + 1]], [xs[x], ys[z + 1]]];
+      const pts = [];
+      for (let i = 0; i < 4; i++) {
+        const j = (i + 1) % 4, a = v[i], b = v[j];
+        if ((a < level) !== (b < level)) {
+          const t = (level - a) / (b - a);
+          pts.push([p[i][0] + (p[j][0] - p[i][0]) * t, p[i][1] + (p[j][1] - p[i][1]) * t]);
+        }
+      }
+      if (pts.length >= 2) out.push([pts[0], pts[1]]);
+      if (pts.length === 4) out.push([pts[2], pts[3]]);
+    }
+  }
+  return out;
+}
+
 export function setupDepthStack(map, { weather, dock }) {
   const $ = (id) => document.getElementById(id);
   // ---------- the water column at the cursor (a dock view) ------------------------------------
@@ -86,7 +111,10 @@ export function setupDepthStack(map, { weather, dock }) {
   box.innerHTML = `<div class="wx-profile-head"><b>Below the surface</b> <span class="wx-profile-note"></span></div>
     <div class="wx-profile-btns"><button type="button" class="wx-wc-btn" title="Temperature, salinity and current against depth at the cursor, in the dock">Water column</button>
     <button type="button" class="wx-section-btn" title="Draw a line on the chart: a section along it shows the water from the surface down, in the dock">Section along a line…</button></div>`;
-  ($("wxp-point") ?? $("side-grib-point"))?.after(box);
+  // at the foot of the weather layers, above the data at the cursor (which grows and shrinks as
+  // the cursor moves, and would push the buttons off the panel), and moved with them (sidepanel.js)
+  const at = $("side-weather");
+  if (at) at.append(box); else $("wxp-point")?.after(box);
   const note = box.querySelector(".wx-profile-note");
   map.addSource("wc-pin", { type: "geojson", data: empty });
   map.addLayer({ id: "wc-pin", type: "circle", source: "wc-pin", paint: { "circle-radius": 6, "circle-color": "#e4572e", "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
@@ -184,21 +212,40 @@ export function setupDepthStack(map, { weather, dock }) {
       ...line.map((c) => ({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: c } })),
     ] });
   };
+  // the line before "Draw another line", back if the new one is cancelled
+  let before = null;
   function startDrawing() {
-    if (!weather.stackPath()) return;
+    if (!weather.stackPath()) { note.textContent = "· load a GRIB with every depth (Copernicus ocean) first"; return; }
+    before = line.length > 1 && section ? { line, section } : null;
     drawing = true; line = []; rubber = null; showLine();
     map.getCanvas().style.cursor = "crosshair";
     map.doubleClickZoom.disable();
-    note.textContent = "· click along the line; double-click (or Enter) to finish, Esc to cancel";
+    // the dock says what to do, where it can be seen
+    if (dock.current() === "section") dock.refresh("section"); else dock.show("section");
   }
   function stopDrawing(keep) {
     drawing = false; rubber = null;
     map.getCanvas().style.cursor = "";
     setTimeout(() => map.doubleClickZoom.enable(), 0);
-    if (keep && line.length > 1) { showLine(); section = null; dock.show("section"); fetchSection(); }
-    else { line = []; showLine(); }
+    if (!(keep && line.length > 1) && before) {
+      // cancelled: the last section again
+      ({ line, section } = before); before = null; showLine(); dock.refresh("section");
+      return;
+    }
+    before = null;
+    if (keep && line.length > 1) {
+      // the kind of water the chart is showing
+      const k = weather.layerKey?.();
+      if (["sss", "subs"].includes(k)) kind = "sal"; else if (["sst", "subt", "skin"].includes(k)) kind = "temp";
+      showLine(); section = null; dock.show("section"); fetchSection();
+    }
+    else { line = []; showLine(); if (dock.current() === "section") dock.show(null); }
   }
-  map.on("click", (e) => { if (drawing) { line.push([e.lngLat.lng, e.lngLat.lat]); showLine(); } });
+  map.on("click", (e) => {
+    if (!drawing) return;
+    line.push([e.lngLat.lng, e.lngLat.lat]); showLine();
+    if (dock.current() === "section") dock.refresh("section");
+  });
   map.on("mousemove", (e) => { if (drawing && line.length) { rubber = [e.lngLat.lng, e.lngLat.lat]; showLine(); } });
   map.on("dblclick", (e) => { if (!drawing) return; e.preventDefault(); stopDrawing(true); });
   window.addEventListener("keydown", (e) => {
@@ -220,8 +267,16 @@ export function setupDepthStack(map, { weather, dock }) {
     if (dock.current() === "section") dock.refresh("section");
   }
   weather.onTime(() => { if (dock.current() === "section" && line.length > 1) fetchSection(); });
+  // the filter in the data panel moved: the section's colours follow it
+  let filterFrame = 0;
+  weather.onChange?.(() => {
+    if (dock.current() !== "section" || !section || kind === "kn" || filterFrame) return;
+    filterFrame = requestAnimationFrame(() => { filterFrame = 0; if (dock.current() === "section" && section) dock.refresh("section"); });
+  });
   dock.onChange((cur) => {
-    if (cur !== "section" && !drawing) { line = []; showLine(); map.getSource("sect-here").setData(empty); }
+    // another view (or the dock closed) while drawing: the drawing stops
+    if (cur !== "section" && drawing) { before = null; stopDrawing(false); }
+    if (cur !== "section" && !drawing) { line = []; section = null; showLine(); map.getSource("sect-here").setData(empty); }
   });
 
   const KINDS = { temp: ["Temperature", "°C"], sal: ["Salinity", "PSU"], kn: ["Current", "kn"] };
@@ -229,13 +284,27 @@ export function setupDepthStack(map, { weather, dock }) {
     title: "Section",
     render(body, tools) {
       tools.innerHTML = "";
+      if (drawing) {
+        // drawing the line: what to do, and buttons for those without a keyboard to hand
+        const finish = document.createElement("button");
+        finish.textContent = "Finish";
+        finish.disabled = line.length < 2;
+        finish.onclick = () => stopDrawing(true);
+        const cancel = document.createElement("button");
+        cancel.textContent = "Cancel";
+        cancel.onclick = () => stopDrawing(false);
+        tools.append(finish, cancel);
+        body.innerHTML = `<p class="sect-draw"><b>Drawing a section line.</b> Click on the chart where the line starts, then at each turn of it` +
+          ` (${line.length} point${line.length === 1 ? "" : "s"} so far). Double-click, Enter or Finish to end it; Esc or Cancel to stop.</p>`;
+        return;
+      }
       const sel = document.createElement("select");
       for (const [k, [label]] of Object.entries(KINDS)) sel.append(new Option(label, k));
       sel.value = kind;
       sel.onchange = () => { kind = sel.value; dock.refresh("section"); };
       const redraw = document.createElement("button");
       redraw.textContent = "Draw another line";
-      redraw.onclick = () => { dock.show(null); startDrawing(); };
+      redraw.onclick = () => startDrawing();
       tools.append(sel, redraw);
       if (!section) { body.innerHTML = `<p class="wx-note">${line.length > 1 ? "Reading the section…" : "Draw a line on the chart (Section along a line…, under GRIB data at the cursor)."}</p>`; return; }
       drawSection(body);
@@ -258,8 +327,11 @@ export function setupDepthStack(map, { weather, dock }) {
     body.append(wrap, key);
     if (!all.length) { key.textContent = "No values along this line (land, or outside the file)."; return; }
     const lo = Math.min(...all), hi = Math.max(...all);
+    // temperature and salinity in the colours of the filter in the data panel (as on the chart),
+    // else spread over the values along the line
+    const flt = weather.sectionFilter?.(kind) ?? null;
     const cols = kind === "kn" ? CURRENT : TURBO;
-    const colour = (v) => ramp(cols, (v - (kind === "kn" ? 0 : lo)) / Math.max(hi - (kind === "kn" ? 0 : lo), 1e-6));
+    const colour = flt ? flt.colour : (v) => ramp(cols, (v - (kind === "kn" ? 0 : lo)) / Math.max(hi - (kind === "kn" ? 0 : lo), 1e-6));
     // deepest level with a value anywhere: the picture stops there
     let nz = s.depths.length;
     while (nz > 1 && vals[nz - 1].every((v) => v == null)) nz--;
@@ -282,7 +354,7 @@ export function setupDepthStack(map, { weather, dock }) {
       for (let x = 0; x < s.dist.length; x++) {
         const v = vals[z][x];
         if (v == null) continue;
-        g.fillStyle = colour(v);
+        g.fillStyle = colour(v) ?? OUTSIDE;
         const x0 = Math.max(m.l, edge(s.dist, x, X)), x1 = Math.min(W - m.r, edge(s.dist, x + 1, X));
         g.fillRect(x0, y0, x1 - x0 + 0.6, y1 - y0 + 0.6);
       }
@@ -295,13 +367,35 @@ export function setupDepthStack(map, { weather, dock }) {
       s.thermocline.forEach((z, x) => { if (z == null) { pen = false; return; } if (pen) g.lineTo(X(s.dist[x]), Y(z)); else g.moveTo(X(s.dist[x]), Y(z)); pen = true; });
       g.stroke(); g.setLineDash([]);
     }
+    // the target: a bold line where the water is at the target value
+    if (flt?.tg != null) {
+      const xs = s.dist.map(X), ys = s.depths.slice(0, nz).map(Y);
+      const segs = isoSegments(vals, xs, ys, flt.tg);
+      for (const [w, c] of [[4.5, "rgba(255,255,255,0.9)"], [2.2, "#111"]]) {
+        g.strokeStyle = c; g.lineWidth = w; g.lineCap = "round";
+        g.beginPath();
+        for (const [a, b] of segs) { g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); }
+        g.stroke();
+      }
+    }
     g.fillStyle = "#1d2a33"; g.font = "11px system-ui, sans-serif"; g.textAlign = "right";
     for (const z of niceTicks(0, deep, 5)) { g.fillText(`${z} m`, m.l - 4, Y(z) + 4); }
     g.textAlign = "center";
     for (const d of niceTicks(0, total, 6)) g.fillText(`${d} NM`, X(d), H - 4);
     const [label, unit] = KINDS[kind];
     const fmt = (v) => (kind === "sal" ? v.toFixed(2) : v.toFixed(1));
-    key.innerHTML = `<span>${label} along the line, ${fmt(kind === "kn" ? 0 : lo)}</span><span class="sect-bar" style="background:linear-gradient(to right,${cols.join(",")})"></span><span>${fmt(hi)} ${unit}</span>` +
+    let bar;
+    if (flt) {
+      // the filter's colours from its lowest to highest stop, the target marked on the bar
+      const a = flt.stops[0][0], b = flt.stops.at(-1)[0], w = b - a || 1;
+      const tgMark = flt.tg != null && flt.tg >= a && flt.tg <= b ? `<i class="sect-tg" style="left:${((flt.tg - a) / w) * 100}%"></i>` : "";
+      bar = `<span>${label} (filter in the data panel), ${fmt(a)}</span><span class="sect-bar" style="background:linear-gradient(to right,${flt.stops.map(([v, c]) => `${c} ${((v - a) / w) * 100}%`).join(",")})">${tgMark}</span><span>${fmt(b)} ${unit}</span>` +
+        (flt.tg != null ? `<span class="sect-target">━ target ${fmt(flt.tg)} ${unit}</span>` : "") +
+        (all.some((v) => flt.colour(v) == null) ? `<span><span class="sect-out"></span> outside the filter</span>` : "");
+    } else {
+      bar = `<span>${label} along the line, ${fmt(kind === "kn" ? 0 : lo)}</span><span class="sect-bar" style="background:linear-gradient(to right,${cols.join(",")})"></span><span>${fmt(hi)} ${unit}</span>`;
+    }
+    key.innerHTML = bar +
       (kind !== "sal" ? `<span class="sect-thermo">- - thermocline</span>` : "") + `<span class="wx-note">at ${new Date(weather.current().t * 1000).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}</span>`;
     cv.onmousemove = (e) => {
       const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
@@ -312,7 +406,8 @@ export function setupDepthStack(map, { weather, dock }) {
       const v = vals[zi]?.[xi];
       tip.hidden = false;
       tip.style.left = `${px + 12}px`; tip.style.top = `${py + 8}px`;
-      tip.textContent = `${v == null ? "sea floor" : `${fmt(v)} ${unit}`} · ${Math.round(s.depths[zi])} m · ${s.dist[xi].toFixed(1)} NM`;
+      const vs = v == null ? "sea floor" : `${fmt(v)} ${unit}${flt?.tg != null ? ` (${v >= flt.tg ? "+" : "−"}${fmt(Math.abs(v - flt.tg))} on the target)` : ""}`;
+      tip.textContent = `${vs} · ${Math.round(s.depths[zi])} m · ${s.dist[xi].toFixed(1)} NM`;
       map.getSource("sect-here").setData({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: s.pts[xi] } });
     };
     cv.onmouseleave = () => { tip.hidden = true; map.getSource("sect-here").setData(empty); };

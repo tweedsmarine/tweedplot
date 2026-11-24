@@ -1818,6 +1818,24 @@ export function setupWeather(map, layers) {
     mountDepth(el) { el.classList.add("wx-depth"); depthBoxes.add(el); drawDepth(); },
     /** The loaded GRIB with a depth stack (three or more depths) to draw profiles and sections from, or null. */
     stackPath: () => oceanPath(LAYERS.thermo_depth) ?? oceanPath(LAYERS.shear_depth),
+    /** The colours of a section of the water (depthstack.js) for "temp" or "sal": the filter of
+     *  that kind's layer as shown in the data panel (the one on the chart, else the last one set),
+     *  as { colour(v): a colour, or null beyond an end that was set (hidden, as on the chart),
+     *  stops, lo, hi, tg, band, layer }; null without one. */
+    sectionFilter(kind) {
+      const keys = { temp: ["subt", "sst", "skin"], sal: ["subs", "sss"] }[kind];
+      if (!keys) return null;
+      const key = keys.includes(wx.layer) ? wx.layer : keys.find((k) => wx.seaFilter[k]?.set);
+      const layer = LAYERS[key], f = key ? wx.seaFilter[key] : null;
+      if (!layer || !f || !filterInUse(layer, f) || !Number.isFinite(f.lo) || !Number.isFinite(f.hi)) return null;
+      const stops = seaScale(f), ends = filterBounds(f);
+      return {
+        layer: key, lo: f.lo, hi: f.hi, tg: Number.isFinite(f.tg) ? f.tg : null, band: filterBand(f), stops,
+        colour: (v) => ((ends.lo && v < f.lo) || (ends.hi && v > f.hi) ? null : paletteAt(v, stops)),
+      };
+    },
+    /** The ocean layer on the chart, if any ("sst", "subs", ...). */
+    layerKey: () => (wx.shading === "off" ? null : wx.layer),
     /** Names of every parameter in the loaded GRIBs. */
     loadedParams: () => new Set([...loaded.values()].flatMap((s) => [...paramsOf(s)])),
     /** A colour-bar legend for the shown layer, kept current. */

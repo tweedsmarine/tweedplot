@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ramp, niceTicks, profileSvg } from "./depthstack.js";
+import { ramp, niceTicks, profileSvg, isoSegments } from "./depthstack.js";
 import { LAYERS } from "./weather.js";
 
 test("colour ramp ends and middle", () => {
@@ -31,4 +31,14 @@ test("water column picture", () => {
 test("layers below the surface", () => {
   for (const k of ["subt", "subs", "subcur"]) assert.ok(LAYERS[k].depth, k);
   for (const k of ["thermo_depth", "thermo_str", "shear_depth", "shear_str"]) assert.ok(LAYERS[k].stack && LAYERS[k].ocean, k);
+});
+
+test("isoSegments: the target line runs where the water crosses it", () => {
+  // warm on top, cold below: 16 °C sits half-way between rows 0 and 1, across both cells
+  const vals = [[18, 18, 18], [14, 14, 14], [10, 10, null]];
+  const segs = isoSegments(vals, [0, 10, 20], [0, 10, 20], 16);
+  assert.equal(segs.length, 2);
+  for (const [a, b] of segs) { assert.equal(a[1], 5); assert.equal(b[1], 5); }
+  // a cell with no value has no line
+  assert.equal(isoSegments(vals, [0, 10, 20], [0, 10, 20], 12).length, 1);
 });
