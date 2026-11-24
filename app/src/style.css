@@ -477,8 +477,8 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
 .nmea-variable output { text-align: right; font-size: 14px; font-weight: 600; white-space: nowrap; }
 .nmea-monitor-log { min-height: 120px; max-height: 280px; overflow: auto; padding: 5px; background: #101a20; color: #d9e5e9; border-radius: 4px; font-size: 11px; line-height: 1.45; }
 .nmea-monitor-empty { padding: 8px; color: #a9bac2; }
-.nmea-frame { display: flex; align-items: baseline; gap: 8px; min-width: max-content; padding: 2px 5px; border-left: 4px solid var(--stream-colour); }
-.nmea-frame-source { flex: none; width: 8ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--stream-colour); font-weight: 700; }
+.nmea-frame { display: flex; align-items: baseline; gap: 8px; min-width: max-content; padding: 2px 5px; border-left: 4px solid transparent; }
+.nmea-frame-source { flex: none; width: 8ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
 .nmea-frame-time { flex: none; color: #a9bac2; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .nmea-frame-time:empty { display: none; }
 .nmea-frame code { flex: none; color: inherit; white-space: pre; }
@@ -2065,7 +2065,7 @@ body:has(.sp-sec:not(.collapsed) #side-wx-clock[open] #side-wx-key:not([hidden])
    filter's bar has the same colours), and the filter in Weather layers and filters stands aside
    whenever this one is on the panel, so there is one bar. */
 #side-wx-key[hidden] ~ #side-wx-filter { display: none; }
-#side-wx-clock:has(#side-wx-filter:not([hidden])) #side-wx-key > :not(.wx-key-title) { display: none; }
+#side-wx-key.filter-shown > :not(.wx-key-title) { display: none; }
 body:has(.sp-sec:not(.collapsed) #side-wx-clock[open] #side-wx-key:not([hidden])) #wxp-filter { display: none; }
 .wx-error { color: #ff8a80; font-weight: 600; margin-top: 4px; }
 .wx-error[hidden] { display: none; }
