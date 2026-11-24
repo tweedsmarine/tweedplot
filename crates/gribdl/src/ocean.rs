@@ -61,8 +61,10 @@ pub const HYCOM_NCSS: &str = "https://ncss.hycom.org/thredds/ncss";
 pub const COASTWATCH: &str = "https://coastwatch.noaa.gov";
 const HIMAWARI_DS: &str = "gridH09AHINRTL3CWW00";
 const CHL_DS: &str = "noaacwNPPN20VIIRSDINEOFDaily";
-/// ACSPO L3S-LEO, near real time, daily, °C (latitude north to south).
-const ACSPO_DS: &str = "noaacwLEOACSPOSSTL3SnrtCDaily";
+/// ACSPO L3S-LEO, near real time, daily: the kelvin copy first (the °C copy,
+/// noaacwLEOACSPOSSTL3SnrtCDaily, stopped being served in Nov 2026), the °C one as a fallback;
+/// units are read from the file.
+const ACSPO_DS: [&str; 2] = ["noaacwLEOACSPOSSTL3SnrtKDaily", "noaacwLEOACSPOSSTL3SnrtCDaily"];
 /// Geo-Polar Blended, night-only foundation temperature, daily, with its error (the °C copy,
 /// noaacwBLENDEDCsstDaily, is no longer served; units are read from the file).
 const BLENDED_DS: &str = "noaacwBLENDEDsstDaily";
@@ -167,10 +169,13 @@ pub fn coastwatch_url(ds: &str, vars: &[&str], part: [f64; 4], days: u32, k: usi
     Ok(format!("{COASTWATCH}/erddap/griddap/{ds}.nc?{}", vars.iter().map(|v| one(v)).collect::<Vec<_>>().join(",")))
 }
 
-/// ACSPO L3S-LEO: sea temperature and its quality level (only "best quality" kept).
-pub fn acspo_url(part: [f64; 4], days: u32, k: usize) -> Result<String> {
-    coastwatch_url(ACSPO_DS, &["sea_surface_temperature", "quality_level"], part, days, k, true)
+/// ACSPO L3S-LEO: sea temperature and its quality level (only "best quality" kept). `try_no`
+/// picks the dataset copy and latitude order (0–3: kelvin north to south, kelvin south to north,
+/// °C north to south, °C south to north); the download tries them in turn.
+pub fn acspo_url(part: [f64; 4], days: u32, k: usize, try_no: usize) -> Result<String> {
+    coastwatch_url(ACSPO_DS[(try_no / 2) % 2], &["sea_surface_temperature", "quality_level"], part, days, k, try_no.is_multiple_of(2))
 }
+pub const ACSPO_TRIES: usize = 4;
 
 /// Geo-Polar Blended: analysed temperature and its estimated error. `north_first` is tried both
 /// ways by the download, as the dataset's latitude order isn't published.
@@ -620,10 +625,28 @@ pub fn download(req: &Request, now: i64, dir: &Path, progress: Progress, cancel:
             let parts = area_parts(req.area)?.len();
             let (mut done, mut bytes) = (0, 0u64);
             progress(0, parts, 0);
+            // the dataset copy and latitude order that answers, kept for the other part
+            let mut try_no = 0;
             let fields = fetch_area(
                 req.area,
                 |part| {
-                    let data = get_retry(&c, &acspo_url(part, days, k)?, cancel)?;
+                    let mut first_err = None;
+                    let mut got = None;
+                    for n in 0..ACSPO_TRIES {
+                        let t = (try_no + n) % ACSPO_TRIES;
+                        match get_retry(&c, &acspo_url(part, days, k, t)?, cancel) {
+                            Ok(d) => {
+                                try_no = t;
+                                got = Some(d);
+                                break;
+                            }
+                            Err(Error::Http(e)) => {
+                                first_err.get_or_insert(e);
+                            }
+                            Err(e) => return Err(e),
+                        }
+                    }
+                    let data = got.ok_or_else(|| Error::Http(first_err.unwrap_or_default()))?;
                     done += 1;
                     bytes += data.len() as u64;
                     progress(done, parts, bytes);
@@ -762,7 +785,11 @@ mod tests {
 
     #[test]
     fn coastwatch_sea_temperature_requests() {
-        let a = acspo_url([172.0, -42.0, 175.0, -40.0], 2, 1).unwrap();
+        let a = acspo_url([172.0, -42.0, 175.0, -40.0], 2, 1, 2).unwrap();
+        assert!(acspo_url([172.0, -42.0, 175.0, -40.0], 2, 1, 0)
+            .unwrap()
+            .contains("noaacwLEOACSPOSSTL3SnrtKDaily.nc?sea_surface_temperature%5Blast-1:1:last%5D%5B(-40.000)"));
+        assert!(acspo_url([172.0, -42.0, 175.0, -40.0], 2, 1, 1).unwrap().contains("KDaily.nc?sea_surface_temperature%5Blast-1:1:last%5D%5B(-42.000)"));
         assert_eq!(
             a,
             "https://coastwatch.noaa.gov/erddap/griddap/noaacwLEOACSPOSSTL3SnrtCDaily.nc?sea_surface_temperature%5Blast-1:1:last%5D%5B(-40.000):1:(-42.000)%5D%5B(172.000):1:(175.000)%5D,quality_level%5Blast-1:1:last%5D%5B(-40.000):1:(-42.000)%5D%5B(172.000):1:(175.000)%5D"
