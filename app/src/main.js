@@ -1012,6 +1012,14 @@ function sendPortrayalContextNow() {
 sendPortrayalContextNow();
 // the chart store has portrayed the features (or again, after a change): draw the tiles again
 listen("chart-s52", () => reloadChartTiles()).catch(() => {});
+// the depth images (NIWA grid, coastal elevation, survey depths, own soundings) open in the
+// background at start: tiles asked for before then came back clear, so ask for them again
+listen("depth-images-ready", () => {
+  for (const id of ["nzbathy", "hires", "depthpack", "pbathy"]) {
+    const src = map.getSource(id);
+    if (src?.setTiles) src.setTiles(src.tiles.map((t) => t.replace(/[?&]r=\d+/, "") + `${t.includes("?") ? "&" : "?"}r=${Date.now()}`));
+  }
+}).catch(() => {});
 
 function applyChartSettings() {
   sendPortrayalContext();

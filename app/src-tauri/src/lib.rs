@@ -2451,11 +2451,15 @@ pub fn run() {
             // the S-63 activation needs this computer's fingerprint (a second or so)
             let h = app.handle().clone();
             std::thread::spawn(move || {
-                s63_cmd::load(&h);
+                // the depth images first (their metadata only: quick). Until each is open its
+                // tiles come back clear, and the chart keeps a clear tile once it has it, so
+                // it is told to ask again ("depth-images-ready", main.js)
                 open_hires(&h);
                 depthpacks::open(&h);
                 open_nzbathy(&h);
                 pbathy::open(&h);
+                let _ = h.emit("depth-images-ready", ());
+                s63_cmd::load(&h);
                 open_charts(h);
             });
 
