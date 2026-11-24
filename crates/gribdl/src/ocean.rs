@@ -61,10 +61,11 @@ pub const HYCOM_NCSS: &str = "https://ncss.hycom.org/thredds/ncss";
 pub const COASTWATCH: &str = "https://coastwatch.noaa.gov";
 const HIMAWARI_DS: &str = "gridH09AHINRTL3CWW00";
 const CHL_DS: &str = "noaacwNPPN20VIIRSDINEOFDaily";
-/// ACSPO L3S-LEO, near real time, daily: the kelvin copy first (the °C copy,
-/// noaacwLEOACSPOSSTL3SnrtCDaily, stopped being served in Nov 2026), the °C one as a fallback;
-/// units are read from the file.
-const ACSPO_DS: [&str; 2] = ["noaacwLEOACSPOSSTL3SnrtKDaily", "noaacwLEOACSPOSSTL3SnrtCDaily"];
+/// ACSPO L3S-LEO, near real time, daily (super-collated, all the polar orbiters), as one GHRSST
+/// file a day on CoastWatch's THREDDS server (subskin temperature in kelvin with quality_level),
+/// cut by NCSS like Himawari. CoastWatch's ERDDAP stopped serving the daily copies
+/// (noaacwLEOACSPOSSTL3Snrt[C|K]Daily) around 21 Nov 2026.
+const ACSPO_THREDDS: &str = "gridLEODYNRTL3SWW00";
 /// Geo-Polar Blended, night-only foundation temperature, daily, with its error (the °C copy,
 /// noaacwBLENDEDCsstDaily, is no longer served; units are read from the file).
 const BLENDED_DS: &str = "noaacwBLENDEDsstDaily";
@@ -169,13 +170,40 @@ pub fn coastwatch_url(ds: &str, vars: &[&str], part: [f64; 4], days: u32, k: usi
     Ok(format!("{COASTWATCH}/erddap/griddap/{ds}.nc?{}", vars.iter().map(|v| one(v)).collect::<Vec<_>>().join(",")))
 }
 
-/// ACSPO L3S-LEO: sea temperature and its quality level (only "best quality" kept). `try_no`
-/// picks the dataset copy and latitude order (0–3: kelvin north to south, kelvin south to north,
-/// °C north to south, °C south to north); the download tries them in turn.
-pub fn acspo_url(part: [f64; 4], days: u32, k: usize, try_no: usize) -> Result<String> {
-    coastwatch_url(ACSPO_DS[(try_no / 2) % 2], &["sea_surface_temperature", "quality_level"], part, days, k, try_no.is_multiple_of(2))
+/// The THREDDS catalogue of one day's ACSPO L3S-LEO daily file (its folder is the year and day of year).
+pub fn acspo_catalog_url(t: i64) -> String {
+    let d = chrono::DateTime::from_timestamp(t, 0).unwrap_or_default();
+    format!("{COASTWATCH}/thredds/catalog/{ACSPO_THREDDS}/{}/catalog.xml", d.format("%Y/%j"))
 }
-pub const ACSPO_TRIES: usize = 4;
+
+/// The daily files a catalogue lists: (time as Unix time, file name), e.g.
+/// "20261122120000-STAR-L3S_GHRSST-SSTsubskin-LEO_Daily-ACSPO_V2.81-v02.0-fv01.0.nc".
+pub fn acspo_files(catalog: &str) -> Vec<(i64, String)> {
+    let mut out = Vec::new();
+    for part in catalog.split("name=\"").skip(1) {
+        let Some(name) = part.split('"').next() else { continue };
+        if !name.ends_with(".nc") || !name.contains("LEO_Daily") || name.len() < 14 {
+            continue;
+        }
+        if let Ok(t) = chrono::NaiveDateTime::parse_from_str(&name[..14], "%Y%m%d%H%M%S") {
+            out.push((t.and_utc().timestamp(), name.to_string()));
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// The NCSS request for one daily ACSPO file, cut to one part of an area (no date line), every `k`th point.
+pub fn acspo_url(file: &str, part: [f64; 4], k: usize) -> Result<String> {
+    let [w, s, e, n] = area_ok(part)?;
+    let t =
+        chrono::NaiveDateTime::parse_from_str(file.get(..14).unwrap_or(""), "%Y%m%d%H%M%S").map_err(|_| Error::Bad(format!("not an ACSPO file: {file}")))?;
+    Ok(format!(
+        "{COASTWATCH}/thredds/ncss/grid/{ACSPO_THREDDS}/{}/{file}?var=sea_surface_temperature&var=quality_level&north={n:.3}&west={w:.3}&east={e:.3}&south={s:.3}&horizStride={k}&accept=netcdf",
+        t.format("%Y/%j"),
+    ))
+}
 
 /// Geo-Polar Blended: analysed temperature and its estimated error. `north_first` is tried both
 /// ways by the download, as the dataset's latitude order isn't published.
@@ -620,40 +648,51 @@ pub fn download(req: &Request, now: i64, dir: &Path, progress: Progress, cancel:
             Ok(path)
         }
         Model::AcspoSst => {
-            let days = (req.hours / 24).clamp(1, 14);
-            let k = stride_for(req.area, 0.02, days as usize);
-            let parts = area_parts(req.area)?.len();
-            let (mut done, mut bytes) = (0, 0u64);
-            progress(0, parts, 0);
-            // the dataset copy and latitude order that answers, kept for the other part
-            let mut try_no = 0;
-            let fields = fetch_area(
-                req.area,
-                |part| {
-                    let mut first_err = None;
-                    let mut got = None;
-                    for n in 0..ACSPO_TRIES {
-                        let t = (try_no + n) % ACSPO_TRIES;
-                        match get_retry(&c, &acspo_url(part, days, k, t)?, cancel) {
-                            Ok(d) => {
-                                try_no = t;
-                                got = Some(d);
-                                break;
-                            }
-                            Err(Error::Http(e)) => {
-                                first_err.get_or_insert(e);
-                            }
-                            Err(e) => return Err(e),
-                        }
-                    }
-                    let data = got.ok_or_else(|| Error::Http(first_err.unwrap_or_default()))?;
-                    done += 1;
-                    bytes += data.len() as u64;
-                    progress(done, parts, bytes);
-                    Ok(data)
-                },
-                |b| fields_from_netcdf_ex(b, grib::write::CENTRE_NESDIS, None, true).map(as_sea_temp),
-            )?;
+            let days = (req.hours / 24).clamp(1, 14) as usize;
+            // the daily files on the server: they come out a day or two late, so look a few days further back
+            let mut files = Vec::new();
+            let mut day = now - now.rem_euclid(86_400);
+            for _ in 0..days + 5 {
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    return Err(Error::Cancelled);
+                }
+                if let Ok(cat) = get_retry(&c, &acspo_catalog_url(day), cancel) {
+                    files.extend(acspo_files(&String::from_utf8_lossy(&cat)));
+                }
+                if files.len() >= days {
+                    break;
+                }
+                day -= 86_400;
+            }
+            files.sort();
+            files.dedup();
+            let files: Vec<(i64, String)> = files.into_iter().rev().take(days).rev().collect();
+            if files.is_empty() {
+                return Err(Error::Bad("no ACSPO daily files on CoastWatch's server for the last days".into()));
+            }
+            let k = stride_for(req.area, 0.02, files.len());
+            let total = files.len();
+            progress(0, total, 0);
+            let mut fields = Vec::new();
+            let mut bytes = 0u64;
+            for (i, (_, file)) in files.iter().enumerate() {
+                let got = fetch_area(
+                    req.area,
+                    |part| {
+                        let data = get_retry(&c, &acspo_url(file, part, k)?, cancel)?;
+                        bytes += data.len() as u64;
+                        Ok(data)
+                    },
+                    |b| fields_from_netcdf_ex(b, grib::write::CENTRE_NESDIS, None, true).map(as_sea_temp),
+                )?;
+                fields.extend(got);
+                progress(i + 1, total, bytes);
+            }
+            fields.retain(|f| !f.values.iter().all(|x| x.is_nan()) || f.param != Param::SeaTemp);
+            if !fields.iter().any(|f| f.param == Param::SeaTemp) {
+                return Err(Error::Bad(format!("cloud over the whole area on all {total} days: no clear-sky sea temperature")));
+            }
+            fields.sort_by_key(|f| f.valid_time);
             let (t0, t1) = (fields.iter().map(|f| f.valid_time).min().unwrap(), fields.iter().map(|f| f.valid_time).max().unwrap());
             let path = dir.join(name("ACSPO_SST", &format!("{}-{}", ymd(t0), ymd(t1)), req.area));
             write(&fields, grib::write::PROCESS_ACSPO_SST, &path)?;
@@ -785,14 +824,16 @@ mod tests {
 
     #[test]
     fn coastwatch_sea_temperature_requests() {
-        let a = acspo_url([172.0, -42.0, 175.0, -40.0], 2, 1, 2).unwrap();
-        assert!(acspo_url([172.0, -42.0, 175.0, -40.0], 2, 1, 0)
-            .unwrap()
-            .contains("noaacwLEOACSPOSSTL3SnrtKDaily.nc?sea_surface_temperature%5Blast-1:1:last%5D%5B(-40.000)"));
-        assert!(acspo_url([172.0, -42.0, 175.0, -40.0], 2, 1, 1).unwrap().contains("KDaily.nc?sea_surface_temperature%5Blast-1:1:last%5D%5B(-42.000)"));
+        // ACSPO: the daily files on THREDDS (as listed on 24 Nov 2026), cut by NCSS
+        let f = "20261122120000-STAR-L3S_GHRSST-SSTsubskin-LEO_Daily-ACSPO_V2.81-v02.0-fv01.0.nc";
+        assert_eq!(acspo_catalog_url(1795392000), "https://coastwatch.noaa.gov/thredds/catalog/gridLEODYNRTL3SWW00/2026/327/catalog.xml");
+        let cat = format!(r#"<dataset name="DY"><dataset name="{f}" ID="x" urlPath="gridLEODYNRTL3SWW00/2026/326/{f}"/><dataset name="other.nc"/></dataset>"#);
+        let files = acspo_files(&cat);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].0, 1795348800);
         assert_eq!(
-            a,
-            "https://coastwatch.noaa.gov/erddap/griddap/noaacwLEOACSPOSSTL3SnrtCDaily.nc?sea_surface_temperature%5Blast-1:1:last%5D%5B(-40.000):1:(-42.000)%5D%5B(172.000):1:(175.000)%5D,quality_level%5Blast-1:1:last%5D%5B(-40.000):1:(-42.000)%5D%5B(172.000):1:(175.000)%5D"
+            acspo_url(f, [172.0, -42.0, 175.0, -40.0], 2).unwrap(),
+            format!("https://coastwatch.noaa.gov/thredds/ncss/grid/gridLEODYNRTL3SWW00/2026/326/{f}?var=sea_surface_temperature&var=quality_level&north=-40.000&west=172.000&east=175.000&south=-42.000&horizStride=2&accept=netcdf")
         );
         let b = blended_url([172.0, -42.0, 175.0, -40.0], 1, 2, false).unwrap();
         assert!(b.starts_with("https://coastwatch.noaa.gov/erddap/griddap/noaacwBLENDEDsstDaily.nc?analysed_sst%5Blast-0:1:last%5D%5B(-42.000):2:(-40.000)%5D"));
@@ -976,6 +1017,25 @@ mod tests {
         let g = grib::GribFile::from_bytes(&bytes);
         assert_eq!(g.model().0, "Himawari-9 SST hourly");
         assert_eq!(g.times(Param::SkinTemp).len(), 1);
+    }
+
+    /// Real ACSPO L3S-LEO daily output from CoastWatch THREDDS NCSS (22 Nov 2026, west of Nelson,
+    /// every 6th point): sub-skin temperature in kelvin, best-quality pixels only, filed as sea temperature.
+    #[test]
+    fn reads_real_acspo_thredds_output() {
+        let b = crate::tests::b64(include_str!("../tests/acspo_nelson.b64"));
+        let f = as_sea_temp(fields_from_netcdf_ex(&b, grib::write::CENTRE_NESDIS, None, true).unwrap());
+        assert_eq!(f.len(), 1);
+        let x = &f[0];
+        assert_eq!(x.param, Param::SeaTemp);
+        assert_eq!(chrono::DateTime::from_timestamp(x.valid_time, 0).unwrap().format("%Y-%m-%d").to_string(), "2026-11-22");
+        assert_eq!((x.grid.ni, x.grid.nj), (26, 17));
+        let ok: Vec<f32> = x.values.iter().cloned().filter(|v| v.is_finite()).collect();
+        assert!(ok.len() > 150 && ok.len() < 442, "{}", ok.len());
+        // late spring water west of Nelson: 14–19 °C
+        assert!(ok.iter().all(|v| (287.0..292.5).contains(v)), "{ok:?}");
+        let g = grib::GribFile::from_bytes(&grib::write::encode(x, grib::write::PROCESS_ACSPO_SST));
+        assert_eq!(g.model().0, "ACSPO SST 2 km");
     }
 
     /// Real chlorophyll output from CoastWatch ERDDAP (15 and 16 Oct 2026).
