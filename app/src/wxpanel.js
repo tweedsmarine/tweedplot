@@ -91,6 +91,11 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     box.id = "side-wx-filter";
     $("side-wx-key").after(box);
     weather.mountFilter(box);
+    // the key's bar steps aside while the filter shows: a class, not a :has() rule (that one made
+    // the browser restyle the whole page on every change anywhere, e.g. each line of Live data)
+    const keyAside = () => $("side-wx-key").classList.toggle("filter-shown", !box.hidden);
+    new MutationObserver(keyAside).observe(box, { attributes: true, attributeFilter: ["hidden"] });
+    keyAside();
     // the depth shown, for the layers at depth when the file has a depth stack: between the key and the filter
     const depth = document.createElement("div");
     depth.id = "side-wx-depth";

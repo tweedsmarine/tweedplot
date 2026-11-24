@@ -171,6 +171,7 @@ export function setupNmeaMonitor(root, { standalone = false, openSettings = () =
   // Rows are only built while the monitor is on screen: hidden (a closed drawer, another view) it
   // just keeps the buffer, and draws it when shown again. A busy bus is many sentences a second.
   let onScreen = false, dirty = false;
+  let pending = [], flushFrame = 0; // rows waiting for the next frame (appendFrame)
   new IntersectionObserver((entries) => {
     onScreen = entries.some((e) => e.isIntersecting);
     if (onScreen && dirty && !paused) { dirty = false; renderLog(); }
@@ -260,6 +261,7 @@ export function setupNmeaMonitor(root, { standalone = false, openSettings = () =
 
   function renderLog() {
     if (!onScreen) { dirty = true; return; }
+    pending = []; // the whole log is drawn from the buffer: rows waiting for the next frame are in it
     const shown = frames.filter(({ frame }) => !filter.value || frame.sourceId === filter.value).slice(-MAX_RENDERED);
     const fragment = document.createDocumentFragment();
     for (const item of shown) fragment.append(makeRow(item));
@@ -277,13 +279,17 @@ export function setupNmeaMonitor(root, { standalone = false, openSettings = () =
     const { frame, sourceId, sourceName } = item;
     const row = document.createElement("div");
     row.className = `nmea-frame${frame.checksumValid ? "" : " invalid"}${frame.ignored ? " ignored" : ""}`;
-    row.style.setProperty("--stream-colour", sourceColour(sourceId, sources));
+    // the colour set on the row and its source name directly: a custom property set on every row makes
+    // the browser copy all the page's inherited variables (thousands with OpenBridge) for each one
+    const colour = sourceColour(sourceId, sources);
+    row.style.borderLeftColor = colour;
     if (frame.error) row.title = frame.error;
     const time = document.createElement("span");
     time.className = "nmea-frame-time";
     time.textContent = prefs.timestamps ? isoTime(frame.receivedAt) : "";
     const source = document.createElement("span");
     source.className = "nmea-frame-source";
+    source.style.color = colour;
     source.textContent = sourceName;
     source.title = sourceName;
     // two GPS receivers on one input: which one sent it, and whether it was left out
@@ -323,9 +329,21 @@ export function setupNmeaMonitor(root, { standalone = false, openSettings = () =
     if (paused) return;
     if (filter.value && filter.value !== item.sourceId) return;
     if (!onScreen) { dirty = true; return; }
+    // rows go on screen once per frame, together: a busy bus is many sentences a second
+    pending.push(item);
+    if (!flushFrame) flushFrame = requestAnimationFrame(flushRows);
+  }
+  function flushRows() {
+    flushFrame = 0;
+    const items = pending.slice(-MAX_RENDERED);
+    pending = [];
+    if (!items.length || paused) return;
     log.querySelector(".nmea-monitor-empty")?.remove();
-    log.append(makeRow(item));
-    while (log.childElementCount > MAX_RENDERED) log.firstElementChild.remove();
+    const fragment = document.createDocumentFragment();
+    for (const item of items) fragment.append(makeRow(item));
+    log.append(fragment);
+    let extra = log.childElementCount - MAX_RENDERED;
+    while (extra-- > 0) log.firstElementChild.remove();
     log.scrollTop = log.scrollHeight;
   }
 

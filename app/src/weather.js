@@ -1227,7 +1227,12 @@ export function setupWeather(map, layers) {
       }
       const at = cursor, tt = t, shownPath = display, requestedView = weatherView, requestedPast = allowPastAnalysis;
       const q = await queryPoint(at, tt);
-      if (at !== cursor || tt !== t || shownPath !== display || requestedView !== weatherView || requestedPast !== allowPastAnalysis) { updatePoint(); return; }
+      // a changed time, file or view makes the answer wrong: ask again. A cursor that has moved on
+      // doesn't: show the values where they were asked for (the read-out names the place) and ask
+      // again for where the cursor is now, so the values follow a moving mouse instead of waiting
+      // for it to stop.
+      if (tt !== t || shownPath !== display || requestedView !== weatherView || requestedPast !== allowPastAnalysis) { updatePoint(); return; }
+      if (at !== cursor) updatePoint();
       const { rows } = q;
       const shown = q.shown && { ...q.shown, t: tt, name: loaded.get(display)?.name ?? q.shown.name };
       for (const fn of pointListeners) fn(shown, at, rows);
@@ -1260,7 +1265,7 @@ export function setupWeather(map, layers) {
           seaBox.append(d);
         }
       }
-    }, 120);
+    }, 50);
   }
   map.on("mousemove", (e) => { cursor = [e.lngLat.lng, e.lngLat.lat]; updatePoint(); });
   map.on("click", (e) => { cursor = [e.lngLat.lng, e.lngLat.lat]; updatePoint(); }); // touch: a tap is the cursor
