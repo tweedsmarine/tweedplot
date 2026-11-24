@@ -113,11 +113,13 @@ export function setupViews(map, { onPlanningTimeout = () => {}, livePosition = (
     if (e.key !== "Escape" || e.defaultPrevented || !["nmea", "inst"].includes(s.current)) return;
     if (e.target.closest?.("input, textarea, select, [contenteditable]")) return;
     if (document.querySelector(".ctx:not([hidden]), dialog[open]")) return;
-    api.set(previous === s.current ? "nav" : previous);
+    api.back();
   });
   window.addEventListener("racenav-need-tools", () => { if (!toolsOn(s.current)) { s.tools[s.current] = true; apply(); } });
   const api = {
     current: () => s.current,
+    /** Back to the view you came from (from Live data or Instruments; Navigation if none). */
+    back() { api.set(previous === s.current ? "nav" : previous); },
     set(id) {
       if (!def(id) || id === s.current) return;
       if (chartViews.has(s.current) || chartViews.has(id)) map.stop();
