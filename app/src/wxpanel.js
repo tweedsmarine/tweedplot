@@ -338,7 +338,16 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     const box = document.createElement("div");
     const isobarControls = $("wx-isobar-controls");
     if (isobarControls.parentElement !== $("wxp-isobar-controls")) $("wxp-isobar-controls").append(isobarControls);
-    for (const o of weather.overlayOptions()) {
+    const opts = weather.overlayOptions();
+    // the isobar interval only while a loaded GRIB has pressure to draw them from
+    $("wxp-isobar-controls").hidden = !opts.some((o) => o.key === "isobars");
+    if (!opts.length) {
+      const n = document.createElement("div");
+      n.className = "wx-note";
+      n.textContent = "None until a GRIB is loaded.";
+      box.append(n);
+    }
+    for (const o of opts) {
       const row = document.createElement("label");
       row.className = "wxp-row";
       const c = document.createElement("input");

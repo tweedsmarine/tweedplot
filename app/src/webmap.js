@@ -43,11 +43,12 @@ export function setupWebMap(map) {
   function credit() {
     const el = $("map-attribution");
     if (!el) return;
-    el.replaceChildren("Charts: LINZ, CC BY 4.0. Land: ", link("© OpenStreetMap contributors", COPYRIGHT), " (ODbL). ");
+    // the charts' credit follows the chart sets in use (main.js, "credit-extra" key "charts")
+    el.replaceChildren(`${extra.charts ?? "Charts: LINZ, CC BY 4.0."} Land: `, link("© OpenStreetMap contributors", COPYRIGHT), " (ODbL). ");
     if (osmOn() && !prefs.osmUrl) el.append("Map: ", link("© OpenStreetMap contributors", COPYRIGHT), ". ");
     if (seaOn() && !prefs.seaUrl) el.append("Seamarks: ", link("© OpenSeaMap contributors", "https://www.openseamap.org"), ". ");
     if ((osmOn() && prefs.osmUrl) || (seaOn() && prefs.seaUrl)) el.append(prefs.credit ? `${prefs.credit}. ` : "Online map: your own tile server. ");
-    for (const t of Object.values(extra)) if (t) el.append(`${t} `);
+    for (const [k, t] of Object.entries(extra)) if (t && k !== "charts") el.append(`${t} `);
     el.append("Not for navigation.");
   }
 
