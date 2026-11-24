@@ -393,16 +393,9 @@ pub fn attr_name(a: &str) -> String {
 }
 
 /// Magnetic variation in degrees (east positive) as "3.25°W". S-57 gives west as negative.
-/// A variation in degrees and decimal minutes, as everywhere in the app: "23°33.6′E".
+/// A variation in degrees to a tenth, east or west, as everywhere in the app: "23.6°E".
 pub fn fmt_variation(deg: f64) -> String {
-    let a = deg.abs();
-    let mut d = a.floor();
-    let mut m = ((a - d) * 600.0).round() / 10.0;
-    if m >= 60.0 {
-        d += 1.0;
-        m -= 60.0;
-    }
-    format!("{}°{:04.1}′{}", d as i64, m, if deg < 0.0 { "W" } else { "E" })
+    format!("{:.1}°{}", deg.abs(), if deg < 0.0 { "W" } else { "E" })
 }
 
 /// The charted variation brought up to date: `valmag` (°, east +) at `ref_year`, changing by
@@ -934,10 +927,10 @@ mod tests {
 
     #[test]
     fn describes_magnetic_variation() {
-        assert_eq!(describe("valmag", "-3.25"), "3°15.0′W");
-        assert_eq!(describe("valmag", "19.5"), "19°30.0′E");
-        assert_eq!(describe("valmag", "23.56"), "23°33.6′E");
-        assert_eq!(describe("valmag", "22.9999"), "23°00.0′E");
+        assert_eq!(describe("valmag", "-3.26"), "3.3°W");
+        assert_eq!(describe("valmag", "19.5"), "19.5°E");
+        assert_eq!(describe("valmag", "23.56"), "23.6°E");
+        assert_eq!(describe("valmag", "22"), "22.0°E");
         assert_eq!(describe("valacm", "0.1"), "+0.1′ a year");
         assert_eq!(describe("valacm", "-2"), "−2.0′ a year");
         assert_eq!(describe("ryrmgv", "2019"), "2019");
