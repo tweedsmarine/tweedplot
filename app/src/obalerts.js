@@ -1,7 +1,7 @@
 // Alerts in the OpenBridge top bar (IEC 62923 bridge alert management, as OpenBridge draws it):
 // the most important unacknowledged alert as a message beside the alert button, the alert button
 // (count, highest level, flashing while any is unacknowledged), and the alert menu under it with
-// every active alert, its acknowledge and dismiss actions, and a way to the Alarms drawer.
+// every active alert, its acknowledge and dismiss actions, and a way to the alarm settings.
 // alarms.js keeps deciding what is raised, sounded, acknowledged and cleared; it sends the list
 // here ("racenav-alerts") each time it changes.
 
@@ -9,6 +9,7 @@ import "@oicl/openbridge-webcomponents/dist/components/alert-button/alert-button
 import "@oicl/openbridge-webcomponents/dist/components/alert-menu/alert-menu.js";
 import "@oicl/openbridge-webcomponents/dist/components/alert-menu-item/alert-menu-item.js";
 import "@oicl/openbridge-webcomponents/dist/components/alert-icon/alert-icon.js";
+import "@oicl/openbridge-webcomponents/dist/icons/icon-alert-settings.js";
 import "@oicl/openbridge-webcomponents/dist/components/topbar-message-item/topbar-message-item.js";
 
 const TYPE = { alarm: "alarm", warn: "warning", caution: "caution" };
@@ -45,7 +46,7 @@ export function setupOpenBridgeAlerts(slot) {
   function setMenu(open) {
     menu.hidden = !open;
     menu.open = open;
-    if (open) renderMenu();
+    if (open) { renderMenu(); relabelListButton(); }
   }
   btn.addEventListener("click-alert", () => setMenu(menu.hidden));
   menu.addEventListener("close", () => setMenu(false));
@@ -57,21 +58,50 @@ export function setupOpenBridgeAlerts(slot) {
   });
   window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !menu.hidden) setMenu(false); });
 
+  // The items are kept and updated in place, keyed by the alert, not rebuilt: alarms.js sends the list
+  // again whenever a reading in it changes (distance, time to go), and a rebuilt item would close
+  // again as soon as it was opened with its chevron.
+  const items = new Map();
   function renderMenu() {
     const list = sorted();
     menu.canAckAll = list.some((a) => !a.acked);
-    menu.innerHTML = list.map((a, i) => `<obc-alert-menu-item data-i="${i}"
-        status="${a.acked ? "acknowledged" : "unacknowledged"}" time="${hhmm(a.since)}" size="${a.detail ? "double-line" : "single-line"}"
-        primaryactionstate="${a.acked ? "none" : "enabled"}" secondaryactionstate="${a.dismiss ? "enabled" : "none"}"
-        secondaryactionlabel="${esc(a.dismissLabel)}">
-        ${icon(a, "alert-icon")}<span slot="title">${esc(a.text)}</span>${a.detail ? `<span slot="description">${esc(a.detail)}</span>` : ""}
-      </obc-alert-menu-item>`).join("");
-    menu.querySelectorAll("obc-alert-menu-item").forEach((el) => {
-      const a = list[+el.dataset.i];
-      el.addEventListener("ack-click", () => a.ack());
-      el.addEventListener("ack-secondary-click", () => a.dismiss?.());
-      el.addEventListener("item-click", () => a.click?.());
+    const keep = new Set();
+    list.forEach((a, i) => {
+      const key = a.id ?? `${a.level}:${a.text}`;
+      keep.add(key);
+      let el = items.get(key);
+      if (!el) {
+        el = document.createElement("obc-alert-menu-item");
+        el.addEventListener("ack-click", () => el._a.ack());
+        el.addEventListener("ack-secondary-click", () => el._a.dismiss?.());
+        el.addEventListener("item-click", () => el._a.click?.());
+        items.set(key, el);
+      }
+      el._a = a;
+      const set = (k, v) => { if (el.getAttribute(k) !== v) el.setAttribute(k, v); };
+      set("status", a.acked ? "acknowledged" : "unacknowledged");
+      set("time", hhmm(a.since));
+      set("size", a.detail ? "double-line" : "single-line");
+      set("primaryactionstate", a.acked ? "none" : "enabled");
+      set("secondaryactionstate", a.dismiss ? "enabled" : "none");
+      set("secondaryactionlabel", a.dismissLabel ?? "");
+      const html = `${icon(a, "alert-icon")}<span slot="title">${esc(a.text)}</span>${a.detail ? `<span slot="description">${esc(a.detail)}</span>` : ""}`;
+      if (el._html !== html) { el.innerHTML = html; el._html = html; }
+      if (menu.children[i] !== el) menu.insertBefore(el, menu.children[i] ?? null);
     });
+    for (const [key, el] of items) if (!keep.has(key)) { el.remove(); items.delete(key); }
+  }
+
+  // The menu's own button to the alert list would only lead to the same list in the Alarms drawer:
+  // it opens the alarm settings there instead (OpenBridge draws the button; its label and icon are changed).
+  async function relabelListButton() {
+    await menu.updateComplete;
+    const b = menu.shadowRoot?.querySelector(".action obc-button:last-child");
+    if (!b || b._relabelled) return;
+    const walker = document.createTreeWalker(b, NodeFilter.SHOW_TEXT);
+    for (let n; (n = walker.nextNode());) if (n.data.trim() === "Alerts") { n.data = n.data.replace("Alerts", "Alarm settings"); b._relabelled = true; }
+    const ic = b.querySelector("obi-alert-list");
+    if (ic) { const s = document.createElement("obi-alert-settings"); s.slot = "leading-icon"; ic.replaceWith(s); }
   }
 
   // the Alarms drawer's list of active alarms: OpenBridge alert icons and buttons, laid out for the
@@ -79,6 +109,9 @@ export function setupOpenBridgeAlerts(slot) {
   const drawerList = document.getElementById("al-active");
   function renderDrawer(list) {
     if (!drawerList) return;
+    // the drawer keeps the alarm settings; its list of active alarms would repeat the alert menu's
+    const card = drawerList.closest(".dcard");
+    if (card) card.style.display = "none";
     drawerList.classList.add("ob-alert-list");
     drawerList.innerHTML = list.length ? list.map((a, i) => `<li data-i="${i}" class="ob-al ob-al-${TYPE[a.level] ?? "warning"}${a.acked ? " acked" : ""}">
         ${icon(a, "x").replace(' slot="x"', "")}

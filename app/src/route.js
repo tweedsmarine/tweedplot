@@ -66,7 +66,8 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
   const snapshot = () => ({ routeId, name: $("rt-name").value, start, startRef, startRings, marks: structuredClone(marks), greatCircle });
   const saveActive = () => { try { if (active) localStorage.setItem(ACTIVE_KEY, JSON.stringify(active)); else localStorage.removeItem(ACTIVE_KEY); } catch { /* ignore */ } };
   /** Another route is about to take the editor: the navigated one keeps going as it last was. */
-  function unlink() { if (active?.linked) { active.linked = false; saveActive(); } }
+  let stoppedHere = null; // { id }: navigation of the editor's route was stopped from the "Route active" note
+  function unlink() { stoppedHere = null; if (active?.linked) { active.linked = false; saveActive(); } }
   function setActiveIndex(i) {
     if (!active) return;
     active.nav = Math.min(Math.max(0, active.marks.length - 1), Math.max(0, i));
@@ -280,6 +281,10 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     for (const id of ["rt-start", "rt-boat", "rt-add", "rt-undo", "rt-great-circle"]) $(id).disabled = lock;
     $("rt-name").readOnly = lock;
     $("rt-locked").hidden = !lock;
+    // stopped from that note: the way back to navigating, until it starts again or another route comes in
+    const paused = !active && stoppedHere && routeId === stoppedHere.id && marks.length > 0;
+    $("rt-paused").hidden = !paused;
+    if (paused) $("rt-resume-to").textContent = `again; it carries on to mark ${Math.min(navIndex, marks.length - 1) + 1}.`;
     showDeparture();
   }
 
@@ -513,7 +518,16 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
   $("nav-prev").onclick = () => setActiveIndex((active?.nav ?? 0) - 1);
   $("nav-next").onclick = () => setActiveIndex((active?.nav ?? 0) + 1);
 
-  const begin = () => { active = { ...snapshot(), nav: navIndex, linked: true }; };
+  const begin = () => { active = { ...snapshot(), nav: navIndex, linked: true }; stoppedHere = null; };
+  // the note's own buttons: the same Stop and Start as the navigation controls, where the route is edited
+  $("rt-stop-edit").onclick = () => {
+    if (!active || !locked()) return;
+    navIndex = active.nav;
+    $("nav-go").click();
+    stoppedHere = { id: routeId };
+    drawMarks();
+  };
+  $("rt-resume").onclick = () => { if (!active && marks.length) $("nav-go").click(); };
   $("nav-go").onclick = () => {
     if (!active && !marks.length) return;
     const was = active?.name;

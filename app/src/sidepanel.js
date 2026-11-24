@@ -356,7 +356,13 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
       `<span title="Display scale on this screen (from the screen calibration)">${scale}</span>`,
     ];
     const html = parts.join(" · ");
-    if (statusEl._html !== html) { statusEl.innerHTML = html; statusEl._html = html; }
+    if (statusEl._html !== html) {
+      statusEl.innerHTML = html; statusEl._html = html;
+      // one line in every view: a little smaller when it would wrap, then cut with "…" (all of it in the tooltip)
+      statusEl.classList.remove("tight");
+      if (statusEl.scrollWidth > statusEl.clientWidth + 1) statusEl.classList.add("tight");
+      statusEl.title = statusEl.scrollWidth > statusEl.clientWidth + 1 ? statusEl.textContent : "";
+    }
   }
   // The one-line strip under the chart: when its readings are wider than the room (Environment's wide
   // panel, a narrow window) the type shrinks a little, down to 60 %, rather than cutting the position off.

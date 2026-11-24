@@ -170,7 +170,8 @@
           <button id="rt-add" title="Click on the chart to add marks in order; click a library mark to reuse it">Add marks</button>
           <button id="rt-undo" title="Remove the last mark">Undo</button>
         </div>
-        <div id="rt-locked" class="wx-note warn" hidden>Being navigated: this route can't be changed. Press Stop navigating, change it, then Start navigating again.</div>
+        <div id="rt-locked" class="wx-note warn rt-lock" hidden><b>Route active:</b> it can't be changed while it's being navigated. <button type="button" id="rt-stop-edit" class="inline-act" title="Stop navigating this route so it can be edited here">Stop navigating</button> to edit it.</div>
+        <div id="rt-paused" class="wx-note rt-lock" hidden><b>Navigation stopped:</b> edit the route, then <button type="button" id="rt-resume" class="inline-act" title="Navigate this route again">Start navigating</button> <span id="rt-resume-to"></span></div>
         <div class="wx-row dep-row"><label class="grow" for="rt-dep-mode" title="When the route leaves: used by Weather on route and by weather routing">Departure</label>
           <select id="rt-dep-mode"><option value="now">Now</option><option value="fixed">Set a time</option></select>
           <input id="rt-dep-time" type="datetime-local" title="Departure, local time of this PC" hidden /></div>

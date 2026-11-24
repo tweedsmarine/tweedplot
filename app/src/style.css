@@ -2809,3 +2809,17 @@ html.ob-shell .dial :is(.ring, .tk, .hull) { stroke: var(--element-neutral-color
 html.ob-shell .dial .tk2 { stroke: var(--element-active-color); }
 html.ob-shell .dial :is(text, .num, .card) { font-family: var(--global-typography-font-family, "Noto Sans"), sans-serif; }
 html.ob-shell .snd-ctl button { color: #fff; }
+
+/* ---------- the panel's status line: one line in every view ---------- */
+html.ob-shell .sp-status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
+html.ob-shell .sp-status.tight { font-size: 0.9em; letter-spacing: -0.01em; }
+
+/* ---------- inline actions in notes: "Route active: … [Stop navigating] to edit it" ---------- */
+.wx-note.rt-lock { line-height: 1.9; }
+.wx-note button.inline-act, #side .wx-note button.inline-act { display: inline-flex; align-items: center; vertical-align: baseline; height: auto; min-height: 0; width: auto; margin: 0 2px; padding: 1px 10px;
+  border-radius: var(--ob-radius, 4px); border: 1px solid var(--border-outline-color); background: var(--normal-enabled-background-color); color: var(--element-active-color);
+  font: inherit; font-weight: var(--font-weight-semibold, 600); cursor: pointer; }
+.wx-note button.inline-act:hover, #side .wx-note button.inline-act:hover { background: var(--normal-hover-background-color); }
+
+/* the Alarms drawer holds the settings: the active alarms are in the alert menu under the bell (obalerts.js hides their card) */
+html.ob-shell #al-active { display: none; }
