@@ -27,7 +27,7 @@ test("every reading formats its own values and nothing else", () => {
   const get = (k) => READINGS.find((x) => x.key === k).value(row, 1.5);
   assert.equal(get("tws"), "225° SW 12 kn");
   assert.equal(get("mslp"), "1012 hPa · +1.5 /3 h");
-  assert.equal(get("cur"), "1.2 kn toward 090° E");
+  assert.equal(get("cur"), "1.2 kn set 090° E");
   assert.equal(get("subt"), "12.4 °C at 266 m");
   assert.equal(get("wave"), false);
 });
