@@ -682,6 +682,8 @@ Tiles are saved on this computer (up to 500 MB) and reused. The tile servers see
 
 OpenStreetMap is there for completeness, to look at an area you have no charts for. It is drawn over the depth layers with its sea made transparent, so layers underneath can conflict with it. The **World depths** shading is coarse, so in the water it can show as pale areas and lines that don't follow OpenStreetMap's coastline, which is confusing. Where you have no charts, switch **World depths** (and **Detailed depths (ETOPO)** or **World coastline** if they get in the way) off in **Chart › Layers**. TweedPlot does not switch any of them off for you.
 
+**Chart outlines.** Tick **Chart outlines** in **Chart › Layers** to see where each chart's data ends: every chart cell's coverage is outlined with a dashed line in the colour of its usage band (Overview purple, General blue, Coastal green, Approach orange, Harbour red, Berthing pink; the key shows under the tick). It shows at a glance which chart covers a place, where a larger-scale chart takes over, and where you are relying on a smaller-scale chart than you would like. It is off until ticked, and kept between runs.
+
 ## Your boat
 
 TweedPlot shows your own boat from live instruments, or wherever you put it when planning.
@@ -1457,7 +1459,9 @@ The data panel shows the cursor's position, the depth there, and the bearing and
 * Drag the title to put the panel anywhere on the chart (double-click the title to put it back top right). **Follow** makes it ride beside the cursor instead, flipping side near the edges; it has no buttons then (Q puts it away; right-click the chart › **Readout: stay where it is put** takes it back to its place).
 * **Pin it** to keep the values at one place while you move the chart time or look elsewhere: **Shift+Q** pins it where the cursor is, or right-click › **Pin the readout here**. A yellow dot marks the place; **Unpin** (or Shift+Q again) follows the cursor again.
 
-**Magnetic variation diagram.** Right-click the chart › **Magnetic variation diagram here** puts a true north line (25 mm high on your screen at any zoom) on the screen, with the magnetic north vector beside it and the text "Var 19.5°E inc 6′ annually", from the World Magnetic Model (or your instruments near the boat). It is fixed to the screen, not the chart: drag it where you want it, and it turns with the chart and takes the variation of the chart under it. It follows the night palettes. Right-click it › **Remove variation diagram**; right-click the chart › **Move variation diagram here** to relocate it. Its place is kept between runs.
+**Variation is in degrees and minutes.** Everywhere in TweedPlot a magnetic variation is given in degrees and decimal minutes, east or west: 23°33.6′E. On the chart, a magnetic variation area or line is labelled with its variation brought up to this year from the chart's figure and annual change, with the year: "Var 23°33.6′E (2026)" (the IHO's own "varn" label, the chart's figure in decimal degrees for its reference year, isn't drawn). Click it for the chart's figure, its reference year and annual change, today's value, and the World Magnetic Model's value for the same place.
+
+**Magnetic variation diagram.** Right-click the chart › **Magnetic variation diagram here** puts a true north line (25 mm high on your screen at any zoom) on the screen, with the magnetic north vector beside it and the text "Var 19°30.0′E inc 6′ annually", from the World Magnetic Model (or your instruments near the boat). It is fixed to the screen, not the chart: drag it where you want it, and it turns with the chart and takes the variation of the chart under it. It follows the night palettes. Right-click it › **Remove variation diagram**; right-click the chart › **Move variation diagram here** to relocate it. Its place is kept between runs.
 
 ## Settings
 

@@ -749,7 +749,23 @@ impl ChartStore {
         }
         let [far, fln, fpt, lsec, ftx] = self.render_features(&tp, z, &starts);
         let [mbound, rules, rules_ln, fareas] = self.render_marine(&tp, z, bbox);
-        mvt::encode_tile(&[wland, wdepth, wdcnt, depare, unsare, depcnt, far, land, wcoast, fln, soundg, lsec, fpt, ftx, mbound, rules, rules_ln, fareas])
+        let cov = self.render_outlines(&tp, bbox);
+        mvt::encode_tile(&[wland, wdepth, wdcnt, depare, unsare, depcnt, far, land, wcoast, fln, soundg, lsec, fpt, ftx, mbound, rules, rules_ln, fareas, cov])
+    }
+
+    /// The charts' outlines ("cov": `band`): each cell's coverage (S-57 M_COVR), for Chart ›
+    /// Layers › Chart outlines, to see where each chart's data ends and which usage band
+    /// (overview .. berthing) covers a place.
+    fn render_outlines(&self, tp: &TileProj, bbox: [f64; 4]) -> Layer {
+        let mut cov = Layer::new("cov");
+        for (band, _, poly) in self.coverage().intersecting(bbox) {
+            let ring = |l: &geo::LineString<f64>| -> geom::Ring { l.coords().map(|c| [c.x, c.y]).collect() };
+            let lines: Vec<geom::Ring> = std::iter::once(ring(poly.exterior())).chain(poly.interiors().iter().map(ring)).collect();
+            if let Some(tg) = tp.lines(&Geom::Lines(lines)) {
+                cov.add(&tg, &[("band", Value::UInt(*band as u64))]);
+            }
+        }
+        cov
     }
 
     /// Maritime boundaries ("mbound": `kind`, `name`), fishing rule areas ("rules") and

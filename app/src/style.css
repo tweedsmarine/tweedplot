@@ -2533,3 +2533,8 @@ svg.sv-plot text { font-size: 11px; fill: currentColor; }
 .readout.follow .ro-head button, .readout.follow .ro-all, .readout.follow .ro-menu { display: none; }
 .readout.follow.away { visibility: hidden; }
 .env-past-analysis { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-top: 4px; }
+
+/* Chart › Layers › Chart outlines: the usage bands' colours */
+.cov-key { flex-wrap: wrap; gap: 4px 10px; font-size: 11px; padding-left: 26px; }
+.cov-key span { display: inline-flex; align-items: center; gap: 4px; }
+.cov-key span::before { content: ""; width: 14px; border-top: 2px dashed var(--c); }
