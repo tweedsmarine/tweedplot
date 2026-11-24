@@ -623,10 +623,10 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
   // press back to the standard display. A standard category the mariner has changed is "changed"
   // (IMO ECDIS PS 10.5: permanently indicated). Base alone isn't enough to navigate by (S-52).
   // a list beside the view icons; "Standard *" when the standard categories have been changed
-  const disp = side.querySelector(".sp-disp"), dispNote = side.querySelector(".sp-disp-note"), ssDisp = strip.querySelector(".ss-disp");
+  const disp = document.querySelector(".sp-disp"), dispNote = side.querySelector(".sp-disp-note"), ssDisp = strip.querySelector(".ss-disp");
   disp.addEventListener("change", () => window.dispatchEvent(new CustomEvent("racenav-set-dispcat", { detail: { cat: disp.value } })));
   // a list takes two clicks: off the standard display, one button takes it back in one (IMO S-Mode)
-  const stdBtn = side.querySelector(".sp-std");
+  const stdBtn = document.querySelector(".sp-std");
   stdBtn.onclick = () => window.dispatchEvent(new CustomEvent("racenav-set-dispcat", { detail: { cat: "standard" } }));
   window.addEventListener("racenav-dispcat", (e) => {
     const d = e.detail || {};
@@ -636,6 +636,9 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
     if (std) std.textContent = d.cat === "standard" && !d.standard ? "Standard *" : "Standard";
     const note = [d.cat === "standard" && !d.standard ? "Standard changed" : d.cat === "base" ? "Base only: not enough to navigate by" : "", d.dated].filter(Boolean).join(" · ");
     dispNote.textContent = note;
+    // the list's tooltip carries the note too (in the OpenBridge top bar the note row isn't shown)
+    disp.dataset.help ??= disp.title || disp.dataset.tip || "";
+    disp.title = [note, disp.dataset.help].filter(Boolean).join("\n\n");
     dispNote.classList.toggle("warn", d.cat === "base" || !!d.dated);
     disp.classList.toggle("warn", d.cat === "base" || !!d.dated);
     stdBtn.hidden = !d.enabled || (d.cat === "standard" && !!d.standard);

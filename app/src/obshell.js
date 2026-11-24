@@ -108,9 +108,12 @@ export function setupOpenBridgeShell() {
   // the workspaces, always one click away: a switch beside the title (it names the view in use)
   const switcher = VIEWS.slice(0, 4).map(([v, label, icon]) =>
     `<button type="button" class="ob-ws" data-view-select="${v}" title="${label}"><${icon} class="ob-ic"></${icon}><span>${label}</span></button>`).join("");
-  bar.innerHTML = `<div slot="command-button" id="ob-views" role="group" aria-label="Workspace">${switcher}</div>` +
+  // the chart detail (Base, Standard, All) beside them: moved out of the data panel, where it took a row
+  bar.innerHTML = `<div slot="command-button" class="ob-cmd"><div id="ob-views" role="group" aria-label="Workspace">${switcher}</div>` +
+    `<div id="ob-disp" role="group" aria-label="Chart detail"></div></div>` +
     `<div slot="alerts" id="ob-actions"></div><obc-clock slot="clock" show-date></obc-clock>`;
   setupOpenBridgeAlerts(bar.querySelector("#ob-actions"));
+  bar.querySelector("#ob-disp").append(...document.querySelectorAll("#side .sp-disp, #side .sp-std"));
   bar.tall = true; // the taller bar: room for MOB, Drop and the anchor at a safe size
   document.body.prepend(bar);
   const clock = bar.querySelector("obc-clock");
