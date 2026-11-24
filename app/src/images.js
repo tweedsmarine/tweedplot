@@ -97,9 +97,20 @@ export function setupImages(map, { tileUrl, toast }) {
     window.dispatchEvent(new CustomEvent("raster-images", { detail: { shown } }));
   }
 
+  /** Whether an image is drawn in the view (its bounds overlap it, either side of 180°). */
+  function inView(e) {
+    const b = e.bounds;
+    if (!b) return true;
+    const v = map.getBounds();
+    if (b[1] > v.getNorth() || b[3] < v.getSouth()) return false;
+    const w = v.getWest(), east = v.getEast();
+    if (east - w >= 360) return true;
+    return [-360, 0, 360].some((k) => b[0] + k <= east && b[2] + k >= w);
+  }
   function credit() {
-    const credits = mergeYears([...new Set(list.filter((e) => e.visible && !e.missing && e.credit).map((e) => e.credit))]);
-    const kaps = list.some((e) => e.visible && !e.missing && (e.kind === "kap" || (e.kind === "mbtiles" && !e.credit)));
+    const drawn = list.filter((e) => e.visible && !e.missing && inView(e));
+    const credits = mergeYears([...new Set(drawn.filter((e) => e.credit).map((e) => e.credit))]);
+    const kaps = drawn.some((e) => e.kind === "kap" || (e.kind === "mbtiles" && !e.credit));
     const text = [credits.length ? `Imagery: ${credits.join("; ")}.` : "", kaps ? "Raster charts: their publishers." : ""].filter(Boolean).join(" ");
     window.dispatchEvent(new CustomEvent("credit-extra", { detail: { key: "images", text } }));
   }
@@ -553,6 +564,8 @@ export function setupImages(map, { tileUrl, toast }) {
     $("img-s2-search").disabled = big;
   }
   map.on("moveend", showArea);
+  // the credits are for the images in view
+  map.on("moveend", credit);
   $("img-s2-toggle").onclick = () => { $("img-s2").hidden = !$("img-s2").hidden; showArea(); };
 
   const fmtDate = (s) => { const d = new Date(s); return isNaN(d) ? s : d.toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" }); };

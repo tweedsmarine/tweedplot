@@ -2158,6 +2158,10 @@ html[data-view="env"] #side :is(.sp-env-tabs, .env-start-buttons) button:is(.on,
 #side #wxp .wxp-chip.on { background: var(--btn-on); color: #fff; border-color: #fff; }
 /* rows of equal buttons share the width; a button alone on a row takes all of it, so it is not missed */
 #side :is(.sp-views, .sp-env-tabs, .env-start-buttons, .sp-wx-transport) { gap: 4px; }
+/* the chart detail keeps room for its longest name ("Standard"): the view icons give way first */
+#side .sp-viewbar .sp-views { flex: 1 1 auto; min-width: 0; }
+#side .sp-viewbar .sp-views button:not(.wxp-chip) { flex: 1 1 0; width: auto; min-width: 30px; max-width: 52px; padding: 0; }
+#side .sp-viewbar select.sp-disp { flex: 1 0 auto; min-width: 6.6em; }
 #side #side-route-wx { display: block; width: 100%; margin: 4px 0 2px; text-align: center; }
 #side .gf-acts button { min-height: var(--chip-h); padding: 2px 8px; }
 #side .gf-tools button { flex: 1 1 auto; }

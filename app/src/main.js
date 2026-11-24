@@ -958,7 +958,19 @@ listen("chart-ready", ({ payload }) => {
     if (startup.finished) toast("Charts ready", 3000);
   }
   noteChartsReady(payload);
+  creditCharts();
 }).catch((e) => console.error("chart-ready listener:", e));
+/** The charts' credit on the map, from the chart sets in use: LINZ's open data charts only
+ *  while they are drawn (the survey depths and coastal elevation are LINZ's too). */
+async function creditCharts() {
+  let sets;
+  try { sets = await invoke("chart_sets_list"); } catch { return; }
+  const linz = sets.some((x) => x.linz && x.in_use);
+  const enc = sets.some((x) => !x.linz && x.in_use);
+  const text = linz ? (enc ? "Charts: LINZ open data, CC BY 4.0, and ENCs." : "Charts: LINZ, CC BY 4.0.")
+    : enc ? "Charts: ENCs. Depths: LINZ, CC BY 4.0." : "Depths: LINZ, CC BY 4.0.";
+  window.dispatchEvent(new CustomEvent("credit-extra", { detail: { key: "charts", text } }));
+}
 // converting ENC cells the first time: show how far it has got
 listen("chart-status", ({ payload }) => {
   const d = payload?.detail || "";

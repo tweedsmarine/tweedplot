@@ -1868,7 +1868,7 @@ export function setupWeather(map, layers) {
           sk ? srcOf(sk) : null;
         const timeStatus = weatherView === "env" && params && path
           ? dataTimeStatus(loaded.get(path), params, t, allowPastAnalysis) : null;
-        return { key, label, on: !!wx[key], paths: params ? paths : [], path, timeStatus, hasData: params ? paths.length > 0 : !!LAYERS[wx.layer]?.contour };
+        return { key, label, on: !!wx[key], paths: params ? paths : [], path, timeStatus, hasData: params ? paths.length > 0 : loaded.size > 0 && !!LAYERS[wx.layer]?.contour };
       }).filter((o) => o.hasData);
     },
     /** Shade `key` ("none" for no shading) from `path`. */
