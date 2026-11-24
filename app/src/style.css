@@ -2885,3 +2885,9 @@ html[data-palette="iho-night"] {
    overlays are at dusk and night, so the key matches what it explains (theme.js, mappalette.js) */
 html[data-palette="dusk"] .data-ramp { filter: brightness(0.75) saturate(0.85); }
 html[data-palette="iho-night"] .data-ramp { filter: brightness(0.45) saturate(0.8); }
+/* the wind dial at dusk and night: the close-hauled sectors and the port/starboard letters use
+   OpenBridge's base colours, which are the same in every palette, so they are softened here */
+html[data-palette="dusk"] .dial :is(.close-stbd, .close-port) { opacity: 0.4; }
+html[data-palette="iho-night"] .dial :is(.close-stbd, .close-port) { opacity: 0.25; }
+html[data-palette="dusk"] .wdial .ps { opacity: 0.8; }
+html[data-palette="iho-night"] .wdial .ps { opacity: 0.55; }
