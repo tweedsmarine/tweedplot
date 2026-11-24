@@ -738,11 +738,13 @@ impl NzBathy {
     }
 }
 
-/// Contour interval (m) at a zoom.
+/// Contour interval (m) at a zoom; none from zoom 10, where the grid fades out under the
+/// charts. Its depths are whole metres on a 250 m grid: on a flat seabed a contour there runs
+/// along the grid's rows and columns, and drew long stepped lines across the chart (Tasman Bay
+/// at 1:150 000, 47–51 m everywhere), while the chart's own contours are the ones to read.
 fn contour_step(z: u8) -> f32 {
     match z {
-        12.. => 50.0,
-        10 | 11 => 100.0,
+        10.. => f32::INFINITY,
         8 | 9 => 200.0,
         6 | 7 => 500.0,
         _ => 1000.0,
@@ -867,6 +869,12 @@ mod tests {
         assert_eq!(store_value(f32::NAN, None), NODATA);
         assert_eq!(store_value(-3.4e38, Some(-3.4e38)), NODATA);
         assert_eq!(store_value(30000.0, None), NODATA);
+    }
+
+    #[test]
+    fn no_contours_where_the_charts_take_over() {
+        assert!(contour_step(10).is_infinite() && contour_step(14).is_infinite());
+        assert_eq!(contour_step(9), 200.0);
     }
 
     #[test]
