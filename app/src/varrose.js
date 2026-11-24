@@ -81,7 +81,7 @@ export function setupVarDiagram(map, { getVariation, getAnnualChange }) {
       magHalo.setAttribute("points", pts(mShape));
       grab2.setAttribute("points", pts([o, m]));
       const ch = getAnnualChange?.(at);
-      text = `Var ${fmtVariation(v, 1)}${Number.isFinite(ch) ? ` ${ch >= 0 ? "inc" : "dec"} ${Math.abs(ch * 60).toFixed(0)}′ annually` : ""}`;
+      text = `Var ${fmtVariation(v)}${Number.isFinite(ch) ? ` ${ch >= 0 ? "inc" : "dec"} ${Math.abs(ch * 60).toFixed(0)}′ annually` : ""}`;
     } else {
       for (const p of [magLine, magHalo, grab2]) p.setAttribute("points", "");
     }

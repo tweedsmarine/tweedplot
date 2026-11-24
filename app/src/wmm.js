@@ -212,7 +212,10 @@ export function magneticVariation(lat, lon, date = new Date(), heightKm = 0) {
   };
 }
 
-/** "3.2°E" / "14.1°W". */
-export function fmtVariation(v, digits = 1) {
-  return `${Math.abs(v).toFixed(digits)}°${v < 0 ? "W" : "E"}`;
+/** A variation in degrees and decimal minutes, as everywhere in the app: "3°14.4′W", "19°02.4′E". */
+export function fmtVariation(v) {
+  const a = Math.abs(v);
+  let d = Math.floor(a), m = Math.round((a - d) * 600) / 10;
+  if (m >= 60) { d += 1; m -= 60; }
+  return `${d}°${m.toFixed(1).padStart(4, "0")}′${v < 0 ? "W" : "E"}`;
 }

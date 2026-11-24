@@ -1,4 +1,5 @@
-// Chart › Layers: show or hide the world depth layers and the world coastline.
+// Chart › Layers: show or hide the world depth layers, the world coastline and the charts'
+// outlines (off until ticked).
 // (High-resolution depths has its own checkbox above.) The choice is remembered. The map
 // re-enables chart layers when the chart store opens, so apply() runs again after that.
 
@@ -25,12 +26,17 @@ export function setupLayerVisibility(map, { ready }) {
     vis("wdcnt", etopo);
     vis("chart-world-land", coast);
     vis("chart-wcoast", coast);
+    const outlines = hidden["lv-outlines"] === false;
+    vis("chart-outlines", outlines);
+    const key = document.getElementById("cov-key");
+    if (key) key.hidden = !outlines;
   }
 
-  for (const id of ["lv-wdepth", "lv-etopo", "lv-wcoast"]) {
+  for (const id of ["lv-wdepth", "lv-etopo", "lv-wcoast", "lv-outlines"]) {
     const box = document.getElementById(id);
     if (!box) continue;
-    box.checked = !hidden[id];
+    // (the outlines are off until ticked: shown only when stored as not hidden)
+    box.checked = id === "lv-outlines" ? hidden[id] === false : !hidden[id];
     box.onchange = () => { hidden[id] = !box.checked; save(); apply(); };
   }
   apply();
