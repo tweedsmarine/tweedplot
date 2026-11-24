@@ -2720,3 +2720,40 @@ html.ob-shell .ly-group h4 { text-transform: none; letter-spacing: 0; font-size:
 /* OpenBridge writes headings and labels in sentence case: no capitals made by CSS in the drawers */
 html.ob-shell #drawer * { text-transform: none; }
 html.ob-shell #drawer :is(h3, h4, h5, h6, summary, th, legend) { letter-spacing: normal; }
+
+/* toggle switches (obc-toggle-switch): on/off settings that act at once (obshell.js TOGGLES, and the
+   Environment panel's overlays); the knob slides right and the track fills with the selected colour */
+html.ob-shell :is(input.ob-toggle, #wxp-over .wxp-row > input[type="checkbox"]) {
+  width: 34px; height: 20px; border-radius: 10px; border: 2px solid var(--element-neutral-color); background: var(--normal-enabled-background-color); margin-right: 8px; }
+html.ob-shell :is(input.ob-toggle, #wxp-over .wxp-row > input[type="checkbox"])::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--element-neutral-color);
+  -webkit-mask: none; mask: none; transition: transform .12s; }
+html.ob-shell :is(input.ob-toggle, #wxp-over .wxp-row > input[type="checkbox"]):checked { background: var(--selected-enabled-background-color); border-color: var(--selected-enabled-background-color); }
+html.ob-shell :is(input.ob-toggle, #wxp-over .wxp-row > input[type="checkbox"]):checked::after { background: var(--on-selected-active-color); transform: translateX(14px); inset: auto; top: 2px; left: 2px; }
+html.ob-shell :is(input.ob-toggle, #wxp-over .wxp-row > input[type="checkbox"]):disabled { border-color: var(--element-disabled-color); }
+html.ob-shell :is(input.ob-toggle, #wxp-over .wxp-row > input[type="checkbox"]):disabled::after { background: var(--element-disabled-color); }
+/* the Alarms drawer's active list: OpenBridge alert items */
+html.ob-shell #al-active.ob-alert-list { padding: 0; margin: 4px 0 8px; display: flex; flex-direction: column; gap: 4px; }
+html.ob-shell #al-active.ob-alert-list > li.ob-al { display: grid; grid-template-columns: 28px 1fr; grid-template-areas: "i t" ". a"; gap: 2px 8px; align-items: start;
+  padding: 8px 8px 8px 6px; border: 1px solid var(--border-outline-color); border-left: 4px solid var(--alert-warning-color); border-radius: var(--ob-radius); background: var(--container-global-color); }
+html.ob-shell #al-active .ob-al-alarm { border-left-color: var(--alert-alarm-color) !important; }
+html.ob-shell #al-active .ob-al-caution { border-left-color: var(--alert-caution-color) !important; }
+html.ob-shell #al-active .ob-al.acked { border-left-color: var(--border-outline-color) !important; }
+html.ob-shell #al-active .ob-al > obc-alert-icon { grid-area: i; width: 24px; height: 24px; }
+html.ob-shell #al-active .ob-al-text { grid-area: t; display: flex; flex-direction: column; min-width: 0; cursor: pointer; }
+html.ob-shell #al-active .ob-al-text b { font-weight: var(--font-weight-semibold, 570); color: var(--element-active-color); }
+html.ob-shell #al-active .ob-al-text small { color: var(--element-neutral-color); font-size: 12px; }
+html.ob-shell #al-active .ob-al-time { color: var(--element-inactive-color); font-size: 11px; }
+html.ob-shell #al-active .ob-al-acts { grid-area: a; display: flex; gap: 6px; }
+html.ob-shell #al-active .ob-al-acts:empty { display: none; }
+html.ob-shell #al-active .ob-al-acts button { flex: none; width: auto; padding: 0 14px; }
+html.ob-shell #al-active.ob-alert-list > li.empty { padding: 4px 0; color: var(--element-neutral-color); }
+/* menus (right-click, Library and others) as obc-context-menu: outlined, flat items, OpenBridge hover;
+   windows and questions as OpenBridge cards */
+html.ob-shell .ctx { border: 1px solid var(--border-outline-color); border-radius: var(--ob-radius); padding: 4px 0; box-shadow: 0 4px 16px rgba(0, 0, 0, .25); }
+html.ob-shell .ctx button { border-radius: 0; padding: 0 16px; min-height: 36px; font-weight: var(--font-weight-regular, 370); color: var(--element-active-color); }
+html.ob-shell .ctx button:hover:not(:disabled) { background: var(--flat-hover-background-color); }
+html.ob-shell .ctx button:disabled { color: var(--element-disabled-color); }
+html.ob-shell .ctx hr { border: 0; border-top: 1px solid var(--border-divider-color); margin: 4px 0; }
+html.ob-shell :is(.float-win, .ask, .readout) { border: 1px solid var(--border-outline-color); border-radius: var(--ob-radius); }
+html.ob-shell .ask h3, html.ob-shell .float-win :is(h3, h4) { text-transform: none; letter-spacing: 0; }

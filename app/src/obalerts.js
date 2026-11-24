@@ -61,7 +61,7 @@ export function setupOpenBridgeAlerts(slot) {
     const list = sorted();
     menu.canAckAll = list.some((a) => !a.acked);
     menu.innerHTML = list.map((a, i) => `<obc-alert-menu-item data-i="${i}"
-        status="${a.acked ? "acknowledged" : "unacknowledged"}" time="${hhmm(a.since)}"
+        status="${a.acked ? "acknowledged" : "unacknowledged"}" time="${hhmm(a.since)}" size="${a.detail ? "double-line" : "single-line"}"
         primaryactionstate="${a.acked ? "none" : "enabled"}" secondaryactionstate="${a.dismiss ? "enabled" : "none"}"
         secondaryactionlabel="${esc(a.dismissLabel)}">
         ${icon(a, "alert-icon")}<span slot="title">${esc(a.text)}</span>${a.detail ? `<span slot="description">${esc(a.detail)}</span>` : ""}
@@ -74,8 +74,29 @@ export function setupOpenBridgeAlerts(slot) {
     });
   }
 
+  // the Alarms drawer's list of active alarms: OpenBridge alert icons and buttons, laid out for the
+  // drawer's width (the alert menu's items need more room than the drawer has)
+  const drawerList = document.getElementById("al-active");
+  function renderDrawer(list) {
+    if (!drawerList) return;
+    drawerList.classList.add("ob-alert-list");
+    drawerList.innerHTML = list.length ? list.map((a, i) => `<li data-i="${i}" class="ob-al ob-al-${TYPE[a.level] ?? "warning"}${a.acked ? " acked" : ""}">
+        ${icon(a, "x").replace(' slot="x"', "")}
+        <div class="ob-al-text"><b>${esc(a.text)}</b>${a.detail ? `<small>${esc(a.detail)}</small>` : ""}
+          <span class="ob-al-time">${hhmm(a.since)}${a.held ? " · dismissed for a minute" : a.acked ? " · acknowledged" : ""}</span></div>
+        <div class="ob-al-acts">${a.acked ? "" : '<button type="button" data-act="ack">ACK</button>'}${a.dismiss ? `<button type="button" data-act="dismiss">${esc(a.dismissLabel)}</button>` : ""}</div>
+      </li>`).join("") : '<li class="empty">No alarms or warnings.</li>';
+    drawerList.querySelectorAll("li.ob-al").forEach((el) => {
+      const a = list[+el.dataset.i];
+      el.querySelector('[data-act="ack"]')?.addEventListener("click", () => a.ack());
+      el.querySelector('[data-act="dismiss"]')?.addEventListener("click", () => a.dismiss?.());
+      el.querySelector(".ob-al-text").addEventListener("click", () => a.click?.());
+    });
+  }
+
   function render() {
     const list = sorted();
+    renderDrawer(list);
     const unacked = list.filter((a) => !a.acked);
     const top = list[0];
     btn.nAlerts = list.length;

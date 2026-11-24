@@ -68,6 +68,22 @@ const TOOL_ICONS = {
   "readout-btn": ["obi-table"], "targets-btn": ["obi-ais-target-activated-iec"], "clear-track": ["obi-delete"], "shot-btn": ["obi-camera"],
   "side-btn": ["obi-panel-right-open"], "tools-btn": ["obi-panel-left-open"],
 };
+// On/off settings that take effect at once are OpenBridge toggle switches; check boxes stay for
+// choosing items in a list (chart layers, sources, filters, names on targets)
+const TOGGLES = [
+  // alarms
+  "al-shallow", "al-contour", "al-air", "al-xte", "al-arrive", "al-poslost", "ais-cpa-on", "ais-ignore-moored", "ais-net-alarms", "mar-alarm", "env-use-past",
+  // weather, routes, routing
+  "gf-auto", "stn-show", "rt-great-circle", "rt-current", "rt-hovertime", "set-avoid-dangers", "set-avoid-farms", "rt-barriers",
+  // targets, library
+  "ais-show", "of-only", "lib-show", "trk-time", "bar-hatch", "evt-auto",
+  // chart: display settings, own-ship lines, online maps, own soundings
+  "set-shallow-dangers", "set-shallow-pattern", "set-contour-labels", "set-sectors", "set-full-light-lines", "set-featnames", "set-soundings",
+  "set-info", "set-text-important", "set-text-other", "set-datesym", "set-hdg-line", "set-cog-line", "set-beam-line", "set-setdrift", "set-own-rings",
+  "inst-arrows", "wm-on", "wm-cached", "pb-live", "pb-check",
+  // settings
+  "boat-lay-show", "boat-lay-cone-show", "set-rec-all", "set-anchor-btn", "nmea-failover-enabled",
+];
 const VIEW_NAMES = { nav: "Navigation", plan: "Planning", env: "Environment", inst: "Instruments", nmea: "Live data" };
 // OpenBridge palettes and TweedPlot's colour modes (Night (red) and (green) are TweedPlot's own: Settings › Display)
 const TO_OBC = { bright: "bright", day: "day", dusk: "dusk", "iho-night": "night", "night-red": "night", "night-green": "night" };
@@ -150,6 +166,12 @@ export function setupOpenBridgeShell() {
     if (!b) continue;
     b.querySelector("svg")?.remove();
     b.insertAdjacentHTML("afterbegin", names.map((n, i) => `<${n} class="ob-ic${names.length > 1 ? (i ? " ob-off" : " ob-on") : ""}"></${n}>`).join(""));
+  }
+
+  // ---------- toggle switches ----------
+  for (const id of TOGGLES) {
+    const c = $(id);
+    if (c?.type === "checkbox") { c.classList.add("ob-toggle"); c.setAttribute("role", "switch"); }
   }
 
   // ---------- page name: the view ----------
