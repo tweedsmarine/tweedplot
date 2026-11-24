@@ -1187,7 +1187,7 @@ The Environment icon at the top of the data panel (or **Chart › Layers › Wea
 | Albacore | 16–20 | 18 | Juvenile albacore (the fish NZ trollers catch) across the South Pacific in summer surface water of 16–21 °C (FAO review, Murray); thermal preference 10–20 °C (ICCAT) |
 | Southern bluefin | 14–18 | 16 | Large fish tagged in NZ waters in winter at 13.6–18.3 °C surface temperature (PLOS One 2012) |
 | Yellowfin | 19.5–25.5 | 21 | Preferred 20.3–25.5 °C (ICCAT review 2022); arrive in NZ when offshore water reaches about 19–20 °C |
-| Bigeye (at 250 m) | 10–14 | 12 | By day at 200–400 m in 8–14 °C water (Howell et al. 2010); best longline catches at 12–14 °C around 240–280 m (Indian Ocean survey). Shown on **Sea temperature at depth**, 250 m: needs Copernicus or HYCOM with depths |
+| Bigeye (at 250 m) | 10–14 | 12 | By day at 200–400 m in 8–14 °C water (Howell et al. 2010); best longline catches at 12–14 °C around 240–280 m (Indian Ocean survey). Shown on **Sea temperature at depth**, 250 m: needs Copernicus or HYCOM with depths. With none loaded, the preset offers to get Copernicus at 250 m for the area on the chart (2–10 days ahead) and is applied once it has loaded |
 | Skipjack | 19–28 | 22 | 19.3–27.9 °C (ICCAT review 2022); major fisheries in 19–23 °C (NOAA) |
 | Striped marlin | 18–25 | 21 | Prefer 20–25 °C (NOAA); 18–20 °C is usual NZ marlin water, with good seasons above 21 °C |
 | Mahi-mahi | 24–29 | 26 | Catch rates highest at 24–29 °C (published studies summarised by Heuer et al. 2021) |

@@ -434,11 +434,34 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     const sp = k === "s" ? SPECIES.find((x) => x[0] === n) : null;
     const c = k === "b" ? PRESETS[n] : k === "u" ? st.presets[n] : sp ? speciesConfig(sp) : null;
     if (c && weather.applyConfig(c) === false) {
-      activity.start(`Preset ${n}`).fail(c.layer === "subt"
-        ? "No sea temperature at depth in the loaded files: get Copernicus or HYCOM with depths in Get data."
-        : "No sea temperature in the loaded files: get one in Get data (MUR, ACSPO, Geo-Polar…).");
+      if (c.layer === "subt") { offerDepths(n, c); return; }
+      activity.start(`Preset ${n}`).fail("No sea temperature in the loaded files: get one in Get data (MUR, ACSPO, Geo-Polar…).");
     }
   };
+  /** A preset needing temperature at depth with none loaded: offer to get Copernicus at that depth for the
+   *  chart view (gribdl.js listens for racenav-get-depths) and apply the preset once it is loaded. */
+  async function offerDepths(name, c) {
+    const depth = c.depth ?? 100;
+    const b = map.getBounds();
+    const w = b.getWest(), e = b.getEast(), so = b.getSouth(), no = b.getNorth();
+    const big = e - w > 20 || no - so > 20;
+    const v = await ask({
+      title: `${name}: temperature at ${depth} m`,
+      note: `None of the loaded files has sea temperature at depth. Get it from the Copernicus ocean model (free, no account) for ${big ? "a 20° box in the middle of the chart" : "the area on the chart now"}: sea temperature, and temperature, salinity and current at ${depth} m. The preset is applied once it has loaded.`,
+      fields: [{ key: "days", label: "Days ahead", type: "select", value: "3", options: [["2", "2 days"], ["3", "3 days"], ["5", "5 days"], ["10", "10 days"]] }],
+      ok: "Get it",
+    });
+    if (!v) return;
+    let area = [w, so, e, no];
+    if (big) {
+      const cx = (w + e) / 2, cy = (so + no) / 2;
+      area = [cx - 10, Math.max(-80, cy - 10), cx + 10, Math.min(80, cy + 10)];
+    }
+    window.addEventListener("racenav-depths-loaded", () => {
+      if (weather.applyConfig(c) === false) activity.start(`Preset ${name}`).fail("Still no sea temperature at depth: the download didn't finish (see the activity log).");
+    }, { once: true });
+    window.dispatchEvent(new CustomEvent("racenav-get-depths", { detail: { area, depth, days: Number(v.days) || 3, label: `${name}: Copernicus at ${depth} m` } }));
+  }
   $("wxp-psave").onclick = async () => {
     const v = await ask({ title: "Save a preset", note: "The layer, sources, overlays and filter shown now, under a name.", ok: "Save",
       fields: [{ key: "name", label: "Name", placeholder: "e.g. Tuna fronts" }],
