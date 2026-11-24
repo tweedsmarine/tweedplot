@@ -28,7 +28,7 @@ const CURSOR = () => R("cursor", "Cursor", ["CPOS", "CBRG", "CRNG", "CSND"], 2);
 export const WEATHER_SECTIONS = {
   weatherTime: "Chart time",
   weather: "Weather layers and filters",
-  gribPoint: "GRIB data at the cursor",
+  // ("GRIB data at the cursor" was here: it is the readout on the chart now, readout.js)
 };
 export const weatherSection = (kind) => ({ id: kind, kind, title: WEATHER_SECTIONS[kind] });
 
@@ -56,9 +56,9 @@ export const PRESETS = {
     fish: () => [weatherSection("weatherTime"), CURSOR()],
   },
   env: {
-    cruise: () => [weatherSection("weatherTime"), weatherSection("gribPoint"), weatherSection("weather")],
-    race: () => [weatherSection("weatherTime"), weatherSection("gribPoint"), weatherSection("weather")],
-    fish: () => [weatherSection("weatherTime"), weatherSection("gribPoint"), weatherSection("weather")],
+    cruise: () => [weatherSection("weatherTime"), weatherSection("weather")],
+    race: () => [weatherSection("weatherTime"), weatherSection("weather")],
+    fish: () => [weatherSection("weatherTime"), weatherSection("weather")],
   },
 };
 
@@ -163,7 +163,7 @@ export function upgrade(data) {
       });
     }
     if (oldVersion < 4 && view === "plan") {
-      data.layouts[k] = [weatherSection("weather"), weatherSection("gribPoint"), ...data.layouts[k]];
+      data.layouts[k] = [weatherSection("weather"), ...data.layouts[k]];
     }
     if (oldVersion < 5 && data.layouts[k].some((sec) => sec?.kind === "weather") && !data.layouts[k].some((sec) => sec?.kind === "weatherTime")) {
       const i = data.layouts[k].findIndex((sec) => sec?.kind === "weather");

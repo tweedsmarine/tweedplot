@@ -256,6 +256,7 @@ details.dcard.flash { animation: plan-flash 1.6s ease-out; }
 #haul-btn::after { content: "Haul"; }
 #pb-rec::after { content: "Record"; }
 #pb-tb::after { content: "Sndgs"; }
+#readout-btn::after { content: "Readout"; }
 #targets-btn::after { content: "Targets"; }
 #clear-track::after { content: "Clear"; }
 #shot-btn::after { content: "Capture"; }
@@ -1146,7 +1147,6 @@ html.no-map #zoom-btns { display: none; }
 .wxp-compare { padding: 0 calc(1.5 * var(--u)) calc(1 * var(--u)); color: var(--tile-ink); }
 .wxp-compare > summary { cursor: pointer; }
 .wxp-compare-table { overflow-x: auto; }
-#side-grib-point #wx-point th { color: var(--tile-quiet); }
 #wxp .wxp-time { padding: 2px 0; }
 #wxp .wx-mini { position: static; }
 #wxp details { border-top: 1px solid var(--line); padding: 3px 0; }
@@ -1156,12 +1156,6 @@ html.no-map #zoom-btns { display: none; }
 #wxp .wxp-row .wx-note { margin-left: auto; }
 #wxp .wxp-presets { display: flex; gap: 4px; margin-top: 4px; }
 #wxp .wxp-presets select { flex: 1; min-width: 0; }
-#side-grib-point .wxp-point { padding: calc(1 * var(--u)) calc(1.5 * var(--u)); }
-#side-grib-point .wxp-point-context { margin-bottom: 4px; color: var(--tile-quiet); font-size: calc(2.5 * var(--u)); overflow-wrap: anywhere; }
-#side-grib-point .wxp-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; font-size: calc(3 * var(--u)); font-variant-numeric: tabular-nums; }
-#side-grib-point .wxp-grid b { text-align: right; }
-#side-grib-point .wxp-grid span { color: var(--tile-quiet); }
-#side-grib-point .wxp-warn:not(:empty) { margin-top: 4px; padding: 4px; background: #4a2d0b; color: #ffcf82; font-weight: 700; }
 #wxp .seafilter, #side-wx-clock .seafilter { margin-top: 4px; }
 #wxp .seafilter .filter-actions, #side-wx-clock .seafilter .filter-actions { flex-wrap: nowrap; }
 :is(#wxp, #side-wx-clock) .seafilter .filter-actions button { flex: 1 1 0; min-width: 0; min-height: 28px; padding: 3px 2px; background: #22343f; color: var(--tile-ink); border: 1px solid #6c8490; }
@@ -1542,8 +1536,6 @@ html:not([data-use="fish"]) .tb-fish { display: none; }
 kbd { display: inline-block; min-width: 1.4em; padding: 0 5px; border: 1px solid var(--line, #9aa); border-bottom-width: 2px; border-radius: 4px; font: inherit; font-size: 12px; text-align: center; background: var(--panel-solid, #fff); }
 .keys-close { padding: 0 8px; }
 /* weather panel: values borrowed from another loaded file (wxpanel.js) */
-#side-grib-point .wxp-from { font-size: 0.75em; margin-left: 2px; }
-#side-grib-point .wxp-srcs { display: flex; flex-direction: column; margin-top: 3px; font-size: calc(2.7 * var(--u)); color: var(--tile-quiet); }
 #wxp-snap svg.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; vertical-align: -3px; }
 /* night cursor near the window edges, drawn by the page (nightcursor.js) */
 /* :not(#…) only lifts the specificity above every night cursor rule, ids and all, so no image is left
@@ -1936,12 +1928,7 @@ html[data-view="env"] #side #wxp .wxp-row { min-height: 28px; }
 html[data-view="env"] #side #wxp .wxp-body :is(button, select),
 html[data-view="env"] #side #wxp .seafilter .filter-actions button { min-height: 28px; }
 html[data-view="env"] #side #wxp details { padding: 1px 0; }
-html[data-view="env"] #side #side-grib-point .wxp-point { padding: 2px 6px; }
-html[data-view="env"] #side #side-grib-point .wxp-grid { gap: 2px 6px; }
 html[data-view="env"] #side .env-seabed label { padding: 2px 0; }
-@container (min-width: 360px) {
-  html[data-view="env"] #side-grib-point .wxp-grid { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; }
-}
 
 /* the cursor readout, in the panel above the alerts (or on the line under the chart) */
 .sp-cursor { flex: none; padding: calc(0.6 * var(--u)) calc(1.5 * var(--u)); border-top: 1px solid #2c3d48; min-height: calc(3.4 * var(--u)); }
@@ -2512,3 +2499,37 @@ svg.sv-plot .grid { stroke: rgba(127, 127, 127, 0.25); stroke-width: 1; }
 svg.sv-plot text { font-size: 11px; fill: currentColor; }
 .sv-key i { display: inline-block; width: 10px; height: 10px; border: 1px solid #444; border-radius: 50%; vertical-align: -1px; margin: 0 2px; }
 .ask .ask-note { white-space: pre-line; }
+
+/* the readout (readout.js): the GRIBs at the cursor, over the chart */
+.readout { position: absolute; top: 12px; right: 12px; z-index: 5; min-width: 220px; max-width: min(360px, calc(100% - 24px)); max-height: calc(100% - 24px);
+  display: flex; flex-direction: column; box-sizing: border-box; padding: 4px 8px 5px; border-radius: 6px; background: var(--panel, #fff); color: var(--ink, #1d2a33);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .3); font-size: 13px; }
+.readout[hidden] { display: none; }
+.readout .ro-head { display: flex; align-items: center; gap: 4px; margin-bottom: 3px; cursor: move; }
+.readout .ro-title { flex: 1; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.readout .ro-head button { flex: none; width: auto; padding: 1px 7px; font-size: 12px; min-height: 22px; }
+.readout .ro-title { white-space: nowrap; }
+.readout .ro-head button.on { background: var(--accent, #0b6e99); color: #fff; }
+.readout .ro-body { overflow: auto; min-height: 0; }
+.readout .ro-grid { display: grid; grid-template-columns: auto 1fr; column-gap: 10px; row-gap: 1px; }
+.readout .ro-k { color: var(--quiet, #5b6b75); white-space: nowrap; }
+.readout .ro-v { font-weight: 700; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.readout .ro-sub { font-size: 11px; font-weight: 400; padding-left: 10px; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+.readout .ro-v.ro-sub { font-weight: 600; max-width: none; }
+.readout .ro-all { margin-top: 4px; padding: 1px 8px; font-size: 11px; }
+.readout .ro-srcs { margin-top: 3px; font-size: 10px; color: var(--quiet, #5b6b75); display: flex; flex-direction: column; }
+.readout .ro-foot { margin-top: 3px; font-size: 10px; color: var(--quiet, #5b6b75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.readout .ro-note { font-size: 12px; color: var(--quiet, #5b6b75); }
+.readout .ro-menu { margin-top: 5px; border-top: 1px solid var(--line, #d0d8de); padding-top: 4px; overflow: auto; max-height: 50vh; }
+.readout .ro-menu[hidden] { display: none; }
+.readout .ro-menu-h { font-weight: 600; font-size: 12px; margin-bottom: 2px; }
+.readout .ro-opt { display: flex; align-items: center; gap: 4px; font-size: 12px; padding: 1px 0; }
+.readout .ro-cmp { margin-left: auto; font-size: 11px; color: var(--quiet, #5b6b75); display: flex; align-items: center; gap: 2px; }
+.readout .ro-menu-foot { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
+.readout .ro-menu-foot button, .readout .ro-all { flex: none; width: auto; }
+.readout .ro-menu-foot button { padding: 1px 10px; font-size: 12px; }
+/* riding beside the cursor: no controls (it can't be clicked), out of the way of the mouse */
+.readout.follow { left: 0 !important; top: 0 !important; right: auto !important; bottom: auto !important; pointer-events: none; opacity: .94; }
+.readout.follow .ro-head button, .readout.follow .ro-all, .readout.follow .ro-menu { display: none; }
+.readout.follow.away { visibility: hidden; }
+.env-past-analysis { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-top: 4px; }

@@ -46,6 +46,8 @@ export const KEYS = [
   { group: "Chart", keys: "M", label: "Measure (ruler); Esc stops", btn: "ruler-btn", map: true, run: click("ruler-btn") },
   { group: "Chart", keys: "V", label: "EBL/VRM from the boat (click fixes it, Esc cancels)", btn: "ebl-btn", map: true, run: click("ebl-btn") },
   { group: "Chart", keys: "T", label: "Target list", btn: "targets-btn", run: click("targets-btn") },
+  { group: "Chart", keys: "Q", label: "Readout of the GRIBs at the cursor on or off", btn: "readout-btn", map: true, run: click("readout-btn") },
+  { group: "Chart", keys: "Shift+Q", label: "Pin the readout where the cursor is (again: follow the cursor)", map: true, run: (c) => c.readoutPin?.() },
   { group: "Chart", keys: "N", label: "Colours: day, dusk, night (IHO), night red, night green", btn: "palette-btn", run: click("palette-btn") },
   { group: "Chart", keys: "Space", label: "Live or paused", btn: "sk-live", run: click("sk-live") },
 

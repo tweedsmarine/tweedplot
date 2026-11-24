@@ -41,7 +41,8 @@ test("Planning starts with chart time, while detailed weather sections remain op
   assert.deepEqual(data.layouts["plan.cruise"].slice(1), original);
   assert.deepEqual(data.layouts["nav.cruise"], original);
   const arranged = [data.layouts["plan.cruise"][1], { kind: "gribPoint" }, data.layouts["plan.cruise"][0], { kind: "weather" }, { kind: "gribPoint" }];
-  assert.deepEqual(clean(arranged, ITEMS).map((s) => s.kind), ["readings", "gribPoint", "weatherTime", "weather"]);
+  // the cursor section is gone (the readout on the chart took its place): dropped from old layouts
+  assert.deepEqual(clean(arranged, ITEMS).map((s) => s.kind), ["readings", "weatherTime", "weather"]);
 });
 
 test("forecast time is added once beside existing weather without changing custom layouts", () => {

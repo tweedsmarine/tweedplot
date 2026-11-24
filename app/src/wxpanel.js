@@ -34,38 +34,6 @@ export function speciesConfig([, layer, depth, blo, bhi, tg]) {
     filter: { lo: Math.floor(blo) - 4, hi: Math.ceil(bhi) + 4, tg, blo, bhi, set: true },
   };
 }
-const DIRS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
-const compass = (d) => DIRS[Math.round((((d % 360) + 360) % 360) / 22.5) % 16];
-const deg3 = (d) => String(Math.round(d) % 360).padStart(3, "0");
-
-/** Readout rows: label, the GRIB parameters that supply it, and how to print the point values. */
-const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-
-const ROWS = [
-  ["Wind", ["WindU", "WindSpeed"], (r) => r.tws != null && `${deg3(r.twd)}° ${compass(r.twd)} ${r.tws.toFixed(0)} kn`, "tws"],
-  ["Gusts", ["Gust"], (r) => r.gust != null && `${r.gust.toFixed(0)} kn`, "gust"],
-  ["Waves", ["WaveHeight"], (r) => r.wave != null && `${r.wave.toFixed(1)} m${r.wavedir != null ? ` from ${compass(r.wavedir)}` : ""}`, "wave"],
-  ["Wave period", ["WavePeriod"], (r) => r.period != null && `${r.period.toFixed(0)} s`, "period"],
-  ["Pressure", ["Mslp"], (r, trend) => r.mslp != null && `${r.mslp.toFixed(0)} hPa${trend != null ? ` · ${trend >= 0 ? "+" : ""}${trend.toFixed(1)} /3 h` : ""}`, "mslp"],
-  ["Air temp", ["AirTemp"], (r) => r.temp != null && `${r.temp.toFixed(1)} °C`, "temp"],
-  ["Rain", ["Rain"], (r) => r.rain != null && `${r.rain.toFixed(1)} mm/h`, "rain"],
-  ["Sea temp", ["SeaTemp"], (r) => r.sst != null && `${r.sst.toFixed(1)} °C`, "sst"],
-  ["Sea temp error", ["SeaTempError"], (r) => r.sst_err != null && `±${r.sst_err.toFixed(2)} °C`, "sst_err"],
-  ["Sea temp (sat.)", ["SkinTemp"], (r) => r.skin != null && `${r.skin.toFixed(1)} °C`, "skin"],
-  ["Temp at depth", ["SubTemp"], (r) => r.subt != null && `${r.subt.toFixed(1)} °C${r.depth != null ? ` at ${Math.abs(r.depth).toFixed(0)} m` : ""}`, "subt"],
-  ["Salinity", ["Salinity"], (r) => r.sss != null && `${r.sss.toFixed(2)} PSU`, "sss"],
-  ["Salinity at depth", ["SubSalinity"], (r) => r.subs != null && `${r.subs.toFixed(2)} PSU${r.depth != null ? ` at ${Math.abs(r.depth).toFixed(0)} m` : ""}`, "subs"],
-  ["Current at depth", ["SubCurrentU"], (r) => r.subcur != null && `${r.subcur.kn.toFixed(1)} kn toward ${deg3(r.subcur.set)}° ${compass(r.subcur.set)}${r.depth != null ? ` at ${Math.abs(r.depth).toFixed(0)} m` : ""}`, "subcur"],
-  ["Chlorophyll", ["Chlorophyll"], (r) => r.chl != null && `${r.chl.toFixed(2)} mg/m³`, "chl"],
-  ["Mixed layer", ["MixedLayer"], (r) => r.mld != null && `${Math.round(r.mld)} m`, "mld"],
-  ["Phytoplankton", ["Phytoplankton"], (r) => r.phyc != null && `${r.phyc.toFixed(2)} mmol/m³`, "phyc"],
-  ["Primary production", ["PrimaryProduction"], (r) => r.nppv != null && `${r.nppv.toFixed(1)} mg C/m³/d`, "nppv"],
-  ["Oxygen", ["Oxygen"], (r) => r.o2 != null && `${Math.round(r.o2)} mmol/m³`, "o2"],
-  ["pH", ["Ph"], (r) => r.ph != null && r.ph.toFixed(3), "ph"],
-  ["Sea surface height", ["SeaLevel"], (r) => r.ssh != null && `${r.ssh >= 0 ? "+" : ""}${r.ssh.toFixed(2)} m`, "ssh"],
-  ["Sea ice", ["SeaIce"], (r) => r.ice != null && `${Math.round(r.ice)} %`, "ice"],
-  ["Current", ["CurrentU"], (r) => r.cur && `${r.cur.kn.toFixed(1)} kn toward ${deg3(r.cur.set)}° ${compass(r.cur.set)}`, "cur"],
-];
 
 export function setupWeatherPanel(map, weather, sidePanel, ui) {
   const $ = (id) => document.getElementById(id);
@@ -134,7 +102,7 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
   // each GRIB's values at the cursor, and Verify runs
   $("wxp-cmp-note").append($("wx-cmp-note"));
   {
-    const old = document.querySelector("#side-grib-point .wxp-compare");
+    const old = $("wx-point-holder");
     if (old) { $("wxp-cmp-point").append(...old.querySelectorAll(".wxp-compare-table, #wx-sea-point")); old.remove(); }
     $("wx-verify").textContent = "Verify runs…";
     const row = $("wx-verify").parentElement;
@@ -522,56 +490,6 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     else if (ageH > 24) { run.classList.add("stale"); run.textContent += " · old: download a fresh run"; }
   }
 
-  // ---------- cursor readout ----------
-  let lastPoint = null, trend = null, trendKey = "";
-  weather.onPoint((row, at) => { lastPoint = row; if (row && at) fetchTrend(row, at); else { trendKey = ""; trend = null; } renderPoint(); });
-  async function fetchTrend(row, at) {
-    const source = row.src?.mslp ?? weather.current().name;
-    const key = `${at[0].toFixed(3)},${at[1].toFixed(3)},${row.t},${source}`;
-    if (key === trendKey || row.mslp == null) return;
-    trendKey = key;
-    trend = null; // not the last point's trend while this one is fetched
-    const rows = await invoke("grib_point", { lat: at[1], lon: at[0], t: row.t - 10800 }).catch(() => []);
-    if (key !== trendKey) return; // the cursor has moved on: a newer request will answer
-    const was = (rows || []).find((r) => r.name === source)?.mslp;
-    trend = was != null ? row.mslp - was : null;
-    renderPoint();
-  }
-  function renderPoint() {
-    const box = $("wxp-point");
-    const have = weather.loadedParams();
-    const rows = ROWS.filter(([, params]) => params.some((p) => have.has(p)));
-    if (!rows.length) {
-      box.innerHTML = `<div class="wx-note">${weather.sources().length ? "No supported cursor fields in the loaded GRIBs." : "No GRIB loaded."}</div>`;
-      return;
-    }
-    const r = lastPoint;
-    // one fixed row per parameter in the loaded GRIBs, so the list never changes size as the cursor moves
-    // a value borrowed from another loaded file (the shown one lacks it) is marked a, b … with the file below
-    const notes = [];
-    const mark = (k) => {
-      const past = r?.past?.[k];
-      const source = r?.src?.[k] ?? (past != null ? r.name : null);
-      const name = source && `${source}${past != null ? ` · past analysis ${fmt(past)}` : ""}`;
-      if (!name) return "";
-      let i = notes.indexOf(name);
-      if (i < 0) { notes.push(name); i = notes.length - 1; }
-      return `<sup class="wxp-from" title="From ${esc(name)}">${String.fromCharCode(97 + i)}</sup>`;
-    };
-    const cells = rows.map(([label, , f, k]) => {
-      const v = r && f(r, trend);
-      return `<span>${label}</span><b>${v ? `${v}${mark(k)}` : "—"}</b>`;
-    });
-    const from = notes.length ? `<div class="wxp-srcs">${notes.map((n, i) => `<span><sup>${String.fromCharCode(97 + i)}</sup> from ${esc(n)}</span>`).join("")}</div>` : "";
-    let warn = "";
-    if (r?.cur && r.tws != null && r.cur.kn >= 1 && r.tws >= 15) {
-      const diff = Math.abs((((r.twd - r.cur.set) % 360) + 540) % 360 - 180);
-      if (diff < 45) warn = "Wind against current: expect steep, short seas.";
-    }
-    const context = r ? `<div class="wxp-point-context">Chart time ${esc(fmt(r.t))} · shown GRIB: ${esc(r.name)}</div>` : "";
-    box.innerHTML = `${context}<div class="wxp-grid">${cells.join("")}</div>${from}<div class="wxp-warn">${warn}</div>`;
-  }
-
   // ---------- snapshot ----------
   $("wxp-snap").onclick = () => {
     // drawn in the frame just rendered (the WebGL buffer is only readable then), with the
@@ -612,7 +530,7 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
   function refresh() {
     clearTimeout(timer);
     timer = setTimeout(() => {
-      renderHead(); renderShow(); renderOver(); renderCompare(); renderPoint();
+      renderHead(); renderShow(); renderOver(); renderCompare();
       $("wxp-visible").textContent = weather.visible() ? "Hide weather" : "Show weather";
       $("wxp-visible").setAttribute("aria-pressed", String(weather.visible()));
     }, 60);

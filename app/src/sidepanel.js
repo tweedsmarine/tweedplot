@@ -38,8 +38,8 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
   const body = side.querySelector(".sp-body"), ownEl = side.querySelector(".sp-own"), mobEl = side.querySelector(".sp-mob");
   const pinnedTime = side.querySelector(".sp-pinned-time"), pinnedPoint = side.querySelector(".sp-pinned-point");
   const routeWeather = side.querySelector(".sp-routewx");
-  const weatherSection = $("side-weather"), gribPoint = $("side-grib-point"), weatherTime = $("side-wx-clock");
-  const weatherElements = { weather: weatherSection, gribPoint, weatherTime };
+  const weatherSection = $("side-weather"), weatherTime = $("side-wx-clock");
+  const weatherElements = { weather: weatherSection, weatherTime };
   const weatherParking = $("side-weather-parking");
   const envTabs = side.querySelector(".sp-env-tabs"), envData = side.querySelector(".sp-env-data");
   const filesHome = $("wx-files-home"), filesSection = $("wx-files-section");
@@ -243,7 +243,7 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
     ownEl.innerHTML = OWN_SHIP.map((k) => rowHtml(k, " own")).join("");
     const L = layout();
     planHome.before(planCard);
-    weatherParking.append(weatherSection, gribPoint, weatherTime);
+    weatherParking.append(weatherSection, weatherTime);
     pinnedTime.innerHTML = "";
     pinnedPoint.innerHTML = "";
     body.innerHTML = "";
@@ -273,8 +273,6 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
         if (editing) sec.innerHTML = `<h4><span class="sp-title">${esc(WEATHER_SECTIONS[s.kind])}</span><span class="sp-tools"><button data-act="up" title="Move up">▲</button><button data-act="down" title="Move down">▼</button><button data-act="del" title="Remove this section">✕</button></span></h4>`;
         sec.append(weatherElements[s.kind]);
         if (s.kind === "weatherTime" && (view() === "plan" || root.classList.contains("weather-focus")) && !editing) pinnedTime.append(sec);
-        // Environment: one scroll region, with the passive cursor read-out after the controls
-        else if (s.kind === "gribPoint" && environment && !editing) { body.append(sec); queueMicrotask(() => { if (sec.isConnected) body.append(sec); }); }
         else body.append(sec);
         return;
       }
@@ -682,15 +680,9 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
         layout().unshift(makeWeatherSection("weatherTime"));
         changed = true;
       }
-      if (!layout().some((s) => s.kind === "gribPoint")) {
-        const i = layout().findIndex((s) => s.kind === "weather");
-        layout().splice(i, 0, makeWeatherSection("gribPoint"));
-        changed = true;
-      }
       if (changed) save();
       if (side.hidden) toggle(); else build();
       weatherSection.open = true;
-      gribPoint.open = true;
-      gribPoint.scrollIntoView({ block: "start" });
+      weatherSection.scrollIntoView({ block: "start" });
     } };
 }

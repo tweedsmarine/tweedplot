@@ -1186,6 +1186,33 @@ export function setupWeather(map, layers) {
     if (r.ph != null) out.push(`pH ${r.ph.toFixed(3)}`);
     return out;
   }
+  /** The values at a place and time from every loaded GRIB: { shown, rows }. `shown`: the shown
+   *  GRIB's values, with anything it lacks borrowed from the other loaded files (`src`: key → the
+   *  file a borrowed value came from); `rows`: each file's own values (a file only gives values for
+   *  times it covers, so only what exists at that time). */
+  async function queryPoint(at, tt = t) {
+    if (!at || !loaded.size || !times.length) return { shown: null, rows: [] };
+    const result = await invoke("grib_point", { lat: at[1], lon: at[0], t: tt, depth: wx.depth }).catch(() => []) || [];
+    const rows = result.filter((r) => loaded.has(r.path)).map((r) =>
+      weatherView === "env" ? applyPointTimePolicy(r, loaded.get(r.path), tt, allowPastAnalysis) : r);
+    let shown = rows.find((r) => r.path === display) ?? null;
+    if (shown) {
+      const extra = {};
+      const src = {};
+      const past = { ...shown.past };
+      for (const k of ["tws", "twd", "gust", "mslp", "wave", "period", "wavedir", "temp", "rain", ...SEA_KEYS]) {
+        if (shown[k] != null) continue;
+        const from = rows.find((r) => r[k] != null);
+        if (from) {
+          extra[k] = from[k]; src[k] = loaded.get(from.path)?.name ?? from.name ?? "another file";
+          if (from.past?.[k] != null) past[k] = from.past[k];
+        }
+      }
+      shown = { ...shown, ...extra, src, past };
+    }
+    for (const r of rows) r.fileName = loaded.get(r.path)?.name ?? r.name;
+    return { shown, rows };
+  }
   let pointTimer = null;
   function updatePoint() {
     if (pointTimer) return;
@@ -1199,29 +1226,11 @@ export function setupWeather(map, layers) {
         return;
       }
       const at = cursor, tt = t, shownPath = display, requestedView = weatherView, requestedPast = allowPastAnalysis;
-      const result = await invoke("grib_point", { lat: at[1], lon: at[0], t: tt, depth: wx.depth }).catch(() => []) || [];
+      const q = await queryPoint(at, tt);
       if (at !== cursor || tt !== t || shownPath !== display || requestedView !== weatherView || requestedPast !== allowPastAnalysis) { updatePoint(); return; }
-      const rows = result.filter((r) => loaded.has(r.path)).map((r) =>
-        weatherView === "env" ? applyPointTimePolicy(r, loaded.get(r.path), tt, allowPastAnalysis) : r);
-      let shown = (rows || []).find((r) => r.path === display) ?? null;
-      // sea readings from whichever loaded file has them (MUR, HYCOM), under the shown GRIB's weather
-      // the shown GRIB's values, with anything it lacks (sea data, or weather when an ocean file is shown) from the other loaded files
-      // (a file only gives values for times it covers, so only what exists at the slider time is shown)
-      if (shown) {
-        const extra = {};
-        const src = {}; // key → the name of the file a borrowed value came from
-        const past = { ...shown.past };
-        for (const k of ["tws", "twd", "gust", "mslp", "wave", "period", "wavedir", "temp", "rain", ...SEA_KEYS]) {
-          if (shown[k] != null) continue;
-          const from = (rows || []).find((r) => r[k] != null);
-          if (from) {
-            extra[k] = from[k]; src[k] = loaded.get(from.path)?.name ?? from.name ?? "another file";
-            if (from.past?.[k] != null) past[k] = from.past[k];
-          }
-        }
-        shown = { ...shown, ...extra, src, past };
-      }
-      for (const fn of pointListeners) fn(shown && { ...shown, t: tt, name: loaded.get(display)?.name ?? shown.name }, at);
+      const { rows } = q;
+      const shown = q.shown && { ...q.shown, t: tt, name: loaded.get(display)?.name ?? q.shown.name };
+      for (const fn of pointListeners) fn(shown, at, rows);
       body.innerHTML = "";
       const seaBox = $("wx-sea-point");
       seaBox.innerHTML = "";
@@ -1771,6 +1780,8 @@ export function setupWeather(map, layers) {
     onTime: (fn) => { timeListeners.push(fn); },
     /** The shown GRIB's values at the cursor (and slider time) each time they change: fn(row | null, [lon, lat]). */
     onPoint: (fn) => { pointListeners.push(fn); },
+    /** The values at a place (the readout's pinned place): { shown, rows } as at the cursor. */
+    queryPoint: (at, tt) => queryPoint(at, tt).then((q) => ({ ...q, shown: q.shown && { ...q.shown, t: tt ?? t, name: loaded.get(display)?.name ?? q.shown.name } })),
     /** Whether any loaded file has sea data (sea temperature, salinity, currents, chlorophyll). */
     hasSea: () => [...loaded.values()].some((s) => {
       const ps = paramsOf(s);
@@ -1821,16 +1832,21 @@ export function setupWeather(map, layers) {
     /** The colours of a section of the water (depthstack.js) for "temp" or "sal": the filter of
      *  that kind's layer as shown in the data panel (the one on the chart, else the last one set),
      *  as { colour(v): a colour, or null beyond an end that was set (hidden, as on the chart),
-     *  stops, lo, hi, tg, band, layer }; null without one. */
-    sectionFilter(kind) {
+     *  stops, lo, hi, tg, band, layer }; null without one. `range` [min, max]: the section's own
+     *  values. A section goes far deeper (and colder) than the surface the filter was set on, so
+     *  its ends run out to the section's values (nothing hidden) (the target stays where the colours
+     *  change from cool to warm) instead of every deeper value taking the first colour. */
+    sectionFilter(kind, range = null) {
       const keys = { temp: ["subt", "sst", "skin"], sal: ["subs", "sss"] }[kind];
       if (!keys) return null;
       const key = keys.includes(wx.layer) ? wx.layer : keys.find((k) => wx.seaFilter[k]?.set);
       const layer = LAYERS[key], f = key ? wx.seaFilter[key] : null;
       if (!layer || !f || !filterInUse(layer, f) || !Number.isFinite(f.lo) || !Number.isFinite(f.hi)) return null;
-      const stops = seaScale(f), ends = filterBounds(f);
+      const g = { ...f };
+      if (range) { g.lo = Math.min(f.lo, range[0]); g.hi = Math.max(f.hi, range[1]); }
+      const stops = seaScale(g), ends = range ? { lo: false, hi: false } : filterBounds(f);
       return {
-        layer: key, lo: f.lo, hi: f.hi, tg: Number.isFinite(f.tg) ? f.tg : null, band: filterBand(f), stops,
+        layer: key, lo: g.lo, hi: g.hi, tg: Number.isFinite(f.tg) ? f.tg : null, band: filterBand(f), stops,
         colour: (v) => ((ends.lo && v < f.lo) || (ends.hi && v > f.hi) ? null : paletteAt(v, stops)),
       };
     },

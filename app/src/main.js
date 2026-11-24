@@ -53,6 +53,7 @@ import { setupRouting } from "./routing.js";
 import { setupBoat } from "./boat.js";
 import { setupDock } from "./dock.js";
 import { setupDepthStack } from "./depthstack.js";
+import { setupReadout } from "./readout.js";
 import { createDamping } from "./damping.js";
 import { setupFleet } from "./fleet.js";
 import { setupGribDownload } from "./gribdl.js";
@@ -511,6 +512,7 @@ let ruler = null;
 let mariner = null; // own ship, vectors, range rings, EBL/VRM, scale bar (mariner.js)
 let gribTools = null;
 let depthStack = null;
+let readout = null;
 let arrows = null;
 let barriers = null;
 let anchor = null;
@@ -731,6 +733,7 @@ map.on("load", () => {
   setupWeatherPanel(map, weather, sidePanel, ui);
   setupScreenshots();
   depthStack = setupDepthStack(map, { weather, dock });
+  readout = setupReadout(map, { weather });
   // the navigated route's weather runs at the speed over ground, while live data is arriving
   const routeWx = setupRouteWeather(map, { weather, routing, course: route, dock,
     getSog: () => (live && positionWatch.age() != null && !positionWatch.lost() && Number.isFinite(vessel.sog) ? vessel.sog : null) });
@@ -1202,6 +1205,7 @@ map.on("dblclick", (e) => {
 setupKeys(map, {
   ui, views,
   followOff: () => setFollow(false),
+  readoutPin: () => readout?.pinAt(),
   centreBoat: () => {
     if (!lastBoat) { toast("No boat position yet", 2500); return; }
     setFollow(true);
@@ -1464,6 +1468,8 @@ map.on("contextmenu", (e) => {
   ctx.querySelector('[data-act="anc-again"]').hidden = watching || !ctxAnchor;
   ctx.querySelector('[data-act="anc-weigh"]').hidden = !watching;
   ctx.querySelector('[data-act="goto-clear"]').hidden = !gotoTarget;
+  ctx.querySelector('[data-act="readout-follow"]').hidden = !readout?.shown();
+  ctx.querySelector('[data-act="readout-follow"]').textContent = readout?.following() ? "Readout: stay where it is put" : "Readout: ride beside the cursor";
   ctxRose = !!varRoses?.hit();
   ctx.querySelector('[data-act="rose-add"]').hidden = ctxRose;
   ctx.querySelector('[data-act="rose-add"]').textContent = varRoses?.shown() ? "Move variation diagram here" : "Magnetic variation diagram here";
@@ -1581,6 +1587,8 @@ ctx.addEventListener("click", (e) => {
   if (act === "ebl-adj" && ctxEbl != null) mariner?.adjustEbl(ctxEbl);
   if (act === "ebl-del" && ctxEbl != null) mariner?.deleteEbl(ctxEbl);
   if (act === "meteogram") gribTools?.meteogramAt(ctxAt);
+  if (act === "readout-pin") readout?.pinAt(ctxAt);
+  if (act === "readout-follow") readout?.toggleFollow();
   if (act === "ruler-toggle") {
     if (ruler.isArmed()) ruler.finish();
     else ruler.startAt(ctxAt);

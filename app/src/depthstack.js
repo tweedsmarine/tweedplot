@@ -356,7 +356,7 @@ export function setupDepthStack(map, { weather, dock }) {
     const lo = Math.min(...all), hi = Math.max(...all);
     // temperature and salinity in the colours of the filter in the data panel (as on the chart),
     // else spread over the values along the line
-    const flt = weather.sectionFilter?.(kind) ?? null;
+    const flt = weather.sectionFilter?.(kind, [lo, hi]) ?? null;
     const cols = kind === "kn" ? CURRENT : TURBO;
     const colour = flt ? flt.colour : (v) => ramp(cols, (v - (kind === "kn" ? 0 : lo)) / Math.max(hi - (kind === "kn" ? 0 : lo), 1e-6));
     // deepest level with a value anywhere: the picture stops there
