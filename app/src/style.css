@@ -2841,3 +2841,47 @@ html.ob-shell #side .sp-env-tabs button, html.ob-shell[data-view="env"] #side .s
 
 /* the Instruments view has no chart: its toolbar keeps the data link, Record, Capture and the panel buttons */
 html.ob-shell[data-view="inst"] :is(#ruler-btn, #ebl-btn, #shoot-btn, #haul-btn, #pb-tb, #readout-btn, #targets-btn, #clear-track) { display: none; }
+
+/* ---------- colours by name, for plots, the sounder and keys (theme.js) ----------
+   The same names on every branch; the values follow the palette. Plot chrome comes from the
+   panel colours around it; the data series have a day value, a dusk value and a night value,
+   lighter than by day (on a dark ground) but no brighter than the night panels. */
+:root {
+  --c-plot-bg: var(--container-background-color, #fff);
+  --c-plot-ink: var(--element-active-color, #1d2a33);
+  --c-plot-quiet: var(--element-neutral-color, #5d6b75);
+  --c-plot-grid: var(--border-divider-color, #8a96a0);
+  --c-plot-halo: var(--container-background-color, #fff);
+  --c-wind: #006994; --c-gust: #c0392b; --c-wave: #2a62c9; --c-period: #5d6b75; --c-pressure: #5b6b75;
+  --c-rain: #2a62c9; --c-temp: #c0392b; --c-cape: #8e44ad; --c-sst: #006994; --c-current: #1abc9c;
+  --c-arrow: #00274d; --c-obs: #1d2a33; --c-hist: #1f9e94; --c-tide: #6a1b9a;
+  --c-snd-top: #0b4f86; --c-snd-mid: #06305a; --c-snd-bottom: #031a33;
+  --c-snd-ink: #ffffff; --c-snd-temp: #7fe0ff; --c-snd-warn: #ffe08a; --c-safety: #ff5a5a;
+  --c-cold: #2166ac; --c-warm: #b2182b; --c-right: #f7f7f7;
+  /* series compared in one plot (GRIB products, weather stations): Tableau 10 by day */
+  --c-cmp-0: #1f77b4; --c-cmp-1: #d62728; --c-cmp-2: #2ca02c; --c-cmp-3: #9467bd; --c-cmp-4: #ff7f0e; --c-cmp-5: #17becf; --c-cmp-6: #8c564b; --c-cmp-7: #e377c2; --c-cmp-8: #7f7f7f; --c-cmp-9: #bcbd22;
+}
+html[data-palette="dusk"] {
+  --c-wind: #4fa3c7; --c-gust: #d0675c; --c-wave: #6b93e0; --c-period: #9aa7b0; --c-pressure: #9aa7b0;
+  --c-rain: #6b93e0; --c-temp: #d0675c; --c-cape: #b07cc8; --c-sst: #3fa0b8; --c-current: #4cc7ae;
+  --c-arrow: #9cb8d6; --c-obs: #d0d8de; --c-hist: #4cc7ae; --c-tide: #b07cc8;
+  --c-snd-top: #08385f; --c-snd-mid: #05223f; --c-snd-bottom: #021224;
+  --c-snd-ink: #d5dde3; --c-snd-temp: #6cc4dc; --c-snd-warn: #d9be6a; --c-safety: #d9534f;
+  --wind-true: #5aa0dc; --wind-app: #d98a3a;
+  --c-cold: #6f9fcf; --c-warm: #cf6f75; --c-right: #c9ced2;
+  --c-cmp-0: #76abd1; --c-cmp-1: #d07777; --c-cmp-2: #7fc87f; --c-cmp-3: #a48abd; --c-cmp-4: #e39f63; --c-cmp-5: #70cdd7; --c-cmp-6: #b79690; --c-cmp-7: #ce79b4; --c-cmp-8: #a3a3a3; --c-cmp-9: #cfd077;
+}
+html[data-palette="iho-night"] {
+  --c-wind: #2f6f8a; --c-gust: #8a3a33; --c-wave: #3f5a8f; --c-period: #66717a; --c-pressure: #66717a;
+  --c-rain: #3f5a8f; --c-temp: #8a3a33; --c-cape: #6e4a80; --c-sst: #2a6676; --c-current: #2f7d6d;
+  --c-arrow: #5c7690; --c-obs: #8a949b; --c-hist: #2f7d6d; --c-tide: #6e4a80;
+  --c-snd-top: #031a2e; --c-snd-mid: #02101e; --c-snd-bottom: #010811;
+  --c-snd-ink: #8b969d; --c-snd-temp: #3d7a8a; --c-snd-warn: #8a7a45; --c-safety: #8a3a33;
+  --wind-true: #2f6a99; --wind-app: #8a5a2a;
+  --c-cold: #3f5f80; --c-warm: #804046; --c-right: #6b7075;
+  --c-cmp-0: #427395; --c-cmp-1: #944243; --c-cmp-2: #4a8d4a; --c-cmp-3: #6c5482; --c-cmp-4: #a66730; --c-cmp-5: #3c929a; --c-cmp-6: #7d5f59; --c-cmp-7: #92447a; --c-cmp-8: #6b6b6b; --c-cmp-9: #949442;
+}
+/* colour keys of the data on the chart (weather, sea, tracks, depths): dimmed as the chart's own
+   overlays are at dusk and night, so the key matches what it explains (theme.js, mappalette.js) */
+html[data-palette="dusk"] .data-ramp { filter: brightness(0.75) saturate(0.85); }
+html[data-palette="iho-night"] .data-ramp { filter: brightness(0.45) saturate(0.8); }

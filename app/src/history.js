@@ -5,6 +5,7 @@
 import { Recorder, CHANNELS, KEEP_HOURS, tendencyWords, unwrap, wrap360, wrap180, MIN_MS } from "./histcore.js";
 import { PRIMARY, own } from "./role.js";
 import { floatResize } from "./floatresize.js";
+import { col as themeCol, alpha } from "./theme.js";
 
 export { CHANNELS };
 
@@ -64,7 +65,7 @@ export function clearHistory() {
 
 // ---------- drawing ------------------------------------------------------------------
 const cssVar = (name, d) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || d;
-const colourOf = (ch) => (ch.tint === "t" ? cssVar("--wind-true", "#2f8fe6") : ch.tint === "a" ? cssVar("--wind-app", "#f57c00") : "#4fd1c5");
+const colourOf = (ch) => (ch.tint === "t" ? cssVar("--wind-true", "#2f8fe6") : ch.tint === "a" ? cssVar("--wind-app", "#f57c00") : themeCol("hist", "#1f9e94"));
 const MIN_SPAN = { TWS: 6, AWS: 6, SOG: 2, BSP: 2, PRES: 6, AIRT: 3, WTEMP: 1, HUM: 10, DPT: 5, TWD: 30, AWA: 30, DRIFT: 1, SET: 30 };
 
 const niceStep = (span, n = 4) => {
@@ -133,7 +134,7 @@ export function drawHistory(cv, k, hours, { compact = false } = {}) {
   g.lineWidth = Math.max(1, dpr * 0.6);
   g.font = font(10); g.textAlign = "left"; g.textBaseline = "middle";
   for (let v = lo; v <= hi + 1e-9; v += st) {
-    g.strokeStyle = "rgba(160,180,190,.18)"; g.beginPath(); g.moveTo(L, Y(v)); g.lineTo(L + pw, Y(v)); g.stroke();
+    g.strokeStyle = alpha(themeCol("plot-grid", "#a0b4be"), 0.35); g.beginPath(); g.moveTo(L, Y(v)); g.lineTo(L + pw, Y(v)); g.stroke();
     g.fillStyle = quiet; g.fillText(fmtV(ch, v), L + pw + 4 * dpr, Y(v));
   }
   const tk = tickStep(hours);
@@ -142,7 +143,7 @@ export function drawHistory(cv, k, hours, { compact = false } = {}) {
   const off = new Date(now).getTimezoneOffset() * 60e3;
   for (let t = Math.ceil((t0 - off) / tk) * tk + off; t < now; t += tk) {
     const x = X(t);
-    g.strokeStyle = "rgba(160,180,190,.13)"; g.beginPath(); g.moveTo(x, T); g.lineTo(x, T + ph); g.stroke();
+    g.strokeStyle = alpha(themeCol("plot-grid", "#a0b4be"), 0.25); g.beginPath(); g.moveTo(x, T); g.lineTo(x, T + ph); g.stroke();
     g.fillStyle = quiet; g.fillText(hhmm(t), Math.min(L + pw - 14 * dpr, Math.max(L + 14 * dpr, x)), T + ph + 2 * dpr);
   }
 

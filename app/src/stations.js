@@ -1,6 +1,7 @@
 // Weather stations and buoys on the chart (Weather › Weather stations and
 // buoys): the latest wind at each, and an info box with the last 24 h against the
 // loaded GRIBs (real versus forecast).
+import { css } from "./theme.js";
 import { infoBox } from "./infobox.js";
 import { invoke } from "@tauri-apps/api/core";
 import { ddm } from "./navmath.js";
@@ -168,7 +169,8 @@ export function setupStations(map, { weather }) {
     const wmax = Math.max(10, Math.ceil(Math.max(...ws, 0) / 5) * 5);
     const y = (v) => T + (1 - v / wmax) * (H - T - 14);
     const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("");
-    const cols = ["#1f6fb2", "#c0392b", "#27ae60", "#8e44ad", "#e67e22"];
+    const cols = [0, 1, 2, 3, 4].map((i) => css(`cmp-${i}`)); // the compared forecasts (theme.js)
+    const obs = css("obs");
     let svg = `<svg viewBox="0 0 ${W} ${H + PH}" class="stn-chart">`;
     for (let v = 0; v <= wmax; v += wmax > 30 ? 10 : 5) svg += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="grid"/><text x="${L - 3}" y="${y(v) + 3}" class="ax">${v}</text>`;
     // hours
@@ -178,11 +180,11 @@ export function setupStations(map, { weather }) {
     }
     grib.forEach((gr, k) => {
       const pts = gr.points.filter((p) => p.tws != null && p.t >= t0 - 3600 && p.t <= t1 + 3600).map((p) => [x(Math.min(t1, Math.max(t0, p.t))), y(p.tws)]);
-      if (pts.length > 1) svg += `<path d="${path(pts)}" fill="none" stroke="${cols[k % cols.length]}" stroke-width="1.3" stroke-dasharray="4 2"/>`;
+      if (pts.length > 1) svg += `<path d="${path(pts)}" fill="none" style="stroke:${cols[k % cols.length]}" stroke-width="1.3" stroke-dasharray="4 2"/>`;
     });
     const wpts = hist.filter((o) => o.wind_kn != null).map((o) => [x(o.t), y(o.wind_kn)]);
-    if (wpts.length) svg += `<path d="${path(wpts)}" fill="none" stroke="#1d2a33" stroke-width="2"/>`;
-    for (const o of hist) if (o.gust_kn != null) svg += `<circle cx="${x(o.t)}" cy="${y(o.gust_kn)}" r="1.6" fill="#1d2a33"/>`;
+    if (wpts.length) svg += `<path d="${path(wpts)}" fill="none" style="stroke:${obs}" stroke-width="2"/>`;
+    for (const o of hist) if (o.gust_kn != null) svg += `<circle cx="${x(o.t)}" cy="${y(o.gust_kn)}" r="1.6" style="fill:${obs}"/>`;
     // pressure panel
     const ps = [...hist.map((o) => o.pressure_hpa), ...grib.flatMap((g) => g.points.filter((p) => p.t >= t0 && p.t <= t1).map((p) => p.mslp))].filter((v) => v != null);
     if (ps.length) {
@@ -191,14 +193,14 @@ export function setupStations(map, { weather }) {
       svg += `<text x="${L - 3}" y="${py(pmax) + 6}" class="ax">${pmax}</text><text x="${L - 3}" y="${py(pmin)}" class="ax">${pmin}</text>`;
       grib.forEach((gr, k) => {
         const pts = gr.points.filter((p) => p.mslp != null && p.t >= t0 && p.t <= t1).map((p) => [x(p.t), py(p.mslp)]);
-        if (pts.length > 1) svg += `<path d="${path(pts)}" fill="none" stroke="${cols[k % cols.length]}" stroke-width="1" stroke-dasharray="4 2"/>`;
+        if (pts.length > 1) svg += `<path d="${path(pts)}" fill="none" style="stroke:${cols[k % cols.length]}" stroke-width="1" stroke-dasharray="4 2"/>`;
       });
       const pp = hist.filter((o) => o.pressure_hpa != null).map((o) => [x(o.t), py(o.pressure_hpa)]);
-      if (pp.length) svg += `<path d="${path(pp)}" fill="none" stroke="#1d2a33" stroke-width="1.5"/>`;
+      if (pp.length) svg += `<path d="${path(pp)}" fill="none" style="stroke:${obs}" stroke-width="1.5"/>`;
       svg += `<text x="${W - R}" y="${H + 12}" class="ax end">hPa</text>`;
     }
     svg += `<text x="${W - R}" y="${T + 9}" class="ax end">kn</text></svg>`;
-    const legend = `<div class="stn-legend"><span><i style="background:#1d2a33"></i>Observed (dots: gusts)</span>${grib.map((gr, k) => `<span><i class="dash" style="border-color:${cols[k % cols.length]}"></i>${esc(gr.name)}</span>`).join("")}</div>`;
+    const legend = `<div class="stn-legend"><span><i style="background:${obs}"></i>Observed (dots: gusts)</span>${grib.map((gr, k) => `<span><i class="dash" style="border-color:${cols[k % cols.length]}"></i>${esc(gr.name)}</span>`).join("")}</div>`;
     return svg + legend;
   }
   /** Mean wind difference forecast − observed per GRIB, at the observation times. */

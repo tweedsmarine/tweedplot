@@ -3,6 +3,7 @@
 // depth, with the thermocline and the shear marked) and a section along a line drawn on the
 // chart (distance across, depth down), shown in the dock. Maps at a depth, and the
 // thermocline and shear maps, are weather layers (weather.js).
+import { col, alpha, onTheme, ramp as dim } from "./theme.js";
 import { invoke } from "@tauri-apps/api/core";
 
 const empty = { type: "FeatureCollection", features: [] };
@@ -329,6 +330,9 @@ export function setupDepthStack(map, { weather, dock }) {
       for (const [k, [label]] of Object.entries(KINDS)) sel.append(new Option(label, k));
       sel.value = kind;
       sel.onchange = () => { kind = sel.value; dock.refresh("section"); };
+      // the palette changed: the section again, in its colours (the canvas doesn't follow by itself)
+      offTheme?.();
+      offTheme = onTheme(() => { if (section && body.isConnected) drawSection(body); });
       const redraw = document.createElement("button");
       redraw.textContent = "Draw another line";
       redraw.onclick = () => startDrawing();
@@ -338,6 +342,7 @@ export function setupDepthStack(map, { weather, dock }) {
     },
   });
 
+  let offTheme = null;
   function drawSection(body) {
     const s = section;
     const vals = s[kind];
@@ -374,21 +379,21 @@ export function setupDepthStack(map, { weather, dock }) {
     const Y = (z) => m.t + (z / deep) * (H - m.t - m.b);
     // each cell from half-way to the previous level/point to half-way to the next
     const edge = (arr, i, f) => (i <= 0 ? f(arr[0]) - (f(arr[1]) - f(arr[0])) / 2 : i >= arr.length ? f(arr.at(-1)) + (f(arr.at(-1)) - f(arr.at(-2))) / 2 : (f(arr[i - 1]) + f(arr[i])) / 2);
-    g.fillStyle = "#8a7a4a"; // below the sea floor
+    g.fillStyle = dim("#8a7a4a"); // below the sea floor
     g.fillRect(m.l, m.t, W - m.l - m.r, H - m.t - m.b);
     for (let z = 0; z < nz; z++) {
       const y0 = Math.max(m.t, edge(s.depths, z, Y)), y1 = Math.min(H - m.b, edge(s.depths, z + 1, Y));
       for (let x = 0; x < s.dist.length; x++) {
         const v = vals[z][x];
         if (v == null) continue;
-        g.fillStyle = colour(v) ?? OUTSIDE;
+        g.fillStyle = dim(colour(v) ?? OUTSIDE);
         const x0 = Math.max(m.l, edge(s.dist, x, X)), x1 = Math.min(W - m.r, edge(s.dist, x + 1, X));
         g.fillRect(x0, y0, x1 - x0 + 0.6, y1 - y0 + 0.6);
       }
     }
     // the thermocline along the line
     if (kind !== "sal") {
-      g.strokeStyle = "#fff"; g.lineWidth = 1.6; g.setLineDash([5, 3]);
+      g.strokeStyle = col("snd-ink", "#fff"); g.lineWidth = 1.6; g.setLineDash([5, 3]);
       g.beginPath();
       let pen = false;
       s.thermocline.forEach((z, x) => { if (z == null) { pen = false; return; } if (pen) g.lineTo(X(s.dist[x]), Y(z)); else g.moveTo(X(s.dist[x]), Y(z)); pen = true; });
@@ -407,7 +412,7 @@ export function setupDepthStack(map, { weather, dock }) {
           if (dir == null || vals[zi]?.[xi] == null) continue;
           g.save(); g.translate(px, Y(s.depths[zi])); g.rotate((dir * Math.PI) / 180);
           // dark arrow with a light halo: readable on every colour of the scale
-          for (const [c, lw] of [["rgba(255,255,255,0.85)", 3.6], ["#1d2a33", 1.4]]) {
+          for (const [c, lw] of [[alpha(col("plot-halo", "#fff"), 0.85), 3.6], [col("plot-ink", "#1d2a33"), 1.4]]) {
             g.strokeStyle = c; g.fillStyle = c; g.lineWidth = lw; g.lineJoin = "round";
             g.beginPath(); g.moveTo(0, L / 2); g.lineTo(0, -L / 2 + 2); g.stroke();
             g.beginPath(); g.moveTo(-3.4, -L / 2 + 3.8); g.lineTo(0, -L / 2); g.lineTo(3.4, -L / 2 + 3.8); g.closePath(); g.fill(); g.stroke();
@@ -420,14 +425,14 @@ export function setupDepthStack(map, { weather, dock }) {
     if (flt?.tg != null) {
       const xs = s.dist.map(X), ys = s.depths.slice(0, nz).map(Y);
       const segs = isoSegments(vals, xs, ys, flt.tg);
-      for (const [w, c] of [[4.5, "rgba(255,255,255,0.9)"], [2.2, "#111"]]) {
+      for (const [w, c] of [[4.5, alpha(col("plot-halo", "#fff"), 0.9)], [2.2, col("plot-ink", "#111")]]) {
         g.strokeStyle = c; g.lineWidth = w; g.lineCap = "round";
         g.beginPath();
         for (const [a, b] of segs) { g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); }
         g.stroke();
       }
     }
-    g.fillStyle = "#1d2a33"; g.font = "11px system-ui, sans-serif"; g.textAlign = "right";
+    g.fillStyle = col("plot-ink", "#1d2a33"); g.font = "11px system-ui, sans-serif"; g.textAlign = "right";
     for (const z of niceTicks(0, deep, 5)) { g.fillText(`${z} m`, m.l - 4, Y(z) + 4); }
     g.textAlign = "center";
     for (const d of niceTicks(0, total, 6)) g.fillText(`${d} NM`, X(d), H - 4);
@@ -438,11 +443,11 @@ export function setupDepthStack(map, { weather, dock }) {
       // the filter's colours from its lowest to highest stop, the target marked on the bar
       const a = flt.stops[0][0], b = flt.stops.at(-1)[0], w = b - a || 1;
       const tgMark = flt.tg != null && flt.tg >= a && flt.tg <= b ? `<i class="sect-tg" style="left:${((flt.tg - a) / w) * 100}%"></i>` : "";
-      bar = `<span>${label} (filter in the data panel), ${fmt(a)}</span><span class="sect-bar" style="background:linear-gradient(to right,${flt.stops.map(([v, c]) => `${c} ${((v - a) / w) * 100}%`).join(",")})">${tgMark}</span><span>${fmt(b)} ${unit}</span>` +
+      bar = `<span>${label} (filter in the data panel), ${fmt(a)}</span><span class="sect-bar data-ramp" style="background:linear-gradient(to right,${flt.stops.map(([v, c]) => `${c} ${((v - a) / w) * 100}%`).join(",")})">${tgMark}</span><span>${fmt(b)} ${unit}</span>` +
         (flt.tg != null ? `<span class="sect-target">━ target ${fmt(flt.tg)} ${unit}</span>` : "") +
         (all.some((v) => flt.colour(v) == null) ? `<span><span class="sect-out"></span> outside the filter</span>` : "");
     } else {
-      bar = `<span>${label} along the line, ${fmt(kind === "kn" ? 0 : lo)}</span><span class="sect-bar" style="background:linear-gradient(to right,${cols.join(",")})"></span><span>${fmt(hi)} ${unit}</span>`;
+      bar = `<span>${label} along the line, ${fmt(kind === "kn" ? 0 : lo)}</span><span class="sect-bar data-ramp" style="background:linear-gradient(to right,${cols.join(",")})"></span><span>${fmt(hi)} ${unit}</span>`;
     }
     key.innerHTML = bar +
       (kind !== "sal" ? `<span class="sect-thermo">- - thermocline</span>` : "") + (kind === "kn" && s.set ? `<span>arrows: set, north up</span>` : "") + `<span class="wx-note">at ${new Date(weather.current().t * 1000).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}</span>`;

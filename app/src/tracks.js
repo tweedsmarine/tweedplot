@@ -193,6 +193,7 @@ export function setupTracks(map, { before, getTime, onTime, status }) {
     grad.style.left = pc(f.lo);
     grad.style.width = `calc(${pc(f.hi)} - ${pc(f.lo)})`;
     grad.style.background = css;
+    grad.classList.add("data-ramp"); // dimmed with the chart at dusk and night (style.css)
     for (const k of ["lo", "tg", "hi"]) box.querySelector(`.h.${k}`).style.left = pc(f[k]);
     const dp = Math.max(0, -Math.round(Math.log10(r.q)));
     const fmt = (v) => v.toFixed(dp);

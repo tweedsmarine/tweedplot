@@ -472,6 +472,7 @@ function makeCard(opts) {
     grad.style.left = pc(s.shallow);
     grad.style.width = `calc(${pc(s.deep)} - ${pc(s.shallow)})`;
     grad.style.background = `linear-gradient(to right, ${sc.map(([v, c]) => `${c} ${((v - s.shallow) / w) * 100}%`).join(", ")})`;
+    grad.classList.add("data-ramp"); // dimmed with the chart at dusk and night (style.css)
     el.querySelector(".h.lo").style.left = pc(s.shallow);
     el.querySelector(".h.hi").style.left = pc(s.deep);
     const th = el.querySelector(".h.tg");

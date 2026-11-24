@@ -2,6 +2,7 @@
 // (sidepanel.js) and on the Instruments view's screen (insttiles.js). Each reading can show
 // a state ("stale", "warn", "alarm") that styles it.
 
+import { col, alpha, ramp } from "./theme.js";
 import { rhumb } from "./navmath.js";
 import { ask } from "./ask.js";
 import { own } from "./role.js";
@@ -248,15 +249,16 @@ function drawSounder(cv, c) {
   const X = (t) => ((t - t0) / winMs) * W, Y = (d) => (d / range) * H;
 
   const bg = g.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, "#0b4f86"); bg.addColorStop(0.5, "#06305a"); bg.addColorStop(1, "#031a33");
+  bg.addColorStop(0, col("snd-top", "#0b4f86")); bg.addColorStop(0.5, col("snd-mid", "#06305a")); bg.addColorStop(1, col("snd-bottom", "#031a33"));
+  const ink = col("snd-ink", "#ffffff");
   g.fillStyle = bg; g.fillRect(0, 0, W, H);
 
   // depth lines and time ticks
   const step = niceStep(range);
   g.lineWidth = Math.max(1, dpr * 0.6); g.font = font(10); g.textBaseline = "bottom";
   for (let d = step; d < range; d += step) {
-    g.strokeStyle = "rgba(255,255,255,.18)"; g.beginPath(); g.moveTo(0, Y(d)); g.lineTo(W, Y(d)); g.stroke();
-    g.fillStyle = "rgba(255,255,255,.75)"; g.textAlign = "right"; g.fillText(`${d} m`, W - 3 * dpr, Y(d) - 1 * dpr);
+    g.strokeStyle = alpha(ink, 0.18); g.beginPath(); g.moveTo(0, Y(d)); g.lineTo(W, Y(d)); g.stroke();
+    g.fillStyle = alpha(ink, 0.75); g.textAlign = "right"; g.fillText(`${d} m`, W - 3 * dpr, Y(d) - 1 * dpr);
   }
   const tick = winMs / 60e3 <= 15 ? 60e3 : winMs / 60e3 <= 60 ? 5 * 60e3 : 15 * 60e3;
   g.textBaseline = "top";
@@ -267,9 +269,9 @@ function drawSounder(cv, c) {
   if (!live && last) { g.font = font(11, true); clearOf = 6 * dpr + g.measureText("DEPTH UNAVAILABLE").width + 6 * dpr; g.font = font(10); }
   for (let t = Math.ceil(t0 / tick) * tick; t < now; t += tick) {
     const x = X(t);
-    g.strokeStyle = "rgba(255,255,255,.12)"; g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
+    g.strokeStyle = alpha(ink, 0.12); g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
     if (x - 14 * dpr < clearOf || x > W - 90 * dpr) continue; // not under the label, nor under the window and range buttons
-    g.fillStyle = "rgba(255,255,255,.6)"; g.textAlign = "center";
+    g.fillStyle = alpha(ink, 0.6); g.textAlign = "center";
     g.fillText(`−${Math.round((now - t) / 60e3)}m`, Math.min(W - 14 * dpr, Math.max(14 * dpr, x)), 2 * dpr);
   }
 
@@ -289,14 +291,15 @@ function drawSounder(cv, c) {
       g.closePath(); g.fill();
     }
   };
-  band(H, "#5a2d0c"); band(20 * dpr, "#a8481a"); band(12 * dpr, "#e0701c"); band(6 * dpr, "#f5b52e"); band(2.5 * dpr, "#fff2a0");
+  band(H, ramp("#5a2d0c")); band(20 * dpr, ramp("#a8481a")); band(12 * dpr, ramp("#e0701c")); band(6 * dpr, ramp("#f5b52e")); band(2.5 * dpr, ramp("#fff2a0"));
 
   // a fixed range the bottom has gone below: say so along the foot, rather than an empty screen
   const deepest = live ? last.d : pts.length ? pts[pts.length - 1].d : null;
   if (sndPrefs.range && deepest != null && deepest > range) {
     const h = 20 * dpr;
-    g.fillStyle = "rgba(245,181,46,.28)"; g.fillRect(0, H - h, W, h);
-    g.fillStyle = "#ffe08a"; g.font = font(11, true); g.textAlign = "center"; g.textBaseline = "middle";
+    const warn = col("snd-warn", "#ffe08a");
+    g.fillStyle = alpha(warn, 0.22); g.fillRect(0, H - h, W, h);
+    g.fillStyle = warn; g.font = font(11, true); g.textAlign = "center"; g.textBaseline = "middle";
     const long = `▼ Bottom below ${range} m: change the range (top right) or choose Auto`;
     g.fillText(g.measureText(long).width < W - 12 * dpr ? long : `▼ Below ${range} m`, W / 2, H - h / 2);
   }
@@ -304,27 +307,27 @@ function drawSounder(cv, c) {
   // the safety depth
   const safe = c.safetyDepth;
   if (safe > 0 && safe < range) {
-    g.setLineDash([6 * dpr, 4 * dpr]); g.strokeStyle = "rgba(255,90,90,.85)"; g.lineWidth = dpr;
+    g.setLineDash([6 * dpr, 4 * dpr]); g.strokeStyle = alpha(col("safety", "#ff5a5a"), 0.85); g.lineWidth = dpr;
     g.beginPath(); g.moveTo(0, Y(safe)); g.lineTo(W, Y(safe)); g.stroke(); g.setLineDash([]);
   }
 
   // the readout
   g.textAlign = "left"; g.textBaseline = "top";
   g.shadowColor = "rgba(0,0,0,.8)"; g.shadowBlur = 4 * dpr;
-  g.fillStyle = "#fff"; g.font = font(Math.max(16, Math.min(40, cv.clientHeight / 4)), true);
+  g.fillStyle = ink; g.font = font(Math.max(16, Math.min(40, cv.clientHeight / 4)), true);
   const big = live ? last.d.toFixed(1) : "—";
   g.fillText(`${big}`, 6 * dpr, 16 * dpr);
   if (!live && last) {
-    g.font = font(11, true); g.fillStyle = "#ffce75";
+    g.font = font(11, true); g.fillStyle = col("snd-warn", "#ffce75");
     g.fillText("DEPTH UNAVAILABLE", 6 * dpr, 3 * dpr);
     g.font = font(Math.max(16, Math.min(40, cv.clientHeight / 4)), true);
   }
   const bw = g.measureText(big).width;
-  g.font = font(11); g.fillStyle = "rgba(255,255,255,.8)"; g.fillText("m", 6 * dpr + bw + 3 * dpr, 20 * dpr + 14 * dpr);
-  if (live && last.w != null) { g.font = font(13, true); g.fillStyle = "#7fe0ff"; g.fillText(`${last.w.toFixed(1)} °C`, 6 * dpr, (22 + Math.max(16, Math.min(40, cv.clientHeight / 4))) * dpr); }
+  g.font = font(11); g.fillStyle = alpha(ink, 0.8); g.fillText("m", 6 * dpr + bw + 3 * dpr, 20 * dpr + 14 * dpr);
+  if (live && last.w != null) { g.font = font(13, true); g.fillStyle = col("snd-temp", "#7fe0ff"); g.fillText(`${last.w.toFixed(1)} °C`, 6 * dpr, (22 + Math.max(16, Math.min(40, cv.clientHeight / 4))) * dpr); }
   g.shadowBlur = 0;
   if (!pts.length) {
-    g.textAlign = "center"; g.textBaseline = "middle"; g.font = font(13); g.fillStyle = "rgba(255,255,255,.7)";
+    g.textAlign = "center"; g.textBaseline = "middle"; g.font = font(13); g.fillStyle = alpha(ink, 0.7);
     g.fillText("Waiting for depth data", W / 2, H / 2);
   }
 }

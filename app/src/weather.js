@@ -1356,6 +1356,7 @@ export function setupWeather(map, layers) {
       const w = f.hi - f.lo;
       const stops = filterInUse(layer, f) ? filterColourStyle(layer, f, wx.shading).stops : fixedStops(layer, f.lo, f.hi);
       grad.style.background = `linear-gradient(to right, ${stops.map(([v, c]) => `${c} ${((v - f.lo) / w) * 100}%`).join(", ")})`;
+      grad.classList.add("data-ramp"); // dimmed with the chart at dusk and night (style.css)
       for (const k of ["lo", "hi"]) box.querySelector(`.h.${k}`).style.left = pc(f[k]);
       const th = box.querySelector(".h.tg");
       th.style.left = pc(f.tg ?? (f.lo + f.hi) / 2);
@@ -1669,6 +1670,7 @@ export function setupWeather(map, layers) {
       const { stops } = filterColourStyle(layer, f, wx.shading);
       bar.classList.add("grad");
       bar.style.background = `linear-gradient(to right, ${stops.map(([v, c]) => `${c} ${((v - f.lo) / w) * 100}%`).join(", ")})`;
+      bar.classList.add("data-ramp"); // dimmed with the chart at dusk and night (style.css)
       const num = (v) => (layer.log ? fmtChl(10 ** v) : String(+v.toFixed(2)));
       // numbers under it: round values across the scale, and the two ends (an end left alone hides
       // nothing: beyond it the last colour carries on, shown as ≤ or ≥)

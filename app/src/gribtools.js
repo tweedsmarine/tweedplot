@@ -5,6 +5,7 @@
 //    the first loaded GRIB that has them. The plots are chosen in Plots ▾.
 //  - Verify: how well earlier runs forecast the wind, scored against a later
 //    run's hour 0 over the chart view, and the track record by model and lead.
+import { css, svgAttr } from "./theme.js";
 import { invoke } from "@tauri-apps/api/core";
 import { fmt } from "./weather.js";
 import { ddm } from "./navmath.js";
@@ -16,13 +17,14 @@ const PLOTS = [
   { key: "twd", group: "Wind", label: "Wind direction", title: "TWD °T", h: 90, src: "models" },
   { key: "waves", group: "Waves", label: "Waves: height, period, direction", short: "Waves", title: "Waves m (period s dashed, right)", h: 100, src: "along" },
   { key: "mslp", group: "Atmosphere", label: "Pressure", title: "MSLP hPa", h: 80, src: "models" },
-  { key: "rain", group: "Atmosphere", label: "Rain", short: "Rain", title: "Rain mm/h", unit: "mm/h", h: 60, src: "along", bars: true, col: "#2a62c9" },
-  { key: "temp", group: "Atmosphere", label: "Air temperature", short: "Air temp", title: "Air temp °C", unit: "°C", h: 70, src: "along", col: "#c0392b" },
-  { key: "sst", group: "Sea", label: "Sea temperature", short: "Sea temp", title: "Sea temp °C", unit: "°C", h: 70, src: "along", col: "#006994" },
-  { key: "cur", group: "Sea", label: "Current", short: "Current", title: "Current kn", unit: "kn", h: 70, src: "along", col: "#1abc9c" },
+  { key: "rain", group: "Atmosphere", label: "Rain", short: "Rain", title: "Rain mm/h", unit: "mm/h", h: 60, src: "along", bars: true, col: css("rain") },
+  { key: "temp", group: "Atmosphere", label: "Air temperature", short: "Air temp", title: "Air temp °C", unit: "°C", h: 70, src: "along", col: css("temp") },
+  { key: "sst", group: "Sea", label: "Sea temperature", short: "Sea temp", title: "Sea temp °C", unit: "°C", h: 70, src: "along", col: css("sst") },
+  { key: "cur", group: "Sea", label: "Current", short: "Current", title: "Current kn", unit: "kn", h: 70, src: "along", col: css("current") },
 ];
 const DEFAULT_PLOTS = ["tws", "twd", "waves", "mslp"];
-const COLOURS = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e", "#17becf", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22"];
+// the compared series, by name (theme.js): Tableau 10 by day, lighter on the dusk and night panels
+const COLOURS = Array.from({ length: 10 }, (_, i) => css(`cmp-${i}`));
 const NS = "http://www.w3.org/2000/svg";
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const ang = (a, b) => ((((a - b) % 360) + 540) % 360) - 180; // signed difference, -180..180, for any a and b
@@ -437,8 +439,8 @@ export function setupGribTools(map, { weather, dock }) {
       if (p) body.append(drawSstPlot(p, Math.max(480, body.clientWidth - 20)));
       const key = document.createElement("p");
       key.className = "wx-note sv-key";
-      key.innerHTML = `On the chart: <i style="background:${SV_COLD}"></i> product colder · <i style="background:#f7f7f7"></i> right · ` +
-        `<i style="background:${SV_WARM}"></i> warmer than the boat (±2 °C at full colour).`;
+      key.innerHTML = `On the chart: <i style="background:${css("cold")}"></i> product colder · <i style="background:${css("right")}"></i> right · ` +
+        `<i style="background:${css("warm")}"></i> warmer than the boat (±2 °C at full colour).`;
       if (p) body.append(key);
     },
   });
@@ -504,7 +506,7 @@ function drawMeteogram(series, along, plots, W, { pick, release, primary = 0 }) 
   svg.classList.add("mg");
   const add = (tag, attrs, parent = svg) => {
     const e = document.createElementNS(NS, tag);
-    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    for (const [k, v] of Object.entries(attrs)) svgAttr(e, k, v);
     parent.append(e);
     return e;
   };
@@ -594,7 +596,7 @@ function drawMeteogram(series, along, plots, W, { pick, release, primary = 0 }) 
         line(pts, (p, i) => (pn.key === "twd" ? dirs[k][i] : p[pn.key]), { stroke: col, "stroke-width": 1.8 }, pn.key === "twd");
       });
       // direction arrows along the top, as on Weather on route: the shown GRIB's wind (else the first), in its colour
-      if (pn.key === "tws" && series[primary]) arrows(g, base + 10, series[primary].points, (p) => p.twd, series.length > 1 ? COLOURS[primary % COLOURS.length] : "#00274d");
+      if (pn.key === "tws" && series[primary]) arrows(g, base + 10, series[primary].points, (p) => p.twd, series.length > 1 ? COLOURS[primary % COLOURS.length] : css("arrow"));
       const unit = pn.key === "tws" ? "kn" : pn.key === "twd" ? "°" : "hPa";
       readers.push({ y0: base, h, at: (t) => series.map((s, k) => {
         const i = s.points.indexOf(nearest(s.points, t));
@@ -605,7 +607,7 @@ function drawMeteogram(series, along, plots, W, { pick, release, primary = 0 }) 
         return { v: shownV, y: yv(v), col: COLOURS[k % COLOURS.length], unit, above: true, d: pn.key === "twd" ? 0 : null };
       }).filter(Boolean) });
     } else if (pn.key === "waves") {
-      line(rows, (r) => r.wave, { stroke: "#2a62c9", "stroke-width": 2 });
+      line(rows, (r) => r.wave, { stroke: css("wave"), "stroke-width": 2 });
       const ps = rows.map((r) => r.period).filter((v) => v != null);
       let yp = null;
       if (ps.length) {
@@ -613,15 +615,15 @@ function drawMeteogram(series, along, plots, W, { pick, release, primary = 0 }) 
         yp = (v) => base + h - (v / ph) * (h - room);
         let d = "", pen = false;
         for (const r of rows) { if (r.period == null) { pen = false; continue; } d += `${pen ? "L" : "M"}${x(r.t).toFixed(1)},${yp(r.period).toFixed(1)}`; pen = true; }
-        add("path", { d, stroke: "#8a96a0", fill: "none", "stroke-width": 1.3, "stroke-dasharray": "2 2" }, g);
+        add("path", { d, stroke: css("plot-grid"), fill: "none", "stroke-width": 1.3, "stroke-dasharray": "2 2" }, g);
         for (const v of [0, ph / 2, ph]) add("text", { x: W - pad.r + 4, y: yp(v) + 4, class: "mg-tick" }, g).textContent = `${v} s`;
       }
-      arrows(g, base + 10, rows, (r) => r.wavedir, "#2a62c9");
+      arrows(g, base + 10, rows, (r) => r.wavedir, css("wave"));
       readers.push({ y0: base, h, at: (t) => {
         const r = nearest(rows, t);
         if (!r) return [];
-        return [r.wave != null && { v: r.wave, y: yv(r.wave), col: "#2a62c9", unit: "m", above: true },
-          r.period != null && yp && { v: r.period, y: yp(r.period), col: "#5d6b75", unit: "s", above: false }].filter(Boolean);
+        return [r.wave != null && { v: r.wave, y: yv(r.wave), col: css("wave"), unit: "m", above: true },
+          r.period != null && yp && { v: r.period, y: yp(r.period), col: css("plot-quiet"), unit: "s", above: false }].filter(Boolean);
       } });
     } else {
       const k = pn.key;
@@ -684,7 +686,7 @@ function drawMeteogram(series, along, plots, W, { pick, release, primary = 0 }) 
       for (const rd of readers) {
         const ls = rd.at(t).map((l) => {
           const txt = `${l.unit === "°" ? String(Math.round(l.v)).padStart(3, "0") : +l.v.toFixed(Math.abs(l.v) < 10 ? 1 : 0)}${l.unit === "°" ? "°" : l.unit ? ` ${l.unit}` : ""}`;
-          add("circle", { cx, cy: l.y, r: 3.5, fill: l.col, stroke: "#fff", "stroke-width": 1.2 }, marks);
+          add("circle", { cx, cy: l.y, r: 3.5, fill: l.col, stroke: css("plot-halo"), "stroke-width": 1.2 }, marks);
           return { ...l, txt, ty: l.y + (l.above ? -7 : 14) };
         }).sort((p, q) => p.ty - q.ty);
         // values in one plot keep 13 px apart, within the plot
@@ -733,7 +735,7 @@ export function drawSstPlot(p, width) {
   }
   svg.innerHTML = `<g class="axes">${g}<text x="4" y="${T + 4}">°C</text></g>` +
     `<path d="${path(1)}" fill="none" stroke="currentColor" stroke-width="1.6"/>` +
-    `<path d="${path(2)}" fill="none" stroke="#1f77b4" stroke-width="1.6" stroke-dasharray="5 3"/>` +
-    `<text x="${W - R}" y="${T + 10}" text-anchor="end" class="lab">— boat   <tspan fill="#1f77b4">- - ${esc(p.product)}</tspan></text>`;
+    `<path d="${path(2)}" fill="none" style="stroke:${css("cmp-0")}" stroke-width="1.6" stroke-dasharray="5 3"/>` +
+    `<text x="${W - R}" y="${T + 10}" text-anchor="end" class="lab">— boat   <tspan style="fill:${css("cmp-0")}">- - ${esc(p.product)}</tspan></text>`;
   return svg;
 }

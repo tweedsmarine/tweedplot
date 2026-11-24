@@ -4,6 +4,7 @@
 // meteogram: wind and gusts with direction arrows, waves (Hs, Tp, direction) by
 // default; pressure, rain, air temperature, CAPE, sea temperature and current to tick.
 // Select a point to inspect it without changing the route's departure.
+import { css, svgAttr } from "./theme.js";
 import { invoke } from "@tauri-apps/api/core";
 import { fmt } from "./weather.js";
 import { positionAt } from "./routing.js";
@@ -13,12 +14,12 @@ const NS = "http://www.w3.org/2000/svg";
 const KEY = "racenav.routewx";
 /** The extra strips, ticked as wanted. */
 const EXTRAS = [
-  { key: "mslp", label: "Pressure", unit: "hPa", col: "#5b6b75" },
-  { key: "rain", label: "Rain", unit: "mm/h", col: "#2a62c9", bars: true },
-  { key: "temp", label: "Air temp", unit: "°C", col: "#c0392b" },
-  { key: "cape", label: "CAPE", unit: "J/kg", col: "#8e44ad", bars: true },
-  { key: "sst", label: "Sea temp", unit: "°C", col: "#006994", sea: true },
-  { key: "cur", label: "Current", unit: "kn", col: "#1abc9c", sea: true },
+  { key: "mslp", label: "Pressure", unit: "hPa", col: css("pressure") },
+  { key: "rain", label: "Rain", unit: "mm/h", col: css("rain"), bars: true },
+  { key: "temp", label: "Air temp", unit: "°C", col: css("temp") },
+  { key: "cape", label: "CAPE", unit: "J/kg", col: css("cape"), bars: true },
+  { key: "sst", label: "Sea temp", unit: "°C", col: css("sst"), sea: true },
+  { key: "cur", label: "Current", unit: "kn", col: css("current"), sea: true },
 ];
 
 export function setupRouteWeather(map, { weather, routing, course, dock, getSog = () => null }) {
@@ -440,7 +441,7 @@ function draw(rows, strips, W, { pick, release, by = "time" }) {
   svg.classList.add("mg");
   const add = (tag, attrs, parent = svg) => {
     const e = document.createElementNS(NS, tag);
-    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    for (const [k, v] of Object.entries(attrs)) svgAttr(e, k, v);
     parent.append(e);
     return e;
   };
@@ -504,25 +505,25 @@ function draw(rows, strips, W, { pick, release, by = "time" }) {
     const base = y0;
     const reg = (key, col, unit, yfn = yv, above = true) => series.push({ key, yv: (v) => yfn(v) - (y0 - base), col, unit, above, y0: base, h: st.h });
     if (st.key === "wind") {
-      reg("gust", "#c0392b", "kn"); reg("tws", "#006994", "kn", yv, false);
-      add("path", { d: path("gust"), stroke: "#c0392b", fill: "none", "stroke-width": 1.2, "stroke-dasharray": "4 3" }, g);
-      add("path", { d: path("tws"), stroke: "#006994", fill: "none", "stroke-width": 2 }, g);
-      arrows(g, y0 + 10, "twd", "#00274d");
+      reg("gust", css("gust"), "kn"); reg("tws", css("wind"), "kn", yv, false);
+      add("path", { d: path("gust"), stroke: css("gust"), fill: "none", "stroke-width": 1.2, "stroke-dasharray": "4 3" }, g);
+      add("path", { d: path("tws"), stroke: css("wind"), fill: "none", "stroke-width": 2 }, g);
+      arrows(g, y0 + 10, "twd", css("arrow"));
     } else if (st.key === "waves") {
-      reg("wave", "#2a62c9", "m");
-      add("path", { d: path("wave"), stroke: "#2a62c9", fill: "none", "stroke-width": 2 }, g);
+      reg("wave", css("wave"), "m");
+      add("path", { d: path("wave"), stroke: css("wave"), fill: "none", "stroke-width": 2 }, g);
       // Tp: its own scale on the right
       const ps = rows.map((r) => r.period).filter((v) => v != null);
       if (ps.length) {
         const pl = 0, ph = Math.max(4, Math.ceil(Math.max(...ps) / 4) * 4);
         const yp = (v) => y0 + st.h - ((v - pl) / (ph - pl)) * (st.h - top2);
-        reg("period", "#5d6b75", "s", yp, false);
+        reg("period", css("plot-quiet"), "s", yp, false);
         let d = "", pen = false;
         for (const r of rows) { if (r.period == null) { pen = false; continue; } d += `${pen ? "L" : "M"}${x(r.t).toFixed(1)},${yp(r.period).toFixed(1)}`; pen = true; }
-        add("path", { d, stroke: "#8a96a0", fill: "none", "stroke-width": 1.3, "stroke-dasharray": "2 2" }, g);
+        add("path", { d, stroke: css("plot-grid"), fill: "none", "stroke-width": 1.3, "stroke-dasharray": "2 2" }, g);
         for (const v of [0, ph / 2, ph]) add("text", { x: W - pad.r + 4, y: yp(v) + 4, class: "mg-tick" }, g).textContent = `${v} s`;
       }
-      arrows(g, y0 + 10, "wavedir", "#2a62c9");
+      arrows(g, y0 + 10, "wavedir", css("wave"));
     } else if (st.bars) {
       reg(st.key, st.col, st.unit ?? "");
       const bw = Math.max(1, (W - pad.l - pad.r) / rows.length - 0.5);
@@ -609,7 +610,7 @@ function draw(rows, strips, W, { pick, release, by = "time" }) {
         const v = val(r, sr.key);
         if (v == null) continue;
         const cy = sr.yv(v);
-        add("circle", { cx, cy, r: 3.5, fill: sr.col, stroke: "#fff", "stroke-width": 1.2 }, marks);
+        add("circle", { cx, cy, r: 3.5, fill: sr.col, stroke: css("plot-halo"), "stroke-width": 1.2 }, marks);
         const txt = `${+v.toFixed(Math.abs(v) < 10 ? 1 : 0)}${sr.unit ? ` ${sr.unit}` : ""}`;
         const right = cx + 12 + txt.length * 6.2 < W - pad.r;
         shown.push({ sr, txt, right, y: cy + (sr.above ? -7 : 14) });
@@ -636,7 +637,7 @@ function drawV(rows, strips, W, H, { pick, release, by = "time" }) {
   svg.classList.add("mg", "mg-v");
   const add = (tag, attrs, parent = svg) => {
     const e = document.createElementNS(NS, tag);
-    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    for (const [k, v] of Object.entries(attrs)) svgAttr(e, k, v);
     parent.append(e);
     return e;
   };
@@ -695,22 +696,22 @@ function drawV(rows, strips, W, H, { pick, release, by = "time" }) {
     };
     const reg = (key, col, unit, fx = xv, above = true) => series.push({ key, xv: fx, col, unit, above, x0, w: sw });
     if (st.key === "wind") {
-      reg("gust", "#c0392b", "kn"); reg("tws", "#006994", "kn", xv, false);
-      add("path", { d: path("gust"), stroke: "#c0392b", fill: "none", "stroke-width": 1.2, "stroke-dasharray": "4 3" }, g);
-      add("path", { d: path("tws"), stroke: "#006994", fill: "none", "stroke-width": 2 }, g);
-      arrows(g, x0, "twd", "#00274d");
+      reg("gust", css("gust"), "kn"); reg("tws", css("wind"), "kn", xv, false);
+      add("path", { d: path("gust"), stroke: css("gust"), fill: "none", "stroke-width": 1.2, "stroke-dasharray": "4 3" }, g);
+      add("path", { d: path("tws"), stroke: css("wind"), fill: "none", "stroke-width": 2 }, g);
+      arrows(g, x0, "twd", css("arrow"));
     } else if (st.key === "waves") {
-      reg("wave", "#2a62c9", "m");
-      add("path", { d: path("wave"), stroke: "#2a62c9", fill: "none", "stroke-width": 2 }, g);
+      reg("wave", css("wave"), "m");
+      add("path", { d: path("wave"), stroke: css("wave"), fill: "none", "stroke-width": 2 }, g);
       const ps = rows.map((r) => r.period).filter((v) => v != null);
       if (ps.length) {
         const ph = Math.max(4, Math.ceil(Math.max(...ps) / 4) * 4);
         const xp = (v) => x0 + left + (v / ph) * (sw - left - 4);
-        reg("period", "#5d6b75", "s", xp, false);
-        add("path", { d: path("period", xp), stroke: "#8a96a0", fill: "none", "stroke-width": 1.3, "stroke-dasharray": "2 2" }, g);
-        for (const v of [0, ph / 2, ph]) add("text", { x: xp(v), y: padT - 17, class: "mg-tick", "text-anchor": "middle", fill: "#5d6b75" }, g).textContent = `${v} s`;
+        reg("period", css("plot-quiet"), "s", xp, false);
+        add("path", { d: path("period", xp), stroke: css("plot-grid"), fill: "none", "stroke-width": 1.3, "stroke-dasharray": "2 2" }, g);
+        for (const v of [0, ph / 2, ph]) add("text", { x: xp(v), y: padT - 17, class: "mg-tick", "text-anchor": "middle", fill: css("plot-quiet") }, g).textContent = `${v} s`;
       }
-      arrows(g, x0, "wavedir", "#2a62c9");
+      arrows(g, x0, "wavedir", css("wave"));
     } else if (st.bars) {
       reg(st.key, st.col, st.unit ?? "");
       const bh = Math.max(1, Hp / rows.length - 0.5);
@@ -750,14 +751,14 @@ function drawV(rows, strips, W, H, { pick, release, by = "time" }) {
   const first = Math.ceil((t0 + off) / Math.min(lab, 86400)) * Math.min(lab, 86400) - off;
   for (let t = first; t <= t1; t += lab) {
     const yy = y(t);
-    add("line", { x1: padL - 8, x2: padL, y1: yy, y2: yy, class: "mg-vgrid", stroke: "#8a96a0" });
+    add("line", { x1: padL - 8, x2: padL, y1: yy, y2: yy, class: "mg-vgrid", stroke: css("plot-grid") });
     add("text", { x: padL - 10, y: yy + 4, class: "mg-tick", "text-anchor": "end" }).textContent = label(t);
     const i = rows.reduce((b, r, k) => (Math.abs(r.t - t) < Math.abs(rows[b].t - t) ? k : b), 0);
     const c = courseAt(rows, i);
     add("text", { x: padL - 10, y: yy + 16, class: "mg-tick", "text-anchor": "end" }).textContent = `${rows[i].nm.toFixed(0)} NM`;
     if (c != null) {
       const gg = add("g", { transform: `translate(${padL - 14},${yy + 27}) rotate(${c.toFixed(0)})` });
-      add("path", { d: "M0,-5 L3,2 L0,0 L-3,2 Z", fill: "#5d6b75" }, gg);
+      add("path", { d: "M0,-5 L3,2 L0,0 L-3,2 Z", fill: css("plot-quiet") }, gg);
       add("text", { x: padL - 24, y: yy + 30, class: "mg-tick", "text-anchor": "end" }).textContent = crs3(c);
     }
   }
@@ -798,7 +799,7 @@ function drawV(rows, strips, W, H, { pick, release, by = "time" }) {
         const v = val(r, sr.key);
         if (v == null) continue;
         const cx = sr.xv(v);
-        add("circle", { cx, cy, r: 3.5, fill: sr.col, stroke: "#fff", "stroke-width": 1.2 }, marks);
+        add("circle", { cx, cy, r: 3.5, fill: sr.col, stroke: css("plot-halo"), "stroke-width": 1.2 }, marks);
         const txt = `${+v.toFixed(Math.abs(v) < 10 ? 1 : 0)}${sr.unit ? ` ${sr.unit}` : ""}`;
         const right = cx + 12 + txt.length * 6.2 < sr.x0 + sr.w;
         // above or below the cursor line, never on it: near the top all go below, near the bottom all above
