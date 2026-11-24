@@ -27,7 +27,8 @@ pub fn magvar_label(valmag: Option<f64>, valacm_min: Option<f64>, ref_year: Opti
         (Some(c), Some(y)) => variation_at(v, c, y, now_year()),
         _ => v,
     };
-    Some(format!("Var {}", fmt_variation(now)))
+    // brought up to the year shown: the chart's own figure is often years old
+    Some(format!("Var {} ({:.0})", fmt_variation(now), now_year().floor()))
 }
 
 /// One feature's attributes, indexed like [`TILE_COLS`].
@@ -392,8 +393,9 @@ pub fn attr_name(a: &str) -> String {
 }
 
 /// Magnetic variation in degrees (east positive) as "3.25°W". S-57 gives west as negative.
+/// A variation in degrees to a tenth, east or west, as everywhere in the app: "23.6°E".
 pub fn fmt_variation(deg: f64) -> String {
-    format!("{}°{}", trim_num_n_dp(deg.abs(), 2), if deg < 0.0 { "W" } else { "E" })
+    format!("{:.1}°{}", deg.abs(), if deg < 0.0 { "W" } else { "E" })
 }
 
 /// The charted variation brought up to date: `valmag` (°, east +) at `ref_year`, changing by
@@ -406,11 +408,6 @@ pub fn variation_at(valmag: f64, valacm_min: f64, ref_year: f64, year: f64) -> f
 pub fn now_year() -> f64 {
     let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
     1970.0 + secs / 31_556_952.0
-}
-
-fn trim_num_n_dp(x: f64, dp: usize) -> String {
-    let s = format!("{x:.dp$}");
-    s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
 fn enum_word(attr: &str, code: u32) -> Option<&'static str> {
@@ -852,7 +849,7 @@ pub fn describe(attr: &str, value: &str) -> String {
     let codes: Vec<&str> = v.split(',').map(str::trim).collect();
     match (attr, v.parse::<f64>()) {
         ("valmag", Ok(x)) => return fmt_variation(x),
-        ("valacm", Ok(x)) => return format!("{}′ a year", trim_num_n_dp(x, 2)),
+        ("valacm", Ok(x)) => return format!("{}{:.1}′ a year", if x < 0.0 { "−" } else { "+" }, x.abs()),
         ("ryrmgv", _) => return v.to_string(),
         _ => {}
     }
@@ -930,9 +927,12 @@ mod tests {
 
     #[test]
     fn describes_magnetic_variation() {
-        assert_eq!(describe("valmag", "-3.25"), "3.25°W");
+        assert_eq!(describe("valmag", "-3.26"), "3.3°W");
         assert_eq!(describe("valmag", "19.5"), "19.5°E");
-        assert_eq!(describe("valacm", "0.1"), "0.1′ a year");
+        assert_eq!(describe("valmag", "23.56"), "23.6°E");
+        assert_eq!(describe("valmag", "22"), "22.0°E");
+        assert_eq!(describe("valacm", "0.1"), "+0.1′ a year");
+        assert_eq!(describe("valacm", "-2"), "−2.0′ a year");
         assert_eq!(describe("ryrmgv", "2019"), "2019");
         // 19.5°E in 2019, increasing 6′ (0.1°) a year
         assert!((variation_at(19.5, 6.0, 2019.0, 2026.0) - 20.2).abs() < 1e-9);

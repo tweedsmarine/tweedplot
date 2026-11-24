@@ -304,6 +304,11 @@ const map = new maplibregl.Map({
         paint: { "line-color": css("--coast"), "line-width": 0.9 } },
       { id: "chart-wcoast", type: "line", source: "chart", "source-layer": "wcoast", layout: { visibility: "none" },
         paint: { "line-color": css("--coast"), "line-width": 0.9 } },
+      // the charts' outlines (Chart › Layers › Chart outlines, layervis.js): each cell's
+      // coverage in its usage band's colour
+      { id: "chart-outlines", type: "line", source: "chart", "source-layer": "cov", layout: { visibility: "none" },
+        paint: { "line-color": ["match", ["get", "band"], 1, "#7b3fa0", 2, "#2f6fd0", 3, "#178a7a", 4, "#d07a12", 5, "#c8322b", "#c0329a"],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1, 12, 2], "line-dasharray": [5, 2] } },
       { id: "soundg", type: "symbol", source: "chart", "source-layer": "soundg", layout: { visibility: "none", "icon-image": soundingImage(), "icon-allow-overlap": false, "icon-padding": 1 },
       },
       { id: "osea", type: "raster", source: "osea", layout: { visibility: "none" } },

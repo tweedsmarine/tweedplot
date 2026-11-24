@@ -42,4 +42,5 @@ test("decimal year and formatting", () => {
   assert.ok(Math.abs(decimalYear(new Date(Date.UTC(2025, 0, 1))) - 2025) < 1e-9);
   assert.equal(fmtVariation(-3.24), "3.2°W");
   assert.equal(fmtVariation(19.04), "19.0°E");
+  assert.equal(fmtVariation(23.56), "23.6°E");
 });

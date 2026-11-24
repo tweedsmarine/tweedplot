@@ -734,7 +734,9 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
   function applySize() {
     const k = opts.symSize, kl = 1 + (k - 1) / 2;
     map.setLayoutProperty("f-lights", "icon-size", k);
-    map.setLayoutProperty("f-points", "icon-size", k);
+    // (the IHO magnetic variation pick symbol, MAGVAR51, is 37 mm tall: drawn at a third of
+    // that, it still marks the area or line without standing over the chart round it)
+    map.setLayoutProperty("f-points", "icon-size", ["*", k, ["match", ["get", "sy"], "MAGVAR51", 0.35, 1]]);
     map.setLayoutProperty("f-rot", "icon-size", k);
     map.setLayoutProperty("s52-info", "icon-size", k);
     map.setLayoutProperty("s52-date", "icon-size", k);
