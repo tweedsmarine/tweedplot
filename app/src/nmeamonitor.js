@@ -108,7 +108,7 @@ export async function openMonitorWindow(report) {
   }
 }
 
-export function setupNmeaMonitor(root, { standalone = false, openSettings = () => {} } = {}) {
+export function setupNmeaMonitor(root, { standalone = false, openSettings = () => {}, onClose = null } = {}) {
   if (!root) return;
   root.classList.add("nmea-monitor");
   root.innerHTML = `
@@ -497,7 +497,12 @@ export function setupNmeaMonitor(root, { standalone = false, openSettings = () =
     emit("nmea-open-settings").catch((error) => report(`Could not open the input settings: ${error}`, true));
   });
   $("[data-popout]")?.addEventListener("click", () => openMonitorWindow(report));
-  $("[data-close]")?.addEventListener("click", () => getCurrentWindow().close().catch((error) => report(`Could not close the monitor window: ${error}`, true)));
+  // Close: in a monitor window of its own, the window closes; in the main window's Live data view it
+  // goes back to the view you came from (closing the window there closed TweedPlot itself)
+  $("[data-close]")?.addEventListener("click", () => {
+    if (onClose) { onClose(); return; }
+    getCurrentWindow().close().catch((error) => report(`Could not close the monitor window: ${error}`, true));
+  });
 
   invoke("nmea_sources_get").then((data) => setSourceList(data.sources || []))
     .catch((error) => report(`Could not load NMEA input names: ${error}`, true));

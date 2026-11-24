@@ -510,7 +510,7 @@ setupHistorySettings(document.getElementById("hist-keep"), document.getElementBy
 restoreHistoryCards();
 document.getElementById("nmea-popout").addEventListener("click", () => openMonitorWindow((message) => toast(message, 6000)));
 setupNmeaMonitor(document.getElementById("nmea-monitor-inline"), { openSettings: openNmeaSettings });
-setupNmeaMonitor(document.getElementById("nmea-monitor-window"), { standalone: true, openSettings: openNmeaSettings });
+setupNmeaMonitor(document.getElementById("nmea-monitor-window"), { standalone: true, openSettings: openNmeaSettings, onClose: PRIMARY ? () => views.back() : null });
 const dock = setupDock(map);
 let features = null;
 let ruler = null;
