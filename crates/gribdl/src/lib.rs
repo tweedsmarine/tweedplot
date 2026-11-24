@@ -809,7 +809,17 @@ pub(crate) fn get_retry(c: &reqwest::blocking::Client, url: &str, cancel: &Atomi
         }
         match c.get(url).send() {
             Ok(r) if r.status().is_success() => return r.bytes().map(|b| b.to_vec()).map_err(|e| Error::Http(e.to_string())),
-            Ok(r) if r.status().as_u16() == 404 => return Err(Error::Http(format!("not on the server yet ({url})"))),
+            Ok(r) if r.status().as_u16() == 404 => {
+                // ERDDAP says 404 both for a dataset it no longer serves and for a query with no data
+                let why = if url.contains("/erddap/") {
+                    let body = r.text().unwrap_or_default();
+                    let line = body.lines().find(|l| l.contains("Not Found") || l.contains("Error")).unwrap_or("").trim().chars().take(160).collect::<String>();
+                    format!("the server has no data for this request{}", if line.is_empty() { String::new() } else { format!(": {line}") })
+                } else {
+                    "not on the server yet".to_string()
+                };
+                return Err(Error::Http(format!("{why} ({url})")));
+            }
             Ok(r) if attempt == 3 || r.status().as_u16() == 400 => {
                 let code = r.status().as_u16();
                 let host = url.split('/').nth(2).unwrap_or("the server").to_string();
