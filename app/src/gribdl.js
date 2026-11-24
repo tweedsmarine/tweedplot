@@ -477,6 +477,15 @@ export function setupGribDownload(map, { weather, course }) {
   sdReady = true;
   sdRender();
 
+  // a species preset needing temperature at depth asks for it (wxpanel.js): Copernicus at that depth for
+  // the area given, then "racenav-depths-loaded" so the preset can be applied
+  window.addEventListener("racenav-get-depths", async (e) => {
+    const { area, depth, days, label } = e.detail ?? {};
+    if (!area) return;
+    const req = { model: "cmems_phy", area, params: ["sst", "depth"], hours: (days || 3) * 24, every: 6, depth };
+    await download(req, label ?? `Copernicus at ${depth} m`);
+    window.dispatchEvent(new Event("racenav-depths-loaded"));
+  });
   (async () => {
     models = (await invoke("gribdl_models").catch(() => [])) || [];
     const sel = $("dl-model");
