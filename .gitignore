@@ -29,3 +29,6 @@ signing.key
 
 # raw screenshots for the manual (the manual uses the smaller JPEGs in app/public/manual/img)
 /screenshots/
+
+# git bundles passed between the sandbox and this PC
+*.bundle
