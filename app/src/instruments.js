@@ -291,6 +291,16 @@ function drawSounder(cv, c) {
   };
   band(H, "#5a2d0c"); band(20 * dpr, "#a8481a"); band(12 * dpr, "#e0701c"); band(6 * dpr, "#f5b52e"); band(2.5 * dpr, "#fff2a0");
 
+  // a fixed range the bottom has gone below: say so along the foot, rather than an empty screen
+  const deepest = live ? last.d : pts.length ? pts[pts.length - 1].d : null;
+  if (sndPrefs.range && deepest != null && deepest > range) {
+    const h = 20 * dpr;
+    g.fillStyle = "rgba(245,181,46,.28)"; g.fillRect(0, H - h, W, h);
+    g.fillStyle = "#ffe08a"; g.font = font(11, true); g.textAlign = "center"; g.textBaseline = "middle";
+    const long = `▼ Bottom below ${range} m: change the range (top right) or choose Auto`;
+    g.fillText(g.measureText(long).width < W - 12 * dpr ? long : `▼ Below ${range} m`, W / 2, H - h / 2);
+  }
+
   // the safety depth
   const safe = c.safetyDepth;
   if (safe > 0 && safe < range) {
@@ -408,6 +418,8 @@ function highwayData(c) {
     cog: c.v.cog, sog, range, bearing: bearingToTarget,
     track, cts, targetHdg, xte, vmg, ttg, eta: ttg == null ? null : c.now + ttg * 1000,
     groundTrackOffset,
+    // nothing navigated (the Highway may be showing the planned route, in Planning and Environment)
+    notNavigating: !c.mob && !c.navigating, planned: !c.mob && !c.navigating && !!c.nav,
   };
 }
 
@@ -427,6 +439,7 @@ function highwayMarkup() {
       </svg>
     </div>
     <div class="hw-canvas">
+      <div class="hw-notnav" hidden><b>NOT NAVIGATING</b><span></span></div>
       <svg viewBox="0 0 600 300" preserveAspectRatio="none" role="img" aria-label="Perspective navigation highway">
         <g class="hw-runway">
           <path d="M235 26L32 290H568L365 26Z" class="hw-road"/>
@@ -486,7 +499,7 @@ function smoothHighway(host, value, now) {
 function highwayTime(seconds) {
   if (seconds == null || !Number.isFinite(seconds)) return "—";
   if (seconds > 99 * 3600) return ">99h";
-  const h = Math.floor(seconds / 3600), m = Math.round((seconds % 3600) / 60);
+  const t = Math.round(seconds / 60), h = Math.floor(t / 60), m = t % 60;
   return h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m} min`;
 }
 
@@ -503,6 +516,14 @@ function renderHighway(host, raw, ctx) {
     host.dataset.ready = "true";
   }
   const h = smoothHighway(host, raw, ctx.now ?? Date.now());
+  // say plainly when nothing is being navigated, so a planned route or blank highway isn't taken for guidance
+  const notNav = host.querySelector(".hw-notnav");
+  if (notNav) {
+    notNav.hidden = !raw?.notNavigating;
+    const why = raw?.planned ? "Showing the planned route" : "";
+    if (notNav.lastChild.textContent !== why) notNav.lastChild.textContent = why;
+    host.classList.toggle("hw-idle", !!raw?.notNavigating);
+  }
   const text = (key, value) => {
     const node = host.querySelector(`[data-hw="${key}"]`);
     if (node && node.textContent !== value) node.textContent = value;
@@ -787,8 +808,8 @@ function loadLayout() {
 
 function hm(s) {
   if (s > 99 * 3600) return "&gt;99h";
-  const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
-  return h ? `${h}<span class="u">h</span>${String(m).padStart(2, "0")}` : `${m}<span class="u">min</span>`;
+  const t = Math.round(s / 60), h = Math.floor(t / 60), m = t % 60; // 15h 47m, as the Highway shows it
+  return h ? `${h}<span class="u">h</span> ${String(m).padStart(2, "0")}<span class="u">m</span>` : `${m}<span class="u">min</span>`;
 }
 
 function ddm(deg, pos, neg) {

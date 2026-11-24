@@ -4,6 +4,7 @@ import * as maplibregl from "maplibre-gl";
 import { invoke } from "@tauri-apps/api/core";
 import { distNm } from "./instruments.js";
 import { ask } from "./ask.js";
+import { s52PxPerMm } from "./chartfeatures.js";
 import { greatCircleGeometry, greatCircle as gcInitial, rhumb } from "./navmath.js";
 
 const ACTIVE_KEY = "racenav.route.active"; // the route being navigated: its own copy, so another can be planned meanwhile
@@ -80,6 +81,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
   let startRings = work.startRings || null;
   // the IHO look (S-52 planned route), with the IHO symbols (mariner.js colours)
   let iho = null; // null, or { colour(token) }
+  let labelGap = null; // px from an IHO mark to its name (drawMarks)
   let mode = null; // "start" | "marks" | null
 
   // ---------- layers ----------------------------------------------------------
@@ -179,7 +181,13 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
   }
   map.on("moveend", () => { if (iho) drawLegLabels(); }); // the side of the leg depends on the view
 
+  // with the IHO symbols the name sits beside the mark, clear of the next mark's outer ring
+  // (3.4 mm radius, at the screen calibration) rather than a fixed distance that a big screen overlaps
   function drawMarks() {
+    if (iho) {
+      const gap = Math.round(4.4 * s52PxPerMm());
+      if (gap !== labelGap && map.getLayer("rt-labels")) { labelGap = gap; map.setLayoutProperty("rt-labels", "icon-offset", ["literal", [gap, 0]]); }
+    }
     const f = [];
     // IHO: waypoint circles (the next one doubled), numbers and names in the route colour
     const ihoLabel = (n, name) => `s52m:t:PLRTE:${n}${name ? ` ${name}` : ""}`;
@@ -643,7 +651,8 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       map.setPaintProperty("rt-legs", "line-width", ["case", ["get", "active"], on ? 3 : 2.5, on ? 1.6 : 1.2]);
       map.setLayoutProperty("rt-labels", "icon-image", on ? ["get", "lbl"] : ["concat", "lbl:", ["get", "name"]]);
       map.setLayoutProperty("rt-labels", "icon-anchor", on ? "left" : "top");
-      map.setLayoutProperty("rt-labels", "icon-offset", on ? ["literal", [14, 0]] : ["literal", [0, 12]]);
+      labelGap = null; // set for the symbol size in drawMarks
+      if (!on) map.setLayoutProperty("rt-labels", "icon-offset", ["literal", [0, 12]]);
       map.setFilter("rt-labels", on ? ["has", "lbl"] : ["!=", ["get", "name"], ""]);
       drawMarks();
     },

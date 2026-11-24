@@ -872,7 +872,7 @@ function feed() {
   const v = live ? vessel : { ...vessel, lat: pos?.[1], lon: pos?.[0] };
   const positionAge = positionWatch.age();
   inst.update({ v, dataAt: live ? lastFeed : 0, positionAt: live && positionAge != null ? Date.now() - positionAge : null,
-    depthAge: (field) => live ? depthWatch.age(field) : null, nav, wp, target, safetyDepth: settings.safetyDepth, replay: replaying() });
+    depthAge: (field) => live ? depthWatch.age(field) : null, nav, navigating: !!activeNav(), wp, target, safetyDepth: settings.safetyDepth, replay: replaying() });
   // the route's next mark changed (or the route's start moved): redraw the laylines
   const key = nav ? `${nav.next.lon},${nav.next.lat},${nav.from}` : "";
   if (key !== layKey) { layKey = key; laylines?.refresh(); }
