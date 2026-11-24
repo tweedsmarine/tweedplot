@@ -1474,6 +1474,7 @@ map.on("contextmenu", (e) => {
   ctx.querySelector('[data-act="anc-weigh"]').hidden = !watching;
   ctx.querySelector('[data-act="goto-clear"]').hidden = !gotoTarget;
   ctx.querySelector('[data-act="readout-follow"]').hidden = !readout?.shown();
+  ctx.querySelector('[data-act="readout-pin"]').hidden = !readout?.shown();
   ctx.querySelector('[data-act="readout-follow"]').textContent = readout?.following() ? "Readout: stay where it is put" : "Readout: ride beside the cursor";
   ctxRose = !!varRoses?.hit();
   ctx.querySelector('[data-act="rose-add"]').hidden = ctxRose;
@@ -1592,6 +1593,7 @@ ctx.addEventListener("click", (e) => {
   if (act === "ebl-adj" && ctxEbl != null) mariner?.adjustEbl(ctxEbl);
   if (act === "ebl-del" && ctxEbl != null) mariner?.deleteEbl(ctxEbl);
   if (act === "meteogram") gribTools?.meteogramAt(ctxAt);
+  if (act === "readout-open") readout?.open();
   if (act === "readout-pin") readout?.pinAt(ctxAt);
   if (act === "readout-follow") readout?.toggleFollow();
   if (act === "ruler-toggle") {

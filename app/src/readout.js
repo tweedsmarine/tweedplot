@@ -2,7 +2,7 @@
 // that the skipper turns on and off (Readout on the toolbar, Q). Optional and temporary: it shows
 // only the readings chosen for the session (⚙: from what the loaded files hold, whatever is under
 // the cursor), with "Show all" for the rest. It can sit where it is put (drag its title) or ride
-// beside the cursor. Pinned (Shift+Q, or right-click › Pin the readout here) it stays on one place
+// beside the cursor. Pinned (Shift+Q, or right-click › Keep GRIB values for this place) it stays on one place
 // as the chart time moves. A reading can also be compared across every loaded GRIB.
 import { invoke } from "@tauri-apps/api/core";
 import { fmt } from "./weather.js";
@@ -69,7 +69,7 @@ const KEY = "racenav.readout";
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 export function setupReadout(map, { weather }) {
-  const st = { on: false, keys: null, compare: [], follow: false, all: false };
+  const st = { on: false, keys: null, compare: [], follow: true, all: false };
   try { Object.assign(st, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* defaults */ }
   if (!Array.isArray(st.compare)) st.compare = [];
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch { /* ignore */ } };
@@ -189,27 +189,29 @@ export function setupReadout(map, { weather }) {
       if (!name) return "";
       let i = notes.indexOf(name);
       if (i < 0) { notes.push(name); i = notes.length - 1; }
-      return `<sup title="From ${esc(name)}">${String.fromCharCode(97 + i)}</sup>`;
+      return `<span class="ro-src" title="From ${esc(name)}">${String.fromCharCode(97 + i)}</span>`;
     };
     let html = "";
     for (const x of list) {
       const v = row && x.value(row, trend);
-      html += `<span class="ro-k">${esc(x.label)}</span><span class="ro-v">${v ? `${esc(v)}${mark(x.key)}` : "—"}</span>`;
+      // the source letter in a column of its own, boxed, so it can't be read as part of the unit
+      html += `<span class="ro-k">${esc(x.label)}</span><span class="ro-v">${v ? esc(v) : "—"}</span><span class="ro-m">${v ? mark(x.key) : ""}</span>`;
       // compared across the loaded GRIBs: one line for each file that has it
       if (st.compare.includes(x.key)) {
         for (const r of rows) {
           const w = x.value(r, null);
           if (!w) continue;
-          html += `<span class="ro-k ro-sub" title="${esc(r.fileName ?? r.name)}">${esc(r.fileName ?? r.name)}</span><span class="ro-v ro-sub">${esc(w)}</span>`;
+          html += `<span class="ro-k ro-sub" title="${esc(r.fileName ?? r.name)}">${esc(r.fileName ?? r.name)}</span><span class="ro-v ro-sub">${esc(w)}</span><span class="ro-m"></span>`;
         }
       }
     }
     const more = available(have).length - chosenReadings(have, st.keys).length;
     body.innerHTML = `<div class="ro-grid">${html}</div>` +
       (more > 0 || st.all ? `<button type="button" class="ro-all">${st.all ? "Show fewer" : `Show all (${more} more)`}</button>` : "") +
-      (notes.length ? `<div class="ro-srcs">${notes.map((n, i) => `<span><sup>${String.fromCharCode(97 + i)}</sup> ${esc(n)}</span>`).join("")}</div>` : "");
+      (notes.length ? `<div class="ro-srcs">${notes.map((n, i) => `<span title="${esc(n)}"><span class="ro-src">${String.fromCharCode(97 + i)}</span> ${esc(n)}</span>`).join("")}</div>` : "");
     const pos = place ? `${Math.abs(place[1]).toFixed(3)}°${place[1] < 0 ? "S" : "N"} ${Math.abs(place[0]).toFixed(3)}°${place[0] < 0 ? "W" : "E"}` : "move the cursor over the chart";
     foot.textContent = `${pos}${row ? ` · ${fmt(row.t)} · ${row.name}` : ""}`;
+    foot.title = foot.textContent;
     body.querySelector(".ro-all")?.addEventListener("click", () => { st.all = !st.all; save(); render(); });
     if (st.follow && !pinned) placeBalloon();
   }
@@ -271,6 +273,8 @@ export function setupReadout(map, { weather }) {
     /** Ride beside the cursor, or stay where it is put. */
     toggleFollow: () => { st.follow = !st.follow; save(); applyFollow(); render(); },
     following: () => st.follow,
+    /** Open the readout with the values at the cursor (not pinned): right-click › GRIB values at cursor. */
+    open: () => { if (!st.on) show(true); unpin(); render(); },
     /** Pin the readout at a place ([lon, lat]), or at the cursor when none is given; again: unpin. */
     pinAt: (lngLat) => (lngLat ? pinAt(lngLat) : pinned ? unpin() : liveAt && pinAt(liveAt)),
     unpin,
