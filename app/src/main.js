@@ -661,10 +661,27 @@ function finishStartupWhenReady() {
     return;
   }
   startup.finished = true;
+  clearTimeout(startup.watchdog);
+  document.getElementById("startup-splash").hidden = true;
   if (info.error) toast(`Chart loading failed: ${info.error}`, 8000, true);
   else if (info.tables > 0) toast("System ready", 3000, true);
   else toast("System ready - no charts found", 5000, true);
 }
+// Never stuck on the splash: whatever is still loading after this long (map tiles waiting on an
+// internet connection that isn't there, say: a boat network with no way out), carry on with what
+// this computer has and say what is still coming. Things still loading finish in the background.
+const STARTUP_LIMIT_MS = 20000;
+startup.watchdog = setTimeout(() => {
+  if (startup.finished) return;
+  startup.finished = true;
+  document.getElementById("startup-splash").hidden = true;
+  const waiting = [
+    !startup.chartsReady && "the charts are still being prepared",
+    startup.chartsReady && startup.chartInfo?.tables > 0 && !chartTileLoaded && "the chart is still being drawn",
+    !startup.mapLoaded && "some map tiles haven't arrived (online maps need an internet connection)",
+  ].filter(Boolean);
+  toast(`Started without waiting any longer: ${waiting.join("; ") || "some parts were slow"}. They'll appear when ready.`, 12000, true);
+}, STARTUP_LIMIT_MS);
 function noteChartsReady(info) {
   if (!info) return;
   if (info.ready === true && !info.error && info.tables > 0) chartStoreReady = true;
@@ -703,7 +720,7 @@ map.on("load", () => {
   setupBrand();
   // never installs while a live position is arriving (installing closes the app)
   setupUpdates();
-  setupWebMap(map);
+  setupWebMap(map, { toast });
   const images = setupImages(map, { tileUrl: TILE_URL, toast });
   setupCalibrate(map, { images, ui, tileUrl: TILE_URL, toast });
   layerVis = setupLayerVisibility(map, { ready: () => chartMapLoaded && chartStoreReady });

@@ -30,6 +30,14 @@ static CACHE_DIR: OnceLock<PathBuf> = OnceLock::new();
 static CONFIG: RwLock<Urls> = RwLock::new(Urls { osm: String::new(), sea: String::new() });
 /// Per server (OpenStreetMap, OpenSeaMap): one refusing doesn't stop the other.
 static BACKOFF_UNTIL: Mutex<[Option<Instant>; 2]> = Mutex::new([None, None]);
+/// No way through to the internet (a request failed before any server answered: a boat network
+/// with no connection out, say): until this time no tile server is asked, the saved tiles are used.
+static OFFLINE_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
+const OFFLINE_RETRY: Duration = Duration::from_secs(120);
+
+fn offline() -> bool {
+    OFFLINE_UNTIL.lock().unwrap_or_else(|e| e.into_inner()).is_some_and(|t| Instant::now() < t)
+}
 /// Requests made to a tile server since the program started (tests check it stays 0 while off).
 static FETCHES: AtomicUsize = AtomicUsize::new(0);
 static WRITES: AtomicUsize = AtomicUsize::new(0);
@@ -195,7 +203,12 @@ fn fetch(kind: Kind, url: &str) -> Result<Option<Vec<u8>>, String> {
     }
     let c = client().ok_or("no HTTP client")?;
     FETCHES.fetch_add(1, Ordering::SeqCst);
-    let r = c.get(url).send().map_err(|e| e.to_string())?;
+    let r = c.get(url).send().map_err(|e| {
+        // nothing answered: no internet here. Stop asking for a while rather than wait on every tile
+        *OFFLINE_UNTIL.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now() + OFFLINE_RETRY);
+        e.to_string()
+    })?;
+    *OFFLINE_UNTIL.lock().unwrap_or_else(|e| e.into_inner()) = None;
     let status = r.status();
     if status.as_u16() == 404 {
         return Ok(None);
@@ -353,7 +366,7 @@ fn load(kind: Kind, z: u8, x: u32, y: u32) -> Tile {
     if CACHED_ONLY.load(Ordering::SeqCst) {
         return cached.map_or(Tile::Blank, |(b, _)| tile_of(b));
     }
-    if backing_off(kind) {
+    if backing_off(kind) || offline() {
         return stale();
     }
     match fetch(kind, &fill(&template, z, x, y)) {
@@ -480,6 +493,8 @@ pub fn webmap_status() -> serde_json::Value {
     }
     serde_json::json!({
         "enabled": ENABLED.load(Ordering::SeqCst),
+        // no internet: only saved tiles are shown, the servers asked again every two minutes
+        "offline": offline(),
         "tiles": files.len(),
         "bytes": files.iter().map(|f| f.1).sum::<u64>(),
     })
