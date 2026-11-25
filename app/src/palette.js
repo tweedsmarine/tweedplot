@@ -34,6 +34,7 @@ export function setupPalette(onChange = () => {}) {
     root.dataset.obcTheme = OBC_THEME[p.mode];
     const dim = p.dim[p.mode] ?? 100;
     root.style.setProperty("--pal-dim", String(dim / 100));
+    root.toggleAttribute("data-pal-dimmed", (p.mode === "dusk" || p.mode === "iho-night") && dim < 100);
     $("pal-mode").value = p.mode;
     $("pal-dim").value = String(dim);
     $("pal-dim").disabled = LIGHT(p.mode);

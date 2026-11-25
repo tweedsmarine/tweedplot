@@ -820,7 +820,8 @@ html[data-view="inst"] #itiles { display: grid; }
    panels are drawn in the palette's own colours. The brightness setting dims the whole window.
    The chart: with the IHO symbols it is drawn in the IHO S-52 palette (mappalette.js); with the
    paper symbols it is dimmed (Dusk) or turned dark (Night) with a filter on the map alone. */
-html:is([data-palette="dusk"], [data-palette="iho-night"]) { filter: brightness(var(--pal-dim, 1)); }
+/* only when turned down: a filter on the whole page puts every frame of the chart through it */
+html:is([data-palette="dusk"], [data-palette="iho-night"])[data-pal-dimmed] { filter: brightness(var(--pal-dim, 1)); }
 html[data-palette="dusk"]:not([data-iho]) #map .maplibregl-canvas-container { filter: brightness(0.75) saturate(0.85); }
 html[data-palette="iho-night"] body { background: #000; }
 html[data-palette="iho-night"]:not([data-iho]) #map .maplibregl-canvas-container { filter: invert(1) hue-rotate(180deg) brightness(0.6); }

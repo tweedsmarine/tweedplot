@@ -82,20 +82,39 @@ export function setupMapPalette(map) {
   };
   const isData = (img) => img && typeof img.width === "number" && img.data && img.data.length === img.width * img.height * 4;
   const skipImage = (id) => /^(s52|sh:|dp:|cl:|pat:|dpat:)/.test(id);
+  // A colour is worked out once per profile and black level, not again for every pixel (an image
+  // has few colours; a label's anti-aliased edge only a few more). Keyed by the packed RGB.
+  const memo = new Map(); // `${k}|${kn}` → Map(rgb → packed result)
   const darkImage = (img, id = "") => {
     const kn = (TEXT_IMAGE.test(id) ? prof.ink : prof.sym) ?? prof.kn;
+    const mk = `${prof.k}|${kn}`;
+    let m = memo.get(mk);
+    if (!m) { m = new Map(); memo.set(mk, m); }
     const d = new Uint8ClampedArray(img.data);
     for (let i = 0; i < d.length; i += 4) {
       if (!d[i + 3]) continue;
-      const [r, g, b] = darken(d[i], d[i + 1], d[i + 2], prof.k, kn);
-      d[i] = r; d[i + 1] = g; d[i + 2] = b;
+      const key = (d[i] << 16) | (d[i + 1] << 8) | d[i + 2];
+      let v = m.get(key);
+      if (v === undefined) {
+        const [r, g, b] = darken(d[i], d[i + 1], d[i + 2], prof.k, kn);
+        v = (r << 16) | (g << 8) | b;
+        m.set(key, v);
+      }
+      d[i] = v >> 16; d[i + 1] = (v >> 8) & 255; d[i + 2] = v & 255;
     }
     return { width: img.width, height: img.height, data: d };
   };
+  // the darkened images, kept per profile: back to a palette already seen, nothing is redrawn
+  const darkFor = (entry, id) => {
+    const name = prof === PROFILES.Dusk ? "Dusk" : "Night";
+    entry.dark ??= {};
+    return (entry.dark[name] ??= darkImage(entry.img, id));
+  };
   map.addImage = (id, img, opts = {}) => {
     if (!opts.sdf && isData(img) && !skipImage(id)) {
-      images.set(id, { img, opts });
-      if (prof) img = darkImage(img, id);
+      const entry = { img, opts };
+      images.set(id, entry);
+      if (prof) img = darkFor(entry, id);
     }
     return rawImage(id, img, opts);
   };
@@ -119,9 +138,9 @@ export function setupMapPalette(map) {
         rawSet(l.id, prop, out(l.id, prop, orig.get(k)));
       }
     }
-    for (const [id, { img }] of images) {
+    for (const [id, entry] of images) {
       if (!map.hasImage(id)) { images.delete(id); continue; }
-      try { map.updateImage(id, prof ? darkImage(img, id) : img); } catch { /* changed size: leave it */ }
+      try { map.updateImage(id, prof ? darkFor(entry, id) : entry.img); } catch { /* changed size: leave it */ }
     }
   }
   return { apply };

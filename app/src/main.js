@@ -353,34 +353,64 @@ function applyChartColours() {
   set("unsare-line", "line-color", c.grey);
   set("depare-drg", "line-color", c.grey);
   set("unsare", "fill-pattern", ihoColours ? "s52f:NODATA03" : "pat:nodata");
-  // soundings and contour labels are drawn in the palette's colours: redrawn in place
+  // soundings and contour labels are drawn in the palette's colours: redrawn in place, and kept per
+  // palette so going back to one already used doesn't draw them all again
+  const pk = chartImagePaletteKey();
   for (const id of map.listImages()) {
     const m = /^(sh|dp):(-?[0-9.]+)$/.exec(id);
-    if (m) map.updateImage(id, soundingIcon(parseFloat(m[2]), m[1] === "sh"));
+    if (m) map.updateImage(id, cachedChartImage(pk, id, () => soundingIcon(parseFloat(m[2]), m[1] === "sh")));
     const l = /^cl:(-?[0-9.]+)$/.exec(id);
-    if (l) { const im = contourLabelIcon(parseFloat(l[1])); const old = map.getImage(id); if (old && old.data.width === im.width && old.data.height === im.height) map.updateImage(id, im); else map.removeImage(id); }
+    if (l) { const im = cachedChartImage(pk, id, () => contourLabelIcon(parseFloat(l[1]))); const old = map.getImage(id); if (old && old.data.width === im.width && old.data.height === im.height) map.updateImage(id, im); else map.removeImage(id); }
   }
+}
+// sounding and contour-label images by palette (a few thousand small images at most; cleared when
+// the safety depth or the symbols change, as the figures' colours depend on them too)
+const chartImageCache = new Map();
+const chartImagePaletteKey = () => `${ihoColours ? paletteMode : "plain"}|${settings?.safetyDepth}|${settings?.safetyContour}`;
+function cachedChartImage(pk, id, make) {
+  const k = `${pk}|${id}`;
+  let im = chartImageCache.get(k);
+  if (!im) { im = make(); chartImageCache.set(k, im); if (chartImageCache.size > 30000) chartImageCache.clear(); }
+  return im;
 }
 /** Day, dusk, night (IHO) with the IHO symbols: the IHO palette for the chart, the rest
  *  darkened to suit. Otherwise TweedPlot's colours (and the page's filter, style.css). */
 let paletteMode = "day";
 let paletteBusy = Promise.resolve();
-function applyPalette() {
+// the chart's palette last drawn: bright and day share one, and with the paper-chart symbols every
+// palette draws the chart the same (the page's filter does the rest), so nothing on the chart is redone
+let chartPaletteDrawn = null;
+function applyPalette(force = false) {
   paletteBusy = paletteBusy.then(async () => {
     const on = !!features?.usingS52();
     const palette = on ? ({ dusk: "Dusk", "iho-night": "Night" }[paletteMode] ?? "Day") : "Day";
+    const key = `${on}|${palette}`;
+    if (!force && key === chartPaletteDrawn) return;
+    const t0 = performance.now(), at = {};
+    const step = (name) => { at[name] = Math.round(performance.now() - t0); };
     // everything loaded first (once per palette), then the whole switch in one go
     let bundle = null;
     try { if (on) bundle = await loadS52Palette(palette); } catch (e) { console.warn("IHO palette:", e); }
+    step("load");
     const live = on && !!bundle;
     features?.usePalette(bundle);
+    step("symbols");
     ihoColours = live ? bundle.colours : null;
     document.documentElement.toggleAttribute("data-iho", live);
     applyChartColours();
+    step("soundings");
     mapPalette.apply(live ? palette : null, (id) => IHO_CHART_LAYERS.has(id) || id.startsWith("s52-"));
+    step("overlays");
     // own ship, track, route, rings and EBLs in the palette's mariner colours (or TweedPlot's)
     route?.setIho(live, tokenColour);
     mariner?.restyle();
+    step("mariner");
+    chartPaletteDrawn = key;
+    // how long each part took, for when a switch is slow (devtools console)
+    await new Promise((r) => requestAnimationFrame(() => r()));
+    step("drawn");
+    console.info(`Palette ${paletteMode} (chart ${key}): ${JSON.stringify(at)} ms, ${map.listImages().length} images`);
+    window.__paletteTiming = { mode: paletteMode, key, ...at, images: map.listImages().length };
   });
   return paletteBusy;
 }
@@ -643,7 +673,7 @@ function noteChartsReady(info) {
 }
 map.on("load", () => {
   features = setupChartFeatures(map, { before: "track", safetyContour: settings.safetyContour, shallow: !!settings.shallowDangers,
-    onSymbols: () => applyPalette(),
+    onSymbols: () => applyPalette(true),
     // a new screen calibration: the images drawn to IHO sizes again
     onScale: () => {
       for (const id of map.listImages()) if (/^(cl:|dpat:)/.test(id)) map.removeImage(id);
