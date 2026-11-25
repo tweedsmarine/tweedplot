@@ -67,8 +67,16 @@ async function download(almanac) {
 export async function openPublication(no) {
   try { if (await invoke("pub_open", { no })) return; } catch (e) { toast(`Could not open it: ${e}`, 5000); return; }
   if (!(await download(no === "almanac"))) return;
-  try { if (!(await invoke("pub_open", { no }))) toast(no === "almanac" ? "The Almanac isn't on LINZ's page" : `There is no Annual Notice No. ${no} in this edition`, 5000); } catch (e) { toast(`Could not open it: ${e}`, 5000); }
+  try {
+    if (await invoke("pub_open", { no })) return;
+    if (no === "almanac") {
+      // LINZ's page didn't have a PDF TweedPlot recognises: the page itself, in the browser
+      toast("TweedPlot couldn't find the Almanac's PDF on LINZ's page, so the page is opening in your browser", 7000);
+      invoke("open_url", { url: ALMANAC_PAGE }).catch(() => window.open(ALMANAC_PAGE));
+    } else toast(`There is no Annual Notice No. ${no} in this edition`, 5000);
+  } catch (e) { toast(`Could not open it: ${e}`, 5000); }
 }
+const ALMANAC_PAGE = "https://www.linz.govt.nz/products-services/maritime-safety/new-zealand-nautical-almanac/nz-nautical-almanac-nz-204-full-version";
 
 const NOTICE_RE = /Annual\s+(?:New\s+Zealand\s+)?Notices?\s+to\s+Mariners[,\s]*(?:(?:No\.?|Number)\s*)?(\d{1,2}[A-C]?)\b/gi;
 const ALMANAC_RE = /(?:New\s+Zealand\s+)?Nautical\s+Almanac(?:\s*\(?NZ\s*204\)?)?/gi;
