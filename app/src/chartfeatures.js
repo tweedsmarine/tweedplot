@@ -439,7 +439,9 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     { id: "f-area-fill", type: "fill", ...src, "source-layer": "far", filter: ["all", minz, ["any", cls("MARCUL", "OBSTRN"), ["==", ["get", "entry"], 1]]],
       paint: { "fill-color": ["match", ["get", "cls"], "OBSTRN", "#7fb8e8", MAGENTA], "fill-opacity": ["match", ["get", "cls"], "OBSTRN", 0.5, 0.08] } },
     { id: "f-area-hit", type: "fill", ...src, "source-layer": "far", filter: ["all", minz, ["!", cls("SEAARE")]],
-      paint: { "fill-color": "#000", "fill-opacity": 0.01 } },
+      // invisible: only for finding the areas under a click (a layer is queried whatever its opacity).
+      // It was 1% black, and where charts overlap each copy added its 1%: faint edges where charts meet
+      paint: { "fill-color": "#000", "fill-opacity": 0 } },
     { id: "f-area-dash", type: "line", ...src, "source-layer": "fab", filter: ["all", minz, cls("RESARE", "ACHARE", "MARCUL", "CBLARE", "CTNARE", "PRCARE", "ISTZNE", "TSSCRS", "TSSRON", "FAIRWY", "FERYRT", "UNKNWN")],
       paint: { "line-color": ["match", ["get", "cls"], ["FAIRWY", "FERYRT"], "#5b6b75", MAGENTA], "line-width": ["match", ["get", "cls"], "RESARE", 1.4, 1], "line-dasharray": [4, 2.5] } },
     // ships' routeing: separation zones and lines (S-52 TSEZNE, TSELNE: translucent magenta), boundaries
