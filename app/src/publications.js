@@ -67,8 +67,9 @@ async function download(almanac) {
  *  isn't here, say so and offer to download it: nothing goes to the internet unless asked
  *  (on a boat the connection may be slow, costly or not there at all). */
 export async function openPublication(no) {
-  try { if (await invoke("pub_open", { no })) return; } catch (e) { toast(`Could not open it: ${e}`, 5000); return; }
   const alm = no === "almanac";
+  const name = alm ? "the Nautical Almanac" : `Annual Notice No. ${no}`;
+  try { if (await invoke("pub_open", { no })) { toast(`Opening ${name} in your PDF viewer…`, 3000); return; } } catch (e) { toast(`Could not open ${name}: ${e}`, 6000); return; }
   const what = alm ? "The New Zealand Nautical Almanac (NZ 204)" : `Annual Notice to Mariners No. ${no}`;
   const v = await ask({
     title: `${what} isn't on this computer`,
