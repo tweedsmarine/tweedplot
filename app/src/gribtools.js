@@ -81,7 +81,7 @@ export function setupGribTools(map, { weather, dock }) {
     const step = span <= 5 * 86400 ? 3600 : 10800;
     const pts = [];
     for (let t = min; t <= max && pts.length < 600; t += step) pts.push([at[1], at[0], t]);
-    const vals = await invoke("grib_along", { first: weather.current().path ?? null, pts }).catch(() => null);
+    const vals = await invoke("grib_along", { first: weather.current().path ?? null, pts, layered: weather.layered() }).catch(() => null);
     return vals ? { step, rows: vals.map((v, i) => ({ ...v, t: pts[i][2] })) } : null;
   }
 

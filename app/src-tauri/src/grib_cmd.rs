@@ -228,10 +228,35 @@ pub(crate) fn grib_loaded() -> Vec<grib::Summary> {
 
 /// Wind on a thinned grid inside `bbox` [w, s, e, n] at time `t`, at most about `max_points` points.
 #[tauri::command]
-pub(crate) fn grib_wind_grid(path: String, t: i64, bbox: [f64; 4], max_points: usize) -> Option<serde_json::Value> {
+pub(crate) fn grib_wind_grid(path: String, t: i64, bbox: [f64; 4], max_points: usize, over: Option<Vec<String>>) -> Option<serde_json::Value> {
     let f = GRIBS.lock().unwrap().get(&path)?.clone();
     let (g, u) = f.grid_at(grib::Param::WindU, t)?;
     let (_, v) = f.grid_at(grib::Param::WindV, t)?;
+    // finer files laid on top and coarser ones round it (see `mosaic`)
+    let step = |g: &grib::Grid| g.dlon.min(g.dlat.abs());
+    let finer: Vec<(grib::Grid, Vec<f32>, Vec<f32>)> = finer_files(&over, &path)
+        .iter()
+        .filter_map(|o| Some((o.grid_at(grib::Param::WindU, t)?, o.grid_at(grib::Param::WindV, t)?.1)))
+        .map(|((og, ou), ov)| (og, ou, ov))
+        .filter(|(og, _, _)| { let r = step(og) / step(&g); !(0.9..=1.1).contains(&r) })
+        .collect();
+    if !finer.is_empty() {
+        let mut all: Vec<(grib::Grid, Vec<&[f32]>)> = finer.iter().map(|(og, ou, ov)| (*og, vec![ou.as_slice(), ov.as_slice()])).collect();
+        all.push((g, vec![u.as_slice(), v.as_slice()]));
+        let (lon0, lat0, dlon, dlat, ni, nj, ch) = mosaic(&all, bbox, max_points)?;
+        let (mut tws, mut twd) = (Vec::new(), Vec::new());
+        for (uu, vv) in ch[0].iter().zip(&ch[1]) {
+            if uu.is_finite() && vv.is_finite() {
+                let w = grib::Wind::from_uv(*uu as f64, *vv as f64);
+                tws.push(Some((w.tws * 10.0).round() / 10.0));
+                twd.push(Some(w.twd.round()));
+            } else {
+                tws.push(None);
+                twd.push(None);
+            }
+        }
+        return Some(serde_json::json!({ "lon0": lon0, "lat0": lat0, "dlon": dlon, "dlat": dlat, "ni": ni, "nj": nj, "tws": tws, "twd": twd }));
+    }
     // Grids may run 0..360 (GFS) while the chart asks in -180..180: shift the
     // view by whole turns so it lines up with the grid, and back for the output.
     let turn = ((g.lon0 + g.dlon * (g.ni as f64 - 1.0) / 2.0 - (bbox[0] + bbox[2]) / 2.0) / 360.0).round() * 360.0;
@@ -285,22 +310,82 @@ fn shading_range(values: &[f32], precision: f32) -> Option<(f32, f32)> {
     finite_range(values).map(|(lo, hi)| (lo.min((lo * precision).round() / precision), hi.max((hi * precision).round() / precision)))
 }
 
-/// One quantity on a thinned grid inside `bbox` at time `t`, for shading and
-/// contours: "wind" and "gust" (kn), "waves", "swell", "windwaves" (m),
-/// "period" (s), "wavedir" (deg from), "rain" (mm/h), "cape" (J/kg), "mslp" (hPa), "temp" (°C).
-#[tauri::command]
-pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max_points: usize, depth: Option<f64>) -> Option<serde_json::Value> {
+/// Several grids laid together over `bbox`, finest on top: on a lattice at the finest grid's
+/// spacing (thinned to about `max_points`), each point takes the nearest value of the finest grid
+/// whose area holds it, else the next finest, and so on (a gap in a finer grid, such as land in an
+/// ocean file, stays a gap rather than showing the coarser grid through). Each grid comes with one
+/// or more channels (u and v for wind). Output in the bbox's longitudes: (lon0, lat0, dlon, dlat,
+/// ni, nj, channels), or None if no grid reaches the bbox.
+#[allow(clippy::type_complexity)]
+fn mosaic(grids: &[(grib::Grid, Vec<&[f32]>)], bbox: [f64; 4], max_points: usize) -> Option<(f64, f64, f64, f64, usize, usize, Vec<Vec<f32>>)> {
+    let c = (bbox[0] + bbox[2]) / 2.0;
+    // each grid's area in the bbox's longitudes, finest first, only those reaching the bbox
+    struct Area<'a> { g: &'a grib::Grid, ch: &'a [&'a [f32]], w: f64, e: f64, s: f64, n: f64 }
+    let mut areas: Vec<Area> = grids
+        .iter()
+        .filter_map(|(g, ch)| {
+            let (dlat, lat0) = (g.dlat.abs(), g.lat0.min(g.lat0 + g.dlat * (g.nj as f64 - 1.0)));
+            let turn = ((g.lon0 + g.dlon * (g.ni as f64 - 1.0) / 2.0 - c) / 360.0).round() * 360.0;
+            let (w, e) = (g.lon0 - turn, g.lon0 - turn + g.dlon * (g.ni as f64 - 1.0));
+            let (s, n) = (lat0, lat0 + dlat * (g.nj as f64 - 1.0));
+            (e >= bbox[0] && w <= bbox[2] && n >= bbox[1] && s <= bbox[3]).then_some(Area { g, ch, w, e, s, n })
+        })
+        .collect();
+    if areas.is_empty() {
+        return None;
+    }
+    areas.sort_by(|a, b| a.g.dlon.min(a.g.dlat.abs()).total_cmp(&b.g.dlon.min(b.g.dlat.abs())));
+    let (dlon, dlat) = (areas[0].g.dlon, areas[0].g.dlat.abs());
+    let w = bbox[0].max(areas.iter().map(|a| a.w).fold(f64::MAX, f64::min));
+    let e = bbox[2].min(areas.iter().map(|a| a.e).fold(f64::MIN, f64::max));
+    let s = bbox[1].max(areas.iter().map(|a| a.s).fold(f64::MAX, f64::min));
+    let n = bbox[3].min(areas.iter().map(|a| a.n).fold(f64::MIN, f64::max));
+    // on the finest grid's own lattice, so its values come through unmoved
+    let lon0 = areas[0].w + ((w - areas[0].w) / dlon).floor() * dlon;
+    let lat0 = areas[0].s + ((s - areas[0].s) / dlat).floor() * dlat;
+    let wi = ((e - lon0) / dlon).ceil().max(0.0) as usize + 1;
+    let wj = ((n - lat0) / dlat).ceil().max(0.0) as usize + 1;
+    let stride = (((wi * wj) as f64 / max_points.max(1) as f64).sqrt().ceil() as usize).max(1);
+    let (ni, nj) = (wi.div_ceil(stride), wj.div_ceil(stride));
+    let nch = areas.iter().map(|a| a.ch.len()).max().unwrap_or(1);
+    let mut out = vec![Vec::with_capacity(ni * nj); nch];
+    for j in 0..nj {
+        let lat = lat0 + (j * stride) as f64 * dlat;
+        for i in 0..ni {
+            let lon = lon0 + (i * stride) as f64 * dlon;
+            let hit = areas.iter().find(|a| lon >= a.w - 1e-9 && lon <= a.e + 1e-9 && lat >= a.s - 1e-9 && lat <= a.n + 1e-9);
+            for (k, o) in out.iter_mut().enumerate() {
+                let v = hit.and_then(|a| {
+                    let gi = (((lon - a.w) / a.g.dlon).round() as usize).min(a.g.ni - 1);
+                    let gj = (((lat - a.s) / a.g.dlat.abs()).round() as usize).min(a.g.nj - 1);
+                    // rows run south to north unless the grid's dlat is negative
+                    let row = if a.g.dlat < 0.0 { a.g.nj - 1 - gj } else { gj };
+                    a.ch.get(k).map(|c| c[row * a.g.ni + gi])
+                });
+                o.push(v.unwrap_or(f32::NAN));
+            }
+        }
+    }
+    Some((lon0, lat0, dlon * stride as f64, dlat * stride as f64, ni, nj, out))
+}
+
+/// The loaded files of `over` other than `path` (the caller keeps those of another resolution).
+fn finer_files(over: &Option<Vec<String>>, path: &str) -> Vec<Arc<grib::GribFile>> {
+    let gribs = GRIBS.lock().unwrap();
+    over.iter().flatten().filter(|p| p.as_str() != path).filter_map(|p| gribs.get(p).cloned()).collect()
+}
+
+/// One quantity from one file at time `t` on the file's own grid, in display units (see `grib_grid`).
+fn layer_values(f: &grib::GribFile, layer: &str, t: i64, depth: Option<f64>) -> Option<(grib::Grid, Vec<f32>)> {
     use grib::stack::Derived;
     use grib::Param as P;
-    let f = GRIBS.lock().unwrap().get(&path)?.clone();
     // a layer at depth: the chosen depth when the file has several, else its one depth
     let at_depth = |p: P| match depth {
         Some(d) if f.depths(p).len() > 1 => f.grid_at_depth(p, d, t),
         _ => f.grid_at(p, t),
     };
     const KN: f32 = 3600.0 / 1852.0;
-    // the grid(s) and how to turn their values into the quantity shown
-    let (g, vals): (grib::Grid, Vec<f32>) = match layer.as_str() {
+    let out: (grib::Grid, Vec<f32>) = match layer {
         "wind" => {
             if let (Some((g, u)), Some((_, v))) = (f.grid_at(P::WindU, t), f.grid_at(P::WindV, t)) {
                 (g, u.iter().zip(&v).map(|(a, b)| (a * a + b * b).sqrt() * KN).collect())
@@ -347,10 +432,10 @@ pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max
             let ((g, u), (_, v)) = (at_depth(P::SubCurrentU)?, at_depth(P::SubCurrentV)?);
             (g, u.iter().zip(&v).map(|(a, b)| (a * a + b * b).sqrt() * KN).collect())
         }
-        "thermo_depth" => grib::stack::derived_grid(&f, Derived::ThermoDepth, t)?,
-        "thermo_str" => grib::stack::derived_grid(&f, Derived::ThermoStrength, t)?,
-        "shear_depth" => grib::stack::derived_grid(&f, Derived::ShearDepth, t)?,
-        "shear_str" => grib::stack::derived_grid(&f, Derived::ShearStrength, t)?,
+        "thermo_depth" => grib::stack::derived_grid(f, Derived::ThermoDepth, t)?,
+        "thermo_str" => grib::stack::derived_grid(f, Derived::ThermoStrength, t)?,
+        "shear_depth" => grib::stack::derived_grid(f, Derived::ShearDepth, t)?,
+        "shear_str" => grib::stack::derived_grid(f, Derived::ShearStrength, t)?,
         "skin" => {
             let (g, v) = f.grid_at(P::SkinTemp, t)?;
             (g, v.iter().map(|x| x - 273.15).collect())
@@ -385,6 +470,19 @@ pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max
         }
         _ => return None,
     };
+    Some(out)
+}
+
+/// One quantity on a thinned grid inside `bbox` at time `t`, for shading and
+/// contours: "wind" and "gust" (kn), "waves", "swell", "windwaves" (m),
+/// "period" (s), "wavedir" (deg from), "rain" (mm/h), "cape" (J/kg), "mslp" (hPa), "temp" (°C).
+/// `over`: other loaded files to lay with it where their resolution differs from `path`'s, finest
+/// on top (a small detailed area over a big coarse one, whichever of the two is shown): see `mosaic`.
+/// Files at the same resolution (other runs, other models) are left out: they're for comparing.
+#[tauri::command]
+pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max_points: usize, depth: Option<f64>, over: Option<Vec<String>>) -> Option<serde_json::Value> {
+    let f = GRIBS.lock().unwrap().get(&path)?.clone();
+    let (g, vals) = layer_values(&f, &layer, t, depth)?;
     // Include both the original values and the rounded values returned for shading.
     let precision = match layer.as_str() {
         "sst" | "sst_err" | "subt" | "sss" | "subs" | "skin" | "thermo_str" | "shear_str" | "subcur" => 100.0,
@@ -392,6 +490,21 @@ pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max
         "ssh" => 100.0,
         _ => 10.0,
     };
+    // finer files laid on top and coarser ones round it: one mosaic of them all
+    let step = |g: &grib::Grid| g.dlon.min(g.dlat.abs());
+    let finer: Vec<(grib::Grid, Vec<f32>)> = finer_files(&over, &path)
+        .iter()
+        .filter_map(|o| layer_values(o, &layer, t, depth))
+        .filter(|(og, _)| { let r = step(og) / step(&g); !(0.9..=1.1).contains(&r) })
+        .collect();
+    if !finer.is_empty() {
+        let mut all: Vec<(grib::Grid, Vec<&[f32]>)> = finer.iter().map(|(og, v)| (*og, vec![v.as_slice()])).collect();
+        all.push((g, vec![vals.as_slice()]));
+        let range = all.iter().filter_map(|(_, ch)| shading_range(ch[0], precision)).reduce(|a, b| (a.0.min(b.0), a.1.max(b.1)));
+        let (lon0, lat0, dlon, dlat, ni, nj, ch) = mosaic(&all, bbox, max_points)?;
+        let out: Vec<Option<f32>> = ch[0].iter().map(|x| x.is_finite().then(|| (x * precision).round() / precision)).collect();
+        return Some(serde_json::json!({ "lon0": lon0, "lat0": lat0, "dlon": dlon, "dlat": dlat, "ni": ni, "nj": nj, "values": out, "range": range }));
+    }
     let range = shading_range(&vals, precision);
     let turn = ((g.lon0 + g.dlon * (g.ni as f64 - 1.0) / 2.0 - (bbox[0] + bbox[2]) / 2.0) / 360.0).round() * 360.0;
     let bbox = [bbox[0] + turn, bbox[1], bbox[2] + turn, bbox[3]];
@@ -665,10 +778,20 @@ pub(crate) fn point_values(f: &grib::GribFile, lat: f64, lon: f64, t: i64, depth
 /// GRIB that has it, the shown one first (so its wind wins; waves or sea data can come
 /// from another file).
 #[tauri::command]
-pub(crate) async fn grib_along(first: Option<String>, pts: Vec<(f64, f64, i64)>) -> Result<Vec<serde_json::Value>, String> {
+pub(crate) async fn grib_along(first: Option<String>, pts: Vec<(f64, f64, i64)>, layered: Option<bool>) -> Result<Vec<serde_json::Value>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut files: Vec<(String, Arc<grib::GribFile>)> = GRIBS.lock().unwrap().iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         files.sort_by(|(a, _), (b, _)| (Some(a) != first.as_ref(), a).cmp(&(Some(b) != first.as_ref(), b)));
+        // files finer than the shown one come before it where they cover the point (a detailed small
+        // area over a big coarse one); the rest after it, as before
+        if layered.unwrap_or(false) {
+            let step = |f: &grib::GribFile| f.summary().params.iter().map(|p| p.dlon.abs().min(p.dlat.abs())).filter(|d| *d > 0.0).fold(f64::MAX, f64::min);
+            let shown = files.first().map(|(_, f)| step(f)).unwrap_or(f64::MAX);
+            let (mut fine, rest): (Vec<_>, Vec<_>) = files.into_iter().partition(|(p, f)| Some(p) != first.as_ref() && step(f) < 0.9 * shown);
+            fine.sort_by(|(_, a), (_, b)| step(a).total_cmp(&step(b)));
+            fine.extend(rest);
+            files = fine;
+        }
         pts.iter()
             .map(|&(lat, lon, t)| {
                 let mut out = serde_json::Map::new();
@@ -726,7 +849,28 @@ pub(crate) async fn weather_save_png(app: tauri::AppHandle, request: tauri::ipc:
 
 #[cfg(test)]
 mod tests {
-    use super::{finite_range, shading_range};
+    use super::{finite_range, mosaic, shading_range};
+
+    #[test]
+    fn finer_grid_lies_on_top_of_a_coarse_one() {
+        // a 1° grid of 1s over 170–179°E 45–36°S, a 0.25° grid of 2s over 173–175°E 41–39°S with a gap
+        let coarse = grib::Grid::regular(10, 10, -45.0, 170.0, 1.0, 1.0);
+        let fine = grib::Grid::regular(9, 9, -41.0, 173.0, 0.25, 0.25);
+        let cv = vec![1.0f32; 100];
+        let mut fv = vec![2.0f32; 81];
+        fv[4 * 9 + 4] = f32::NAN; // land in the fine file: stays a gap
+        let (lon0, lat0, dlon, dlat, ni, nj, ch) = mosaic(&[(coarse, vec![&cv[..]]), (fine, vec![&fv[..]])], [170.0, -45.0, 179.0, -36.0], 1_000_000).unwrap();
+        assert_eq!((dlon, dlat), (0.25, 0.25));
+        let at = |lon: f64, lat: f64| ch[0][((lat - lat0) / dlat).round() as usize * ni + ((lon - lon0) / dlon).round() as usize];
+        assert_eq!(at(171.0, -44.0), 1.0);
+        assert_eq!(at(173.5, -40.5), 2.0);
+        assert!(at(174.0, -40.0).is_nan());
+        assert_eq!(at(176.0, -38.0), 1.0);
+        assert!(ni * nj > 1000);
+        // thinned to the limit
+        let (.., ni2, nj2, _) = mosaic(&[(coarse, vec![&cv[..]]), (fine, vec![&fv[..]])], [170.0, -45.0, 179.0, -36.0], 300).unwrap();
+        assert!(ni2 * nj2 <= 400, "{ni2}x{nj2}");
+    }
 
     #[test]
     fn full_grid_range_includes_extremes_and_ignores_missing_values() {
