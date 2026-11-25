@@ -144,6 +144,9 @@ impl Param {
             (10, 1, 193) => Param::SubCurrentV,
             (10, 1, 2) => Param::CurrentU,
             (10, 1, 3) => Param::CurrentV,
+            // ECMWF sve/svn (eastward/northward surface sea water velocity, IFS 0.1° open data)
+            (10, 3, 14) => Param::CurrentU,
+            (10, 3, 15) => Param::CurrentV,
             (d, c, n) => Param::Other(d, c, n),
         }
     }
@@ -383,6 +386,7 @@ impl GribFile {
     /// time; for duplicate times the latest run wins.
     fn build(path: PathBuf, mut fields: Vec<Field>, skipped: Vec<String>) -> Self {
         fields.extend(uv_from_speed_dir(&fields));
+        fields.extend(rain_from_accumulation(&fields));
         let mut index: std::collections::BTreeMap<Param, Vec<usize>> = std::collections::BTreeMap::new();
         let mut levels: std::collections::BTreeMap<(Param, i64), Vec<usize>> = std::collections::BTreeMap::new();
         for (i, f) in fields.iter().enumerate() {
@@ -620,6 +624,46 @@ impl GribFile {
 /// Some files (UKMO through Meltemus) give wind as speed and direction rather
 /// than U/V components. Build U/V fields from them so everything downstream
 /// (barbs, routing, comparisons) works the same.
+/// ECMWF total precipitation (0/1/8, kg m-2, accumulated from the start of the run, as the
+/// downloader writes it): rain rate fields (0/1/7, kg m-2 s-1 = mm/s) for each step, the mean
+/// over the interval since the step before, like GFS's rain rate. Not when the file has a rain
+/// rate already. A first step more than 6 h into the run (the steps before it not in the file)
+/// gives no rate: the mean since the start would smear it.
+fn rain_from_accumulation(fields: &[Field]) -> Vec<Field> {
+    if fields.iter().any(|f| f.param == Param::Rain) {
+        return Vec::new();
+    }
+    let acc: Vec<&Field> = fields.iter().filter(|f| f.centre == 98 && f.param == Param::Other(0, 1, 8)).collect();
+    let mut groups: std::collections::BTreeMap<(Option<u16>, i64, usize, usize, i64, i64), Vec<&Field>> = std::collections::BTreeMap::new();
+    for f in acc {
+        let g = &f.grid;
+        groups.entry((f.member, f.ref_time, g.ni, g.nj, (g.lat0 * 1e4).round() as i64, (g.lon0 * 1e4).round() as i64)).or_default().push(f);
+    }
+    let mut out = Vec::new();
+    for (_, mut v) in groups {
+        v.sort_by_key(|f| f.valid_time);
+        v.dedup_by_key(|f| f.valid_time);
+        let mut prev: Option<&Field> = None;
+        for f in v {
+            let (t0, base) = match prev {
+                Some(p) => (p.valid_time, Some(&p.values)),
+                None => (f.ref_time, None),
+            };
+            prev = Some(f);
+            let dt = (f.valid_time - t0) as f32;
+            if dt <= 0.0 || (base.is_none() && dt > 6.0 * 3600.0) {
+                continue;
+            }
+            let values = f.values.iter().enumerate().map(|(i, &a)| {
+                let b = base.map_or(0.0, |b| b[i]);
+                if a.is_finite() && b.is_finite() { ((a - b) / dt).max(0.0) } else { f32::NAN }
+            }).collect();
+            out.push(Field { param: Param::Rain, number: 7, values, ..f.clone() });
+        }
+    }
+    out
+}
+
 fn uv_from_speed_dir(fields: &[Field]) -> Vec<Field> {
     if fields.iter().any(|f| f.param == Param::WindU) {
         return Vec::new();
@@ -890,6 +934,37 @@ mod tests {
         let w = Wind::from_uv(5.0, 0.0);
         assert!((w.twd - 270.0).abs() < 1e-9);
         assert!((w.tws - 9.719).abs() < 1e-3);
+    }
+
+    #[test]
+    fn ecmwf_total_precipitation_becomes_rain_rate() {
+        let g = Grid::from_grib(1, 1, -40.0, 170.0, -40.0, 170.0, 1.0, 1.0, 0x40).canonical();
+        let mk = |h: i64, acc: f32| Field {
+            param: Param::Other(0, 1, 8),
+            discipline: 0,
+            category: 1,
+            number: 8,
+            surface_type: 1,
+            surface_value: 0.0,
+            centre: 98,
+            ref_time: 0,
+            valid_time: h * 3600,
+            member: None,
+            grid: g,
+            values: vec![acc],
+            local: None,
+        };
+        // 3 mm in the first 3 h, then 9 mm more in the next 6 h
+        let f = GribFile::build(PathBuf::new(), vec![mk(0, 0.0), mk(3, 3.0), mk(9, 12.0)], vec![]);
+        let mmh = |h: i64| f.value(Param::Rain, -40.0, 170.0, h * 3600).map(|r| r * 3600.0);
+        assert!((mmh(3).unwrap() - 1.0).abs() < 1e-4);
+        assert!((mmh(9).unwrap() - 1.5).abs() < 1e-4);
+        // a file starting well into the run: no rate for its first step
+        let late = GribFile::build(PathBuf::new(), vec![mk(48, 40.0), mk(51, 43.0)], vec![]);
+        assert_eq!(late.times(Param::Rain), vec![51 * 3600]);
+        // ECMWF ocean currents (sve/svn) are currents
+        assert_eq!(Param::from_codes(10, 3, 14, 160), Param::CurrentU);
+        assert_eq!(Param::from_codes(10, 3, 15, 160), Param::CurrentV);
     }
 
     #[test]

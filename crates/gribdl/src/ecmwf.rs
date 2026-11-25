@@ -47,6 +47,8 @@ fn short_names(model: Model, param: &str) -> Vec<Vec<&'static str>> {
         (_, "mslp") => vec![vec!["msl"]],
         (_, "temp") => vec![vec!["2t"]],
         (Model::EcmwfIfs0p1, "current") => vec![vec!["sve"], vec!["svn"]],
+        // total precipitation, accumulated from the start of the run: turned into a rate on loading (grib crate)
+        (Model::EcmwfIfs0p25 | Model::EcmwfIfs0p1 | Model::EcmwfAifs0p25, "rain") => vec![vec!["tp"]],
         (Model::EcmwfIfs0p25 | Model::EcmwfIfs0p1, "gust") => vec![vec!["10fg", "i10fg", "fg10"]],
         _ => vec![],
     }
@@ -291,6 +293,15 @@ fn step(
                     got += data.len() as u64;
                 }
                 for fld in &fields {
+                    // IFS total precipitation (tp, 0/1/52, metres): written as 0/1/8 in kg m-2 = mm, as AIFS has
+                    // it, since the file keeps only template 4.0 (the grib crate turns it into a rain rate)
+                    let tp;
+                    let fld = if fld.centre == 98 && fld.discipline == 0 && fld.category == 1 && fld.number == 52 {
+                        tp = grib::Field { number: 8, param: grib::Param::Other(0, 1, 8), values: fld.values.iter().map(|v| v * 1000.0).collect(), ..fld.clone() };
+                        &tp
+                    } else {
+                        fld
+                    };
                     if let Some(cut) = grib::write::crop(fld, req.area) {
                         out.extend(grib::write::encode(&cut, process));
                     }

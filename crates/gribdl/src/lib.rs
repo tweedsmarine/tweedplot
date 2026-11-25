@@ -224,6 +224,7 @@ impl Model {
                     ParamInfo { id: "wind", name: "Wind at 10 m", fields: 2, default: true },
                     ParamInfo { id: "gust", name: "Gusts (where published)", fields: 1, default: false },
                     ParamInfo { id: "mslp", name: "Pressure (MSL)", fields: 1, default: true },
+                    ParamInfo { id: "rain", name: "Rain (mm/h, from total precipitation)", fields: 1, default: false },
                     ParamInfo { id: "temp", name: "Air temperature (2 m)", fields: 1, default: false },
                     ParamInfo { id: "waves", name: "Waves from the ECMWF wave model in the same file (height, period, direction)", fields: 3, default: false },
                 ],
@@ -239,6 +240,7 @@ impl Model {
                     ParamInfo { id: "wind", name: "Wind at 10 m", fields: 2, default: true },
                     ParamInfo { id: "gust", name: "Gusts", fields: 1, default: false },
                     ParamInfo { id: "mslp", name: "Pressure (MSL)", fields: 1, default: true },
+                    ParamInfo { id: "rain", name: "Rain (mm/h, from total precipitation)", fields: 1, default: false },
                     ParamInfo { id: "temp", name: "Air temperature (2 m)", fields: 1, default: false },
                     ParamInfo { id: "current", name: "Surface currents", fields: 2, default: false },
                     ParamInfo { id: "waves", name: "Waves from the ECMWF wave model in the same file (height, period, direction)", fields: 3, default: false },
@@ -254,6 +256,7 @@ impl Model {
                 params: vec![
                     ParamInfo { id: "wind", name: "Wind at 10 m", fields: 2, default: true },
                     ParamInfo { id: "mslp", name: "Pressure (MSL)", fields: 1, default: true },
+                    ParamInfo { id: "rain", name: "Rain (mm/h, from total precipitation)", fields: 1, default: false },
                     ParamInfo { id: "temp", name: "Air temperature (2 m)", fields: 1, default: false },
                     ParamInfo { id: "waves", name: "Waves from the ECMWF wave model in the same file (height, period, direction)", fields: 3, default: false },
                 ],
