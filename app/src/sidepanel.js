@@ -15,6 +15,7 @@
 // screen calibration (Settings › Display), like the S-52 symbols, so text is the same size in
 // millimetres on every screen. The chart's container is narrowed by the panel (style.css,
 // --side-w), so the chart is never under it.
+import { tcpaMin } from "./ais.js";
 import { ITEMS, readingState, paintGraphic, historyKey, distNm } from "./instruments.js";
 import { preset, clean, fromFloating, upgrade, weatherSection as makeWeatherSection, WEATHER_SECTIONS, OWN_SHIP, PANEL_VIEWS, WIDTHS_MM, snapWidth } from "./sidepresets.js";
 import { CHANNELS as HIST, openHistoryCard, recorder } from "./history.js";
@@ -423,8 +424,8 @@ export function setupSidePanel({ inst, views, use, map, getAis = () => null, cen
       // fixed, right-aligned columns under headings, so figures don't shift as they change
       else html = `<div class="sp-li tgt sp-hd"><span class="sw"></span><span class="nm">Target</span><span class="cpa">CPA</span><span class="tcpa">TCPA</span><span class="rng">Range</span></div>`;
       for (const t of list) {
-        // TCPA in minutes up to 10 h, then hours, and past 99 h just ">99 h" (a slow closing target far off)
-        const tc = t.tcpa < 600 ? `${Math.round(t.tcpa)}<small>min</small>` : t.tcpa < 99 * 60 ? `${Math.round(t.tcpa / 60)}<small>h</small>` : `>99<small>h</small>`;
+        // TCPA always in minutes, ">99" beyond (the ARPA convention: no mix of minutes and hours)
+        const tc = `${tcpaMin(t.tcpa)}<small>min</small>`;
         const closing = t.cpa != null;
         html += `<div class="sp-li tgt${t.danger ? " danger" : ""}${t.lost ? " lost" : ""}" data-id="${esc(t.id)}" title="Click to show ${esc(t.name)} and open its card. CPA and TCPA (dashes: not closing), then range"><span class="sw" style="background:${esc(t.col)}"></span><span class="nm">${esc(t.name)}</span><span class="cpa">${closing ? `${nm(t.cpa)}<small>NM</small>` : "—"}</span><span class="tcpa">${closing ? tc : "—"}</span><span class="rng">${nm(t.range)}<small>NM</small></span></div>`;
       }
