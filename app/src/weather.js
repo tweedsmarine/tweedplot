@@ -733,6 +733,17 @@ export function setupWeather(map, layers) {
   function showGrib(path) {
     if (!loaded.has(path)) return;
     display = path;
+    // "Show" means this file: layers and overlays it has stop coming from another file chosen for them
+    // earlier (an ocean layer kept its own file, so a second Copernicus area marked shown stayed hidden)
+    let dropped = false;
+    for (const key of Object.keys(wx.src)) {
+      const src = wx.src[key];
+      if (!src || src === path) continue;
+      const l = LAYERS[key] ?? (key === "breaks" ? LAYERS.sst : null);
+      const has = l ? hasLayer(path, l) : (OVERLAY_PARAMS[key] ?? []).some((n) => hasIn(path, n));
+      if (has) { delete wx.src[key]; dropped = true; }
+    }
+    if (dropped) saveWx();
     for (const r of $("wx-loaded").querySelectorAll("input[type=radio]")) r.checked = false;
     const i = [...loaded.keys()].indexOf(path);
     const radio = $("wx-loaded").querySelectorAll("input[type=radio]")[i];
