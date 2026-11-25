@@ -108,17 +108,17 @@ input[type="text"], input[type="search"] { min-height: var(--btn-h); box-sizing:
 .about h2 { margin: 0; font-size: 22px; }
 .about h2 b { color: var(--brand-amber); }
 .about .tag { margin: 2px 0 0; color: var(--brand-sky); font-size: 13px; }
-.about p { font-size: 13px; line-height: 1.45; color: var(--element-active-color); }
+.about p { font-size: 13px; line-height: 1.45; color: #d8e6ee; }
 .about a { color: var(--brand-amber); }
 .about { max-height: calc(100vh - 20px); overflow-y: auto; }
-.about #about-update-status { font-size: 13px; color: var(--element-active-color); }
+.about #about-update-status { font-size: 13px; color: #d8e6ee; }
 /* a newer TweedPlot: shown at the top until Install, What's new or Later (updates.js) */
 /* below the return-to-Navigation countdown (#idle-notice), which matters more */
 .update-notice { position: fixed; z-index: 55; top: 58px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; max-width: 90vw;
   padding: 8px 12px; border-radius: 8px; background: var(--brand-navy); color: #fff; font-weight: 600; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4); }
 .update-notice[hidden] { display: none; }
 .about summary { cursor: pointer; font-size: 13px; color: var(--brand-amber); margin: 6px 0; }
-.about .credits ul { margin: 6px 0; padding-left: 18px; font-size: 12px; line-height: 1.4; color: var(--element-active-color); }
+.about .credits ul { margin: 6px 0; padding-left: 18px; font-size: 12px; line-height: 1.4; color: #d8e6ee; }
 .about .credits p { font-size: 12px; }
 .about button { background: var(--brand-amber); border-color: var(--brand-amber); color: var(--brand-ink); font-weight: 600; }
 
