@@ -16,7 +16,7 @@ export function loadWebMapPrefs() {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || "{}") }; } catch { return { ...DEFAULTS }; }
 }
 
-export function setupWebMap(map) {
+export function setupWebMap(map, { toast = () => {} } = {}) {
   const prefs = loadWebMapPrefs();
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ } };
   const openUrl = (url) => invoke("open_url", { url }).catch(() => window.open(url));
@@ -71,6 +71,23 @@ export function setupWebMap(map) {
       const el = $("wm-cache"); if (el) el.textContent = `Cached map tiles: ${s.tiles.toLocaleString()} (${fmtMB(s.bytes)})`;
     } catch { /* ignore */ }
   }
+
+  // No internet (the boat's network goes nowhere): Rust stops asking and shows the saved tiles; say so
+  // once, and again when the connection is back.
+  let wasOffline = false;
+  setInterval(async () => {
+    if (!prefs.on || prefs.cachedOnly || !(prefs.osm || prefs.sea)) { wasOffline = false; return; }
+    const s = await invoke("webmap_status").catch(() => null);
+    if (!s || s.offline === wasOffline) return;
+    wasOffline = s.offline;
+    if (s.offline) {
+      toast("No internet connection: online maps show only the tiles saved on this computer (tried again every 2 minutes)", 10000);
+      status("No internet connection: showing the map tiles saved on this computer; the tile servers are tried again every 2 minutes.", "warn");
+    } else {
+      toast("Internet connection back: online maps updating", 4000);
+      apply({ reloadTiles: true });
+    }
+  }, 15000);
 
   function reload() {
     for (const id of ["osm", "osea"]) {
