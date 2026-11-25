@@ -349,6 +349,13 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
     ["depth", "Depth"],
     ["waterTemperature", "Water temperature"],
     ["weather", "Air pressure, temperature and humidity"],
+    ["rateOfTurn", "Rate of turn"],
+    ["attitude", "Heel and pitch"],
+    ["rudder", "Rudder angle"],
+    ["current", "Set and drift (measured)"],
+    ["log", "Log and trip"],
+    ["gnssQuality", "Position quality"],
+    ["engine", "Engine and battery"],
   ];
 
   function renderArbitration() {
@@ -489,6 +496,13 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
         depth: ["depth", "depthKeel", "depthSurface"],
         waterTemperature: ["waterTemp"],
         weather: ["pressure", "airTemp", "humidity"],
+        rateOfTurn: ["rot"],
+        attitude: ["heel", "pitch"],
+        rudder: ["rudder"],
+        current: ["set", "drift"],
+        log: ["log", "trip"],
+        gnssQuality: ["sats", "hdop", "fixDim", "posError"],
+        engine: ["batteryV", "rpm"],
       }[group] || [];
       return [Object.fromEntries(fields.map((field) => [field, observation[field]]))];
     });

@@ -78,6 +78,29 @@ pub struct VesselState {
     /// Total log and trip, NM.
     pub log: Option<f64>,
     pub trip: Option<f64>,
+    /// Rate of turn, degrees a minute, + = to starboard.
+    pub rot: Option<f64>,
+    /// Heel (+ = to starboard) and pitch (+ = bow up), degrees.
+    pub heel: Option<f64>,
+    pub pitch: Option<f64>,
+    /// Rudder angle, degrees, + = to starboard.
+    pub rudder: Option<f64>,
+    /// Set (degrees true, the way the current flows) and drift (knots), measured on board.
+    pub set: Option<f64>,
+    pub drift: Option<f64>,
+    /// Position quality: satellites used, HDOP, fix (1 none, 2 2D, 3 3D), estimated error (m).
+    pub sats: Option<f64>,
+    pub hdop: Option<f64>,
+    pub fix_dim: Option<f64>,
+    pub pos_error: Option<f64>,
+    /// A battery's voltage and an engine's revolutions a minute (the house battery and the
+    /// first engine reported, when there are several).
+    pub battery_v: Option<f64>,
+    pub rpm: Option<f64>,
+    #[serde(skip)]
+    pub battery_id: Option<String>,
+    #[serde(skip)]
+    pub engine_id: Option<String>,
     /// Water and air temperature (°C), barometric pressure (hPa).
     pub water_temp: Option<f64>,
     pub air_temp: Option<f64>,
@@ -217,7 +240,39 @@ impl VesselState {
                 self.humidity = num().map(|h| if h <= 1.0 { h * 100.0 } else { h });
             }
             "navigation.datetime" => self.datetime = val.as_str().map(str::to_string),
-            _ => {}
+            "navigation.rateOfTurn" => self.rot = num().map(|r| r.to_degrees() * 60.0),
+            "navigation.attitude" => {
+                self.heel = val.get("roll").and_then(Value::as_f64).map(f64::to_degrees).or(self.heel);
+                self.pitch = val.get("pitch").and_then(Value::as_f64).map(f64::to_degrees).or(self.pitch);
+            }
+            "steering.rudderAngle" => self.rudder = num().map(f64::to_degrees),
+            "environment.current" => {
+                self.set = val.get("setTrue").and_then(Value::as_f64).map(|r| nav_core::norm360(r.to_degrees())).or(self.set);
+                self.drift = val.get("drift").and_then(Value::as_f64).map(|ms| ms * MS_TO_KN).or(self.drift);
+            }
+            "environment.current.setTrue" => self.set = num().map(|r| nav_core::norm360(r.to_degrees())),
+            "environment.current.drift" => self.drift = num().map(|ms| ms * MS_TO_KN),
+            "navigation.gnss.satellites" => self.sats = num(),
+            "navigation.gnss.horizontalDilution" => self.hdop = num(),
+            _ => {
+                // electrical.batteries.<id>.voltage, propulsion.<id>.revolutions (Hz): the house
+                // battery (else the first one heard) and the first engine heard
+                if let Some(id) = path.strip_prefix("electrical.batteries.").and_then(|r| r.strip_suffix(".voltage")) {
+                    let ours = match &self.battery_id {
+                        None => true,
+                        Some(b) => b == id || (id == "house" && b != "house"),
+                    };
+                    if ours {
+                        self.battery_id = Some(id.to_string());
+                        self.battery_v = num();
+                    }
+                } else if let Some(id) = path.strip_prefix("propulsion.").and_then(|r| r.strip_suffix(".revolutions")) {
+                    if self.engine_id.as_deref().is_none_or(|e| e == id) {
+                        self.engine_id = Some(id.to_string());
+                        self.rpm = num().map(|hz| hz * 60.0);
+                    }
+                }
+            }
         }
     }
 }
@@ -423,6 +478,38 @@ async fn open_log(dir: &PathBuf) -> Option<tokio::io::BufWriter<tokio::fs::File>
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn applies_the_connectivity_batch() {
+        let mut s = VesselState::default();
+        let d = json!({
+            "context": "vessels.self",
+            "updates": [{
+                "values": [
+                    {"path": "navigation.rateOfTurn", "value": -0.004_363_323},
+                    {"path": "navigation.attitude", "value": {"roll": 0.174_532_9, "pitch": -0.034_906_6, "yaw": 1.0}},
+                    {"path": "steering.rudderAngle", "value": 0.087_266_5},
+                    {"path": "environment.current", "value": {"setTrue": std::f64::consts::FRAC_PI_2, "drift": 0.514_444}},
+                    {"path": "navigation.gnss.satellites", "value": 11},
+                    {"path": "navigation.gnss.horizontalDilution", "value": 0.9},
+                    {"path": "electrical.batteries.start.voltage", "value": 12.4},
+                    {"path": "electrical.batteries.house.voltage", "value": 12.9},
+                    {"path": "electrical.batteries.start.voltage", "value": 12.3},
+                    {"path": "propulsion.port.revolutions", "value": 30.0},
+                    {"path": "propulsion.starboard.revolutions", "value": 10.0}
+                ]
+            }]
+        });
+        assert!(s.apply_delta(&d));
+        assert!((s.rot.unwrap() + 15.0).abs() < 1e-3, "{:?}", s.rot);
+        assert!((s.heel.unwrap() - 10.0).abs() < 1e-3 && (s.pitch.unwrap() + 2.0).abs() < 1e-3);
+        assert!((s.rudder.unwrap() - 5.0).abs() < 1e-3);
+        assert!((s.set.unwrap() - 90.0).abs() < 1e-9 && (s.drift.unwrap() - 1.0).abs() < 1e-3);
+        assert_eq!((s.sats, s.hdop), (Some(11.0), Some(0.9)));
+        // the house battery is kept once heard; the first engine heard
+        assert_eq!(s.battery_v, Some(12.9));
+        assert_eq!(s.rpm, Some(1800.0));
+    }
 
     #[test]
     fn applies_position_cog_sog() {
