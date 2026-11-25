@@ -1944,12 +1944,23 @@ html[data-view="env"] #side .env-seabed label { padding: 2px 0; }
 .sp-li:hover { background: rgba(255,255,255,.05); }
 .sp-li .no { flex: none; min-width: calc(3 * var(--u)); color: #5c7382; font-size: calc(2.6 * var(--u)); text-align: right; }
 .sp-li .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sp-li .d, .sp-li .t { flex: none; font-weight: 700; text-align: right; }
+.sp-li .d, .sp-li .t { flex: none; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.sp-li .d { min-width: calc(10 * var(--u)); }
+/* targets: fixed right-aligned columns (CPA, TCPA, range) under a heading row */
+.sp-li.tgt { gap: calc(1.2 * var(--u)); }
+.sp-li .cpa, .sp-li .tcpa, .sp-li .rng { flex: none; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sp-li .cpa { width: calc(9.5 * var(--u)); }
+.sp-li .tcpa { width: calc(11 * var(--u)); }
+.sp-li .rng { width: calc(10.5 * var(--u)); color: var(--tile-quiet); }
+.sp-li.sp-hd { cursor: default; font-size: calc(2.4 * var(--u)); color: #5c7382; text-transform: uppercase; letter-spacing: .04em; padding-bottom: 0; }
+.sp-li.sp-hd:hover { background: none; }
+.sp-li.sp-hd :is(.cpa, .tcpa, .rng) { font-weight: 600; color: inherit; }
+.sp-li.sp-hd .sw { visibility: hidden; }
 .sp-li .t { min-width: calc(9 * var(--u)); color: var(--tile-quiet); }
 .sp-li small { font-size: .7em; font-weight: 500; color: var(--tile-quiet); margin-left: .15em; }
 .sp-li.next .nm { font-weight: 700; }
 .sp-li .sw { flex: none; width: calc(2.2 * var(--u)); height: calc(2.2 * var(--u)); border-radius: 50%; align-self: center; }
-.sp-li.danger { color: #ff6b5e; } .sp-li.danger .d { color: #ff6b5e; }
+.sp-li.danger { color: #ff6b5e; } .sp-li.danger :is(.d, .cpa, .tcpa) { color: #ff6b5e; }
 .sp-li.lost .nm { text-decoration: line-through; opacity: .7; }
 .sp-empty { font-size: calc(2.6 * var(--u)); color: #5c7382; padding: calc(0.4 * var(--u)) 0; }
 /* trend lines under readings (the last 3 hours) */
