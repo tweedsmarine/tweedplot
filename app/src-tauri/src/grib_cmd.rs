@@ -236,9 +236,9 @@ pub(crate) fn grib_wind_grid(path: String, t: i64, bbox: [f64; 4], max_points: u
     let step = |g: &grib::Grid| g.dlon.min(g.dlat.abs());
     let finer: Vec<(grib::Grid, Vec<f32>, Vec<f32>)> = finer_files(&over, &path)
         .iter()
-        .filter_map(|o| Some((o.grid_at(grib::Param::WindU, t)?, o.grid_at(grib::Param::WindV, t)?.1)))
-        .map(|((og, ou), ov)| (og, ou, ov))
-        .filter(|(og, _, _)| { let r = step(og) / step(&g); !(0.9..=1.1).contains(&r) })
+        .filter_map(|(o, same)| Some((o.grid_at(grib::Param::WindU, t)?, o.grid_at(grib::Param::WindV, t)?.1, *same)))
+        .filter(|((og, _), _, same)| *same || !(0.9..=1.1).contains(&(step(og) / step(&g))))
+        .map(|((og, ou), ov, _)| (og, ou, ov))
         .collect();
     if !finer.is_empty() {
         let mut all: Vec<(grib::Grid, Vec<&[f32]>)> = finer.iter().map(|(og, ou, ov)| (*og, vec![ou.as_slice(), ov.as_slice()])).collect();
@@ -369,10 +369,21 @@ fn mosaic(grids: &[(grib::Grid, Vec<&[f32]>)], bbox: [f64; 4], max_points: usize
     Some((lon0, lat0, dlon * stride as f64, dlat * stride as f64, ni, nj, out))
 }
 
-/// The loaded files of `over` other than `path` (the caller keeps those of another resolution).
-fn finer_files(over: &Option<Vec<String>>, path: &str) -> Vec<Arc<grib::GribFile>> {
+/// The loaded files of `over` other than `path`, each with whether it is from the same model and
+/// run as `path` (another area of the same download: laid alongside even at the same resolution).
+/// The caller keeps those of another resolution, and those of the same run.
+fn finer_files(over: &Option<Vec<String>>, path: &str) -> Vec<(Arc<grib::GribFile>, bool)> {
     let gribs = GRIBS.lock().unwrap();
-    over.iter().flatten().filter(|p| p.as_str() != path).filter_map(|p| gribs.get(p).cloned()).collect()
+    let base = gribs.get(path).map(|f| f.model());
+    over.iter()
+        .flatten()
+        .filter(|p| p.as_str() != path)
+        .filter_map(|p| gribs.get(p).cloned())
+        .map(|f| {
+            let same = base.as_ref().is_some_and(|b| *b == f.model() && !b.0.is_empty());
+            (f, same)
+        })
+        .collect()
 }
 
 /// One quantity from one file at time `t` on the file's own grid, in display units (see `grib_grid`).
@@ -478,7 +489,8 @@ fn layer_values(f: &grib::GribFile, layer: &str, t: i64, depth: Option<f64>) -> 
 /// "period" (s), "wavedir" (deg from), "rain" (mm/h), "cape" (J/kg), "mslp" (hPa), "temp" (°C).
 /// `over`: other loaded files to lay with it where their resolution differs from `path`'s, finest
 /// on top (a small detailed area over a big coarse one, whichever of the two is shown): see `mosaic`.
-/// Files at the same resolution (other runs, other models) are left out: they're for comparing.
+/// Files at the same resolution are left out (other runs or models are for comparing), except other
+/// areas of the same model and run, which are laid alongside.
 #[tauri::command]
 pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max_points: usize, depth: Option<f64>, over: Option<Vec<String>>) -> Option<serde_json::Value> {
     let f = GRIBS.lock().unwrap().get(&path)?.clone();
@@ -494,8 +506,9 @@ pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max
     let step = |g: &grib::Grid| g.dlon.min(g.dlat.abs());
     let finer: Vec<(grib::Grid, Vec<f32>)> = finer_files(&over, &path)
         .iter()
-        .filter_map(|o| layer_values(o, &layer, t, depth))
-        .filter(|(og, _)| { let r = step(og) / step(&g); !(0.9..=1.1).contains(&r) })
+        .filter_map(|(o, same)| layer_values(o, &layer, t, depth).map(|lv| (lv, *same)))
+        .filter(|((og, _), same)| *same || !(0.9..=1.1).contains(&(step(og) / step(&g))))
+        .map(|(lv, _)| lv)
         .collect();
     if !finer.is_empty() {
         let mut all: Vec<(grib::Grid, Vec<&[f32]>)> = finer.iter().map(|(og, v)| (*og, vec![v.as_slice()])).collect();
