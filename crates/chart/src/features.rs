@@ -27,6 +27,8 @@
 //! drawn as its symbol. (IMO's ECDIS performance standard keeps isolated
 //! dangers in the display base, which can't be removed; small-scale chart
 //! displays dropping a reef were behind the Vestas Wind stranding in 2014.)
+//! Marine farms are the exception: they follow their SCAMIN, from `FARM_ZOOM` at
+//! the latest, and carry no `hz` (see `FARM_ZOOM`).
 //!
 //! Other properties: `db` = 1 on what IMO's ECDIS performance standard puts in the
 //! display base besides dangers (buoys and beacons, ships' routeing); `wd` on a rock,
@@ -306,6 +308,16 @@ pub fn is_info(code: &str) -> bool {
     matches!(code, "PILBOP" | "RDOCAL" | "SISTAT" | "RSCSTA")
 }
 pub const INFO_ZOOM: f64 = 9.0;
+/// Marine farms: hazards, but drawn from their chart's SCAMIN as on an ECDIS, not at every zoom
+/// (the Marlborough Sounds' hundreds of farms, each charted on several charts, buried the
+/// small-scale chart), and from this zoom (about 1:70,000) at the latest whatever their SCAMIN.
+/// Routing keeps off them at every zoom (`for_each_danger`).
+pub const FARM_ZOOM: f64 = 12.0;
+
+/// A hazard shown at every zoom, whatever its chart's SCAMIN (a marine farm follows it).
+fn always_shown(code: &str) -> bool {
+    is_hazard(code) && code != "MARCUL"
+}
 const HAZARD_CLIP_MIN_ZOOM: u8 = 7;
 
 fn clip_coverage_for(hazard: bool, z: u8) -> bool {
@@ -856,8 +868,11 @@ impl ChartStore {
                                 if is_info(class.code) {
                                     minz = minz.min(INFO_ZOOM);
                                 }
+                                if class.code == "MARCUL" {
+                                    minz = minz.min(FARM_ZOOM);
+                                }
                                 let hazard = is_hazard(class.code);
-                                if !hazard && !keep(minz) {
+                                if !always_shown(class.code) && !keep(minz) {
                                     continue;
                                 }
                                 // only a feature actually drawn at this zoom hides a coarser band's copy
@@ -978,7 +993,9 @@ impl ChartStore {
                                     props.push(("name", Value::Str(n.into())));
                                 }
                                 if hazard {
-                                    props.push(("hz", Value::UInt(1)));
+                                    if always_shown(class.code) {
+                                        props.push(("hz", Value::UInt(1)));
+                                    }
                                     put_hazard(px, hazard_rank(class.code, &a), props);
                                 } else {
                                     fpt.add(&TileGeom::Points(vec![[px[0].round() as i32, px[1].round() as i32]]), &props);
@@ -1082,9 +1099,12 @@ impl ChartStore {
                             if is_info(class.code) {
                                 minz = minz.min(INFO_ZOOM);
                             }
+                            if class.code == "MARCUL" {
+                                minz = minz.min(FARM_ZOOM);
+                            }
                             let own_minz = minz;
                             minz = shown_from(t.band, &gb, minz);
-                            if !hazard && !keep(minz) {
+                            if !always_shown(class.code) && !keep(minz) {
                                 continue;
                             }
                             // a chart read early: only its copies of what a coarser chart shows
@@ -1098,7 +1118,7 @@ impl ChartStore {
                                 ("band", Value::UInt(t.band as u64)),
                                 ("minz", Value::F64((minz * 10.0).round() / 10.0)),
                             ];
-                            if hazard {
+                            if always_shown(class.code) {
                                 props.push(("hz", Value::UInt(1)));
                             }
                             if is_display_base(class.code) {
