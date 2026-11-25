@@ -12,6 +12,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { PRIMARY } from "./role.js";
+import { ask } from "./ask.js";
 import * as activity from "./activity.js";
 import { setupWeather, barbImage } from "./weather.js";
 import { setupWeatherPanel } from "./wxpanel.js";
@@ -534,6 +535,13 @@ let ctxRose = false; // right-click was on the variation diagram
 // "Go to here": the target for laylines (and later the autopilot); else the route's next mark
 let gotoTarget = null;
 try { gotoTarget = JSON.parse(localStorage.getItem("racenav.goto") || "null"); } catch { /* none */ }
+// nor a Go to left set when TweedPlot closed (never navigating at start: see route.js)
+let gotoNotResumed = null;
+if (PRIMARY && gotoTarget) {
+  gotoNotResumed = gotoTarget.name || "the Go to point";
+  gotoTarget = null;
+  try { localStorage.removeItem("racenav.goto"); } catch { /* storage unavailable */ }
+}
 function setGoto(g) {
   // the leg runs from where the boat was when the go to was set (cross-track error is off that line)
   if (g && !g.from && lastBoat) g = { ...g, from: [...lastBoat] };
@@ -744,6 +752,20 @@ map.on("load", () => {
   route = setupRoute(map, { library, getBoat: () => lastBoat, getArrivalNm: () => Number(document.getElementById("rt-radius").value) || 0.1 });
   // navigation started or stopped, or the view changed: the readings, highway and laylines follow at once
   route.onChange(() => { feed(); laylines?.refresh(); });
+  // what was navigated when TweedPlot closed isn't navigated again without asking (route.js)
+  if (PRIMARY && (route.held() || gotoNotResumed)) setTimeout(async () => {
+    const h = route.held();
+    if (!h) { toast(`Not navigating: the Go to ${gotoNotResumed} set when TweedPlot closed was cancelled.`, 15000); return; }
+    const opts = h.marks.map((n, i) => [String(i), `${i + 1}. ${n}${i === h.ahead ? " (nearest leg to the boat)" : ""}${i === h.nav && i !== h.ahead ? " (where it had got to)" : ""}`]);
+    const v = await ask({
+      title: `Carry on navigating ${h.name}?`,
+      note: `It was being navigated when TweedPlot closed. Nothing is navigated, and nothing is sent to an autopilot, until you choose.${gotoNotResumed ? ` (The Go to ${gotoNotResumed} was cancelled.)` : ""}`,
+      fields: [{ key: "mark", label: "Next mark", type: "select", value: String(h.ahead), options: opts }],
+      ok: "Carry on navigating", cancel: "Don't navigate",
+    });
+    route.resumeHeld(v ? Number(v.mark) : null);
+    if (!v) toast("Not navigating. Route › Start navigating when wanted.", 10000);
+  }, 6000);
   window.addEventListener("racenav-view", () => { feed(); laylines?.refresh(); });
   mariner = setupMariner(map, { settings, saveSettings, colours: () => ihoColours, usingS52: () => features?.usingS52(), library, route, toast, getVariation: variationAt });
   route.setIho(!!ihoColours, tokenColour);
