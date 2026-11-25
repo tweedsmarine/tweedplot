@@ -306,6 +306,9 @@ const WX_DEFAULTS = { density: 5, size: 1.0, shading: "2", opacity: 0.45, land: 
   seaFilter: {},
   // loaded GRIBs left out of the agreement displays
   cmpOff: [],
+  // finer loaded GRIBs drawn over the shown one where they cover (a detailed small area over a big
+  // coarse one); the coarser file fills in round them
+  layered: true,
   // which loaded GRIB feeds each layer or overlay when the choice is not the shown one: { key: path }
   src: {},
   // highlight sea temperature fronts (where the temperature changes fastest)
@@ -1035,24 +1038,26 @@ export function setupWeather(map, layers) {
       const breakKey = wx.breaks ? ["sst", "skin"].find((k) => (bsrc ? hasIn(bsrc, LAYERS[k].params[0]) : oceanPath(LAYERS[k]))) : null;
       const breakPath = breakKey ? bsrc ?? oceanPath(LAYERS[breakKey]) : null;
       drawError = null;
+      // the other loaded files, for laying finer ones on top and coarser ones round (the backend keeps those of another resolution)
+      const over = (base) => (wx.layered !== false && base ? [...loaded.keys()].filter((p) => p !== base) : null);
       const [g, gs, gw, gp, [gcd, gcs], gb, [gfd, gfs]] = await Promise.all([
-        wx.arrows && (hasIn(pBarbs, "WindU") || hasIn(pBarbs, "WindSpeed")) ? invoke("grib_wind_grid", { path: pBarbs, t, bbox, maxPoints: arrowPts }).catch(failed) : null,
+        wx.arrows && (hasIn(pBarbs, "WindU") || hasIn(pBarbs, "WindSpeed")) ? invoke("grib_wind_grid", { path: pBarbs, t, bbox, maxPoints: arrowPts, over: over(pBarbs) }).catch(failed) : null,
         !shade ? null : layer.verify
           ? (verifyTarget ? invoke("grib_verify_grid", { paths: [], t: verifyTarget.t, at: t, forecast: verifyTarget.path, kind: layer.verify, bbox, maxPoints: 20000 })
             .catch((e) => ({ error: String(e) })) : { error: "Choose a forecast to verify in the Verify dock." })
           : layer.compare
           ? invoke("grib_compare", { paths: comparePaths(), metric: layer.compare, t, bbox, maxPoints: 20000 }).catch((e) => ({ error: String(e) }))
           : timeAllowed(shadePath(layer), layer.params)
-          ? invoke("grib_grid", { path: shadePath(layer), layer: wx.layer, t, bbox, maxPoints: 20000, depth: layer.depth ? wx.depth : null }).catch(failed) : null,
-        wx.waveArrows && hasIn(pWaves, "WaveDir") ? invoke("grib_grid", { path: pWaves, layer: "wavedir", t, bbox, maxPoints: Math.max(40, arrowPts / 2) }).catch(failed) : null,
-        wx.isobars && hasIn(pIso, "Mslp") ? invoke("grib_grid", { path: pIso, layer: "mslp", t, bbox, maxPoints: 20000 }).catch(failed) : null,
+          ? invoke("grib_grid", { path: shadePath(layer), layer: wx.layer, t, bbox, maxPoints: 20000, depth: layer.depth ? wx.depth : null, over: over(shadePath(layer)) }).catch(failed) : null,
+        wx.waveArrows && hasIn(pWaves, "WaveDir") ? invoke("grib_grid", { path: pWaves, layer: "wavedir", t, bbox, maxPoints: Math.max(40, arrowPts / 2), over: over(pWaves) }).catch(failed) : null,
+        wx.isobars && hasIn(pIso, "Mslp") ? invoke("grib_grid", { path: pIso, layer: "mslp", t, bbox, maxPoints: 20000, over: over(pIso) }).catch(failed) : null,
         curPath && timeAllowed(curPath, ["CurrentU"])
-          ? Promise.all(["currentdir", "current"].map((layer) => invoke("grib_grid", { path: curPath, layer, t, bbox, maxPoints: curPts }).catch(failed)))
+          ? Promise.all(["currentdir", "current"].map((layer) => invoke("grib_grid", { path: curPath, layer, t, bbox, maxPoints: curPts, over: over(curPath) }).catch(failed)))
           : [null, null],
-        breakPath && timeAllowed(breakPath, LAYERS[breakKey].params) ? invoke("grib_grid", { path: breakPath, layer: breakKey, t, bbox, maxPoints: 20000 }).catch(failed) : null,
+        breakPath && timeAllowed(breakPath, LAYERS[breakKey].params) ? invoke("grib_grid", { path: breakPath, layer: breakKey, t, bbox, maxPoints: 20000, over: over(breakPath) }).catch(failed) : null,
         // the flow at the file's own resolution in view (up to 6 000 points)
         flowPath && timeAllowed(flowPath, ["CurrentU"])
-          ? Promise.all(["currentdir", "current"].map((layer) => invoke("grib_grid", { path: flowPath, layer, t, bbox, maxPoints: 6000 }).catch(failed)))
+          ? Promise.all(["currentdir", "current"].map((layer) => invoke("grib_grid", { path: flowPath, layer, t, bbox, maxPoints: 6000, over: over(flowPath) }).catch(failed)))
           : [null, null],
       ]);
       if (version !== drawVersion) return;
@@ -1211,7 +1216,16 @@ export function setupWeather(map, layers) {
       const extra = {};
       const src = {};
       const past = { ...shown.past };
+      // finer files over the shown one (when layered) give their values first, finest first
+      const res = (p) => Math.min(...(loaded.get(p)?.params ?? []).map((q) => Math.min(Math.abs(q.dlon), Math.abs(q.dlat))).filter((d) => d > 0), Infinity);
+      const finer = wx.layered === false ? [] : rows.filter((r) => r.path !== display && res(r.path) < 0.9 * res(display)).sort((a, b) => res(a.path) - res(b.path));
       for (const k of ["tws", "twd", "gust", "mslp", "wave", "period", "wavedir", "temp", "rain", ...SEA_KEYS]) {
+        const over = finer.find((r) => r[k] != null);
+        if (over) {
+          extra[k] = over[k]; src[k] = loaded.get(over.path)?.name ?? over.name ?? "another file";
+          if (over.past?.[k] != null) past[k] = over.past[k];
+          continue;
+        }
         if (shown[k] != null) continue;
         const from = rows.find((r) => r[k] != null);
         if (from) {
@@ -1283,6 +1297,12 @@ export function setupWeather(map, layers) {
 
   // load() has already reported any error.
   $("wx-load").onclick = () => { load($("wx-files").value).catch(() => {}); };
+  // finer GRIBs over the shown one (a small detailed area with a big coarse one)
+  const layeredBox = $("wx-layered");
+  if (layeredBox) {
+    layeredBox.checked = wx.layered !== false;
+    layeredBox.onchange = () => { wx.layered = layeredBox.checked; saveWx(); draw(); changed(); };
+  }
   $("wx-refresh").onclick = () => refreshFiles(true);
 
   // ---------- display settings ----------------------------------------------------------
@@ -1782,6 +1802,8 @@ export function setupWeather(map, layers) {
     setCursor: (lonlat) => { cursor = lonlat; updatePoint(); },
     /** The GRIB shown on the chart and the slider time. */
     current: () => ({ path: display, t, name: display && loaded.get(display)?.name }),
+    /** Whether finer loaded GRIBs are drawn (and read) over the shown one. */
+    layered: () => wx.layered !== false,
     /** Every loaded GRIB: { path, name, start, end } (wind times). */
     all: () => [...loaded].map(([path, s]) => {
       const w = s.params.find((p) => p.param === "WindU") ?? s.params.find((p) => p.times?.length);

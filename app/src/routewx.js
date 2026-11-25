@@ -104,7 +104,7 @@ export function setupRouteWeather(map, { weather, routing, course, dock, getSog 
     request.run(async () => {
       const pts = from === "routing" ? active.map((p) => ({ ...p })) : courseTrack(c, dep, kn);
       const rows = sampleTrack(pts, positionAt, from === "routing");
-      const vals = await invoke("grib_along", { first: current.path, pts: rows.map((r) => [r.lat, r.lon, r.t]) });
+      const vals = await invoke("grib_along", { first: current.path, pts: rows.map((r) => [r.lat, r.lon, r.t]), layered: weather.layered?.() ?? true });
       if (!Array.isArray(vals) || vals.length !== rows.length || vals.some((v) => !v || typeof v !== "object" || Array.isArray(v))) {
         throw new Error("The forecast returned an incomplete result.");
       }
