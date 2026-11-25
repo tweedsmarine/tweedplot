@@ -814,7 +814,7 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     // tidal stream diamonds) to them
     const pad = 6;
     const box = [[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]];
-    const own = map.queryRenderedFeatures(box).some((f) => /^(rt-|lib-|fl-|dl-|boat|tide-|ts-|stn-|ais-|alarm-|ruler-|bar-|trk-|evt-|ovl-|vd-|anc-|lay-)/.test(f.layer.id));
+    const own = map.queryRenderedFeatures(box).some((f) => /^(rt-|lib-|fl-|dl-|boat|tide-|ts-|stn-|ais-|dsc-|alarm-|ruler-|bar-|trk-|evt-|ovl-|vd-|anc-|lay-)/.test(f.layer.id));
     if (own) return;
     // inside a fishing rule area, the rules box (marine.js) stands in for chart areas
     const inRule = map.getLayer("mar-rules-fill") && map.getLayoutProperty("mar-rules-fill", "visibility") !== "none"

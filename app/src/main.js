@@ -712,7 +712,7 @@ map.on("load", () => {
   });
   for (const alarm of pendingNmeaAlarms.splice(0)) alarms.raise(...alarm);
   // DSC distress, urgency and safety calls from the VHF (dsc.js): an alarm, and the caller on the chart
-  setupDsc(map, { getAlarms: () => alarms, toast,
+  setupDsc(map, { getAlarms: () => alarms, toast, getOwn: () => lastBoat,
     aisName: (mmsi) => { const t = aisApi?.targets?.get?.(Number(mmsi)) ?? aisApi?.targets?.get?.(String(mmsi)); return t?.name?.trim() || null; } });
   // alarms from other equipment (NMEA ALR, ALF; Signal K notifications; a GPS not on WGS 84)
   equipment = setupEquipmentAlerts({ getAlarms: () => alarms });
