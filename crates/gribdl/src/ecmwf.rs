@@ -293,10 +293,10 @@ fn step(
                     got += data.len() as u64;
                 }
                 for fld in &fields {
-                    // IFS total precipitation (tp, 0/1/52, metres): written as 0/1/8 in kg m-2 = mm, as AIFS has
+                    // IFS total precipitation (tp, 0/1/52 or the ECMWF local 0/1/193, metres): written as 0/1/8 in kg m-2 = mm, as AIFS has
                     // it, since the file keeps only template 4.0 (the grib crate turns it into a rain rate)
                     let tp;
-                    let fld = if fld.centre == 98 && fld.discipline == 0 && fld.category == 1 && fld.number == 52 {
+                    let fld = if fld.centre == 98 && matches!(fld.param, grib::Param::Other(0, 1, 52) | grib::Param::Other(0, 1, 193)) {
                         tp = grib::Field { number: 8, param: grib::Param::Other(0, 1, 8), values: fld.values.iter().map(|v| v * 1000.0).collect(), ..fld.clone() };
                         &tp
                     } else {

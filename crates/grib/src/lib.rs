@@ -624,8 +624,17 @@ impl GribFile {
 /// Some files (UKMO through Meltemus) give wind as speed and direction rather
 /// than U/V components. Build U/V fields from them so everything downstream
 /// (barbs, routing, comparisons) works the same.
-/// ECMWF total precipitation (0/1/8, kg m-2, accumulated from the start of the run, as the
-/// downloader writes it): rain rate fields (0/1/7, kg m-2 s-1 = mm/s) for each step, the mean
+/// ECMWF total precipitation as kg m-2 (= mm) per unit of the field: 0/1/8 (AIFS, and as the
+/// downloader writes IFS tp) in kg m-2; IFS tp as published, 0/1/52 or the ECMWF local 0/1/193, in metres.
+pub fn ecmwf_tp_scale(p: Param) -> Option<f32> {
+    match p {
+        Param::Other(0, 1, 8) => Some(1.0),
+        Param::Other(0, 1, 52) | Param::Other(0, 1, 193) => Some(1000.0),
+        _ => None,
+    }
+}
+
+/// ECMWF total precipitation (accumulated from the start of the run): rain rate fields (0/1/7, kg m-2 s-1 = mm/s) for each step, the mean
 /// over the interval since the step before, like GFS's rain rate. Not when the file has a rain
 /// rate already. A first step more than 6 h into the run (the steps before it not in the file)
 /// gives no rate: the mean since the start would smear it.
@@ -633,7 +642,7 @@ fn rain_from_accumulation(fields: &[Field]) -> Vec<Field> {
     if fields.iter().any(|f| f.param == Param::Rain) {
         return Vec::new();
     }
-    let acc: Vec<&Field> = fields.iter().filter(|f| f.centre == 98 && f.param == Param::Other(0, 1, 8)).collect();
+    let acc: Vec<&Field> = fields.iter().filter(|f| f.centre == 98 && ecmwf_tp_scale(f.param).is_some()).collect();
     let mut groups: std::collections::BTreeMap<(Option<u16>, i64, usize, usize, i64, i64), Vec<&Field>> = std::collections::BTreeMap::new();
     for f in acc {
         let g = &f.grid;
@@ -654,9 +663,10 @@ fn rain_from_accumulation(fields: &[Field]) -> Vec<Field> {
             if dt <= 0.0 || (base.is_none() && dt > 6.0 * 3600.0) {
                 continue;
             }
+            let k = ecmwf_tp_scale(f.param).unwrap_or(1.0);
             let values = f.values.iter().enumerate().map(|(i, &a)| {
                 let b = base.map_or(0.0, |b| b[i]);
-                if a.is_finite() && b.is_finite() { ((a - b) / dt).max(0.0) } else { f32::NAN }
+                if a.is_finite() && b.is_finite() { ((a - b) * k / dt).max(0.0) } else { f32::NAN }
             }).collect();
             out.push(Field { param: Param::Rain, number: 7, values, ..f.clone() });
         }
@@ -753,7 +763,15 @@ pub fn scan(path: impl AsRef<Path>) -> Result<FileInfo, GribError> {
                     Param::Oxygen => "oxygen",
                     Param::Ph => "pH",
                     Param::Salinity | Param::SubSalinity => "salinity",
-                    Param::Other(..) => "other",
+                    Param::Other(..) if f.centre == 98 && ecmwf_tp_scale(f.param).is_some() => "rain",
+                    // say which, so an unread field can be identified
+                    Param::Other(d, c, n) => {
+                        let c = format!("other ({d}/{c}/{n})");
+                        if !contents.contains(&c) {
+                            contents.push(c);
+                        }
+                        continue;
+                    }
                 };
                 if !contents.iter().any(|x| x == c) {
                     contents.push(c.to_string());
@@ -961,6 +979,10 @@ mod tests {
         assert!((mmh(9).unwrap() - 1.5).abs() < 1e-4);
         // a file starting well into the run: no rate for its first step
         let late = GribFile::build(PathBuf::new(), vec![mk(48, 40.0), mk(51, 43.0)], vec![]);
+        // IFS tp as published (ECMWF local 0/1/193, metres) gives the same
+        let m = |h: i64, acc: f32| Field { param: Param::Other(0, 1, 193), number: 193, ..mk(h, acc / 1000.0) };
+        let f2 = GribFile::build(PathBuf::new(), vec![m(0, 0.0), m(3, 3.0)], vec![]);
+        assert!((f2.value(Param::Rain, -40.0, 170.0, 3 * 3600).unwrap() * 3600.0 - 1.0).abs() < 1e-3);
         assert_eq!(late.times(Param::Rain), vec![51 * 3600]);
         // ECMWF ocean currents (sve/svn) are currents
         assert_eq!(Param::from_codes(10, 3, 14, 160), Param::CurrentU);
