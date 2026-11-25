@@ -73,7 +73,7 @@ const TOOL_ICONS = {
 // choosing items in a list (chart layers, sources, filters, names on targets)
 const TOGGLES = [
   // alarms
-  "al-shallow", "al-contour", "al-air", "al-xte", "al-arrive", "al-poslost", "ais-cpa-on", "ais-ignore-moored", "ais-net-alarms", "mar-alarm", "env-use-past",
+  "ap-send", "al-shallow", "al-contour", "al-air", "al-xte", "al-arrive", "al-poslost", "ais-cpa-on", "ais-ignore-moored", "ais-net-alarms", "mar-alarm", "env-use-past",
   // weather, routes, routing
   "gf-auto", "stn-show", "rt-great-circle", "rt-current", "rt-hovertime", "set-avoid-dangers", "set-avoid-farms", "rt-barriers",
   // targets, library
