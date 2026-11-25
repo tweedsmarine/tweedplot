@@ -149,6 +149,7 @@ export function setupUpdates() {
     mode.value = prefs.mode;
     mode.addEventListener("change", () => {
       prefs.mode = mode.value;
+      prefs.asked = true; // chosen in Settings: that's the answer, no question at start-up
       save();
       if (prefs.mode === "download" && found && !downloaded) fetchInstaller(false);
     });
@@ -160,8 +161,28 @@ export function setupUpdates() {
   // so a PC that slept through the 12 hours looks soon after it wakes)
   if (inTauri) {
     const auto = () => { if (checkDue(prefs, Date.now())) look(false); };
-    setTimeout(() => { if (prefs.mode !== "off") look(false); }, FIRST_CHECK_MS);
+    // the first start (or the first since the question was added): asked once whether to look
+    // online at all; nothing is fetched before the answer
+    if (!prefs.asked) setTimeout(askOnce, 8000);
+    setTimeout(() => { if (prefs.asked && prefs.mode !== "off") look(false); }, FIRST_CHECK_MS);
     setInterval(auto, Math.min(CHECK_EVERY_MS, 60 * 60 * 1000));
+  }
+
+  async function askOnce() {
+    if (prefs.asked) return;
+    const v = await ask({
+      title: "Check for TweedPlot updates?",
+      note: "TweedPlot can look on GitHub for a new version when it starts and twice a day while it's open. " +
+        "Each look needs an internet connection and uses a few kilobytes; nothing is downloaded or installed without asking you. " +
+        "You can change this at any time in Settings › Diagnostics › Software updates.",
+      ok: "Yes, check for updates", cancel: "No",
+    });
+    prefs.asked = true;
+    prefs.mode = v ? "notify" : "off";
+    save();
+    if (mode) mode.value = prefs.mode;
+    log(v ? "the skipper chose to check for updates" : "the skipper chose not to check for updates");
+    if (v) look(false);
   }
 
   return { check: () => look(true) };
