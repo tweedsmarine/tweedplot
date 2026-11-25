@@ -24,6 +24,13 @@ pub const DEFAULT_URL: &str = "ws://localhost:3000/signalk/v1/stream?subscribe=a
 
 const MS_TO_KN: f64 = 3600.0 / 1852.0;
 
+/// A Signal K notification: its state (alert, warn, alarm, emergency) and message.
+#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+pub struct Notification {
+    pub state: String,
+    pub message: String,
+}
+
 /// Own-vessel state built from Signal K deltas.
 #[derive(Debug, Clone, Default, Serialize, PartialEq)]
 pub struct VesselState {
@@ -97,6 +104,11 @@ pub struct VesselState {
     /// first engine reported, when there are several).
     pub battery_v: Option<f64>,
     pub rpm: Option<f64>,
+    /// The GNSS receiver's datum code (NMEA DTM): W84 is WGS 84.
+    pub datum: Option<String>,
+    /// Signal K notifications not in the normal state, by path ("notifications.mob" →
+    /// { state, message }): alarms raised by the server or by other devices on it.
+    pub notifications: BTreeMap<String, Notification>,
     #[serde(skip)]
     pub battery_id: Option<String>,
     #[serde(skip)]
@@ -254,6 +266,17 @@ impl VesselState {
             "environment.current.drift" => self.drift = num().map(|ms| ms * MS_TO_KN),
             "navigation.gnss.satellites" => self.sats = num(),
             "navigation.gnss.horizontalDilution" => self.hdop = num(),
+            _ if path.starts_with("notifications.") => {
+                // a notification: kept while it is above normal, removed when it returns to normal
+                // (or is deleted: a null value)
+                let state = val.get("state").and_then(Value::as_str).unwrap_or("normal").to_ascii_lowercase();
+                if matches!(state.as_str(), "alert" | "warn" | "alarm" | "emergency") {
+                    let message = val.get("message").and_then(Value::as_str).unwrap_or("").to_string();
+                    self.notifications.insert(path.to_string(), Notification { state, message });
+                } else {
+                    self.notifications.remove(path);
+                }
+            }
             _ => {
                 // electrical.batteries.<id>.voltage, propulsion.<id>.revolutions (Hz): the house
                 // battery (else the first one heard) and the first engine heard
@@ -478,6 +501,19 @@ async fn open_log(dir: &PathBuf) -> Option<tokio::io::BufWriter<tokio::fs::File>
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn keeps_notifications_above_normal() {
+        let mut s = VesselState::default();
+        let d = |state: &str| json!({ "context": "vessels.self", "updates": [{ "values": [
+            {"path": "notifications.environment.depth.belowKeel", "value": {"state": state, "message": "Shallow water", "method": ["visual", "sound"]}}
+        ] }] });
+        assert!(s.apply_delta(&d("alarm")));
+        assert_eq!(s.notifications["notifications.environment.depth.belowKeel"].state, "alarm");
+        assert_eq!(s.notifications["notifications.environment.depth.belowKeel"].message, "Shallow water");
+        assert!(s.apply_delta(&d("normal")));
+        assert!(s.notifications.is_empty());
+    }
 
     #[test]
     fn applies_the_connectivity_batch() {

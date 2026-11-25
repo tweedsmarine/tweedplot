@@ -93,6 +93,8 @@ import { setupSettings } from "./settings.js";
 import { setupSidePanel } from "./sidepanel.js";
 import { setupAutopilot } from "./autopilot.js";
 import { setupDsc } from "./dsc.js";
+import { setupEquipmentAlerts } from "./equipment.js";
+import { setupRadarTargets } from "./arpa.js";
 import { setupHistorySettings, restoreHistoryCards, recorder as histRecorder } from "./history.js";
 import { setupNmeaMonitor, openMonitorWindow } from "./nmeamonitor.js";
 
@@ -718,6 +720,10 @@ map.on("load", () => {
   // DSC distress, urgency and safety calls from the VHF (dsc.js): an alarm, and the caller on the chart
   setupDsc(map, { getAlarms: () => alarms, toast,
     aisName: (mmsi) => { const t = aisApi?.targets?.get?.(Number(mmsi)) ?? aisApi?.targets?.get?.(String(mmsi)); return t?.name?.trim() || null; } });
+  // alarms from other equipment (NMEA ALR, ALF; Signal K notifications; a GPS not on WGS 84)
+  equipment = setupEquipmentAlerts({ getAlarms: () => alarms });
+  // radar (ARPA) targets from TTM and TLL
+  setupRadarTargets(map, { getOwn: () => ({ pos: lastBoat, heading: vessel?.heading, cog: vessel?.cog }) });
   // the leg to the autopilot (autopilot.js): only live, not in a replay, and with a current position
   setupAutopilot({
     getLeg: () => {
@@ -1660,8 +1666,14 @@ map.on("click", () => { ctx.hidden = true; });
 map.on("movestart", (e) => { if (e.originalEvent) ctx.hidden = true; }); // not the boat-follow nudges
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") ctx.hidden = true; });
 
+let equipment = null; // alarms from other equipment (equipment.js)
 listen("vessel", ({ payload }) => {
   const raw = payload.v ?? payload;
+  // Signal K notifications and the GPS datum, whichever source navigates (not from a replay)
+  if (!payload.replay) {
+    if (payload.source !== "nmea0183") equipment?.signalK(raw.notifications);
+    else equipment?.datum(raw.datum);
+  }
   if (payload.replay) {
     if (!replayOn) return; // a late message after the replay stopped
   } else {
