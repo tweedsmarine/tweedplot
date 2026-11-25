@@ -1998,7 +1998,11 @@ html.side-strip body:has(.ss-alerts .alarm:not(.warn):not(.acked):not(.summary))
 /* the highway in the data panel: laid out to the panel's width, in millimetres (--u) */
 .hw-fluid { position: relative; }
 .hw-fluid .hw-dashboard { position: absolute; inset: 0; width: auto; height: auto; transform: none;
-  grid-template-rows: auto calc(7 * var(--u)) minmax(calc(10 * var(--u)), 1fr) calc(3.5 * var(--u)) auto; gap: calc(0.8 * var(--u)); }
+  grid-template-rows: auto calc(7 * var(--u)) minmax(calc(10 * var(--u)), 1fr) auto; gap: calc(0.8 * var(--u)); }
+/* the steering arrow along the foot of the highway picture, not in a row of its own (no gap above XTE) */
+.hw-fluid .hw-canvas { grid-row: 3; grid-column: 1; }
+.hw-fluid .hw-steer-row { grid-row: 3; grid-column: 1; align-self: end; height: calc(3.5 * var(--u)); margin: 0 calc(1 * var(--u)) calc(0.6 * var(--u)); position: relative; z-index: 1; pointer-events: none; }
+.hw-fluid .hw-bottom { grid-row: 4; }
 .hw-fluid .hw-metrics { gap: calc(0.6 * var(--u)); }
 .hw-fluid .hw-metrics.hw-top { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .hw-fluid .hw-metric { padding: calc(0.4 * var(--u)) calc(0.8 * var(--u)); border-radius: 4px; gap: 0; }
