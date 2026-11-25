@@ -2156,7 +2156,9 @@ details.sub summary { color: inherit; opacity: .9; font-weight: 600; }
 /* the last rows of Weather layers and filters: whole-width buttons, nothing running off the panel */
 #side #wxp .wxp-body > button { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin-top: 4px; }
 #side #wxp .wxp-presets { gap: 4px; }
-#side #wxp .wxp-presets :is(select, button) { flex: 1 1 0; min-width: 0; }
+/* the preset list takes the room; Save… and Delete keep their own width (the list read "Presets…" cut short) */
+#side #wxp .wxp-presets select { flex: 1 1 auto; min-width: 9em; }
+#side #wxp .wxp-presets button { flex: 0 0 auto; }
 /* scroll bars and the time slider on the dark surfaces: dim, so they do not glare in the night colours */
 #side, #side *, #side-strip, #side-strip * { scrollbar-color: var(--element-inactive-color) transparent; scrollbar-width: thin; }
 html:is([data-palette^="night"], [data-palette="iho-night"]) #side input[type="range"] { filter: brightness(0.55); }

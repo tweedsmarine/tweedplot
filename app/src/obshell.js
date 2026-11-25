@@ -67,7 +67,7 @@ const TOOL_ICONS = {
   follow: ["obi-center-iec", "obi-center-off-iec"], "ruler-btn": ["obi-measure-google"],
   "ebl-btn": ["obi-radar-electronic-range-and-bearing-proposal"], "pb-rec": ["obi-media-record"], "pb-tb": ["obi-chart-seabed-proposal"],
   "readout-btn": ["obi-table"], "targets-btn": ["obi-ais-target-activated-iec"], "clear-track": ["obi-delete"], "shot-btn": ["obi-camera"],
-  "side-btn": ["obi-panel-right-open"], "tools-btn": ["obi-panel-left-open"],
+  "side-btn": ["obi-panel-right-open"], 
 };
 // On/off settings that take effect at once are OpenBridge toggle switches; check boxes stay for
 // choosing items in a list (chart layers, sources, filters, names on targets)

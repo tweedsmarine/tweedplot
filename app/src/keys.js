@@ -22,7 +22,6 @@ export const KEYS = [
   { group: "Views", keys: "F3", label: "Planning view", run: (c) => c.views.set("plan") },
   { group: "Views", keys: "F4", label: "Instruments view", run: (c) => c.views.set("inst") },
   { group: "Views", keys: "F6", label: "Environment view", run: (c) => c.views.set("env") },
-  { group: "Views", keys: "P", label: "Show or hide the rail and drawers", btn: "tools-btn", run: click("tools-btn") },
   { group: "Views", keys: "O", label: "Show the data panel beside the chart, or hide it to a line under the chart", btn: "side-btn", run: click("side-btn") },
   { group: "Views", keys: "Esc", label: "In the Instruments or Live data view: back to the view you came from", own: true },
   { group: "Views", keys: "F11", label: "Full screen", own: true },

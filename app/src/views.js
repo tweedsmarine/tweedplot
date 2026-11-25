@@ -48,7 +48,8 @@ export function setupViews(map, { onPlanningTimeout = () => {}, livePosition = (
   if (!PRIMARY && VIEWS.some((v) => v.id === startView)) s.current = startView;
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* ignore */ } };
   const def = (id) => VIEWS.find((v) => v.id === id);
-  const toolsOn = (id) => s.tools[id] ?? def(id).tools;
+  // OpenBridge: no rail; the drawers open from the menu in every view, so always "on"
+  const toolsOn = () => true;
   const mapOn = (id) => s.map?.[id] ?? def(id).map;
   const chartPositions = new Map();
   const chartViews = new Set(["nav", "plan", "env"]);
@@ -69,9 +70,6 @@ export function setupViews(map, { onPlanningTimeout = () => {}, livePosition = (
       button.classList.toggle("on", current);
       button.setAttribute("aria-pressed", String(current));
     }
-    const tb = $("tools-btn");
-    tb.classList.toggle("on", tools);
-    tb.title = `Left panels: ${tools ? "hide" : "show"} the rail and drawers in the ${v.name} view (P)`;
     save();
     if (!PRIMARY) patchWindow(LABEL, { view: v.id });
     window.dispatchEvent(new CustomEvent("racenav-view", { detail: { id: v.id, tools } }));
@@ -82,7 +80,6 @@ export function setupViews(map, { onPlanningTimeout = () => {}, livePosition = (
   // a click lists the views by name (a new user can't guess what a cycling button will do next);
   // F2–F4 and the keys list switch directly
   $("view-btn").onclick = () => (pop.hidden ? openPop() : (pop.hidden = true));
-  $("tools-btn").onclick = () => { s.tools[s.current] = !toolsOn(s.current); apply(); };
 
   // right-click the view button: pick a view, and show or hide the chart in this one
   const pop = document.createElement("div");

@@ -1,5 +1,6 @@
 // The Instruments view in OpenBridge's dress: the compass is OpenBridge's own instrument
-// (obc-compass: heading up, heading and COG markers, the true wind from where it blows); the other
+// (obc-compass: heading up, heading and COG markers, the true wind from where it blows, the bearing
+// to the next mark as the setpoint marker when navigating); the other
 // tiles keep TweedPlot's drawings in OpenBridge's colours and type (style.css). The tiles, their
 // layout and what they show are TweedPlot's (insttiles.js, instruments.js).
 
@@ -57,5 +58,10 @@ export function setupOpenBridgeInstruments() {
     el.windFromDirection = twd;
     el.currentWindSpeedKnots = ctx?.v?.tws ?? null;
     el.rateOfTurnDegreesPerMinute = rateOfTurn(host, ctx);
+    // the bearing to the next mark of the navigated route, as the ring's setpoint marker (only when
+    // navigating: a planned route isn't a course to steer)
+    const btw = ctx?.navigating && Number.isFinite(ctx?.wp?.btw) ? ctx.wp.btw : null;
+    el.headingSetpoint = btw;
+    el.title = btw == null ? "" : `Marker on the ring: bearing to ${ctx.nav?.next?.name || "the next mark"} ${Math.round(btw)}°T`;
   };
 }

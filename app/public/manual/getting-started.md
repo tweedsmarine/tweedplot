@@ -9,7 +9,7 @@ Nothing covers the chart: everything else sits beside it.
 ![The Navigation view under way through French Pass: the rail, the toolbar, the chart with the route being navigated, and the data panel](img/12-navigation.jpg)
 
 - **The rail** (left edge): the drawers. {icon:weather} Weather, {icon:course} Route, {icon:routing} Wx routing, {icon:fleet} Targets & fleets, {icon:library} Library, {icon:chart} Chart, {icon:inst} Instruments, {icon:alarms} Alarms. {icon:manual} Manual and {icon:settings} Settings are at the bottom. Click one to open it; click it again (or **Esc**) to close it. The **?** in a drawer's title bar opens the manual at that drawer.
-- **The toolbar** (the strip down the chart's left edge): {icon:north} north up, the live data light, live or paused, {icon:follow} follow the boat, {icon:ruler} ruler, {icon:ebl} EBL/VRM, {icon:targets} target list, clear the track, {icon:screenshot} **Capture** a screenshot (saved to TweedPlot-Screenshots on the Desktop unless you choose another folder); then the **View** list, {icon:side} **Right**: show or hide the data panel (**O**), {icon:panels} **Left**: show or hide the rail and drawers (**P**), {icon:day} colours (day, dusk, night). Every button has a short label under its icon, and the three groups (status, tools, display) are set apart by a wider line. Scroll the toolbar when the window is too short to show all buttons. **LIVE**, **PAUSED** or **REPLAY** shows the data mode; **FOLLOW** means the chart follows the boat and **FREE** means it does not. Hover a button for what it does.
+- **The toolbar** (the strip down the chart's left edge): {icon:north} north up, the live data light, live or paused, {icon:follow} follow the boat, {icon:ruler} ruler, {icon:ebl} EBL/VRM, {icon:targets} target list, clear the track, {icon:screenshot} **Capture** a screenshot (saved to TweedPlot-Screenshots on the Desktop unless you choose another folder); then the **View** list, {icon:side} **Right**: show or hide the data panel (**O**), {icon:day} colours (day, dusk, night). Every button has a short label under its icon, and the three groups (status, tools, display) are set apart by a wider line. Scroll the toolbar when the window is too short to show all buttons. **LIVE**, **PAUSED** or **REPLAY** shows the data mode; **FOLLOW** means the chart follows the boat and **FREE** means it does not. Hover a button for what it does.
 - **The data panel** (right of the chart). From the top:
   - the status line: LIVE, PAUSED or REPLAY, north up or turned, and the scale;
   - **MOB** and **Drop** (a mark at the boat), and the anchor button if you turn it on, in every view;
@@ -101,7 +101,7 @@ Your own depth soundings build up into a seabed, as on Olex or TimeZero.
 | ? | Every key |
 | F2  F3  F4 | Navigation, Planning, Instruments view |
 | W  R  G  L  C  I  A  S | Open a drawer: Weather, Route, Wx routing, Library, Chart, Instruments, Alarms, Settings |
-| O  /  P | Show or hide the data panel / the rail and drawers (the dock is independent) |
+| O | Show or hide the data panel (the dock is independent) |
 | B  /  F | Centre on the boat / follow it |
 | Space | Live or paused |
 | M  /  V | Ruler (measure) / EBL/VRM |
