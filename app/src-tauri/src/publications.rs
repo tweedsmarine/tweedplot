@@ -97,6 +97,36 @@ fn pdf_links(html: &str, needle: &str) -> Vec<(String, String)> {
     out
 }
 
+/// The full almanac's PDF on LINZ's "full version" page. LINZ has named it differently from one
+/// edition to the next ("hydro_202324-almanac_full-nautical-almanac_pdf.pdf", then "New Zealand
+/// Nautical Almanac 2025-26 Edition - NZ 204_1.pdf" under /system/files), so it is chosen by what
+/// the link says rather than one file name: a PDF about the almanac or NZ 204 that isn't an Annual
+/// Notice, an extract or a section, "full" and "edition" preferred. A page with one other PDF only
+/// (a plain "Download" link) gives that one.
+fn almanac_link(html: &str) -> Option<String> {
+    let links = pdf_links(html, "");
+    let words = |url: &str, text: &str| format!("{} {}", url.replace("%20", " ").replace(['_', '-'], " "), text).to_ascii_lowercase();
+    let other = |w: &str| w.contains("antm") || w.contains("notice to mariners") || w.contains("extract") || w.contains("section");
+    let mut best: Option<(i32, String)> = None;
+    for (url, text) in &links {
+        let w = words(url, text);
+        if other(&w) || !(w.contains("almanac") || w.contains("nz 204") || w.contains("nz204")) {
+            continue;
+        }
+        let score = 3 * i32::from(w.contains("full")) + 2 * i32::from(w.contains("edition")) + i32::from(w.contains("204"));
+        if best.as_ref().map_or(true, |(b, _)| score > *b) {
+            best = Some((score, url.clone()));
+        }
+    }
+    if best.is_none() {
+        let rest: Vec<_> = links.iter().filter(|(u, t)| !other(&words(u, t))).collect();
+        if rest.len() == 1 {
+            return Some(rest[0].0.clone());
+        }
+    }
+    best.map(|(_, u)| u)
+}
+
 /// The Annual Notices listed on LINZ's page: number, title, PDF.
 fn parse_notices(html: &str) -> Vec<Notice> {
     let mut v: Vec<Notice> = Vec::new();
@@ -185,7 +215,7 @@ pub async fn pubs_download(app: tauri::AppHandle, almanac: bool) -> Result<Value
         let mut alm = None;
         if almanac {
             let page = get_text(&c, ALMANAC_PAGE)?;
-            if let Some((url, _)) = pdf_links(&page, "full-nautical-almanac").into_iter().next() {
+            if let Some(url) = almanac_link(&page) {
                 get_pdf(&c, &url, &fresh.join("NZ204-almanac.pdf"))?;
                 alm = Some("NZ204-almanac.pdf".to_string());
             }
@@ -241,6 +271,24 @@ pub async fn pub_open(app: tauri::AppHandle, no: String) -> Result<bool, String>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finds_the_almanac_however_linz_names_it() {
+        // 2025/26: under /system/files, named for the edition
+        let a = r#"<a href="/sites/default/files/2026-06/hydro_202627-almanac_title-section-pages-1-and-2_pdf.pdf">Title section</a>
+          <a href="/system/files/2025-06/New%20Zealand%20Nautical%20Almanac%202025-26%20Edition%20-%20NZ%20204_1.pdf">New Zealand Nautical Almanac 2025-26 Edition - NZ 204</a>
+          <a href="/sites/default/files/2025-06/hydro_202526-almanac_ANTM-1_pdf.pdf">Annual Notice to Mariners No. 1</a>"#;
+        assert_eq!(almanac_link(a).as_deref(), Some("https://www.linz.govt.nz/system/files/2025-06/New%20Zealand%20Nautical%20Almanac%202025-26%20Edition%20-%20NZ%20204_1.pdf"));
+        // 2023/24: the old name
+        let b = r#"<a href="/sites/default/files/2023-06/hydro_202324-almanac_full-nautical-almanac_pdf.pdf"><span>Download</span></a>"#;
+        assert_eq!(almanac_link(b).as_deref(), Some("https://www.linz.govt.nz/sites/default/files/2023-06/hydro_202324-almanac_full-nautical-almanac_pdf.pdf"));
+        // a page with one plain download link
+        let c = r#"<a href="/system/files/2026-06/nz204_2026.pdf">Download (PDF, 9 MB)</a><a href="/about">About</a>"#;
+        assert_eq!(almanac_link(c).as_deref(), Some("https://www.linz.govt.nz/system/files/2026-06/nz204_2026.pdf"));
+        // nothing that is the almanac
+        let d = r#"<a href="/x/hydro_202627-almanac_ANTM-19_pdf.pdf">Annual Notice to Mariners No. 19</a>"#;
+        assert_eq!(almanac_link(d), None);
+    }
 
     #[test]
     fn reads_the_notices_page() {
