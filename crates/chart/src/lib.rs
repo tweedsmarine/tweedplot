@@ -167,6 +167,10 @@ pub struct ChartStore {
     pub(crate) dbs: Vec<remote::Db>,
     pub tables: Vec<TableInfo>,
     cache: Mutex<lru::LruCache<(u8, u32, u32), Arc<Vec<u8>>>>,
+    /// Moves on each time the cache is cleared: a tile that started drawing before a clear
+    /// (with the old symbols, or before the IHO portrayal was ready) isn't put back in the
+    /// cache after it, where it would be served for the rest of the session.
+    cache_epoch: std::sync::atomic::AtomicU64,
     /// Coverage polygons of each band and their spatial index, loaded on first use.
     coverage: std::sync::OnceLock<features::CoverageIndex>,
     /// Per feature table: its median SCAMIN (when its features usually start to show).
@@ -299,6 +303,7 @@ impl ChartStore {
             dbs,
             tables,
             cache: Mutex::new(lru::LruCache::new(NonZeroUsize::new(2048).unwrap())),
+            cache_epoch: std::sync::atomic::AtomicU64::new(0),
             coverage: std::sync::OnceLock::new(),
             scamin_median: Mutex::new(std::collections::HashMap::new()),
             s52: std::sync::RwLock::new(None),
@@ -319,6 +324,7 @@ impl ChartStore {
         // TWEEDPLOT_TILE_LOG=1: each tile as it starts and how long it took (finding a tile
         // that crashes or is slow)
         let log = std::env::var_os("TWEEDPLOT_TILE_LOG").is_some();
+        let epoch = self.cache_epoch.load(std::sync::atomic::Ordering::SeqCst);
         let t0 = std::time::Instant::now();
         if log {
             eprintln!("tile {z}/{x}/{y} …");
@@ -335,13 +341,22 @@ impl ChartStore {
         if log {
             eprintln!("tile {z}/{x}/{y} {} bytes {:.0} ms", t.len(), t0.elapsed().as_secs_f64() * 1000.0);
         }
-        self.cache.lock().unwrap_or_else(|e| e.into_inner()).put((z, x, y), t.clone());
+        {
+            // kept only if nothing cleared the cache while it was drawn (checked under the lock
+            // clear_cache takes, so a clear can't slip in between the check and the put)
+            let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+            if self.cache_epoch.load(std::sync::atomic::Ordering::SeqCst) == epoch {
+                cache.put((z, x, y), t.clone());
+            }
+        }
         Some(t)
     }
 
-    /// Forget the rendered tiles (after a drawing setting changes).
+    /// Forget the rendered tiles (after a drawing setting changes, or the IHO portrayal is ready).
     pub fn clear_cache(&self) {
-        self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        self.cache_epoch.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        cache.clear();
     }
 
     /// Build the shared spatial data needed by tile rendering before serving tiles.
