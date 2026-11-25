@@ -32,8 +32,13 @@ const DEFAULTS = { show: true, names: true, key: "", owKey: "", owSeed: "", owOn
 const FLEET_KEY = "racenav.ownfleet";
 export const GROUP_COLOURS = { Friends: "#2e86de", Company: "#e67e22", "Race fleet": "#d63031", Other: "#8e44ad" };
 /** One colour for every vessel (the night palettes invert the page, so it follows them); red is only for danger. */
-/** TCPA for reading: minutes up to 10 h, then hours, and past 99 h just ">99 h". */
-export function tcpaText(min) { return min < 600 ? `${Math.round(min)} min` : min < 99 * 60 ? `${Math.round(min / 60)} h` : ">99 h"; }
+/** TCPA beyond this (minutes) is shown as ">99": the radar (ARPA) convention, counting minutes to 99.9 and
+ *  showing more as ">99.9 min" (Furuno and others); a CPA that far off is no risk to act on yet. */
+export const TCPA_MAX = 99;
+/** TCPA in whole minutes, always minutes (no mix of minutes and hours), ">99" past that. */
+export function tcpaMin(min) { return min < TCPA_MAX + 0.5 ? String(Math.max(0, Math.round(min))) : `>${TCPA_MAX}`; }
+/** TCPA for reading, with its unit: "12 min", ">99 min". */
+export function tcpaText(min) { return `${tcpaMin(min)} min`; }
 const TARGET_COL = "#1d2a33", TARGET_HALO = "#ffffff", DANGER_COL = "#d00000";
 /** A turn faster than this (degrees per minute) is marked on the heading line. */
 const ROT_MIN = 3; // °/min: a short barb from here, a long one from ROT_FAST
@@ -915,7 +920,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
       tr.className = [r.danger ? "danger" : "", r.net ? "net" : "", r.lost ? "lost" : "", r.id === selected ? "sel" : ""].join(" ");
       if (r.net) tr.title = "Heard over the internet only: may be minutes late or missing. Not for navigation";
       tr.innerHTML = `<td><span class="sw"></span></td><td></td><td class="n">${fmt(r.range, r.range != null && r.range < 10 ? 2 : 1)}</td><td class="n">${deg(r.brg)}</td>
-        <td class="n">${fmt(r.cpa, 2)}</td><td class="n">${r.tcpa == null ? "—" : r.tcpa < 600 ? Math.round(r.tcpa) : tcpaText(r.tcpa)}</td><td class="n">${fmt(r.sog)}</td><td class="n">${deg(r.cog)}</td><td class="n age">${age(r.age)}</td><td>${r.src}</td><td class="ctl"></td><td class="ctl"></td>`;
+        <td class="n">${fmt(r.cpa, 2)}</td><td class="n">${r.tcpa == null ? "—" : tcpaMin(r.tcpa)}</td><td class="n">${fmt(r.sog)}</td><td class="n">${deg(r.cog)}</td><td class="n age">${age(r.age)}</td><td>${r.src}</td><td class="ctl"></td><td class="ctl"></td>`;
       const locked = fleet.trackAll && !!inFleet(r.id);
       const cb = document.createElement("input");
       cb.type = "checkbox"; cb.checked = !!r.trk; cb.disabled = locked;
