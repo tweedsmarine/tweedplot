@@ -588,10 +588,10 @@ html[data-view="nmea"] #nmea-monitor-window .nmea-variable-grid { grid-template-
 
 /* Startup stays branded until the chart source has rendered a tile. */
 .startup-splash { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
-  background: radial-gradient(ellipse at 50% 45%, var(--selected-enabled-background-color) 0%, var(--brand-navy) 55%, var(--container-background-color) 100%); }
+  background: var(--brand-navy); }
 .splash-brand { width: min(560px, 72vw); }
 .startup-splash img { display: block; width: 100%; height: auto; }
-.splash-details { margin: 22px 0 0 28.78%; color: var(--element-neutral-color); font-size: 13px; letter-spacing: 0.04em; line-height: 1.6; }
+.splash-details { margin: 22px 0 0 28.78%; color: #b9d9e0; font-size: 13px; letter-spacing: 0.04em; line-height: 1.6; }
 .startup-splash[hidden] { display: none; }
 
 /* short messages at the bottom of the chart (ruler hints …) */
@@ -2892,3 +2892,6 @@ html[data-palette="dusk"] .dial :is(.close-stbd, .close-port) { opacity: 0.4; }
 html[data-palette="iho-night"] .dial :is(.close-stbd, .close-port) { opacity: 0.25; }
 html[data-palette="dusk"] .wdial .ps { opacity: 0.8; }
 html[data-palette="iho-night"] .wdial .ps { opacity: 0.55; }
+/* the start-up splash: flat navy (as before OpenBridge), dimmed at dusk and night so it doesn't glare */
+html[data-palette="dusk"] .startup-splash { filter: brightness(0.8); }
+html[data-palette="iho-night"] .startup-splash { filter: brightness(0.5); }
