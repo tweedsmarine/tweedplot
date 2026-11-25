@@ -90,6 +90,8 @@ import { setupInstruments, waypointData, targetAt } from "./instruments.js";
 import { setupLibrary, labelImage } from "./library.js";
 import { setupSettings } from "./settings.js";
 import { setupSidePanel } from "./sidepanel.js";
+import { setupAutopilot } from "./autopilot.js";
+import { setupDsc } from "./dsc.js";
 import { setupHistorySettings, restoreHistoryCards, recorder as histRecorder } from "./history.js";
 import { setupNmeaMonitor, openMonitorWindow } from "./nmeamonitor.js";
 
@@ -681,6 +683,18 @@ map.on("load", () => {
     soundReady: () => startup.finished || performance.now() > 120000,
   });
   for (const alarm of pendingNmeaAlarms.splice(0)) alarms.raise(...alarm);
+  // DSC distress, urgency and safety calls from the VHF (dsc.js): an alarm, and the caller on the chart
+  setupDsc(map, { getAlarms: () => alarms, toast,
+    aisName: (mmsi) => { const t = aisApi?.targets?.get?.(Number(mmsi)) ?? aisApi?.targets?.get?.(String(mmsi)); return t?.name?.trim() || null; } });
+  // the leg to the autopilot (autopilot.js): only live, not in a replay, and with a current position
+  setupAutopilot({
+    getLeg: () => {
+      const nav = activeNav();
+      if (!nav || !lastBoat || !live || replaying() || positionWatch.lost()) return null;
+      return { nav, wp: waypointData(lastBoat, vessel.sog, vessel.cog, nav.from, [nav.next.lon, nav.next.lat]), boat: lastBoat,
+        variation: vessel.variation, arrivalNm: Number(document.getElementById("rt-radius").value) || 0.1 };
+    },
+  });
   setupMarine(map, {
     getBoat: () => ({ pos: lastBoat, cog: vessel?.cog, sog: vessel?.sog, live: live && liveDataConnected() }),
     getLength: () => Number(boat.get().length) || 0,

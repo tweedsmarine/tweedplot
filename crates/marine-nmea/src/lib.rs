@@ -3,6 +3,8 @@
 //! Every valid sentence, including sentences not decoded yet, is retained as
 //! a frame so catalog coverage can be extended without losing source data.
 
+pub mod autopilot;
+pub mod dsc;
 pub mod fixstreams;
 
 use serde::{Deserialize, Serialize};
@@ -662,6 +664,8 @@ pub const CATALOG: &[CatalogEntry] = &[
     entry!("BOD", "Bearing origin to destination", "Waypoint", PreservedRaw),
     entry!("BWC", "Bearing and distance to waypoint", "Waypoint", PreservedRaw),
     entry!("BWW", "Bearing waypoint to waypoint", "Waypoint", PreservedRaw),
+    entry!("DSC", "Digital selective calling (distress, urgency, safety)", "Safety", Decoded),
+    entry!("DSE", "DSC expansion (enhanced position)", "Safety", Decoded),
     entry!("DBK", "Depth below keel", "Depth", Decoded),
     entry!("DBS", "Depth below surface", "Depth", Decoded),
     entry!("DBT", "Depth below transducer", "Depth", Decoded),

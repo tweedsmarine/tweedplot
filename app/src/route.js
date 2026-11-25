@@ -716,7 +716,8 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       const from = r.nav > 0 ? [r.marks[r.nav - 1].lon, r.marks[r.nav - 1].lat] : r.start;
       // the marks after the next one, for the data panel's list of marks ahead
       const ahead = r.marks.slice(r.nav + 1).map((m, j) => ({ name: m.name || `Mark ${r.nav + j + 2}`, lon: m.lon, lat: m.lat, n: r.nav + j + 2 }));
-      return { next: { name: next.name || `Mark ${r.nav + 1}`, lon: next.lon, lat: next.lat, n: r.nav + 1 }, from, index: r.nav, count: r.marks.length, ahead };
+      const fromName = r.nav > 0 ? r.marks[r.nav - 1].name || `Mark ${r.nav}` : "Start";
+      return { next: { name: next.name || `Mark ${r.nav + 1}`, lon: next.lon, lat: next.lat, n: r.nav + 1 }, from, fromName, index: r.nav, count: r.marks.length, ahead };
     },
     /** The planned route's departure (Unix s; now for Now or a start from the boat) and speed (kn). */
     departure,

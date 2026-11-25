@@ -2219,6 +2219,7 @@ pub fn run() {
             settings::settings_get,
             settings::settings_save,
             nmea::nmea_ports,
+            nmea::autopilot_send,
             nmea::nmea_sources_get,
             nmea::nmea_sources_set,
             nmea::nmea_gps_stream_set,
