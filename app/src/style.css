@@ -2921,3 +2921,5 @@ html.ob-shell input[type="range"]::-webkit-slider-thumb { -webkit-appearance: no
 html.ob-shell input[type="range"]:disabled::-webkit-slider-thumb { background: var(--element-disabled-color); }
 /* the chart's start-up note has no business over the Instruments screen (no chart there) */
 html.no-map #toast.startup-toast { display: none; }
+/* links at dusk and night in the palette's own colour (still underlined), not bright browser blue */
+html:is([data-obc-theme="dusk"], [data-obc-theme="night"]) a:not(.btn) { color: var(--element-active-color); }
