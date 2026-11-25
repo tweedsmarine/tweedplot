@@ -442,6 +442,7 @@ fn sentence_groups(sentence: &Sentence, observation: &Observation) -> Vec<DataGr
     }
     let heading_valid = match sentence.formatter.as_str() {
         "HDT" => has_number(0) && fields.get(1).is_some_and(|unit| unit == "T"),
+        "THS" => has_number(0) && fields.get(1).is_some_and(|mode| mode == "A" || mode == "E"),
         "HDM" => has_number(0) && fields.get(1).is_some_and(|unit| unit == "M"),
         "HDG" => has_number(0) || has_number(3),
         "VHW" => (has_number(0) && fields.get(1).is_some_and(|unit| unit == "T")) || (has_number(2) && fields.get(3).is_some_and(|unit| unit == "M")),
@@ -450,8 +451,9 @@ fn sentence_groups(sentence: &Sentence, observation: &Observation) -> Vec<DataGr
     if heading_valid && (observation.heading.is_some() || observation.heading_mag.is_some() || observation.variation.is_some()) {
         groups.push(DataGroup::Heading);
     }
-    if sentence.formatter == "VHW"
-        && ((has_number(4) && fields.get(5).is_some_and(|unit| unit == "N")) || (has_number(6) && fields.get(7).is_some_and(|unit| unit == "K")))
+    if ((sentence.formatter == "VHW"
+        && ((has_number(4) && fields.get(5).is_some_and(|unit| unit == "N")) || (has_number(6) && fields.get(7).is_some_and(|unit| unit == "K"))))
+        || (sentence.formatter == "VBW" && has_number(0) && fields.get(2).is_some_and(|status| status == "A")))
         && observation.stw.is_some()
     {
         groups.push(DataGroup::SpeedThroughWater);
@@ -491,7 +493,7 @@ fn sentence_groups(sentence: &Sentence, observation: &Observation) -> Vec<DataGr
         (DataGroup::Rudder, this.rudder.is_some()),
         (DataGroup::Current, this.set.is_some() || this.drift.is_some()),
         (DataGroup::Log, this.log.is_some() || this.trip.is_some()),
-        (DataGroup::GnssQuality, this.sats.is_some() || this.hdop.is_some() || this.fix_dim.is_some() || this.pos_error.is_some()),
+        (DataGroup::GnssQuality, this.sats.is_some() || this.hdop.is_some() || this.fix_dim.is_some() || this.pos_error.is_some() || this.datum.is_some()),
         (DataGroup::Engine, this.battery_v.is_some() || this.rpm.is_some()),
     ];
     groups.extend(extra.into_iter().filter(|(_, heard)| *heard).map(|(g, _)| g));
@@ -590,6 +592,7 @@ fn copy_group(vessel: &mut signalk::VesselState, observation: &Observation, grou
             vessel.hdop = observation.hdop;
             vessel.fix_dim = observation.fix_dim;
             vessel.pos_error = observation.pos_error;
+            vessel.datum.clone_from(&observation.datum);
         }
         DataGroup::Engine => {
             vessel.battery_v = observation.battery_v;
@@ -731,6 +734,10 @@ fn consume_bytes(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
                     // a fix from the other GPS receiver on this input (or out of time order)
                 } else if matches!(sentence.formatter.as_str(), "DSC" | "DSE") {
                     dsc_sentence(app, source, &sentence);
+                } else if matches!(sentence.formatter.as_str(), "ALR" | "ALF") {
+                    equipment_alert(app, source, &sentence);
+                } else if matches!(sentence.formatter.as_str(), "TTM" | "TLL") {
+                    radar_target(app, source, &sentence);
                 } else {
                     observation.apply(&sentence);
                     let mut hub = MULTIPLEXER.lock().unwrap();
@@ -773,6 +780,49 @@ fn dsc_sentence(app: &tauri::AppHandle, source: &SourceConfig, sentence: &Senten
     };
     if let Err(error) = app.emit("dsc", serde_json::json!({ "call": call, "source": source.name, "raw": sentence.raw })) {
         eprintln!("Could not publish a DSC call: {error}");
+    }
+}
+
+/// An alarm from other equipment (ALR, ALF) to the app's alert list ("equipment-alert").
+fn equipment_alert(app: &tauri::AppHandle, source: &SourceConfig, sentence: &Sentence) {
+    use marine_nmea::alerts;
+    let alert = if sentence.formatter == "ALR" { alerts::parse_alr(&sentence.fields) } else { alerts::parse_alf(&sentence.fields) };
+    let Some(alert) = alert else { return };
+    if let Err(error) = app.emit(
+        "equipment-alert",
+        serde_json::json!({ "alert": alert, "talker": sentence.talker, "source": source.name, "sourceId": source.id }),
+    ) {
+        eprintln!("Could not publish an equipment alert: {error}");
+    }
+}
+
+/// Radar targets by source and number: a TTM and a TLL for the same target are merged.
+static RADAR: Mutex<BTreeMap<String, BTreeMap<u32, marine_nmea::radar::RadarTarget>>> = Mutex::new(BTreeMap::new());
+
+/// A radar target (TTM, TLL) to the app ("radar-target"), with what the other sentence gave.
+fn radar_target(app: &tauri::AppHandle, source: &SourceConfig, sentence: &Sentence) {
+    use marine_nmea::radar;
+    let parsed = if sentence.formatter == "TTM" { radar::parse_ttm(&sentence.fields) } else { radar::parse_tll(&sentence.fields) };
+    let Some(t) = parsed else { return };
+    let merged = {
+        let mut all = RADAR.lock().unwrap();
+        let entry = all.entry(source.id.clone()).or_default().entry(t.number).or_insert_with(|| t.clone());
+        if sentence.formatter == "TTM" {
+            // the TTM's movement and the latest TLL position kept together
+            let (lat, lon) = (entry.lat, entry.lon);
+            *entry = radar::RadarTarget { lat, lon, ..t };
+        } else {
+            entry.lat = t.lat;
+            entry.lon = t.lon;
+            entry.status = t.status;
+            if t.name.is_some() {
+                entry.name = t.name;
+            }
+        }
+        entry.clone()
+    };
+    if let Err(error) = app.emit("radar-target", serde_json::json!({ "target": merged, "source": source.name, "sourceId": source.id })) {
+        eprintln!("Could not publish a radar target: {error}");
     }
 }
 

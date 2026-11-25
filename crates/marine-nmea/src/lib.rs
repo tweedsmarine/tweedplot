@@ -3,8 +3,10 @@
 //! Every valid sentence, including sentences not decoded yet, is retained as
 //! a frame so catalog coverage can be extended without losing source data.
 
+pub mod alerts;
 pub mod autopilot;
 pub mod dsc;
+pub mod radar;
 pub mod fixstreams;
 
 use serde::{Deserialize, Serialize};
@@ -75,6 +77,8 @@ pub struct Observation {
     /// Battery voltage (XDR, type U, a name with BAT) and engine revolutions a minute (RPM, XDR).
     pub battery_v: Option<f64>,
     pub rpm: Option<f64>,
+    /// The GNSS receiver's local datum (DTM), as its code: W84 is WGS 84, what the charts use.
+    pub datum: Option<String>,
     pub extra: BTreeMap<String, String>,
     /// The heading came from a true-heading sensor (HDT, VHW), so a magnetic heading
     /// doesn't replace it.
@@ -307,6 +311,13 @@ impl Observation {
                 );
             }
             "HDT" if f.len() >= 2 && f[1] == "T" => heading_true = angle(&f[0]),
+            // true heading and its mode, as satellite compasses send it: A autonomous or E estimated
+            // (dead reckoning) are used; M manual, S simulator and V not valid are not
+            "THS" if f.len() >= 2 && matches!(f[1].as_str(), "A" | "E") => heading_true = angle(&f[0]),
+            // dual-axis speed log: longitudinal speed through the water (kn) when its status is A
+            "VBW" if f.len() >= 3 && f[2] == "A" => put(&mut self.stw, number(&f[0])),
+            // the receiver's datum: local datum code first (W84, W72, S85, P90, 999 user-defined)
+            "DTM" if !f.is_empty() && !f[0].trim().is_empty() => self.datum = Some(f[0].trim().to_string()),
             "HDM" if f.len() >= 2 && f[1] == "M" => put(&mut self.heading_mag, angle(&f[0])),
             "HDG" if !f.is_empty() => {
                 put(&mut self.heading_mag, angle(&f[0]));
@@ -406,7 +417,7 @@ impl Observation {
                 self.heading = Some((magnetic + variation).rem_euclid(360.0));
             }
         }
-        if matches!(sentence.formatter.as_str(), "HDT" | "HDG" | "HDM" | "VHW" | "MWD") {
+        if matches!(sentence.formatter.as_str(), "HDT" | "THS" | "HDG" | "HDM" | "VHW" | "MWD") {
             if let (Some(direction), Some(heading)) = (self.twd, self.heading) {
                 self.twa = Some((direction - heading + 180.0).rem_euclid(360.0) - 180.0);
             }
@@ -659,13 +670,19 @@ pub const CATALOG: &[CatalogEntry] = &[
     entry!("AAM", "Waypoint arrival alarm", "Waypoint", PreservedRaw),
     entry!("VDM", "AIS messages from other vessels", "AIS", PreservedRaw),
     entry!("VDO", "AIS own-vessel messages", "AIS", PreservedRaw),
-    entry!("ALR", "Alarm", "Safety", PreservedRaw),
+    entry!("ALR", "Alarm", "Safety", Decoded),
     entry!("APB", "Autopilot sentence B", "Autopilot", PreservedRaw),
     entry!("BOD", "Bearing origin to destination", "Waypoint", PreservedRaw),
     entry!("BWC", "Bearing and distance to waypoint", "Waypoint", PreservedRaw),
     entry!("BWW", "Bearing waypoint to waypoint", "Waypoint", PreservedRaw),
     entry!("DSC", "Digital selective calling (distress, urgency, safety)", "Safety", Decoded),
     entry!("DSE", "DSC expansion (enhanced position)", "Safety", Decoded),
+    entry!("THS", "True heading and status", "Heading", Decoded),
+    entry!("VBW", "Dual ground/water speed", "Speed", Decoded),
+    entry!("DTM", "Datum reference", "GNSS", Decoded),
+    entry!("ALF", "Alert sentence (bridge alert management)", "Safety", Decoded),
+    entry!("TTM", "Tracked target message (radar)", "Radar", Decoded),
+    entry!("TLL", "Target latitude and longitude (radar)", "Radar", Decoded),
     entry!("DBK", "Depth below keel", "Depth", Decoded),
     entry!("DBS", "Depth below surface", "Depth", Decoded),
     entry!("DBT", "Depth below transducer", "Depth", Decoded),
@@ -914,5 +931,26 @@ mod tests {
         assert_eq!(o.rpm, Some(1850.0));
         o.apply(&sentence("IIRPM,E,1,2100,,A"));
         assert_eq!(o.rpm, Some(2100.0));
+    }
+
+    #[test]
+    fn decodes_ths_vbw_dtm() {
+        let mut o = Observation::default();
+        o.apply(&sentence("GNTHS,123.4,A"));
+        assert_eq!(o.heading, Some(123.4));
+        // not valid: kept as it was
+        o.apply(&sentence("GNTHS,200.0,V"));
+        assert_eq!(o.heading, Some(123.4));
+        // a magnetic heading doesn't replace the satellite compass's true heading
+        o.apply(&sentence("HCHDG,100.0,,,20.0,E"));
+        assert_eq!(o.heading, Some(123.4));
+        o.apply(&sentence("VMVBW,6.4,0.2,A,6.9,0.3,A,,V,,V"));
+        assert_eq!(o.stw, Some(6.4));
+        o.apply(&sentence("VMVBW,9.9,0.2,V,6.9,0.3,A,,V,,V"));
+        assert_eq!(o.stw, Some(6.4));
+        o.apply(&sentence("GPDTM,W84,,0.0,N,0.0,E,0.0,W84"));
+        assert_eq!(o.datum.as_deref(), Some("W84"));
+        o.apply(&sentence("GPDTM,999,,0.08,N,0.07,E,-47.7,W84"));
+        assert_eq!(o.datum.as_deref(), Some("999"));
     }
 }
