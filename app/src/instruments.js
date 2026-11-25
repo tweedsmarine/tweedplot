@@ -37,8 +37,11 @@ export const ITEMS = {
   },
   POS: { label: "Position", unit: "", group: "Navigation", live: true, wide: true, get: (c) => (c.v.lat != null && c.v.lon != null ? [c.v.lat, c.v.lon] : null), fmt: (p) => `${ddm(p[0], "N", "S")}<br>${ddm(p[1], "E", "W")}` },
   // the current the boat is in: ground vector (COG, SOG) minus water vector (heading, BSP), over the last minute (setdrift.js)
-  SET: { label: "Set", unit: "°T", group: "Navigation", live: true, get: (c) => c.setdrift?.set ?? null, fmt: deg3 },
-  DRIFT: { label: "Drift", unit: "kn", group: "Navigation", live: true, get: (c) => c.setdrift?.drift ?? null, fmt: f1 },
+  // (measured by the instruments when they send it: NMEA VDR, Signal K environment.current)
+  SET: { label: "Set", unit: "°T", group: "Navigation", live: true, get: (c) => c.v.set ?? c.setdrift?.set ?? null, fmt: deg3 },
+  DRIFT: { label: "Drift", unit: "kn", group: "Navigation", live: true, get: (c) => c.v.drift ?? c.setdrift?.drift ?? null, fmt: f1 },
+  // rate of turn, °/min (NMEA ROT, Signal K navigation.rateOfTurn); + = to starboard
+  ROT: { label: "ROT", unit: "°/min", group: "Navigation", live: true, get: (c) => c.v.rot, fmt: (x) => `${Math.abs(x).toFixed(0)}<span class="u">${x < -0.5 ? "P" : x > 0.5 ? "S" : ""}</span>`, side: (x) => (x < -0.5 ? "port" : x > 0.5 ? "stbd" : "") },
   LOG: { label: "Log", unit: "NM", group: "Navigation", live: true, get: (c) => c.v.log, fmt: (x) => x.toFixed(0) },
   TRIP: { label: "Trip", unit: "NM", group: "Navigation", live: true, get: (c) => c.v.trip, fmt: f1 },
   // local and UTC time together (the data panel's own-ship block)
@@ -61,6 +64,21 @@ export const ITEMS = {
   AIRT: { short: "Air", label: "Air temp", unit: "°C", group: "Weather", live: true, get: (c) => c.v.air_temp, fmt: f1 },
   HUM: { short: "RH", label: "Humidity", unit: "%", group: "Weather", live: true, get: (c) => c.v.humidity, fmt: (x) => x.toFixed(0) },
   WTEMP: { short: "Water", label: "Water temp", unit: "°C", group: "Weather", live: true, get: (c) => c.v.water_temp, fmt: f1 },
+
+  // the boat: heel and pitch (XDR, Signal K navigation.attitude), rudder (RSA, steering.rudderAngle),
+  // engine revs (RPM, XDR, propulsion) and the battery (XDR, electrical.batteries)
+  HEEL: { label: "Heel", unit: "°", group: "Boat", live: true, get: (c) => c.v.heel, fmt: sideAngle, side: (x) => (x < 0 ? "port" : "stbd") },
+  PITCH: { label: "Pitch", unit: "°", group: "Boat", live: true, get: (c) => c.v.pitch, fmt: (x) => `${Math.abs(x).toFixed(1)}<span class="u">${x > 0 ? "up" : x < 0 ? "down" : ""}</span>` },
+  RUD: { label: "Rudder", unit: "°", group: "Boat", live: true, get: (c) => c.v.rudder, fmt: sideAngle, side: (x) => (x < 0 ? "port" : "stbd") },
+  RPM: { label: "RPM", unit: "rpm", group: "Boat", live: true, get: (c) => c.v.rpm, fmt: (x) => x.toFixed(0) },
+  BATT: { label: "Battery", unit: "V", group: "Boat", live: true, get: (c) => c.v.battery_v, fmt: f1 },
+  // how good the position is: satellites, HDOP (GGA, GSA, Signal K navigation.gnss), estimated error (GST)
+  SATS: { label: "Satellites", unit: "", group: "Position quality", live: true, get: (c) => c.v.sats, fmt: (x) => x.toFixed(0) },
+  HDOP: { label: "HDOP", unit: "", group: "Position quality", live: true, get: (c) => c.v.hdop, fmt: f1,
+    state: (x) => (x > 5 ? "alarm" : x > 2 ? "warn" : "") },
+  POSERR: { label: "Position error", unit: "m", group: "Position quality", live: true, get: (c) => c.v.pos_error, fmt: (x) => (x < 10 ? x.toFixed(1) : x.toFixed(0)) },
+  FIX: { label: "Fix", unit: "", group: "Position quality", live: true, get: (c) => c.v.fix_dim, fmt: (x) => (x >= 3 ? "3D" : x >= 2 ? "2D" : "None"),
+    state: (x) => (x < 2 ? "alarm" : x < 3 ? "warn" : "") },
 
   NEXT: { label: "To mark", unit: "", group: "Route", wide: true, get: (c) => c.nav?.next?.name ?? null, fmt: (s) => esc(s) },
   BTW: { label: "BTW", unit: "°T", group: "Route", get: (c) => c.wp?.btw, fmt: deg3 },

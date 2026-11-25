@@ -27,6 +27,19 @@ const VARIABLES = [
   ["pressure", "Barometric pressure", "weather", "pressure", (v) => `${v.toFixed(1)} hPa`],
   ["airTemp", "Air temperature", "weather", "airTemp", (v) => `${v.toFixed(1)} °C`],
   ["humidity", "Relative humidity", "weather", "humidity", (v) => `${v.toFixed(0)} %`],
+  ["rot", "Rate of turn", "rateOfTurn", "rot", (v) => `${v.toFixed(1)} °/min`],
+  ["heel", "Heel", "attitude", "heel", (v) => `${v.toFixed(1)}°`],
+  ["pitch", "Pitch", "attitude", "pitch", (v) => `${v.toFixed(1)}°`],
+  ["rudder", "Rudder angle", "rudder", "rudder", (v) => `${v.toFixed(1)}°`],
+  ["set", "Set (measured)", "current", "set", (v) => `${v.toFixed(0)}°T`],
+  ["drift", "Drift (measured)", "current", "drift", (v) => `${v.toFixed(2)} kn`],
+  ["log", "Log", "log", "log", (v) => `${v.toFixed(1)} NM`],
+  ["trip", "Trip", "log", "trip", (v) => `${v.toFixed(2)} NM`],
+  ["sats", "Satellites", "gnssQuality", "sats", (v) => `${v.toFixed(0)}`],
+  ["hdop", "HDOP", "gnssQuality", "hdop", (v) => v.toFixed(1)],
+  ["posError", "Position error", "gnssQuality", "posError", (v) => `${v.toFixed(1)} m`],
+  ["batteryV", "Battery voltage", "engine", "batteryV", (v) => `${v.toFixed(2)} V`],
+  ["rpm", "Engine revs", "engine", "rpm", (v) => `${v.toFixed(0)} rpm`],
 ];
 const DEFAULT_VARIABLES = ["latitude", "longitude", "sog", "cog", "depth", "heading"];
 

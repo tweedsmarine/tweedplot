@@ -45,11 +45,33 @@ pub enum DataGroup {
     Depth,
     WaterTemperature,
     Weather,
+    RateOfTurn,
+    Attitude,
+    Rudder,
+    Current,
+    Log,
+    GnssQuality,
+    Engine,
 }
 
 impl DataGroup {
-    pub const ALL: [Self; 8] =
-        [Self::Position, Self::Motion, Self::Heading, Self::SpeedThroughWater, Self::Wind, Self::Depth, Self::WaterTemperature, Self::Weather];
+    pub const ALL: [Self; 15] = [
+        Self::Position,
+        Self::Motion,
+        Self::Heading,
+        Self::SpeedThroughWater,
+        Self::Wind,
+        Self::Depth,
+        Self::WaterTemperature,
+        Self::Weather,
+        Self::RateOfTurn,
+        Self::Attitude,
+        Self::Rudder,
+        Self::Current,
+        Self::Log,
+        Self::GnssQuality,
+        Self::Engine,
+    ];
 
     pub fn key(self) -> &'static str {
         match self {
@@ -61,6 +83,13 @@ impl DataGroup {
             Self::Depth => "depth",
             Self::WaterTemperature => "waterTemperature",
             Self::Weather => "weather",
+            Self::RateOfTurn => "rateOfTurn",
+            Self::Attitude => "attitude",
+            Self::Rudder => "rudder",
+            Self::Current => "current",
+            Self::Log => "log",
+            Self::GnssQuality => "gnssQuality",
+            Self::Engine => "engine",
         }
     }
 
@@ -78,6 +107,13 @@ impl DataGroup {
             Self::Depth => "Depth",
             Self::WaterTemperature => "Water temperature",
             Self::Weather => "Air pressure, temperature and humidity",
+            Self::RateOfTurn => "Rate of turn",
+            Self::Attitude => "Heel and pitch",
+            Self::Rudder => "Rudder angle",
+            Self::Current => "Set and drift (measured)",
+            Self::Log => "Log and trip",
+            Self::GnssQuality => "Position quality",
+            Self::Engine => "Engine and battery",
         }
     }
 }
@@ -389,6 +425,7 @@ fn sentence_groups(sentence: &Sentence, observation: &Observation) -> Vec<DataGr
     }
     let wind_valid = match sentence.formatter.as_str() {
         "MWV" => fields.get(4).is_some_and(|status| status == "A") && has_number(0) && has_number(2),
+        "VWR" | "VWT" => has_number(0) && (has_number(2) || has_number(4) || has_number(6)),
         "MWD" => has_number(0) || has_number(4) || has_number(6),
         _ => false,
     };
@@ -411,6 +448,20 @@ fn sentence_groups(sentence: &Sentence, observation: &Observation) -> Vec<DataGr
     if matches!(sentence.formatter.as_str(), "MDA" | "XDR") && marine_nmea::weather(&sentence.formatter, fields).any() {
         groups.push(DataGroup::Weather);
     }
+    // the readings added with ROT, XDR angles, RSA, VDR, VLW, GSA/GST and RPM: a group counts as
+    // heard from a source when this sentence gave it a value
+    let mut this = Observation::default();
+    this.apply(sentence);
+    let extra = [
+        (DataGroup::RateOfTurn, this.rot.is_some()),
+        (DataGroup::Attitude, this.heel.is_some() || this.pitch.is_some()),
+        (DataGroup::Rudder, this.rudder.is_some()),
+        (DataGroup::Current, this.set.is_some() || this.drift.is_some()),
+        (DataGroup::Log, this.log.is_some() || this.trip.is_some()),
+        (DataGroup::GnssQuality, this.sats.is_some() || this.hdop.is_some() || this.fix_dim.is_some() || this.pos_error.is_some()),
+        (DataGroup::Engine, this.battery_v.is_some() || this.rpm.is_some()),
+    ];
+    groups.extend(extra.into_iter().filter(|(_, heard)| *heard).map(|(g, _)| g));
     groups
 }
 
@@ -486,6 +537,30 @@ fn copy_group(vessel: &mut signalk::VesselState, observation: &Observation, grou
             vessel.pressure = observation.pressure;
             vessel.air_temp = observation.air_temp;
             vessel.humidity = observation.humidity;
+        }
+        DataGroup::RateOfTurn => vessel.rot = observation.rot,
+        DataGroup::Attitude => {
+            vessel.heel = observation.heel;
+            vessel.pitch = observation.pitch;
+        }
+        DataGroup::Rudder => vessel.rudder = observation.rudder,
+        DataGroup::Current => {
+            vessel.set = observation.set;
+            vessel.drift = observation.drift;
+        }
+        DataGroup::Log => {
+            vessel.log = observation.log;
+            vessel.trip = observation.trip;
+        }
+        DataGroup::GnssQuality => {
+            vessel.sats = observation.sats;
+            vessel.hdop = observation.hdop;
+            vessel.fix_dim = observation.fix_dim;
+            vessel.pos_error = observation.pos_error;
+        }
+        DataGroup::Engine => {
+            vessel.battery_v = observation.battery_v;
+            vessel.rpm = observation.rpm;
         }
     }
 }

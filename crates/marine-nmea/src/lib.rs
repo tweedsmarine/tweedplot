@@ -50,6 +50,29 @@ pub struct Observation {
     pub pressure: Option<f64>,
     pub humidity: Option<f64>,
     pub datetime: Option<String>,
+    /// Rate of turn, degrees a minute, + = to starboard (ROT).
+    pub rot: Option<f64>,
+    /// Heel (roll) and pitch, degrees: heel + = to starboard, pitch + = bow up (XDR angles).
+    pub heel: Option<f64>,
+    pub pitch: Option<f64>,
+    /// Rudder angle, degrees, + = to starboard (RSA).
+    pub rudder: Option<f64>,
+    /// Set (degrees true, the way the current flows) and drift (knots), as the instruments
+    /// work them out (VDR).
+    pub set: Option<f64>,
+    pub drift: Option<f64>,
+    /// Total log and trip through the water, NM (VLW).
+    pub log: Option<f64>,
+    pub trip: Option<f64>,
+    /// Position quality: satellites used (GGA), horizontal dilution of precision (GGA, GSA),
+    /// fix (GSA: 1 none, 2 2D, 3 3D) and the estimated position error in metres (GST).
+    pub sats: Option<f64>,
+    pub hdop: Option<f64>,
+    pub fix_dim: Option<f64>,
+    pub pos_error: Option<f64>,
+    /// Battery voltage (XDR, type U, a name with BAT) and engine revolutions a minute (RPM, XDR).
+    pub battery_v: Option<f64>,
+    pub rpm: Option<f64>,
     pub extra: BTreeMap<String, String>,
     /// The heading came from a true-heading sensor (HDT, VHW), so a magnetic heading
     /// doesn't replace it.
@@ -205,8 +228,66 @@ impl Observation {
             "GGA" if f.len() >= 9 => {
                 if number(&f[5]).is_some_and(|quality| quality > 0.0) {
                     self.position(&f[1], &f[2], &f[3], &f[4]);
+                    put(&mut self.sats, number(&f[6]));
+                    put(&mut self.hdop, number(&f[7]).filter(|h| *h > 0.0 && *h < 99.0));
                 }
             }
+            // fix mode (1 no fix, 2 2D, 3 3D), the satellites in use, PDOP, HDOP, VDOP
+            "GSA" if f.len() >= 17 => {
+                put(&mut self.fix_dim, number(&f[1]).filter(|d| (1.0..=3.0).contains(d)));
+                put(&mut self.hdop, number(&f[15]).filter(|h| *h > 0.0 && *h < 99.0));
+            }
+            // pseudorange errors: the 1-sigma latitude and longitude errors, metres
+            "GST" if f.len() >= 7 => {
+                if let (Some(la), Some(lo)) = (number(&f[5]), number(&f[6])) {
+                    self.pos_error = Some((la * la + lo * lo).sqrt());
+                }
+            }
+            // rate of turn, degrees a minute (- = to port), and A when valid
+            "ROT" if !f.is_empty() && f.get(1).is_none_or(|s| s == "A") => put(&mut self.rot, number(&f[0])),
+            // rudder: starboard (or single) rudder angle, A when valid; - = to port
+            "RSA" if f.len() >= 2 && f[1] == "A" => put(&mut self.rudder, number(&f[0])),
+            // set and drift: direction true, T, direction magnetic, M, speed, N
+            "VDR" if f.len() >= 6 => {
+                if f[1] == "T" {
+                    put(&mut self.set, angle(&f[0]));
+                }
+                if f[5] == "N" {
+                    put(&mut self.drift, number(&f[4]));
+                }
+            }
+            // total and trip distance through the water, NM
+            "VLW" if f.len() >= 4 => {
+                if f[1] == "N" {
+                    put(&mut self.log, number(&f[0]));
+                }
+                if f[3] == "N" {
+                    put(&mut self.trip, number(&f[2]));
+                }
+            }
+            // relative (VWR) and true (VWT) wind: angle 0–180 off the bow, L or R, then knots (N),
+            // metres a second (M) or km/h (K) — the older sentences many instruments still send
+            "VWR" | "VWT" if f.len() >= 4 => {
+                let a = number(&f[0]).filter(|a| (0.0..=180.0).contains(a));
+                let side = match f[1].as_str() {
+                    "L" => Some(-1.0),
+                    "R" => Some(1.0),
+                    _ => None,
+                };
+                // the first of knots, m/s, km/h that has a figure (instruments often fill only one)
+                let unit = |i: usize, u: &str, k: f64| f.get(i + 1).filter(|x| *x == u).and(f.get(i)).and_then(|v| number(v)).map(|v| v * k);
+                let speed = unit(2, "N", 1.0).or_else(|| unit(4, "M", 1.943_844_5)).or_else(|| unit(6, "K", 0.539_956_8));
+                let angle = a.zip(side).map(|(a, s)| a * s);
+                if sentence.formatter == "VWR" {
+                    put(&mut self.awa, angle);
+                    put(&mut self.aws, speed);
+                } else {
+                    put(&mut self.twa, angle);
+                    put(&mut self.tws, speed);
+                }
+            }
+            // engine (E) or shaft (S) revolutions: source, number, rpm, pitch %, A when valid
+            "RPM" if f.len() >= 5 && f[4] == "A" && f[0] == "E" => put(&mut self.rpm, number(&f[2])),
             "GLL" if f.len() >= 6 && f[5] == "A" => {
                 self.position(&f[0], &f[1], &f[2], &f[3]);
             }
@@ -289,6 +370,13 @@ impl Observation {
                 put(&mut self.pressure, w.pressure);
                 put(&mut self.air_temp, w.air_temp);
                 put(&mut self.humidity, w.humidity);
+                if sentence.formatter == "XDR" {
+                    let x = xdr_other(f);
+                    put(&mut self.heel, x.heel);
+                    put(&mut self.pitch, x.pitch);
+                    put(&mut self.battery_v, x.battery_v);
+                    put(&mut self.rpm, x.rpm);
+                }
             }
             "ZDA" if f.len() >= 4 => {
                 if let Some(datetime) = zda_datetime(&f[0], &f[1], &f[2], &f[3]) {
@@ -397,6 +485,50 @@ pub fn weather(formatter: &str, f: &[String]) -> Weather {
         _ => {}
     }
     w
+}
+
+/// What else an XDR carries besides the weather: heel and pitch, battery voltage, engine revs.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct XdrOther {
+    pub heel: Option<f64>,
+    pub pitch: Option<f64>,
+    pub battery_v: Option<f64>,
+    pub rpm: Option<f64>,
+}
+
+impl XdrOther {
+    pub fn any(&self) -> bool {
+        self.heel.is_some() || self.pitch.is_some() || self.battery_v.is_some() || self.rpm.is_some()
+    }
+    pub fn attitude(&self) -> bool {
+        self.heel.is_some() || self.pitch.is_some()
+    }
+    pub fn engine(&self) -> bool {
+        self.battery_v.is_some() || self.rpm.is_some()
+    }
+}
+
+/// Angles (type A, in D degrees) named ROLL or HEEL (+ = to starboard) and PTCH or PITCH
+/// (+ = bow up), as Airmar, B&G and Signal K's NMEA output name them; voltage (U, in V)
+/// with BAT in its name; tachometer (T, in R rpm).
+pub fn xdr_other(f: &[String]) -> XdrOther {
+    let mut x = XdrOther::default();
+    for g in f.chunks(4) {
+        let (kind, value, unit) = (g[0].as_str(), g.get(1).and_then(|v| number(v)), g.get(2).map(String::as_str).unwrap_or(""));
+        let name = g.get(3).map(|n| n.to_ascii_uppercase()).unwrap_or_default();
+        match kind {
+            "A" if unit == "D" && (name.contains("ROLL") || name.contains("HEEL")) => {
+                x.heel = x.heel.or(value.filter(|a| (-90.0..=90.0).contains(a)));
+            }
+            "A" if unit == "D" && (name.contains("PTCH") || name.contains("PITCH")) => {
+                x.pitch = x.pitch.or(value.filter(|a| (-90.0..=90.0).contains(a)));
+            }
+            "U" if unit == "V" && name.contains("BAT") => x.battery_v = x.battery_v.or(value.filter(|v| (0.0..=100.0).contains(v))),
+            "T" if unit == "R" => x.rpm = x.rpm.or(value.filter(|r| (0.0..=20_000.0).contains(r))),
+            _ => {}
+        }
+    }
+    x
 }
 
 fn number(s: &str) -> Option<f64> {
@@ -537,8 +669,8 @@ pub const CATALOG: &[CatalogEntry] = &[
     entry!("GGA", "GNSS fix data", "Position", Decoded),
     entry!("GLL", "Geographic position", "Position", Decoded),
     entry!("GNS", "GNSS fix data", "Position", PreservedRaw),
-    entry!("GSA", "GNSS DOP and active satellites", "GNSS", PreservedRaw),
-    entry!("GST", "GNSS pseudorange error statistics", "GNSS", PreservedRaw),
+    entry!("GSA", "GNSS DOP and active satellites", "GNSS", Decoded),
+    entry!("GST", "GNSS pseudorange error statistics", "GNSS", Decoded),
     entry!("GSV", "Satellites in view", "GNSS", PreservedRaw),
     entry!("HDG", "Heading, deviation and variation", "Heading", Decoded),
     entry!("HDM", "Heading, magnetic", "Heading", Decoded),
@@ -549,17 +681,18 @@ pub const CATALOG: &[CatalogEntry] = &[
     entry!("MTW", "Mean water temperature", "Environment", Decoded),
     entry!("RMB", "Recommended minimum navigation data", "Waypoint", PreservedRaw),
     entry!("RMC", "Recommended minimum GNSS data", "Position", Decoded),
-    entry!("ROT", "Rate of turn", "Motion", PreservedRaw),
-    entry!("RSA", "Rudder sensor angle", "Steering", PreservedRaw),
+    entry!("ROT", "Rate of turn", "Motion", Decoded),
+    entry!("RPM", "Engine or shaft revolutions", "Engine", Decoded),
+    entry!("RSA", "Rudder sensor angle", "Steering", Decoded),
     entry!("RTE", "Routes", "Waypoint", PreservedRaw),
-    entry!("VDR", "Set and drift", "Current", PreservedRaw),
+    entry!("VDR", "Set and drift", "Current", Decoded),
     entry!("VHW", "Water speed and heading", "Speed", Decoded),
-    entry!("VLW", "Distance travelled through water", "Log", PreservedRaw),
+    entry!("VLW", "Distance travelled through water", "Log", Decoded),
     entry!("VTG", "Course and speed over ground", "Position", Decoded),
-    entry!("VWR", "Relative wind speed and angle", "Wind", PreservedRaw),
-    entry!("VWT", "True wind speed and angle", "Wind", PreservedRaw),
+    entry!("VWR", "Relative wind speed and angle", "Wind", Decoded),
+    entry!("VWT", "True wind speed and angle", "Wind", Decoded),
     entry!("WPL", "Waypoint location", "Waypoint", PreservedRaw),
-    entry!("XDR", "Transducer measurements (barometer, air temperature and humidity used)", "Sensors", Decoded),
+    entry!("XDR", "Transducer measurements (barometer, air temperature, humidity, heel, pitch, battery voltage and engine revs used)", "Sensors", Decoded),
     entry!("XTE", "Cross-track error", "Waypoint", PreservedRaw),
     entry!("ZDA", "Time and date", "Time", Decoded),
 ];
@@ -731,5 +864,51 @@ mod tests {
         assert_eq!(w.air_temp, Some(21.4));
         assert_eq!(w.humidity, Some(55.0));
         assert_eq!(x("C,80,C,ENGINE").air_temp, None);
+    }
+
+    #[test]
+    fn decodes_the_connectivity_batch() {
+        let mut o = Observation::default();
+        // rate of turn: - to port; V (not valid) ignored
+        o.apply(&sentence("TIROT,-12.5,A"));
+        assert_eq!(o.rot, Some(-12.5));
+        o.apply(&sentence("TIROT,30.0,V"));
+        assert_eq!(o.rot, Some(-12.5));
+        // rudder
+        o.apply(&sentence("IIRSA,-4.5,A,,V"));
+        assert_eq!(o.rudder, Some(-4.5));
+        // set and drift
+        o.apply(&sentence("IIVDR,045.0,T,025.0,M,1.3,N"));
+        assert_eq!((o.set, o.drift), (Some(45.0), Some(1.3)));
+        // log and trip
+        o.apply(&sentence("IIVLW,12345.6,N,12.3,N"));
+        assert_eq!((o.log, o.trip), (Some(12345.6), Some(12.3)));
+        // the older wind sentences: port is negative
+        o.apply(&sentence("IIVWR,32.0,L,15.2,N,7.8,M,28.2,K"));
+        assert_eq!((o.awa, o.aws), (Some(-32.0), Some(15.2)));
+        o.apply(&sentence("IIVWT,45.0,R,,N,6.0,M,,K"));
+        assert_eq!(o.twa, Some(45.0));
+        assert!((o.tws.unwrap() - 11.663).abs() < 0.01);
+        // position quality
+        o.apply(&sentence("GPGGA,092750.000,5321.6802,N,00630.3372,W,1,08,1.03,61.7,M,55.2,M,,"));
+        assert_eq!((o.sats, o.hdop), (Some(8.0), Some(1.03)));
+        o.apply(&sentence("GPGSA,A,3,04,05,,09,12,,,24,,,,,2.5,1.3,2.1"));
+        assert_eq!((o.fix_dim, o.hdop), (Some(3.0), Some(1.3)));
+        o.apply(&sentence("GPGST,172814.0,0.006,0.023,0.020,273.6,3.0,4.0,0.033"));
+        assert_eq!(o.pos_error, Some(5.0));
+        // XDR: heel and pitch (Airmar and B&G names), battery, engine
+        o.apply(&sentence("YXXDR,A,-1.2,D,PTCH,A,8.5,D,ROLL"));
+        assert_eq!((o.pitch, o.heel), (Some(-1.2), Some(8.5)));
+        o.apply(&sentence("IIXDR,A,-12.0,D,Heel,U,12.7,V,BATTERY#0,T,1850,R,ENGINE#0"));
+        assert_eq!((o.heel, o.battery_v, o.rpm), (Some(-12.0), Some(12.7), Some(1850.0)));
+        // the weather in an XDR still read, and an XDR without these leaves them alone
+        o.apply(&sentence("WIXDR,P,1.0132,B,Barometer"));
+        assert_eq!(o.pressure, Some(1013.2));
+        assert_eq!(o.heel, Some(-12.0));
+        // engine revolutions (E), not the shaft (S)
+        o.apply(&sentence("IIRPM,S,1,400,,A"));
+        assert_eq!(o.rpm, Some(1850.0));
+        o.apply(&sentence("IIRPM,E,1,2100,,A"));
+        assert_eq!(o.rpm, Some(2100.0));
     }
 }
