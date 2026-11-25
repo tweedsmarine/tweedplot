@@ -2,6 +2,7 @@
 // A simulated passage as NMEA 0183, for demonstrations, screenshots and testing without a boat.
 //
 //   node nmea-sim.mjs make [route.json | route.gpx] [--out file.nmea] [--speed 7.5] [--no-ais]
+//   node nmea-sim.mjs distress [--out distress-test.nmea]
 //   node nmea-sim.mjs play file.nmea [--udp 127.0.0.1:10110 | --tcp 10110] [--from 02:30] [--rate 1] [--loop] [--keep-time]
 //
 // make  writes one second of sentences after another: position, course and speed (RMC, GGA, VTG),
@@ -288,6 +289,90 @@ function make(args) {
   wps.forEach((w, k) => { if (k) s += legs[k - 1].d; const tt = reached[k] ?? t; console.log(`${w.name.padEnd(30)} ${s.toFixed(1).padStart(6)}   ${pad(Math.floor(tt / 3600), 2)}:${pad(Math.floor((tt % 3600) / 60), 2)}`); });
 }
 
+// ---------- distress ----------
+// A short scenario to test distress alerting: own boat motoring slowly in Tasman Bay while AIS-SART,
+// MOB and EPIRB-AIS transmitters come up (active and test) and the VHF passes on DSC distress alerts,
+// a relay, an acknowledgement and urgency and safety calls. One event a minute or so, each placed
+// round the boat so that they don't land on top of each other. All MMSIs are invented.
+//   at (s)  what                                     where from the boat
+const DISTRESS = [
+  { at: 30, ais: { mmsi: 970099101, status: 14, text: "SART ACTIVE", drift: [0.6, 100] }, off: [1.2, 40], what: "AIS-SART, active" },
+  { at: 90, ais: { mmsi: 972099102, status: 14, text: "MOB ACTIVE", drift: [0.8, 120] }, off: [0.35, 200], what: "AIS MOB device, active (astern)" },
+  { at: 150, ais: { mmsi: 974099103, status: 14, text: "EPIRB ACTIVE", drift: [0.4, 80] }, off: [2.5, 320], what: "EPIRB-AIS, active" },
+  { at: 210, ais: { mmsi: 970099104, status: 15, text: "SART TEST", drift: [0, 0], until: 300 }, off: [1.5, 140], what: "AIS-SART, test (stops after 90 s)" },
+  { at: 270, dsc: "alert", mmsi: 512009971, nature: "01", dse: true, off: [3.0, 10], what: "DSC distress alert, flooding, with DSE position" },
+  { at: 330, dsc: "relay", mmsi: 512009972, from: "005120111", nature: "05", off: [4.0, 260], what: "DSC distress relay (coast station), sinking" },
+  { at: 390, dsc: "ack", mmsi: 512009971, from: "005120111", nature: "01", off: [3.0, 10], ref: 270, what: "DSC distress acknowledgement of the 04:30 alert" },
+  { at: 450, dsc: "urgency", mmsi: 512009973, what: "DSC all-ships urgency call" },
+  { at: 510, dsc: "safety", mmsi: "005120111", what: "DSC all-ships safety call (coast station)" },
+  { at: 570, dsc: "alert", mmsi: 512009974, nature: "10", nopos: true, what: "DSC distress alert, man overboard, no position" },
+  { at: 630, ais: { mmsi: 972099105, status: 15, text: "MOB TEST", drift: [0, 0], until: 700 }, off: [0.8, 290], what: "AIS MOB device, test (stops after 70 s)" },
+  { at: 690, dsc: "alert", mmsi: 512009971, nature: "01", dse: true, off: [3.0, 10], ref: 270, what: "DSC distress alert repeated (the 04:30 ship)" },
+];
+/** DSC position field (quadrant, ddmm, dddmm) and the DSE's extra minutes digits. */
+function dscPos([lon, lat]) {
+  const q = lat < 0 ? (lon < 0 ? 3 : 2) : lon < 0 ? 1 : 0;
+  const part = (v) => { const a = Math.abs(v), d = Math.floor(a), m = (a - d) * 60, mi = Math.floor(m); return [d, mi, Math.floor((m - mi) * 10000)]; };
+  const [la, lam, laf] = part(lat), [lo, lom, lof] = part(lon);
+  return [`${q}${pad(la, 2)}${pad(lam, 2)}${pad(lo, 3)}${pad(lom, 2)}`, `${pad(laf, 4)}${pad(lof, 4)}`];
+}
+const addr = (m) => `${pad(m, 9)}0`;
+/** Safety-related broadcast (AIS message 14). */
+function msg14(mmsi, text) { return vdm(new Bits().u(14, 6).u(0, 2).u(mmsi, 30).u(0, 2).t(text, text.length)); }
+
+function distress(args) {
+  const out = args.out ?? path.join(process.cwd(), "distress-test.nmea");
+  const start = new Date(args.start ?? "2026-11-14T18:00:00Z");
+  const len = 780; // 13 minutes
+  const VAR = 22, SOG = 5, COG = 45;
+  let pos = [173.24, -41.16]; // Tasman Bay, north of Nelson
+  const track = [];
+  for (let t = 0; t <= len; t++) { track.push(pos); pos = move(pos, SOG * KN * Math.sin(COG * R), SOG * KN * Math.cos(COG * R)); }
+  const place = (ev) => { const [d, b] = ev.off; return move(track[ev.ref ?? ev.at], d * Math.sin(b * R), d * Math.cos(b * R)); };
+  const lines = [];
+  for (let t = 0; t < len; t++) {
+    const now = new Date(start.getTime() + t * 1000), p = track[t];
+    lines.push(
+      sentence(`GPRMC,${hms(now)},A,${latF(p[1])},${lonF(p[0])},${SOG.toFixed(1)},${COG.toFixed(1)},${dmy(now)},${VAR.toFixed(1)},E,D`),
+      sentence(`GPGGA,${hms(now)},${latF(p[1])},${lonF(p[0])},2,10,0.9,3.0,M,12.0,M,4.0,0120`),
+      sentence(`GPVTG,${COG.toFixed(1)},T,${norm360(COG - VAR).toFixed(1)},M,${SOG.toFixed(1)},N,${(SOG * 1.852).toFixed(1)},K,D`),
+      sentence(`HEHDT,${COG.toFixed(1)},T`),
+    );
+    for (const ev of DISTRESS) {
+      if (ev.ais) {
+        const a = ev.ais, end = a.until ?? len;
+        if (t < ev.at || t >= end) continue;
+        const since = t - ev.at;
+        // an AIS-SART sends a burst of position reports once a minute (here every 20 s, to see it move sooner),
+        // and "… ACTIVE" / "… TEST" every four minutes
+        if (since % 20 === 0) {
+          const [kn, set] = a.drift;
+          const d = kn * KN * since;
+          const at = move(place(ev), d * Math.sin(set * R), d * Math.cos(set * R));
+          lines.push(...msg1({ mmsi: a.mmsi, status: a.status, sog: kn, cog: set, pos: at, hdg: null }, t));
+        }
+        if (since % 240 === 1) lines.push(...msg14(a.mmsi, a.text));
+        continue;
+      }
+      if (t !== ev.at) continue;
+      const hhmm = `${pad(now.getUTCHours(), 2)}${pad(now.getUTCMinutes(), 2)}`;
+      const [pf, extra] = ev.off && !ev.nopos ? dscPos(place(ev)) : ["9999999999", null];
+      const time = ev.nopos ? "8888" : hhmm;
+      let f;
+      if (ev.dsc === "alert") f = `12,${addr(ev.mmsi)},,${ev.nature},00,${pf},${time},,,S,${ev.dse ? "E" : ""}`;
+      else if (ev.dsc === "relay") f = `16,${addr(ev.from)},12,12,00,${pf},${time},${addr(ev.mmsi)},${ev.nature},S,`;
+      else if (ev.dsc === "ack") f = `16,${addr(ev.from)},12,20,00,${pf},${time},${addr(ev.mmsi)},${ev.nature},B,`;
+      else if (ev.dsc === "urgency") f = `16,${addr(ev.mmsi)},10,00,09,,,,,S,`;
+      else f = `16,${addr(ev.mmsi)},08,00,09,,,,,S,`;
+      lines.push(sentence(`CDDSC,${f}`));
+      if (ev.dse && extra) lines.push(sentence(`CDDSE,1,1,A,${addr(ev.mmsi)},00,${extra}`));
+    }
+  }
+  fs.writeFileSync(out, lines.join("\r\n") + "\r\n");
+  console.log(`${out}\n${len / 60} min, ${lines.length} sentences. Own boat at ${SOG} kn ${COG}°T from 41°09.6'S 173°14.4'E.\n\n time   event`);
+  for (const ev of DISTRESS) console.log(`${pad(Math.floor(ev.at / 60), 2)}:${pad(ev.at % 60, 2)}   ${ev.what}${ev.ais ? ` (${ev.ais.mmsi})` : ` (${ev.mmsi})`}`);
+}
+
 // ---------- play ----------
 function play(args) {
   const file = args._[0];
@@ -300,6 +385,13 @@ function play(args) {
   let k = 0;
   if (args.from) { const [h, m = 0] = String(args.from).split(":").map(Number); k = Math.min(groups.length - 1, h * 3600 + m * 60); }
   const restamp = (ln, now) => {
+    // a DSC call's time (field 7, hhmm UTC) follows the clock too, unless it is 8888 (not known)
+    const dsc = /^\$(..DSC,)([^*]*)\*/.exec(ln);
+    if (dsc) {
+      const f = dsc[2].split(",");
+      if (/^\d{4}$/.test(f[6] ?? "") && f[6] !== "8888") f[6] = `${pad(now.getUTCHours(), 2)}${pad(now.getUTCMinutes(), 2)}`;
+      return sentence(dsc[1] + f.join(","));
+    }
     const m = /^\$(..(RMC|GGA),)([^*]*)\*/.exec(ln);
     if (!m) return ln;
     const f = m[3].split(",");
@@ -349,6 +441,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try {
     if (cmd === "make") make(parse(rest));
     else if (cmd === "play") play(parse(rest));
-    else console.log("node nmea-sim.mjs make [route.json | route.gpx] [--out file.nmea] [--speed 7.5] [--start 2026-11-14T18:00:00Z] [--no-ais]\nnode nmea-sim.mjs play file.nmea [--udp 127.0.0.1:10110 | --tcp 10110] [--from hh:mm] [--rate 1] [--loop] [--keep-time]");
+    else if (cmd === "distress") distress(parse(rest));
+    else console.log("node nmea-sim.mjs make [route.json | route.gpx] [--out file.nmea] [--speed 7.5] [--start 2026-11-14T18:00:00Z] [--no-ais]\nnode nmea-sim.mjs distress [--out distress-test.nmea]\nnode nmea-sim.mjs play file.nmea [--udp 127.0.0.1:10110 | --tcp 10110] [--from hh:mm] [--rate 1] [--loop] [--keep-time]");
   } catch (e) { console.error(String(e.message || e)); process.exit(1); }
 }

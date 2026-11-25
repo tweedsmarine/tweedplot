@@ -25,6 +25,32 @@ In TweedPlot: **Settings › Connections › NMEA data sources › Add source**,
 
 The depths, wind and tidal streams are made up to look right for each stretch (they are in the route file); they are not the chart's or a forecast's. The stream runs with the boat through French Pass, so the speed over the ground reaches about 11 kn there. **The AIS names, call signs and MMSIs (512 000 901 to 906) are invented.**
 
+## Distress test
+
+```
+node tools/nmea-sim/nmea-sim.mjs distress
+node tools/nmea-sim/nmea-sim.mjs play distress-test.nmea
+```
+
+`distress` writes `distress-test.nmea`: 13 minutes of own boat motoring at 5 kn, 045°T, from about 2.5 NM north of Nelson, with one distress event a minute, each placed round the boat a few cables to a few miles off so that they don't sit on top of each other:
+
+| Time in | Event |
+| --- | --- |
+| 00:30 | AIS-SART, active (970 099 101): status 14 and "SART ACTIVE", drifting |
+| 01:30 | AIS MOB device, active (972 099 102), a third of a mile astern |
+| 02:30 | EPIRB-AIS, active (974 099 103) |
+| 03:30 | AIS-SART in test (970 099 104): status 15 and "SART TEST", for 90 s |
+| 04:30 | DSC distress alert, flooding (512 009 971), with a DSE (enhanced position) |
+| 05:30 | DSC distress relay from a coast station (005 120 111), sinking (512 009 972) |
+| 06:30 | DSC distress acknowledgement of the 04:30 alert |
+| 07:30 | DSC all-ships urgency call (512 009 973) |
+| 08:30 | DSC all-ships safety call (coast station) |
+| 09:30 | DSC distress alert, man overboard, no position (512 009 974) |
+| 10:30 | AIS MOB device in test (972 099 105), for 70 s |
+| 11:30 | The 04:30 alert again (a DSC alert repeats until acknowledged) |
+
+The AIS transmitters send a position every 20 s (a real one sends a burst once a minute) and their "… ACTIVE" or "… TEST" text (message 14) every four minutes. `play` puts the clock's time into the DSC calls as well as into RMC and GGA. **All the MMSIs are invented.** Use `play … --from 00:04` to start just before the DSC calls.
+
 ## Options
 
 - `make [route.json | route.gpx] [--out file.nmea] [--speed 7.5] [--start 2026-11-14T18:00:00Z] [--no-ais]`. A route file is a list of waypoints, each with `name`, `lat`, `lon` and, optionally, `depth` (m), `twd` and `tws` (true wind, °T and kn) and `set` and `drift` (the stream, °T and kn): see `nelson-wellington.json`. A GPX route exported from TweedPlot works too. `make` prints when the boat reaches each waypoint.
