@@ -2899,3 +2899,12 @@ html[data-palette="iho-night"] .wdial .ps { opacity: 0.55; }
 /* the start-up splash: flat navy (as before OpenBridge), dimmed at dusk and night so it doesn't glare */
 html[data-palette="dusk"] .startup-splash { filter: brightness(0.8); }
 html[data-palette="iho-night"] .startup-splash { filter: brightness(0.5); }
+
+/* Settings › Number-key marks: key, symbol, colour, name on one line */
+.qm-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.qm-row { display: grid; grid-template-columns: 22px minmax(0, 1.4fr) 30px minmax(0, 1fr); gap: 4px; align-items: center; }
+.qm-row .qm-key { justify-self: center; }
+.qm-row .isel-btn { width: 100%; min-width: 0; }
+.qm-row .qm-colour { width: 30px; height: var(--btn-h); padding: 1px; }
+.qm-row .qm-colour:disabled, .qm-row .qm-name:disabled { opacity: 0.35; }
+.qm-row .qm-name { min-width: 0; width: 100%; }

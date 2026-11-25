@@ -13,6 +13,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { PRIMARY } from "./role.js";
 import { ask } from "./ask.js";
+import { setupQuickMarks, slotForKey } from "./quickmarks.js";
 import * as activity from "./activity.js";
 import { setupWeather, barbImage } from "./weather.js";
 import { setupWeatherPanel } from "./wxpanel.js";
@@ -1281,8 +1282,11 @@ map.on("dblclick", (e) => {
 });
 
 // ---------- keyboard shortcuts (keys.js holds the table) ------------------------------------
+// keys 1 to 0: the number-key marks (Settings › Number-key marks)
+const quickMarks = setupQuickMarks({ getBoat: () => lastBoat, toast, refresh: () => library?.refresh() });
 setupKeys(map, {
   ui, views,
+  quickMark: (e) => quickMarks.drop(slotForKey(e)),
   followOff: () => setFollow(false),
   readoutPin: () => readout?.pinAt(),
   centreBoat: () => {
