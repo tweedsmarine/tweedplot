@@ -2,6 +2,7 @@
 // and navigation to the next mark. Routing lives in routing.js.
 import * as maplibregl from "maplibre-gl";
 import { invoke } from "@tauri-apps/api/core";
+import { PRIMARY } from "./role.js";
 import { distNm } from "./instruments.js";
 import { ask } from "./ask.js";
 import { s52PxPerMm } from "./chartfeatures.js";
@@ -55,6 +56,17 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
     ? { routeId: work.routeId ?? null, name: work.name || "", start: work.start ?? null, startRef: work.startRef ?? null, startRings: work.startRings ?? null,
         marks: structuredClone(work.marks), greatCircle: Boolean(work.greatCircle), nav: work.nav || 0, linked: true }
     : null;
+  // TweedPlot never starts navigating by itself: a route that was navigated when it closed is not
+  // navigated again until Start navigating is pressed (with the boat somewhere else by then, and an
+  // autopilot perhaps listening, picking up the old leg would be dangerous). The editor keeps the
+  // route and the mark it had got to. (Another window opened while TweedPlot runs follows the main one.)
+  let held = null; // what was navigated at the last close, until resumed (asked at start, main.js) or not
+  if (PRIMARY && active) {
+    held = active;
+    if (active.linked) navIndex = active.nav ?? navIndex;
+    active = null;
+    try { localStorage.removeItem(ACTIVE_KEY); } catch { /* ignore */ }
+  }
   const linked = () => !!active?.linked;
   /** The route in the editor is the one being navigated: it can't be changed until navigation is stopped. */
   const locked = () => linked();
@@ -580,6 +592,7 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
   });
 
   drawMarks();
+  if (held) persist();
   library.onChange(() => {
     // keep names of library marks in step with edits made in the Library panel
     for (const m of marks) { const x = m.id && library.byId(m.id); if (x) m.name = x.name; }
@@ -741,6 +754,43 @@ export function setupRoute(map, { library, getBoat, getArrivalNm }) {
       const ahead = r.marks.slice(r.nav + 1).map((m, j) => ({ name: m.name || `Mark ${r.nav + j + 2}`, lon: m.lon, lat: m.lat, n: r.nav + j + 2 }));
       const fromName = r.nav > 0 ? r.marks[r.nav - 1].name || `Mark ${r.nav}` : "Start";
       return { next: { name: next.name || `Mark ${r.nav + 1}`, lon: next.lon, lat: next.lat, n: r.nav + 1 }, from, fromName, index: r.nav, count: r.marks.length, ahead };
+    },
+    /** The route that was navigated when TweedPlot last closed, not navigated now: { name, marks, nav, ahead }
+     *  (`ahead`: the next mark from where the boat is now, by the leg nearest it), or null. */
+    held: () => {
+      if (!held) return null;
+      const b = getBoat();
+      let ahead = held.nav ?? 0;
+      if (b) {
+        // the leg nearest the boat (flat, scaled for latitude: legs are short next to the earth)
+        const k = Math.cos((b[1] * Math.PI) / 180);
+        const P = (q) => [q[0] * k, q[1]];
+        const segDist = (a, c) => {
+          const [ax, ay] = P(a), [cx, cy] = P(c), [bx, by] = P(b);
+          const dx = cx - ax, dy = cy - ay, l2 = dx * dx + dy * dy;
+          const t = l2 ? Math.max(0, Math.min(1, ((bx - ax) * dx + (by - ay) * dy) / l2)) : 0;
+          return Math.hypot(ax + t * dx - bx, ay + t * dy - by);
+        };
+        let best = Infinity;
+        held.marks.forEach((m, i) => {
+          const from = i > 0 ? [held.marks[i - 1].lon, held.marks[i - 1].lat] : held.start ?? [m.lon, m.lat];
+          const d = segDist(from, [m.lon, m.lat]);
+          if (d < best) { best = d; ahead = i; }
+        });
+      }
+      return { name: held.name || "The route", marks: held.marks.map((m, i) => m.name || `Mark ${i + 1}`), nav: held.nav ?? 0, ahead };
+    },
+    /** Navigate the held route again, to mark `index` (or forget it: `index` null). */
+    resumeHeld(index) {
+      if (!held) return;
+      const h = held;
+      held = null;
+      if (index == null || active) return;
+      const i = Math.min(Math.max(0, index), h.marks.length - 1);
+      if (h.linked && h.routeId === routeId) { navIndex = i; begin(); } else active = { ...h, nav: i };
+      persist(); saveActive(); drawMarks();
+      for (const f of listeners) f();
+      status(`Navigating ${active.name || "this route"}: to mark ${active.nav + 1}.`);
     },
     /** The planned route's departure (Unix s; now for Now or a start from the boat) and speed (kn). */
     departure,
