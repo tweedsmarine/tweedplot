@@ -2550,3 +2550,12 @@ svg.sv-plot text { font-size: 11px; fill: currentColor; }
 .cov-key { flex-wrap: wrap; gap: 4px 10px; font-size: 11px; padding-left: 26px; }
 .cov-key span { display: inline-flex; align-items: center; gap: 4px; }
 .cov-key span::before { content: ""; width: 14px; border-top: 2px dashed var(--c); }
+
+/* Settings › Number-key marks: key, symbol, colour, name on one line */
+.qm-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.qm-row { display: grid; grid-template-columns: 22px minmax(0, 1.4fr) 30px minmax(0, 1fr); gap: 4px; align-items: center; }
+.qm-row .qm-key { justify-self: center; }
+.qm-row .isel-btn { width: 100%; min-width: 0; }
+.qm-row .qm-colour { width: 30px; height: var(--btn-h); padding: 1px; }
+.qm-row .qm-colour:disabled, .qm-row .qm-name:disabled { opacity: 0.35; }
+.qm-row .qm-name { min-width: 0; width: 100%; }

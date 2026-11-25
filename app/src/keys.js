@@ -60,6 +60,7 @@ export const KEYS = [
   { group: "Marks and library", keys: "D", label: "Record own soundings on or off", btn: "pb-rec", map: true, run: click("pb-rec") },
   { group: "Marks and library", keys: "K", label: "Drop anchor, or weigh it when anchored (press twice)", btn: "anchor-btn", map: true, run: click("anchor-btn") },
   { group: "Marks and library", keys: "E", label: "Drop a mark at the boat (event mark, no alarm)", btn: "drop-btn", run: click("drop-btn") },
+  { group: "Marks and library", keys: "1 … 0", label: "Drop the mark set for that key (Settings › Number-key marks)", own: true },
   { group: "Marks and library", keys: "Ctrl+F", label: "Find in the library", run: (c) => c.findInLibrary() },
 
   { group: "Safety", keys: "Ctrl+M", label: "Man overboard", btn: "mob-btn", run: click("mob-btn") },
@@ -133,6 +134,14 @@ export function setupKeys(map, ctx) {
         if (e.key === "+" || e.key === "=") { e.preventDefault(); map.zoomIn({ duration: 200 }); return; }
         if (e.key === "-" || e.key === "_") { e.preventDefault(); map.zoomOut({ duration: 200 }); return; }
       }
+    }
+
+    // 1 to 0 (top row or keypad): the number-key marks (quickmarks.js), in every view and use
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && /^(Digit|Numpad)\d$/.test(e.code) && c.quickMark) {
+      if (typing || busy()) return;
+      e.preventDefault();
+      c.quickMark(e);
+      return;
     }
 
     for (const k of KEYS) {
