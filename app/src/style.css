@@ -204,7 +204,7 @@ details.sub summary { cursor: pointer; font-size: 11px; color: var(--quiet); tex
 .list li.more small { color: var(--quiet); font-size: 11px; }
 .list li .main small { color: var(--quiet); font-size: 11px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list li button { flex: none; min-height: var(--chip-h); padding: 2px 7px; font-size: 12px; }
-.list li .num { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--base-purple-400); color: var(--on-selected-active-color); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.list li .num { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--base-purple-400); color: var(--container-background-color); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
 .list li .num.s { background: var(--good); }
 .list li.active { background: var(--container-background-color); }
 .wx-row[hidden] { display: none; }
@@ -468,6 +468,8 @@ table.cmp td.best { font-weight: 700; color: var(--good); }
 .nmea-monitor-controls input[type="checkbox"] { width: auto; }
 .nmea-monitor-controls select { max-width: 180px; }
 .nmea-monitor-controls input[type="number"] { width: 76px; }
+/* buttons keep their words on one line; the row wraps instead (they were squeezed into four lines) */
+.nmea-monitor-controls button, .nmea-monitor-head button { flex: none; white-space: nowrap; }
 .nmea-monitor-controls [data-custom-minutes][hidden] { display: none; }
 .nmea-monitor-message { min-height: 17px; color: var(--quiet); font-size: 12px; overflow-wrap: anywhere; }
 .nmea-monitor-message.bad { color: var(--bad); }
@@ -2701,7 +2703,7 @@ html.ob-shell button { border-radius: var(--ob-radius); font-weight: var(--font-
 html.ob-shell button:active:not(:disabled) { background: var(--normal-pressed-background-color); }
 html.ob-shell button.on:active, html.ob-shell button[aria-pressed="true"]:active { background: var(--selected-pressed-background-color); }
 /* fields and lists: obc-text-input-field */
-html.ob-shell :is(input[type="text"], input[type="number"], input[type="search"], input[type="email"], input[type="url"], input[type="password"], input[type="datetime-local"], input[type="date"], input[type="time"], select, textarea) {
+html.ob-shell :is(input:not([type]), input[type="text"], input[type="number"], input[type="search"], input[type="email"], input[type="url"], input[type="password"], input[type="datetime-local"], input[type="date"], input[type="time"], select, textarea) {
   min-height: var(--btn-h); border: 1px solid var(--normal-enabled-border-color); border-radius: var(--ob-radius); background: var(--normal-enabled-background-color);
   color: var(--element-active-color); font-family: inherit; font-size: 13px; }
 html.ob-shell :is(input, select, textarea):hover:not(:disabled) { border-color: var(--normal-hover-border-color); }
@@ -2910,3 +2912,12 @@ html[data-palette="iho-night"] .startup-splash { filter: brightness(0.5); }
 .qm-row .qm-colour { width: 30px; height: var(--btn-h); padding: 1px; }
 .qm-row .qm-colour:disabled, .qm-row .qm-name:disabled { opacity: 0.35; }
 .qm-row .qm-name { min-width: 0; width: 100%; }
+
+/* sliders in OpenBridge's colours: the native track was near-white in dusk and night */
+html.ob-shell input[type="range"] { -webkit-appearance: none; appearance: none; background: transparent; min-height: 20px; }
+html.ob-shell input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--normal-enabled-border-color); }
+html.ob-shell input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%;
+  background: var(--selected-enabled-background-color); border: 2px solid var(--container-background-color); }
+html.ob-shell input[type="range"]:disabled::-webkit-slider-thumb { background: var(--element-disabled-color); }
+/* the chart's start-up note has no business over the Instruments screen (no chart there) */
+html.no-map #toast.startup-toast { display: none; }
