@@ -41,12 +41,12 @@ test("the alarm checker raises and retains a hidden non-fleet collision target",
   let visible = true, lost = false;
   const create = new Function(
     "getOwn", "targets", "ownMmsi", "s", "raised", "alarms", "collisionAlarmEligible", "isLost", "netOnly",
-    "cpaTcpa", "isDanger", "bearing", "shownInView", "shown",
+    "cpaTcpa", "isDanger", "bearing", "shownInView", "shown", "isDistress",
     `${source.slice(start, end)}\nreturn checkAlarms;`,
   );
   const check = create(
     () => own, new Map([[target.mmsi, target]]), 987654321, state, raised, alarms, collisionAlarmEligible, () => lost, () => false,
-    () => ({ cpa: 0.1, tcpa: 5, range: 1 }), () => true, () => 180, () => visible, () => false,
+    () => ({ cpa: 0.1, tcpa: 5, range: 1 }), () => true, () => 180, () => visible, () => false, (t) => ["sart", "mob", "epirb"].includes(t.kind),
   );
   check();
   assert.match(active.get("ais-123456789").text, /COLLISION RISK/);
