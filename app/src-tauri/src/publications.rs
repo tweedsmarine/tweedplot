@@ -259,8 +259,10 @@ pub async fn pub_open(app: tauri::AppHandle, no: String) -> Result<bool, String>
     if !p.is_file() {
         return Ok(false);
     }
+    // Explorer opens a file as a double-click does (ShellExecute, the PDF program the user chose).
+    // rundll32's url.dll FileProtocolHandler, used before, did nothing at all on Chris's PC.
     #[cfg(windows)]
-    let r = std::process::Command::new("rundll32").arg("url.dll,FileProtocolHandler").arg(&p).spawn();
+    let r = std::process::Command::new("explorer.exe").arg(&p).spawn();
     #[cfg(target_os = "macos")]
     let r = std::process::Command::new("open").arg(&p).spawn();
     #[cfg(all(unix, not(target_os = "macos")))]
