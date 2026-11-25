@@ -2,12 +2,12 @@ use marine_nmea::fixstreams::{FixStreams, StreamSummary, Verdict};
 use marine_nmea::{Framer, Observation, Sentence};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
-use std::io::Read;
+use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Emitter;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::watch;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -205,6 +205,39 @@ static STATUS_DIRTY: Mutex<std::collections::BTreeSet<String>> = Mutex::new(std:
 static RECENT: Mutex<BTreeMap<String, (String, MonitorRing)>> = Mutex::new(BTreeMap::new());
 /// AIS messages over NMEA are put together and decoded per source.
 static AIS_DECODERS: Mutex<BTreeMap<String, ais::nmea::Decoder>> = Mutex::new(BTreeMap::new());
+/// Sentences to send out on a connected serial or TCP source (the autopilot output), by source id.
+/// A source's connection registers here while it is open and takes itself off when it closes.
+static OUTBOUND: Mutex<BTreeMap<String, tokio::sync::mpsc::UnboundedSender<Vec<u8>>>> = Mutex::new(BTreeMap::new());
+
+fn outbound_open(id: &str) -> tokio::sync::mpsc::UnboundedReceiver<Vec<u8>> {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    OUTBOUND.lock().unwrap().insert(id.to_owned(), tx);
+    rx
+}
+
+fn outbound_close(id: &str) {
+    OUTBOUND.lock().unwrap().remove(id);
+}
+
+/// Send the autopilot sentences for the leg being navigated out on a connected source: RMB, APB,
+/// XTE, BOD and BWC, once for each call (the app calls once a second while the mariner has
+/// "Send to the autopilot" on and a mark is navigated). `talker`: "GP" unless another is set.
+/// Errors when the source isn't connected (or can't be written to: UDP inputs only listen).
+#[tauri::command]
+pub fn autopilot_send(source_id: String, talker: Option<String>, nav: marine_nmea::autopilot::AutopilotNav) -> Result<usize, String> {
+    let talker = talker.filter(|t| t.len() == 2 && t.bytes().all(|c| c.is_ascii_uppercase())).unwrap_or_else(|| "GP".into());
+    let hms = chrono::Utc::now().format("%H%M%S").to_string();
+    let lines = marine_nmea::autopilot::sentences(&nav, &talker, &hms);
+    let bytes: Vec<u8> = lines.concat().into_bytes();
+    let tx = OUTBOUND.lock().unwrap().get(&source_id).cloned();
+    match tx {
+        Some(tx) => tx.send(bytes).map(|_| lines.len()).map_err(|_| "The connection has just closed".into()),
+        None => Err("That source isn't connected (or is a UDP input, which TweedPlot can't send on)".into()),
+    }
+}
+
+/// The last DSC call per MMSI, so a DSE's enhanced position can be added to it.
+static DSC_LAST: Mutex<BTreeMap<String, marine_nmea::dsc::DscCall>> = Mutex::new(BTreeMap::new());
 /// How often the vessel state goes to the windows when data is coming in.
 const PUBLISH_EVERY: Duration = Duration::from_millis(100);
 /// How many publish ticks between status and sentence-monitor updates (half a second).
@@ -696,6 +729,8 @@ fn consume_bytes(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
                     }
                 } else if verdict == Verdict::Ignore {
                     // a fix from the other GPS receiver on this input (or out of time order)
+                } else if matches!(sentence.formatter.as_str(), "DSC" | "DSE") {
+                    dsc_sentence(app, source, &sentence);
                 } else {
                     observation.apply(&sentence);
                     let mut hub = MULTIPLEXER.lock().unwrap();
@@ -714,6 +749,30 @@ fn consume_bytes(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
             }
             Err(error) => invalid_sentence(app, source, generation, String::from_utf8_lossy(&raw).trim().to_owned(), &error),
         }
+    }
+}
+
+/// A DSC call from the VHF (distress, urgency, safety) to the app ("dsc"), and a DSE's enhanced
+/// position added to the call it follows (sent again with the better position).
+fn dsc_sentence(app: &tauri::AppHandle, source: &SourceConfig, sentence: &Sentence) {
+    use marine_nmea::dsc;
+    let call = if sentence.formatter == "DSC" {
+        let Some(call) = dsc::parse_dsc(&sentence.fields) else { return };
+        DSC_LAST.lock().unwrap().insert(call.mmsi.clone(), call.clone());
+        call
+    } else {
+        let Some((mmsi, dlat, dlon)) = dsc::parse_dse(&sentence.fields) else { return };
+        let mut last = DSC_LAST.lock().unwrap();
+        let Some(call) = last.get_mut(&mmsi) else { return };
+        let (Some(lat), Some(lon)) = (call.lat, call.lon) else { return };
+        let (lat, lon) = dsc::refine(lat, lon, dlat, dlon);
+        call.lat = Some(lat);
+        call.lon = Some(lon);
+        call.expansion = false;
+        call.clone()
+    };
+    if let Err(error) = app.emit("dsc", serde_json::json!({ "call": call, "source": source.name, "raw": sentence.raw })) {
+        eprintln!("Could not publish a DSC call: {error}");
     }
 }
 
@@ -948,13 +1007,21 @@ async fn run_tcp(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
             result = tokio::net::TcpStream::connect(&address) => result,
         };
         match stream {
-            Ok(mut stream) => {
+            Ok(stream) => {
+                let (mut stream, mut writer) = stream.into_split();
+                let mut outbound = outbound_open(&source.id);
                 let mut framer = Framer::default();
                 update_status(app, &source.id, generation, Some("connected"), Some(format!("Connected to {address}; waiting for NMEA data")), false, None);
                 let mut buf = [0u8; 2048];
                 loop {
                     let read = tokio::select! {
-                        _ = stop.changed() => return,
+                        _ = stop.changed() => { outbound_close(&source.id); return; }
+                        Some(bytes) = outbound.recv() => {
+                            if let Err(error) = writer.write_all(&bytes).await {
+                                eprintln!("Could not send on {address}: {error}");
+                            }
+                            continue;
+                        }
                         result = stream.read(&mut buf) => result,
                     };
                     match read {
@@ -979,6 +1046,7 @@ async fn run_tcp(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
                         }
                     }
                 }
+                outbound_close(&source.id);
             }
             Err(error) => {
                 update_status(app, &source.id, generation, Some("error"), Some(format!("Could not connect to {address}: {error}")), false, None);
@@ -1054,6 +1122,7 @@ async fn run_serial(app: &tauri::AppHandle, source: &SourceConfig, generation: u
         let worker_cancelled = cancelled.clone();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let worker_port = port_name.clone();
+        let mut outbound = outbound_open(&source.id);
         let worker = tokio::task::spawn_blocking(move || {
             let mut port = match serialport::new(&worker_port, baud_rate).timeout(Duration::from_millis(250)).open() {
                 Ok(port) => port,
@@ -1065,6 +1134,12 @@ async fn run_serial(app: &tauri::AppHandle, source: &SourceConfig, generation: u
             let _ = tx.send(SerialMessage::Opened);
             let mut buf = [0u8; 2048];
             while !worker_cancelled.load(Ordering::Relaxed) {
+                // anything to send (the autopilot output) goes out between reads (they wait 250 ms at most)
+                while let Ok(bytes) = outbound.try_recv() {
+                    if let Err(error) = port.write_all(&bytes) {
+                        eprintln!("Could not send on {worker_port}: {error}");
+                    }
+                }
                 match port.read(&mut buf) {
                     Ok(0) => {}
                     Ok(n) => {
@@ -1106,6 +1181,7 @@ async fn run_serial(app: &tauri::AppHandle, source: &SourceConfig, generation: u
             }
         }
         cancelled.store(true, Ordering::Relaxed);
+        outbound_close(&source.id);
         if let Err(error) = worker.await {
             update_status(app, &source.id, generation, Some("error"), Some(format!("Serial reader failed: {error}")), false, None);
         }

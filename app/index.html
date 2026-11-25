@@ -151,6 +151,8 @@
           <button id="nav-next" title="Next mark">▶</button>
         </div>
         <div class="wx-row"><button id="nav-go" class="grow" title="Navigate this route: its next mark, cross-track error and marks ahead show in the Navigation view, with the highway and the arrival and off-track alarms. It stays navigated while you open or plan another route">Start navigating</button></div>
+        <div class="wx-row"><label class="grow" title="Send the leg being navigated to the autopilot each second (NMEA 0183 RMB, APB, XTE, BOD, BWC), for its Track or Nav mode. Off each time TweedPlot starts"><input id="ap-send" type="checkbox" /> Send to the autopilot</label></div>
+        <div id="ap-note" class="wx-note"></div>
         <div id="nav-apart" hidden>
           <div class="wx-note">The route being navigated is not the one below. It is drawn heavier in magenta; the route below is orange.</div>
           <div class="wx-row">
@@ -1119,6 +1121,10 @@
               </select>
             </div>
             <div id="nmea-arbitration" class="settings-grid"></div>
+            <h4>Autopilot output</h4>
+            <div class="wx-row"><label class="grow" for="ap-source">Send to</label><select id="ap-source" title="The serial or TCP input the autopilot is connected to (a UDP input only listens)"></select></div>
+            <div class="wx-row"><label class="grow" for="ap-talker">Talker</label><select id="ap-talker" title="The two letters the sentences start with; most autopilots accept GP"><option value="GP">GP (most autopilots)</option><option value="EC">EC (ECDIS)</option><option value="II">II (integrated instruments)</option></select></div>
+            <div class="wx-note">With Route › Send to the autopilot on, the leg being navigated goes out once a second as RMB, APB, XTE, BOD and BWC, for the autopilot's Track or Nav mode. Nothing is sent while nothing is navigated, during a replay, or without a current position.</div>
             <h4>Live NMEA data</h4>
             <div class="wx-row"><button id="nmea-popout" type="button" title="Open the live NMEA monitor in a separate window">Pop out live NMEA data</button></div>
             <div id="nmea-active-sources" class="nmea-current-data">No active NMEA sources.</div>
