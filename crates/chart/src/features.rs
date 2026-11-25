@@ -734,7 +734,7 @@ impl ChartStore {
         let mut fpt = Layer::new("fpt");
         // the information-type symbols put at areas' middles in this tile, to draw one where
         // several would stand on top of each other (see INFO_AREA_SYMBOLS)
-        let mut info_marks: Vec<(String, [f64; 2])> = Vec::new();
+        let mut info_marks: Vec<(String, [f64; 2], (f64, f64))> = Vec::new();
         let mut lsec = Layer::new("lsec");
         let mut ftx = Layer::new("ftx");
         let bbox = tp.lonlat_bbox(crate::BUFFER);
@@ -1258,19 +1258,31 @@ impl ChartStore {
                                                 .collect();
                                             put_texts(&mut ftx, c, &centre_texts, &base);
                                         }
-                                        // an information area's symbol (the "i" square of a reserve, a restricted
-                                        // area ...) where the same symbol already stands within a few millimetres:
-                                        // left out. ENCs often chart one reserve as several overlapping areas, one
-                                        // for each restriction, and the coarser and finer charts' copies of an
-                                        // area have their middles a little apart: one square says it all.
-                                        let crowded = centre_symbol.as_deref().filter(|sy| INFO_AREA_SYMBOLS.contains(sy)).is_some_and(|sy| {
-                                            let near = info_marks.iter().any(|(s, p)| s == sy && (p[0] - c[0]).hypot(p[1] - c[1]) < INFO_AREA_SPACING);
+                                        // a symbol that only says "there is information or a restriction here"
+                                        // (the IHO "i" of a feature with notes, INFORM01; an information or
+                                        // restricted area's square) where the same symbol already stands within
+                                        // a few millimetres, shown at these zooms: left out. ENCs chart one marine
+                                        // farm or reserve on every chart that covers it, and often as several
+                                        // overlapping areas, one for each restriction; the copies' middles are a
+                                        // little apart, and one symbol says it all (a click lists them all).
+                                        let zr = (prop_f64(&pp, "minz").unwrap_or(0.0), prop_f64(&pp, "maxz").unwrap_or(f64::MAX));
+                                        let mut place = |key: String| {
+                                            let near = info_marks.iter().any(|(s, p, r)| {
+                                                *s == key && (p[0] - c[0]).hypot(p[1] - c[1]) < INFO_AREA_SPACING && r.0 <= zr.0 && r.1 >= zr.1
+                                            });
                                             if !near {
-                                                info_marks.push((sy.to_string(), c));
+                                                info_marks.push((key, c, zr));
                                             }
                                             near
-                                        });
-                                        if (centre_symbol.is_some() || centre_info.is_some()) && !crowded {
+                                        };
+                                        let crowded = centre_symbol.as_deref().filter(|sy| INFO_AREA_SYMBOLS.contains(sy)).is_some_and(|sy| place(sy.to_string()));
+                                        if centre_info.as_deref().is_some_and(|si| place(format!("i:{si}"))) {
+                                            pp.retain(|(k, _)| *k != "si");
+                                        }
+                                        if crowded {
+                                            pp.retain(|(k, _)| *k != "sy");
+                                        }
+                                        if pp.iter().any(|(k, _)| matches!(*k, "sy" | "si" | "sd")) {
                                             fpt.add(&TileGeom::Points(vec![[c[0].round() as i32, c[1].round() as i32]]), &pp);
                                         }
                                     }
@@ -1903,6 +1915,15 @@ fn date_props(get: impl Fn(&str) -> Option<String>) -> Vec<(&'static str, Value)
 
 /// The IHO information symbols as tile properties: `si` the chart notes' ("i" and the
 /// like), `sd` the date-dependent symbol (CHDATD01), each shown when the mariner asks.
+/// A number property's value.
+fn prop_f64(props: &[(&str, Value)], key: &str) -> Option<f64> {
+    props.iter().find(|(k, _)| *k == key).and_then(|(_, v)| match v {
+        Value::F64(f) => Some(*f),
+        Value::UInt(u) => Some(*u as f64),
+        Value::Str(_) => None,
+    })
+}
+
 fn info_props(si: &str) -> Vec<(&'static str, Value)> {
     let (date, info): (Vec<&str>, Vec<&str>) = si.split(',').filter(|x| !x.is_empty()).partition(|x| x.starts_with("CHDATD"));
     let mut out = Vec::new();
