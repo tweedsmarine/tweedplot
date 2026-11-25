@@ -310,8 +310,12 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     return null;
   }
   /** Whether a target is drawn and listed: not own boat, own fleet only if asked, internet ones inside the range. */
+  /** An AIS-SART, MOB device or EPIRB: always on the chart, whatever hides other targets. */
+  const isDistress = (t) => t.kind === "sart" || t.kind === "mob" || t.kind === "epirb";
   function shown(t) {
     if (t.lat == null || t.mmsi === ownMmsi) return false;
+    // a distress transmitter is never filtered away (own fleet only, the internet range, AIS hidden)
+    if (isDistress(t)) return true;
     if (fleet.only && !inFleet(t.mmsi)) return false;
     if (netOnly(t)) {
       const c = netCentre();
@@ -358,7 +362,11 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   mapTheme();
   let drawnEmpty = false;
   function draw() {
-    const vis = shownInView() ? "visible" : "none";
+    // AIS hidden in this view still shows any distress transmitter (AIS-SART, MOB device, EPIRB): a person in
+    // the water mustn't be hidden by a display setting
+    const onlyDistress = !shownInView();
+    const anyDistress = onlyDistress && [...targets.values()].some((t) => isDistress(t) && t.lat != null);
+    const vis = shownInView() || anyDistress ? "visible" : "none";
     // AIS not shown in this view: nothing is built (a busy feed has thousands of targets); the layers are emptied once
     if (vis === "none") {
       for (const id of ["ais-shapes", "ais-hdg", "ais-vec", "ais-sel", "ais-lost", "ais-status", "ais-fleet-names", "ais-names", "ais-track", "ais-cpa-path", "ais-cpa-line", "ais-cpa-pt", "ais-cpa-lbl"]) map.setLayoutProperty(id, "visibility", "none");
@@ -384,7 +392,8 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     const cull = targets.size > CULL_ABOVE ? viewBox() : null;
     for (const t of targets.values()) {
       if (!shown(t)) continue;
-      if (cull && t.mmsi !== selected && !inViewBox(cull, t)) continue;
+      if (onlyDistress && !isDistress(t)) continue;
+      if (cull && t.mmsi !== selected && !isDistress(t) && !inViewBox(cull, t)) continue;
       const fe = inFleet(t.mmsi);
       const lost = isLost(t);
       const c = t.kind === "vessel" && own?.pos ? cpaTcpa(own, t) : null;
@@ -704,7 +713,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
         // escalates (and sounds again) at the user's limit, then half, then a quarter of it
         const stage = Math.max(c.tcpa < s.tcpa / 4 ? 2 : c.tcpa < s.tcpa / 2 ? 1 : 0, c.cpa < s.cpa / 4 ? 2 : c.cpa < s.cpa / 2 ? 1 : 0);
         alarms.raise(id, { level: "alarm", stage, holdable: true, text: `COLLISION RISK ${t.name ?? t.mmsi}: CPA ${c.cpa.toFixed(2)} NM in ${Math.round(c.tcpa)} min`,
-          detail: `${c.range.toFixed(2)} NM at ${String(Math.round(bearing(own.pos, [t.lon, t.lat]))).padStart(3, "0")}°T · ${t.sog?.toFixed(1) ?? "?"} kn ${t.cog != null ? Math.round(t.cog) + "°T" : ""}${!shownInView() || !shown(t) ? " · target hidden by display settings" : ""} · click to show details`,
+          detail: `${c.range.toFixed(2)} NM at ${String(Math.round(bearing(own.pos, [t.lon, t.lat]))).padStart(3, "0")}°T · ${t.sog?.toFixed(1) ?? "?"} kn ${t.cog != null ? Math.round(t.cog) + "°T" : ""}${(!shownInView() && !isDistress(t)) || !shown(t) ? " · target hidden by display settings" : ""} · click to show details`,
           onClick: () => { map.easeTo({ center: [t.lon, t.lat] }); openPopup(t.mmsi); } });
         now.add(id);
       }
