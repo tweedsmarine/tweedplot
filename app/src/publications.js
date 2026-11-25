@@ -1,8 +1,9 @@
 // Nautical publications the chart notes refer to: LINZ's New Zealand Nautical Almanac
 // (NZ 204) and its Annual New Zealand Notices to Mariners (one PDF each). Downloaded from
-// linz.govt.nz when asked (Chart › Get data › Nautical publications, or a link in a chart
-// note), kept, and opened in the PDF viewer. A new edition comes out each 1 July.
+// linz.govt.nz only when the mariner says so (Chart › Get data › Nautical publications, or the
+// offer when a link in a chart note finds it missing), kept, and opened from this computer. A new edition comes out each 1 July.
 import { invoke } from "@tauri-apps/api/core";
+import { ask } from "./ask.js";
 
 const $ = (id) => document.getElementById(id);
 let status = null;
@@ -62,21 +63,28 @@ async function download(almanac) {
   }
 }
 
-/** Open an Annual Notice ("19", "4A") or the Almanac ("almanac"), downloading first if
- *  it isn't here yet. */
+/** Open an Annual Notice ("19", "4A") or the Almanac ("almanac") from this computer. When it
+ *  isn't here, say so and offer to download it: nothing goes to the internet unless asked
+ *  (on a boat the connection may be slow, costly or not there at all). */
 export async function openPublication(no) {
   try { if (await invoke("pub_open", { no })) return; } catch (e) { toast(`Could not open it: ${e}`, 5000); return; }
-  if (!(await download(no === "almanac"))) return;
+  const alm = no === "almanac";
+  const what = alm ? "The New Zealand Nautical Almanac (NZ 204)" : `Annual Notice to Mariners No. ${no}`;
+  const v = await ask({
+    title: `${what} isn't on this computer`,
+    note: `TweedPlot opens LINZ's publications from this computer, so they work without an internet connection. ` +
+      `Download ${alm ? "the Almanac (about 9 MB) and this year's Annual Notices (about 3 MB)" : "this year's Annual Notices (about 3 MB)"} from LINZ now? ` +
+      "You can also do it later: Chart › Get data › Nautical publications.",
+    ok: "Download", cancel: "Not now",
+  });
+  if (!v) return;
+  if (!(await download(alm))) return;
   try {
-    if (await invoke("pub_open", { no })) return;
-    if (no === "almanac") {
-      // LINZ's page didn't have a PDF TweedPlot recognises: the page itself, in the browser
-      toast("TweedPlot couldn't find the Almanac's PDF on LINZ's page, so the page is opening in your browser", 7000);
-      invoke("open_url", { url: ALMANAC_PAGE }).catch(() => window.open(ALMANAC_PAGE));
-    } else toast(`There is no Annual Notice No. ${no} in this edition`, 5000);
+    if (!(await invoke("pub_open", { no }))) {
+      toast(alm ? "LINZ's page had no Almanac PDF TweedPlot recognises; the Annual Notices were downloaded" : `There is no Annual Notice No. ${no} in this edition`, 7000);
+    }
   } catch (e) { toast(`Could not open it: ${e}`, 5000); }
 }
-const ALMANAC_PAGE = "https://www.linz.govt.nz/products-services/maritime-safety/new-zealand-nautical-almanac/nz-nautical-almanac-nz-204-full-version";
 
 const NOTICE_RE = /Annual\s+(?:New\s+Zealand\s+)?Notices?\s+to\s+Mariners[,\s]*(?:(?:No\.?|Number)\s*)?(\d{1,2}[A-C]?)\b/gi;
 const ALMANAC_RE = /(?:New\s+Zealand\s+)?Nautical\s+Almanac(?:\s*\(?NZ\s*204\)?)?/gi;
