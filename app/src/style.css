@@ -2375,7 +2375,7 @@ html[data-view="plan"] #side .sp-routewx { display: none !important; }
 #drawer .wx-mini .chip.on { background: var(--selected-enabled-background-color); border-color: var(--accent-text); }
 #drawer .wx-combine { background: var(--container-background-color); border-color: var(--selected-enabled-background-color); }
 #drawer .lib-filter select.filtering { background: var(--container-background-color); border-color: var(--accent-text); }
-#drawer :is(.ly-gear:hover, .ll-ftog.on) { background: var(--selected-enabled-background-color); color: var(--accent-text); border-color: var(--accent-text); }
+#drawer :is(.ly-gear:hover, .ll-ftog.on) { background: var(--selected-enabled-background-color); color: var(--on-selected-active-color); border-color: var(--selected-enabled-background-color); }
 #drawer .ly-get { background: transparent; color: var(--base-orange-500); border-color: var(--alert-warning-color); }
 #drawer .ll-body .main input.nm:is(:hover, :focus) { background: var(--in-bg); }
 #drawer .dcard > summary .dc-info:hover { color: var(--accent-text); }
@@ -2934,3 +2934,16 @@ html.ob-shell input[type="range"]:disabled::-webkit-slider-thumb { background: v
 html.no-map #toast.startup-toast { display: none; }
 /* links at dusk and night in the palette's own colour (still underlined), not bright browser blue */
 html:is([data-obc-theme="dusk"], [data-obc-theme="night"]) a:not(.btn) { color: var(--element-active-color); }
+
+/* IHO night has no page filter (the night-red/green palettes do): its cursors are drawn as they are, on
+   black, so a brighter red with a grey edge, or the arrow all but vanished against dark panels */
+html[data-palette="iho-night"] {
+  --cur-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M3 2v17l4.5-4 3 7 2.5-1-3-7H17z' fill='%23d23a2a' stroke='%23555' stroke-width='1.2'/%3E%3C/svg%3E") 3 2, default;
+  --cur-ring: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='7' fill='none' stroke='%23d23a2a' stroke-width='2.5'/%3E%3Ccircle cx='12' cy='12' r='1.5' fill='%23d23a2a'/%3E%3C/svg%3E") 12 12, pointer;
+  --cur-cross: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M12 2v7M12 15v7M2 12h7M15 12h7' stroke='%23d23a2a' stroke-width='2'/%3E%3C/svg%3E") 12 12, crosshair;
+  --cur-grab: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M12 3v18M3 12h18' stroke='%23d23a2a' stroke-width='2.5'/%3E%3Ccircle cx='12' cy='12' r='4' fill='none' stroke='%23d23a2a' stroke-width='2'/%3E%3C/svg%3E") 12 12, grab;
+  --cur-grabbing: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M12 3v18M3 12h18' stroke='%23d23a2a' stroke-width='2.5'/%3E%3Ccircle cx='12' cy='12' r='4' fill='%23d23a2a'/%3E%3C/svg%3E") 12 12, grabbing;
+  --cur-nwse: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M5 5l14 14M5 5h6M5 5v6M19 19h-6M19 19v-6' fill='none' stroke='%23444' stroke-width='4.5'/%3E%3Cpath d='M5 5l14 14M5 5h6M5 5v6M19 19h-6M19 19v-6' fill='none' stroke='%23d23a2a' stroke-width='2'/%3E%3C/svg%3E") 12 12, nwse-resize;
+  --cur-ew: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M3 12h18M3 12l5-5M3 12l5 5M21 12l-5-5M21 12l-5 5' fill='none' stroke='%23444' stroke-width='4.5'/%3E%3Cpath d='M3 12h18M3 12l5-5M3 12l5 5M21 12l-5-5M21 12l-5 5' fill='none' stroke='%23d23a2a' stroke-width='2'/%3E%3C/svg%3E") 12 12, ew-resize;
+  --cur-ns: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M12 3v18M12 3l-5 5M12 3l5 5M12 21l-5-5M12 21l5-5' fill='none' stroke='%23444' stroke-width='4.5'/%3E%3Cpath d='M12 3v18M12 3l-5 5M12 3l5 5M12 21l-5-5M12 21l5-5' fill='none' stroke='%23d23a2a' stroke-width='2'/%3E%3C/svg%3E") 12 12, ns-resize;
+}

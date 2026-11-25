@@ -72,8 +72,14 @@ export function setupNightCursor() {
     if (el !== lastEl || inline !== lastInline) { lastEl = el; lastInline = inline; cur = cursorAt(el); }
     if (!cur) { off(); return; } // a system cursor anyway (text caret)
     const dimVar = Number(getComputedStyle(root).getPropertyValue("--pal-dim")) || 0.6;
-    const want = recolour(cur.url, root.dataset.palette, root.dataset.palette === "iho-night" ? dimVar * 0.6 : dimVar);
+    // IHO night has no page filter: its cursor image is drawn as it is (the red/green night palettes'
+    // filter inverts and tints, so theirs is recoloured to come out right through it)
+    const want = root.dataset.palette === "iho-night" ? cur.url : recolour(cur.url, root.dataset.palette, dimVar);
     if (want !== src) { src = want; img.src = want; }
+    // IHO night dimmed (Brightness under 100 %) dims the whole page, this image with it, but not the
+    // real cursor: lift it back by the same amount so the two look alike (it all but vanished)
+    const dimmed = root.dataset.palette === "iho-night" && root.hasAttribute("data-pal-dimmed");
+    img.style.filter = dimmed ? `brightness(${(1 / Math.max(0.05, dimVar)).toFixed(2)})` : "";
     img.style.width = img.style.height = `${cur.size}px`;
     img.style.transform = `translate(${x - cur.hx}px, ${y - cur.hy}px)`;
     if (!on) { root.classList.add("cur-edge"); on = true; }
