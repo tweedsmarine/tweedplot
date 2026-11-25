@@ -2371,8 +2371,8 @@ html[data-view="plan"] #side .sp-routewx { display: none !important; }
 #drawer .wx-row button.armed { color: var(--element-neutral-color); }
 #drawer .trip-now .trip-on { background: var(--container-background-color); }
 #drawer .evt-open { background: var(--selected-enabled-background-color); }
-#drawer .evt-buttons .evt-btn.shot { background: var(--selected-enabled-background-color); color: var(--base-blue-500); border-color: var(--selected-enabled-background-color); }
-#drawer .evt-buttons .evt-btn.haul { background: var(--alert-warning-color); color: var(--base-orange-500); border-color: var(--alert-warning-color); }
+#drawer .evt-buttons .evt-btn.shot { background: var(--selected-enabled-background-color); color: var(--on-selected-active-color); border-color: var(--selected-enabled-background-color); }
+#drawer .evt-buttons .evt-btn.haul { background: var(--alert-warning-color); color: var(--on-warning-active-color); border-color: var(--alert-warning-color); }
 #drawer .haul-buttons .haul-catch { background: var(--container-background-color); color: var(--base-mint-500); }
 @keyframes ly-flash-dark { 0%, 40% { background: var(--alert-caution-color); } 100% { background: transparent; } }
 #drawer .ly-flash { animation-name: ly-flash-dark; }
