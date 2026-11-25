@@ -835,15 +835,29 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
       ? (await Promise.all(list.map((f) => invoke("chart_feature", { t: f.properties.t, fid: f.properties.fid }).catch(() => null)))).filter(Boolean)
       : [await invoke("chart_depth_at", { lon: e.lngLat.lng, lat: e.lngLat.lat }).catch(() => null)].filter(Boolean);
     if (!infos.length) return;
+    // the same feature more than once (one area charted by several overlapping charts, or
+    // repeated in one): shown once, with how many there are
+    const groups = new Map();
+    for (const info of infos) {
+      const key = `${info.code}|${JSON.stringify(info.attrs)}`;
+      const g = groups.get(key);
+      if (g) g.n++; else groups.set(key, { info, n: 1 });
+    }
     const el = document.createElement("div");
     el.className = "feat-pop";
-    for (const info of infos) {
+    for (const { info, n } of groups.values()) {
       const h = document.createElement("h4");
       const name = info.attrs.find(([k]) => k === "Name")?.[1];
       // the catch-all table for objects without a symbol: name the object by its class
       const kind = info.code === "CHTOBJ" ? OBJECT_NAMES[info.attrs.find(([k]) => k === "S-57 object class")?.[1]] ?? info.name : info.name;
       h.textContent = name ? `${kind}: ${name}` : kind;
       el.append(h);
+      if (n > 1) {
+        const same = document.createElement("div");
+        same.className = "wx-note";
+        same.textContent = `Charted ${n} times here, all the same (overlapping charts, or the chart repeats it)`;
+        el.append(same);
+      }
       const rows = [...info.attrs];
       if (rows.some(([k]) => k === "Magnetic variation")) {
         const w = magneticVariation(e.lngLat.lat, e.lngLat.lng);
@@ -867,7 +881,8 @@ export function setupChartFeatures(map, { before, safetyContour = 5, shallow = f
     note.className = "wx-note";
     note.textContent = "LINZ chart data, CC BY 4.0. Not for navigation.";
     el.append(note);
-    infoBox(map, "chart", { width: 360, height: 360 }).open(el, { title: infos.length > 1 ? `${infos.length} chart features` : infos[0].name, at: [e.lngLat.lng, e.lngLat.lat] });
+    const distinct = groups.size;
+    infoBox(map, "chart", { width: 360, height: 360 }).open(el, { title: distinct > 1 ? `${distinct} chart features` : infos[0].name, at: [e.lngLat.lng, e.lngLat.lat] });
   });
   for (const id of [...POINTS, ...LINES]) {
     map.on("mouseenter", id, () => { if (!placing()) map.getCanvas().style.cursor = "pointer"; });

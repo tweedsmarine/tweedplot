@@ -47,6 +47,13 @@ use rstar::{
 use crate::clip::{clip_line, quantise};
 use crate::geom::{parse_gpkg, Geom, Ring};
 use crate::mvt::{Layer, TileGeom, Value, EXTENT};
+
+/// The IHO symbols that only say "there is information or a restriction here" at an area's middle:
+/// information area (INFARE51), entry restricted or prohibited (ENTRES51, 61, 71), and caution
+/// area (CTNARE51). Several of one of these within [`INFO_AREA_SPACING`] are drawn as one.
+const INFO_AREA_SYMBOLS: [&str; 5] = ["INFARE51", "ENTRES51", "ENTRES61", "ENTRES71", "CTNARE51"];
+/// About 7 mm on the screen, in tile units (4096 to a 512 px tile, at about 4 px a millimetre).
+const INFO_AREA_SPACING: f64 = 7.0 * 4.0 * 8.0;
 use crate::s57::{self, Attrs, Geo, Light, TILE_COLS};
 use crate::{band_minzoom, geom_bounds, ChartStore, Kind, TableInfo, TileProj};
 
@@ -725,6 +732,9 @@ impl ChartStore {
         let mut fab = Layer::new("fab");
         let mut fln = Layer::new("fln");
         let mut fpt = Layer::new("fpt");
+        // the information-type symbols put at areas' middles in this tile, to draw one where
+        // several would stand on top of each other (see INFO_AREA_SYMBOLS)
+        let mut info_marks: Vec<(String, [f64; 2])> = Vec::new();
         let mut lsec = Layer::new("lsec");
         let mut ftx = Layer::new("ftx");
         let bbox = tp.lonlat_bbox(crate::BUFFER);
@@ -1248,7 +1258,19 @@ impl ChartStore {
                                                 .collect();
                                             put_texts(&mut ftx, c, &centre_texts, &base);
                                         }
-                                        if centre_symbol.is_some() || centre_info.is_some() {
+                                        // an information area's symbol (the "i" square of a reserve, a restricted
+                                        // area ...) where the same symbol already stands within a few millimetres:
+                                        // left out. ENCs often chart one reserve as several overlapping areas, one
+                                        // for each restriction, and the coarser and finer charts' copies of an
+                                        // area have their middles a little apart: one square says it all.
+                                        let crowded = centre_symbol.as_deref().filter(|sy| INFO_AREA_SYMBOLS.contains(sy)).is_some_and(|sy| {
+                                            let near = info_marks.iter().any(|(s, p)| s == sy && (p[0] - c[0]).hypot(p[1] - c[1]) < INFO_AREA_SPACING);
+                                            if !near {
+                                                info_marks.push((sy.to_string(), c));
+                                            }
+                                            near
+                                        });
+                                        if (centre_symbol.is_some() || centre_info.is_some()) && !crowded {
                                             fpt.add(&TileGeom::Points(vec![[c[0].round() as i32, c[1].round() as i32]]), &pp);
                                         }
                                     }
