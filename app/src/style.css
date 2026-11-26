@@ -1544,6 +1544,7 @@ html.cur-edge:not(#n1):not(#n2):not(#n3), html.cur-edge:not(#n1):not(#n2):not(#n
 #night-cursor { position: fixed; left: 0; top: 0; z-index: 2147483647; pointer-events: none; }
 
 /* a system cursor by name that the night rules above miss (nightcursor.js sets data-ncur) */
+html:is([data-palette^="night"], [data-palette="iho-night"]) [data-ncur="arrow"]:not(#n1):not(#n2) { cursor: var(--cur-arrow) !important; }
 html:is([data-palette^="night"], [data-palette="iho-night"]) [data-ncur="hand"]:not(#n1):not(#n2) { cursor: var(--cur-hand) !important; }
 html:is([data-palette^="night"], [data-palette="iho-night"]) [data-ncur="grab"]:not(#n1):not(#n2) { cursor: var(--cur-grab) !important; }
 html:is([data-palette^="night"], [data-palette="iho-night"]) [data-ncur="grabbing"]:not(#n1):not(#n2) { cursor: var(--cur-grabbing) !important; }

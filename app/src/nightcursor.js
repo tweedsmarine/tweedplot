@@ -30,14 +30,24 @@ export function parseCursor(v) {
 
 /**
  * The cursor's SVG recoloured to come out right through the night filter (invert, then the
- * palette's colour from brightness, then dimming `dim`): the night colour → the grey that
- * gives it, the black edge → white.
+ * palette's colour from brightness, then the page's dimming, which dims it as it dims the page):
+ * every colour but the black edge → the grey that gives the night colour, the black edge → white.
  */
-export function recolour(url, palette, dim) {
-  const [level, code] = COLOUR[palette] ?? COLOUR["night-red"];
-  const g = Math.max(0, Math.round(255 - Math.min(255, level / Math.max(0.05, dim))));
-  const grey = `%23${g.toString(16).padStart(2, "0").repeat(3)}`;
-  return url.split(code).join(grey).replace(/stroke='%23000'/g, "stroke='%23fff'");
+export function recolour(url, palette) {
+  const [level] = COLOUR[palette] ?? COLOUR["night-red"];
+  const grey = `%23${(255 - level).toString(16).padStart(2, "0").repeat(3)}`;
+  return url
+    .replace(/(fill|stroke)='%23(?!000')([0-9a-fA-F]{6}|[0-9a-fA-F]{3})'/g, (_, a) => `${a}='${grey}'`)
+    .replace(/stroke='%23000'/g, "stroke='%23fff'");
+}
+
+/** Every colour in a cursor's SVG scaled by `dim` (0..1): the night cursors follow Brightness. Exported for tests. */
+export function dimmed(url, dim) {
+  const k = Math.max(0.05, Math.min(1, dim));
+  return url.replace(/%23([0-9a-fA-F]{6}|[0-9a-fA-F]{3})(?=')/g, (_, h) => {
+    const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+    return `%23${[0, 2, 4].map((i) => Math.round(parseInt(full.slice(i, i + 2), 16) * k).toString(16).padStart(2, "0")).join("")}`;
+  });
 }
 
 // a system cursor by name → the night cursor that draws it
@@ -48,7 +58,7 @@ const NAMED = {
   "ns-resize": "ns", "n-resize": "ns", "s-resize": "ns", "row-resize": "ns",
   "ew-resize": "ew", "e-resize": "ew", "w-resize": "ew", "col-resize": "ew",
   "nwse-resize": "nwse", "nw-resize": "nwse", "se-resize": "nwse", "nesw-resize": "nwse", "ne-resize": "nwse", "sw-resize": "nwse",
-  default: "arrow", "not-allowed": "arrow", "no-drop": "arrow", help: "arrow", "context-menu": "arrow", wait: "arrow", progress: "arrow",
+  default: "arrow", auto: "arrow", "not-allowed": "arrow", "no-drop": "arrow", help: "arrow", "context-menu": "arrow", wait: "arrow", progress: "arrow",
 };
 /** The night cursor for an element from its own and its ancestors' computed cursors (nearest first):
  * a name in NAMED decides; the night arrow (the default every element has at night) looks further up;
@@ -60,6 +70,29 @@ export function namedFor(cursors) {
     if (!k.includes("M3 2v17")) return null; // a night cursor other than the arrow
   }
   return null;
+}
+
+const NIGHT_NAMES = ["arrow", "hand", "grab", "grabbing", "cross", "ns", "ew", "nwse"];
+
+/**
+ * Night versions of a style sheet's cursor rules: each rule that names a system cursor gets a copy,
+ * same selector and so the same weight, that uses the night cursor (`--ncur-*`, set only in the
+ * night palettes) and falls back to the named one by day. Added after the originals, so the
+ * copies win. Rules whose selector can't be repeated (pseudo-elements) are left. Exported for tests.
+ */
+export function nightCopies(rules) {
+  const out = [];
+  const walk = (list) => {
+    for (const r of list) {
+      if (r.cssRules && !r.selectorText) { walk(r.cssRules); continue; }
+      const c = r.style?.getPropertyValue?.("cursor")?.trim();
+      if (!r.selectorText || !c || !NAMED[c] || /::|data-palette|data-ncur/.test(r.selectorText)) continue;
+      const imp = r.style.getPropertyPriority("cursor") === "important" ? " !important" : "";
+      out.push(`${r.selectorText} { cursor: var(--ncur-${NAMED[c]}, ${c})${imp}; }`);
+    }
+  };
+  walk(rules);
+  return out;
 }
 
 /** Whether a pointer at x, y is within `edge` px of the window's edges. */
@@ -78,7 +111,73 @@ export function setupNightCursor() {
   let lastEl = null, lastInline = "", cur = null, src = "";
   const night = () => /^(iho-)?night/.test(String(root.dataset.palette || ""));
 
-  // a system cursor by name where the night rules miss it: data-ncur on the element under the pointer
+  // ---- night copies of every cursor rule: the page's sheets and each OpenBridge shadow root's ----
+  const sheetFor = (texts) => {
+    const sh = new CSSStyleSheet();
+    for (const t of texts) { try { sh.insertRule(t, sh.cssRules.length); } catch { /* a selector this browser won't take */ } }
+    return sh;
+  };
+  const rulesOf = (sheets) => { const all = []; for (const sh of sheets) { try { all.push(...sh.cssRules); } catch { /* another origin's sheet */ } } return all; };
+  let pageSheet = null;
+  function coverPage() {
+    const mine = pageSheet;
+    const sheets = [...document.styleSheets].filter((x) => x !== mine);
+    const sh = sheetFor(nightCopies(rulesOf([...sheets, ...document.adoptedStyleSheets.filter((x) => x !== mine)])));
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets.filter((x) => x !== mine), sh];
+    pageSheet = sh;
+  }
+  const covered = new WeakSet();
+  function coverShadow(root) {
+    if (!root || covered.has(root)) return;
+    covered.add(root);
+    const own = [...root.adoptedStyleSheets, ...[...root.querySelectorAll("style")].map((x) => x.sheet).filter(Boolean)];
+    const copies = nightCopies(rulesOf(own));
+    // near the window's edges the page draws the cursor (see above): none inside the component either
+    copies.unshift(":host-context(html.cur-edge), :host-context(html.cur-edge) * { cursor: none !important; }");
+    root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheetFor(copies)];
+  }
+  function coverShadows(from = document) {
+    for (const el of from.querySelectorAll("*")) if (el.shadowRoot) { coverShadow(el.shadowRoot); coverShadows(el.shadowRoot); }
+  }
+  let coverTimer = null;
+  const coverSoon = () => { clearTimeout(coverTimer); coverTimer = setTimeout(() => { coverPage(); coverShadows(); }, 300); };
+  coverPage(); coverShadows();
+  // the components render after start-up; later ones are met under the pointer (below)
+  setTimeout(coverSoon, 1500);
+  setTimeout(coverSoon, 6000);
+  new MutationObserver(coverSoon).observe(document.head, { childList: true, subtree: true });
+  // a shadow root met under the pointer that hasn't been covered yet
+  document.addEventListener("pointerover", (e) => { for (const n of e.composedPath()) if (n instanceof ShadowRoot) coverShadow(n); }, { capture: true, passive: true });
+
+  // ---- the night cursors follow Brightness (the page is dimmed by its filter; the cursor isn't) ----
+  let dimKey = "";
+  function dimCursors() {
+    const key = `${root.dataset.palette}|${root.style.getPropertyValue("--pal-dim")}`;
+    if (key === dimKey) return;
+    dimKey = key;
+    for (const n of NIGHT_NAMES) { root.style.removeProperty(`--cur-${n}`); root.style.removeProperty(`--ncur-${n}`); }
+    if (!night()) return;
+    const dim = Number(getComputedStyle(root).getPropertyValue("--pal-dim")) || (root.dataset.palette === "iho-night" ? 1 : 0.6);
+    // IHO night is dimmed only below 100 %; the red and green ones always by their dimming
+    const k = root.dataset.palette === "iho-night" && !root.hasAttribute("data-pal-dimmed") ? 1 : dim;
+    const cs = getComputedStyle(root);
+    for (const n of NIGHT_NAMES) {
+      const v = cs.getPropertyValue(`--cur-${n}`).trim();
+      if (!v) continue;
+      root.style.setProperty(`--cur-${n}`, k < 1 ? dimmed(v, k) : v);
+      root.style.setProperty(`--ncur-${n}`, `var(--cur-${n})`);
+    }
+  }
+  dimCursors();
+  let wasNight = night();
+  new MutationObserver(() => {
+    dimCursors();
+    if (night() && !wasNight) coverShadows(); // components drawn by day
+    wasNight = night();
+  }).observe(root, { attributes: true, attributeFilter: ["data-palette", "data-pal-dimmed", "style"] });
+
+  // a system cursor by name set straight on an element (style="cursor: pointer"), which no sheet covers:
+  // data-ncur on the element under the pointer
   let fixed = null, fixedFor = null;
   function unfix() { if (fixed) { fixed.removeAttribute("data-ncur"); fixed = null; } fixedFor = null; }
   function fixNamed(el) {
@@ -89,14 +188,16 @@ export function setupNightCursor() {
     const list = [];
     for (let e = el, i = 0; e && e !== document.documentElement && i < 8; e = e.parentElement, i++) list.push(getComputedStyle(e).cursor);
     const want = namedFor(list);
-    if (want && want !== "arrow") { el.setAttribute("data-ncur", want); fixed = el; }
+    if (want) { el.setAttribute("data-ncur", want); fixed = el; }
   }
 
   // the cursor the page asks for at an element (with the edge rule lifted while reading it)
   function cursorAt(el) {
     if (on) root.classList.remove("cur-edge");
-    const v = getComputedStyle(el).cursor;
+    let v = getComputedStyle(el).cursor;
     if (on) root.classList.add("cur-edge");
+    // still a name (an element no rule covers): the night cursor that draws it
+    if (!/^url\(/.test(v.trim()) && NAMED[v.trim()]) v = getComputedStyle(root).getPropertyValue(`--cur-${NAMED[v.trim()]}`);
     return parseCursor(v);
   }
   function off() {
@@ -108,7 +209,9 @@ export function setupNightCursor() {
     fixNamed(e.target instanceof Element ? e.target : null);
     const x = e.clientX, y = e.clientY;
     if (!nearEdge(x, y, window.innerWidth, window.innerHeight)) { off(); lastEl = null; return; }
-    const el = e.target instanceof Element ? e.target : null;
+    // the element really under the pointer, inside an OpenBridge component too
+    const inner = e.composedPath?.()[0];
+    const el = inner instanceof Element ? inner : e.target instanceof Element ? e.target : null;
     if (!el) { off(); return; }
     // MapLibre changes the canvas's own cursor (over a feature, while dragging) without a new target
     const inline = el.style?.cursor ?? "";
@@ -117,7 +220,7 @@ export function setupNightCursor() {
     const dimVar = Number(getComputedStyle(root).getPropertyValue("--pal-dim")) || 0.6;
     // IHO night has no page filter: its cursor image is drawn as it is (the red/green night palettes'
     // filter inverts and tints, so theirs is recoloured to come out right through it)
-    const want = root.dataset.palette === "iho-night" ? cur.url : recolour(cur.url, root.dataset.palette, dimVar);
+    const want = root.dataset.palette === "iho-night" ? cur.url : recolour(cur.url, root.dataset.palette);
     if (want !== src) { src = want; img.src = want; }
     // IHO night dimmed (Brightness under 100 %) dims the whole page, this image with it, but not the
     // real cursor: lift it back by the same amount so the two look alike (it all but vanished)
