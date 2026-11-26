@@ -220,8 +220,6 @@ details.dcard.flash { animation: plan-flash 1.6s ease-out; }
 .list li.empty { color: var(--quiet); font-size: 12px; }
 /* a mark opened for editing in its place in the list */
 .list li.editing { background: var(--container-background-color); }
-.list li.edit-row { display: block; padding: 0 0 6px; border-top: none; background: var(--container-background-color); }
-.list li.edit-row button { padding: 4px 10px; font-size: 13px; }
 .tabs { display: flex; gap: 4px; margin-bottom: 6px; }
 .tabs button { padding: 3px 6px; }
 .tab[hidden], .edit[hidden] { display: none; }
@@ -306,8 +304,6 @@ html.side-left #side-btn::after { content: "Data"; }
 .tile .trsz { right: 0; bottom: 0; opacity: 0; background: linear-gradient(135deg, transparent 55%, var(--tile-quiet) 55% 68%, transparent 68%); }
 .tile:hover .trsz, .tile .trsz:active { opacity: 0.8; }
 .tile.dragging { opacity: 0.45; }
-.tile.drop-before { box-shadow: inset 4px 0 0 #ffb000; }
-.tile.drop-after { box-shadow: inset -4px 0 0 #ffb000; }
 .tile {
   background: var(--tile-bg); color: var(--tile-ink); border-radius: 6px; padding: 4px 8px 5px;
   display: flex; flex-direction: column; justify-content: space-between; cursor: pointer; box-sizing: border-box;
@@ -528,9 +524,6 @@ html[data-view="nmea"] #nmea-monitor-window .nmea-variable-grid { grid-template-
 }
 
 /* fleet */
-.list li .main .pname { width: 100%; box-sizing: border-box; font-weight: 600; padding: 2px 4px; }
-.list li .pviews { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 11px; color: var(--quiet); padding-top: 2px; }
-.list li .pviews label { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
 .list li .star { flex: none; border: none; background: none; padding: 0 2px; font-size: 15px; color: var(--element-neutral-color); }
 .list li .star.on { color: var(--base-yellow-500); }
 #fl-title { font-size: 13px; }
@@ -614,7 +607,7 @@ html[data-view="nmea"] #nmea-monitor-window .nmea-variable-grid { grid-template-
 .rw-pick input[type="number"] { width: 48px; font-size: 12px; padding: 1px 4px; }
 .rw-readout { min-height: 18px; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink); padding: 2px 0 0 46px; }
 .rw-context { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 4px 0; }
-.rw-context button, .rw-controls button, .rw-inspect button { flex: none; min-height: var(--btn-h); }
+.rw-context button, .rw-inspect button { flex: none; min-height: var(--btn-h); }
 .rw-context input[type="datetime-local"] { min-height: var(--btn-h); max-width: 100%; }
 .rw-context input[type="number"] { min-height: var(--btn-h); width: 65px; }
 /* Weather along: the navigated route, the planned route or the weather routing */
@@ -769,9 +762,6 @@ table.gt-table tr.gt-best td.nm { font-weight: 700; }
 @keyframes prog-slide { from { margin-left: -30%; } to { margin-left: 100%; } }
 
 /* Library › Marks filters */
-.lib-filter { margin: 3px 0; font-size: 12px; }
-.lib-filter label { white-space: nowrap; }
-.lib-filter select.filtering { border-color: var(--accent); background: var(--container-background-color); }
 #data-etopo-list button.warn { border-color: var(--alert-caution-color); background: var(--base-yellow-050); color: var(--base-yellow-500); }
 
 /* ---------- replay bar (top centre) ---------- */
@@ -929,8 +919,6 @@ html.ui-zoom #zoom-btns { display: flex; }
 #zoom-btns button { flex: none; width: 52px; height: 52px; padding: 0; border-radius: 50%; font-size: 28px; line-height: 1; box-shadow: 0 1px 6px rgba(0,0,0,0.35); }
 html.no-map #zoom-btns { display: none; }
 #north-needle { transform-box: view-box; transform-origin: 12px 12px; }
-
-/* large controls for touch and gloves */
 
 /* ---------- AIS ---------- */
 .ais-pop table { border-collapse: collapse; font-size: 12px; margin-top: 4px; }
@@ -1131,7 +1119,6 @@ html.no-map #zoom-btns { display: none; }
 #wxp .seafilter .vals .lo, #wxp .seafilter .vals .hi, #side-wx-clock .seafilter .vals :is(.lo, .hi, .blo, .bhi) { color: var(--tile-ink); }
 #wxp .seafilter .h, #side-wx-clock .seafilter .h { border-bottom-color: var(--border-divider-color); }
 #wxp .seafilter .h.tg, #side-wx-clock .seafilter .h.tg { border-bottom-color: var(--alert-alarm-color); }
-#wxp .wxp-head { font-weight: 600; padding: 4px 0 2px; border-top: 1px solid var(--line); }
 #wxp-run { padding: 3px 0; font-size: calc(2.7 * var(--u)); overflow-wrap: anywhere; }
 #wxp-run.stale { color: var(--base-orange-500); font-weight: 600; }
 #wxp-data { min-height: var(--btn-h); background: var(--container-background-color); color: var(--tile-ink); border: 1px solid var(--normal-enabled-border-color); }
@@ -1238,8 +1225,6 @@ html.no-map #zoom-btns { display: none; }
 .lib-bulk { background: color-mix(in srgb, var(--alert-alarm-color) 12%, transparent); border-radius: 6px; padding: 6px; }
 .lib-bulk span { font-size: 12px; }
 /* the count gets its own line above Filter the chart too / Clear / Delete shown */
-.lib-filter:has(#lib-f-count) { flex-wrap: wrap; }
-#lib-f-count { flex-basis: 100%; }
 
 /* colour-by scale for tracks, bottom left of the chart */
 .trk-legend { position: absolute; right: calc(var(--chart-r) + 10px); bottom: calc(var(--chart-b) + 150px); z-index: 3; width: 200px; padding: 6px 8px; border-radius: 6px;
@@ -1674,7 +1659,6 @@ html:is([data-palette^="night"], [data-palette="iho-night"]) [data-ncur="nwse"]:
 .ly-get[hidden] { display: none; }
 .ly-sub { padding: 0 2px 4px 28px; font-size: 12px; }
 .ly-sub[hidden] { display: none; }
-.ly-group.ly-empty .ly-row:not(:first-of-type) { display: none; }
 .ly-group .wx-row { padding-left: 2px; }
 .ly-flash { animation: ly-flash 1.6s ease-out; }
 @keyframes ly-flash { 0%, 40% { background: var(--base-yellow-050); } 100% { background: transparent; } }
@@ -1807,15 +1791,6 @@ html.side-left .sp-grip { left: auto; right: 0; }
 .sp-sec h4 .sp-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-sec h4 .chev { width: calc(2.5 * var(--u)); color: var(--element-inactive-color); }
 .sp-sec.collapsed .sp-rows, .sp-sec.collapsed .sp-g { display: none; }
-.sp-sec.collapsed .sp-grib-files { display: none; }
-.sp-grib-files { padding: calc(1 * var(--u)) calc(1.5 * var(--u)); }
-.sp-grib-files[hidden] { display: none; }
-.sp-grib-files label { display: block; margin: 8px 0 4px; font-size: calc(2.7 * var(--u)); color: var(--tile-quiet); }
-.sp-grib-files label:first-child { margin-top: 0; }
-.sp-grib-files select { width: 100%; min-height: var(--btn-h); padding: 4px; border: 1px solid var(--normal-enabled-border-color); border-radius: 4px; background: var(--container-background-color); color: var(--tile-ink); }
-.sp-grib-files input[type="range"] { width: 100%; min-height: var(--chip-h); }
-.sp-grib-actions { display: flex; gap: 6px; margin-top: 6px; }
-.sp-grib-actions button { flex: 1; min-width: 0; min-height: var(--btn-h); background: var(--container-background-color); color: var(--tile-ink); border: 1px solid var(--normal-enabled-border-color); }
 #side-wx-coverage { font-size: calc(2.5 * var(--u)); color: var(--tile-quiet); overflow-wrap: anywhere; }
 #side-wx-coverage.warn { color: var(--base-orange-500); }
 .sp-wx-clock { padding: 0 calc(1.5 * var(--u)) calc(1 * var(--u)); }
@@ -1900,16 +1875,11 @@ html.weather-focus .ss-alerts #alarm-banner:has(.alarm ~ .alarm)::after { conten
 html[data-view="env"] .env-past-analysis { display: block; }
 .env-start { display: none; }
 html[data-view="env"] .env-start { display: block; }
-.env-start-buttons { display: flex; gap: 4px; margin: 4px 0; }
-.env-start-buttons button { flex: 1; min-height: var(--btn-h); background: var(--container-background-color); color: var(--tile-ink); border: 1px solid var(--normal-enabled-border-color); }
-.env-start-buttons button.on { background: var(--accent); color: var(--on-selected-active-color); border: 2px solid var(--border-divider-color); }
-.env-start-buttons button.on::before { content: "✓ "; }
 .env-seabed label { display: block; padding: 4px 0; }
 /* Environment controls are deliberately more compact than the navigation and safety controls. */
 html[data-view="env"] #side { container-type: inline-size; }
 html[data-view="env"] #side .sp-env-tabs { padding: 3px 6px; }
 html[data-view="env"] #side .sp-env-tabs button,
-html[data-view="env"] #side .env-start-buttons button,
 html[data-view="env"] #side .sp-wx-transport button { min-height: var(--btn-h); padding: 2px; }
 html[data-view="env"] #side .sp-wx-clock input[type="range"] { min-height: 24px; }
 html[data-view="env"] #side .sp-weather > summary { padding: 3px 6px; }
@@ -2070,7 +2040,7 @@ html.side-strip body:has(.ss-alerts .alarm:not(.warn):not(.acked):not(.summary))
 .dl-area-row label { flex: 1; min-width: 0; }
 /* GRIB data at the cursor: tall enough for all its rows before it scrolls */
 .sp-pinned-point { max-height: 38vh; }
-#wxp-filter .none, .sea-filter .none { margin-top: 4px; color: var(--base-orange-500); }
+#wxp-filter .none { margin-top: 4px; color: var(--base-orange-500); }
 
 /* One colour key on the panel: the one beside the chart time while that section is on the panel and
    open; otherwise the one in Weather layers and filters (e.g. Navigation without a Chart time section).
@@ -2134,20 +2104,20 @@ body:has(.sp-sec:not(.collapsed) #side-wx-clock[open] #side-wx-key:not([hidden])
 #side {
   --btn-on: var(--accent);
 }
-#side :is(.sp-views, .sp-disp, .sp-env-tabs, .sp-wx-transport, .env-start-buttons, .sp-routewx, #wxp, .sp-env-data, .sp-weather) button:not(.wxp-chip),
+#side :is(.sp-views, .sp-disp, .sp-env-tabs, .sp-wx-transport, .sp-routewx, #wxp, .sp-env-data, .sp-weather) button:not(.wxp-chip),
 #side #side-route-wx,
-html[data-view="env"] #side :is(.sp-env-tabs, .env-start-buttons, .sp-wx-transport) button,
+html[data-view="env"] #side :is(.sp-env-tabs, .sp-wx-transport) button,
 html[data-view="env"] #side #wxp .wxp-body :is(button, select),
 html[data-view="env"] #side #wxp .seafilter .filter-actions button {
   min-height: var(--btn-h); padding: 2px 8px; border-radius: 5px; box-sizing: border-box;
   background: var(--btn-bg); color: var(--tile-ink, var(--element-active-color)); border: 1px solid var(--btn-line);
   font-size: calc(2.8 * var(--u, 4px)); font-weight: 600; line-height: 1.15; cursor: pointer;
 }
-#side :is(.sp-views, .sp-disp, .sp-env-tabs, .sp-wx-transport, .env-start-buttons, .sp-routewx, #wxp, .sp-env-data, .sp-weather) button:not(.wxp-chip):hover:not(:disabled, .on, [aria-pressed="true"]),
+#side :is(.sp-views, .sp-disp, .sp-env-tabs, .sp-wx-transport, .sp-routewx, #wxp, .sp-env-data, .sp-weather) button:not(.wxp-chip):hover:not(:disabled, .on, [aria-pressed="true"]),
 #side #side-route-wx:hover:not(:disabled, .on), #side #wxp .wxp-chip:hover:not(.on) { background: var(--btn-bg-hover); }
-#side :is(.sp-views, .sp-disp, .sp-env-tabs, .sp-wx-transport, .env-start-buttons, .sp-routewx, #wxp, .sp-env-data, .sp-weather) button:is(.on, [aria-pressed="true"]):not(.wxp-chip),
+#side :is(.sp-views, .sp-disp, .sp-env-tabs, .sp-wx-transport, .sp-routewx, #wxp, .sp-env-data, .sp-weather) button:is(.on, [aria-pressed="true"]):not(.wxp-chip),
 #side #side-route-wx:is(.on, [aria-pressed="true"]),
-html[data-view="env"] #side :is(.sp-env-tabs, .env-start-buttons) button:is(.on, [aria-pressed="true"]) {
+html[data-view="env"] #side :is(.sp-env-tabs) button:is(.on, [aria-pressed="true"]) {
   background: var(--btn-on); color: var(--on-selected-active-color); border: 1px solid var(--border-divider-color);
 }
 #side button:disabled { opacity: .45; cursor: default; }
@@ -2156,7 +2126,7 @@ html[data-view="env"] #side :is(.sp-env-tabs, .env-start-buttons) button:is(.on,
 #side #wxp .wxp-chip { min-height: var(--chip-h); padding: 2px 10px; border-radius: 12px; background: var(--btn-bg); border: 1px solid var(--btn-line); font-size: calc(2.8 * var(--u, 4px)); font-weight: 600; }
 #side #wxp .wxp-chip.on { background: var(--btn-on); color: var(--on-selected-active-color); border-color: var(--border-divider-color); }
 /* rows of equal buttons share the width; a button alone on a row takes all of it, so it is not missed */
-#side :is(.sp-views, .sp-env-tabs, .env-start-buttons, .sp-wx-transport) { gap: 4px; }
+#side :is(.sp-views, .sp-env-tabs, .sp-wx-transport) { gap: 4px; }
 /* the chart detail keeps room for its longest name ("Standard"): the view icons give way first */
 #side .sp-viewbar .sp-views { flex: 1 1 auto; min-width: 0; }
 #side .sp-viewbar .sp-views button:not(.wxp-chip) { flex: 1 1 0; width: auto; min-width: 30px; max-width: 52px; padding: 0; }
@@ -2373,7 +2343,7 @@ html[data-view="plan"] #side .sp-routewx { display: none !important; }
 #drawer :is(hr) { border-color: var(--line); }
 #drawer ::placeholder { color: var(--element-inactive-color); }
 /* light fills written into single rules, given dark equivalents inside the drawer */
-#drawer :is(.list li.active, .list li.editing, .list li.edit-row) { background: var(--container-background-color); }
+#drawer :is(.list li.active, .list li.editing) { background: var(--container-background-color); }
 #drawer :is(.edit, .lib-manage, .ly-head, .anc-card .anc-state) { background: var(--card-bg); border-color: var(--line); }
 #drawer .anc-card .anc-state.on { background: var(--alert-warning-color); color: var(--base-orange-500); }
 #drawer .progress { background: var(--container-background-color); }
@@ -2384,7 +2354,6 @@ html[data-view="plan"] #side .sp-routewx { display: none !important; }
 #drawer .wx-mini .chip { background: var(--in-bg); border-color: var(--in-line); }
 #drawer .wx-mini .chip.on { background: var(--selected-enabled-background-color); border-color: var(--accent-text); }
 #drawer .wx-combine { background: var(--container-background-color); border-color: var(--selected-enabled-background-color); }
-#drawer .lib-filter select.filtering { background: var(--container-background-color); border-color: var(--accent-text); }
 #drawer :is(.ly-gear:hover, .ll-ftog.on) { background: var(--selected-enabled-background-color); color: var(--on-selected-active-color); border-color: var(--selected-enabled-background-color); }
 #drawer .ly-get { background: transparent; color: var(--base-orange-500); border-color: var(--alert-warning-color); }
 #drawer .ll-body .main input.nm:is(:hover, :focus) { background: var(--in-bg); }

@@ -142,7 +142,7 @@ export function setupDepthStack(map, { weather, dock }) {
   // at the foot of the weather layers, above the data at the cursor (which grows and shrinks as
   // the cursor moves, and would push the buttons off the panel), and moved with them (sidepanel.js)
   const at = $("side-weather");
-  if (at) at.append(box); else $("wxp-point")?.after(box);
+  at?.append(box);
   const note = box.querySelector(".wx-profile-note");
   map.addSource("wc-pin", { type: "geojson", data: empty });
   map.addLayer({ id: "wc-pin", type: "circle", source: "wc-pin", paint: { "circle-radius": 6, "circle-color": "#e4572e", "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });

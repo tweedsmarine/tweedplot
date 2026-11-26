@@ -23,15 +23,6 @@ export function trackInTrip(tr, t) {
   return s <= b && (tr.stats?.end ?? s) >= a;
 }
 
-/** A Trip filter for a list (marks or tracks): one choice per trip, with how many each has. */
-export function tripFilter(inTrip) {
-  return {
-    key: "trip", label: "Trip", type: "choice", title: "Only what was made during one trip",
-    options: (items) => trips.map((t) => [t.id, `${t.name}${t.fishery ? ` · ${t.fishery}` : ""}`, items.reduce((n, x) => n + (inTrip(x, t) ? 1 : 0), 0)]),
-    test: (x, v) => inTrip(x, tripById(v)),
-  };
-}
-
 /** "2 d 4 h", "5 h 10 min". */
 export function duration(s) {
   if (!(s > 0)) return "";

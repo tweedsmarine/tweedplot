@@ -81,17 +81,6 @@ const CUR = [[0, "#f7fbff"], [0.25, "#c6dbef"], [0.5, "#9ecae1"], [0.75, "#6baed
 // the colours an auto range is spread over ("turbo": dark blue, cyan, green, yellow, red)
 const TURBO = ["#30123b", "#4145ab", "#4675ed", "#39a2fc", "#1bcfd4", "#24eca6", "#61fc6c", "#a4fc3b", "#d1e834", "#f3c63a", "#fe9b2d", "#f36315", "#d93806", "#a51301"];
 
-/** A colour scale over lo..hi (the visible values), with stops at tidy values. */
-export function autoScale(lo, hi) {
-  if (!(hi > lo)) hi = lo + 0.5;
-  const n = TURBO.length;
-  const raw = (hi - lo) / (n - 1);
-  const p = 10 ** Math.floor(Math.log10(raw));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => s >= raw) ?? raw;
-  const start = Math.floor(lo / step) * step;
-  return TURBO.map((c, i) => [Math.round((start + i * step) * 1000) / 1000, c]);
-}
-
 /** The colours for a sea filter: lo..target over the cool half of TURBO, target..hi over the warm half.
  * With a highlight band the whole palette runs over the band (target in it, if there is one), and
  * below and above the band take the first and last colours, for the most detail where it matters. */
