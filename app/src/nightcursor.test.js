@@ -28,3 +28,16 @@ test("edge zone", () => {
   assert.equal(nearEdge(980, 400, 1000, 800), true);
   assert.equal(nearEdge(500, 10, 1000, 800), true);
 });
+
+import { namedFor } from "./nightcursor.js";
+test("a system cursor by name gets the night one, from the element or the one it sits in", () => {
+  const arrow = 'url("data:image/svg+xml,%3Cpath d=\'M3 2v17l\'") 3 2, default';
+  const hand = 'url("data:image/svg+xml,hand") 9 2, pointer';
+  assert.equal(namedFor(["pointer"]), "hand");
+  assert.equal(namedFor([arrow, "pointer"]), "hand"); // the title inside a clickable heading
+  assert.equal(namedFor([arrow, arrow, arrow]), null);
+  assert.equal(namedFor([hand, "pointer"]), null); // already a night cursor
+  assert.equal(namedFor(["default", "pointer"]), "arrow");
+  assert.equal(namedFor(["ns-resize"]), "ns");
+  assert.equal(namedFor(["text"]), null); // the text caret stays
+});
