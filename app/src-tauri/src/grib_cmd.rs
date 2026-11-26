@@ -320,7 +320,14 @@ fn shading_range(values: &[f32], precision: f32) -> Option<(f32, f32)> {
 fn mosaic(grids: &[(grib::Grid, Vec<&[f32]>)], bbox: [f64; 4], max_points: usize) -> Option<(f64, f64, f64, f64, usize, usize, Vec<Vec<f32>>)> {
     let c = (bbox[0] + bbox[2]) / 2.0;
     // each grid's area in the bbox's longitudes, finest first, only those reaching the bbox
-    struct Area<'a> { g: &'a grib::Grid, ch: &'a [&'a [f32]], w: f64, e: f64, s: f64, n: f64 }
+    struct Area<'a> {
+        g: &'a grib::Grid,
+        ch: &'a [&'a [f32]],
+        w: f64,
+        e: f64,
+        s: f64,
+        n: f64,
+    }
     let mut areas: Vec<Area> = grids
         .iter()
         .filter_map(|(g, ch)| {
@@ -492,7 +499,15 @@ fn layer_values(f: &grib::GribFile, layer: &str, t: i64, depth: Option<f64>) -> 
 /// Files at the same resolution are left out (other runs or models are for comparing), except other
 /// areas of the same model and run, which are laid alongside.
 #[tauri::command]
-pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max_points: usize, depth: Option<f64>, over: Option<Vec<String>>) -> Option<serde_json::Value> {
+pub(crate) fn grib_grid(
+    path: String,
+    layer: String,
+    t: i64,
+    bbox: [f64; 4],
+    max_points: usize,
+    depth: Option<f64>,
+    over: Option<Vec<String>>,
+) -> Option<serde_json::Value> {
     let f = GRIBS.lock().unwrap().get(&path)?.clone();
     let (g, vals) = layer_values(&f, &layer, t, depth)?;
     // Include both the original values and the rounded values returned for shading.

@@ -94,7 +94,21 @@ impl CoverageIndex {
 fn outlined_class(code: &str) -> bool {
     matches!(
         code,
-        "RESARE" | "ACHARE" | "MARCUL" | "CBLARE" | "CTNARE" | "PRCARE" | "ISTZNE" | "TSSCRS" | "TSSRON" | "FAIRWY" | "FERYRT" | "UNKNWN" | "DMPGRD" | "OBSTRN" | "WEDKLP"
+        "RESARE"
+            | "ACHARE"
+            | "MARCUL"
+            | "CBLARE"
+            | "CTNARE"
+            | "PRCARE"
+            | "ISTZNE"
+            | "TSSCRS"
+            | "TSSRON"
+            | "FAIRWY"
+            | "FERYRT"
+            | "UNKNWN"
+            | "DMPGRD"
+            | "OBSTRN"
+            | "WEDKLP"
     )
 }
 
@@ -116,7 +130,11 @@ impl CoverEdges {
                 for w in ring.0.windows(2) {
                     let (a, b) = ([w[0].x, w[0].y], [w[1].x, w[1].y]);
                     // only the edges reaching the tile (with the tolerance)
-                    if a[0].max(b[0]) + EDGE_TOL < bbox[0] || a[0].min(b[0]) - EDGE_TOL > bbox[2] || a[1].max(b[1]) + EDGE_TOL < bbox[1] || a[1].min(b[1]) - EDGE_TOL > bbox[3] {
+                    if a[0].max(b[0]) + EDGE_TOL < bbox[0]
+                        || a[0].min(b[0]) - EDGE_TOL > bbox[2]
+                        || a[1].max(b[1]) + EDGE_TOL < bbox[1]
+                        || a[1].min(b[1]) - EDGE_TOL > bbox[3]
+                    {
                         continue;
                     }
                     segs.push(GeomWithData::new(
@@ -1295,7 +1313,8 @@ impl ChartStore {
                                             }
                                             near
                                         };
-                                        let crowded = centre_symbol.as_deref().filter(|sy| INFO_AREA_SYMBOLS.contains(sy)).is_some_and(|sy| place(sy.to_string()));
+                                        let crowded =
+                                            centre_symbol.as_deref().filter(|sy| INFO_AREA_SYMBOLS.contains(sy)).is_some_and(|sy| place(sy.to_string()));
                                         if centre_info.as_deref().is_some_and(|si| place(format!("i:{si}"))) {
                                             pp.retain(|(k, _)| *k != "si");
                                         }

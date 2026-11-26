@@ -13,8 +13,13 @@ use tokio::sync::watch;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SourceTransport {
-    Serial { port: String, baud_rate: u32 },
-    Tcp { address: String },
+    Serial {
+        port: String,
+        baud_rate: u32,
+    },
+    Tcp {
+        address: String,
+    },
     /// `send_to`: where sentences TweedPlot sends go (the autopilot output, acknowledgements), host:port;
     /// a broadcast address (192.168.1.255:10110) reaches every listener on the network.
     Udp {
@@ -247,7 +252,8 @@ pub fn autopilot_send(source_id: String, talker: Option<String>, nav: marine_nme
 /// sentences are sent this way.
 #[tauri::command]
 pub fn equipment_ack(source_id: String, body: String) -> Result<String, String> {
-    let ok = (body.starts_with("ACK,") || body.starts_with("ACN,")) && body.len() <= 60 && body.bytes().all(|c| c.is_ascii_alphanumeric() || b",.-".contains(&c));
+    let ok =
+        (body.starts_with("ACK,") || body.starts_with("ACN,")) && body.len() <= 60 && body.bytes().all(|c| c.is_ascii_alphanumeric() || b",.-".contains(&c));
     if !ok {
         return Err("Not an acknowledgement TweedPlot sends".into());
     }
@@ -811,10 +817,9 @@ fn equipment_alert(app: &tauri::AppHandle, source: &SourceConfig, sentence: &Sen
     use marine_nmea::alerts;
     let alert = if sentence.formatter == "ALR" { alerts::parse_alr(&sentence.fields) } else { alerts::parse_alf(&sentence.fields) };
     let Some(alert) = alert else { return };
-    if let Err(error) = app.emit(
-        "equipment-alert",
-        serde_json::json!({ "alert": alert, "talker": sentence.talker, "source": source.name, "sourceId": source.id }),
-    ) {
+    if let Err(error) =
+        app.emit("equipment-alert", serde_json::json!({ "alert": alert, "talker": sentence.talker, "source": source.name, "sourceId": source.id }))
+    {
         eprintln!("Could not publish an equipment alert: {error}");
     }
 }
@@ -1131,7 +1136,14 @@ async fn run_tcp(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
     }
 }
 
-async fn run_udp(app: &tauri::AppHandle, source: &SourceConfig, generation: u64, bind_address: String, send_to: Option<String>, stop: &mut watch::Receiver<bool>) {
+async fn run_udp(
+    app: &tauri::AppHandle,
+    source: &SourceConfig,
+    generation: u64,
+    bind_address: String,
+    send_to: Option<String>,
+    stop: &mut watch::Receiver<bool>,
+) {
     let mut framer = Framer::default();
     let mut observation = Observation::default();
     let mut buf = [0u8; 65536];
@@ -1159,7 +1171,15 @@ async fn run_udp(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
                     Some(addr)
                 }
                 None => {
-                    update_status(app, &source.id, generation, Some("error"), Some(format!("Can't send to {to}: not a host:port this computer can reach; retrying")), false, None);
+                    update_status(
+                        app,
+                        &source.id,
+                        generation,
+                        Some("error"),
+                        Some(format!("Can't send to {to}: not a host:port this computer can reach; retrying")),
+                        false,
+                        None,
+                    );
                     if *stop.borrow() || wait_or_stop(stop, Duration::from_secs(5)).await {
                         break;
                     }

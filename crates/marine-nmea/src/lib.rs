@@ -6,8 +6,8 @@
 pub mod alerts;
 pub mod autopilot;
 pub mod dsc;
-pub mod radar;
 pub mod fixstreams;
+pub mod radar;
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

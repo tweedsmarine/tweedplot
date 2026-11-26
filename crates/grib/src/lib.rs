@@ -664,10 +664,19 @@ fn rain_from_accumulation(fields: &[Field]) -> Vec<Field> {
                 continue;
             }
             let k = ecmwf_tp_scale(f.param).unwrap_or(1.0);
-            let values = f.values.iter().enumerate().map(|(i, &a)| {
-                let b = base.map_or(0.0, |b| b[i]);
-                if a.is_finite() && b.is_finite() { ((a - b) * k / dt).max(0.0) } else { f32::NAN }
-            }).collect();
+            let values = f
+                .values
+                .iter()
+                .enumerate()
+                .map(|(i, &a)| {
+                    let b = base.map_or(0.0, |b| b[i]);
+                    if a.is_finite() && b.is_finite() {
+                        ((a - b) * k / dt).max(0.0)
+                    } else {
+                        f32::NAN
+                    }
+                })
+                .collect();
             out.push(Field { param: Param::Rain, number: 7, values, ..f.clone() });
         }
     }

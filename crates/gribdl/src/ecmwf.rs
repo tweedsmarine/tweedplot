@@ -297,7 +297,12 @@ fn step(
                     // it, since the file keeps only template 4.0 (the grib crate turns it into a rain rate)
                     let tp;
                     let fld = if fld.centre == 98 && matches!(fld.param, grib::Param::Other(0, 1, 52) | grib::Param::Other(0, 1, 193)) {
-                        tp = grib::Field { number: 8, param: grib::Param::Other(0, 1, 8), values: fld.values.iter().map(|v| v * 1000.0).collect(), ..fld.clone() };
+                        tp = grib::Field {
+                            number: 8,
+                            param: grib::Param::Other(0, 1, 8),
+                            values: fld.values.iter().map(|v| v * 1000.0).collect(),
+                            ..fld.clone()
+                        };
                         &tp
                     } else {
                         fld

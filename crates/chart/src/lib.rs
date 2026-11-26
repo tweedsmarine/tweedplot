@@ -765,7 +765,9 @@ impl ChartStore {
         let [far, fln, fpt, lsec, ftx, fab] = self.render_features(&tp, z, &starts);
         let [mbound, rules, rules_ln, fareas] = self.render_marine(&tp, z, bbox);
         let cov = self.render_outlines(&tp, bbox);
-        mvt::encode_tile(&[wland, wdepth, wdcnt, depare, unsare, depcnt, far, fab, land, wcoast, fln, soundg, lsec, fpt, ftx, mbound, rules, rules_ln, fareas, cov])
+        mvt::encode_tile(&[
+            wland, wdepth, wdcnt, depare, unsare, depcnt, far, fab, land, wcoast, fln, soundg, lsec, fpt, ftx, mbound, rules, rules_ln, fareas, cov,
+        ])
     }
 
     /// The charts' outlines ("cov": `band`): each cell's coverage (S-57 M_COVR), for Chart ›
