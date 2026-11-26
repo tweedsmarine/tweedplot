@@ -25,7 +25,10 @@ export function setupDock(map) {
   const sideW = () => Math.min(window.innerWidth * 0.7, Math.max(280, prefs.width ?? place.width ?? 460));
   // a view can ask for more height than the dock has been given (the polar's plot and table); once the
   // dock is dragged while that view is shown, its own height is kept
-  const height = () => Math.min(window.innerHeight * 0.7, place.minHeight ? (prefs.heights?.[current] ?? Math.max(prefs.height, place.minHeight)) : prefs.height);
+  const height = () => {
+    const want = place.minHeight ? (prefs.heights?.[current] ?? Math.max(prefs.height, place.minHeight)) : prefs.height;
+    return Number.isFinite(window.innerHeight) ? Math.min(window.innerHeight * 0.7, want) : want;
+  };
   function layout() {
     const right = !!current && place.side === "right";
     document.documentElement.classList.toggle("dock-right", right);
