@@ -14,6 +14,28 @@ const $ = (id) => document.getElementById(id);
 const norm = (d) => ((d % 360) + 360) % 360;
 const off180 = (d) => ((d + 540) % 360) - 180;
 
+/** Waypoint IDs (8 characters, as the sentences carry them) that tell the leg's two marks apart:
+ * "Wellington approach" and "Wellington entrance" would both be "Wellingt", so they become
+ * "Wel appr" and "Wel entr" (or numbered, "Welli18" and "Welli19", when that isn't enough). Exported for tests. */
+export function distinctIds(a, b, n = null) {
+  const clean = (x) => String(x ?? "").replace(/[^A-Za-z0-9 ._-]/g, "").trim();
+  const sa = clean(a), sb = clean(b);
+  if (!sa || !sb || sa === sb || sa.slice(0, 8).trim() !== sb.slice(0, 8).trim()) return [a, b];
+  // where they differ, back to the start of that word or number
+  let p = 0;
+  while (sa[p] === sb[p]) p++;
+  while (p > 0 && sa[p - 1] !== " ") p--;
+  const f = (x) => {
+    const tail = x.slice(p).trim();
+    // a short difference (a number) keeps as much of the name as fits; a long one, its first letters
+    return (tail.length <= 4 ? `${x.slice(0, 7 - tail.length).trim()} ${tail}` : `${x.slice(0, 3).trim()} ${tail}`).slice(0, 8).trim();
+  };
+  const [ia, ib] = p > 0 ? [f(sa), f(sb)] : [null, null];
+  if (ia && ib && ia !== ib) return [ia, ib];
+  const num = n ?? 2;
+  return [`${sa.slice(0, 5).trim()}${num - 1}`, `${sb.slice(0, 5).trim()}${num}`];
+}
+
 /** The leg as the autopilot sentences describe it, from the navigated mark and the boat. Exported for tests. */
 export function legFor({ nav, wp, boat, variation, arrivalNm }) {
   if (!nav?.next || !wp || !boat || wp.dtw == null || wp.btw == null) return null;
@@ -25,10 +47,11 @@ export function legFor({ nav, wp, boat, variation, arrivalNm }) {
   const steer = norm(leg - Math.sign(xte) * correction);
   // past the line square to the leg through the mark
   const passed = Math.abs(off180(bearing(dest, boat) - leg)) < 90;
+  const [originId, destId] = distinctIds(nav.goto ? "Here" : nav.fromName ?? "Start", nav.next.name ?? "Mark", nav.next.n);
   return {
     xteNm: xte,
-    originId: nav.goto ? "Here" : nav.fromName ?? "Start",
-    destId: nav.next.name ?? "Mark",
+    originId,
+    destId,
     destLat: nav.next.lat,
     destLon: nav.next.lon,
     rangeNm: wp.dtw,
