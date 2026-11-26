@@ -444,7 +444,7 @@ function listen(args) {
   const port = Number(args.port ?? args.udp ?? 10111);
   const sock = dgram.createSocket({ type: "udp4", reuseAddr: true });
   sock.on("message", (m, from) => {
-    for (const l of m.toString().split(/\r?\n/)) if (l.trim()) console.log(`${new Date().toISOString().slice(11, 19)}  ${from.address}  ${l}`);
+    for (const l of m.toString().split(/\r?\n/)) if (l.trim()) console.log(`${new Date().toLocaleTimeString("en-GB", { hour12: false })}  ${from.address}  ${l}`);
   });
   sock.bind(port, () => console.log(`Listening on UDP ${port} (Ctrl+C to stop)`));
 }
