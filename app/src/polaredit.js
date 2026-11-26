@@ -9,7 +9,10 @@
 // a shipped polar is never changed: your copy with its name is used instead.
 import { invoke } from "@tauri-apps/api/core";
 import { ask } from "./ask.js";
-import { ramp, onTheme } from "./theme.js";
+// beta6 has no theme.js (OpenBridge's colours by name): the classic night palettes are a filter on
+// the whole page, so the curve colours need no mapping and nothing to redraw on a palette change
+const ramp = (c) => c;
+const onTheme = () => {};
 
 // ---------- the sums (the same as the polar crate's) ----------
 
