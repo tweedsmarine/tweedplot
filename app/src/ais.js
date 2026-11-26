@@ -27,6 +27,8 @@ const DEFAULTS = { show: true, names: true, key: "", owKey: "", owSeed: "", owOn
   sleep: "off", sleepKn: 0.5, sleepNm: 0,
   // internet AIS area: "view" (the chart view) | "centre" (range round the chart centre) | "boat" (range round own boat); range NM
   netMode: "boat", netRange: 30, netAlarms: false,
+  // radar (ARPA) targets: a collision alarm from the radar's own CPA and TCPA, against the limits above
+  radarAlarms: false,
   // floating target list
   win: { open: false, sort: "cpa", dir: 1, filter: "all", x: null, y: null } };
 const FLEET_KEY = "racenav.ownfleet";
@@ -853,6 +855,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   $("ais-net-range").value = s.netRange;
   $("ais-net-range-row").hidden = s.netMode === "view";
   $("ais-net-alarms").checked = s.netAlarms;
+  if ($("ais-radar-alarms")) $("ais-radar-alarms").checked = s.radarAlarms;
   $("ais-vec-min").value = s.vecMin;
   $("ais-curve").checked = s.curve;
   $("ais-daysh").checked = s.dayShapes;
@@ -869,6 +872,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
   $("ais-net-mode").onchange = (e) => { s.netMode = e.target.value; $("ais-net-range-row").hidden = s.netMode === "view"; save(); subAt = null; subscribe(true); draw(); renderList(); };
   $("ais-net-range").onchange = (e) => { const v = parseFloat(e.target.value); if (v >= 1) s.netRange = Math.min(180, v); e.target.value = s.netRange; save(); subscribe(true); draw(); renderList(); };
   $("ais-net-alarms").onchange = (e) => { s.netAlarms = e.target.checked; save(); checkAlarms(); };
+  if ($("ais-radar-alarms")) $("ais-radar-alarms").onchange = (e) => { s.radarAlarms = e.target.checked; save(); };
   $("ais-vec-min").onchange = (e) => { const v = parseFloat(e.target.value); if (v >= 1) s.vecMin = Math.min(60, v); e.target.value = s.vecMin; save(); draw(); };
   $("ais-cpa-draw").onchange = (e) => { s.cpaDraw = e.target.value; save(); draw(); };
 
@@ -1084,5 +1088,7 @@ export function setupAis(map, { getOwn, alarms, ui, getOwnMmsi }) {
     map.easeTo({ center: [t.lon, t.lat] });
     openPopup(t.mmsi);
   }
-  return { targets, openPopup, closest, select };
+  return { targets, openPopup, closest, select,
+    /** The collision limits (Alarms › Targets), for the radar targets too. */
+    cpaLimits: () => ({ on: s.cpaOn, cpa: s.cpa, tcpa: s.tcpa, radar: s.radarAlarms }) };
 }

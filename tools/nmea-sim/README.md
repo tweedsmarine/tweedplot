@@ -51,6 +51,25 @@ node tools/nmea-sim/nmea-sim.mjs play distress-test.nmea
 
 The AIS transmitters send a position every 20 s (a real one sends a burst once a minute) and their "… ACTIVE" or "… TEST" text (message 14) every four minutes. `play` puts the clock's time into the DSC calls as well as into RMC and GGA. **All the MMSIs are invented.** Use `play … --from 00:04` to start just before the DSC calls.
 
+## Equipment test
+
+```
+node tools/nmea-sim/nmea-sim.mjs equipment
+node tools/nmea-sim/nmea-sim.mjs play equipment-test.nmea
+node tools/nmea-sim/nmea-sim.mjs listen --port 10111
+```
+
+`equipment` writes `equipment-test.nmea`: 10 minutes of own boat at 5 kn, 045°T, with two radar (ARPA) targets as TTM and TLL every 3 s (R1 on a collision course, its CPA under 0.05 NM and its TCPA inside 12 min from about 03:00; R2 passing clear) and alarms from other equipment, repeated every 30 s while they last:
+
+| Time in | Event |
+| --- | --- |
+| 00:20 | Radar targets R1 and R2 acquired |
+| 01:00 | Sounder ALR 012 SHALLOW WATER, until 05:00 (TweedPlot can acknowledge it: ACK) |
+| 02:00 | Sounder ALF warning 3015, category B, until 07:00 (TweedPlot can acknowledge it: ACN) |
+| 03:00 | Radar ALF alarm 3100, category A, until 06:00 (only at the radar) |
+
+`listen` prints what arrives on a UDP port. In TweedPlot, give the UDP connection a **Send to** of `127.0.0.1:10111` to see the autopilot sentences and the acknowledgements TweedPlot sends.
+
 ## Options
 
 - `make [route.json | route.gpx] [--out file.nmea] [--speed 7.5] [--start 2026-11-14T18:00:00Z] [--no-ais]`. A route file is a list of waypoints, each with `name`, `lat`, `lon` and, optionally, `depth` (m), `twd` and `tws` (true wind, °T and kn) and `set` and `drift` (the stream, °T and kn): see `nelson-wellington.json`. A GPX route exported from TweedPlot works too. `make` prints when the boat reaches each waypoint.
