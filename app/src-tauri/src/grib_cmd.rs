@@ -85,7 +85,7 @@ pub(crate) async fn grib_files() -> Vec<serde_json::Value> {
 }
 
 pub(crate) fn grib_files_blocking() -> Vec<serde_json::Value> {
-    let loaded = GRIBS.lock().unwrap();
+    let loaded = GRIBS.lock().unwrap_or_else(|e| e.into_inner());
     let mut out = Vec::new();
     for dir in grib_dirs() {
         let Ok(rd) = std::fs::read_dir(&dir) else {
@@ -126,13 +126,13 @@ pub(crate) fn grib_files_blocking() -> Vec<serde_json::Value> {
 pub(crate) fn scan_cached(p: &std::path::Path, mtime: u64, size: u64) -> Option<grib::FileInfo> {
     static CACHE: Mutex<BTreeMap<String, (u64, u64, Option<grib::FileInfo>)>> = Mutex::new(BTreeMap::new());
     let key = p.to_string_lossy().into_owned();
-    if let Some((m, s, info)) = CACHE.lock().unwrap().get(&key) {
+    if let Some((m, s, info)) = CACHE.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
         if *m == mtime && *s == size {
             return info.clone();
         }
     }
     let info = grib::scan(p).ok();
-    CACHE.lock().unwrap().insert(key, (mtime, size, info.clone()));
+    CACHE.lock().unwrap_or_else(|e| e.into_inner()).insert(key, (mtime, size, info.clone()));
     info
 }
 
@@ -157,13 +157,13 @@ pub(crate) async fn grib_load(app: tauri::AppHandle, path: String) -> Result<gri
     .map_err(|e| e.to_string())?;
     let mut s = f.summary();
     s.file = path.clone();
-    GRIBS.lock().unwrap().insert(path, Arc::new(f));
+    GRIBS.lock().unwrap_or_else(|e| e.into_inner()).insert(path, Arc::new(f));
     Ok(s)
 }
 
 #[tauri::command]
 pub(crate) fn grib_unload(path: String) {
-    GRIBS.lock().unwrap().remove(&path);
+    GRIBS.lock().unwrap_or_else(|e| e.into_inner()).remove(&path);
 }
 
 /// Pick GRIB files anywhere on the PC and copy them into the first GRIB folder. Returns the new paths
@@ -198,7 +198,7 @@ pub(crate) async fn grib_add(app: tauri::AppHandle) -> Result<Vec<String>, Strin
 #[tauri::command]
 pub(crate) fn grib_delete(paths: Vec<String>) -> Result<usize, String> {
     let dirs = grib_dirs();
-    let loaded = GRIBS.lock().unwrap();
+    let loaded = GRIBS.lock().unwrap_or_else(|e| e.into_inner());
     let mut n = 0;
     for p in paths {
         let path = std::path::PathBuf::from(&p);
@@ -229,7 +229,7 @@ pub(crate) fn grib_loaded() -> Vec<grib::Summary> {
 /// Wind on a thinned grid inside `bbox` [w, s, e, n] at time `t`, at most about `max_points` points.
 #[tauri::command]
 pub(crate) fn grib_wind_grid(path: String, t: i64, bbox: [f64; 4], max_points: usize, over: Option<Vec<String>>) -> Option<serde_json::Value> {
-    let f = GRIBS.lock().unwrap().get(&path)?.clone();
+    let f = GRIBS.lock().unwrap_or_else(|e| e.into_inner()).get(&path)?.clone();
     let (g, u) = f.grid_at(grib::Param::WindU, t)?;
     let (_, v) = f.grid_at(grib::Param::WindV, t)?;
     // finer files laid on top and coarser ones round it (see `mosaic`)
@@ -320,7 +320,14 @@ fn shading_range(values: &[f32], precision: f32) -> Option<(f32, f32)> {
 fn mosaic(grids: &[(grib::Grid, Vec<&[f32]>)], bbox: [f64; 4], max_points: usize) -> Option<(f64, f64, f64, f64, usize, usize, Vec<Vec<f32>>)> {
     let c = (bbox[0] + bbox[2]) / 2.0;
     // each grid's area in the bbox's longitudes, finest first, only those reaching the bbox
-    struct Area<'a> { g: &'a grib::Grid, ch: &'a [&'a [f32]], w: f64, e: f64, s: f64, n: f64 }
+    struct Area<'a> {
+        g: &'a grib::Grid,
+        ch: &'a [&'a [f32]],
+        w: f64,
+        e: f64,
+        s: f64,
+        n: f64,
+    }
     let mut areas: Vec<Area> = grids
         .iter()
         .filter_map(|(g, ch)| {
@@ -373,7 +380,7 @@ fn mosaic(grids: &[(grib::Grid, Vec<&[f32]>)], bbox: [f64; 4], max_points: usize
 /// run as `path` (another area of the same download: laid alongside even at the same resolution).
 /// The caller keeps those of another resolution, and those of the same run.
 fn finer_files(over: &Option<Vec<String>>, path: &str) -> Vec<(Arc<grib::GribFile>, bool)> {
-    let gribs = GRIBS.lock().unwrap();
+    let gribs = GRIBS.lock().unwrap_or_else(|e| e.into_inner());
     let base = gribs.get(path).map(|f| f.model());
     over.iter()
         .flatten()
@@ -492,8 +499,16 @@ fn layer_values(f: &grib::GribFile, layer: &str, t: i64, depth: Option<f64>) -> 
 /// Files at the same resolution are left out (other runs or models are for comparing), except other
 /// areas of the same model and run, which are laid alongside.
 #[tauri::command]
-pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max_points: usize, depth: Option<f64>, over: Option<Vec<String>>) -> Option<serde_json::Value> {
-    let f = GRIBS.lock().unwrap().get(&path)?.clone();
+pub(crate) fn grib_grid(
+    path: String,
+    layer: String,
+    t: i64,
+    bbox: [f64; 4],
+    max_points: usize,
+    depth: Option<f64>,
+    over: Option<Vec<String>>,
+) -> Option<serde_json::Value> {
+    let f = GRIBS.lock().unwrap_or_else(|e| e.into_inner()).get(&path)?.clone();
     let (g, vals) = layer_values(&f, &layer, t, depth)?;
     // Include both the original values and the rounded values returned for shading.
     let precision = match layer.as_str() {
@@ -553,7 +568,7 @@ pub(crate) fn grib_grid(path: String, layer: String, t: i64, bbox: [f64; 4], max
 pub(crate) fn grib_compare(paths: Vec<String>, metric: String, t: i64, bbox: [f64; 4], max_points: usize) -> Result<serde_json::Value, String> {
     let m = grib::compare::Metric::parse(&metric).ok_or("unknown comparison")?;
     let files: Vec<(String, Arc<grib::GribFile>)> = {
-        let g = GRIBS.lock().unwrap();
+        let g = GRIBS.lock().unwrap_or_else(|e| e.into_inner());
         paths.iter().filter_map(|p| g.get(p).map(|f| (p.clone(), f.clone()))).collect()
     };
     let refs: Vec<&grib::GribFile> = files.iter().map(|(_, f)| f.as_ref()).collect();
@@ -577,7 +592,7 @@ pub(crate) fn grib_compare(paths: Vec<String>, metric: String, t: i64, bbox: [f6
 }
 
 pub(crate) fn loaded(paths: &[String]) -> Vec<(String, Arc<grib::GribFile>)> {
-    let g = GRIBS.lock().unwrap();
+    let g = GRIBS.lock().unwrap_or_else(|e| e.into_inner());
     if paths.is_empty() {
         let mut v: Vec<_> = g.iter().map(|(k, f)| (k.clone(), f.clone())).collect();
         v.sort_by(|a, b| a.0.cmp(&b.0));
@@ -713,7 +728,7 @@ pub(crate) fn grib_verify_grid(
 /// Every loaded GRIB at one point and time: the quick agreement check.
 #[tauri::command]
 pub(crate) fn grib_point(lat: f64, lon: f64, t: i64, depth: Option<f64>) -> Vec<serde_json::Value> {
-    let files: Vec<(String, Arc<grib::GribFile>)> = GRIBS.lock().unwrap().iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    let files: Vec<(String, Arc<grib::GribFile>)> = GRIBS.lock().unwrap_or_else(|e| e.into_inner()).iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     files
         .into_iter()
         .map(|(k, f)| {
@@ -729,14 +744,14 @@ pub(crate) fn grib_point(lat: f64, lon: f64, t: i64, depth: Option<f64>) -> Vec<
 /// current at each depth, with the thermocline and shear), or null.
 #[tauri::command]
 pub(crate) fn grib_profile(path: String, lat: f64, lon: f64, t: i64) -> Option<grib::stack::Profile> {
-    let f = GRIBS.lock().unwrap().get(&path)?.clone();
+    let f = GRIBS.lock().unwrap_or_else(|e| e.into_inner()).get(&path)?.clone();
     grib::stack::profile(&f, lat, lon, t)
 }
 
 /// A section through the depth stack along a line ([lon, lat] corners) at time `t`, `n` points.
 #[tauri::command]
 pub(crate) async fn grib_section(path: String, line: Vec<[f64; 2]>, t: i64, n: usize) -> Option<grib::stack::Section> {
-    let f = GRIBS.lock().unwrap().get(&path)?.clone();
+    let f = GRIBS.lock().unwrap_or_else(|e| e.into_inner()).get(&path)?.clone();
     tauri::async_runtime::spawn_blocking(move || grib::stack::section(&f, &line, n, t)).await.ok().flatten()
 }
 
@@ -793,7 +808,8 @@ pub(crate) fn point_values(f: &grib::GribFile, lat: f64, lon: f64, t: i64, depth
 #[tauri::command]
 pub(crate) async fn grib_along(first: Option<String>, pts: Vec<(f64, f64, i64)>, layered: Option<bool>) -> Result<Vec<serde_json::Value>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let mut files: Vec<(String, Arc<grib::GribFile>)> = GRIBS.lock().unwrap().iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let mut files: Vec<(String, Arc<grib::GribFile>)> =
+            GRIBS.lock().unwrap_or_else(|e| e.into_inner()).iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         files.sort_by(|(a, _), (b, _)| (Some(a) != first.as_ref(), a).cmp(&(Some(b) != first.as_ref(), b)));
         // files finer than the shown one come before it where they cover the point (a detailed small
         // area over a big coarse one); the rest after it, as before
@@ -983,7 +999,7 @@ fn sst_windows(files: &[(String, Arc<grib::GribFile>)], from_disk: bool, max_age
 fn disk_sst_files(obs: &[grib::sstverify::Obs], max_age_s: i64, limit: usize) -> Vec<String> {
     let (Some(t0), Some(t1)) = (obs.iter().map(|o| o.t).min(), obs.iter().map(|o| o.t).max()) else { return Vec::new() };
     let lat = (obs.iter().map(|o| o.lat).fold(f64::INFINITY, f64::min), obs.iter().map(|o| o.lat).fold(f64::NEG_INFINITY, f64::max));
-    let loaded = GRIBS.lock().unwrap().keys().cloned().collect::<std::collections::BTreeSet<String>>();
+    let loaded = GRIBS.lock().unwrap_or_else(|e| e.into_inner()).keys().cloned().collect::<std::collections::BTreeSet<String>>();
     let mut out = Vec::new();
     for f in grib_files_blocking() {
         let Some(path) = f["path"].as_str() else { continue };

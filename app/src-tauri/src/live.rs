@@ -18,7 +18,7 @@ fn now_s() -> i64 {
 }
 
 fn with_targets<R>(f: impl FnOnce(&mut ais::Targets) -> R) -> R {
-    let mut g = TARGETS.lock().unwrap();
+    let mut g = TARGETS.lock().unwrap_or_else(|e| e.into_inner());
     f(g.get_or_insert_with(ais::Targets::default))
 }
 
@@ -30,7 +30,7 @@ pub(crate) fn merge_ais(u: ais::Update) {
 }
 
 pub(crate) fn is_replaying() -> bool {
-    REPLAY.lock().unwrap().is_some()
+    REPLAY.lock().unwrap_or_else(|e| e.into_inner()).is_some()
 }
 
 /// The folder Signal K sessions are logged to.
@@ -42,7 +42,7 @@ pub fn log_dir(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
 fn on_event(app: &tauri::AppHandle, ev: signalk::Event, replayed: bool) {
     match ev {
         signalk::Event::Status { connected, detail } => {
-            *crate::SK_STATUS.lock().unwrap() = Some((connected, detail.clone()));
+            *crate::SK_STATUS.lock().unwrap_or_else(|e| e.into_inner()) = Some((connected, detail.clone()));
             let _ = app.emit("sk-status", serde_json::json!({ "connected": connected, "detail": detail }));
         }
         signalk::Event::Vessel(mut v) => {
@@ -86,7 +86,7 @@ pub fn start(app: &tauri::AppHandle) {
     let (atx, mut arx) = tokio::sync::mpsc::channel::<(&'static str, ais::stream::Event)>(1024);
     for provider in ["aisstream", "openwaters"] {
         let (req_tx, req_rx) = tokio::sync::watch::channel(ais::stream::Request::default());
-        AIS_REQ.lock().unwrap().insert(provider, req_tx);
+        AIS_REQ.lock().unwrap_or_else(|e| e.into_inner()).insert(provider, req_tx);
         let (ptx, mut prx) = tokio::sync::mpsc::channel(1024);
         tauri::async_runtime::spawn(ais::stream::run(req_rx, ptx));
         let atx = atx.clone();
@@ -103,7 +103,7 @@ pub fn start(app: &tauri::AppHandle) {
         while let Some((provider, ev)) = arx.recv().await {
             match ev {
                 ais::stream::Event::Status { connected, detail } => {
-                    AIS_STATUS.lock().unwrap().insert(provider, (connected, detail.clone()));
+                    AIS_STATUS.lock().unwrap_or_else(|e| e.into_inner()).insert(provider, (connected, detail.clone()));
                     let _ = h2.emit("ais-status", serde_json::json!({ "provider": provider, "connected": connected, "detail": detail }));
                 }
                 ais::stream::Event::Update(u) => {
@@ -131,9 +131,9 @@ pub fn start(app: &tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_millis(250)).await;
-            let r = REPLAY.lock().unwrap().clone();
+            let r = REPLAY.lock().unwrap_or_else(|e| e.into_inner()).clone();
             if let Some((c, name)) = r {
-                let (s, e) = *c.span.lock().unwrap();
+                let (s, e) = *c.span.lock().unwrap_or_else(|e| e.into_inner());
                 let _ = h4.emit(
                     "replay",
                     serde_json::json!({
@@ -159,9 +159,9 @@ pub fn ais_targets() -> Vec<ais::Target> {
 pub fn ais_online(provider: Option<String>, key: String, boxes: Vec<[[f64; 2]; 2]>) {
     let provider = if provider.as_deref() == Some("openwaters") { "openwaters" } else { "aisstream" };
     if key.trim().is_empty() {
-        AIS_STATUS.lock().unwrap().insert(provider, (false, "off".into()));
+        AIS_STATUS.lock().unwrap_or_else(|e| e.into_inner()).insert(provider, (false, "off".into()));
     }
-    if let Some(tx) = AIS_REQ.lock().unwrap().get(provider) {
+    if let Some(tx) = AIS_REQ.lock().unwrap_or_else(|e| e.into_inner()).get(provider) {
         let _ = tx.send(ais::stream::Request { provider: provider.into(), key, boxes });
     }
 }
@@ -203,13 +203,6 @@ pub fn ais_tracks(mmsis: Vec<u32>) -> std::collections::HashMap<u32, Vec<[f64; 3
     with_targets(|t| mmsis.iter().filter_map(|m| t.tracks.get(m).map(|tr| (*m, tr.clone()))).collect())
 }
 
-#[tauri::command]
-pub fn ais_status() -> serde_json::Value {
-    let g = AIS_STATUS.lock().unwrap();
-    let one = |p: &str| g.get(p).map_or(serde_json::json!({ "connected": false, "detail": "" }), |(c, d)| serde_json::json!({ "connected": c, "detail": d }));
-    serde_json::json!({ "aisstream": one("aisstream"), "openwaters": one("openwaters") })
-}
-
 // ---------- replay commands ----------------------------------------------------------
 
 /// The Signal K session logs, newest first.
@@ -231,7 +224,7 @@ pub fn replay_start(app: tauri::AppHandle, path: String, speed: Option<f64>) -> 
     let ctl = Arc::new(signalk::replay::Control::default());
     ctl.speed.store((speed.unwrap_or(1.0).clamp(0.1, 1000.0) * 100.0) as u32, Ordering::Relaxed);
     let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    *REPLAY.lock().unwrap() = Some((ctl.clone(), name));
+    *REPLAY.lock().unwrap_or_else(|e| e.into_inner()) = Some((ctl.clone(), name));
     with_targets(|t| t.clear());
     let _ = app.emit("ais", serde_json::json!({ "reset": true, "targets": [], "gone": [] }));
     let (tx, mut rx) = tokio::sync::mpsc::channel(512);
@@ -245,7 +238,7 @@ pub fn replay_start(app: tauri::AppHandle, path: String, speed: Option<f64>) -> 
     std::thread::spawn(move || {
         let r = signalk::replay::run(&p, ctl.clone(), tx, Duration::from_millis(250));
         // ended by itself (not replaced by another replay): back to live
-        let mut g = REPLAY.lock().unwrap();
+        let mut g = REPLAY.lock().unwrap_or_else(|e| e.into_inner());
         if g.as_ref().is_some_and(|(c, _)| Arc::ptr_eq(c, &ctl)) {
             *g = None;
             drop(g);
@@ -260,7 +253,7 @@ pub fn replay_start(app: tauri::AppHandle, path: String, speed: Option<f64>) -> 
 /// Pause or play, change speed (1 = real time), or go to a time (Unix ms).
 #[tauri::command]
 pub fn replay_control(paused: Option<bool>, speed: Option<f64>, seek: Option<i64>) {
-    if let Some((c, _)) = REPLAY.lock().unwrap().as_ref() {
+    if let Some((c, _)) = REPLAY.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
         if let Some(p) = paused {
             c.paused.store(p, Ordering::Relaxed);
         }
@@ -276,7 +269,7 @@ pub fn replay_control(paused: Option<bool>, speed: Option<f64>, seek: Option<i64
 /// Stop the replay and go back to live data.
 #[tauri::command]
 pub fn replay_stop(app: tauri::AppHandle) {
-    let r = REPLAY.lock().unwrap().take();
+    let r = REPLAY.lock().unwrap_or_else(|e| e.into_inner()).take();
     if let Some((c, _)) = r {
         c.stop.store(true, Ordering::Relaxed);
         with_targets(|t| t.clear());

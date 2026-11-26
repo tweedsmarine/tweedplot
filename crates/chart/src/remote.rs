@@ -169,15 +169,15 @@ impl RemoteSource for LocalFiles {
     fn rows(&self, db: u32, table: &str, bbox: [f64; 4], cols: &[&str]) -> Vec<Row> {
         let Some((c, by)) = self.dbs.get(db as usize) else { return vec![] };
         let Some(t) = by.get(table) else { return vec![] };
-        query_rows(&c.lock().unwrap(), t, bbox, cols)
+        query_rows(&c.lock().unwrap_or_else(|e| e.into_inner()), t, bbox, cols)
     }
     fn feature(&self, db: u32, table: &str, fid: i64, cols: &[&str]) -> Option<Row> {
         let (c, by) = self.dbs.get(db as usize)?;
-        query_feature(&c.lock().unwrap(), by.get(table)?, fid, cols)
+        query_feature(&c.lock().unwrap_or_else(|e| e.into_inner()), by.get(table)?, fid, cols)
     }
     fn median(&self, db: u32, table: &str, col: &str) -> Option<f64> {
         let (c, by) = self.dbs.get(db as usize)?;
-        query_median(&c.lock().unwrap(), by.get(table)?, col)
+        query_median(&c.lock().unwrap_or_else(|e| e.into_inner()), by.get(table)?, col)
     }
 }
 

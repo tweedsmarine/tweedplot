@@ -539,7 +539,7 @@ mod tests {
         back_off(Kind::Osm, 600);
         assert!(backing_off(Kind::Osm));
         assert!(!backing_off(Kind::Sea));
-        BACKOFF_UNTIL.lock().unwrap()[Kind::Osm.slot()] = None;
+        BACKOFF_UNTIL.lock().unwrap_or_else(|e| e.into_inner())[Kind::Osm.slot()] = None;
     }
 
     /// Off sends no request, and with "cached only" a cached tile is served without one.
@@ -554,7 +554,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("tweedplot-webmap-test-{}", std::process::id()));
         init(dir.clone());
         {
-            let mut c = CONFIG.write().unwrap();
+            let mut c = CONFIG.write().unwrap_or_else(|e| e.into_inner());
             c.osm = "http://127.0.0.1:9/{z}/{x}/{y}.png".into();
         }
         let f = cache_file(&dir, Kind::Osm, &template(Kind::Osm), 5, 3, 2);
@@ -566,7 +566,7 @@ mod tests {
         assert_eq!(FETCHES.load(Ordering::SeqCst), before);
         ENABLED.store(false, Ordering::SeqCst);
         CACHED_ONLY.store(false, Ordering::SeqCst);
-        CONFIG.write().unwrap().osm.clear();
+        CONFIG.write().unwrap_or_else(|e| e.into_inner()).osm.clear();
         let _ = std::fs::remove_dir_all(dir);
     }
 }

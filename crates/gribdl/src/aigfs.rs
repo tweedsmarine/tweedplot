@@ -186,7 +186,7 @@ pub fn download(req: &Request, run: &Run, dir: &Path, progress: Progress, cancel
                     }
                     Err(_) => stop.store(true, Ordering::Relaxed),
                 }
-                results.lock().unwrap()[i] = Some(r.map(|x| x.0));
+                results.lock().unwrap_or_else(|e| e.into_inner())[i] = Some(r.map(|x| x.0));
             });
         }
     });

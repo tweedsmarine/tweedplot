@@ -75,19 +75,19 @@ pub(crate) fn note(file: &Path, text: impl Into<String>) {
     let text = text.into();
     eprintln!("ENC {}: {text}", file.display());
     let cell = file.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-    let mut n = NOTES.lock().unwrap();
+    let mut n = NOTES.lock().unwrap_or_else(|e| e.into_inner());
     n.retain(|x| !(x.file == file.display().to_string() && x.text == text));
     n.push(Note { file: file.display().to_string(), cell, text });
 }
 
 /// Notes from converting cells since the charts were last opened.
 pub fn notes() -> Vec<Note> {
-    NOTES.lock().unwrap().clone()
+    NOTES.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 /// Forget the notes (before the charts are opened again).
 pub fn clear_notes() {
-    NOTES.lock().unwrap().clear();
+    NOTES.lock().unwrap_or_else(|e| e.into_inner()).clear();
 }
 
 fn hash(s: &str) -> u32 {

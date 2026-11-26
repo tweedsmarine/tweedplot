@@ -38,7 +38,7 @@ fn cached_polar(path: &str) -> Option<Arc<polar::Polar>> {
     // keyed by the file's time too: a polar saved from the editor is read again
     static CACHE: Mutex<Option<(String, Option<std::time::SystemTime>, Arc<polar::Polar>)>> = Mutex::new(None);
     let mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
-    let mut c = CACHE.lock().unwrap();
+    let mut c = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if c.as_ref().map(|x| x.0 != path || x.1 != mtime).unwrap_or(true) {
         *c = Some((path.to_string(), mtime, Arc::new(polar::Polar::from_path(path).ok()?)));
     }
@@ -80,13 +80,6 @@ pub(crate) fn polar_save(app: tauri::AppHandle, name: String, tws: Vec<f64>, twa
     std::fs::write(&tmp, p.to_csv()).map_err(|e| format!("Could not save {}: {e}", dest.display()))?;
     std::fs::rename(&tmp, &dest).map_err(|e| format!("Could not save {}: {e}", dest.display()))?;
     Ok(dest.to_string_lossy().into_owned())
-}
-
-/// Boat speed from a polar file (cached) at a TWA and TWS, kn.
-#[tauri::command]
-pub(crate) fn polar_speed(path: String, twa: f64, tws: f64) -> Option<f64> {
-    let b = cached_polar(&path)?.bsp(twa.abs(), tws);
-    b.is_finite().then_some((b * 100.0).round() / 100.0)
 }
 
 /// The true wind angles (deg) giving the best VMG upwind and downwind at a TWS: what the
@@ -199,7 +192,7 @@ pub(crate) struct MarkOpt {
 /// Route from start through the marks with one loaded GRIB, a polar and the chart.
 #[tauri::command]
 pub(crate) async fn route_compute(req: RouteRequest) -> Result<serde_json::Value, String> {
-    let grib = GRIBS.lock().unwrap().get(&req.grib_path).cloned().ok_or("Load the GRIB first (Weather panel).")?;
+    let grib = GRIBS.lock().unwrap_or_else(|e| e.into_inner()).get(&req.grib_path).cloned().ok_or("Load the GRIB first (Weather panel).")?;
     tauri::async_runtime::spawn_blocking(move || {
         let polar = polar::Polar::from_path(&req.polar_path).map_err(|e| format!("Polar: {e}"))?;
         let start = nav_core::LatLon::new(req.start[1], req.start[0]);
@@ -240,7 +233,7 @@ pub(crate) async fn route_compute(req: RouteRequest) -> Result<serde_json::Value
         }
         // waves for the wave-height limit: this GRIB, else a loaded wave GRIB covering the start
         let wave_grib: Option<Arc<grib::GribFile>> = if req.params.max_hs > 0.0 && grib.times(grib::Param::WaveHeight).is_empty() {
-            let g = GRIBS.lock().unwrap();
+            let g = GRIBS.lock().unwrap_or_else(|e| e.into_inner());
             g.values()
                 .filter(|f| {
                     f.times(grib::Param::WaveHeight).first().is_some_and(|&a| a <= req.t0)

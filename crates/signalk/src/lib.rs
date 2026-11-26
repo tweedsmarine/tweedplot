@@ -505,9 +505,11 @@ mod tests {
     #[test]
     fn keeps_notifications_above_normal() {
         let mut s = VesselState::default();
-        let d = |state: &str| json!({ "context": "vessels.self", "updates": [{ "values": [
+        let d = |state: &str| {
+            json!({ "context": "vessels.self", "updates": [{ "values": [
             {"path": "notifications.environment.depth.belowKeel", "value": {"state": state, "message": "Shallow water", "method": ["visual", "sound"]}}
-        ] }] });
+        ] }] })
+        };
         assert!(s.apply_delta(&d("alarm")));
         assert_eq!(s.notifications["notifications.environment.depth.belowKeel"].state, "alarm");
         assert_eq!(s.notifications["notifications.environment.depth.belowKeel"].message, "Shallow water");

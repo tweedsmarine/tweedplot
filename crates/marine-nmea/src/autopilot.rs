@@ -80,10 +80,7 @@ fn lat_lon(lat: f64, lon: f64) -> (String, String) {
         }
         format!("{:0w$}{:06.3}", d as u32, m, w = deg_digits)
     };
-    (
-        format!("{},{}", part(lat, 2), if lat < 0.0 { "S" } else { "N" }),
-        format!("{},{}", part(lon, 3), if lon < 0.0 { "W" } else { "E" }),
-    )
+    (format!("{},{}", part(lat, 2), if lat < 0.0 { "S" } else { "N" }), format!("{},{}", part(lon, 3), if lon < 0.0 { "W" } else { "E" }))
 }
 
 /// The six sentences for one moment (`talker`: "GP" is what most autopilots expect; `utc_hms`

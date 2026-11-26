@@ -42,8 +42,8 @@ fn build_index(app: &tauri::AppHandle) -> HashMap<String, PathBuf> {
 /// Copy the notes of the cells under `from` into the store. (texts, pictures)
 pub fn import_from(app: &tauri::AppHandle, from: &Path) -> Result<(usize, usize), String> {
     let n = texts::copy_ancillary(from, &store_dir(app)).map_err(|e| e.to_string())?;
-    *INDEX.lock().unwrap() = None;
-    *PICTURES.lock().unwrap() = None;
+    *INDEX.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *PICTURES.lock().unwrap_or_else(|e| e.into_inner()) = None;
     Ok(n)
 }
 
@@ -64,19 +64,19 @@ pub async fn chart_text(app: tauri::AppHandle, name: String) -> Result<Value, St
             return Value::Null;
         }
         let path = {
-            let mut g = INDEX.lock().unwrap();
+            let mut g = INDEX.lock().unwrap_or_else(|e| e.into_inner());
             g.get_or_insert_with(|| build_index(&app)).get(&key).cloned()
         };
         let Some(path) = path else { return Value::Null };
         if !key.ends_with(".TXT") {
-            if let Some(v) = PICTURES.lock().unwrap().as_ref().and_then(|m| m.get(&key)) {
+            if let Some(v) = PICTURES.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|m| m.get(&key)) {
                 return v.clone();
             }
             let v = match std::fs::read(&path).map_err(|e| e.to_string()).and_then(|b| picture_reply(&b)) {
                 Ok((url, w, h)) => json!({ "name": key, "picture": url, "width": w, "height": h }),
                 Err(e) => return json!({ "name": key, "picture": null, "error": e }),
             };
-            PICTURES.lock().unwrap().get_or_insert_with(HashMap::new).insert(key, v.clone());
+            PICTURES.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(key, v.clone());
             return v;
         }
         match std::fs::read(&path) {

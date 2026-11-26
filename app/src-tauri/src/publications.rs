@@ -114,7 +114,7 @@ fn almanac_link(html: &str) -> Option<String> {
             continue;
         }
         let score = 3 * i32::from(w.contains("full")) + 2 * i32::from(w.contains("edition")) + i32::from(w.contains("204"));
-        if best.as_ref().map_or(true, |(b, _)| score > *b) {
+        if best.as_ref().is_none_or(|(b, _)| score > *b) {
             best = Some((score, url.clone()));
         }
     }
@@ -280,7 +280,10 @@ mod tests {
         let a = r#"<a href="/sites/default/files/2026-06/hydro_202627-almanac_title-section-pages-1-and-2_pdf.pdf">Title section</a>
           <a href="/system/files/2025-06/New%20Zealand%20Nautical%20Almanac%202025-26%20Edition%20-%20NZ%20204_1.pdf">New Zealand Nautical Almanac 2025-26 Edition - NZ 204</a>
           <a href="/sites/default/files/2025-06/hydro_202526-almanac_ANTM-1_pdf.pdf">Annual Notice to Mariners No. 1</a>"#;
-        assert_eq!(almanac_link(a).as_deref(), Some("https://www.linz.govt.nz/system/files/2025-06/New%20Zealand%20Nautical%20Almanac%202025-26%20Edition%20-%20NZ%20204_1.pdf"));
+        assert_eq!(
+            almanac_link(a).as_deref(),
+            Some("https://www.linz.govt.nz/system/files/2025-06/New%20Zealand%20Nautical%20Almanac%202025-26%20Edition%20-%20NZ%20204_1.pdf")
+        );
         // 2023/24: the old name
         let b = r#"<a href="/sites/default/files/2023-06/hydro_202324-almanac_full-nautical-almanac_pdf.pdf"><span>Download</span></a>"#;
         assert_eq!(almanac_link(b).as_deref(), Some("https://www.linz.govt.nz/sites/default/files/2023-06/hydro_202324-almanac_full-nautical-almanac_pdf.pdf"));

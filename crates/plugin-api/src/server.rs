@@ -15,7 +15,7 @@ pub struct Events {
 
 impl Events {
     pub fn send(&self, event: &str, data: Value) {
-        let mut w = self.out.lock().unwrap();
+        let mut w = self.out.lock().unwrap_or_else(|e| e.into_inner());
         let _ = write_frame(&mut *w, &json!({ "event": event, "data": data }), &[]);
     }
 }
@@ -35,7 +35,7 @@ pub fn serve_streams(input: impl Read, output: impl Write + Send + 'static, mut 
         // a panic in one request must not take the charts down: say so and carry on
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handle(&method, params, body, &events)))
             .unwrap_or_else(|_| Err(format!("the plugin failed on '{method}'")));
-        let mut w = events.out.lock().unwrap();
+        let mut w = events.out.lock().unwrap_or_else(|e| e.into_inner());
         let _ = match r {
             Ok((result, body)) => write_frame(&mut *w, &json!({ "id": id, "ok": true, "result": result }), &body),
             Err(e) => write_frame(&mut *w, &json!({ "id": id, "ok": false, "error": e }), &[]),
@@ -75,11 +75,11 @@ mod tests {
         });
         let got = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let g = got.clone();
-        c.on_event(move |e, d| g.lock().unwrap().push((e.to_string(), d.clone())));
+        c.on_event(move |e, d| g.lock().unwrap_or_else(|e| e.into_inner()).push((e.to_string(), d.clone())));
         let (v, b) = c.request("echo", json!({"x": 1}), &[9, 8], Duration::from_secs(5)).unwrap();
         assert_eq!((v["x"].as_i64(), b), (Some(1), vec![9, 8]));
         assert_eq!(c.call("job", json!({}), Duration::from_secs(5)).unwrap(), json!("done"));
-        assert_eq!(got.lock().unwrap().len(), 1);
+        assert_eq!(got.lock().unwrap_or_else(|e| e.into_inner()).len(), 1);
         assert!(c.call("nope", json!({}), Duration::from_secs(5)).unwrap_err().to_string().contains("unknown method"));
         assert!(c.call("boom", json!({}), Duration::from_secs(5)).unwrap_err().to_string().contains("failed on 'boom'"));
         // many threads at once each get their own answer

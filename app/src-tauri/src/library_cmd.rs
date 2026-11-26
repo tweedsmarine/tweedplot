@@ -95,7 +95,7 @@ pub(crate) fn symbols_sync(app: &tauri::AppHandle) -> Result<usize, String> {
 
 /// Make `path` the library in use (opening, or making, it).
 pub(crate) fn library_switch(app: &tauri::AppHandle, path: &std::path::Path) -> Result<(), String> {
-    if REC.lock().unwrap().is_some() {
+    if REC.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
         return Err("The track recorder is on: stop recording before changing library.".into());
     }
     let l = library::Library::open_file(path).map_err(es)?;
@@ -301,7 +301,7 @@ pub(crate) fn trips_list() -> Result<Vec<library::Trip>, String> {
 #[tauri::command]
 pub(crate) fn trip_save(app: tauri::AppHandle, trip: library::Trip, record: bool) -> Result<library::Trip, String> {
     let t = lib()?.save_trip(trip).map_err(es)?;
-    if record && t.ended.is_none() && REC.lock().unwrap().is_none() {
+    if record && t.ended.is_none() && REC.lock().unwrap_or_else(|e| e.into_inner()).is_none() {
         rec_flush();
         rec_begin(None)?;
     }
@@ -457,7 +457,13 @@ pub(crate) fn library_is_protected(path: String) -> bool {
 pub(crate) static OVERLAYS: std::sync::LazyLock<Mutex<Vec<Arc<library::Overlay>>>> = std::sync::LazyLock::new(|| Mutex::new(Vec::new()));
 
 pub(crate) fn overlay(path: &str) -> Result<Arc<library::Overlay>, String> {
-    OVERLAYS.lock().unwrap().iter().find(|o| o.path() == std::path::Path::new(path)).cloned().ok_or_else(|| format!("{path} isn't shown alongside"))
+    OVERLAYS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .find(|o| o.path() == std::path::Path::new(path))
+        .cloned()
+        .ok_or_else(|| format!("{path} isn't shown alongside"))
 }
 
 /// Show a library alongside (read-only); returns its name and what's in it.
@@ -471,7 +477,7 @@ pub(crate) async fn overlay_add(path: String) -> Result<serde_json::Value, Strin
         Ok(o) => o,
         Err(_) => {
             let o = Arc::new(tauri::async_runtime::spawn_blocking(move || library::Overlay::open(&p).map_err(es)).await.map_err(|e| e.to_string())??);
-            OVERLAYS.lock().unwrap().push(o.clone());
+            OVERLAYS.lock().unwrap_or_else(|e| e.into_inner()).push(o.clone());
             o
         }
     };
@@ -479,7 +485,7 @@ pub(crate) async fn overlay_add(path: String) -> Result<serde_json::Value, Strin
 }
 #[tauri::command]
 pub(crate) fn overlay_remove(path: String) {
-    OVERLAYS.lock().unwrap().retain(|o| o.path() != std::path::Path::new(&path));
+    OVERLAYS.lock().unwrap_or_else(|e| e.into_inner()).retain(|o| o.path() != std::path::Path::new(&path));
 }
 #[tauri::command]
 pub(crate) async fn overlay_marks(path: String) -> Result<Vec<library::Mark>, String> {
@@ -660,11 +666,6 @@ pub(crate) fn es(e: library::Error) -> String {
 }
 
 #[tauri::command]
-pub(crate) fn lib_info() -> Result<serde_json::Value, String> {
-    let l = lib()?;
-    Ok(serde_json::json!({ "dir": l.dir(), "file": l.path(), "converting": l.converting() }))
-}
-#[tauri::command]
 pub(crate) fn barriers_list() -> Result<Vec<library::Barrier>, String> {
     lib()?.barriers().map_err(es)
 }
@@ -718,12 +719,6 @@ pub(crate) fn symbol_set(app: tauri::AppHandle, symbol: String, kind: String, la
     library_changed(&app);
     Ok(n)
 }
-/// The marks in an area (west, south, east, north), from the spatial index.
-#[tauri::command]
-pub(crate) fn marks_in(west: f64, south: f64, east: f64, north: f64) -> Result<Vec<library::Mark>, String> {
-    lib()?.marks_in(west, south, east, north).map_err(es)
-}
-
 #[tauri::command]
 pub(crate) fn marks_delete(app: tauri::AppHandle, ids: Vec<String>, force: bool) -> Result<usize, String> {
     let n = lib()?.delete_marks(&ids, force).map_err(es)?;
@@ -778,13 +773,6 @@ pub(crate) fn gpx_export(name: String, mark_ids: Vec<String>, route_ids: Vec<Str
 pub(crate) fn gpx_write(name: String, text: String) -> Result<String, String> {
     Ok(lib()?.write_export(&name, &text).map_err(es)?.to_string_lossy().into_owned())
 }
-#[tauri::command]
-pub(crate) fn gpx_import(app: tauri::AppHandle, text: String, group: String) -> Result<library::ImportReport, String> {
-    let r = lib()?.import_gpx(&text, &group).map_err(es)?;
-    library_changed(&app);
-    Ok(r)
-}
-
 /// Import marks, routes and tracks from a file picked in the system file dialog: GPX, or
 /// TimeZero's .tzd / .TzBackup (or the WaypointRouteDatabase.xml inside one). The file is read
 /// here, not passed through the page: a TimeZero file can be gigabytes.

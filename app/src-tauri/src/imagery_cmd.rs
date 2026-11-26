@@ -162,11 +162,6 @@ pub(crate) fn images_remove(id: String) -> Result<(), String> {
     store()?.remove(&id).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub(crate) fn images_folder() -> Result<String, String> {
-    Ok(store()?.dir().to_string_lossy().into_owned())
-}
-
 fn check_area(b: &[f64; 4]) -> Result<(), String> {
     if !b.iter().all(|v| v.is_finite()) || b[0] >= b[2] || b[1] >= b[3] || b[1] < -85.0 || b[3] > 85.0 {
         return Err("The area isn't valid.".into());

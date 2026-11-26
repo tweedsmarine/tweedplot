@@ -82,13 +82,17 @@ export function setupAnchor(map, { library, alarms, getBoat, getVessel, getAnten
   }
 
   // ---------- drawing ----------------------------------------------------------------
+  let cleared = false; // no anchor watch and the layers already empty: nothing to redraw each second
   function draw() {
     const a = alarms.anchor.get();
     library.exclude(a?.id ? [a.id] : []);
     if (!a) {
+      if (cleared && drag == null) return;
       for (const id of ["anc-circle", "anc-line", "anc-pt"]) map.getSource(id).setData(empty);
+      cleared = true;
       return;
     }
+    cleared = false;
     const p = drag ?? [a.lon, a.lat];
     map.getSource("anc-pt").setData({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: p } });
     const radius = preview ?? a.radius;

@@ -261,7 +261,16 @@ pub fn section(f: &GribFile, line: &[[f64; 2]], n: usize, t: i64) -> Option<Sect
             thermocline(&depths, &col).filter(|r| r.1 >= THERMO_MIN).map(|r| round(r.0, 10.0))
         })
         .collect();
-    Some(Section { dist: pts.iter().map(|p| round(p.1, 100.0)).collect(), pts: pts.iter().map(|p| p.0).collect(), depths, temp, sal, kn, set, thermocline: thermo })
+    Some(Section {
+        dist: pts.iter().map(|p| round(p.1, 100.0)).collect(),
+        pts: pts.iter().map(|p| p.0).collect(),
+        depths,
+        temp,
+        sal,
+        kn,
+        set,
+        thermocline: thermo,
+    })
 }
 
 #[cfg(test)]

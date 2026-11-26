@@ -122,7 +122,7 @@ pub fn run(path: &Path, ctl: Arc<Control>, tx: mpsc::Sender<Event>, min_interval
     if idx.is_empty() {
         return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "no timed lines in this log"));
     }
-    *ctl.span.lock().unwrap() = (idx[0].0, idx[idx.len() - 1].0);
+    *ctl.span.lock().unwrap_or_else(|e| e.into_inner()) = (idx[0].0, idx[idx.len() - 1].0);
     let mut file = BufReader::new(std::fs::File::open(path)?);
     let read_at = |i: usize, file: &mut BufReader<std::fs::File>| -> Option<Value> {
         file.seek(SeekFrom::Start(idx[i].1)).ok()?;

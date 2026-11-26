@@ -119,7 +119,7 @@ fn start(app: &tauri::AppHandle) -> Result<Arc<Plugin>, String> {
 
 /// The running plugin, started (or restarted after a crash) if it is installed.
 pub fn get(app: &tauri::AppHandle) -> Option<Arc<Plugin>> {
-    let mut g = PLUGIN.lock().unwrap();
+    let mut g = PLUGIN.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(p) = g.as_ref() {
         if p.client.alive() {
             return Some(p.clone());
@@ -131,13 +131,13 @@ pub fn get(app: &tauri::AppHandle) -> Option<Arc<Plugin>> {
     }
     match start(app) {
         Ok(p) => {
-            *LAST_ERROR.lock().unwrap() = None;
+            *LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()) = None;
             *g = Some(p.clone());
             Some(p)
         }
         Err(e) => {
             eprintln!("{NAME}: {e}");
-            *LAST_ERROR.lock().unwrap() = Some(e);
+            *LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()) = Some(e);
             None
         }
     }
@@ -145,7 +145,7 @@ pub fn get(app: &tauri::AppHandle) -> Option<Arc<Plugin>> {
 
 /// Stop the plugin (before replacing or removing it).
 pub fn stop() {
-    if let Some(p) = PLUGIN.lock().unwrap().take() {
+    if let Some(p) = PLUGIN.lock().unwrap_or_else(|e| e.into_inner()).take() {
         p.client.stop();
     }
 }
@@ -163,12 +163,16 @@ pub fn request(app: &tauri::AppHandle, method: &str, params: Value, body: &[u8])
 }
 
 fn not_running() -> String {
-    LAST_ERROR.lock().unwrap().clone().unwrap_or_else(|| format!("{NAME} isn't installed. Encrypted charts need it: get it in Chart › Encrypted charts"))
+    LAST_ERROR
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+        .unwrap_or_else(|| format!("{NAME} isn't installed. Encrypted charts need it: get it in Chart › Encrypted charts"))
 }
 
 /// What the encrypted charts card shows about the plugin.
 pub fn info(app: &tauri::AppHandle) -> Value {
-    let running = PLUGIN.lock().unwrap().clone().filter(|p| p.client.alive());
+    let running = PLUGIN.lock().unwrap_or_else(|e| e.into_inner()).clone().filter(|p| p.client.alive());
     let manifest = verified(app).ok().map(|(m, _)| m);
     json!({
         "name": NAME,
@@ -176,7 +180,7 @@ pub fn info(app: &tauri::AppHandle) -> Value {
         "running": running.is_some(),
         "version": running.as_ref().map(|p| p.version.clone()).or(manifest.map(|m| m.version)),
         "dev": running.as_ref().is_some_and(|p| p.dev) || dev_exe().is_some(),
-        "error": LAST_ERROR.lock().unwrap().clone(),
+        "error": LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()).clone(),
         "platform": plugin_api::package::this_platform(),
     })
 }
@@ -204,7 +208,7 @@ pub fn install_package(app: &tauri::AppHandle, bytes: &[u8]) -> Result<String, S
     }
     stop();
     plugin_api::package::install(bytes, key, &dir).map_err(|e| e.to_string())?;
-    *LAST_ERROR.lock().unwrap() = None;
+    *LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()) = None;
     Ok(m.version)
 }
 
@@ -217,7 +221,7 @@ pub fn remove(app: &tauri::AppHandle) -> Result<(), String> {
             std::fs::remove_dir_all(&d).map_err(|e| e.to_string())?;
         }
     }
-    *LAST_ERROR.lock().unwrap() = None;
+    *LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()) = None;
     Ok(())
 }
 

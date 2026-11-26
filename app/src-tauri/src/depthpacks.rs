@@ -14,7 +14,7 @@ use tauri::{Emitter, Manager};
 static PACKS: RwLock<Option<Arc<DepthPacks>>> = RwLock::new(None);
 
 pub fn packs() -> Option<Arc<DepthPacks>> {
-    PACKS.read().unwrap().clone()
+    PACKS.read().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 /// `RACENAV_DEPTH_DIR`, else `C:\dev\tweedplot-data\depth` when the dev data folder exists,
@@ -36,7 +36,7 @@ pub fn open(app: &tauri::AppHandle) {
     for (f, e) in &p.problems {
         eprintln!("survey depths: {f}: {e}");
     }
-    *PACKS.write().unwrap() = Some(Arc::new(p));
+    *PACKS.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(p));
 }
 
 /// The image for /depthpack/z/x/y.png.
@@ -236,7 +236,7 @@ pub async fn depthpack_import(app: tauri::AppHandle, folder: bool) -> Result<Val
     // the page shows the import from here (it can take minutes from a USB stick)
     let total: u64 = files.iter().map(|f| std::fs::metadata(f).map(|m| m.len()).unwrap_or(0)).sum();
     let _ = app.emit("depthpack-import", json!({ "stage": "start", "count": files.len(), "bytes": total }));
-    *PACKS.write().unwrap() = None; // files being replaced are open
+    *PACKS.write().unwrap_or_else(|e| e.into_inner()) = None; // files being replaced are open
     let a = app.clone();
     let r = tauri::async_runtime::spawn_blocking(move || {
         let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
@@ -266,7 +266,7 @@ pub fn depthpack_delete(app: tauri::AppHandle, file: String) -> Result<(), Strin
     if file.contains(['/', '\\']) || file.contains("..") {
         return Err("bad name".into());
     }
-    *PACKS.write().unwrap() = None;
+    *PACKS.write().unwrap_or_else(|e| e.into_inner()) = None;
     let mut err = None;
     if let Ok(rd) = std::fs::read_dir(dir(&app)) {
         for e in rd.flatten() {

@@ -85,20 +85,20 @@ pub fn migrate_from_racenav() {
 }
 
 fn charts() -> Option<Arc<chart::ChartStore>> {
-    CHARTS.read().unwrap().clone()
+    CHARTS.read().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 /// The downloaded high-resolution depths (LINZ coastal elevation tiles), drawn as images.
 static HIRES: std::sync::RwLock<Option<Arc<chart::hires::Hires>>> = std::sync::RwLock::new(None);
 
 fn hires() -> Option<Arc<chart::hires::Hires>> {
-    HIRES.read().unwrap().clone()
+    HIRES.read().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 /// (Re)open the high-resolution depth tiles (quick: only their headers are read).
 fn open_hires(app: &tauri::AppHandle) {
     let h = chart::hires::Hires::open(&hires_dir(app));
-    *HIRES.write().unwrap() = Some(Arc::new(h));
+    *HIRES.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(h));
 }
 
 /// High-resolution depths (LINZ coastal elevation GeoTIFFs): `RACENAV_HIRES_DIR`, else
@@ -118,11 +118,11 @@ fn hires_dir(app: &tauri::AppHandle) -> PathBuf {
 static NZBATHY: std::sync::RwLock<Option<Arc<chart::nzbathy::NzBathy>>> = std::sync::RwLock::new(None);
 
 fn nzbathy() -> Option<Arc<chart::nzbathy::NzBathy>> {
-    NZBATHY.read().unwrap().clone()
+    NZBATHY.read().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 fn open_nzbathy(app: &tauri::AppHandle) {
-    *NZBATHY.write().unwrap() = chart::nzbathy::NzBathy::open(&nzbathy_dir(app)).map(Arc::new);
+    *NZBATHY.write().unwrap_or_else(|e| e.into_inner()) = chart::nzbathy::NzBathy::open(&nzbathy_dir(app)).map(Arc::new);
 }
 
 /// NIWA bathymetry store: `RACENAV_NZBATHY_DIR`, else `<dev data>\nzbathy`, else `<app data>\nzbathy`.
@@ -159,7 +159,7 @@ async fn nzbathy_import(app: tauri::AppHandle, path: String) -> Result<serde_jso
     let dir = nzbathy_dir(&app);
     let h = app.clone();
     let r = tauri::async_runtime::spawn_blocking(move || {
-        *NZBATHY.write().unwrap() = None; // the old store is replaced
+        *NZBATHY.write().unwrap_or_else(|e| e.into_inner()) = None; // the old store is replaced
         let progress = |stage: &str, done: u64, total: u64| {
             let _ = h.emit("data-progress", serde_json::json!({ "stage": stage, "done": done, "total": total }));
         };
@@ -185,7 +185,7 @@ fn nzbathy_status(app: tauri::AppHandle) -> serde_json::Value {
 
 #[tauri::command]
 fn nzbathy_delete(app: tauri::AppHandle) -> Result<(), String> {
-    *NZBATHY.write().unwrap() = None; // the file is open
+    *NZBATHY.write().unwrap_or_else(|e| e.into_inner()) = None; // the file is open
     let p = nzbathy_dir(&app).join(chart::nzbathy::FILE);
     let r = if p.exists() { std::fs::remove_file(&p).map_err(|e| e.to_string()) } else { Ok(()) };
     open_nzbathy(&app);
@@ -219,7 +219,7 @@ pub(crate) static SK_STATUS: Mutex<Option<(bool, String)>> = Mutex::new(None);
 
 #[tauri::command]
 fn sk_status() -> serde_json::Value {
-    match SK_STATUS.lock().unwrap().clone() {
+    match SK_STATUS.lock().unwrap_or_else(|e| e.into_inner()).clone() {
         Some((connected, detail)) => {
             serde_json::json!({ "connected": connected, "detail": detail })
         }
@@ -275,14 +275,14 @@ static JOBS: OnceLock<Mutex<std::collections::HashMap<String, Arc<std::sync::ato
 fn job_begin(job: &str) -> Arc<std::sync::atomic::AtomicBool> {
     let flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
     if !job.is_empty() {
-        JOBS.get_or_init(Default::default).lock().unwrap().insert(job.to_string(), flag.clone());
+        JOBS.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner()).insert(job.to_string(), flag.clone());
     }
     flag
 }
 
 fn job_end(job: &str) {
     if let Some(m) = JOBS.get() {
-        m.lock().unwrap().remove(job);
+        m.lock().unwrap_or_else(|e| e.into_inner()).remove(job);
     }
 }
 
@@ -308,7 +308,7 @@ fn job_progress(app: &tauri::AppHandle, job: &str) -> impl FnMut(&str, usize, us
 /// Stop a job (it finishes what it's doing and keeps what's done).
 #[tauri::command]
 fn job_cancel(job: String) {
-    if let Some(f) = JOBS.get().and_then(|m| m.lock().unwrap().get(&job).cloned()) {
+    if let Some(f) = JOBS.get().and_then(|m| m.lock().unwrap_or_else(|e| e.into_inner()).get(&job).cloned()) {
         f.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 }
@@ -372,14 +372,14 @@ fn rec_begin(resume: Option<&str>) -> Result<library::TrackSummary, String> {
     t.source = "log".into();
     let sum = t.summary();
     rec_settings_save(true, &t.id);
-    *REC.lock().unwrap() = Some(library::Recorder::new(t));
+    *REC.lock().unwrap_or_else(|e| e.into_inner()) = Some(library::Recorder::new(t));
     Ok(sum)
 }
 
 /// Save the recording track now (if it has new fixes).
 fn rec_flush() {
     let snapshot = {
-        let mut g = REC.lock().unwrap();
+        let mut g = REC.lock().unwrap_or_else(|e| e.into_inner());
         match g.as_mut() {
             Some(r) if r.is_dirty() => {
                 r.mark_saved(chrono_now());
@@ -413,7 +413,7 @@ fn rec_resume() {
 /// Offer a Signal K fix to the recorder; saves every 30 s.
 /// The track being recorded now, if any.
 pub(crate) fn rec_track_id() -> Option<String> {
-    REC.lock().unwrap().as_ref().map(|r| r.track.id.clone())
+    REC.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|r| r.track.id.clone())
 }
 
 pub(crate) fn rec_vessel(app: &tauri::AppHandle, v: &signalk::VesselState) {
@@ -425,7 +425,7 @@ pub(crate) fn rec_vessel(app: &tauri::AppHandle, v: &signalk::VesselState) {
     let now = chrono_now();
     let t = v.datetime.as_deref().and_then(library::tracks::parse_iso).unwrap_or(now);
     let (kept, due, stats) = {
-        let mut g = REC.lock().unwrap();
+        let mut g = REC.lock().unwrap_or_else(|e| e.into_inner());
         let Some(r) = g.as_mut() else { return };
         // the track says what its depths are measured below: the transducer when the source
         // gives that (with the transducer's depth from Settings › Vessel), else the surface
@@ -455,7 +455,7 @@ pub(crate) fn rec_vessel(app: &tauri::AppHandle, v: &signalk::VesselState) {
 
 #[tauri::command]
 fn rec_status() -> serde_json::Value {
-    let g = REC.lock().unwrap();
+    let g = REC.lock().unwrap_or_else(|e| e.into_inner());
     match g.as_ref() {
         Some(r) => {
             serde_json::json!({ "on": true, "id": r.track.id, "name": r.track.name, "stats": r.track.stats })
@@ -483,7 +483,7 @@ fn rec_start(fresh: bool) -> Result<serde_json::Value, String> {
 #[tauri::command]
 fn rec_stop() -> serde_json::Value {
     rec_flush();
-    let id = REC.lock().unwrap().take().map(|r| r.track.id).unwrap_or_default();
+    let id = REC.lock().unwrap_or_else(|e| e.into_inner()).take().map(|r| r.track.id).unwrap_or_default();
     rec_settings_save(false, &id);
     rec_status()
 }
@@ -498,7 +498,7 @@ fn tracks_list() -> Result<Vec<library::TrackSummary>, String> {
 #[tauri::command]
 fn track_get(id: String) -> Result<serde_json::Value, String> {
     let t = {
-        let g = REC.lock().unwrap();
+        let g = REC.lock().unwrap_or_else(|e| e.into_inner());
         match g.as_ref().filter(|r| r.track.id == id) {
             Some(r) => r.track.clone(),
             None => {
@@ -516,7 +516,7 @@ fn track_get(id: String) -> Result<serde_json::Value, String> {
 fn track_update(id: String, name: String, notes: String, colour: String) -> Result<library::TrackSummary, String> {
     rec_flush();
     let s = lib()?.update_track_info(&id, &name, &notes, &colour).map_err(es)?;
-    if let Some(r) = REC.lock().unwrap().as_mut().filter(|r| r.track.id == id) {
+    if let Some(r) = REC.lock().unwrap_or_else(|e| e.into_inner()).as_mut().filter(|r| r.track.id == id) {
         r.track.name = s.name.clone();
         r.track.notes = s.notes.clone();
         r.track.colour = s.colour.clone();
@@ -524,18 +524,10 @@ fn track_update(id: String, name: String, notes: String, colour: String) -> Resu
     Ok(s)
 }
 
-#[tauri::command]
-fn track_delete(id: String) -> Result<(), String> {
-    if REC.lock().unwrap().as_ref().is_some_and(|r| r.track.id == id) {
-        return Err("This track is being recorded: stop recording first.".into());
-    }
-    lib()?.delete_track(&id).map_err(es)
-}
-
 /// Delete many tracks (not the one being recorded); returns how many went.
 #[tauri::command]
 fn tracks_delete(ids: Vec<String>) -> Result<usize, String> {
-    let recording = REC.lock().unwrap().as_ref().map(|r| r.track.id.clone());
+    let recording = REC.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|r| r.track.id.clone());
     let l = lib()?;
     let mut n = 0;
     for id in ids.iter().filter(|id| Some(*id) != recording.as_ref()) {
@@ -544,15 +536,6 @@ fn tracks_delete(ids: Vec<String>) -> Result<usize, String> {
         }
     }
     Ok(n)
-}
-
-/// Write a track as GPX into the library's export folder; returns the path.
-#[tauri::command]
-fn track_export(id: String) -> Result<String, String> {
-    rec_flush();
-    let l = lib()?;
-    let t = l.track(&id).map_err(es)?;
-    Ok(l.write_export(&t.name, &t.to_gpx()).map_err(es)?.to_string_lossy().into_owned())
 }
 
 // ---------- tides (LINZ) ----------
@@ -575,7 +558,7 @@ fn tide_dir(app: &tauri::AppHandle) -> PathBuf {
 }
 
 pub(crate) fn tide_db() -> Arc<tides::TideDb> {
-    let mut g = TIDES.lock().unwrap();
+    let mut g = TIDES.lock().unwrap_or_else(|e| e.into_inner());
     if g.is_none() {
         let dir = TIDE_DIR.get().cloned().unwrap_or_else(|| PathBuf::from("tides"));
         *g = Some(Arc::new(tides::TideDb::open(&dir)));
@@ -735,7 +718,7 @@ async fn tides_download(app: tauri::AppHandle, years: Vec<i32>) -> Result<serde_
     .await
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())?;
-    *TIDES.lock().unwrap() = None; // re-read on next use
+    *TIDES.lock().unwrap_or_else(|e| e.into_inner()) = None; // re-read on next use
     Ok(serde_json::json!({ "written": n, "info": tides_info() }))
 }
 
@@ -764,7 +747,7 @@ fn tracking_dir(app: &tauri::AppHandle) -> PathBuf {
 
 fn with_race<T>(key: &str, f: impl FnOnce(&mut tracking::Race) -> Result<T, String>) -> Result<T, String> {
     let key = tracking::clean_key(key).map_err(|e| e.to_string())?;
-    let mut races = RACES.lock().unwrap();
+    let mut races = RACES.lock().unwrap_or_else(|e| e.into_inner());
     if !races.contains_key(&key) {
         let dir = TRACKING_DIR.get().ok_or("no tracking folder")?;
         races.insert(key.clone(), tracking::Race::open(dir, &key).map_err(|e| e.to_string())?);
@@ -941,7 +924,7 @@ fn s52_attach(app: &tauri::AppHandle, store: &chart::ChartStore) {
     match chart::s52::S52::open(&dir.join("s101-pc"), &dir.join("s101-fc").join(S101_FC)) {
         Ok(s) => {
             store.set_s52(Some(s));
-            for (k, v) in S52_CONTEXT.lock().unwrap().iter() {
+            for (k, v) in S52_CONTEXT.lock().unwrap_or_else(|e| e.into_inner()).iter() {
                 store.set_s52_context(k, v);
             }
         }
@@ -970,11 +953,11 @@ fn s52_warm(app: tauri::AppHandle, store: Arc<chart::ChartStore>) {
 #[tauri::command]
 fn chart_s52_context(app: tauri::AppHandle, id: String, value: String) {
     {
-        let mut c = S52_CONTEXT.lock().unwrap();
+        let mut c = S52_CONTEXT.lock().unwrap_or_else(|e| e.into_inner());
         c.retain(|(k, _)| *k != id);
         c.push((id.clone(), value.clone()));
     }
-    let store = CHARTS.read().unwrap().clone();
+    let store = CHARTS.read().unwrap_or_else(|e| e.into_inner()).clone();
     if let Some(store) = store {
         if store.set_s52_context(&id, &value) {
             s52_warm(app, store);
@@ -1003,22 +986,22 @@ async fn s52_cached(
     key: String,
     make: impl FnOnce(&portrayal::Catalogue) -> serde_json::Value + Send + 'static,
 ) -> Result<serde_json::Value, String> {
-    if let Some(v) = S52_CACHE.lock().unwrap().1.get(&key) {
+    if let Some(v) = S52_CACHE.lock().unwrap_or_else(|e| e.into_inner()).1.get(&key) {
         return Ok((**v).clone());
     }
     let dir = s101_dir(&app).ok_or("the S-101 portrayal catalogue is not installed")?;
     tauri::async_runtime::spawn_blocking(move || {
-        let cached = S52_CACHE.lock().unwrap().0.clone();
+        let cached = S52_CACHE.lock().unwrap_or_else(|e| e.into_inner()).0.clone();
         let cat = match cached {
             Some(c) => c,
             None => {
                 let c = Arc::new(portrayal::Catalogue::open(&dir.join("s101-pc")).map_err(|e| e.to_string())?);
-                S52_CACHE.lock().unwrap().0 = Some(c.clone());
+                S52_CACHE.lock().unwrap_or_else(|e| e.into_inner()).0 = Some(c.clone());
                 c
             }
         };
         let v = Arc::new(make(&cat));
-        S52_CACHE.lock().unwrap().1.insert(key, v.clone());
+        S52_CACHE.lock().unwrap_or_else(|e| e.into_inner()).1.insert(key, v.clone());
         Ok((*v).clone())
     })
     .await
@@ -1071,7 +1054,7 @@ pub(crate) fn open_charts(handle: tauri::AppHandle) {
 
 fn open_charts_started(handle: tauri::AppHandle) {
     CHARTS_READY.store(false, std::sync::atomic::Ordering::Release);
-    *CHART_ERROR.lock().unwrap() = None;
+    *CHART_ERROR.lock().unwrap_or_else(|e| e.into_inner()) = None;
     let dir = chart_dir(&handle);
     let sets_off = chart_sets_off(&handle);
     // the LINZ open data charts (TweedPlot's own chart) can be left out like an ENC set, so only
@@ -1180,13 +1163,13 @@ fn open_store(handle: tauri::AppHandle, dirs: Vec<PathBuf>, dir: PathBuf, prepar
             let world = store.has_world_land();
             s52_attach(&handle, &store);
             let store = Arc::new(store);
-            *CHARTS.write().unwrap() = Some(store.clone());
+            *CHARTS.write().unwrap_or_else(|e| e.into_inner()) = Some(store.clone());
             CHARTS_READY.store(true, std::sync::atomic::Ordering::Release);
             let _ = handle.emit("chart-ready", serde_json::json!({ "ready": true, "tables": n, "dir": dir, "world_land": world, "s52": store.s52_on() }));
             s52_warm(handle.clone(), store);
         }
         Err(e) => {
-            *CHART_ERROR.lock().unwrap() = Some(e.to_string());
+            *CHART_ERROR.lock().unwrap_or_else(|e| e.into_inner()) = Some(e.to_string());
             CHARTS_READY.store(true, std::sync::atomic::Ordering::Release);
             let _ = handle.emit("chart-ready", serde_json::json!({ "ready": true, "tables": 0, "dir": dir, "error": e.to_string() }));
         }
@@ -1497,7 +1480,7 @@ fn hires_delete(app: tauri::AppHandle, name: String) -> Result<(), String> {
     if name.contains(['/', '\\']) || name.contains("..") {
         return Err("bad name".into());
     }
-    *HIRES.write().unwrap() = None; // the files are open
+    *HIRES.write().unwrap_or_else(|e| e.into_inner()) = None; // the files are open
     let mut err = None;
     for e in std::fs::read_dir(&dir).map_err(|e| e.to_string())?.flatten() {
         let p = e.path();
@@ -1510,12 +1493,6 @@ fn hires_delete(app: tauri::AppHandle, name: String) -> Result<(), String> {
     }
     open_hires(&app);
     err.map_or(Ok(()), Err)
-}
-
-/// Height (m above NZVD2016) from the high-resolution depths at a place.
-#[tauri::command]
-fn hires_height(lon: f64, lat: f64) -> Option<f32> {
-    hires()?.height_at(lon, lat)
 }
 
 /// Download ETOPO 2022 depths for `area` at `arcsec` (15, 30, 60), write depth
@@ -1557,7 +1534,7 @@ fn data_etopo_delete(app: tauri::AppHandle, file: String) -> Result<(), String> 
         return Err("not a downloaded depth area".into());
     }
     // the store has the file open: reopen without it first, then delete
-    *CHARTS.write().unwrap() = None;
+    *CHARTS.write().unwrap_or_else(|e| e.into_inner()) = None;
     if let Err(e) = std::fs::remove_file(&p) {
         open_charts_started(app);
         return Err(e.to_string());
@@ -1880,7 +1857,7 @@ async fn chart_shallow_ahead(lat: f64, lon: f64, cog: f64, dist_m: f64, depth: f
 #[tauri::command]
 fn chart_info() -> serde_json::Value {
     let ready = CHARTS_READY.load(std::sync::atomic::Ordering::Acquire);
-    let error = CHART_ERROR.lock().unwrap().clone();
+    let error = CHART_ERROR.lock().unwrap_or_else(|e| e.into_inner()).clone();
     match charts() {
         Some(s) => serde_json::json!({
             "ready": ready,
@@ -2143,7 +2120,6 @@ pub fn run() {
             hires_download,
             hires_status,
             hires_delete,
-            hires_height,
             depthpacks::depthpack_status,
             depthpacks::depthpack_surveys,
             depthpacks::depthpack_height,
@@ -2168,7 +2144,6 @@ pub fn run() {
             imagery_cmd::images_reorder,
             imagery_cmd::images_order_by_scale,
             imagery_cmd::images_remove,
-            imagery_cmd::images_folder,
             imagery_cmd::s2_search,
             imagery_cmd::s2_thumbnail,
             imagery_cmd::s2_download,
@@ -2232,7 +2207,6 @@ pub fn run() {
             polar_save,
             polar_import,
             polar_open_folder,
-            polar_speed,
             polar_vmg_angles,
             route_compute,
             sk_status,
@@ -2241,14 +2215,12 @@ pub fn run() {
             live::ais_targets,
             live::ais_online,
             live::ow_register,
-            live::ais_status,
             live::ais_set_own,
             live::ais_tracks,
             live::replay_logs,
             live::replay_start,
             live::replay_control,
             live::replay_stop,
-            lib_info,
             marks_list,
             mark_save,
             mark_delete,
@@ -2264,7 +2236,6 @@ pub fn run() {
             routing_delete,
             gpx_export,
             gpx_write,
-            gpx_import,
             marks_delete,
             symbols_list,
             setter_open,
@@ -2295,7 +2266,6 @@ pub fn run() {
             library_undo_import,
             library_export,
             symbol_set,
-            marks_in,
             library_pick_file,
             library_import_path,
             library_current,
@@ -2329,9 +2299,7 @@ pub fn run() {
             tracks_list,
             track_get,
             track_update,
-            track_delete,
             tracks_delete,
-            track_export,
             yb_open,
             yb_refresh,
             yb_races,

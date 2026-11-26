@@ -43,7 +43,7 @@ impl PluginClient {
         let stdin = child.stdin.take().ok_or(Error::Closed)?;
         let stdout = child.stdout.take().ok_or(Error::Closed)?;
         let c = Self::from_streams(stdout, stdin);
-        *c.child.lock().unwrap() = Some(child);
+        *c.child.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
         Ok(c)
     }
 
@@ -64,18 +64,18 @@ impl PluginClient {
                         } else {
                             Err(h["error"].as_str().unwrap_or("the plugin refused").to_string())
                         };
-                        if let Some(tx) = p.lock().unwrap().remove(&id) {
+                        if let Some(tx) = p.lock().unwrap_or_else(|e| e.into_inner()).remove(&id) {
                             let _ = tx.send(reply);
                         }
                     } else if let Some(name) = h["event"].as_str() {
-                        if let Some(f) = ev.lock().unwrap().as_ref() {
+                        if let Some(f) = ev.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
                             f(name, &h["data"]);
                         }
                     }
                 }
                 a.store(false, Ordering::SeqCst);
                 // anyone still waiting hears that it stopped
-                for (_, tx) in p.lock().unwrap().drain() {
+                for (_, tx) in p.lock().unwrap_or_else(|e| e.into_inner()).drain() {
                     let _ = tx.send(Err("the plugin stopped".into()));
                 }
             })
@@ -97,7 +97,7 @@ impl PluginClient {
 
     /// Call `f(event, data)` for each event the plugin sends.
     pub fn on_event(&self, f: impl Fn(&str, &Value) + Send + Sync + 'static) {
-        *self.events.lock().unwrap() = Some(Box::new(f));
+        *self.events.lock().unwrap_or_else(|e| e.into_inner()) = Some(Box::new(f));
     }
 
     /// Send a request and wait for its reply (result and body).
@@ -107,11 +107,11 @@ impl PluginClient {
         }
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = mpsc::channel();
-        self.pending.lock().unwrap().insert(id, tx);
+        self.pending.lock().unwrap_or_else(|e| e.into_inner()).insert(id, tx);
         {
-            let mut w = self.writer.lock().unwrap();
+            let mut w = self.writer.lock().unwrap_or_else(|e| e.into_inner());
             if let Err(e) = write_frame(&mut *w, &json!({ "id": id, "method": method, "params": params }), body) {
-                self.pending.lock().unwrap().remove(&id);
+                self.pending.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
                 return Err(e.into());
             }
         }
@@ -120,7 +120,7 @@ impl PluginClient {
             Ok(Err(e)) if !self.alive() => Err(if e == "the plugin stopped" { Error::Closed } else { Error::Plugin(e) }),
             Ok(Err(e)) => Err(Error::Plugin(e)),
             Err(_) => {
-                self.pending.lock().unwrap().remove(&id);
+                self.pending.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
                 Err(Error::Timeout(method.to_string()))
             }
         }
@@ -133,7 +133,7 @@ impl PluginClient {
 
     /// Stop the plugin (it is also stopped when the client is dropped).
     pub fn stop(&self) {
-        if let Some(mut c) = self.child.lock().unwrap().take() {
+        if let Some(mut c) = self.child.lock().unwrap_or_else(|e| e.into_inner()).take() {
             let _ = c.kill();
             let _ = c.wait();
         }

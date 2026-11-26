@@ -13,8 +13,13 @@ use tokio::sync::watch;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SourceTransport {
-    Serial { port: String, baud_rate: u32 },
-    Tcp { address: String },
+    Serial {
+        port: String,
+        baud_rate: u32,
+    },
+    Tcp {
+        address: String,
+    },
     /// `send_to`: where sentences TweedPlot sends go (the autopilot output, acknowledgements), host:port;
     /// a broadcast address (192.168.1.255:10110) reaches every listener on the network.
     Udp {
@@ -217,12 +222,12 @@ static OUTBOUND: Mutex<BTreeMap<String, tokio::sync::mpsc::UnboundedSender<Vec<u
 
 fn outbound_open(id: &str) -> tokio::sync::mpsc::UnboundedReceiver<Vec<u8>> {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    OUTBOUND.lock().unwrap().insert(id.to_owned(), tx);
+    OUTBOUND.lock().unwrap_or_else(|e| e.into_inner()).insert(id.to_owned(), tx);
     rx
 }
 
 fn outbound_close(id: &str) {
-    OUTBOUND.lock().unwrap().remove(id);
+    OUTBOUND.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
 }
 
 /// Send the autopilot sentences for the leg being navigated out on a connected source: RMB, APB,
@@ -235,7 +240,7 @@ pub fn autopilot_send(source_id: String, talker: Option<String>, nav: marine_nme
     let hms = chrono::Utc::now().format("%H%M%S").to_string();
     let lines = marine_nmea::autopilot::sentences(&nav, &talker, &hms);
     let bytes: Vec<u8> = lines.concat().into_bytes();
-    let tx = OUTBOUND.lock().unwrap().get(&source_id).cloned();
+    let tx = OUTBOUND.lock().unwrap_or_else(|e| e.into_inner()).get(&source_id).cloned();
     match tx {
         Some(tx) => tx.send(bytes).map(|_| lines.len()).map_err(|_| "The connection has just closed".into()),
         None => Err("That connection isn't open (a UDP one sends only with a \"send to\" address)".into()),
@@ -247,12 +252,13 @@ pub fn autopilot_send(source_id: String, talker: Option<String>, nav: marine_nme
 /// sentences are sent this way.
 #[tauri::command]
 pub fn equipment_ack(source_id: String, body: String) -> Result<String, String> {
-    let ok = (body.starts_with("ACK,") || body.starts_with("ACN,")) && body.len() <= 60 && body.bytes().all(|c| c.is_ascii_alphanumeric() || b",.-".contains(&c));
+    let ok =
+        (body.starts_with("ACK,") || body.starts_with("ACN,")) && body.len() <= 60 && body.bytes().all(|c| c.is_ascii_alphanumeric() || b",.-".contains(&c));
     if !ok {
         return Err("Not an acknowledgement TweedPlot sends".into());
     }
     let line = marine_nmea::autopilot::frame(&format!("EC{body}"));
-    let tx = OUTBOUND.lock().unwrap().get(&source_id).cloned();
+    let tx = OUTBOUND.lock().unwrap_or_else(|e| e.into_inner()).get(&source_id).cloned();
     match tx {
         Some(tx) => tx.send(line.clone().into_bytes()).map(|_| line.trim_end().to_string()).map_err(|_| "The connection has just closed".into()),
         None => Err("That connection can't send (a UDP one needs a \"send to\" address)".into()),
@@ -320,7 +326,7 @@ impl MonitorRing {
 }
 
 fn record_monitor_frame(source: &SourceConfig, raw: String, checksum_valid: bool, error: Option<String>, gps: Option<String>, ignored: bool, ais: bool) {
-    let mut recent = RECENT.lock().unwrap();
+    let mut recent = RECENT.lock().unwrap_or_else(|e| e.into_inner());
     let ring = &mut recent.entry(source.id.clone()).or_insert_with(|| (source.name.clone(), MonitorRing::default())).1;
     ring.push(MonitorFrame { received_at: chrono::Utc::now(), raw, checksum_valid, error, gps, ignored }, ais);
 }
@@ -328,7 +334,7 @@ fn record_monitor_frame(source: &SourceConfig, raw: String, checksum_valid: bool
 /// Whether this run of the input is still the current one: after the inputs are restarted a
 /// task that is still winding down must not put its data into the new state.
 fn is_current(id: &str, generation: u64) -> bool {
-    STATUSES.lock().unwrap().get(id).is_some_and(|status| status.generation == generation)
+    STATUSES.lock().unwrap_or_else(|e| e.into_inner()).get(id).is_some_and(|status| status.generation == generation)
 }
 
 fn emit_status(app: &tauri::AppHandle, status: SourceStatus) {
@@ -338,7 +344,7 @@ fn emit_status(app: &tauri::AppHandle, status: SourceStatus) {
 }
 
 fn update_status(app: &tauri::AppHandle, id: &str, generation: u64, state: Option<&str>, detail: Option<String>, valid: bool, sentence: Option<&Sentence>) {
-    let mut statuses = STATUSES.lock().unwrap();
+    let mut statuses = STATUSES.lock().unwrap_or_else(|e| e.into_inner());
     let Some(status) = statuses.get_mut(id) else {
         return;
     };
@@ -372,7 +378,7 @@ fn update_status(app: &tauri::AppHandle, id: &str, generation: u64, state: Optio
     // a sentence counted: published with the next monitor tick, not one event per sentence
     if state.is_none() && sentence.is_some() {
         drop(statuses);
-        STATUS_DIRTY.lock().unwrap().insert(id.to_owned());
+        STATUS_DIRTY.lock().unwrap_or_else(|e| e.into_inner()).insert(id.to_owned());
         return;
     }
     let status = status.clone();
@@ -384,23 +390,23 @@ fn update_status(app: &tauri::AppHandle, id: &str, generation: u64, state: Optio
 
 /// Publish the source statuses and the sentences heard since the last time.
 fn publish_monitor(app: &tauri::AppHandle) {
-    let dirty = std::mem::take(&mut *STATUS_DIRTY.lock().unwrap());
+    let dirty = std::mem::take(&mut *STATUS_DIRTY.lock().unwrap_or_else(|e| e.into_inner()));
     let statuses: Vec<SourceStatus> = {
-        let all = STATUSES.lock().unwrap();
+        let all = STATUSES.lock().unwrap_or_else(|e| e.into_inner());
         dirty.iter().filter_map(|id| all.get(id).cloned()).collect()
     };
     let now = clock();
     for mut status in statuses {
-        if let Some(fs) = FIX_STREAMS.lock().unwrap().get(&status.id) {
+        if let Some(fs) = FIX_STREAMS.lock().unwrap_or_else(|e| e.into_inner()).get(&status.id) {
             status.gps_streams = if fs.count() > 1 { fs.summary(now) } else { Vec::new() };
         }
         emit_status(app, status);
     }
-    let recent = std::mem::take(&mut *RECENT.lock().unwrap());
+    let recent = std::mem::take(&mut *RECENT.lock().unwrap_or_else(|e| e.into_inner()));
     if recent.is_empty() {
         return;
     }
-    let hub = MULTIPLEXER.lock().unwrap();
+    let hub = MULTIPLEXER.lock().unwrap_or_else(|e| e.into_inner());
     for (id, (name, ring)) in recent {
         let frames = ring.into_frames();
         let observation = hub.sources.get(&id).map(|s| s.observation.clone()).unwrap_or_default();
@@ -421,7 +427,7 @@ fn publish_monitor(app: &tauri::AppHandle) {
 }
 
 fn invalid_sentence(app: &tauri::AppHandle, source: &SourceConfig, generation: u64, raw: String, error: &marine_nmea::ParseError) {
-    let mut statuses = STATUSES.lock().unwrap();
+    let mut statuses = STATUSES.lock().unwrap_or_else(|e| e.into_inner());
     let Some(status) = statuses.get_mut(&source.id) else {
         return;
     };
@@ -434,7 +440,7 @@ fn invalid_sentence(app: &tauri::AppHandle, source: &SourceConfig, generation: u
     status.last_sentence = Some(raw.clone());
     drop(statuses);
     record_monitor_frame(source, raw, false, Some(error.to_string()), None, false, false);
-    STATUS_DIRTY.lock().unwrap().insert(source.id.clone());
+    STATUS_DIRTY.lock().unwrap_or_else(|e| e.into_inner()).insert(source.id.clone());
     let _ = app;
 }
 
@@ -648,7 +654,7 @@ fn multiplexed_vessel(hub: &Multiplexer, selected: &BTreeMap<DataGroup, Option<S
 fn publish_multiplexed(app: &tauri::AppHandle, force: bool) {
     let now = Instant::now();
     let (vessel, group_sources, switches, changed) = {
-        let mut hub = MULTIPLEXER.lock().unwrap();
+        let mut hub = MULTIPLEXER.lock().unwrap_or_else(|e| e.into_inner());
         let selected = selected_sources(&mut hub, now);
         let changed = selected != hub.active_sources;
         let switches = DataGroup::ALL
@@ -670,7 +676,7 @@ fn publish_multiplexed(app: &tauri::AppHandle, force: bool) {
     };
 
     let group_details = {
-        let hub = MULTIPLEXER.lock().unwrap();
+        let hub = MULTIPLEXER.lock().unwrap_or_else(|e| e.into_inner());
         DataGroup::ALL
             .iter()
             .filter_map(|group| {
@@ -680,10 +686,10 @@ fn publish_multiplexed(app: &tauri::AppHandle, force: bool) {
             })
             .collect::<Vec<_>>()
     };
-    let any_connected = STATUSES.lock().unwrap().values().any(|status| status.state == "connected" || status.state == "receiving");
+    let any_connected = STATUSES.lock().unwrap_or_else(|e| e.into_inner()).values().any(|status| status.state == "connected" || status.state == "receiving");
     for (group, from, to) in switches {
         let (from_name, to_name) = {
-            let hub = MULTIPLEXER.lock().unwrap();
+            let hub = MULTIPLEXER.lock().unwrap_or_else(|e| e.into_inner());
             let source_name =
                 |id: &str| hub.source_configs.iter().find(|source| source.id == id).map(|source| source.name.clone()).unwrap_or_else(|| id.to_owned());
             (source_name(&from), source_name(&to))
@@ -749,7 +755,12 @@ fn consume_bytes(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
                 record_monitor_frame(source, sentence.raw.clone(), sentence.checksum_valid, None, gps, verdict == Verdict::Ignore, ais);
                 if ais {
                     // AIS: a target for the chart, not navigation data
-                    let update = AIS_DECODERS.lock().unwrap().entry(source.id.clone()).or_default().push(&sentence.formatter, &sentence.fields);
+                    let update = AIS_DECODERS
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .entry(source.id.clone())
+                        .or_default()
+                        .push(&sentence.formatter, &sentence.fields);
                     if let Some(update) = update {
                         crate::live::merge_ais(update);
                     }
@@ -763,7 +774,7 @@ fn consume_bytes(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
                     radar_target(app, source, &sentence);
                 } else {
                     observation.apply(&sentence);
-                    let mut hub = MULTIPLEXER.lock().unwrap();
+                    let mut hub = MULTIPLEXER.lock().unwrap_or_else(|e| e.into_inner());
                     let source_observation = hub.sources.entry(source.id.clone()).or_default();
                     source_observation.observation = observation.clone();
                     update_depth_seen(source_observation, &sentence, Instant::now());
@@ -788,11 +799,11 @@ fn dsc_sentence(app: &tauri::AppHandle, source: &SourceConfig, sentence: &Senten
     use marine_nmea::dsc;
     let call = if sentence.formatter == "DSC" {
         let Some(call) = dsc::parse_dsc(&sentence.fields) else { return };
-        DSC_LAST.lock().unwrap().insert(call.mmsi.clone(), call.clone());
+        DSC_LAST.lock().unwrap_or_else(|e| e.into_inner()).insert(call.mmsi.clone(), call.clone());
         call
     } else {
         let Some((mmsi, dlat, dlon)) = dsc::parse_dse(&sentence.fields) else { return };
-        let mut last = DSC_LAST.lock().unwrap();
+        let mut last = DSC_LAST.lock().unwrap_or_else(|e| e.into_inner());
         let Some(call) = last.get_mut(&mmsi) else { return };
         let (Some(lat), Some(lon)) = (call.lat, call.lon) else { return };
         let (lat, lon) = dsc::refine(lat, lon, dlat, dlon);
@@ -811,10 +822,9 @@ fn equipment_alert(app: &tauri::AppHandle, source: &SourceConfig, sentence: &Sen
     use marine_nmea::alerts;
     let alert = if sentence.formatter == "ALR" { alerts::parse_alr(&sentence.fields) } else { alerts::parse_alf(&sentence.fields) };
     let Some(alert) = alert else { return };
-    if let Err(error) = app.emit(
-        "equipment-alert",
-        serde_json::json!({ "alert": alert, "talker": sentence.talker, "source": source.name, "sourceId": source.id }),
-    ) {
+    if let Err(error) =
+        app.emit("equipment-alert", serde_json::json!({ "alert": alert, "talker": sentence.talker, "source": source.name, "sourceId": source.id }))
+    {
         eprintln!("Could not publish an equipment alert: {error}");
     }
 }
@@ -828,7 +838,7 @@ fn radar_target(app: &tauri::AppHandle, source: &SourceConfig, sentence: &Senten
     let parsed = if sentence.formatter == "TTM" { radar::parse_ttm(&sentence.fields) } else { radar::parse_tll(&sentence.fields) };
     let Some(t) = parsed else { return };
     let merged = {
-        let mut all = RADAR.lock().unwrap();
+        let mut all = RADAR.lock().unwrap_or_else(|e| e.into_inner());
         let entry = all.entry(source.id.clone()).or_default().entry(t.number).or_insert_with(|| t.clone());
         if sentence.formatter == "TTM" {
             // the TTM's movement and the latest TLL position kept together
@@ -854,7 +864,7 @@ fn radar_target(app: &tauri::AppHandle, source: &SourceConfig, sentence: &Senten
 /// Also which receiver it was ("A", "B" …), when there is more than one on the input.
 fn fix_verdict(app: &tauri::AppHandle, source: &SourceConfig, sentence: &Sentence) -> (Verdict, Option<String>) {
     let (verdict, switch, gps) = {
-        let mut all = FIX_STREAMS.lock().unwrap();
+        let mut all = FIX_STREAMS.lock().unwrap_or_else(|e| e.into_inner());
         let fs = all.entry(source.id.clone()).or_insert_with(|| {
             let mut fs = FixStreams::default();
             fs.set_pinned(source.gps_stream.clone());
@@ -882,10 +892,10 @@ pub fn nmea_gps_stream_set(app: tauri::AppHandle, source_id: String, key: Option
     let source = settings.nmea_sources.iter_mut().find(|s| s.id == source_id).ok_or("No such NMEA input")?;
     source.gps_stream.clone_from(&key);
     crate::settings::settings_save(app, settings)?;
-    if let Some(cfg) = MULTIPLEXER.lock().unwrap().source_configs.iter_mut().find(|s| s.id == source_id) {
+    if let Some(cfg) = MULTIPLEXER.lock().unwrap_or_else(|e| e.into_inner()).source_configs.iter_mut().find(|s| s.id == source_id) {
         cfg.gps_stream.clone_from(&key);
     }
-    if let Some(fs) = FIX_STREAMS.lock().unwrap().get_mut(&source_id) {
+    if let Some(fs) = FIX_STREAMS.lock().unwrap_or_else(|e| e.into_inner()).get_mut(&source_id) {
         fs.set_pinned(key);
     }
     Ok(())
@@ -915,7 +925,7 @@ pub async fn nmea_capture_begin(app: tauri::AppHandle, header: String, suggest: 
         path.set_extension("txt");
     }
     std::fs::write(&path, header).map_err(|error| format!("Could not write NMEA capture {}: {error}", path.display()))?;
-    *CAPTURE.lock().unwrap() = Some(path.clone());
+    *CAPTURE.lock().unwrap_or_else(|e| e.into_inner()) = Some(path.clone());
     Ok(Some(path.to_string_lossy().into_owned()))
 }
 
@@ -923,7 +933,7 @@ pub async fn nmea_capture_begin(app: tauri::AppHandle, header: String, suggest: 
 #[tauri::command]
 pub fn nmea_capture_append(text: String) -> Result<(), String> {
     use std::io::Write;
-    let guard = CAPTURE.lock().unwrap();
+    let guard = CAPTURE.lock().unwrap_or_else(|e| e.into_inner());
     let Some(path) = guard.as_ref() else { return Err("No NMEA capture is running".into()) };
     let mut f = std::fs::OpenOptions::new().append(true).open(path).map_err(|error| format!("Could not write NMEA capture {}: {error}", path.display()))?;
     f.write_all(text.as_bytes()).map_err(|error| format!("Could not write NMEA capture {}: {error}", path.display()))
@@ -932,7 +942,7 @@ pub fn nmea_capture_append(text: String) -> Result<(), String> {
 /// End the capture: `discard` deletes the file (a cancelled capture leaves nothing behind).
 #[tauri::command]
 pub fn nmea_capture_end(discard: bool) -> Result<(), String> {
-    let Some(path) = CAPTURE.lock().unwrap().take() else { return Ok(()) };
+    let Some(path) = CAPTURE.lock().unwrap_or_else(|e| e.into_inner()).take() else { return Ok(()) };
     if discard {
         std::fs::remove_file(&path).map_err(|error| format!("Could not delete {}: {error}", path.display()))?;
     }
@@ -949,16 +959,16 @@ fn start_sources(app: &tauri::AppHandle, sources: &[SourceConfig], mut arbitrati
     }
     let mux_enabled = sources.iter().any(|source| source.enabled);
     let navigation_source = mux_enabled.then(|| serde_json::json!({ "id": "nmea-multiplexer", "name": "NMEA multiplexer" }));
-    *NAVIGATION_SOURCE.lock().unwrap() = navigation_source.as_ref().map(|_| "nmea-multiplexer".to_owned());
+    *NAVIGATION_SOURCE.lock().unwrap_or_else(|e| e.into_inner()) = navigation_source.as_ref().map(|_| "nmea-multiplexer".to_owned());
     {
-        let mut hub = MULTIPLEXER.lock().unwrap();
+        let mut hub = MULTIPLEXER.lock().unwrap_or_else(|e| e.into_inner());
         hub.sources.clear();
-        AIS_DECODERS.lock().unwrap().clear();
-        RECENT.lock().unwrap().clear();
-        STATUS_DIRTY.lock().unwrap().clear();
+        AIS_DECODERS.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        RECENT.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        STATUS_DIRTY.lock().unwrap_or_else(|e| e.into_inner()).clear();
         hub.active_sources.clear();
         hub.source_configs = sources.to_vec();
-        let mut streams = FIX_STREAMS.lock().unwrap();
+        let mut streams = FIX_STREAMS.lock().unwrap_or_else(|e| e.into_inner());
         streams.clear();
         for source in sources.iter().filter(|s| s.enabled) {
             let mut fs = FixStreams::default();
@@ -996,13 +1006,13 @@ fn start_sources(app: &tauri::AppHandle, sources: &[SourceConfig], mut arbitrati
             }
         });
     }
-    let mut running = SOURCES.lock().unwrap();
+    let mut running = SOURCES.lock().unwrap_or_else(|e| e.into_inner());
     for stop in running.drain(..) {
         let _ = stop.send(true);
     }
 
     let enabled = sources.iter().filter(|source| source.enabled);
-    let mut statuses = STATUSES.lock().unwrap();
+    let mut statuses = STATUSES.lock().unwrap_or_else(|e| e.into_inner());
     statuses.clear();
     let mut initial_statuses = Vec::new();
     let mut to_start = Vec::new();
@@ -1041,7 +1051,7 @@ fn start_sources(app: &tauri::AppHandle, sources: &[SourceConfig], mut arbitrati
 }
 
 pub(crate) fn navigation_source_id() -> Option<String> {
-    NAVIGATION_SOURCE.lock().unwrap().clone()
+    NAVIGATION_SOURCE.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 async fn run_source(app: tauri::AppHandle, source: SourceConfig, generation: u64, mut stop: watch::Receiver<bool>) {
@@ -1131,7 +1141,14 @@ async fn run_tcp(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
     }
 }
 
-async fn run_udp(app: &tauri::AppHandle, source: &SourceConfig, generation: u64, bind_address: String, send_to: Option<String>, stop: &mut watch::Receiver<bool>) {
+async fn run_udp(
+    app: &tauri::AppHandle,
+    source: &SourceConfig,
+    generation: u64,
+    bind_address: String,
+    send_to: Option<String>,
+    stop: &mut watch::Receiver<bool>,
+) {
     let mut framer = Framer::default();
     let mut observation = Observation::default();
     let mut buf = [0u8; 65536];
@@ -1159,7 +1176,15 @@ async fn run_udp(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
                     Some(addr)
                 }
                 None => {
-                    update_status(app, &source.id, generation, Some("error"), Some(format!("Can't send to {to}: not a host:port this computer can reach; retrying")), false, None);
+                    update_status(
+                        app,
+                        &source.id,
+                        generation,
+                        Some("error"),
+                        Some(format!("Can't send to {to}: not a host:port this computer can reach; retrying")),
+                        false,
+                        None,
+                    );
                     if *stop.borrow() || wait_or_stop(stop, Duration::from_secs(5)).await {
                         break;
                     }

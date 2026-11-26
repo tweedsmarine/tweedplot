@@ -143,7 +143,7 @@ impl<'a> Converter<'a> {
     /// Where S-57 attribute `acronym` goes in feature type `code`.
     fn place(&self, code: &str, acronym: &str) -> Option<Place> {
         let key = (code.to_string(), acronym.to_string());
-        if let Some(p) = self.places.lock().unwrap().get(&key) {
+        if let Some(p) = self.places.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
             return p.clone();
         }
         let mut found = None;
@@ -169,7 +169,7 @@ impl<'a> Converter<'a> {
             }
             found = best;
         }
-        self.places.lock().unwrap().insert(key, found.clone());
+        self.places.lock().unwrap_or_else(|e| e.into_inner()).insert(key, found.clone());
         found
     }
 

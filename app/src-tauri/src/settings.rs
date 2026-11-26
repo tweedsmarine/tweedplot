@@ -198,7 +198,8 @@ fn validate(s: &Settings) -> Result<(), String> {
                     return Err(format!("Source '{}' needs a valid UDP bind address.", source.name));
                 }
                 if let Some(to) = send_to.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
-                    let port_ok = to.rsplit_once(':').and_then(|(h, p)| (!h.is_empty()).then_some(p)).and_then(|p| p.parse::<u16>().ok()).is_some_and(|p| p > 0);
+                    let port_ok =
+                        to.rsplit_once(':').and_then(|(h, p)| (!h.is_empty()).then_some(p)).and_then(|p| p.parse::<u16>().ok()).is_some_and(|p| p > 0);
                     if !port_ok || to.chars().count() > 255 {
                         return Err(format!("Source '{}': \"send to\" needs a host:port, such as 192.168.1.255:10110.", source.name));
                     }

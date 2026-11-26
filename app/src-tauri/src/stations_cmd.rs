@@ -10,13 +10,13 @@ const FRESH_S: i64 = 600;
 
 fn cached(key: &str, fetch: impl FnOnce() -> stations::Result<Vec<stations::Obs>>) -> stations::Result<Vec<stations::Obs>> {
     let now = chrono::Utc::now().timestamp();
-    if let Some((t, v)) = CACHE.lock().unwrap().get_or_insert_with(HashMap::new).get(key) {
+    if let Some((t, v)) = CACHE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).get(key) {
         if now - t < FRESH_S {
             return Ok(v.clone());
         }
     }
     let v = fetch()?;
-    CACHE.lock().unwrap().get_or_insert_with(HashMap::new).insert(key.to_string(), (now, v.clone()));
+    CACHE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(key.to_string(), (now, v.clone()));
     Ok(v)
 }
 
@@ -26,7 +26,7 @@ fn cached(key: &str, fetch: impl FnOnce() -> stations::Result<Vec<stations::Obs>
 pub async fn stations_latest(bbox: [f64; 4], sources: Vec<String>, refresh: Option<bool>) -> serde_json::Value {
     tauri::async_runtime::spawn_blocking(move || {
         if refresh.unwrap_or(false) {
-            CACHE.lock().unwrap().take();
+            CACHE.lock().unwrap_or_else(|e| e.into_inner()).take();
         }
         let mut obs = Vec::new();
         let mut errors = serde_json::Map::new();

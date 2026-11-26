@@ -154,7 +154,11 @@ impl Polar {
         let f = |v: f64| {
             let s = format!("{v:.3}");
             let s = s.trim_end_matches('0').trim_end_matches('.');
-            if s.is_empty() || s == "-0" { "0".to_string() } else { s.to_string() }
+            if s.is_empty() || s == "-0" {
+                "0".to_string()
+            } else {
+                s.to_string()
+            }
         };
         let mut out = String::from("TWA\\TWS");
         for t in &self.tws {
