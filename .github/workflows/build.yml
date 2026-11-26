@@ -1,9 +1,11 @@
-# Windows installers and the Mac app, only when asked (pushes alone build nothing, so they cost nothing):
-#  - by hand: GitHub › Actions › build › Run workflow (choose which Windows installers and
-#    which Mac build), or `gh workflow run build.yml -f arch=arm64 -f macos=none` from a terminal;
-#  - or by putting [build] (Windows) and/or [build-mac] (Mac) in the message of the last commit pushed.
+# Windows installers, the Mac app and the Linux packages, only when asked (pushes alone build
+# nothing, so they cost nothing):
+#  - by hand: GitHub › Actions › build › Run workflow (choose which Windows installers, which Mac
+#    build and whether Linux), or `gh workflow run build.yml -f arch=arm64 -f macos=none -f linux=false`;
+#  - or by putting [build] (Windows), [build-mac] (Mac) and/or [build-linux] (Linux) in the message
+#    of the last commit pushed.
 # The installers are attached to the run as artifacts: Actions › the run › Artifacts.
-# Tagged releases are release.yml (Windows only for now).
+# Tagged releases are release.yml (Windows, Mac and Linux).
 name: build
 
 on:
@@ -19,6 +21,10 @@ on:
         type: choice
         options: [universal, arm64, x64, none]
         default: universal
+      linux:
+        description: Linux x64 packages (.deb, .rpm, .AppImage)
+        type: boolean
+        default: false
       tests:
         description: Run the Rust tests first
         type: boolean
@@ -37,12 +43,14 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.head_commit.message, '[build]') ||
-      contains(github.event.head_commit.message, '[build-mac]')
+      contains(github.event.head_commit.message, '[build-mac]') ||
+      contains(github.event.head_commit.message, '[build-linux]')
     runs-on: ubuntu-latest
     outputs:
       windows: ${{ steps.m.outputs.windows }}
       mac: ${{ steps.m.outputs.mac }}
       mac_targets: ${{ steps.m.outputs.mac_targets }}
+      linux: ${{ steps.m.outputs.linux }}
       tests: ${{ steps.m.outputs.tests }}
     steps:
       - id: m
@@ -52,15 +60,18 @@ jobs:
           MSG: ${{ github.event.head_commit.message }}
           IN_ARCH: ${{ github.event.inputs.arch }}
           IN_MAC: ${{ github.event.inputs.macos }}
+          IN_LINUX: ${{ github.event.inputs.linux }}
           IN_TESTS: ${{ github.event.inputs.tests }}
         run: |
           if [ "$EVENT" = workflow_dispatch ]; then
-            arch="$IN_ARCH"; mac="$IN_MAC"; tests="$IN_TESTS"
+            arch="$IN_ARCH"; mac="$IN_MAC"; linux="$IN_LINUX"; tests="$IN_TESTS"
           else
-            arch=none; mac=none; tests=true
+            arch=none; mac=none; linux=false; tests=true
             case "$MSG" in *"[build]"*) arch=both ;; esac
             case "$MSG" in *"[build-mac]"*) mac=universal ;; esac
+            case "$MSG" in *"[build-linux]"*) linux=true ;; esac
           fi
+          echo "linux=${linux:-false}" >> "$GITHUB_OUTPUT"
           x64='{"arch":"x64","runner":"windows-latest"}'
           arm='{"arch":"arm64","runner":"windows-11-arm"}'
           case "$arch" in
@@ -176,5 +187,45 @@ jobs:
         with:
           name: TweedPlot-macos-${{ needs.plan.outputs.mac }}-${{ github.sha }}
           path: target/${{ needs.plan.outputs.mac }}/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 30
+
+  # Linux x64 packages, on the older Ubuntu so they run on older distributions too (glibc).
+  # Linux-only settings (deb, rpm, AppImage, icons) are in app/src-tauri/tauri.linux.conf.json.
+  linux:
+    needs: [plan, test]
+    if: always() && needs.plan.result == 'success' && needs.plan.outputs.linux == 'true' && (needs.test.result == 'success' || needs.test.result == 'skipped')
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: System libraries (WebKitGTK and the bundlers' tools)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-x64
+      - name: Front-end dependencies
+        working-directory: app
+        run: npm ci
+      - name: Build the packages
+        uses: tauri-apps/tauri-action@v1
+        with:
+          projectPath: app
+          tauriScript: npx tauri
+      - name: Keep the packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: TweedPlot-linux-x64-${{ github.sha }}
+          path: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/rpm/*.rpm
+            target/release/bundle/appimage/*.AppImage
           if-no-files-found: error
           retention-days: 30

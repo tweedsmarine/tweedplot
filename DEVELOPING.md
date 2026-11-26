@@ -54,7 +54,7 @@ Configure NMEA inputs and the multiplexer in Settings. Enabled sources are monit
 ## Windows builds (GitHub Actions)
 
 - `.github/workflows/build.yml`: builds only when asked, so ordinary pushes use no Actions minutes. Either **Actions › build › Run workflow** (choose **both**, **x64** or **arm64**, and whether to run the tests first), `gh workflow run build.yml -f arch=arm64` from a terminal, or put `[build]` in the message of the last commit you push. It runs the Rust tests (on Linux: half the Windows rate) and builds the NSIS installers for **x64** (`windows-latest`) and **ARM64** (`windows-11-arm`, native). They are on the run page under Artifacts for 30 days.
-- `.github/workflows/release.yml`: push a tag `vX.Y.Z` (matching `version` in `app/src-tauri/tauri.conf.json`) and both installers go on a draft release, with the updater files; check it, add notes, Publish. Publishing is what offers it to installed copies (below).
+- `.github/workflows/release.yml`: push a tag `vX.Y.Z` (matching `version` in `app/src-tauri/tauri.conf.json`) and every installer goes on one draft release, with the updater files: Windows x64 and ARM64, the universal Mac disk image and the Linux x64 packages. Its last job, **check**, says whether `latest.json` has an update for every platform (builds finishing together can overwrite each other's entries; if one is missing, run it again before publishing). Check the draft, add notes, Publish. Publishing is what offers it to installed copies (below).
 - The installers are not code-signed: SmartScreen warns until they are (More info › Run anyway).
 
 ## Mac builds (GitHub Actions)
@@ -62,7 +62,15 @@ Configure NMEA inputs and the multiplexer in Settings. Enabled sources are monit
 - `build.yml` builds a Mac app as well when asked: **Run workflow** › **macOS** (**universal**: one app for Apple silicon and Intel Macs; **arm64**; **x64**; or **none**), `gh workflow run build.yml -f macos=universal -f arch=none` from a terminal (Mac only), or put `[build-mac]` in the message of the last commit you push (`[build]` and `[build-mac]` together: both). It runs on `macos-latest` (Apple silicon) and the `.dmg` is on the run page under Artifacts for 30 days.
 - Mac-only settings are in `app/src-tauri/tauri.macos.conf.json`, which Tauri merges over `tauri.conf.json` when building on a Mac: the `.app` and `.dmg` bundles (the Windows build stays NSIS only), the `.icns` icon, macOS 11 or later, and an ad-hoc signature (`signingIdentity: "-"`).
 - The app is not signed with an Apple Developer ID or notarised. The ad-hoc signature lets it run on Apple silicon, but Gatekeeper still blocks the first start ("Apple could not verify…"): Done, then System Settings › Privacy & Security › Open Anyway (or `xattr -dr com.apple.quarantine /Applications/TweedPlot.app`). Proper signing needs an Apple Developer account (US$99 a year).
-- Not yet in `release.yml` (tagged releases and updates are Windows only) until a Mac build has been tried.
+- `release.yml` builds the universal app for every tagged release, with its updater file (`.app.tar.gz` and `.sig`), so installed Macs update themselves like Windows PCs. Try a `build.yml` Mac run first when the Mac build has changed.
+
+## Linux builds (GitHub Actions)
+
+- `build.yml` builds the Linux x64 packages when asked: **Run workflow** › tick **Linux**, `gh workflow run build.yml -f linux=true -f arch=none -f macos=none`, or `[build-linux]` in the message of the last commit pushed. `release.yml` builds them for every tagged release.
+- They are built on Ubuntu 22.04, so they run on that and later (and other distributions of the same age or newer): `.deb` for Debian, Ubuntu and Mint, `.rpm` for Fedora and openSUSE, and an `.AppImage` for anything else (`chmod +x`, then run it). They need WebKitGTK 4.1, which the .deb and .rpm bring in; most current desktops have it for the AppImage.
+- Linux-only settings are in `app/src-tauri/tauri.linux.conf.json` (the three bundles, icons, the Navigation category).
+- Updates: only the AppImage updates itself (the updater replaces the file). A .deb or .rpm copy is offered the update but is updated by installing the new package.
+- Serial ports are `/dev/ttyUSB0`, `/dev/ttyACM0` and so on; the user must be in the `dialout` group (`sudo usermod -aG dialout $USER`, then log out and in). The S-63 Charts plugin is Windows only.
 
 ### Updates
 
