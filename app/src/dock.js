@@ -23,12 +23,15 @@ export function setupDock(map) {
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* ignore */ } };
 
   const sideW = () => Math.min(window.innerWidth * 0.7, Math.max(280, prefs.width ?? place.width ?? 460));
+  // a view can ask for more height than the dock has been given (the polar's plot and table); once the
+  // dock is dragged while that view is shown, its own height is kept
+  const height = () => Math.min(window.innerHeight * 0.7, place.minHeight ? (prefs.heights?.[current] ?? Math.max(prefs.height, place.minHeight)) : prefs.height);
   function layout() {
     const right = !!current && place.side === "right";
     document.documentElement.classList.toggle("dock-right", right);
-    if (right) { el.style.height = ""; el.style.width = `${sideW()}px`; } else { el.style.width = ""; el.style.height = `${prefs.height}px`; }
+    if (right) { el.style.height = ""; el.style.width = `${sideW()}px`; } else { el.style.width = ""; el.style.height = `${height()}px`; }
     // beside the chart the dock takes width from the chart, not height
-    document.documentElement.style.setProperty("--dock-h", current && !right ? `${prefs.height}px` : "0px");
+    document.documentElement.style.setProperty("--dock-h", current && !right ? `${height()}px` : "0px");
     document.documentElement.style.setProperty("--dock-w", right ? `${sideW()}px` : "0px");
     window.dispatchEvent(new Event("racenav-layout")); // floating panels keep clear of the dock
   }
@@ -64,10 +67,13 @@ export function setupDock(map) {
   grip.addEventListener("pointerdown", (e) => {
     grip.setPointerCapture(e.pointerId);
     const side = place.side === "right";
-    const x0 = e.clientX, y0 = e.clientY, h0 = prefs.height, w0 = sideW();
+    const x0 = e.clientX, y0 = e.clientY, h0 = height(), w0 = sideW();
     const move = (ev) => {
       if (side) prefs.width = Math.max(280, Math.min(window.innerWidth * 0.7, w0 + (x0 - ev.clientX)));
-      else prefs.height = Math.max(120, Math.min(window.innerHeight * 0.7, h0 + (y0 - ev.clientY)));
+      else {
+        const h = Math.max(120, Math.min(window.innerHeight * 0.7, h0 + (y0 - ev.clientY)));
+        if (place.minHeight) prefs.heights = { ...prefs.heights, [current]: h }; else prefs.height = h;
+      }
       layout();
     };
     const up = () => { grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); save(); if (side) refresh(); };

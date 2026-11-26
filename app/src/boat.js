@@ -1,5 +1,5 @@
 // Routing › Boat and polar: polar, efficiency, manoeuvre costs (kept per PC).
-// Future home of the polar view and polar tuning (with a dock view for the plot).
+// The polar's plot and table editor is polaredit.js (in the dock).
 import { invoke } from "@tauri-apps/api/core";
 
 const KEY = "racenav.boat";
@@ -59,6 +59,12 @@ export function setupBoat() {
     $(id).onchange = (e) => { boat[key] = e.target.checked; save(); window.dispatchEvent(new Event("racenav-boat")); };
   }
   loadPolars();
+  // a polar saved in the polar editor: the list again, and the saved copy used if it replaced the one in use
+  window.addEventListener("racenav-polars", async ({ detail }) => {
+    if (detail?.use && detail.path) boat.polar = detail.path;
+    await loadPolars();
+    window.dispatchEvent(new Event("racenav-boat"));
+  });
   window.addEventListener("racenav-vessel-profile", ({ detail }) => {
     boat = { ...boat, ...detail };
     window.dispatchEvent(new Event("racenav-boat"));

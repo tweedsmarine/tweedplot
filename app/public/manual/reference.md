@@ -780,6 +780,14 @@ TWA\TWS	4	6	8	10	12	16	20
 - **Comments**: blank lines and lines starting with `#` are ignored, so you can note the source and date at the top.
 - **The file name** is the polar's name in the list.
 
+*Viewing and editing.* **View and edit…** under Polar opens the polar in the dock: a plot on the left (a curve for each wind speed, coloured light to strong; a dot at each curve's best upwind and downwind VMG; point at it to read the TWA, TWS and boat speed) and the table on the right, edited like a spreadsheet:
+
+- Click a cell and type; **Enter** moves down, **Tab** across, the arrow keys any way. **Esc** undoes the cell you are typing in, **Ctrl+Z** and **Ctrl+Y** undo and redo.
+- Drag across cells, or Shift+click or Shift+arrow, to select a block. **Ctrl+C** copies it for a spreadsheet; **Ctrl+V** pastes a block from one at the cell you are in. To bring in a whole table, headings and all, paste it onto **TWA \ TWS** in the top-left corner (a click there selects the whole table).
+- **Scale…** multiplies the selected speeds, or all of them, by a percentage. **+ Angle** and **+ Speed** add a row or column after the selected one, filled in from the table; **− Angle** and **− Speed** delete the selected rows or columns. Change a heading and the table puts itself back in order.
+- Changed cells are shaded and the saved curve is shown dashed beside the edited one, so you can see what you have done. The rows under the table give each wind speed's best beat and run angle and VMG. A cell that can't be right (a wind speed out of order, a negative speed) is outlined and the polar can't be saved until it is fixed.
+- **Save** writes into your polar folder as a `.csv`. A shipped polar is never changed: saving it makes your copy with the same name, which is used from then on (the one in use stays in use). **Save as…** saves under a new name. **Revert** goes back to the polar as saved.
+
 *Between and beyond the numbers.* Speeds between the table's angles and wind speeds are interpolated in a straight line both ways. Below the lightest wind speed the speed falls in proportion to zero at 0 kn (unless the table has a 0 kn column, as a power polar does). Above the strongest it holds the last column: TweedPlot never extrapolates upwards. Angles inside the first row (inside 40° in the example) are interpolated towards the nearest row; put a row of zeros at 0° (or at the angle the boat stops sailing, about 30° for most yachts) so the routing doesn't think the boat can point higher than it can.
 
 *Where to get one.*
@@ -797,8 +805,8 @@ TWA\TWS	4	6	8	10	12	16	20
 1. Start from the nearest you can find: your boat's ORC certificate, a sister ship's, or a similar boat's scaled by length.
 2. Check the shape. Upwind speeds should peak in 12–16 kn and level off; the best upwind angle is usually 38–45°, the best downwind angle 140–170° depending on the boat and wind. Speeds that keep climbing in 30+ kn are a VPP with no sea in it.
 3. Compare with the instruments: sail at a steady angle for a few minutes in steady wind, note TWS, TWA and boat speed, and compare with the table. Do this at several angles and wind speeds over a season.
-4. If you are consistently a set fraction below, lower the **Polar efficiency** (Settings › Vessel › Performance) rather than editing the table. Edit the table (in a spreadsheet, saved as CSV, or any text editor) where it is wrong in shape: a sail you don't carry, an angle the boat can't hold.
-5. Keep the original. Save your version under a new name (`First40_7_ours.pol`) with a `#` line saying what you changed.
+4. If you are consistently a set fraction below, lower the **Polar efficiency** (Settings › Vessel › Performance) rather than editing the table. Edit the table (**View and edit…**, a spreadsheet saved as CSV, or any text editor) where it is wrong in shape: a sail you don't carry, an angle the boat can't hold.
+5. Keep the original. Save your version under a new name (**Save as…**, `First40_7_ours`). A polar saved from TweedPlot has no `#` notes; keep those in a text file beside it if you want them.
 
 For a power boat, see *Making a power polar* in the Route planning tutorial.
 
@@ -1474,7 +1482,7 @@ The data panel shows the cursor's position, the depth there, and the bearing and
 | **Vessel identity** | Vessel name, IMO number, call sign, **MMSI** | The MMSI keeps your own boat from showing as an AIS target |
 | **Vessel dimensions** | **Draft**, **Length overall**, **Breadth**, **Air draft**, **Transducer depth** (metres) | The boat drawn to scale, the fishing rules for vessels over 46 m, the air draft alarm; the transducer depth is added to the sounder's depth for own soundings |
 | **Position and GPS antenna** | Reference latitude and longitude; GPS antenna aft of the bow and off the centre line; one row per receiver when there are several | Where the chart opens without a GPS fix; placing the boat's outline round the antenna; the bow for the anchor |
-| **Performance (polar)** | **Polar**, **Import polar…**, **Open folder**, **Polar efficiency**, **Tack costs**, **Gybe costs** | Weather routing and the target speeds (see Polars, under Your boat). Wx routing shows the boat it routes, with a **change** link here |
+| **Performance (polar)** | **Polar**, **View and edit…**, **Import polar…**, **Open folder**, **Polar efficiency**, **Tack costs**, **Gybe costs** | Weather routing and the target speeds (see Polars, under Your boat). Wx routing shows the boat it routes, with a **change** link here |
 | **Laylines** | **Show laylines**, **Show tacking cone**, the tacking and gybing angles without a polar, the cone's half-angle | Laylines and the tacking cone (also switched in Chart › Layers › My things and the right-click menu; not drawn in the Fishing use) |
 | **Fishing** | The methods the boat fishes (bottom trawl, longline, potting…) | Chart › Layers › Fishing closures with **My methods**, and the closed-area alarm |
 

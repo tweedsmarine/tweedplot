@@ -128,6 +128,51 @@ impl Polar {
         best
     }
 
+    /// A polar from a table (the polar editor's): wind speeds strictly going up, wind angles from 0
+    /// to 180 strictly going up, one row of speeds per angle with one speed (0 or more) per wind speed.
+    pub fn from_table(name: &str, tws: Vec<f64>, twa: Vec<f64>, speeds: Vec<Vec<f64>>) -> Result<Self, String> {
+        if tws.is_empty() || twa.is_empty() {
+            return Err("the table needs at least one wind speed and one wind angle".into());
+        }
+        if tws.iter().any(|v| !v.is_finite() || *v < 0.0) || tws.windows(2).any(|w| w[1] <= w[0]) {
+            return Err("wind speeds must be 0 or more and go up from left to right".into());
+        }
+        if twa.iter().any(|v| !v.is_finite() || !(0.0..=180.0).contains(v)) || twa.windows(2).any(|w| w[1] <= w[0]) {
+            return Err("wind angles must be 0 to 180 and go up from top to bottom".into());
+        }
+        if speeds.len() != twa.len() || speeds.iter().any(|r| r.len() != tws.len()) {
+            return Err("every wind angle needs a speed for every wind speed".into());
+        }
+        if speeds.iter().flatten().any(|v| !v.is_finite() || *v < 0.0) {
+            return Err("boat speeds must be numbers, 0 or more".into());
+        }
+        Ok(Polar { name: name.to_string(), tws, twa, speeds })
+    }
+
+    /// The table as qtVlm's .csv (`TWA\TWS;4;6;…`), which OpenCPN, Expedition imports and TweedPlot read.
+    pub fn to_csv(&self) -> String {
+        let f = |v: f64| {
+            let s = format!("{v:.3}");
+            let s = s.trim_end_matches('0').trim_end_matches('.');
+            if s.is_empty() || s == "-0" { "0".to_string() } else { s.to_string() }
+        };
+        let mut out = String::from("TWA\\TWS");
+        for t in &self.tws {
+            out.push(';');
+            out.push_str(&f(*t));
+        }
+        out.push('\n');
+        for (a, row) in self.twa.iter().zip(&self.speeds) {
+            out.push_str(&f(*a));
+            for v in row {
+                out.push(';');
+                out.push_str(&f(*v));
+            }
+            out.push('\n');
+        }
+        out
+    }
+
     /// Scale every speed by `factor` (e.g. 0.9 for 90 % efficiency).
     pub fn scaled(&self, factor: f64) -> Polar {
         let mut p = self.clone();
@@ -209,6 +254,20 @@ mod tests {
 135;1.97;2.97;3.76;4.37;4.71;5.13;5.46;5.58;5.63;5.76
 180;2.05;3.10;3.92;4.56;4.67;4.87;5.19;5.47;5.83;6.27
 ";
+
+    #[test]
+    fn a_table_saves_and_reads_back() {
+        let p = Polar::parse("m", MORGANE_CSV).unwrap();
+        let again = Polar::parse("m", &p.to_csv()).unwrap();
+        assert_eq!(again.tws, p.tws);
+        assert_eq!(again.twa, p.twa);
+        assert_eq!(again.speeds, p.speeds);
+        assert!(p.to_csv().starts_with("TWA\\TWS;4;6;8;"));
+        assert!(Polar::from_table("x", vec![6.0, 4.0], vec![40.0], vec![vec![1.0, 2.0]]).is_err());
+        assert!(Polar::from_table("x", vec![4.0], vec![40.0, 40.0], vec![vec![1.0], vec![2.0]]).is_err());
+        assert!(Polar::from_table("x", vec![4.0], vec![40.0], vec![vec![-1.0]]).is_err());
+        assert!(Polar::from_table("x", vec![4.0, 6.0], vec![40.0, 90.0], vec![vec![1.0, 2.0], vec![1.5, 2.5]]).is_ok());
+    }
 
     #[test]
     fn parses_qtvlm_csv() {
