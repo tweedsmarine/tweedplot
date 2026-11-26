@@ -161,7 +161,11 @@ export function setupAlarms(map, { getBoat, getBow = () => null, getSafetyDepth,
   function ack(id) {
     if (!PRIMARY) { command("ack", id); return; }
     const a = active.get(id);
-    if (a) { a.acked = true; a.ackedAt = Date.now(); render(); }
+    if (!a) return;
+    const first = !a.acked;
+    a.acked = true; a.ackedAt = Date.now(); render();
+    // the alarm's own follow-up (another instrument's alarm: acknowledged there too)
+    if (first) { try { a.onAck?.(); } catch { /* ignore */ } }
   }
   // Watchdog: a silenced high-priority alarm whose cause still lasts sounds again after the
   // watchdog time (Alarms › Sound), so it can't be forgotten.

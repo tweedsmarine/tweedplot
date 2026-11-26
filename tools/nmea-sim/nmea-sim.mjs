@@ -3,6 +3,8 @@
 //
 //   node nmea-sim.mjs make [route.json | route.gpx] [--out file.nmea] [--speed 7.5] [--no-ais]
 //   node nmea-sim.mjs distress [--out distress-test.nmea]
+//   node nmea-sim.mjs equipment [--out equipment-test.nmea]
+//   node nmea-sim.mjs listen [--port 10111]
 //   node nmea-sim.mjs play file.nmea [--udp 127.0.0.1:10110 | --tcp 10110] [--from 02:30] [--rate 1] [--loop] [--keep-time]
 //
 // make  writes one second of sentences after another: position, course and speed (RMC, GGA, VTG),
@@ -373,6 +375,80 @@ function distress(args) {
   for (const ev of DISTRESS) console.log(`${pad(Math.floor(ev.at / 60), 2)}:${pad(ev.at % 60, 2)}   ${ev.what}${ev.ais ? ` (${ev.ais.mmsi})` : ` (${ev.mmsi})`}`);
 }
 
+// ---------- equipment ----------
+// A short scenario to test what TweedPlot does with other equipment: radar (ARPA) targets from
+// TTM and TLL, one on a collision course and one passing clear, and alarms from a sounder and the
+// radar as ALR and ALF (one that can be acknowledged from TweedPlot, one that can't). With
+// `listen` in another window, what TweedPlot sends back (autopilot sentences, ACK and ACN) shows.
+//   at (s)  what
+const EQUIPMENT = [
+  { at: 20, what: "Radar targets R1 (collision course, CPA under 0.05 NM, inside 12 min from about 03:00) and R2 (passing clear) acquired" },
+  { at: 60, what: "Sounder ALR 012 SHALLOW WATER, active, until 05:00" },
+  { at: 120, what: "Sounder ALF warning 3015 (category B: can be acknowledged from TweedPlot), until 07:00" },
+  { at: 180, what: "Radar ALF alarm 3100 (category A: only at the radar), until 06:00" },
+];
+function equipment(args) {
+  const out = args.out ?? path.join(process.cwd(), "equipment-test.nmea");
+  const start = new Date(args.start ?? "2026-11-14T18:00:00Z");
+  const len = 600;
+  const VAR = 22, SOG = 5, COG = 45;
+  const own0 = [173.24, -41.16];
+  const ownAt = (t) => move(own0, SOG * KN * t * Math.sin(COG * R), SOG * KN * t * Math.cos(COG * R));
+  // R1 meets own ship near t = 900 s (15 min) from the starboard bow; R2 passes 1.5 NM off
+  const meet = ownAt(900);
+  const r1 = { n: 1, name: "SHIP1", sog: 12, cog: 300, at0: move(move(meet, 0.05, 0), -12 * KN * 900 * Math.sin(300 * R), -12 * KN * 900 * Math.cos(300 * R)) };
+  const r2 = { n: 2, name: "SHIP2", sog: 9, cog: 200, at0: move(ownAt(0), 1.5, 3.5) };
+  const tgtAt = (g, t) => move(g.at0, g.sog * KN * t * Math.sin(g.cog * R), g.sog * KN * t * Math.cos(g.cog * R));
+  const lines = [];
+  for (let t = 0; t < len; t++) {
+    const now = new Date(start.getTime() + t * 1000), p = ownAt(t);
+    const time = `${hms(now)}`;
+    lines.push(
+      sentence(`GPRMC,${time},A,${latF(p[1])},${lonF(p[0])},${SOG.toFixed(1)},${COG.toFixed(1)},${dmy(now)},${VAR.toFixed(1)},E,D`),
+      sentence(`GPGGA,${time},${latF(p[1])},${lonF(p[0])},2,10,0.9,3.0,M,12.0,M,4.0,0120`),
+      sentence(`HEHDT,${COG.toFixed(1)},T`),
+    );
+    // radar targets every 3 s, with the radar's own CPA and TCPA
+    if (t >= 20 && t % 3 === 2) {
+      const vo = [SOG * Math.sin(COG * R), SOG * Math.cos(COG * R)];
+      for (const g of [r1, r2]) {
+        const q = tgtAt(g, t), { d, brg } = leg(p, q);
+        const rel = [q[0] - p[0], q[1] - p[1]];
+        const k = Math.cos(p[1] * R);
+        const pr = [rel[0] * 60 * k, rel[1] * 60];
+        const vt = [g.sog * Math.sin(g.cog * R), g.sog * Math.cos(g.cog * R)];
+        const vr = [vt[0] - vo[0], vt[1] - vo[1]];
+        const v2 = vr[0] ** 2 + vr[1] ** 2;
+        const th = v2 > 1e-9 ? -(pr[0] * vr[0] + pr[1] * vr[1]) / v2 : 0; // hours
+        const cpa = Math.hypot(pr[0] + vr[0] * th, pr[1] + vr[1] * th);
+        const status = t < 26 ? "Q" : "T";
+        lines.push(sentence(`RATTM,${pad(g.n, 2)},${d.toFixed(2)},${brg.toFixed(1)},T,${g.sog.toFixed(1)},${g.cog.toFixed(1)},T,${cpa.toFixed(2)},${(th * 60).toFixed(1)},N,${g.name},${status},,${time},A`));
+        lines.push(sentence(`RATLL,${pad(g.n, 2)},${latF(q[1])},${lonF(q[0])},${g.name},${time},${status},`));
+      }
+    }
+    // alarms, repeated every 30 s while they last (as equipment does), then once more when cleared
+    const every = (from, to) => t >= from && (t - from) % 30 === 0 && t <= to;
+    if (every(60, 300)) lines.push(sentence(`SDALR,${time},012,${t < 300 ? "A" : "V"},V,SHALLOW WATER`));
+    if (every(120, 420)) lines.push(sentence(`SDALF,1,1,${Math.floor((t - 120) / 30) % 10},${time},B,W,${t < 420 ? "V" : "N"},SDR,3015,1,0,0,Depth below shallow limit`));
+    if (every(180, 360)) lines.push(sentence(`RAALF,1,1,${Math.floor((t - 180) / 30) % 10},${time},A,A,${t < 360 ? "V" : "N"},,3100,1,0,0,Dangerous target`));
+  }
+  fs.writeFileSync(out, lines.join("\r\n") + "\r\n");
+  console.log(`${out}\n${len / 60} min, ${lines.length} sentences. Own boat at ${SOG} kn ${COG}°T.\n\n time   event`);
+  for (const ev of EQUIPMENT) console.log(`${pad(Math.floor(ev.at / 60), 2)}:${pad(ev.at % 60, 2)}   ${ev.what}`);
+}
+
+// ---------- listen ----------
+// Prints what arrives on a UDP port: what TweedPlot sends on a UDP connection with a "send to"
+// address (autopilot sentences, ACK, ACN).
+function listen(args) {
+  const port = Number(args.port ?? args.udp ?? 10111);
+  const sock = dgram.createSocket({ type: "udp4", reuseAddr: true });
+  sock.on("message", (m, from) => {
+    for (const l of m.toString().split(/\r?\n/)) if (l.trim()) console.log(`${new Date().toISOString().slice(11, 19)}  ${from.address}  ${l}`);
+  });
+  sock.bind(port, () => console.log(`Listening on UDP ${port} (Ctrl+C to stop)`));
+}
+
 // ---------- play ----------
 function play(args) {
   const file = args._[0];
@@ -442,6 +518,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     if (cmd === "make") make(parse(rest));
     else if (cmd === "play") play(parse(rest));
     else if (cmd === "distress") distress(parse(rest));
-    else console.log("node nmea-sim.mjs make [route.json | route.gpx] [--out file.nmea] [--speed 7.5] [--start 2026-11-14T18:00:00Z] [--no-ais]\nnode nmea-sim.mjs distress [--out distress-test.nmea]\nnode nmea-sim.mjs play file.nmea [--udp 127.0.0.1:10110 | --tcp 10110] [--from hh:mm] [--rate 1] [--loop] [--keep-time]");
+    else if (cmd === "equipment") equipment(parse(rest));
+    else if (cmd === "listen") listen(parse(rest));
+    else console.log("node nmea-sim.mjs make [route.json | route.gpx] [--out file.nmea] [--speed 7.5] [--start 2026-11-14T18:00:00Z] [--no-ais]\nnode nmea-sim.mjs distress [--out distress-test.nmea]\nnode nmea-sim.mjs equipment [--out equipment-test.nmea]\nnode nmea-sim.mjs listen [--port 10111]\nnode nmea-sim.mjs play file.nmea [--udp 127.0.0.1:10110 | --tcp 10110] [--from hh:mm] [--rate 1] [--loop] [--keep-time]");
   } catch (e) { console.error(String(e.message || e)); process.exit(1); }
 }

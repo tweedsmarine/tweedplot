@@ -8,6 +8,10 @@
 //! silenced, A active acknowledged, O active responsibility transferred, U rectified
 //! unacknowledged, N normal), manufacturer mnemonic, alert identifier, instance, revision,
 //! escalation, text. A second ALF sentence (number 2) carries more text only.
+//!
+//! Acknowledging from TweedPlot: ACK (the alarm's number) answers an ALR; ACN (manufacturer,
+//! identifier, instance, command A, status C) answers an ALF. A category A alert may only be
+//! acknowledged at the equipment that raised it (IEC 62923), so none is offered for it.
 
 use serde::Serialize;
 
@@ -23,6 +27,14 @@ pub struct EquipmentAlert {
     /// Acknowledged at the equipment.
     pub acked: bool,
     pub text: String,
+    /// The sentence that acknowledges it at the equipment, without the talker and framing
+    /// ("ACK,012", "ACN,,SDR,3015,1,A,C"); None when it may only be acknowledged there.
+    pub ack: Option<String>,
+}
+
+/// Characters safe inside a field of a sentence TweedPlot sends.
+fn clean(s: &str) -> bool {
+    !s.is_empty() && s.len() <= 16 && s.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'.' || c == b'-')
 }
 
 /// An ALR's fields, when it is an alarm (number and text).
@@ -38,6 +50,7 @@ pub fn parse_alr(f: &[String]) -> Option<EquipmentAlert> {
         active: f.get(2).is_some_and(|c| c == "A"),
         acked: f.get(3).is_some_and(|a| a == "A"),
         text: f.get(4).map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).unwrap_or_else(|| format!("Alarm {num}")),
+        ack: clean(num).then(|| format!("ACK,{num}")),
     })
 }
 
@@ -63,12 +76,17 @@ pub fn parse_alf(f: &[String]) -> Option<EquipmentAlert> {
     };
     let id = format!("ALF {} {}.{}", field(7), field(8), if field(9).is_empty() { "1" } else { field(9) });
     let text = field(12);
+    let instance = if field(9).is_empty() { "1" } else { field(9) };
+    // category A: acknowledged only at the equipment; an empty manufacturer field is allowed (a standard alert)
+    let ack = (field(4) != "A" && clean(field(8)) && clean(instance) && (field(7).is_empty() || clean(field(7))))
+        .then(|| format!("ACN,,{},{},{},A,C", field(7), field(8), instance));
     Some(EquipmentAlert {
         id,
         priority,
         active,
         acked,
         text: if text.is_empty() { format!("Alert {} from {}", field(8), field(7)) } else { text.to_string() },
+        ack,
     })
 }
 
@@ -84,6 +102,7 @@ mod tests {
     fn reads_alr() {
         let a = parse_alr(&f("220516.00,012,A,V,SHALLOW WATER")).unwrap();
         assert_eq!((a.id.as_str(), a.active, a.acked, a.text.as_str()), ("ALR 012", true, false, "SHALLOW WATER"));
+        assert_eq!(a.ack.as_deref(), Some("ACK,012"));
         let b = parse_alr(&f("220530.00,012,V,A,SHALLOW WATER")).unwrap();
         assert!(!b.active && b.acked);
     }
@@ -94,6 +113,10 @@ mod tests {
         let a = parse_alf(&f("1,1,0,124304.50,A,W,V,SDR,3015,1,0,0,Depth below shallow limit")).unwrap();
         assert_eq!((a.id.as_str(), a.priority, a.active, a.acked), ("ALF SDR 3015.1", "warning", true, false));
         assert_eq!(a.text, "Depth below shallow limit");
+        // category A: acknowledged at the equipment only
+        assert_eq!(a.ack, None);
+        let b = parse_alf(&f("1,1,0,124304.50,B,W,V,SDR,3015,1,0,0,Depth below shallow limit")).unwrap();
+        assert_eq!(b.ack.as_deref(), Some("ACN,,SDR,3015,1,A,C"));
         // rectified: no longer active
         assert!(!parse_alf(&f("1,1,1,124310.00,A,W,N,SDR,3015,1,1,0,Depth below shallow limit")).unwrap().active);
         // the second sentence of a pair only adds text

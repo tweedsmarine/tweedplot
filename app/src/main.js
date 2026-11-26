@@ -750,9 +750,9 @@ map.on("load", () => {
   setupDsc(map, { getAlarms: () => alarms, toast, getOwn: () => lastBoat,
     aisName: (mmsi) => { const t = aisApi?.targets?.get?.(Number(mmsi)) ?? aisApi?.targets?.get?.(String(mmsi)); return t?.name?.trim() || null; } });
   // alarms from other equipment (NMEA ALR, ALF; Signal K notifications; a GPS not on WGS 84)
-  equipment = setupEquipmentAlerts({ getAlarms: () => alarms });
+  equipment = setupEquipmentAlerts({ getAlarms: () => alarms, toast });
   // radar (ARPA) targets from TTM and TLL
-  setupRadarTargets(map, { getOwn: () => ({ pos: lastBoat, heading: vessel?.heading, cog: vessel?.cog }) });
+  setupRadarTargets(map, { getOwn: () => ({ pos: lastBoat, heading: vessel?.heading, cog: vessel?.cog }), getAlarms: () => alarms, limits: () => aisApi?.cpaLimits?.() });
   // the leg to the autopilot (autopilot.js): only live, not in a replay, and with a current position
   setupAutopilot({
     getLeg: () => {

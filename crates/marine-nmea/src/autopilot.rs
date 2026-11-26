@@ -1,5 +1,5 @@
 //! NMEA 0183 sentences that steer an autopilot along the leg being navigated: RMB, APB, XTE,
-//! BOD and BWC (IEC 61162-1), the set chart plotters send. An autopilot in Track or Nav mode
+//! BOD, BWC and AAM (IEC 61162-1), the set chart plotters send. An autopilot in Track or Nav mode
 //! follows the cross-track error and the bearing to the next mark; most read RMB or APB, some
 //! XTE, and BOD/BWC give the waypoint names and bearings for their display.
 
@@ -26,6 +26,9 @@ pub struct AutopilotNav {
     /// Inside the arrival circle; past the line square to the leg through the mark.
     pub arrived: bool,
     pub passed: bool,
+    /// The arrival circle's radius, NM (for AAM; 0.1 when not given).
+    #[serde(default)]
+    pub arrival_radius_nm: Option<f64>,
     /// Magnetic variation, degrees, east +: the magnetic bearings are given when it's known.
     pub variation: Option<f64>,
 }
@@ -83,7 +86,7 @@ fn lat_lon(lat: f64, lon: f64) -> (String, String) {
     )
 }
 
-/// The five sentences for one moment (`talker`: "GP" is what most autopilots expect; `utc_hms`
+/// The six sentences for one moment (`talker`: "GP" is what most autopilots expect; `utc_hms`
 /// "hhmmss" for BWC). Each framed with its checksum and CR LF, none over 82 characters.
 pub fn sentences(nav: &AutopilotNav, talker: &str, utc_hms: &str) -> Vec<String> {
     // names shortened further if a sentence would still be longer than NMEA's 82 characters
@@ -117,6 +120,8 @@ fn sentences_with(nav: &AutopilotNav, talker: &str, utc_hms: &str, max: usize) -
         frame(&format!("{talker}XTE,A,A,{xte:.2},{steer},N,A")),
         frame(&format!("{talker}BOD,{leg:.1},T,{},M,{dest},{orig}", mag(leg))),
         frame(&format!("{talker}BWC,{utc_hms},{lat},{lon},{brg:.1},T,{},M,{range:.2},N,{dest},A", mag(brg))),
+        // arrival alarm: circle entered, perpendicular passed, the circle's radius, the mark
+        frame(&format!("{talker}AAM,{arrived},{passed},{:.2},N,{dest}", nav.arrival_radius_nm.unwrap_or(0.1).clamp(0.0, 9.99))),
     ]
 }
 
@@ -139,6 +144,7 @@ mod tests {
             steer_true: Some(48.3),
             arrived: false,
             passed: false,
+            arrival_radius_nm: Some(0.05),
             variation: Some(22.0),
         }
     }
@@ -146,7 +152,7 @@ mod tests {
     #[test]
     fn builds_valid_sentences() {
         let out = sentences(&nav(), "GP", "021500");
-        assert_eq!(out.len(), 5);
+        assert_eq!(out.len(), 6);
         for s in &out {
             assert!(s.len() <= 82, "{s}");
             assert!(s.ends_with("\r\n"));
@@ -159,6 +165,7 @@ mod tests {
         assert_eq!(out[2].split('*').next().unwrap(), "$GPXTE,A,A,0.12,L,N,A");
         assert_eq!(out[3].split('*').next().unwrap(), "$GPBOD,51.0,T,29.0,M,French P,Current");
         assert_eq!(out[4].split('*').next().unwrap(), "$GPBWC,021500,4055.998,S,17349.560,E,54.2,T,32.2,M,3.31,N,French P,A");
+        assert_eq!(out[5].split('*').next().unwrap(), "$GPAAM,V,V,0.05,N,French P");
     }
 
     #[test]
@@ -174,6 +181,7 @@ mod tests {
         assert!(out[0].contains(",54.2,,A,A*"));
         assert!(out[1].starts_with("$ECAPB,A,A,0.50,R,N,A,A,"));
         assert!(out[3].starts_with("$ECBOD,51.0,T,,M,"));
+        assert!(out[5].starts_with("$ECAAM,A,A,0.05,N,"));
     }
 
     #[test]

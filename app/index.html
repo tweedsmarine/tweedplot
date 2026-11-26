@@ -793,6 +793,7 @@
         <div class="wx-row"><label class="grow" title="The boat is further than this off the line from the last mark to the next (Route › Navigate)"><input id="al-xte" type="checkbox" /> Off track: cross-track error over (NM)</label><input id="al-xte-nm" type="number" min="0.01" step="0.05" /></div>
         <div class="wx-row"><label class="grow" title="A warning when the next mark is this many minutes away at the speed made good towards it, or the boat is inside its arrival radius"><input id="al-arrive" type="checkbox" /> Approaching the next mark, minutes before</label><input id="al-arrive-min" type="number" min="0.5" step="0.5" /></div>
         <div class="wx-row"><label class="grow"><input id="al-poslost" type="checkbox" /> Position lost (no GPS for 30 s)</label></div>
+        <div class="wx-row"><label class="grow" title="An alarm from a sounder, radar, AIS or other instrument (NMEA ALR or ALF), acknowledged here, is acknowledged on that instrument too (NMEA ACK or ACN, sent on the connection it came in on). Not for alerts the standard says must be acknowledged at the instrument itself"><input id="al-eq-ack" type="checkbox" /> Acknowledging another instrument's alarm here acknowledges it there too</label></div>
         <h3>Anchor watch</h3>
         <div class="wx-row"><label class="grow" for="anc-radius" title="The swing radius a new anchor starts with; set each anchor's own on its card">Default swing radius (m)</label><input id="anc-radius" type="number" min="10" step="5" /><button id="anc-drop">Drop anchor</button></div>
         <div id="anc-state" class="wx-note"></div>
@@ -801,6 +802,7 @@
           <div class="wx-row"><label class="grow" for="ais-tcpa">within (min)</label><input id="ais-tcpa" type="number" min="1" step="1" /></div>
           <div class="wx-row"><label class="grow"><input id="ais-ignore-moored" type="checkbox" /> Ignore anchored and moored ships</label></div>
           <div class="wx-row"><label class="grow" title="Internet AIS can be minutes late or missing: an alarm from it can come late, and no alarm doesn't mean no danger"><input id="ais-net-alarms" type="checkbox" /> Alarms for internet-only targets too</label></div>
+          <div class="wx-row"><label class="grow" title="A collision alarm for a radar (ARPA) target whose CPA and TCPA, as the radar works them out (NMEA TTM), are inside the limits above. Off by default: the radar usually sounds its own"><input id="ais-radar-alarms" type="checkbox" /> Alarms for radar (ARPA) targets too</label></div>
           <div class="wx-note">An AIS-SART, MOB device or EPIRB always raises an alarm. CPA alarms work from live data (or a replay).</div>
         <h3>Areas</h3>
 <div class="wx-row"><label class="grow" title="A warning when the boat is inside, or heading into, an area closed to the fishing methods in Settings › Vessel › Fishing (every closed area if none are set)"><input id="mar-alarm" type="checkbox" /> Closed-area alarm, looking ahead</label>
@@ -1148,6 +1150,7 @@
               </div>
               <div class="settings-grid" data-nmea-transport="udp" hidden>
                 <label>Local bind address<input name="bindAddress" type="text" placeholder="0.0.0.0:10110" autocomplete="off" spellcheck="false" /></label>
+                <label title="Where TweedPlot's own sentences go on this connection (the autopilot output, alarm acknowledgements): a device's host:port, or the network's broadcast address to reach every listener. Leave empty to only listen">Send to (optional)<input name="sendTo" type="text" placeholder="192.168.1.255:10110" autocomplete="off" spellcheck="false" /></label>
               </div>
               <div class="settings-actions">
                 <span id="nmea-settings-status" role="status" aria-live="polite"></span>

@@ -261,6 +261,7 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       sourceForm.elements.namedItem("address").value = source.transport.address;
     } else {
       sourceForm.elements.namedItem("bindAddress").value = source.transport.bindAddress;
+      sourceForm.elements.namedItem("sendTo").value = source.transport.sendTo ?? "";
     }
     document.getElementById("nmea-form-title").textContent = "Edit source";
     document.getElementById("nmea-source-save").textContent = "Save source";
@@ -301,7 +302,7 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
       const transport = source.transport;
       const endpoint = transport.type === "serial"
         ? `${transport.port} · ${transport.baudRate} baud`
-        : transport.type === "tcp" ? transport.address : `UDP ${transport.bindAddress}`;
+        : transport.type === "tcp" ? transport.address : `UDP ${transport.bindAddress}${transport.sendTo ? `, sends to ${transport.sendTo}` : ""}`;
       const state = sourceStatuses.get(source.id);
       detail.classList.add("nmea-source-status");
       row.dataset.sourceId = source.id;
@@ -410,7 +411,7 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
     const transport = source.transport;
     const endpoint = transport.type === "serial"
       ? `${transport.port} · ${transport.baudRate} baud`
-      : transport.type === "tcp" ? transport.address : `UDP ${transport.bindAddress}`;
+      : transport.type === "tcp" ? transport.address : `UDP ${transport.bindAddress}${transport.sendTo ? `, sends to ${transport.sendTo}` : ""}`;
     label.textContent = sourceStatusText(source, endpoint, payload);
     renderGpsStreams(row.querySelector(".nmea-gps"), source, payload);
   }
@@ -570,7 +571,8 @@ export function setupSettings({ boat, ui, onReferencePosition }) {
     } else if (sourceType.value === "tcp") {
       transport = { type: "tcp", address: sourceForm.elements.namedItem("address").value.trim() };
     } else {
-      transport = { type: "udp", bindAddress: sourceForm.elements.namedItem("bindAddress").value.trim() };
+      const sendTo = sourceForm.elements.namedItem("sendTo").value.trim();
+      transport = { type: "udp", bindAddress: sourceForm.elements.namedItem("bindAddress").value.trim(), ...(sendTo ? { sendTo } : {}) };
     }
     const prior = sources.find((item) => item.id === editingId);
     const source = {

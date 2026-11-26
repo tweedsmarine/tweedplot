@@ -15,7 +15,13 @@ use tokio::sync::watch;
 pub enum SourceTransport {
     Serial { port: String, baud_rate: u32 },
     Tcp { address: String },
-    Udp { bind_address: String },
+    /// `send_to`: where sentences TweedPlot sends go (the autopilot output, acknowledgements), host:port;
+    /// a broadcast address (192.168.1.255:10110) reaches every listener on the network.
+    Udp {
+        bind_address: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        send_to: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -232,7 +238,24 @@ pub fn autopilot_send(source_id: String, talker: Option<String>, nav: marine_nme
     let tx = OUTBOUND.lock().unwrap().get(&source_id).cloned();
     match tx {
         Some(tx) => tx.send(bytes).map(|_| lines.len()).map_err(|_| "The connection has just closed".into()),
-        None => Err("That source isn't connected (or is a UDP input, which TweedPlot can't send on)".into()),
+        None => Err("That connection isn't open (a UDP one sends only with a \"send to\" address)".into()),
+    }
+}
+
+/// Acknowledge another piece of equipment's alarm on the connection it came in on: an ACK (for an
+/// ALR) or ACN (for an ALF) as the equipment's alert gave it ("ACK,012"), talker EC. Only those two
+/// sentences are sent this way.
+#[tauri::command]
+pub fn equipment_ack(source_id: String, body: String) -> Result<String, String> {
+    let ok = (body.starts_with("ACK,") || body.starts_with("ACN,")) && body.len() <= 60 && body.bytes().all(|c| c.is_ascii_alphanumeric() || b",.-".contains(&c));
+    if !ok {
+        return Err("Not an acknowledgement TweedPlot sends".into());
+    }
+    let line = marine_nmea::autopilot::frame(&format!("EC{body}"));
+    let tx = OUTBOUND.lock().unwrap().get(&source_id).cloned();
+    match tx {
+        Some(tx) => tx.send(line.clone().into_bytes()).map(|_| line.trim_end().to_string()).map_err(|_| "The connection has just closed".into()),
+        None => Err("That connection can't send (a UDP one needs a \"send to\" address)".into()),
     }
 }
 
@@ -1029,8 +1052,8 @@ async fn run_source(app: tauri::AppHandle, source: SourceConfig, generation: u64
         SourceTransport::Tcp { address } => {
             run_tcp(&app, &source, generation, address.clone(), &mut stop).await;
         }
-        SourceTransport::Udp { bind_address } => {
-            run_udp(&app, &source, generation, bind_address.clone(), &mut stop).await;
+        SourceTransport::Udp { bind_address, send_to } => {
+            run_udp(&app, &source, generation, bind_address.clone(), send_to.clone(), &mut stop).await;
         }
     }
     if *stop.borrow() {
@@ -1108,10 +1131,11 @@ async fn run_tcp(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
     }
 }
 
-async fn run_udp(app: &tauri::AppHandle, source: &SourceConfig, generation: u64, bind_address: String, stop: &mut watch::Receiver<bool>) {
+async fn run_udp(app: &tauri::AppHandle, source: &SourceConfig, generation: u64, bind_address: String, send_to: Option<String>, stop: &mut watch::Receiver<bool>) {
     let mut framer = Framer::default();
     let mut observation = Observation::default();
     let mut buf = [0u8; 65536];
+    let send_to = send_to.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
     loop {
         if *stop.borrow() {
             break;
@@ -1127,27 +1151,63 @@ async fn run_udp(app: &tauri::AppHandle, source: &SourceConfig, generation: u64,
                 continue;
             }
         };
+        // sending: to a host:port (looked up once per binding); broadcast allowed for x.x.x.255
+        let target = match &send_to {
+            Some(to) => match tokio::net::lookup_host(to.as_str()).await.ok().and_then(|mut a| a.find(|a| a.is_ipv4()).or(None)) {
+                Some(addr) => {
+                    let _ = socket.set_broadcast(true);
+                    Some(addr)
+                }
+                None => {
+                    update_status(app, &source.id, generation, Some("error"), Some(format!("Can't send to {to}: not a host:port this computer can reach; retrying")), false, None);
+                    if *stop.borrow() || wait_or_stop(stop, Duration::from_secs(5)).await {
+                        break;
+                    }
+                    continue;
+                }
+            },
+            None => None,
+        };
+        let mut outbound = target.map(|_| outbound_open(&source.id));
         update_status(
             app,
             &source.id,
             generation,
             Some("connected"),
-            Some(format!("Listening on UDP {bind_address}; nothing received yet (check the sender's address and port)")),
+            Some(match &send_to {
+                Some(to) => format!("Listening on UDP {bind_address}, sending to {to}; nothing received yet"),
+                None => format!("Listening on UDP {bind_address}; nothing received yet (check the sender's address and port)"),
+            }),
             false,
             None,
         );
         loop {
             let received = tokio::select! {
                 _ = stop.changed() => break,
+                Some(bytes) = async { match outbound.as_mut() { Some(o) => o.recv().await, None => std::future::pending().await } } => {
+                    if let Some(addr) = target {
+                        if let Err(error) = socket.send_to(&bytes, addr).await {
+                            eprintln!("Could not send UDP to {addr}: {error}");
+                        }
+                    }
+                    continue;
+                }
                 result = socket.recv_from(&mut buf) => result,
             };
             match received {
                 Ok((n, _peer)) => consume_bytes(app, source, generation, &mut framer, &mut observation, &buf[..n]),
                 Err(error) => {
+                    // Windows reports an unreachable port of an earlier send as a receive error: carry on
+                    if error.kind() == std::io::ErrorKind::ConnectionReset {
+                        continue;
+                    }
                     update_status(app, &source.id, generation, Some("error"), Some(format!("UDP receive failed: {error}; retrying")), false, None);
                     break;
                 }
             }
+        }
+        if target.is_some() {
+            outbound_close(&source.id);
         }
         if *stop.borrow() || wait_or_stop(stop, Duration::from_secs(2)).await {
             break;

@@ -1,6 +1,6 @@
 // Steering the autopilot along the route: once a second, while "Send to the autopilot" is on and a
-// mark is navigated, the leg goes out as NMEA 0183 RMB, APB, XTE, BOD and BWC on the chosen
-// serial or TCP input (the sentences are built in the back end, nmea.rs and marine-nmea).
+// mark is navigated, the leg goes out as NMEA 0183 RMB, APB, XTE, BOD, BWC and AAM on the chosen
+// serial or TCP connection, or a UDP one with a "send to" address (the sentences are built in the back end, nmea.rs and marine-nmea).
 //
 // Safety: the switch is off each time TweedPlot starts (it is never remembered), and nothing is
 // sent while nothing is navigated, so an autopilot in Track mode raises its own lost-data alarm
@@ -38,6 +38,7 @@ export function legFor({ nav, wp, boat, variation, arrivalNm }) {
     steerTrue: steer,
     arrived: wp.dtw <= (arrivalNm ?? 0.1),
     passed,
+    arrivalRadiusNm: arrivalNm ?? 0.1,
     variation: Number.isFinite(variation) ? variation : null,
   };
 }
@@ -54,9 +55,11 @@ export function setupAutopilot({ getLeg }) {
   let sources = [];
   async function loadSources() {
     try { sources = (await invoke("nmea_sources_get"))?.sources ?? []; } catch { sources = []; }
-    const usable = sources.filter((s) => s.transport?.type === "serial" || s.transport?.type === "tcp");
+    // UDP sends only with a "send to" address (a UDP input on its own only listens)
+    const usable = sources.filter((s) => s.transport?.type === "serial" || s.transport?.type === "tcp" || (s.transport?.type === "udp" && s.transport.sendTo));
+    const where = (t) => (t.type === "serial" ? t.port : t.type === "tcp" ? t.address : `UDP to ${t.sendTo}`);
     if (src) {
-      src.replaceChildren(new Option("Not set", ""), ...usable.map((s) => new Option(`${s.name} (${s.transport.type === "serial" ? s.transport.port : s.transport.address})`, s.id)));
+      src.replaceChildren(new Option("Not set", ""), ...usable.map((s) => new Option(`${s.name} (${where(s.transport)})`, s.id)));
       src.value = usable.some((s) => s.id === prefs.source) ? prefs.source : "";
     }
     show();
@@ -94,7 +97,7 @@ export function setupAutopilot({ getLeg }) {
     try {
       await invoke("autopilot_send", { sourceId: prefs.source, talker: prefs.talker, nav: leg });
       const side = leg.xteNm >= 0 ? "L" : "R";
-      last = { ok: true, text: `Sending RMB, APB, XTE, BOD and BWC: to ${leg.destId}, ${leg.rangeNm.toFixed(2)} NM, XTE ${Math.abs(leg.xteNm).toFixed(2)} NM, steer ${side}.` };
+      last = { ok: true, text: `Sending RMB, APB, XTE, BOD, BWC and AAM: to ${leg.destId}, ${leg.rangeNm.toFixed(2)} NM, XTE ${Math.abs(leg.xteNm).toFixed(2)} NM, steer ${side}.` };
     } catch (e) {
       last = { ok: false, text: `Not sent: ${e}` };
     }
