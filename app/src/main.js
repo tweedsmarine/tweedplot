@@ -54,6 +54,7 @@ import { setupMariner, marinerImage, tokenColour } from "./mariner.js";
 import { setupRouting } from "./routing.js";
 import { setupBoat } from "./boat.js";
 import { setupDock } from "./dock.js";
+import { setupPolarEdit } from "./polaredit.js";
 import { setupDepthStack } from "./depthstack.js";
 import { setupReadout } from "./readout.js";
 import { createDamping } from "./damping.js";
@@ -550,6 +551,8 @@ document.getElementById("nmea-popout").addEventListener("click", () => openMonit
 setupNmeaMonitor(document.getElementById("nmea-monitor-inline"), { openSettings: openNmeaSettings });
 setupNmeaMonitor(document.getElementById("nmea-monitor-window"), { standalone: true, openSettings: openNmeaSettings, onClose: PRIMARY ? () => views.back() : null });
 const dock = setupDock(map);
+const polarEdit = setupPolarEdit({ dock, getBoatPolar: () => boat.get().polar, toast });
+document.getElementById("boat-polar-edit")?.addEventListener("click", () => polarEdit.open());
 let features = null;
 let ruler = null;
 let mariner = null; // own ship, vectors, range rings, EBL/VRM, scale bar (mariner.js)

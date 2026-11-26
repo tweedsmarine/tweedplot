@@ -35,12 +35,51 @@ pub(crate) fn polar_dirs(app: &tauri::AppHandle) -> Vec<(PathBuf, &'static str)>
 }
 
 fn cached_polar(path: &str) -> Option<Arc<polar::Polar>> {
-    static CACHE: Mutex<Option<(String, Arc<polar::Polar>)>> = Mutex::new(None);
+    // keyed by the file's time too: a polar saved from the editor is read again
+    static CACHE: Mutex<Option<(String, Option<std::time::SystemTime>, Arc<polar::Polar>)>> = Mutex::new(None);
+    let mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
     let mut c = CACHE.lock().unwrap();
-    if c.as_ref().map(|x| x.0 != path).unwrap_or(true) {
-        *c = Some((path.to_string(), Arc::new(polar::Polar::from_path(path).ok()?)));
+    if c.as_ref().map(|x| x.0 != path || x.1 != mtime).unwrap_or(true) {
+        *c = Some((path.to_string(), mtime, Arc::new(polar::Polar::from_path(path).ok()?)));
     }
-    Some(c.as_ref()?.1.clone())
+    Some(c.as_ref()?.2.clone())
+}
+
+/// A polar file as a table for the polar editor: { name, path, yours, tws, twa, speeds }.
+#[tauri::command]
+pub(crate) fn polar_table(app: tauri::AppHandle, path: String) -> Result<serde_json::Value, String> {
+    let p = polar::Polar::from_path(&path).map_err(|e| format!("Could not read the polar: {e}"))?;
+    let yours = std::path::Path::new(&path).parent().map(|d| d == user_polar_dir(&app)).unwrap_or(false);
+    Ok(serde_json::json!({ "name": p.name, "path": path, "yours": yours, "tws": p.tws, "twa": p.twa, "speeds": p.speeds }))
+}
+
+/// A file name's stem with only safe characters.
+fn safe_stem(name: &str) -> String {
+    name.chars().map(|c| if c.is_alphanumeric() || " ._-()".contains(c) { c } else { '_' }).collect::<String>().trim().to_string()
+}
+
+/// Save the polar editor's table into your polar folder as `name` (qtVlm .csv layout). A polar of
+/// yours with that name is replaced only with `overwrite` (it keeps its file and extension); a
+/// shipped polar is never changed, a polar of yours with its name is used in its place.
+/// Returns the saved path, or the error "exists" when asked not to overwrite.
+#[tauri::command]
+pub(crate) fn polar_save(app: tauri::AppHandle, name: String, tws: Vec<f64>, twa: Vec<f64>, speeds: Vec<Vec<f64>>, overwrite: bool) -> Result<String, String> {
+    let stem = safe_stem(&name);
+    if stem.is_empty() {
+        return Err("Give the polar a name.".into());
+    }
+    let p = polar::Polar::from_table(&stem, tws, twa, speeds).map_err(|e| format!("Can't save: {e}."))?;
+    let dir = user_polar_dir(&app);
+    // a polar of yours with this name already (any of the extensions TweedPlot reads)
+    let existing = ["csv", "pol", "txt"].iter().map(|x| dir.join(format!("{stem}.{x}"))).find(|f| f.is_file());
+    if existing.is_some() && !overwrite {
+        return Err("exists".into());
+    }
+    let dest = existing.unwrap_or_else(|| dir.join(format!("{stem}.csv")));
+    let tmp = dest.with_extension("part");
+    std::fs::write(&tmp, p.to_csv()).map_err(|e| format!("Could not save {}: {e}", dest.display()))?;
+    std::fs::rename(&tmp, &dest).map_err(|e| format!("Could not save {}: {e}", dest.display()))?;
+    Ok(dest.to_string_lossy().into_owned())
 }
 
 /// Boat speed from a polar file (cached) at a TWA and TWS, kn.

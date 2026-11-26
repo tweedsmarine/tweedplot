@@ -2227,6 +2227,8 @@ pub fn run() {
             nmea::nmea_capture_append,
             nmea::nmea_capture_end,
             polar_files,
+            polar_table,
+            polar_save,
             polar_import,
             polar_open_folder,
             polar_speed,
