@@ -1,4 +1,10 @@
-// Night cursors at the edges of the window.
+// Night cursors at the edges of the window, and wherever the page's own rules miss one.
+//
+// Night cursors are the standard shapes (arrow, pointing hand, open and closed hand, crosshair,
+// resize arrows) in the night colour, so nothing new to learn. style.css gives them to the
+// controls it knows; anything else that asks for a system cursor by name (cursor: pointer on a
+// heading, say) would get Windows' own, bright white: fixNamed() gives it the night one (and its
+// children the same, as by day they inherit it).
 //
 // The night palettes draw their own cursors (style.css, --cur-*), because the colour filter
 // doesn't reach the system cursor. But Chromium (WebView2) only shows a page's cursor image when
@@ -34,6 +40,28 @@ export function recolour(url, palette, dim) {
   return url.split(code).join(grey).replace(/stroke='%23000'/g, "stroke='%23fff'");
 }
 
+// a system cursor by name → the night cursor that draws it
+const NAMED = {
+  pointer: "hand", "zoom-in": "hand", "zoom-out": "hand",
+  grab: "grab", move: "grab", "all-scroll": "grab", grabbing: "grabbing",
+  crosshair: "cross", cell: "cross",
+  "ns-resize": "ns", "n-resize": "ns", "s-resize": "ns", "row-resize": "ns",
+  "ew-resize": "ew", "e-resize": "ew", "w-resize": "ew", "col-resize": "ew",
+  "nwse-resize": "nwse", "nw-resize": "nwse", "se-resize": "nwse", "nesw-resize": "nwse", "ne-resize": "nwse", "sw-resize": "nwse",
+  default: "arrow", "not-allowed": "arrow", "no-drop": "arrow", help: "arrow", "context-menu": "arrow", wait: "arrow", progress: "arrow",
+};
+/** The night cursor for an element from its own and its ancestors' computed cursors (nearest first):
+ * a name in NAMED decides; the night arrow (the default every element has at night) looks further up;
+ * any other image is already a night cursor. Exported for tests. */
+export function namedFor(cursors) {
+  for (const v of cursors) {
+    const k = String(v || "").trim();
+    if (!k.startsWith("url(")) return NAMED[k] ?? null;
+    if (!k.includes("M3 2v17")) return null; // a night cursor other than the arrow
+  }
+  return null;
+}
+
 /** Whether a pointer at x, y is within `edge` px of the window's edges. */
 export const nearEdge = (x, y, w, h, edge = EDGE) => x < edge || y < edge || x > w - edge || y > h - edge;
 
@@ -50,6 +78,20 @@ export function setupNightCursor() {
   let lastEl = null, lastInline = "", cur = null, src = "";
   const night = () => /^(iho-)?night/.test(String(root.dataset.palette || ""));
 
+  // a system cursor by name where the night rules miss it: data-ncur on the element under the pointer
+  let fixed = null, fixedFor = null;
+  function unfix() { if (fixed) { fixed.removeAttribute("data-ncur"); fixed = null; } fixedFor = null; }
+  function fixNamed(el) {
+    if (el === fixedFor) return;
+    unfix();
+    fixedFor = el;
+    if (!el || el.tagName === "CANVAS" || el.closest?.(".maplibregl-map")) return; // the chart has its own rules
+    const list = [];
+    for (let e = el, i = 0; e && e !== document.documentElement && i < 8; e = e.parentElement, i++) list.push(getComputedStyle(e).cursor);
+    const want = namedFor(list);
+    if (want && want !== "arrow") { el.setAttribute("data-ncur", want); fixed = el; }
+  }
+
   // the cursor the page asks for at an element (with the edge rule lifted while reading it)
   function cursorAt(el) {
     if (on) root.classList.remove("cur-edge");
@@ -62,7 +104,8 @@ export function setupNightCursor() {
     img.hidden = true;
   }
   function update(e) {
-    if (!night() || e.pointerType === "touch" || e.pointerType === "pen") { off(); return; }
+    if (!night() || e.pointerType === "touch" || e.pointerType === "pen") { off(); unfix(); return; }
+    fixNamed(e.target instanceof Element ? e.target : null);
     const x = e.clientX, y = e.clientY;
     if (!nearEdge(x, y, window.innerWidth, window.innerHeight)) { off(); lastEl = null; return; }
     const el = e.target instanceof Element ? e.target : null;
@@ -90,5 +133,5 @@ export function setupNightCursor() {
   for (const t of ["pointerdown", "pointerup"]) document.addEventListener(t, (e) => { lastEl = null; update(e); }, { capture: true, passive: true });
   document.addEventListener("mouseout", (e) => { if (!e.relatedTarget) off(); });
   window.addEventListener("blur", off);
-  new MutationObserver(() => { if (!night()) off(); lastEl = null; }).observe(root, { attributes: true, attributeFilter: ["data-palette"] });
+  new MutationObserver(() => { if (!night()) { off(); unfix(); } lastEl = null; fixedFor = null; }).observe(root, { attributes: true, attributeFilter: ["data-palette"] });
 }
