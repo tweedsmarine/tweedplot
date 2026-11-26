@@ -1,12 +1,17 @@
 # A tagged release: push a tag like v0.2.0 (matching the version in
-# app/src-tauri/tauri.conf.json) and the x64 and ARM64 installers are built and
-# put on a draft GitHub release. Check it, write the notes, then Publish.
+# app/src-tauri/tauri.conf.json) and every installer is built and put on one draft
+# GitHub release:
+#   Windows  x64 and ARM64 NSIS installers (.exe)
+#   macOS    one universal disk image (.dmg) for Apple silicon and Intel Macs
+#   Linux    x64 .deb (Debian, Ubuntu, Mint …), .rpm (Fedora, openSUSE …) and .AppImage (any)
+# Check it, write the notes, then Publish.
 #
-# Updates: the installers are signed with the updater key (secrets
-# TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD) and latest.json
-# goes on the release. Installed copies look at the latest *published, non-pre-release*
-# release (releases/latest/download/latest.json), so nobody is offered a release until
-# it is published. See DEVELOPING.md › Updates.
+# Updates: the builds are signed with the updater key (secrets TAURI_SIGNING_PRIVATE_KEY
+# and TAURI_SIGNING_PRIVATE_KEY_PASSWORD) and each adds its platforms to latest.json on the
+# release; the last job checks that latest.json has them all. Installed copies look at the
+# latest *published, non-pre-release* release (releases/latest/download/latest.json), so
+# nobody is offered a release until it is published. On Linux only the AppImage updates
+# itself; .deb and .rpm are updated by installing the new one. See DEVELOPING.md › Updates.
 name: release
 
 on:
@@ -14,8 +19,31 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+env:
+  RELEASE_BODY: |
+    Test build. Not for navigation.
+    Windows: TweedPlot_*_x64-setup.exe for most PCs; TweedPlot_*_arm64-setup.exe for Windows on Arm (Snapdragon, Surface Pro X …). Not code-signed yet: SmartScreen warns ("Windows protected your PC") — More info › Run anyway.
+    Mac: TweedPlot_*_universal.dmg for Apple silicon and Intel Macs (macOS 11 or later). Not notarised: the first start is blocked — Done, then System Settings › Privacy & Security › Open Anyway.
+    Linux (x64): .deb for Debian, Ubuntu and Mint; .rpm for Fedora and openSUSE; .AppImage for any other (make it executable, then run it).
+
 jobs:
+  # the updater key must be in place before anything is built
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Updater key set up
+        shell: bash
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if grep -q REPLACE_WITH_THE_UPDATER_PUBLIC_KEY app/src-tauri/tauri.conf.json; then
+            echo "::error::Put the updater public key in app/src-tauri/tauri.conf.json (plugins.updater.pubkey)"; exit 1; fi
+          if [ -z "$KEY" ]; then
+            echo "::error::Add the TAURI_SIGNING_PRIVATE_KEY secret (Settings › Secrets and variables › Actions)"; exit 1; fi
+
   windows:
+    needs: preflight
     permissions:
       contents: write
     strategy:
@@ -38,15 +66,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.arch }}
-      - name: Updater key set up
-        shell: bash
-        env:
-          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: |
-          if grep -q REPLACE_WITH_THE_UPDATER_PUBLIC_KEY app/src-tauri/tauri.conf.json; then
-            echo "::error::Put the updater public key in app/src-tauri/tauri.conf.json (plugins.updater.pubkey)"; exit 1; fi
-          if [ -z "$KEY" ]; then
-            echo "::error::Add the TAURI_SIGNING_PRIVATE_KEY secret (Settings › Secrets and variables › Actions)"; exit 1; fi
       - name: Front-end dependencies
         working-directory: app
         run: npm ci
@@ -63,10 +82,118 @@ jobs:
           args: --config src-tauri/tauri.release.conf.json
           tagName: v__VERSION__
           releaseName: TweedPlot v__VERSION__
-          releaseBody: |
-            Test build. Not for navigation.
-            TweedPlot_*_x64-setup.exe for most Windows PCs; TweedPlot_*_arm64-setup.exe for Windows on Arm (Snapdragon, Surface Pro X …).
-            The installer is not code-signed yet: Windows SmartScreen will warn ("Windows protected your PC") — choose More info › Run anyway.
+          releaseBody: ${{ env.RELEASE_BODY }}
           releaseDraft: true
           # not a pre-release: GitHub's "latest" (which installed copies look at) skips pre-releases
           prerelease: false
+
+  # One universal app for Apple silicon and Intel, on an Apple silicon runner. Mac-only settings
+  # (bundles, icon, minimum macOS, ad-hoc signature) are in app/src-tauri/tauri.macos.conf.json.
+  # Not signed with a Developer ID or notarised: see DEVELOPING.md › Mac builds.
+  macos:
+    needs: preflight
+    permissions:
+      contents: write
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: mac-universal
+      - name: Front-end dependencies
+        working-directory: app
+        run: npm ci
+      - name: Build and attach to the draft release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: app
+          tauriScript: npx tauri
+          args: --target universal-apple-darwin --config src-tauri/tauri.release.conf.json
+          tagName: v__VERSION__
+          releaseName: TweedPlot v__VERSION__
+          releaseBody: ${{ env.RELEASE_BODY }}
+          releaseDraft: true
+          prerelease: false
+
+  # x64 Linux, built on the older Ubuntu so it runs on older distributions too (glibc).
+  # Linux-only settings (deb, rpm, AppImage, icons) are in app/src-tauri/tauri.linux.conf.json.
+  linux:
+    needs: preflight
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: System libraries (WebKitGTK and the bundlers' tools)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-x64
+      - name: Front-end dependencies
+        working-directory: app
+        run: npm ci
+      - name: Build and attach to the draft release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: app
+          tauriScript: npx tauri
+          args: --config src-tauri/tauri.release.conf.json
+          tagName: v__VERSION__
+          releaseName: TweedPlot v__VERSION__
+          releaseBody: ${{ env.RELEASE_BODY }}
+          releaseDraft: true
+          prerelease: false
+
+  # The builds each add their platforms to latest.json on the draft; builds finishing together
+  # could overwrite each other's. Before you press Publish, this says whether every platform is
+  # there, so an installed copy is never pointed at a release that has no update for it.
+  check:
+    needs: [windows, macos, linux]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: latest.json lists every platform
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(jq -r .version app/src-tauri/tauri.conf.json)
+          tag="v$version"
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" -p latest.json -D /tmp/rel --clobber
+          echo "Platforms in latest.json:"; jq -r '.platforms | keys[]' /tmp/rel/latest.json
+          missing=""
+          for p in windows-x86_64 windows-aarch64 darwin-aarch64 darwin-x86_64 linux-x86_64; do
+            jq -e --arg p "$p" '.platforms[$p].url and .platforms[$p].signature' /tmp/rel/latest.json >/dev/null || missing="$missing $p"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::latest.json on the $tag draft has no update for:$missing. Don't publish yet: run this workflow again (Run workflow, or re-run the failed build) so those builds add themselves."
+            exit 1
+          fi
+          echo "All platforms present. Check the draft, add the notes and Publish."
