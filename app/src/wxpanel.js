@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { fmt, weatherSelectionSummary } from "./weather.js";
 import * as activity from "./activity.js";
 import { ask } from "./ask.js";
+import { speciesList, speciesConfig as spConfig, speciesNote, editSpecies } from "./species.js";
 
 const KEY = "racenav.wxpanel";
 const PRESETS = {
@@ -11,29 +12,8 @@ const PRESETS = {
   Passage: { layer: "wind", overlays: { arrows: true, waveArrows: true, currArrows: true, isobars: true, isotherms: false, breaks: false } },
   Anchorage: { layer: "gust", overlays: { arrows: true, waveArrows: false, currArrows: false, isobars: true, isotherms: false, breaks: false } },
 };
-// Species: the sea temperature band each is usually found in, highlighted on the sea temperature
-// layer with the target marked, isotherms and temperature breaks (fronts) drawn. A starting point,
-// not a rule: fish follow food, fronts and currents as much as temperature, and local knowledge
-// beats any band. Sources are given in the manual (Weather and tides › Species presets).
-//   [name, layer, depth (m, for a layer at depth), band low, band high, target, note]
-export const SPECIES = [
-  ["Albacore", "sst", null, 16, 20, 18, "Juvenile albacore, the fish NZ trollers catch, are found in about 16–21 °C surface water, often along fronts"],
-  ["Southern bluefin", "sst", null, 14, 18, 16, "Tagged in NZ waters in winter at 13.6–18.3 °C surface temperature"],
-  ["Yellowfin", "sst", null, 19.5, 25.5, 21, "Preferred about 20–25.5 °C; they arrive in NZ when offshore water reaches 19–20 °C"],
-  ["Bigeye (at 250 m)", "subt", 250, 10, 14, 12, "By day at 200–400 m in 8–14 °C water; longline catches best at 12–14 °C around 250 m. Needs a file with temperature at depth (Copernicus or HYCOM)"],
-  ["Skipjack", "sst", null, 19, 28, 22, "Found in about 19–28 °C; the main fisheries are in 19–23 °C"],
-  ["Striped marlin", "sst", null, 18, 25, 21, "Prefer 20–25 °C; 18–20 °C is usual NZ marlin water, 21 °C and up in good seasons"],
-  ["Mahi-mahi", "sst", null, 24, 29, 26, "Catch rates are highest in 24–29 °C water"],
-];
-const SPECIES_OVERLAYS = { arrows: false, waveArrows: false, currArrows: true, isobars: false, isotherms: true, breaks: true };
-export function speciesConfig([, layer, depth, blo, bhi, tg]) {
-  return {
-    layer,
-    ...(depth != null ? { depth } : {}),
-    overlays: SPECIES_OVERLAYS,
-    filter: { lo: Math.floor(blo) - 4, hi: Math.ceil(bhi) + 4, tg, blo, bhi, set: true },
-  };
-}
+// Species presets (built-in figures, the user's changes, the editor): species.js
+export { SPECIES, speciesConfig } from "./species.js";
 
 export function setupWeatherPanel(map, weather, sidePanel, ui) {
   const $ = (id) => document.getElementById(id);
@@ -41,6 +21,10 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
   try { Object.assign(st, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch { /* storage unavailable or damaged: defaults */ }
   if (!st.sec || typeof st.sec !== "object") st.sec = { show: true, over: true };
   if (!st.presets || typeof st.presets !== "object") st.presets = {};
+  // species presets: changed figures for built-in species, and the user's own species (species.js)
+  if (!st.speciesEdits || typeof st.speciesEdits !== "object") st.speciesEdits = {};
+  if (!Array.isArray(st.speciesOwn)) st.speciesOwn = [];
+  const species = () => speciesList(st.speciesEdits, st.speciesOwn);
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch { /* ignore */ } };
 
   const win = $("wxp");
@@ -72,7 +56,7 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
         <h5>Each GRIB at the cursor</h5><div id="wxp-cmp-point"></div>
         <h5>Check against what happened</h5><div id="wxp-cmp-verify"></div>
       </details>
-      <div class="wxp-presets"><select id="wxp-preset" title="Presets"></select><button id="wxp-psave" title="Save what is shown as a preset">Save…</button><button id="wxp-pdel" title="Delete the chosen saved preset">Delete</button></div>
+      <div class="wxp-presets"><select id="wxp-preset" title="Presets"></select><button id="wxp-psave" title="Save what is shown as a preset">Save…</button><button id="wxp-pdel" title="Delete the chosen saved preset">Delete</button><button id="wxp-pspecies" title="Change the species presets' temperatures, or add your own species">Species…</button></div>
       <div class="wxp-actions">
         <button id="wxp-data" type="button" title="Download or manage GRIB files (Get data)">GRIBs…</button>
         <button id="wxp-visible" title="Hide or show the weather on the chart">Hide weather</button>
@@ -403,9 +387,9 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     for (const n of Object.keys(PRESETS)) sel.append(new Option(n, `b:${n}`));
     const fish = document.createElement("optgroup");
     fish.label = "Species (sea temperature)";
-    for (const sp of SPECIES) {
-      const o = new Option(`${sp[0]} ${sp[3]}–${sp[4]} °C`, `s:${sp[0]}`);
-      o.title = sp[6];
+    for (const sp of species()) {
+      const o = new Option(`${sp.name} ${sp.blo}–${sp.bhi} °C${sp.edited ? " (yours)" : ""}`, `s:${sp.name}`);
+      o.title = speciesNote(sp);
       fish.append(o);
     }
     sel.append(fish);
@@ -413,8 +397,8 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
   }
   $("wxp-preset").onchange = (e) => {
     const [k, n] = [e.target.value.slice(0, 1), e.target.value.slice(2)];
-    const sp = k === "s" ? SPECIES.find((x) => x[0] === n) : null;
-    const c = k === "b" ? PRESETS[n] : k === "u" ? st.presets[n] : sp ? speciesConfig(sp) : null;
+    const sp = k === "s" ? species().find((x) => x.name === n) : null;
+    const c = k === "b" ? PRESETS[n] : k === "u" ? st.presets[n] : sp ? spConfig(sp) : null;
     if (c && weather.applyConfig(c) === false) {
       if (c.layer === "subt") { offerDepths(n, c); return; }
       activity.start(`Preset ${n}`).fail("No sea temperature in the loaded files: get one in Get data (MUR, ACSPO, Geo-Polar…).");
@@ -453,6 +437,13 @@ export function setupWeatherPanel(map, weather, sidePanel, ui) {
     st.presets[name] = weather.config();
     save(); renderPresets();
     $("wxp-preset").value = `u:${name}`;
+  };
+  $("wxp-pspecies").onclick = async () => {
+    const v = await editSpecies(st.speciesEdits, st.speciesOwn);
+    if (!v) return;
+    st.speciesEdits = v.edits;
+    st.speciesOwn = v.own;
+    save(); renderPresets();
   };
   $("wxp-pdel").onclick = () => {
     const v = $("wxp-preset").value;
