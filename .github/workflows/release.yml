@@ -176,7 +176,8 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      # a draft release is only visible with write access
+      contents: write
     steps:
       - uses: actions/checkout@v7
       - name: latest.json lists every platform
@@ -186,14 +187,19 @@ jobs:
         run: |
           version=$(jq -r .version app/src-tauri/tauri.conf.json)
           tag="v$version"
-          gh release download "$tag" -R "$GITHUB_REPOSITORY" -p latest.json -D /tmp/rel --clobber
-          echo "Platforms in latest.json:"; jq -r '.platforms | keys[]' /tmp/rel/latest.json
+          # a draft has no tag yet as far as `gh release download` is concerned: find it in the list
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" --jq ".[] | select(.tag_name == \"$tag\") | .id" | head -n1)
+          if [ -z "$id" ]; then echo "::error::No release (draft or published) for $tag"; exit 1; fi
+          asset=$(gh api "repos/$GITHUB_REPOSITORY/releases/$id/assets?per_page=100" --jq '.[] | select(.name == "latest.json") | .id' | head -n1)
+          if [ -z "$asset" ]; then echo "::error::The $tag release has no latest.json"; exit 1; fi
+          gh api -H "Accept: application/octet-stream" "repos/$GITHUB_REPOSITORY/releases/assets/$asset" > /tmp/latest.json
+          echo "Platforms in latest.json:"; jq -r '.platforms | keys[]' /tmp/latest.json
           missing=""
           for p in windows-x86_64 windows-aarch64 darwin-aarch64 darwin-x86_64 linux-x86_64; do
-            jq -e --arg p "$p" '.platforms[$p].url and .platforms[$p].signature' /tmp/rel/latest.json >/dev/null || missing="$missing $p"
+            jq -e --arg p "$p" '.platforms[$p].url and .platforms[$p].signature' /tmp/latest.json >/dev/null || missing="$missing $p"
           done
           if [ -n "$missing" ]; then
-            echo "::error::latest.json on the $tag draft has no update for:$missing. Don't publish yet: run this workflow again (Run workflow, or re-run the failed build) so those builds add themselves."
+            echo "::error::latest.json on the $tag release has no update for:$missing. Don't publish yet: re-run the failed build(s) so they add themselves."
             exit 1
           fi
           echo "All platforms present. Check the draft, add the notes and Publish."
