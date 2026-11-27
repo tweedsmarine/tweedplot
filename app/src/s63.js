@@ -19,6 +19,7 @@ function twice(btn, ask, action) {
 }
 
 export function setupS63(map, { toast } = {}) {
+  const PR = "s63-plugin-report"; // the plugin's messages, under its buttons
   let status = null;
   let warned = false;
 
@@ -38,8 +39,9 @@ export function setupS63(map, { toast } = {}) {
   map.on("moveend", banner);
 
   /** Show a report: [{ cell, level, text }] or a single line. */
-  function report(lines, title) {
-    const ul = $("s63-report");
+  // the plugin's own messages go under its buttons: the rest of the section is hidden until it runs
+  function report(lines, title, where = "s63-report") {
+    const ul = $(where);
     ul.innerHTML = "";
     const all = typeof lines === "string" ? [{ cell: "", level: "info", text: lines }] : lines;
     if (title) all.unshift({ cell: "", level: "info", text: title });
@@ -79,7 +81,7 @@ export function setupS63(map, { toast } = {}) {
     try { status = await invoke("s63_status"); } catch { return; }
     if (!status) return;
     pluginRow();
-    if (status.error) report([{ cell: "", level: "error", text: status.error }]);
+    if (status.error) report([{ cell: "", level: "error", text: status.error }], null, status.plugin?.running ? "s63-report" : PR);
     if (!status.plugin?.running) {
       status.cells = status.cells || [];
       status.permits = status.permits || [];
@@ -226,27 +228,27 @@ export function setupS63(map, { toast } = {}) {
 
   const busy = async (btn, text, job) => {
     btn.disabled = true;
-    report(text);
-    try { await job(); } catch (e) { report([{ cell: "", level: "error", text: String(e) }]); } finally { btn.disabled = false; }
+    report(text, null, PR);
+    try { await job(); } catch (e) { report([{ cell: "", level: "error", text: String(e) }], null, PR); } finally { btn.disabled = false; }
     refresh();
   };
   $("s63-plugin-get").onclick = () => busy($("s63-plugin-get"), "Downloading TweedPlot S-63 Charts…", async () => {
     const v = await invoke("s63_plugin_download");
     updateFound = null;
-    report([{ cell: "", level: "ok", text: `TweedPlot S-63 Charts ${v} installed. Opening the charts again…` }]);
+    report([{ cell: "", level: "ok", text: `TweedPlot S-63 Charts ${v} installed. Opening the charts again…` }], null, PR);
   });
   $("s63-plugin-file").onclick = () => busy($("s63-plugin-file"), "Choose the package file (.tpplugin)…", async () => {
     const v = await invoke("s63_plugin_install_file");
-    if (v) { updateFound = null; report([{ cell: "", level: "ok", text: `TweedPlot S-63 Charts ${v} installed. Opening the charts again…` }]); } else report([]);
+    if (v) { updateFound = null; report([{ cell: "", level: "ok", text: `TweedPlot S-63 Charts ${v} installed. Opening the charts again…` }], null, PR); } else report([], null, PR);
   });
   $("s63-plugin-check").onclick = () => busy($("s63-plugin-check"), "Looking on tweedsmarine.nz…", async () => {
     const r = await invoke("s63_plugin_check");
     updateFound = r.newer ? r.version : null;
-    report(r.newer ? `Version ${r.version} is available: press Update.` : `Up to date (${r.installed}).`);
+    report(r.newer ? `Version ${r.version} is available: press Update.` : `Up to date (${r.installed}).`, null, PR);
   });
   $("s63-plugin-remove").onclick = () => twice($("s63-plugin-remove"), "Sure? Remove", () => busy($("s63-plugin-remove"), "Removing the plugin…", async () => {
     await invoke("s63_plugin_remove");
-    report("TweedPlot S-63 Charts removed. Its activation stays on this computer, for when it is installed again; the encrypted charts aren't shown without it.");
+    report("TweedPlot S-63 Charts removed. Its activation stays on this computer, for when it is installed again; the encrypted charts aren't shown without it.", null, PR);
   }));
 
   $("s63-key-btn").onclick = () => $("s63-key-file").click();
