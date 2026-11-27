@@ -61,6 +61,8 @@ Download the one for your computer from the Assets list below.
 - Night cursors in the standard shapes (arrow, pointing hand, open and closed hand) in the night colour, dimmed with Brightness, and no more white Windows cursor anywhere at night.
 
 **Fixes**
+- Routing: a route to a mark close to the shore (Hobart, for example) could fail to arrive, with the front sailing on past the mark until the forecast ran out. A step that reaches the mark now arrives, as long as the part sailed up to the mark is clear.
+- The S-63 Charts plugin's Download, Install from file and Check for update now say what went wrong when they fail; before, a failed download on a computer without the plugin said nothing.
 - The Nautical Almanac and Annual Notices to Mariners opened nothing on some PCs; they now open as a double-click does.
 - The Highway in the data panel had a gap above XTE, TTG and ETA.
 
