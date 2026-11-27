@@ -38,6 +38,9 @@ pub struct Raster {
     pub dlon: f64,
     pub dlat: f64,
     pub cells: Vec<u8>,
+    /// Coarser land beyond this raster's area (see [`Raster::with_outer`]): without it,
+    /// outside is open sea, and a front wandering out of the area could cross land.
+    pub outer: Option<Box<Raster>>,
 }
 
 impl Raster {
@@ -55,7 +58,16 @@ impl Raster {
         }
         let w = ((width_m / cell).ceil() as usize).max(1);
         let h = ((height_m / cell).ceil() as usize).max(1);
-        Raster { w, h, lon0: bbox[0], lat0: bbox[1], dlon: (bbox[2] - bbox[0]) / w as f64, dlat: (bbox[3] - bbox[1]) / h as f64, cells: vec![UNKNOWN; w * h] }
+        Raster {
+            w,
+            h,
+            lon0: bbox[0],
+            lat0: bbox[1],
+            dlon: (bbox[2] - bbox[0]) / w as f64,
+            dlat: (bbox[3] - bbox[1]) / h as f64,
+            cells: vec![UNKNOWN; w * h],
+            outer: None,
+        }
     }
 
     pub fn cell_size_m(&self) -> f64 {
@@ -66,18 +78,40 @@ impl Raster {
         ((p[0] - self.lon0) / self.dlon, (p[1] - self.lat0) / self.dlat)
     }
 
-    /// Cell value at a position; outside the raster counts as FREE (open sea, no chart).
+    /// Cell value at a position; outside the raster, the outer raster's, else FREE (open sea, no chart).
     pub fn at(&self, lat: f64, lon: f64) -> u8 {
         let (x, y) = self.xy(&[lon, lat]);
         if x < 0.0 || y < 0.0 || x >= self.w as f64 || y >= self.h as f64 {
-            return FREE;
+            return self.outer.as_ref().map_or(FREE, |o| o.at(lat, lon));
         }
         self.cells[y as usize * self.w + x as usize]
     }
 
-    /// True if any cell is blocked.
+    /// True if any cell is blocked (here or in the outer raster).
     pub fn any_blocked(&self) -> bool {
-        self.cells.contains(&BLOCKED)
+        self.cells.contains(&BLOCKED) || self.outer.as_ref().is_some_and(|o| o.any_blocked())
+    }
+
+    /// Land beyond this raster's area, from a coarser raster over a wider one: outside this
+    /// raster, positions and steps are checked against it.
+    pub fn with_outer(mut self, outer: Raster) -> Self {
+        self.outer = Some(Box::new(outer));
+        self
+    }
+
+    /// Land only (no depths), for an outer raster: the charts' land and the world coastline.
+    pub fn land_from_chart(store: &chart::ChartStore, bbox: [f64; 4], cell_m: f64, max_cells: usize) -> Self {
+        let mut r = Raster::new(bbox, cell_m, max_cells);
+        store.for_each_land(bbox, |rings| {
+            r.fill(rings, BLOCKED);
+            r.block_outline(rings);
+        });
+        let cell = r.cell_size_m();
+        store.for_each_world_land(bbox, cell, |rings| {
+            r.fill(rings, BLOCKED);
+            r.block_outline(rings);
+        });
+        r
     }
 
     pub fn blocked(&self, lat: f64, lon: f64) -> bool {
@@ -93,6 +127,11 @@ impl Raster {
             let t = k as f64 / n as f64;
             let (x, y) = (x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
             if x < 0.0 || y < 0.0 || x >= self.w as f64 || y >= self.h as f64 {
+                if let Some(o) = &self.outer {
+                    if o.blocked(self.lat0 + y * self.dlat, self.lon0 + x * self.dlon) {
+                        return false;
+                    }
+                }
                 continue;
             }
             if self.cells[y as usize * self.w + x as usize] == BLOCKED {

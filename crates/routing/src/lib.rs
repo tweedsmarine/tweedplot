@@ -609,7 +609,61 @@ pub fn route_marks(
                     }
                 }
             }
-            Goal::Circle { .. } => route_leg(from, t, mark.pos, goal, polar, wind, obstacles, &leg_barriers, p, &mut res),
+            Goal::Circle { r, .. } => {
+                // Near land, a small circle (as close as possible, or a mark just off the shore) is
+                // seldom hit by the leg's long steps: the boat can't always point straight at it,
+                // a step that ends near enough is luck, and beating up a narrow bay every tack
+                // runs into the shore. So, as when going round a mark: sail to a circle about an
+                // hour and a half's sailing out with the usual steps, then on to the mark with
+                // short ones. If that doesn't arrive, the leg is routed in one go, as before.
+                let vmax = polar.speeds.iter().flatten().fold(0.0f64, |a, &b| a.max(b)) * p.efficiency;
+                let step_s = if p.step_s > 0.0 { p.step_s } else { auto_step_s(from.distance_to(&mark.pos), vmax, obstacles.is_some()) };
+                let r_near = (1.5 * vmax.max(1.0) * step_s / 3600.0).clamp(2.0, 20.0);
+                // only with land or shallow water inside that circle: in open water the long steps get there
+                let land_near = obstacles.is_some_and(|ras| {
+                    (1..=4).any(|k| {
+                        (0..36).any(|b| {
+                            let q = mark.pos.destination(b as f64 * 10.0, r_near * k as f64 / 4.0);
+                            ras.blocked(q.lat, q.lon)
+                        })
+                    })
+                });
+                let two_stage = land_near && r < 0.25 * r_near && from.distance_to(&mark.pos) > 2.0 * r_near;
+                let single = |res: &mut RouteResult| route_leg(from, t, mark.pos, goal, polar, wind, obstacles, &leg_barriers, p, res);
+                if !two_stage {
+                    single(&mut res)
+                } else {
+                    let mut a = route_leg(from, t, mark.pos, Goal::Circle { c: mark.pos, r: r_near }, polar, wind, obstacles, &leg_barriers, p, &mut res);
+                    match a.arrived {
+                        // didn't get within a few miles: one go can't do better, and says so for the mark
+                        None => {
+                            res.isochrones.truncate(iso_start);
+                            single(&mut res)
+                        }
+                        Some((lat, lon, ta)) => {
+                            let near_p = Params { step_s: if p.step_s > 0.0 { p.step_s.min(300.0) } else { 0.0 }, ..p.clone() };
+                            let fin = route_leg(LatLon::new(lat, lon), ta, mark.pos, goal, polar, wind, obstacles, &leg_barriers, &near_p, &mut res);
+                            if fin.arrived.is_none() {
+                                res.isochrones.truncate(iso_start);
+                                single(&mut res)
+                            } else {
+                                // one leg: the way in, then the last miles
+                                a.points.pop();
+                                a.points.extend(fin.points);
+                                a.leg.to = fin.leg.to;
+                                a.leg.distance_nm += fin.leg.distance_nm;
+                                a.leg.tacks += fin.leg.tacks;
+                                a.leg.gybes += fin.leg.gybes;
+                                a.leg.arrival = fin.leg.arrival;
+                                a.arrived = fin.arrived;
+                                a.status = fin.status;
+                                a.message = fin.message;
+                                a
+                            }
+                        }
+                    }
+                }
+            }
         };
         isochrones_per_leg.push(res.isochrones.len() - iso_start);
         let n = res.legs.len();
@@ -899,12 +953,23 @@ fn route_leg(
                 no_wind = true;
                 let tf = nodes[front[0]].t;
                 if let Some(end) = wind.end_time().filter(|&e| tf + step_s > e as f64) {
-                    // Out of weather: finish at the point of the last isochrone nearest the mark.
+                    // Out of weather: finish at the point of the last isochrone nearest the mark,
+                    // unless the front got nearer before and has gone on past: then the routing
+                    // shows how close it got, rather than a point off beyond the mark.
                     let (dd, ni) =
                         front.iter().map(|&ni| (LatLon::new(nodes[ni].lat, nodes[ni].lon).distance_to(&dest), ni)).min_by(|a, b| a.0.total_cmp(&b.0)).unwrap();
-                    best_approach = (dd, ni);
                     status = "grib end".into();
-                    message = format!("The GRIB ends at {}; the route stops there,", grib::fmt_run(end));
+                    let step_nm = vmax * dt_h;
+                    if best_approach.0 + step_nm < dd {
+                        message = format!(
+                            "The GRIB ends at {}; the routing had gone on past by then, so it is shown to its closest approach, at {},",
+                            grib::fmt_run(end),
+                            grib::fmt_run(nodes[best_approach.1].t.round() as i64)
+                        );
+                    } else {
+                        best_approach = (dd, ni);
+                        message = format!("The GRIB ends at {}; the route stops there,", grib::fmt_run(end));
+                    }
                 } else {
                     status = "no wind data".into();
                     message = format!("The GRIB has no wind for the route at {} (outside its area).", grib::fmt_run(tf as i64));
@@ -1068,7 +1133,7 @@ fn route_leg(
         }
     }
     // as close as possible, and the closest point reached is near enough: that is the arrival
-    if close && (status == "close" || status == "blocked" || status == "too many steps") && best_approach.0 <= CLOSE_ACCEPT_NM {
+    if close && (status == "close" || status == "blocked" || status == "too many steps" || status == "grib end") && best_approach.0 <= CLOSE_ACCEPT_NM {
         let last = *chain.last().expect("the chain holds at least the start");
         let note = format!(
             "As close as possible: {:.2} NM from the mark; land, water shallower than the safety depth or a barrier stop it getting closer.",
@@ -1956,5 +2021,57 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn outer_raster_has_the_land_beyond_the_area() {
+        // the routing area stops short of an island; the outer raster has it
+        let island = vec![vec![[175.0, -41.2], [175.4, -41.2], [175.4, -40.8], [175.0, -40.8], [175.0, -41.2]]];
+        let inner = Raster::new([173.0, -42.0, 174.5, -40.0], 100.0, 1_000_000);
+        assert!(inner.segment_clear([174.0, -41.0], [176.0, -41.0]), "without it, outside is open sea");
+        let mut outer = Raster::new([170.0, -45.0, 180.0, -36.0], 2000.0, 1_000_000);
+        outer.fill(&island, raster::BLOCKED);
+        outer.block_outline(&island);
+        let ras = inner.with_outer(outer);
+        assert!(ras.blocked(-41.0, 175.2));
+        assert!(!ras.blocked(-41.0, 174.0));
+        assert!(!ras.segment_clear([174.0, -41.0], [176.0, -41.0]), "a step across the island");
+        assert!(ras.segment_clear([174.0, -41.5], [176.0, -41.5]), "a step south of it");
+        assert!(ras.any_blocked());
+    }
+
+    #[test]
+    fn grib_end_after_passing_shows_the_closest_approach() {
+        // the mark in a closed lagoon (no way in), the GRIB lasting well beyond the time to get
+        // there: the front goes on past, and the routing is shown to its closest approach
+        let pol = test_polar();
+        let mid = LatLon::new(-41.0, 174.0);
+        let ring = |r_nm: f64| -> Vec<[f64; 2]> {
+            (0..=72)
+                .map(|k| {
+                    let q = mid.destination(k as f64 * 5.0, r_nm);
+                    [q.lon, q.lat]
+                })
+                .collect()
+        };
+        let atoll = vec![ring(3.0), ring(2.0)];
+        let mut ras = Raster::new([172.5, -42.0, 175.5, -40.0], 50.0, 2_000_000);
+        ras.fill(&atoll, raster::BLOCKED);
+        ras.block_outline(&atoll);
+        let start = mid.destination(270.0, 40.0);
+        let r = route_marks(
+            start,
+            0,
+            &[MarkSpec { pos: mid, rounding: Rounding::Through, radius_nm: None }],
+            &pol,
+            &SteadyUntil { tws: 14.0, twd: 0.0, end: 8 * 3600 },
+            Some(&ras),
+            &Barriers::default(),
+            &Params::default(),
+        );
+        assert_eq!(r.status, "grib end", "{}", r.message);
+        let end = r.points.last().unwrap();
+        let off = LatLon::new(end.lat, end.lon).distance_to(&mid);
+        assert!(off < 4.5, "shown to {off:.1} NM from the mark: {}", r.message);
     }
 }
