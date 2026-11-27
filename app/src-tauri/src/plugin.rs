@@ -234,7 +234,17 @@ pub fn latest() -> Result<plugin_api::package::IndexEntry, String> {
         .and_then(|r| r.error_for_status())
         .and_then(|r| r.text())
         .map_err(|e| format!("The plugin download page can't be reached: {e}"))?;
-    let list: Vec<plugin_api::package::IndexEntry> = serde_json::from_str(&text).map_err(|e| format!("The plugin download list can't be read: {e}"))?;
+    // a list saved by Notepad or PowerShell starts with a byte-order mark: allowed
+    let text = text.trim_start_matches('\u{feff}').trim_start();
+    if !text.starts_with('[') {
+        // a web server's "not found" or home page, answered as if all were well
+        let start: String = text.chars().take(60).filter(|c| !c.is_control()).collect();
+        return Err(format!(
+            "The plugin download list isn't at {} (the site answered with something else: \"{start}…\"). Install from file meanwhile.",
+            index_url()
+        ));
+    }
+    let list: Vec<plugin_api::package::IndexEntry> = serde_json::from_str(text).map_err(|e| format!("The plugin download list can't be read: {e}"))?;
     let me = plugin_api::package::this_platform();
     list.into_iter()
         .filter(|e| e.platform == me && e.api == plugin_api::API_VERSION)
