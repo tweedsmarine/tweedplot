@@ -852,7 +852,17 @@ fn route_leg(
                     if wrap < -120.0 || (wrapping && np.distance_to(&wrap_m) > wrap_far) {
                         continue; // well round the wrong way, or far off: never the fast way round
                     }
-                    if grid_mode {
+                    // Arrival first: a step that reaches the goal (circle or rounding line)
+                    // ends the leg there, wherever the rest of it would have gone. So it isn't
+                    // dropped for ending in water the front has already been through, or for
+                    // carrying on past a mark near the shore onto the land: only the part
+                    // sailed, up to the goal, has to be clear.
+                    let frac = goal.fraction(here, np, n.wrap);
+                    let upto = match frac {
+                        Some(f) => LatLon::new(n.lat + (np.lat - n.lat) * f, n.lon + norm180(np.lon - n.lon) * f),
+                        None => np,
+                    };
+                    if grid_mode && frac.is_none() {
                         // cheap rejections before the obstacle check
                         let key = key3(np.lat, np.lon, wrap);
                         if visited.contains(&key) && key != key3(n.lat, n.lon, n.wrap) {
@@ -863,17 +873,16 @@ fn route_leg(
                         }
                     }
                     if let Some(r) = obstacles {
-                        if !r.segment_clear([n.lon, n.lat], [np.lon, np.lat]) {
+                        if !r.segment_clear([n.lon, n.lat], [upto.lon, upto.lat]) {
                             continue;
                         }
                     }
                     if let Some(b) = barriers {
-                        if !b.segment_clear([n.lon, n.lat], [np.lon, np.lat]) {
+                        if !b.segment_clear([n.lon, n.lat], [upto.lon, upto.lat]) {
                             continue;
                         }
                     }
-                    // Arrival: does this step reach the goal (circle or rounding line)?
-                    let arrive = goal.fraction(here, np, n.wrap).map(|f| {
+                    let arrive = frac.map(|f| {
                         // time spent: penalty first, then sailing
                         let pen_h = dt_h - hours;
                         t + (pen_h + f * hours) * 3600.0
@@ -1878,5 +1887,74 @@ mod tests {
         ras.fill(&[vec![[172.95, -41.05], [173.05, -41.05], [173.05, -40.95], [172.95, -40.95], [172.95, -41.05]]], raster::BLOCKED);
         let r = route(start, 0, &[start.destination(90.0, 5.0)], &pol, &SteadyWind { tws: 10.0, twd: 0.0 }, Some(&ras), &Params::default());
         assert_eq!(r.status, "start blocked");
+    }
+
+    /// The wind for [`marks_near_the_shore_are_reached`]: steady, until the GRIB ends.
+    struct SteadyUntil {
+        tws: f64,
+        twd: f64,
+        end: i64,
+    }
+    impl WindSource for SteadyUntil {
+        fn wind(&self, _: f64, _: f64, t: i64) -> Option<(f64, f64)> {
+            (t <= self.end).then_some((self.tws, self.twd))
+        }
+        fn end_time(&self) -> Option<i64> {
+            Some(self.end)
+        }
+    }
+
+    #[test]
+    fn marks_near_the_shore_are_reached() {
+        // Hobart from gates to the west: an island with a bay in its south coast (Storm Bay), the
+        // mark about a mile from its head. A step that reached the mark but ran on onto the land,
+        // or ended in water the front had already been through, used to be dropped before the
+        // arrival was seen: some gates and winds then never got there, and the front sailed
+        // on past the island until the GRIB ran out.
+        let pol = test_polar();
+        let island = vec![vec![
+            [144.6, -43.6],
+            [147.0, -43.6],
+            [147.0, -43.0],
+            [147.6, -43.0],
+            [147.6, -43.6],
+            [148.3, -43.6],
+            [148.3, -40.7],
+            [144.6, -40.7],
+            [144.6, -43.6],
+        ]];
+        let mut ras = Raster::new([126.0, -48.0, 150.0, -40.0], 50.0, 2_000_000);
+        ras.fill(&island, raster::BLOCKED);
+        ras.block_outline(&island);
+        let mark = LatLon::new(-43.015, 147.3);
+        assert!(!ras.blocked(mark.lat, mark.lon));
+        {
+            for gate_lat in [-44.0, -45.6, -47.5] {
+                let start = LatLon::new(gate_lat, 140.0);
+                for twd in [270.0, 315.0, 225.0, 0.0] {
+                    for rounding in [Rounding::Through, Rounding::Close] {
+                        let w = SteadyUntil { tws: 16.0, twd, end: 400 * 3600 };
+                        let r = route_marks(
+                            start,
+                            0,
+                            &[MarkSpec { pos: mark, rounding, radius_nm: None }],
+                            &pol,
+                            &w,
+                            Some(&ras),
+                            &Barriers::default(),
+                            &Params::default(),
+                        );
+                        assert_eq!(r.status, "arrived", "mark {:.3}°, gate {gate_lat}°, wind from {twd}°, {rounding:?}: {}", mark.lat, r.message);
+                        let end = r.points.last().unwrap();
+                        let off = LatLon::new(end.lat, end.lon).distance_to(&mark);
+                        let r_nm = if rounding == Rounding::Close { 0.02 } else { 0.11 };
+                        assert!(off < r_nm, "ended {off:.2} NM from the mark");
+                        for s in r.points.windows(2) {
+                            assert!(ras.segment_clear([s[0].lon, s[0].lat], [s[1].lon, s[1].lat]), "the route crosses the land");
+                        }
+                    }
+                }
+            }
+        }
     }
 }
